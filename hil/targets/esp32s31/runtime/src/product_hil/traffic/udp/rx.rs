@@ -40,6 +40,7 @@ pub(in crate::product_hil) struct UdpRxSessionSource {
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct UdpRxBenchmarkConfig {
+    pub network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface,
     pub local_port: u16,
     pub queue_depth: usize,
     pub payload_capacity: usize,
@@ -79,6 +80,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         0,
         0,
         HilEvent::ServiceReady(ServiceInfo {
+            network_interface: config.network_interface,
             transport: HilTransport::Udp,
             direction: HilDirection::Rx,
             local_port: config.local_port,
@@ -110,6 +112,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                         0,
                         0,
                         HilEvent::ServiceReady(ServiceInfo {
+                            network_interface: config.network_interface,
                             transport: HilTransport::Udp,
                             direction: HilDirection::Rx,
                             local_port: config.local_port,

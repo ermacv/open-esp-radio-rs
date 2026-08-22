@@ -63,6 +63,10 @@ impl<const CAPACITY: usize> Esp32s31AccessPointProtocolMailbox<CAPACITY> {
         self.len == 0
     }
 
+    pub const fn remaining_capacity(&self) -> usize {
+        CAPACITY.saturating_sub(self.len)
+    }
+
     pub fn clear(&mut self) {
         while self.pop().is_some() {}
     }

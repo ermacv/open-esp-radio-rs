@@ -1,0 +1,23 @@
+schema = 3
+id = "station-access-point-load"
+description = "Simultaneous same-channel STA+AP UDP bidirectional load with per-interface fairness, beacon timing, and RX hardware health"
+image = "diagnostic-psram-stack"
+isolation = "reset"
+data_plane = "single-core"
+tags = ["wifi", "sta-ap", "udp", "fairness", "beacon", "psram-stack"]
+
+[link]
+phy = "ht40"
+minimum_mcs = 7
+
+[workload]
+kind = "station-access-point"
+timeout_seconds = 30
+duration_seconds = 15
+rate_bps_per_flow = 10000000
+minimum_bps_per_flow = 5000000
+maximum_fairness_skew_percent = 50
+payload_bytes = 1472
+
+[criteria]
+require_no_beacon_loss = true

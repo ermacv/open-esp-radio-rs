@@ -154,6 +154,7 @@ pub enum WifiOperation {
     Scan,
     Monitor,
     AccessPoint,
+    StationAccessPoint,
     Roundtrip,
 }
 
@@ -165,6 +166,7 @@ impl WifiOperation {
             Self::Scan => "scan",
             Self::Monitor => "monitor",
             Self::AccessPoint => "ap",
+            Self::StationAccessPoint => "sta-ap",
             Self::Roundtrip => "roundtrip",
         }
     }
@@ -240,6 +242,21 @@ pub enum Workload {
         #[serde(default)]
         client: AccessPointClient,
         traffic: AccessPointTraffic,
+    },
+    /// One equal-offer UDP bidirectional session on each endpoint of a live
+    /// same-channel STA+AP epoch.
+    StationAccessPoint {
+        timeout_seconds: u16,
+        duration_seconds: u16,
+        rate_bps_per_flow: u64,
+        minimum_bps_per_flow: u64,
+        maximum_fairness_skew_percent: u8,
+        payload_bytes: u16,
+    },
+    /// Controlled loss of the upstream AP tears down the complete same-channel
+    /// pair; restoring the fixture permits one explicit fresh paired start.
+    StationAccessPointReconnect {
+        timeout_seconds: u16,
     },
 }
 
@@ -391,6 +408,8 @@ impl Scenario {
                 | Workload::StationApAbsence { .. }
                 | Workload::WifiRole { .. }
                 | Workload::MonitorCapture { .. }
+                | Workload::StationAccessPoint { .. }
+                | Workload::StationAccessPointReconnect { .. }
         );
         let link_allowed =
             station_link_required || matches!(self.workload, Workload::AccessPoint { .. });
@@ -534,15 +553,71 @@ impl Scenario {
                     }
                 }
             }
+            Workload::StationAccessPoint {
+                timeout_seconds,
+                duration_seconds,
+                rate_bps_per_flow,
+                minimum_bps_per_flow,
+                maximum_fairness_skew_percent,
+                payload_bytes,
+            } => {
+                bounded(*timeout_seconds, 30, 180, self, "timeout_seconds")?;
+                bounded(*duration_seconds, 5, 120, self, "duration_seconds")?;
+                bounded(*payload_bytes, 64, 1472, self, "payload_bytes")?;
+                bounded(
+                    *maximum_fairness_skew_percent,
+                    1,
+                    100,
+                    self,
+                    "maximum_fairness_skew_percent",
+                )?;
+                if !(100_000..=100_000_000).contains(rate_bps_per_flow) {
+                    return self.criteria_error(
+                        "rate_bps_per_flow must be within 100 Kbit/s..=100 Mbit/s",
+                    );
+                }
+                if *minimum_bps_per_flow == 0 || minimum_bps_per_flow > rate_bps_per_flow {
+                    return self.criteria_error(
+                        "minimum_bps_per_flow must be nonzero and cannot exceed the offer",
+                    );
+                }
+            }
+            Workload::StationAccessPointReconnect { timeout_seconds } => {
+                bounded(*timeout_seconds, 30, 180, self, "timeout_seconds")?;
+            }
         }
         self.validate_criteria()?;
         Ok(())
     }
 
     fn validate_criteria(&self) -> Result<()> {
-        let (rx_offer, tx_offer, udp, bidirectional_udp, icmp, station_data_plane) =
-            match &self.workload {
-                Workload::Udp {
+        let (rx_offer, tx_offer, udp, bidirectional_udp, icmp, station_data_plane) = match &self
+            .workload
+        {
+            Workload::Udp {
+                direction,
+                rx_rate_bps,
+                tx_rate_bps,
+                ..
+            } => (
+                *rx_rate_bps,
+                *tx_rate_bps,
+                true,
+                *direction == Direction::Bidirectional,
+                false,
+                true,
+            ),
+            Workload::Tcp {
+                rx_rate_bps,
+                tx_rate_bps,
+                ..
+            } => (*rx_rate_bps, *tx_rate_bps, false, false, false, true),
+            Workload::Icmp { .. } => (None, None, false, false, true, true),
+            Workload::StationReconnect { .. } => (None, None, false, false, false, true),
+            Workload::StationAccessPoint { .. } => (None, None, false, false, false, true),
+            Workload::StationAccessPointReconnect { .. } => (None, None, false, false, false, true),
+            Workload::AccessPoint { traffic, .. } => match traffic {
+                AccessPointTraffic::Udp {
                     direction,
                     rx_rate_bps,
                     tx_rate_bps,
@@ -553,39 +628,18 @@ impl Scenario {
                     true,
                     *direction == Direction::Bidirectional,
                     false,
-                    true,
+                    false,
                 ),
-                Workload::Tcp {
+                AccessPointTraffic::Tcp {
                     rx_rate_bps,
                     tx_rate_bps,
                     ..
-                } => (*rx_rate_bps, *tx_rate_bps, false, false, false, true),
-                Workload::Icmp { .. } => (None, None, false, false, true, true),
-                Workload::StationReconnect { .. } => (None, None, false, false, false, true),
-                Workload::AccessPoint { traffic, .. } => match traffic {
-                    AccessPointTraffic::Udp {
-                        direction,
-                        rx_rate_bps,
-                        tx_rate_bps,
-                        ..
-                    } => (
-                        *rx_rate_bps,
-                        *tx_rate_bps,
-                        true,
-                        *direction == Direction::Bidirectional,
-                        false,
-                        false,
-                    ),
-                    AccessPointTraffic::Tcp {
-                        rx_rate_bps,
-                        tx_rate_bps,
-                        ..
-                    } => (*rx_rate_bps, *tx_rate_bps, false, false, false, false),
-                    AccessPointTraffic::Icmp { .. } => (None, None, false, false, true, false),
-                    AccessPointTraffic::None => (None, None, false, false, false, false),
-                },
-                _ => (None, None, false, false, false, false),
-            };
+                } => (*rx_rate_bps, *tx_rate_bps, false, false, false, false),
+                AccessPointTraffic::Icmp { .. } => (None, None, false, false, true, false),
+                AccessPointTraffic::None => (None, None, false, false, false, false),
+            },
+            _ => (None, None, false, false, false, false),
+        };
         if self.criteria.exact_delivery && !udp {
             return self.criteria_error("exact_delivery is valid only for UDP workloads");
         }
@@ -633,6 +687,7 @@ impl Scenario {
         if self.criteria.require_no_beacon_loss
             && !station_data_plane
             && !matches!(self.workload, Workload::AccessPoint { .. })
+            && !matches!(self.workload, Workload::StationAccessPoint { .. })
         {
             return self.criteria_error(
                 "require_no_beacon_loss requires a station or access-point data-plane workload",

@@ -75,6 +75,7 @@ impl ControlledAp {
             Self::Local(_) => helper_action("stop"),
             Self::OpenWrt(ap) => {
                 openwrt_action(&ap.config, &ap.radio, "down")?;
+                wait_for_openwrt_interface_down(&ap.config)?;
                 ap.stopped = true;
                 Ok(())
             }
@@ -233,6 +234,20 @@ fn wait_for_openwrt_interface(config: &OpenWrtConfig, phy: PhyExpectation) -> Re
         "controlled OpenWrt AP did not restore the required {expected_width} MHz interface"
     )
     .into())
+}
+
+fn wait_for_openwrt_interface_down(config: &OpenWrtConfig) -> Result<()> {
+    for _ in 0..50 {
+        let output = openwrt_command(
+            config,
+            &format!("iw dev {} info >/dev/null 2>&1", config.wireless_interface),
+        )?;
+        if !output.status.success() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    Err("controlled OpenWrt AP interface remained present after radio shutdown".into())
 }
 
 fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process::Output> {

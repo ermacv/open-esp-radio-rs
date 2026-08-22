@@ -1243,6 +1243,7 @@ pub(crate) fn run(
         None
     };
     let session = capture.start_session(SessionConfig {
+        network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
         direction: Direction::Bidirectional,
         completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),

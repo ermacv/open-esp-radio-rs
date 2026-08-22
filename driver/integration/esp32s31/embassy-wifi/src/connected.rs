@@ -15,18 +15,18 @@ use embassy_sync::{
 };
 use embassy_time::{Instant, Timer};
 use open_esp_radio::esp32s31::hal::radio_arena::Esp32s31RadioOwnerArena;
+use open_esp_radio::esp32s31::wifi::device::cooperative_hardware::CooperativeRadioHardware;
 #[cfg(feature = "qualification")]
 use open_esp_radio::esp32s31::wifi::dma::descriptor::{rx_done, rx_rearm_word};
-#[cfg(feature = "qualification")]
-use open_esp_radio::esp32s31::wifi::sta::connected_rx::{
-    ConnectedRxEvent, ConnectedRxSink as MacConnectedRxSink,
-};
 #[cfg(feature = "qualification")]
 use open_esp_radio::esp32s31::wifi::mac::irq::{
     IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
 };
 use open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptSecurity;
-use open_esp_radio::esp32s31::wifi::device::cooperative_hardware::CooperativeRadioHardware;
+#[cfg(feature = "qualification")]
+use open_esp_radio::esp32s31::wifi::sta::connected_rx::{
+    ConnectedRxEvent, ConnectedRxSink as MacConnectedRxSink,
+};
 use open_esp_radio::esp32s31::{
     hal::{MacInterruptSetup, RadioRuntimeOwner},
     wifi::mac::{
@@ -43,7 +43,6 @@ use open_esp_radio_embassy_net::SharedPinnedRxQueue;
 #[cfg(feature = "qualification")]
 use open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::ConnectedRxProtocolSink;
 use open_esp_radio_esp32s31_wifi_embassy::{
-    station_tx::Esp32s31ConnectedTx,
     connected_rx_protocol::{
         Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStopped,
         Esp32s31ConnectedRxProtocolStorage, Esp32s31StagedRxQueue,
@@ -52,8 +51,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaCompositionFailure,
         Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaConfigError,
         Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaNetworkTxDomain,
-        Esp32s31ConnectedStaPort,
-        Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy,
+        Esp32s31ConnectedStaPort, Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy,
         Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxHandoffFailure,
         Esp32s31ConnectedStaTxPolicy, Esp32s31ConnectedStaTxResources,
     },
@@ -63,9 +61,6 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     embassy_rx::EmbassyEsp32s31RxDmaObservationDelay,
     monitor::Esp32s31MonitorInterrupts,
     network_rx::EmbassyNetConnectedRxSink,
-    rx_frontier::{
-        EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier, Esp32s31RxFrontierError,
-    },
     resource_profile::{
         ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH as CONTROL_QUEUE_DEPTH,
         ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY as NETWORK_FRAME_CAPACITY,
@@ -77,23 +72,25 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT as RX_STAGE_SLOT_COUNT,
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
-    rx_dma_service::{Esp32s31StagedRxProducer, Esp32s31RxEpochResources, Esp32s31StoppedRx},
+    rx_dma_service::{Esp32s31RxEpochResources, Esp32s31StagedRxProducer, Esp32s31StoppedRx},
+    rx_frontier::{EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier, Esp32s31RxFrontierError},
     rx_reorder::{RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage},
     sta_tx_epoch::Esp32s31StaTxEpochExt,
     station::{
         ConnectedControlShutdown as Esp32s31ConnectedControlShutdown, ConnectedWpa2Security,
-        Esp32s31ConnectedDriverAssemblyFailure,
-        Esp32s31ConnectedDriverServices, Esp32s31ConnectedDriverTeardownFailure,
-        Esp32s31ConnectedEpochResources, Esp32s31ConnectedEpochStartFailure,
-        Esp32s31ConnectedEpochStarted, Esp32s31ConnectedNetworkStarted,
-        Esp32s31ConnectedNetworkStartedParts, Esp32s31ConnectedServiceResources,
-        Esp32s31ConnectedStationExit, Esp32s31InitialConnectedEpochResources,
-        Esp32s31StationCommand, Esp32s31StationCommandReceiver, NoopEsp32s31ConnectedRunObserver,
+        Esp32s31ConnectedDriverAssemblyFailure, Esp32s31ConnectedDriverServices,
+        Esp32s31ConnectedDriverTeardownFailure, Esp32s31ConnectedEpochResources,
+        Esp32s31ConnectedEpochStartFailure, Esp32s31ConnectedEpochStarted,
+        Esp32s31ConnectedNetworkStarted, Esp32s31ConnectedNetworkStartedParts,
+        Esp32s31ConnectedServiceResources, Esp32s31ConnectedStationExit,
+        Esp32s31InitialConnectedEpochResources, Esp32s31StationCommand,
+        Esp32s31StationCommandReceiver, NoopEsp32s31ConnectedRunObserver,
         activate_esp32s31_connected_epoch, prepare_esp32s31_connected_service,
-        run_and_quiesce_esp32s31_connected_epoch,
-        start_esp32s31_initial_connected_epoch, start_esp32s31_reconnected_connected_epoch,
+        run_and_quiesce_esp32s31_connected_epoch, start_esp32s31_initial_connected_epoch,
+        start_esp32s31_reconnected_connected_epoch,
     },
     station_epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch},
+    station_tx::Esp32s31ConnectedTx,
     wdev::WdevRunner,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
@@ -110,13 +107,13 @@ use open_esp_radio_wifi_embassy::{
 };
 use static_cell::ConstStaticCell;
 
+use crate::radio_resources::{
+    NETWORK_TX_HEADROOM, NetworkRunner, RadioAmpduStorage, RadioTxBacking, RunningWifiNetwork,
+    TX_AMPDU_BUFFER_SIZE, WifiNetworkResources,
+};
 use crate::runtime::{
     ControlTx, ProductionStationBoardResources, ProductionStationRuntime, RX_BUFFER_SIZE,
     RX_DESCRIPTOR_COUNT, RxStorage, TxStorage, production_station_runtime,
-};
-use crate::radio_resources::{
-    NETWORK_TX_HEADROOM, NetworkRunner, RadioAmpduStorage, RadioTxBacking,
-    RunningWifiNetwork, TX_AMPDU_BUFFER_SIZE, WifiNetworkResources,
 };
 pub(super) type ControlResources =
     ConnectedControlResources<CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
@@ -417,7 +414,7 @@ pub type ConnectedDisconnectedEpoch = Esp32s31DisconnectedStaEpoch<
 pub type MacInterruptEpoch =
     Esp32s31MacInterruptEpoch<'static, EspHalMacInterruptRoute, CriticalSectionRawMutex>;
 
-static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
+pub(super) static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
     EmbassyMacIrqRuntime::new_with_rx_moderation(
         open_esp_radio_esp32s31_wifi_esp_hal::mac_interrupt_epoch::unmask_active_mac_rx_delivery_interrupts,
     );
@@ -431,14 +428,23 @@ static POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
     reason = "the linker must retain latency-critical RX staging in internal SRAM"
 )]
 #[unsafe(link_section = ".critical.bss.open_radio_rx_stage")]
-static RX_STAGE_POOL: RxStagePool<RX_STAGE_SLOT_COUNT, RX_STAGE_CAPACITY> = RxStagePool::new();
-static STAGED_RX_QUEUE: Esp32s31StagedRxQueue<
+pub(super) static RX_STAGE_POOL: RxStagePool<RX_STAGE_SLOT_COUNT, RX_STAGE_CAPACITY> =
+    RxStagePool::new();
+pub(super) static STAGED_RX_QUEUE: Esp32s31StagedRxQueue<
     'static,
     CriticalSectionRawMutex,
     RX_STAGE_SLOT_COUNT,
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
 > = Esp32s31StagedRxQueue::new();
+pub(super) static STA_AP_STAGED_RX_QUEUE:
+    open_esp_radio_esp32s31_wifi_embassy::sta_ap::Esp32s31StaApStagedRxQueue<
+        'static,
+        CriticalSectionRawMutex,
+        RX_STAGE_SLOT_COUNT,
+        RX_STAGE_CAPACITY,
+        RX_STAGE_SLOT_COUNT,
+    > = open_esp_radio_esp32s31_wifi_embassy::sta_ap::Esp32s31StaApStagedRxQueue::new();
 static STATION_SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<
     CriticalSectionRawMutex,
     RX_STAGE_SLOT_COUNT,
@@ -446,8 +452,7 @@ static STATION_SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<
 static ACCESS_POINT_SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<
     CriticalSectionRawMutex,
     RX_STAGE_SLOT_COUNT,
-> =
-    SharedPinnedRxQueue::new();
+> = SharedPinnedRxQueue::new();
 
 #[inline(always)]
 pub(super) fn publish_access_point_shared_network_rx(index: u8) {
@@ -460,13 +465,12 @@ pub(super) fn publish_access_point_shared_network_rx(index: u8) {
 fn notify_shared_network_rx_release() {
     IRQ_RUNTIME.notify_rx_capacity();
 }
-static RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
+pub(super) static RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
     RxReorderCommandResources::new();
 pub(super) static RX_REORDER_STORAGE: RxReorderFrameStorage<
     RX_STAGE_CAPACITY,
     RX_REORDER_BACKING_SLOT_COUNT,
-> =
-    RxReorderFrameStorage::new();
+> = RxReorderFrameStorage::new();
 // Reorder machines and retained RX lease tokens are long-lived protocol
 // state. Keeping their arena static prevents this multi-kilobyte owner table
 // from being copied through the connected async state machine's stack frame.
@@ -488,6 +492,17 @@ static REGISTER_ARENA: ConstStaticCell<Esp32s31RadioOwnerArena> =
 // are deliberately not allocated by this product integration.
 static ETHERNET_FRAME: ConstStaticCell<[u8; RX_STAGE_CAPACITY]> =
     ConstStaticCell::new([0; RX_STAGE_CAPACITY]);
+// One station protocol turn may close a reorder gap and synchronously release
+// the current MPDU plus a complete negotiated BlockAck window. Each released
+// MPDU can itself be an A-MSDU, and the deferred publication image adds one
+// two-byte record prefix per decoded Ethernet subframe. This PSRAM-owned arena
+// therefore covers the full typed release frontier rather than only one DMA
+// unit; network backpressure can retain that finite batch without poisoning
+// the affine paired owner graph with a synthetic `BatchCapacity` fault.
+const STA_AP_STATION_RX_BATCH_CAPACITY: usize =
+    (RX_REORDER_WINDOW + 1) * RX_STAGE_CAPACITY * 2;
+static STA_AP_STATION_RX_BATCH: ConstStaticCell<[u8; STA_AP_STATION_RX_BATCH_CAPACITY]> =
+    ConstStaticCell::new([0; STA_AP_STATION_RX_BATCH_CAPACITY]);
 static RX_PROTOCOL_TASK_CONTROL: ConnectedTaskControlResources<
     CriticalSectionRawMutex,
     ConnectedRxProtocolStoppedOwner,
@@ -687,9 +702,7 @@ impl Esp32s31QualificationSnapshot {
     pub fn sta_receive_policy(
         self,
     ) -> Option<open_esp_radio::esp32s31::hal::wifi_mac::MacStaReceivePolicySnapshot> {
-        self.registers
-            .try_station_receive_policy_snapshot()
-            .ok()
+        self.registers.try_station_receive_policy_snapshot().ok()
     }
 
     /// Snapshot hardware RX counters only while a connected epoch owns the
@@ -698,9 +711,7 @@ impl Esp32s31QualificationSnapshot {
     pub fn rx_statistics(
         self,
     ) -> Option<open_esp_radio::esp32s31::hal::wifi_mac::MacRxStatisticsSnapshot> {
-        self.registers
-            .try_receive_statistics_snapshot()
-            .ok()
+        self.registers.try_receive_statistics_snapshot().ok()
     }
 
     /// Wrapping count of real `RX_SUCCESS` publications from the shared hard
@@ -772,7 +783,7 @@ impl InitialConnectedStaticResources {
         );
     }
 
-    fn with_rx(
+    pub(super) fn with_rx(
         mut self,
         rx: ConnectedRxEpochResources,
     ) -> Esp32s31InitialConnectedEpochResources<
@@ -790,7 +801,7 @@ impl InitialConnectedStaticResources {
     }
 }
 
-type ConnectedNetworkStarted<'state, 'security> = Esp32s31ConnectedNetworkStarted<
+pub(super) type ConnectedNetworkStarted<'state, 'security> = Esp32s31ConnectedNetworkStarted<
     'security,
     ProductionStationRuntime<'state>,
     ConnectedStationEpoch,
@@ -944,6 +955,10 @@ pub type ConnectedStationResources<'state, 'security> = Esp32s31ConnectedService
 
 pub(super) fn initialize_ethernet_frame() -> &'static mut [u8] {
     ETHERNET_FRAME.take().as_mut_slice()
+}
+
+pub(super) fn initialize_sta_ap_station_rx_batch() -> &'static mut [u8] {
+    STA_AP_STATION_RX_BATCH.take().as_mut_slice()
 }
 
 /// Materialize the large connected-RX arena once; every later connected
@@ -1314,6 +1329,7 @@ pub async fn run_connected<'state, 'security>(
     let ProductionStationBoardResources {
         interface,
         rx_protocol_runtime,
+        sta_ap_rx_batch,
         initial_connected,
         #[cfg(feature = "qualification")]
         qualification,
@@ -1342,9 +1358,8 @@ pub async fn run_connected<'state, 'security>(
             .rx_pipeline,
     );
 
-    let network_rx = network_runner.rx_publisher(
-        open_esp_radio_esp32s31_wifi_embassy::sta_ap::STA_NETWORK_INTERFACE_ID,
-    );
+    let network_rx = network_runner
+        .rx_publisher(open_esp_radio_esp32s31_wifi_embassy::sta_ap::STA_NETWORK_INTERFACE_ID);
     let (control_publisher, control_receiver) = control_resources.split();
     let rx_sink = EmbassyNetConnectedRxSink::new_with_shared_rx(
         network_rx,
@@ -1368,86 +1383,86 @@ pub async fn run_connected<'state, 'security>(
     };
     let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
     let tx_sequences = sequences;
-    let drivers =
-        match Esp32s31ConnectedStaPort::compose(
-            plan,
-            hardware,
-            rx,
-            Esp32s31ConnectedStaRxProtocolResources {
-                frames: staged_receiver,
-                irq: &IRQ_RUNTIME,
-                sink: rx_sink,
-                mpdu: frame,
-                ethernet,
-                reorder_commands: reorder_receiver,
-                reorder_storage: &RX_REORDER_STORAGE,
-                runtime: rx_protocol_runtime,
-                reorder_scratch: None,
-                pipeline_observer: {
-                    #[cfg(feature = "qualification")]
-                    {
-                        qualification.map(|hooks| hooks.rx_pipeline)
-                    }
-                    #[cfg(not(feature = "qualification"))]
-                    {
-                        None
-                    }
+    let drivers = match Esp32s31ConnectedStaPort::compose(
+        plan,
+        hardware,
+        rx,
+        Esp32s31ConnectedStaRxProtocolResources {
+            frames: staged_receiver,
+            irq: &IRQ_RUNTIME,
+            sink: rx_sink,
+            mpdu: frame,
+            ethernet,
+            reorder_commands: reorder_receiver,
+            reorder_storage: &RX_REORDER_STORAGE,
+            runtime: rx_protocol_runtime,
+            reorder_scratch: None,
+            pipeline_observer: {
+                #[cfg(feature = "qualification")]
+                {
+                    qualification.map(|hooks| hooks.rx_pipeline)
+                }
+                #[cfg(not(feature = "qualification"))]
+                {
+                    None
+                }
+            },
+        },
+        Esp32s31ConnectedStaTxResources {
+            control: control_tx,
+            aggregate,
+            pairwise_key: pairwise,
+            sequences: tx_sequences,
+            aggregate_tx_observer: {
+                #[cfg(feature = "qualification")]
+                {
+                    qualification.map(|hooks| hooks.aggregate_tx)
+                }
+                #[cfg(not(feature = "qualification"))]
+                {
+                    None
+                }
+            },
+            network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
+        },
+        Esp32s31ConnectedStaControlResources {
+            receiver: control_receiver,
+            reorder_commands: reorder_sender,
+            rx_block_ack: &crate::runtime::PRODUCTION_RX_BLOCK_ACK,
+        },
+    ) {
+        Ok(drivers) => drivers,
+        Err(composition) => {
+            qualification_event!(
+                "open-radio: connected TX handoff found a live owner; quarantined"
+            );
+            let failure = Esp32s31ConnectedDriverAssemblyFailure {
+                network: network_runner,
+                composition,
+                map_services: core::convert::identity::<ConnectedDriverServices>
+                    as ConnectedServicesMapper,
+            };
+            return ConnectedStationRunExit::Faulted(ConnectedStationFault::DriverAssembly {
+                _fault: ConnectedDriverAssemblyFault {
+                    _role: role,
+                    _interrupt: interrupt_epoch,
+                    _dma: dma,
+                    _tx_storage: tx_storage,
+                    _scan_table: scan_table,
+                    _stack: stack,
+                    _initial_network_task: stack_runner,
+                    _control_resources: control_resources,
+                    _group: group,
+                    _pmk: pmk,
+                    _supplicant_nonce: supplicant_nonce,
+                    _message4_protection: message4_protection,
+                    _interface: interface,
+                    _failure: failure,
+                    _task_reservation: task_reservation,
                 },
-            },
-            Esp32s31ConnectedStaTxResources {
-                control: control_tx,
-                aggregate,
-                pairwise_key: pairwise,
-                sequences: tx_sequences,
-                aggregate_tx_observer: {
-                    #[cfg(feature = "qualification")]
-                    {
-                        qualification.map(|hooks| hooks.aggregate_tx)
-                    }
-                    #[cfg(not(feature = "qualification"))]
-                    {
-                        None
-                    }
-                },
-                network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
-            },
-            Esp32s31ConnectedStaControlResources {
-                receiver: control_receiver,
-                reorder_commands: reorder_sender,
-            },
-        ) {
-            Ok(drivers) => drivers,
-            Err(composition) => {
-                qualification_event!(
-                    "open-radio: connected TX handoff found a live owner; quarantined"
-                );
-                let failure = Esp32s31ConnectedDriverAssemblyFailure {
-                    network: network_runner,
-                    composition,
-                    map_services: core::convert::identity::<ConnectedDriverServices>
-                        as ConnectedServicesMapper,
-                };
-                return ConnectedStationRunExit::Faulted(ConnectedStationFault::DriverAssembly {
-                    _fault: ConnectedDriverAssemblyFault {
-                        _role: role,
-                        _interrupt: interrupt_epoch,
-                        _dma: dma,
-                        _tx_storage: tx_storage,
-                        _scan_table: scan_table,
-                        _stack: stack,
-                        _initial_network_task: stack_runner,
-                        _control_resources: control_resources,
-                        _group: group,
-                        _pmk: pmk,
-                        _supplicant_nonce: supplicant_nonce,
-                        _message4_protection: message4_protection,
-                        _interface: interface,
-                        _failure: failure,
-                        _task_reservation: task_reservation,
-                    },
-                });
-            }
-        };
+            });
+        }
+    };
     let report = drivers.report;
     let rx_protocol = drivers.protocol;
     let mut radio_runner = WdevRunner::new(
@@ -1536,6 +1551,18 @@ pub async fn run_connected<'state, 'security>(
         &mut observer,
         |exit, runner| {
             #[cfg(feature = "qualification")]
+            if let Esp32s31ConnectedStationExit::HardwareFailure(error) = &exit {
+                // Preserve the fail-closed reason ahead of the larger exit
+                // snapshots. A saturated diagnostic writer must not erase
+                // the one fact needed to distinguish TX, RX and control
+                // ownership failures during HIL triage.
+                qualification_event!("open-radio: connected hardware failure: {error:?}");
+                qualification_event!(
+                    "open-radio: connected RX address mismatch: {:?}",
+                    runner.services().rx().first_buffer_address_mismatch()
+                );
+            }
+            #[cfg(feature = "qualification")]
             {
                 let control = runner.services().control();
                 let beacon = control.beacon_monitor();
@@ -1586,8 +1613,7 @@ pub async fn run_connected<'state, 'security>(
                     ConnectedStationOutcome::StationStopped(command)
                 }
                 Esp32s31ConnectedStationExit::HardwareFailure(error) => {
-                    #[cfg(feature = "qualification")]
-                    qualification_event!("open-radio: connected hardware failure: {error:?}");
+                    let _ = error;
                     ConnectedStationOutcome::HardwareFailure
                 }
             }
@@ -1661,6 +1687,7 @@ pub async fn run_connected<'state, 'security>(
                     ProductionStationBoardResources {
                         interface,
                         rx_protocol_runtime,
+                        sta_ap_rx_batch,
                         initial_connected,
                         #[cfg(feature = "qualification")]
                         qualification,
@@ -1699,6 +1726,7 @@ pub async fn run_connected<'state, 'security>(
                 ProductionStationBoardResources {
                     interface,
                     rx_protocol_runtime,
+                    sta_ap_rx_batch,
                     initial_connected,
                     #[cfg(feature = "qualification")]
                     qualification,
@@ -1741,6 +1769,7 @@ pub async fn run_connected<'state, 'security>(
             crate::runtime::ProductionStationBoardResources {
                 interface,
                 rx_protocol_runtime,
+                sta_ap_rx_batch,
                 initial_connected,
                 #[cfg(feature = "qualification")]
                 qualification,
@@ -1761,13 +1790,16 @@ pub async fn run_connected<'state, 'security>(
 pub fn initialize_station_network(
     station_address: [u8; 6],
     access_point_address: [u8; 6],
-) -> (crate::radio_resources::Esp32s31WifiDevices, WifiNetworkResources) {
+) -> (
+    crate::radio_resources::Esp32s31WifiDevices,
+    WifiNetworkResources,
+) {
     let (_station_publisher, station_consumer) = STATION_SHARED_NETWORK_RX_QUEUE.split(
         RX_STAGE_POOL.handoff_pool(),
         notify_shared_network_rx_release,
     );
-    let (_access_point_publisher, access_point_consumer) =
-        ACCESS_POINT_SHARED_NETWORK_RX_QUEUE.split(
+    let (_access_point_publisher, access_point_consumer) = ACCESS_POINT_SHARED_NETWORK_RX_QUEUE
+        .split(
             RX_STAGE_POOL.handoff_pool(),
             notify_shared_network_rx_release,
         );

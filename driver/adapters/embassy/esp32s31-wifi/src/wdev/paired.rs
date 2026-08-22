@@ -462,6 +462,7 @@ pub trait WdevPairedControlService<H, PhysicalTx, FirstTx, SecondTx> {
         first_tx: &'a mut FirstTx,
         second_tx: &'a mut SecondTx,
         context: WdevControlContext,
+        retained_tx: Option<WdevPairRole>,
     ) -> impl Future<Output = Result<WdevPairedControlProgress<Self::Exit>, Self::Error>> + 'a;
 
     fn stop(
@@ -509,6 +510,10 @@ pub trait WdevPairedNetworkTxService<
             QUEUE_DEPTH,
         >,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
+
+    fn last_started_frame_count(&self) -> usize {
+        1
+    }
 
     fn wait_deadline<'a>(
         &'a mut self,
@@ -589,6 +594,7 @@ pub struct WdevPairedServiceSet<H, PhysicalTx, R, FirstTx, SecondTx, C> {
     control: C,
     active: Option<WdevPairRole>,
     prepared: Option<WdevPairRole>,
+    last_started_frames: usize,
 }
 
 impl<H, PhysicalTx, R, FirstTx, SecondTx, C>
@@ -619,6 +625,7 @@ impl<H, PhysicalTx, R, FirstTx, SecondTx, C>
             control,
             active: None,
             prepared: None,
+            last_started_frames: 1,
         }
     }
 
@@ -636,6 +643,16 @@ impl<H, PhysicalTx, R, FirstTx, SecondTx, C>
 
     pub fn rx_mut(&mut self) -> &mut R {
         &mut self.rx
+    }
+
+    /// Borrow the sole hardware and common RX owners together.
+    ///
+    /// A same-channel composition starts and stops its one DMA producer at
+    /// the outer paired boundary. Returning two disjoint borrows prevents a
+    /// caller from extracting either owner or manufacturing a second RX
+    /// service merely to satisfy borrow checking.
+    pub fn hardware_and_rx_mut(&mut self) -> (&mut H, &mut R) {
+        (&mut self.hardware, &mut self.rx)
     }
 
     pub fn into_parts(self) -> (H, PhysicalTx, R, FirstTx, SecondTx, C) {
@@ -719,6 +736,27 @@ where
             let (first, second) = network_rx
                 .pair_mut(self.first_interface, self.second_interface)
                 .expect("paired WDEV runner must retain both addressed RX endpoints");
+            let retained_tx = self.prepared.or_else(|| {
+                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
+            });
+            if retained_tx.is_some() {
+                // A software standby is not an idle physical boundary.  The
+                // DMA producer may continue reclaiming descriptors, but a
+                // role protocol consumer could require the ordinary TX owner
+                // and therefore cannot run until the retained role completes.
+                return self
+                    .rx
+                    .service_during_tx(
+                        &mut self.hardware,
+                        &mut self.physical_tx,
+                        &mut self.first_tx,
+                        &mut self.second_tx,
+                        first,
+                        second,
+                    )
+                    .await
+                    .map_err(WdevPairedServiceError::Rx);
+            }
             let progress = self
                 .rx
                 .service(
@@ -769,7 +807,10 @@ where
     }
 
     fn has_rx_work(&self) -> bool {
-        self.rx.has_work(&self.first_tx, &self.second_tx)
+        let retained_tx = self.prepared.or_else(|| {
+            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
+        });
+        retained_tx.is_none() && self.rx.has_work(&self.first_tx, &self.second_tx)
     }
 
     fn serviced_rx_frames(&self) -> u64 {
@@ -785,6 +826,9 @@ where
         M: 'a,
     {
         async move {
+            let retained_tx = self.prepared.or_else(|| {
+                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
+            });
             let progress = self
                 .control
                 .service(
@@ -793,6 +837,7 @@ where
                     &mut self.first_tx,
                     &mut self.second_tx,
                     context,
+                    retained_tx,
                 )
                 .await
                 .map_err(WdevPairedServiceError::Control)?;
@@ -881,11 +926,20 @@ where
                     .await
                     .map_err(WdevPairedServiceError::SecondTx)?,
             };
+            self.last_started_frames = match role {
+                WdevPairRole::First => self.first_tx.last_started_frame_count(),
+                WdevPairRole::Second => self.second_tx.last_started_frame_count(),
+            }
+            .max(1);
             self.active = (progress == WifiTxProgress::Pending).then_some(role);
             self.prepared =
                 unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
             Ok(progress)
         }
+    }
+
+    fn last_started_tx_frame_count(&self) -> usize {
+        self.last_started_frames
     }
 
     fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {

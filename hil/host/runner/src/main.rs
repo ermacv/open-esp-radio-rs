@@ -32,6 +32,8 @@ mod rx_traffic;
 mod scenario;
 mod stack_audit;
 mod startup_artifact;
+mod station_access_point_qualification;
+mod station_access_point_reconnect;
 mod station_ap_absence;
 mod station_ap_loss;
 mod station_fixture;
@@ -546,6 +548,7 @@ fn execute_workload(
             | Workload::Tcp { .. }
             | Workload::Icmp { .. }
             | Workload::StationReconnect { .. }
+            | Workload::StationAccessPoint { .. }
     )
     .then(|| {
         controlled_ap::ControlledAp::start(
@@ -846,6 +849,36 @@ fn execute_workload(
             output,
             lab,
         ),
+        Workload::StationAccessPoint {
+            timeout_seconds,
+            duration_seconds,
+            rate_bps_per_flow,
+            minimum_bps_per_flow,
+            maximum_fairness_skew_percent,
+            payload_bytes,
+        } => station_access_point_qualification::run(
+            station_access_point_qualification::Config {
+                timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
+                duration: std::time::Duration::from_secs(u64::from(*duration_seconds)),
+                rate_bps_per_flow: *rate_bps_per_flow,
+                minimum_bps_per_flow: *minimum_bps_per_flow,
+                maximum_fairness_skew_percent: *maximum_fairness_skew_percent,
+                payload_bytes: usize::from(*payload_bytes),
+            },
+            output,
+            lab,
+        ),
+        Workload::StationAccessPointReconnect { timeout_seconds } => {
+            station_access_point_reconnect::run(
+                std::time::Duration::from_secs(u64::from(*timeout_seconds)),
+                output,
+                lab,
+                selected
+                    .link
+                    .expect("validated paired reconnect has a link expectation")
+                    .phy,
+            )
+        }
     }
 }
 

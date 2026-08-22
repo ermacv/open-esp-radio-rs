@@ -322,7 +322,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                      ack_timeout_retries={} \
                      cts_timeout_retries={} collision_retries={} hardware_failures={} \
                      hardware_timeouts={} collision_limits={} last_hardware_status={} beacons={}; AP RX evidence: \
-                     units={} descriptors={} recycled_descriptors={} retained_descriptors={} discarded_units={} \
+                     units={} descriptors={} recycled_descriptors={} retained_descriptors={} discarded_units={} overload_dropped={} critical_reserve={} critical_blocked={} \
                      max_service_us={}/{}/{} data/management/eapol={}/{}/{} dma_total_us/calls={}/{} data_total_us={} \
                      rx_ht40_mcs={:?} total_ht={} ht_ampdu={} rssi={}/{}/{}/{} protected={} mic_failures={} quarantined={} duplicates={} \
                      radio_rejected={} protocol_rejected={} ethernet_staged={} tcp_staged={}",
@@ -351,6 +351,9 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     stopped.recycled_rx_descriptors,
                     stopped.retained_rx_descriptors,
                     stopped.discarded_rx_units,
+                    stopped.rx_overload_discarded_units,
+                    stopped.rx_critical_reserve_admissions,
+                    stopped.rx_critical_admission_blocked,
                     stopped.maximum_rx_service_micros,
                     stopped.maximum_rx_dma_service_micros,
                     stopped.maximum_rx_protocol_service_micros,
@@ -362,7 +365,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     stopped.total_rx_protected_data_service_micros,
                     stopped.rx_ht40_mcs_frames,
                     stopped.rx_ht_data_frames,
-                    stopped.rx_ht_ampdu_data_frames,
+                    stopped.rx_ht_mpdus_with_aggregation_bit,
                     stopped.rx_rssi_samples,
                     stopped.rx_rssi_sum_dbm,
                     stopped.rx_rssi_min_dbm,
@@ -536,10 +539,10 @@ fn validate_mcs_evidence(
     if require_rx && evidence.rx_ht40_mcs_frames[7] == 0 {
         return Err(format!(
             "AP client-to-target path did not observe HT40 MCS7 protected data \
-             (HT40 MCS histogram={:?}, total HT frames={}, HT A-MPDU frames={})",
+             (HT40 MCS histogram={:?}, total HT frames={}, MPDUs with HT-SIG aggregation bit={}; PPDU count/depth unavailable)",
             evidence.rx_ht40_mcs_frames,
             evidence.rx_ht_data_frames,
-            evidence.rx_ht_ampdu_data_frames,
+            evidence.rx_ht_mpdus_with_aggregation_bit,
         )
         .into());
     }
@@ -718,6 +721,7 @@ fn qualify_udp(
     if rx_rate_bps.is_some() {
         probe_udp_rx_ready_via(
             capture,
+            open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
             target,
             (traffic_target != target).then_some(traffic_target),
             UDP_RX_PORT,
@@ -741,6 +745,7 @@ fn qualify_udp(
     };
     let duration_millis = u32::try_from(duration.as_millis())?;
     let session = capture.start_session(SessionConfig {
+        network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
         transport: Transport::Udp,
         direction: protocol_direction,
         completion: Completion::DurationMillis(duration_millis),
@@ -980,6 +985,7 @@ fn qualify_tcp(
     let protocol_direction = protocol_direction(direction);
     let duration_millis = u32::try_from(duration.as_millis())?;
     let session = capture.start_session(SessionConfig {
+        network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
         transport: Transport::Tcp,
         direction: protocol_direction,
         completion: Completion::DurationMillis(duration_millis),

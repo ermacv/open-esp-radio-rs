@@ -1,0 +1,15 @@
+schema = 3
+id = "station-access-point-reconnect"
+description = "Upstream beacon loss tears down the complete STA+AP owner and a restored fixture permits one explicit fresh pair"
+image = "diagnostic-psram-stack"
+isolation = "reset"
+tags = ["wifi", "sta-ap", "reconnect", "beacon-loss", "psram-stack"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "station-access-point-reconnect"
+timeout_seconds = 120
+
+[criteria]

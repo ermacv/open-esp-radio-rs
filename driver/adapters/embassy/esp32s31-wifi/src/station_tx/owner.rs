@@ -312,6 +312,17 @@ where
         !matches!(self.active, ConnectedTxActive::Idle)
     }
 
+    /// Network leases captured by the currently active fresh exchange.
+    /// Retries keep this original count: fairness charges leases once when
+    /// they leave the network queue, not once per hardware publication.
+    pub fn active_network_frame_count(&self) -> usize {
+        match &self.active {
+            ConnectedTxActive::Idle => 1,
+            ConnectedTxActive::Ordinary => 1,
+            ConnectedTxActive::Aggregate(active) => usize::from(active.original_subframes),
+        }
+    }
+
     pub fn has_prepared_network_tx(&self) -> bool {
         self.standby_prepared.is_some() || self.standby_error.is_some()
     }
@@ -431,26 +442,24 @@ where
         let pending_ordinary_retry = self.pending_ordinary_retry;
         let observer = self.observer;
 
-        match self.try_into_teardown_parts() {
-            Ok((resources, handoff, aggregate)) => Ok((
-                resources,
-                aggregate,
-                Esp32s31ConnectedTxParked {
-                    handoff,
-                    block_ack_windows,
-                    config,
-                    rate_control,
-                    aggregate_rate_policy,
-                    last_aggregate_status,
-                    pending_ordinary_retry,
-                    observer,
-                },
-            )),
-            Err(mut owner) => {
-                owner.rate_control.restore(rate_control);
-                Err(owner)
-            }
-        }
+        let (ordinary, aggregate) = self.try_into_parts()?;
+        let (resources, ordinary) = ordinary
+            .try_park()
+            .unwrap_or_else(|_| unreachable!("idle ordinary owner must park its role state"));
+        Ok((
+            resources,
+            aggregate,
+            Esp32s31ConnectedTxParked {
+                ordinary,
+                block_ack_windows,
+                config,
+                rate_control,
+                aggregate_rate_policy,
+                last_aggregate_status,
+                pending_ordinary_retry,
+                observer,
+            },
+        ))
     }
 
     /// Rejoin station-local policy with the exact physical owners returned by
@@ -467,7 +476,7 @@ where
         parked: Esp32s31ConnectedTxParked<'ampdu, SLOTS>,
     ) -> Self {
         let Esp32s31ConnectedTxParked {
-            handoff,
+            ordinary,
             block_ack_windows,
             config,
             rate_control,
@@ -476,7 +485,7 @@ where
             pending_ordinary_retry,
             observer,
         } = parked;
-        let ordinary = Esp32s31SingleMpduTx::new(resources, handoff);
+        let ordinary = Esp32s31SingleMpduTx::resume(resources, ordinary);
         let mut owner = match Self::new(
             ordinary,
             aggregate,

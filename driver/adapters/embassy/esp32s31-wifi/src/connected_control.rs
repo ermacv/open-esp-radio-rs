@@ -239,9 +239,23 @@ impl<M: RawMutex> ConnectedControlReorder for EmbassyReorderSink<'_, '_, M> {
 pub struct Esp32s31ConnectedControl<'resources, M: RawMutex, const CAPACITY: usize> {
     receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
     core: Esp32s31ConnectedControlCore,
-    rx_block_ack: Esp32s31StaApRxBlockAck,
+    rx_block_ack: Esp32s31ConnectedRxBlockAck<'resources>,
     rx_reorder_commands: Option<RxReorderCommandSender<'resources, M>>,
     security: Option<ConnectedWpa2Security>,
+}
+
+enum Esp32s31ConnectedRxBlockAck<'resources> {
+    Local(Esp32s31StaApRxBlockAck),
+    Shared(&'resources Esp32s31StaApRxBlockAck),
+}
+
+impl Esp32s31ConnectedRxBlockAck<'_> {
+    const fn sessions(&self) -> &Esp32s31StaApRxBlockAck {
+        match self {
+            Self::Local(sessions) => sessions,
+            Self::Shared(sessions) => sessions,
+        }
+    }
 }
 
 impl<'resources, M: RawMutex, const CAPACITY: usize>
@@ -256,7 +270,23 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         Self {
             receiver,
             core: Esp32s31ConnectedControlCore::new(peer, he_enabled, tx_block_ack),
-            rx_block_ack: Esp32s31StaApRxBlockAck::new(),
+            rx_block_ack: Esp32s31ConnectedRxBlockAck::Local(Esp32s31StaApRxBlockAck::new()),
+            rx_reorder_commands: None,
+            security: None,
+        }
+    }
+
+    pub fn new_shared(
+        receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
+        peer: [u8; 6],
+        he_enabled: bool,
+        tx_block_ack: open_esp_radio_esp32s31_wifi_mac::tx_ampdu::StaTxBlockAckSessions,
+        rx_block_ack: &'resources Esp32s31StaApRxBlockAck,
+    ) -> Self {
+        Self {
+            receiver,
+            core: Esp32s31ConnectedControlCore::new(peer, he_enabled, tx_block_ack),
+            rx_block_ack: Esp32s31ConnectedRxBlockAck::Shared(rx_block_ack),
             rx_reorder_commands: None,
             security: None,
         }
@@ -293,7 +323,16 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         mut self,
         maximum_window: u16,
     ) -> Result<Self, open_esp_radio_esp32s31_wifi_mac::rx_ampdu::RxBlockAckSessionsError> {
-        self.rx_block_ack = Esp32s31StaApRxBlockAck::with_maximum_window(maximum_window)?;
+        match &mut self.rx_block_ack {
+            Esp32s31ConnectedRxBlockAck::Local(sessions) => {
+                *sessions = Esp32s31StaApRxBlockAck::with_maximum_window(maximum_window)?;
+            }
+            Esp32s31ConnectedRxBlockAck::Shared(sessions) => {
+                if sessions.maximum_window() != maximum_window {
+                    return Err(open_esp_radio_esp32s31_wifi_mac::rx_ampdu::RxBlockAckSessionsError::InvalidWindow(maximum_window));
+                }
+            }
+        }
         Ok(self)
     }
 
@@ -310,7 +349,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     }
 
     pub const fn rx_block_ack(&self) -> &Esp32s31StaApRxBlockAck {
-        &self.rx_block_ack
+        self.rx_block_ack.sessions()
     }
 
     pub const fn tx_block_ack(
@@ -374,7 +413,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        let shutdown = self.core.shutdown(hardware, tx, &mut self.rx_block_ack)?;
+        let shutdown = self
+            .rx_block_ack
+            .sessions()
+            .with_sessions(|rx_block_ack| self.core.shutdown(hardware, tx, rx_block_ack))?;
         let mut discarded_events = 0_u8;
         while self.receiver.try_receive().is_some() {
             discarded_events = discarded_events.saturating_add(1);
@@ -479,33 +521,37 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             sender: self.rx_reorder_commands.as_ref(),
         };
         if self.core.tx_in_flight() {
-            return self.core.service_step(
-                ConnectedControlPorts {
-                    hardware,
-                    tx,
-                    reorder: &mut reorder,
-                    rx_block_ack: &mut self.rx_block_ack,
-                },
-                None,
-                !self.receiver.is_empty(),
-                context,
-            );
+            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
+                self.core.service_step(
+                    ConnectedControlPorts {
+                        hardware,
+                        tx,
+                        reorder: &mut reorder,
+                        rx_block_ack,
+                    },
+                    None,
+                    !self.receiver.is_empty(),
+                    context,
+                )
+            });
         }
 
         // A peer disconnect keeps terminal priority once TX ownership is
         // free. GTK rekey then precedes non-terminal BlockAck work.
         if let Some(event) = self.receiver.try_receive_terminal() {
-            return self.core.service_step(
-                ConnectedControlPorts {
-                    hardware,
-                    tx,
-                    reorder: &mut reorder,
-                    rx_block_ack: &mut self.rx_block_ack,
-                },
-                Some(event),
-                !self.receiver.is_empty(),
-                context,
-            );
+            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
+                self.core.service_step(
+                    ConnectedControlPorts {
+                        hardware,
+                        tx,
+                        reorder: &mut reorder,
+                        rx_block_ack,
+                    },
+                    Some(event),
+                    !self.receiver.is_empty(),
+                    context,
+                )
+            });
         }
         if let Some(frame) = self.receiver.try_receive_security() {
             let Some(security) = self.security.as_mut() else {
@@ -516,17 +562,19 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             return Ok(security.process(hardware, tx, frame).await);
         }
         let event = self.receiver.try_receive_control();
-        self.core.service_step(
-            ConnectedControlPorts {
-                hardware,
-                tx,
-                reorder: &mut reorder,
-                rx_block_ack: &mut self.rx_block_ack,
-            },
-            event,
-            !self.receiver.is_empty(),
-            context,
-        )
+        self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
+            self.core.service_step(
+                ConnectedControlPorts {
+                    hardware,
+                    tx,
+                    reorder: &mut reorder,
+                    rx_block_ack,
+                },
+                event,
+                !self.receiver.is_empty(),
+                context,
+            )
+        })
     }
 }
 

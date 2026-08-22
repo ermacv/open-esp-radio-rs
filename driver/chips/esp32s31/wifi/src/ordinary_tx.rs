@@ -229,6 +229,14 @@ pub struct OrdinaryTxOwner<'slot, P, E, T, const BUFFER_SIZE: usize> {
     last_outcome: Option<OrdinaryTxOutcome>,
 }
 
+/// Opaque logical completion state detached from idle physical TX resources.
+///
+/// There is intentionally no public constructor: only a real terminal owner
+/// can produce this token, so a role handoff cannot fabricate an outcome.
+pub struct OrdinaryTxParked {
+    last_outcome: Option<OrdinaryTxOutcome>,
+}
+
 impl<'slot, P, E, T, const BUFFER_SIZE: usize> OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
@@ -252,6 +260,17 @@ where
             active: None,
             last_outcome: None,
         }
+    }
+
+    /// Rejoin idle physical resources with the exact opaque role-local state
+    /// emitted by [`Self::try_park`].
+    pub fn resume(
+        resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
+        parked: OrdinaryTxParked,
+    ) -> Self {
+        let mut owner = Self::new(resources);
+        owner.last_outcome = parked.last_outcome;
+        owner
     }
 
     pub const fn active(&self) -> bool {
@@ -321,6 +340,22 @@ where
     /// attempting a station lifecycle transition again.
     #[allow(clippy::result_large_err)]
     pub fn try_into_resources(self) -> Result<WifiTxResources<'slot, P, E, T, BUFFER_SIZE>, Self> {
+        self.try_park().map(|(resources, _)| resources)
+    }
+
+    /// Detach an idle descriptor owner without discarding its terminal
+    /// observation. Physical resources and logical callback state become two
+    /// distinct, uniquely owned capabilities.
+    #[allow(clippy::result_large_err)]
+    pub fn try_park(
+        self,
+    ) -> Result<
+        (
+            WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
+            OrdinaryTxParked,
+        ),
+        Self,
+    > {
         if self.queue_state() != MacTxQueueState::Ready {
             return Err(self);
         }
@@ -331,15 +366,18 @@ where
             entropy,
             timer,
             active: _,
-            last_outcome: _,
+            last_outcome,
         } = self;
-        Ok(WifiTxResources {
-            slot,
-            policy,
-            power,
-            entropy,
-            timer,
-        })
+        Ok((
+            WifiTxResources {
+                slot,
+                policy,
+                power,
+                entropy,
+                timer,
+            },
+            OrdinaryTxParked { last_outcome },
+        ))
     }
 
     pub fn contention_publication(

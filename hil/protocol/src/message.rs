@@ -119,6 +119,11 @@ impl SessionLinkRequirements {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SessionConfig {
+    /// Exact network endpoint that owns this transport session. The physical
+    /// radio may expose both endpoints during one same-channel STA+AP epoch;
+    /// transport ownership must therefore never be inferred from the Wi-Fi
+    /// role or from whichever stack became ready first.
+    pub network_interface: WifiNetworkInterface,
     pub transport: Transport,
     pub direction: Direction,
     pub completion: Completion,
@@ -157,6 +162,9 @@ pub struct FeatureCapabilities {
     /// This image can materialize and stop the bounded WPA2-Personal access
     /// point role described by [`WifiAccessPointRequest`].
     pub wifi_access_point: bool,
+    /// This image can materialize one same-channel station plus access point
+    /// owner and expose both network endpoints at the same time.
+    pub simultaneous_station_access_point: bool,
     /// This image can run one finite normalized monitor capture and export
     /// typed frame chunks without using UART text as a data protocol.
     pub wifi_monitor_capture: bool,
@@ -514,6 +522,10 @@ pub enum Command {
     StartAccessPoint(WifiAccessPointRequest),
     /// Stop the active access point and return to role-neutral Wi-Fi ownership.
     StopAccessPoint,
+    /// Materialize one same-channel upstream station plus downstream SoftAP.
+    StartStationAccessPoint(WifiStationAccessPointRequest),
+    /// Stop both paired roles and return every physical owner to idle.
+    StopStationAccessPoint,
     /// Run one finite monitor epoch, export its captured frames, return to
     /// idle and publish a terminal capture summary.
     CaptureMonitor(WifiMonitorCaptureRequest),
@@ -581,6 +593,14 @@ pub enum WifiRole {
     Station,
     Monitor,
     AccessPoint,
+    StationAccessPoint,
+}
+
+/// Logical network endpoint backed by the shared physical Wi-Fi owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum WifiNetworkInterface {
+    Station,
+    AccessPoint,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -643,6 +663,26 @@ pub struct WifiAccessPointRequest {
     /// IP configuration owned by the HIL application while the AP role is
     /// active. This is deliberately outside the radio-driver request.
     pub ipv4: NetworkIpv4Configuration,
+}
+
+/// One upstream station plus one same-channel downstream SoftAP request.
+///
+/// The AP channel is explicit and the production driver rejects the complete
+/// request unless the upstream association negotiates exactly that channel
+/// and width. The HIL layer does not add a channel-switching fallback.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiStationAccessPointRequest {
+    pub station_credentials: NetworkCredentials,
+    pub access_point: WifiAccessPointRequest,
+}
+
+impl WifiStationAccessPointRequest {
+    pub fn validate(&self) -> Result<(), WifiAccessPointRequestError> {
+        self.station_credentials
+            .validate()
+            .map_err(WifiAccessPointRequestError::Credentials)?;
+        self.access_point.validate()
+    }
 }
 
 impl WifiAccessPointRequest {
@@ -940,6 +980,11 @@ pub struct WifiAccessPointEvidence {
     pub retained_rx_descriptors: u32,
     /// Complete units intentionally discarded after their payload was observed.
     pub discarded_rx_units: u32,
+    /// Bulk protected units discarded after upper-copy saturation while DMA
+    /// ownership was recycled immediately.
+    pub rx_overload_discarded_units: u32,
+    pub rx_critical_reserve_admissions: u32,
+    pub rx_critical_admission_blocked: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
     pub rx_quarantined_frames: u32,
@@ -957,8 +1002,9 @@ pub struct WifiAccessPointEvidence {
     pub network_tx_frames_rejected: u32,
     /// Protected HT data MPDUs observed by the target RX boundary.
     pub rx_ht_data_frames: u32,
-    /// Protected HT data MPDUs carried by an HT A-MPDU PPDU.
-    pub rx_ht_ampdu_data_frames: u32,
+    /// Protected HT MPDUs whose copied HT-SIG Aggregation bit is set.
+    /// The descriptor contract does not expose PPDU boundaries or depth.
+    pub rx_ht_mpdus_with_aggregation_bit: u32,
     pub rx_rssi_samples: u32,
     pub rx_rssi_sum_dbm: i32,
     pub rx_rssi_min_dbm: i8,
@@ -991,8 +1037,23 @@ pub struct WifiAccessPointEvidence {
     pub protected_data_unauthorized: u32,
     pub protected_data_foreign: u32,
     pub protected_data_duplicates: u32,
+    pub rx_reorder_buffered_mpdus: u32,
+    pub rx_reorder_dispatched_mpdus: u32,
+    pub rx_reorder_hardware_window_resets: u32,
+    pub rx_reorder_gap_timeouts: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
+}
+
+/// Terminal evidence for one explicit same-channel STA+AP stop transaction.
+///
+/// The role transition proves that every shared physical owner returned to
+/// idle; the AP report preserves beacon and fairness-relevant observations
+/// from that exact paired generation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiStationAccessPointStopEvidence {
+    pub transition: WifiRoleTransitionEvidence,
+    pub access_point: WifiAccessPointEvidence,
 }
 
 impl StationEpochEvidence {
@@ -1087,6 +1148,7 @@ pub enum StationLifecycleEvent {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NetworkInfo {
+    pub network_interface: WifiNetworkInterface,
     pub address: [u8; 4],
     pub prefix_length: u8,
     pub gateway: Option<[u8; 4]>,
@@ -1094,6 +1156,7 @@ pub struct NetworkInfo {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ServiceInfo {
+    pub network_interface: WifiNetworkInterface,
     pub transport: Transport,
     pub direction: Direction,
     pub local_port: u16,
@@ -1430,6 +1493,9 @@ pub enum Event {
     WifiAccessPointStarted(WifiRoleTransitionEvidence),
     /// Reliable completion of `StopAccessPoint` and its bounded AP summary.
     WifiAccessPointStopped(WifiAccessPointEvidence),
+    /// Reliable completion of `StopStationAccessPoint` with the AP-side
+    /// timing report retained from the same physical epoch.
+    WifiStationAccessPointStopped(WifiStationAccessPointStopEvidence),
     /// Terminal failure of a correlated role start/stop command.
     WifiRoleFailed(WifiRoleFailureEvidence),
     /// One ordered chunk emitted by `CaptureMonitor`.

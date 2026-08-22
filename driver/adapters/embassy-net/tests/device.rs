@@ -4,6 +4,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
     task::{Context, Waker},
 };
+use std::{sync::Arc, task::Wake};
 
 use embassy_net_driver::{Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -19,6 +20,18 @@ const TX_HEADROOM: usize = 28;
 const TX_TRAILER: usize = 8;
 const TEST_ETHERNET_LENGTH: usize = ETHERNET_HEADER_LEN + 8;
 static SHARED_RX_RELEASES: AtomicUsize = AtomicUsize::new(0);
+
+struct CountWake(Arc<AtomicUsize>);
+
+impl Wake for CountWake {
+    fn wake(self: Arc<Self>) {
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
 fn observe_shared_rx_release() {
     SHARED_RX_RELEASES.fetch_add(1, Ordering::Relaxed);
@@ -370,42 +383,10 @@ fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
 }
 
 #[test]
-fn rejected_aggregate_candidate_requeues_the_same_pinned_frame() {
-    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
-    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
-    let resources = Box::leak(Box::new(TestResources::new()));
-    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
-    let interface = NetworkInterfaceId::new(7);
-    let (mut device, radio) = split_pinned!(resources, pool, interface, [0; 6]);
-
-    for marker in [0x31, 0x72] {
-        device
-            .transmit(&mut context())
-            .unwrap()
-            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
-    }
-    let consumer = radio.tx_consumer();
-    let first = consumer.try_receive().unwrap();
-    let mut second = consumer.try_receive().unwrap();
-    assert_eq!(*first.tag(), interface);
-    assert_eq!(*second.tag(), interface);
-    let second_address = second.storage_mut().as_mut_ptr();
-    assert_eq!(first.ethernet()[0], 0x31);
-    assert_eq!(second.ethernet()[0], 0x72);
-
-    consumer.requeue(second);
-    let mut reclaimed = consumer.try_receive().unwrap();
-    assert_eq!(*reclaimed.tag(), interface);
-    assert_eq!(reclaimed.ethernet()[0], 0x72);
-    assert_eq!(reclaimed.storage_mut().as_mut_ptr(), second_address);
-    assert_eq!(consumer.queue_len(), 0);
-}
-
-#[test]
 fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
-    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
-    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
     let station_resources = Box::leak(Box::new(EndpointResources::new()));
     let access_point_resources = Box::leak(Box::new(EndpointResources::new()));
     let tx_resources = Box::leak(Box::new(TxResources::new()));
@@ -415,10 +396,12 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     let station_interface = NetworkInterfaceId::new(3);
     let access_point_interface = NetworkInterfaceId::new(7);
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut station_device, station_rx) =
+    let (station_device, station_rx) =
         station_resources.split(provider, station_interface, station);
-    let (mut access_point_device, access_point_rx) =
+    let (access_point_device, access_point_rx) =
         access_point_resources.split(provider, access_point_interface, access_point);
+    let mut station_device = station_device.with_tx_credit_limit(2);
+    let mut access_point_device = access_point_device.with_tx_credit_limit(2);
     let radio = DualPinnedNetworkRunner::new(
         station_interface,
         station_rx,
@@ -439,31 +422,86 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     access_point_device
         .transmit(&mut context())
         .unwrap()
-        .consume(TEST_ETHERNET_LENGTH, |_| ());
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xa1));
     station_device
         .transmit(&mut context())
         .unwrap()
-        .consume(TEST_ETHERNET_LENGTH, |_| ());
-    let consumer = radio.tx_consumer();
-    assert_eq!(consumer.queue_len_for(station_interface), 1);
-    assert_eq!(consumer.queue_len_for(access_point_interface), 1);
-    let station_tx = consumer.for_interface(station_interface);
-    let access_point_tx = consumer.for_interface(access_point_interface);
-    assert_eq!(*station_tx.try_receive().unwrap().tag(), station_interface);
-    assert_eq!(station_tx.queue_len(), 0);
-    assert_eq!(access_point_tx.queue_len(), 1);
-    assert_eq!(
-        *access_point_tx.try_receive().unwrap().tag(),
-        access_point_interface
-    );
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x51));
     access_point_device
         .transmit(&mut context())
         .unwrap()
-        .consume(TEST_ETHERNET_LENGTH, |_| ());
-    assert_eq!(
-        *access_point_tx.try_receive().unwrap().tag(),
-        access_point_interface
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xa2));
+    assert!(
+        access_point_device.transmit(&mut context()).is_none(),
+        "one VIF cannot consume the peer's remaining physical credit"
     );
+    station_device
+        .transmit(&mut context())
+        .unwrap()
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x52));
+    let consumer = radio.tx_consumer();
+    // Each VIF owns a FIFO; the sole physical consumer chooses between their
+    // visible heads. There is no invented cross-VIF ordering, and neither
+    // choice can rotate frames within the other interface.
+    assert_eq!(consumer.queue_len_for(station_interface), 2);
+    assert_eq!(consumer.queue_len_for(access_point_interface), 2);
+    let station_tx = consumer.for_interface(station_interface);
+    let access_point_tx = consumer.for_interface(access_point_interface);
+    let station_first = station_tx.try_receive().unwrap();
+    assert_eq!(*station_first.tag(), station_interface);
+    assert_eq!(station_first.ethernet()[0], 0x51);
+    drop(station_first);
+    let station_second = station_tx.try_receive().unwrap();
+    assert_eq!(station_second.ethernet()[0], 0x52);
+    drop(station_second);
+    assert_eq!(station_tx.queue_len(), 0);
+    assert_eq!(access_point_tx.queue_len(), 2);
+    let access_point_first = access_point_tx.try_receive().unwrap();
+    assert_eq!(*access_point_first.tag(), access_point_interface);
+    assert_eq!(access_point_first.ethernet()[0], 0xa1);
+    drop(access_point_first);
+    let access_point_second = access_point_tx.try_receive().unwrap();
+    assert_eq!(access_point_second.ethernet()[0], 0xa2);
+}
+
+#[test]
+fn empty_shared_tx_pool_does_not_ping_pong_endpoint_wakers() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    let station_resources = Box::leak(Box::new(EndpointResources::new()));
+    let access_point_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (provider, consumer) = tx_resources.split(pool);
+    let (mut station, _station_rx) =
+        station_resources.split(provider, NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]);
+    let (mut access_point, _access_point_rx) =
+        access_point_resources.split(provider, NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]);
+    station
+        .transmit(&mut context())
+        .expect("the sole physical credit starts free")
+        .consume(TEST_ETHERNET_LENGTH, |_| ());
+
+    let station_wakes = Arc::new(AtomicUsize::new(0));
+    let access_point_wakes = Arc::new(AtomicUsize::new(0));
+    let station_waker = Waker::from(Arc::new(CountWake(station_wakes.clone())));
+    let access_point_waker = Waker::from(Arc::new(CountWake(access_point_wakes.clone())));
+    let mut station_context = Context::from_waker(&station_waker);
+    let mut access_point_context = Context::from_waker(&access_point_waker);
+
+    assert!(station.transmit(&mut station_context).is_none());
+    assert!(access_point.transmit(&mut access_point_context).is_none());
+    assert_eq!(station_wakes.load(Ordering::Relaxed), 0);
+    assert_eq!(access_point_wakes.load(Ordering::Relaxed), 0);
+
+    drop(
+        consumer
+            .try_receive()
+            .expect("radio owns the published slot"),
+    );
+    assert_eq!(station_wakes.load(Ordering::Relaxed), 1);
+    assert_eq!(access_point_wakes.load(Ordering::Relaxed), 1);
 }
 
 #[test]
@@ -501,6 +539,53 @@ fn pinned_ingress_credit_survives_saturated_application_egress() {
         .expect("reserved ingress response credit");
     received.consume(|frame| assert_eq!(frame[0], 0xa5));
     drop(response);
+}
+
+#[test]
+fn every_permanent_endpoint_keeps_its_own_ingress_credit() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    // Two application credits plus one ingress credit for each endpoint.
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
+    let station_resources = Box::leak(Box::new(EndpointResources::new()));
+    let access_point_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (provider, _consumer) = tx_resources.split(pool);
+    let (station, station_rx) =
+        station_resources.split(provider, NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]);
+    let (access_point, access_point_rx) =
+        access_point_resources.split(provider, NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]);
+    let mut station = station.with_ingress_tx_reserve();
+    let mut access_point = access_point.with_ingress_tx_reserve();
+
+    station
+        .transmit(&mut context())
+        .expect("first application credit")
+        .consume(ETHERNET_HEADER_LEN, |_| ());
+    access_point
+        .transmit(&mut context())
+        .expect("second application credit")
+        .consume(ETHERNET_HEADER_LEN, |_| ());
+    assert!(station.transmit(&mut context()).is_none());
+    assert!(access_point.transmit(&mut context()).is_none());
+
+    station_rx
+        .try_send_rx(&[0x51; ETHERNET_HEADER_LEN])
+        .unwrap();
+    access_point_rx
+        .try_send_rx(&[0xa7; ETHERNET_HEADER_LEN])
+        .unwrap();
+    let (station_frame, station_reply) = station
+        .receive(&mut context())
+        .expect("STA keeps a paired ingress TX credit");
+    let (access_point_frame, access_point_reply) = access_point
+        .receive(&mut context())
+        .expect("AP keeps a distinct paired ingress TX credit");
+    station_frame.consume(|frame| assert_eq!(frame[0], 0x51));
+    access_point_frame.consume(|frame| assert_eq!(frame[0], 0xa7));
+    drop(station_reply);
+    drop(access_point_reply);
 }
 
 #[test]

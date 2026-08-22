@@ -97,4 +97,11 @@ pub enum AggregateTxObservation {
 /// observer is attached.
 pub trait AggregateTxObserver: Sync {
     fn observe(&self, observation: AggregateTxObservation);
+
+    /// Observe one AP Ethernet lease exactly when the radio claims it from
+    /// the network frontier, before encoding mutates its backing.
+    ///
+    /// The borrowed bytes are diagnostic input only and must not be retained.
+    /// The default keeps ordinary production observers value-only.
+    fn observe_access_point_network_claim(&self, _ethernet: &[u8]) {}
 }

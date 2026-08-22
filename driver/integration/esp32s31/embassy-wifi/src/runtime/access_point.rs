@@ -61,119 +61,120 @@ type ProductionAccessPointRxReorderStorage =
 
 #[cfg(feature = "qualification")]
 #[inline(never)]
-fn publish_access_point_observation(
+pub(super) fn publish_access_point_observation(
     hook: fn(crate::Esp32s31AccessPointObservation),
     channel: WifiChannel,
-    report: &open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRunReport,
+    control: &open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointControlReport,
+    mac: &open_esp_radio::esp32s31::wifi::ap::mac::Esp32s31ApMacReport,
+    engine: &open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineReport,
     rx_hardware_buffer_full: u16,
     rx_hardware_fifo_overflow: u16,
 ) {
     hook(crate::Esp32s31AccessPointObservation {
         channel: channel.primary(),
         bandwidth_mhz: channel.bandwidth_mhz(),
-        beacons_transmitted: report.mac.beacons_transmitted,
-        missed_beacon_intervals: report.control.missed_beacon_intervals,
-        maximum_beacon_lateness_micros: report.control.maximum_beacon_lateness_micros,
-        tx_interrupt_wakes: report.control.tx_interrupt_wakes,
-        tx_deadline_wakes: report.control.tx_deadline_wakes,
-        maximum_tx_pending_micros: report.control.maximum_tx_pending_micros,
-        maximum_network_tx_pending_micros: report.control.maximum_network_tx_pending_micros,
-        network_tx_attempts_at_maximum_pending: report
-            .control
-            .network_tx_attempts_at_maximum_pending,
-        maximum_rx_service_micros: report.control.maximum_rx_service_micros,
-        maximum_rx_dma_service_micros: report.control.maximum_rx_dma_service_micros,
-        total_rx_dma_service_micros: report.control.total_rx_dma_service_micros,
-        rx_dma_service_calls: report.control.rx_dma_service_calls,
-        maximum_rx_protocol_service_micros: report.control.maximum_rx_protocol_service_micros,
-        maximum_rx_protected_data_service_micros: report
-            .control
-            .maximum_rx_protected_data_service_micros,
-        total_rx_protected_data_service_micros: report
-            .control
-            .total_rx_protected_data_service_micros,
-        maximum_rx_management_service_micros: report
-            .control
-            .maximum_rx_management_service_micros,
-        maximum_rx_eapol_service_micros: report.control.maximum_rx_eapol_service_micros,
-        maximum_network_backpressure_micros: report.control.maximum_network_backpressure_micros,
-        authentication_responses: report.mac.authentication_responses_transmitted,
-        association_responses: report.mac.association_responses_transmitted,
-        authorized_peers: report.engine.authorized_peers,
-        maximum_associated_peers: report.engine.maximum_associated_peers,
-        maximum_authorized_peers: report.engine.maximum_authorized_peers,
-        peer_removals: report.engine.peer_removals,
-        authentication_timeouts: report.engine.authentication_timeouts,
-        wpa2_response_windows: report.engine.wpa2_response_windows,
-        wpa2_pending_on_stop: report.engine.wpa2_pending_on_stop,
-        wpa2_retransmissions: report.engine.wpa2_retransmissions,
-        wpa2_handshake_failures: report.engine.wpa2_handshake_failures,
-        wpa2_handshake_timeouts: report.engine.wpa2_handshake_timeouts,
-        inactivity_timeouts: report.engine.inactivity_timeouts,
-        disassociations_prepared: report.engine.disassociations_prepared,
-        disassociations_published: report.mac.disassociations_published,
-        disassociations_acknowledged: report.mac.disassociations_acknowledged,
-        deauthentications_prepared: report.engine.deauthentications_prepared,
-        deauthentications_published: report.mac.deauthentications_published,
-        deauthentications_acknowledged: report.mac.deauthentications_acknowledged,
-        tx_block_ack_requests_prepared: report.engine.tx_block_ack_requests_prepared,
-        tx_block_ack_responses_observed: report.engine.tx_block_ack_responses_observed,
-        tx_block_ack_agreements_operational: report.engine.tx_block_ack_agreements_operational,
-        tx_block_ack_responses_rejected: report.engine.tx_block_ack_responses_rejected,
-        tx_block_ack_negotiation_timeouts: report.engine.tx_block_ack_negotiation_timeouts,
-        rx_block_ack_responses_transmitted: report.mac.rx_block_ack_responses_transmitted,
-        completed_rx_units: report.control.completed_rx_units,
-        completed_rx_descriptors: report.control.completed_rx_descriptors,
-        recycled_rx_descriptors: report.control.recycled_rx_descriptors,
+        beacons_transmitted: mac.beacons_transmitted,
+        missed_beacon_intervals: control.missed_beacon_intervals,
+        maximum_beacon_lateness_micros: control.maximum_beacon_lateness_micros,
+        tx_interrupt_wakes: control.tx_interrupt_wakes,
+        tx_deadline_wakes: control.tx_deadline_wakes,
+        maximum_tx_pending_micros: control.maximum_tx_pending_micros,
+        maximum_network_tx_pending_micros: control.maximum_network_tx_pending_micros,
+        network_tx_attempts_at_maximum_pending: control.network_tx_attempts_at_maximum_pending,
+        maximum_rx_service_micros: control.maximum_rx_service_micros,
+        maximum_rx_dma_service_micros: control.maximum_rx_dma_service_micros,
+        total_rx_dma_service_micros: control.total_rx_dma_service_micros,
+        rx_dma_service_calls: control.rx_dma_service_calls,
+        maximum_rx_protocol_service_micros: control.maximum_rx_protocol_service_micros,
+        maximum_rx_protected_data_service_micros: control.maximum_rx_protected_data_service_micros,
+        total_rx_protected_data_service_micros: control.total_rx_protected_data_service_micros,
+        maximum_rx_management_service_micros: control.maximum_rx_management_service_micros,
+        maximum_rx_eapol_service_micros: control.maximum_rx_eapol_service_micros,
+        maximum_network_backpressure_micros: control.maximum_network_backpressure_micros,
+        authentication_responses: mac.authentication_responses_transmitted,
+        association_responses: mac.association_responses_transmitted,
+        authorized_peers: engine.authorized_peers,
+        maximum_associated_peers: engine.maximum_associated_peers,
+        maximum_authorized_peers: engine.maximum_authorized_peers,
+        peer_removals: engine.peer_removals,
+        authentication_timeouts: engine.authentication_timeouts,
+        wpa2_response_windows: engine.wpa2_response_windows,
+        wpa2_pending_on_stop: engine.wpa2_pending_on_stop,
+        wpa2_retransmissions: engine.wpa2_retransmissions,
+        wpa2_handshake_failures: engine.wpa2_handshake_failures,
+        wpa2_handshake_timeouts: engine.wpa2_handshake_timeouts,
+        inactivity_timeouts: engine.inactivity_timeouts,
+        disassociations_prepared: engine.disassociations_prepared,
+        disassociations_published: mac.disassociations_published,
+        disassociations_acknowledged: mac.disassociations_acknowledged,
+        deauthentications_prepared: engine.deauthentications_prepared,
+        deauthentications_published: mac.deauthentications_published,
+        deauthentications_acknowledged: mac.deauthentications_acknowledged,
+        tx_block_ack_requests_prepared: engine.tx_block_ack_requests_prepared,
+        tx_block_ack_responses_observed: engine.tx_block_ack_responses_observed,
+        tx_block_ack_agreements_operational: engine.tx_block_ack_agreements_operational,
+        tx_block_ack_responses_rejected: engine.tx_block_ack_responses_rejected,
+        tx_block_ack_negotiation_timeouts: engine.tx_block_ack_negotiation_timeouts,
+        rx_block_ack_responses_transmitted: mac.rx_block_ack_responses_transmitted,
+        completed_rx_units: control.completed_rx_units,
+        completed_rx_descriptors: control.completed_rx_descriptors,
+        recycled_rx_descriptors: control.recycled_rx_descriptors,
         rx_hardware_buffer_full,
         rx_hardware_fifo_overflow,
-        retained_rx_descriptors: report.control.retained_rx_descriptors,
-        discarded_rx_units: report.control.discarded_rx_units,
-        ignored_rx_frames: report.control.ignored_rx_frames,
-        rx_mic_failures: report.control.rx_mic_failures,
-        rx_quarantined_frames: report.control.rx_quarantined_frames,
-        rx_view_rejected: report.control.rx_view_rejected,
-        control_frames_staged: report.control.control_frames_staged,
-        control_frames_dropped_while_busy: report.control.control_frames_dropped_while_busy,
-        ethernet_frames_staged: report.control.ethernet_frames_staged,
-        ethernet_arp_requests_staged: report.control.ethernet_arp_requests_staged,
-        ethernet_tcp_frames_staged: report.control.ethernet_tcp_frames_staged,
-        network_tx_frames_observed: report.control.network_tx_frames_observed,
-        network_tx_arp_requests: report.control.network_tx_arp_requests,
-        network_tx_arp_replies: report.control.network_tx_arp_replies,
-        network_tx_rejected_no_peer: report.control.network_tx_rejected_no_peer,
-        network_tx_rejected_destination: report.control.network_tx_rejected_destination,
-        network_tx_frames_rejected: report.control.network_tx_frames_rejected,
-        rx_ht_data_frames: report.control.rx_ht_data_frames,
-        rx_ht_ampdu_data_frames: report.control.rx_ht_ampdu_data_frames,
-        rx_rssi_samples: report.control.rx_rssi_samples,
-        rx_rssi_sum_dbm: report.control.rx_rssi_sum_dbm,
-        rx_rssi_min_dbm: report.control.rx_rssi_min_dbm,
-        rx_rssi_max_dbm: report.control.rx_rssi_max_dbm,
-        rx_ht40_mcs_frames: report.control.rx_ht40_mcs_frames,
-        tx_ht_aggregates: report.control.tx_ht_aggregates,
-        tx_ht40_mcs7_aggregates: report.control.tx_ht40_mcs7_aggregates,
-        data_frames_transmitted: report.mac.data_frames_transmitted,
-        data_tx_attempts: report.mac.data_tx.attempts,
-        data_tx_retried_frames: report.mac.data_tx.retried_frames,
-        data_tx_maximum_attempts: report.mac.data_tx.maximum_attempts,
-        data_tx_minimum_final_rate_kbps: report.mac.data_tx.minimum_final_rate_kbps,
-        data_tx_ack_snr_samples: report.mac.data_tx.ack_snr_samples,
-        data_tx_minimum_ack_snr_db: report.mac.data_tx.minimum_ack_snr_db,
-        data_tx_maximum_ack_snr_db: report.mac.data_tx.maximum_ack_snr_db,
-        tx_ack_timeout_retries: report.mac.data_tx.ack_timeout_retries,
-        tx_cts_timeout_retries: report.mac.data_tx.cts_timeout_retries,
-        tx_collision_retries: report.mac.data_tx.collision_retries,
-        tx_hardware_failures: report.mac.tx_failures.hardware_failures,
-        tx_hardware_timeouts: report.mac.tx_failures.hardware_timeouts,
-        tx_collision_limits: report.mac.tx_failures.collision_limits,
-        tx_last_hardware_status: report.mac.tx_failures.last_hardware_status,
-        protected_data_frames: report.control.protected_data_frames,
-        protected_data_unauthorized: report.control.protected_data_unauthorized,
-        protected_data_foreign: report.control.protected_data_foreign,
-        protected_data_duplicates: report.control.protected_data_duplicates,
-        protected_data_radio_rejected: report.control.protected_data_radio_rejected,
-        protected_data_protocol_rejected: report.control.protected_data_protocol_rejected,
+        retained_rx_descriptors: control.retained_rx_descriptors,
+        discarded_rx_units: control.discarded_rx_units,
+        rx_overload_discarded_units: control.rx_overload_discarded_units,
+        rx_critical_reserve_admissions: control.rx_critical_reserve_admissions,
+        rx_critical_admission_blocked: control.rx_critical_admission_blocked,
+        ignored_rx_frames: control.ignored_rx_frames,
+        rx_mic_failures: control.rx_mic_failures,
+        rx_quarantined_frames: control.rx_quarantined_frames,
+        rx_view_rejected: control.rx_view_rejected,
+        control_frames_staged: control.control_frames_staged,
+        control_frames_dropped_while_busy: control.control_frames_dropped_while_busy,
+        ethernet_frames_staged: control.ethernet_frames_staged,
+        ethernet_arp_requests_staged: control.ethernet_arp_requests_staged,
+        ethernet_tcp_frames_staged: control.ethernet_tcp_frames_staged,
+        network_tx_frames_observed: control.network_tx_frames_observed,
+        network_tx_arp_requests: control.network_tx_arp_requests,
+        network_tx_arp_replies: control.network_tx_arp_replies,
+        network_tx_rejected_no_peer: control.network_tx_rejected_no_peer,
+        network_tx_rejected_destination: control.network_tx_rejected_destination,
+        network_tx_frames_rejected: control.network_tx_frames_rejected,
+        rx_ht_data_frames: control.rx_ht_data_frames,
+        rx_ht_mpdus_with_aggregation_bit: control.rx_ht_mpdus_with_aggregation_bit,
+        rx_rssi_samples: control.rx_rssi_samples,
+        rx_rssi_sum_dbm: control.rx_rssi_sum_dbm,
+        rx_rssi_min_dbm: control.rx_rssi_min_dbm,
+        rx_rssi_max_dbm: control.rx_rssi_max_dbm,
+        rx_ht40_mcs_frames: control.rx_ht40_mcs_frames,
+        tx_ht_aggregates: control.tx_ht_aggregates,
+        tx_ht40_mcs7_aggregates: control.tx_ht40_mcs7_aggregates,
+        data_frames_transmitted: mac.data_frames_transmitted,
+        data_tx_attempts: mac.data_tx.attempts,
+        data_tx_retried_frames: mac.data_tx.retried_frames,
+        data_tx_maximum_attempts: mac.data_tx.maximum_attempts,
+        data_tx_minimum_final_rate_kbps: mac.data_tx.minimum_final_rate_kbps,
+        data_tx_ack_snr_samples: mac.data_tx.ack_snr_samples,
+        data_tx_minimum_ack_snr_db: mac.data_tx.minimum_ack_snr_db,
+        data_tx_maximum_ack_snr_db: mac.data_tx.maximum_ack_snr_db,
+        tx_ack_timeout_retries: mac.data_tx.ack_timeout_retries,
+        tx_cts_timeout_retries: mac.data_tx.cts_timeout_retries,
+        tx_collision_retries: mac.data_tx.collision_retries,
+        tx_hardware_failures: mac.tx_failures.hardware_failures,
+        tx_hardware_timeouts: mac.tx_failures.hardware_timeouts,
+        tx_collision_limits: mac.tx_failures.collision_limits,
+        tx_last_hardware_status: mac.tx_failures.last_hardware_status,
+        protected_data_frames: control.protected_data_frames,
+        protected_data_unauthorized: control.protected_data_unauthorized,
+        protected_data_foreign: control.protected_data_foreign,
+        protected_data_duplicates: control.protected_data_duplicates,
+        rx_reorder_buffered_mpdus: control.rx_reorder_buffered_mpdus,
+        rx_reorder_dispatched_mpdus: control.rx_reorder_dispatched_mpdus,
+        rx_reorder_hardware_window_resets: control.rx_reorder_hardware_window_resets,
+        rx_reorder_gap_timeouts: control.rx_reorder_gap_timeouts,
+        protected_data_radio_rejected: control.protected_data_radio_rejected,
+        protected_data_protocol_rejected: control.protected_data_protocol_rejected,
     });
 }
 
@@ -299,9 +300,7 @@ impl ProductionWifiPhysicalResources {
         self,
     ) -> (
         Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
-        Option<
-            open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
-        >,
+        Option<open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>>,
         ProductionOrdinaryTxResources,
         RadioAmpduStorage,
     ) {
@@ -351,7 +350,7 @@ pub(super) struct ProductionAccessPointEngineFault {
     _engine: open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStartFailure<'static>,
     _parked: ProductionAccessPointParked,
     _rx_dispatcher: &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
-    _rx_block_ack: &'static mut ProductionAccessPointRxBlockAck,
+    _rx_block_ack: &'static ProductionAccessPointRxBlockAck,
     _rx_reorder: &'static mut ProductionAccessPointRxReorder,
     _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
     _rx_frame: &'static mut [u8],
@@ -370,7 +369,7 @@ pub(super) struct ProductionAccessPointSecurityMaterialFault {
     _pairwise_storage:
         &'static mut open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage,
     _rx_dispatcher: &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
-    _rx_block_ack: &'static mut ProductionAccessPointRxBlockAck,
+    _rx_block_ack: &'static ProductionAccessPointRxBlockAck,
     _rx_reorder: &'static mut ProductionAccessPointRxReorder,
     _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
     _rx_frame: &'static mut [u8],
@@ -417,7 +416,7 @@ pub(super) enum ProductionAccessPointTeardownFault {
         _rx_frame: &'static mut [u8],
         _tx_frame: &'static mut [u8],
         _data_rx: &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
-        _rx_block_ack: &'static mut ProductionAccessPointRxBlockAck,
+        _rx_block_ack: &'static ProductionAccessPointRxBlockAck,
         _rx_reorder: &'static mut ProductionAccessPointRxReorder,
         _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
         _engine: open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStop<'static>,
@@ -433,7 +432,10 @@ pub(super) enum ProductionAccessPointTeardownFault {
 pub(super) fn try_split_wifi_stopped_resources(
     resources: ProductionWifiStoppedResources,
 ) -> Result<
-    (ProductionWifiPhysicalResources, ProductionStationRoleResources),
+    (
+        ProductionWifiPhysicalResources,
+        ProductionStationRoleResources,
+    ),
     ProductionWifiStoppedResources,
 > {
     let returned = match resources {
@@ -767,11 +769,7 @@ pub(super) fn join_station_activation_resources(
             };
             ProductionWifiStoppedResources::Returned(ProductionWifiReusableResources {
                 storage: ProductionStationStorage::new(
-                    dma,
-                    tx_epoch,
-                    scan_table,
-                    scan_frame,
-                    ethernet,
+                    dma, tx_epoch, scan_table, scan_frame, ethernet,
                 ),
                 board,
                 phase,
@@ -796,7 +794,7 @@ pub(super) struct ProductionAccessPointResources {
         &'static mut open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage,
     pub(super) rx_dispatcher:
         &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
-    pub(super) rx_block_ack: &'static mut ProductionAccessPointRxBlockAck,
+    pub(super) rx_block_ack: &'static ProductionAccessPointRxBlockAck,
     pub(super) rx_reorder: &'static mut Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>,
     pub(super) rx_reorder_storage:
         &'static open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RxReorderFrameStorage<
@@ -1300,7 +1298,7 @@ impl ProductionWifiEpochRunner {
     }
 }
 
-async fn wait_for_access_point_stop(
+pub(super) async fn wait_for_active_wifi_role_stop(
     endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, CriticalSectionRawMutex, Esp32s31RadioError>,
 ) {
     loop {
@@ -1432,7 +1430,7 @@ impl ProductionWifiEpochRunner {
                     #[cfg(feature = "qualification")]
                     rx_delivery_observer,
                     publish_access_point_shared_network_rx,
-                    wait_for_access_point_stop(endpoint),
+                    wait_for_active_wifi_role_stop(endpoint),
                     |status| crate::access_point_status::publish_access_point_status(
                         generation, status
                     ),
@@ -1476,9 +1474,7 @@ impl ProductionWifiEpochRunner {
             let rx_policy_after = task.registers.access_point_receive_policy_snapshot();
             let rx_match_after = task.registers.he_trigger_receive_diagnostics();
             for index in 0..8 {
-                if let Some(snapshot) = task
-                    .registers
-                    .rx_block_ack_entry_snapshot(index)
+                if let Some(snapshot) = task.registers.rx_block_ack_entry_snapshot(index)
                     && snapshot.control & (1 << 30) != 0
                 {
                     qualification_event!(
@@ -1607,7 +1603,9 @@ impl ProductionWifiEpochRunner {
             publish_access_point_observation(
                 hooks.access_point,
                 task.channel,
-                report,
+                &report.control,
+                &report.mac,
+                &report.engine,
                 rx_hardware_buffer_full,
                 rx_hardware_fifo_overflow,
             );

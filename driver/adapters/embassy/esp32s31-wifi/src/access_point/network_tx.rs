@@ -17,7 +17,9 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B> {
     deadline_micros: Option<u64>,
     exchange_started_micros: Option<u64>,
     prepared_first: Option<B>,
+    prepared_second: Option<B>,
     prepared_standby: Option<PreparedStandby>,
+    last_started_frames: usize,
 }
 
 impl<'observer, B> Esp32s31AccessPointNetworkTx<'observer, B>
@@ -30,7 +32,9 @@ where
             deadline_micros: None,
             exchange_started_micros: None,
             prepared_first: None,
+            prepared_second: None,
             prepared_standby: None,
+            last_started_frames: 1,
         }
     }
 
@@ -39,27 +43,40 @@ where
     }
 
     pub(super) fn has_prepared(&self) -> bool {
-        self.prepared_first.is_some() || self.prepared_standby.is_some()
+        self.prepared_first.is_some()
+            || self.prepared_second.is_some()
+            || self.prepared_standby.is_some()
     }
 
     pub(super) fn prepared_frame_count(&self) -> usize {
-        self.prepared_standby
-            .as_ref()
-            .map_or(usize::from(self.prepared_first.is_some()), |batch| {
-                batch.admitted
-            })
+        self.prepared_standby.as_ref().map_or(
+            usize::from(self.prepared_first.is_some())
+                + usize::from(self.prepared_second.is_some()),
+            |batch| batch.admitted,
+        )
+    }
+
+    pub(super) const fn last_started_frame_count(&self) -> usize {
+        self.last_started_frames
     }
 
     pub(super) fn can_prepare<const SLOTS: usize, const BUFFER_SIZE: usize>(
         &self,
         aggregate: &Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
     ) -> bool {
-        (self.deadline_micros.is_some() || self.has_prepared())
-            && aggregate.has_standby()
-            && self
-                .prepared_standby
-                .as_ref()
-                .is_none_or(|batch| batch.admitted < usize::from(batch.policy.frame_limit()))
+        if !aggregate.has_standby() {
+            return false;
+        }
+        match self.prepared_standby.as_ref() {
+            Some(batch) => {
+                self.prepared_first.is_none()
+                    && batch.admitted < usize::from(batch.policy.frame_limit())
+            }
+            None => {
+                (self.deadline_micros.is_some() || self.prepared_first.is_some())
+                    && self.prepared_second.is_none()
+            }
+        }
     }
 }
 
@@ -127,15 +144,26 @@ where
             + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
+        self.last_started_frames = 1;
+        if let Some(observer) = self.observer {
+            observer.observe_access_point_network_claim(frame.as_slice());
+        }
         let admission = control.mac.aggregate_admission(frame.as_slice());
 
         if let Some(admission) = admission
             && network.queue_len() != 0
             && let Some(mut second) = network.try_receive()
         {
+            if let Some(observer) = self.observer {
+                observer.observe_access_point_network_claim(second.as_slice());
+            }
             let preparation_started = self.observer.map(|_| Instant::now().as_micros());
             if !admission.accepts_ethernet(second.as_slice()) {
-                network.requeue(second);
+                // This lease was older than every frame still in the network
+                // queue. Retain it locally for the next transaction; putting
+                // it on the channel tail would reorder one VIF's UDP stream.
+                debug_assert!(self.prepared_first.is_none());
+                self.prepared_first = Some(second);
                 return control
                     .start_network_tx(hardware, frame.as_slice())
                     .map_err(Esp32s31AccessPointWdevError::Control);
@@ -200,8 +228,12 @@ where
                 let Some(mut next) = network.try_receive() else {
                     break;
                 };
+                if let Some(observer) = self.observer {
+                    observer.observe_access_point_network_claim(next.as_slice());
+                }
                 if !admission.accepts_ethernet(next.as_slice()) {
-                    network.requeue(next);
+                    debug_assert!(self.prepared_first.is_none());
+                    self.prepared_first = Some(next);
                     break;
                 }
                 let offset = next.ethernet_offset();
@@ -252,6 +284,7 @@ where
                 .saturating_add(ordinary.publication_timeout_micros());
             self.deadline_micros = Some(deadline_micros);
             control.observe_ht_aggregate(policy.rate());
+            self.last_started_frames = admitted;
             return Ok(WifiTxProgress::Pending);
         }
 
@@ -288,7 +321,7 @@ where
             TX_BUFFER_SIZE,
         >,
         mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        network: &PinnedTxInterfaceConsumer<
+        _network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -302,15 +335,19 @@ where
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        if (!self.aggregate_pending() && !self.has_prepared()) || !aggregate.has_standby() {
-            network.requeue(frame);
-            return Ok(());
-        }
+        assert!(
+            (self.aggregate_pending() || self.has_prepared()) && aggregate.has_standby(),
+            "WDEV must check AP standby ownership before claiming another ordered lease"
+        );
         let started = self.observer.map(|_| Instant::now().as_micros());
+        if let Some(observer) = self.observer {
+            observer.observe_access_point_network_claim(frame.as_slice());
+        }
 
         if let Some(batch) = self.prepared_standby.as_mut() {
             if !batch.admission.accepts_ethernet(frame.as_slice()) {
-                network.requeue(frame);
+                debug_assert!(self.prepared_first.is_none());
+                self.prepared_first = Some(frame);
                 return Ok(());
             }
             let peer = batch.admission.peer();
@@ -351,8 +388,9 @@ where
         let Some(admission) =
             admission.filter(|admission| admission.accepts_ethernet(frame.as_slice()))
         else {
-            network.requeue(first);
-            network.requeue(frame);
+            debug_assert!(self.prepared_second.is_none());
+            self.prepared_first = Some(first);
+            self.prepared_second = Some(frame);
             return Ok(());
         };
         let peer = admission.peer();
@@ -476,6 +514,7 @@ where
             let Some(frame) = self.prepared_first.take() else {
                 return Ok(WifiTxProgress::Complete);
             };
+            self.prepared_first = self.prepared_second.take();
             return control
                 .start_network_tx(hardware, frame.as_slice())
                 .map_err(Esp32s31AccessPointWdevError::Control);
@@ -527,6 +566,7 @@ where
         >,
     ) -> Result<(), Esp32s31AccessPointWdevError> {
         self.prepared_first = None;
+        self.prepared_second = None;
         if self.prepared_standby.take().is_some() {
             aggregate
                 .standby_mut()

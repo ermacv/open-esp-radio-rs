@@ -48,6 +48,10 @@ pub enum RxRingError {
     Empty,
     Count,
     Address,
+    DescriptorOwnerAddress,
+    DescriptorBaseAddress,
+    BufferAddress,
+    TailBufferAddress,
     Size,
     Overflow,
     Busy,
@@ -758,7 +762,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.descriptors
     }
 
-    pub(crate) const fn buffer_addresses(&self) -> &'a [u32; COUNT] {
+    pub const fn buffer_addresses(&self) -> &'a [u32; COUNT] {
         self.buffer_addresses
     }
 

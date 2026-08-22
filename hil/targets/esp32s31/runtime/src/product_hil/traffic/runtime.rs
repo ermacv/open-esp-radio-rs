@@ -14,6 +14,7 @@ use super::{
     run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark, run_session_dispatcher,
 };
 use crate::product_hil::{AGGREGATE_TX, OPEN_RADIO_TASK_POLL_TELEMETRY, RX_PIPELINE, TASK_POLLS};
+use open_esp_radio_hil_protocol::WifiNetworkInterface;
 
 const UDP_PAYLOAD_CAPACITY: usize = 1_472;
 const UDP_RX_QUEUE_DEPTH: usize = 64;
@@ -32,74 +33,114 @@ const TCP_RX_BUFFER_CAPACITY: usize = 262_144;
 // The buffer is CPU-only storage placed in PSRAM by the qualification profile.
 const TCP_TX_BUFFER_CAPACITY: usize = 131_072;
 
-static UDP_SINK_RX_METADATA: StaticCell<[PacketMetadata; UDP_RX_QUEUE_DEPTH]> = StaticCell::new();
-static UDP_SINK_RX_BUFFER: ConstStaticCell<[u8; UDP_RX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]> =
-    ConstStaticCell::new([0; UDP_RX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]);
-static UDP_SINK_TX_METADATA: StaticCell<[PacketMetadata; UDP_AUXILIARY_QUEUE_DEPTH]> =
-    StaticCell::new();
-static UDP_SINK_TX_BUFFER: ConstStaticCell<[u8; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]> =
-    ConstStaticCell::new([0; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]);
-static UDP_SOURCE_RX_METADATA: StaticCell<[PacketMetadata; UDP_AUXILIARY_QUEUE_DEPTH]> =
-    StaticCell::new();
-static UDP_SOURCE_RX_BUFFER: ConstStaticCell<
-    [u8; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY],
-> = ConstStaticCell::new([0; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]);
-static UDP_SOURCE_TX_METADATA: StaticCell<[PacketMetadata; UDP_TX_QUEUE_DEPTH]> = StaticCell::new();
-static UDP_SOURCE_TX_BUFFER: ConstStaticCell<[u8; UDP_TX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]> =
-    ConstStaticCell::new([0; UDP_TX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]);
-// Non-divisor payload sizes can require an internal smoltcp ring-padding
-// record. embassy-net's zero-copy `send_to_with` cannot safely retry if that
-// padding consumes the final metadata entry after its FnOnce callback ran.
-// Keep the repeatable fallback payload in static PSRAM rather than adding a
-// 1,472-byte object to the Embassy task future/CPU stack.
-static UDP_SOURCE_PACKET: ConstStaticCell<[u8; UDP_PAYLOAD_CAPACITY]> =
-    ConstStaticCell::new([0; UDP_PAYLOAD_CAPACITY]);
-static TCP_RX_BUFFER: ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]> =
-    ConstStaticCell::new([0; TCP_RX_BUFFER_CAPACITY]);
-static TCP_TX_BUFFER: ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]> =
-    ConstStaticCell::new([0; TCP_TX_BUFFER_CAPACITY]);
+struct ConnectedTrafficResources {
+    udp_sink_rx_metadata: StaticCell<[PacketMetadata; UDP_RX_QUEUE_DEPTH]>,
+    udp_sink_rx_buffer: ConstStaticCell<[u8; UDP_RX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]>,
+    udp_sink_tx_metadata: StaticCell<[PacketMetadata; UDP_AUXILIARY_QUEUE_DEPTH]>,
+    udp_sink_tx_buffer: ConstStaticCell<[u8; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]>,
+    udp_source_rx_metadata: StaticCell<[PacketMetadata; UDP_AUXILIARY_QUEUE_DEPTH]>,
+    udp_source_rx_buffer: ConstStaticCell<[u8; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]>,
+    udp_source_tx_metadata: StaticCell<[PacketMetadata; UDP_TX_QUEUE_DEPTH]>,
+    udp_source_tx_buffer: ConstStaticCell<[u8; UDP_TX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]>,
+    udp_source_packet: ConstStaticCell<[u8; UDP_PAYLOAD_CAPACITY]>,
+    tcp_rx_buffer: ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]>,
+    tcp_tx_buffer: ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]>,
+    bidirectional_rx_sessions: BidirectionalSessionChannel,
+    bidirectional_tx_sessions: BidirectionalSessionChannel,
+    bidirectional_results: BidirectionalResultChannel,
+    udp_sessions: SessionChannel,
+    tcp_sessions: SessionChannel,
+}
 
-static BIDIRECTIONAL_RX_SESSIONS: BidirectionalSessionChannel = Channel::new();
-static BIDIRECTIONAL_TX_SESSIONS: BidirectionalSessionChannel = Channel::new();
-static BIDIRECTIONAL_RESULTS: BidirectionalResultChannel = Channel::new();
-static UDP_SESSIONS: SessionChannel = Channel::new();
-static TCP_SESSIONS: SessionChannel = Channel::new();
+impl ConnectedTrafficResources {
+    const fn new() -> Self {
+        Self {
+            udp_sink_rx_metadata: StaticCell::new(),
+            udp_sink_rx_buffer: ConstStaticCell::new(
+                [0; UDP_RX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY],
+            ),
+            udp_sink_tx_metadata: StaticCell::new(),
+            udp_sink_tx_buffer: ConstStaticCell::new(
+                [0; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY],
+            ),
+            udp_source_rx_metadata: StaticCell::new(),
+            udp_source_rx_buffer: ConstStaticCell::new(
+                [0; UDP_AUXILIARY_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY],
+            ),
+            udp_source_tx_metadata: StaticCell::new(),
+            udp_source_tx_buffer: ConstStaticCell::new(
+                [0; UDP_TX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY],
+            ),
+            // Non-divisor payload sizes can require an internal smoltcp
+            // ring-padding record. Keep one repeatable fallback per endpoint.
+            udp_source_packet: ConstStaticCell::new([0; UDP_PAYLOAD_CAPACITY]),
+            tcp_rx_buffer: ConstStaticCell::new([0; TCP_RX_BUFFER_CAPACITY]),
+            tcp_tx_buffer: ConstStaticCell::new([0; TCP_TX_BUFFER_CAPACITY]),
+            bidirectional_rx_sessions: Channel::new(),
+            bidirectional_tx_sessions: Channel::new(),
+            bidirectional_results: Channel::new(),
+            udp_sessions: Channel::new(),
+            tcp_sessions: Channel::new(),
+        }
+    }
+}
+
+static STATION_TRAFFIC: ConnectedTrafficResources = ConnectedTrafficResources::new();
+static ACCESS_POINT_TRAFFIC: ConnectedTrafficResources = ConnectedTrafficResources::new();
+
+fn resources(network_interface: WifiNetworkInterface) -> &'static ConnectedTrafficResources {
+    match network_interface {
+        WifiNetworkInterface::Station => &STATION_TRAFFIC,
+        WifiNetworkInterface::AccessPoint => &ACCESS_POINT_TRAFFIC,
+    }
+}
 
 #[inline(never)]
 fn runtime_code_marker() {}
 
 #[embassy_executor::task]
 async fn session_dispatcher_task() {
-    run_session_dispatcher(&UDP_SESSIONS, &TCP_SESSIONS).await;
-}
-
-#[embassy_executor::task]
-async fn udp_session_coordinator_task() {
-    run_open_radio_bidirectional_session_coordinator(
-        &UDP_SESSIONS,
-        &BIDIRECTIONAL_RX_SESSIONS,
-        &BIDIRECTIONAL_TX_SESSIONS,
-        &BIDIRECTIONAL_RESULTS,
+    run_session_dispatcher(
+        &STATION_TRAFFIC.udp_sessions,
+        &STATION_TRAFFIC.tcp_sessions,
+        &ACCESS_POINT_TRAFFIC.udp_sessions,
+        &ACCESS_POINT_TRAFFIC.tcp_sessions,
     )
     .await;
 }
 
-#[embassy_executor::task]
-async fn udp_rx_task(stack: Stack<'static>) {
-    let rx_metadata =
-        UDP_SINK_RX_METADATA.init_with(|| [PacketMetadata::EMPTY; UDP_RX_QUEUE_DEPTH]);
-    let tx_metadata =
-        UDP_SINK_TX_METADATA.init_with(|| [PacketMetadata::EMPTY; UDP_AUXILIARY_QUEUE_DEPTH]);
+#[embassy_executor::task(pool_size = 2)]
+async fn udp_session_coordinator_task(network_interface: WifiNetworkInterface) {
+    let resources = resources(network_interface);
+    run_open_radio_bidirectional_session_coordinator(
+        &resources.udp_sessions,
+        &resources.bidirectional_rx_sessions,
+        &resources.bidirectional_tx_sessions,
+        &resources.bidirectional_results,
+    )
+    .await;
+}
+
+#[embassy_executor::task(pool_size = 2)]
+async fn udp_rx_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
+    let resources = resources(network_interface);
+    let rx_metadata = resources
+        .udp_sink_rx_metadata
+        .init_with(|| [PacketMetadata::EMPTY; UDP_RX_QUEUE_DEPTH]);
+    let tx_metadata = resources
+        .udp_sink_tx_metadata
+        .init_with(|| [PacketMetadata::EMPTY; UDP_AUXILIARY_QUEUE_DEPTH]);
     observe_open_radio_task_polls(
         run_open_radio_udp_rx_benchmark(
             stack,
             UdpSocketBuffers::new(
                 rx_metadata,
-                UDP_SINK_RX_BUFFER.take(),
+                resources.udp_sink_rx_buffer.take(),
                 tx_metadata,
-                UDP_SINK_TX_BUFFER.take(),
+                resources.udp_sink_tx_buffer.take(),
             ),
             UdpRxBenchmarkConfig {
+                network_interface,
                 local_port: 4_323,
                 queue_depth: UDP_RX_QUEUE_DEPTH,
                 payload_capacity: UDP_PAYLOAD_CAPACITY,
@@ -107,8 +148,8 @@ async fn udp_rx_task(stack: Stack<'static>) {
                 task_poll_telemetry: OPEN_RADIO_TASK_POLL_TELEMETRY,
                 code_address: runtime_code_marker as *const () as usize,
                 session_source: UdpRxSessionSource {
-                    sessions: &BIDIRECTIONAL_RX_SESSIONS,
-                    results: &BIDIRECTIONAL_RESULTS,
+                    sessions: &resources.bidirectional_rx_sessions,
+                    results: &resources.bidirectional_results,
                 },
             },
             UdpRxTelemetry {
@@ -122,14 +163,17 @@ async fn udp_rx_task(stack: Stack<'static>) {
     .await;
 }
 
-#[embassy_executor::task]
-async fn udp_tx_task(stack: Stack<'static>) {
-    let rx_metadata =
-        UDP_SOURCE_RX_METADATA.init_with(|| [PacketMetadata::EMPTY; UDP_AUXILIARY_QUEUE_DEPTH]);
-    let tx_metadata =
-        UDP_SOURCE_TX_METADATA.init_with(|| [PacketMetadata::EMPTY; UDP_TX_QUEUE_DEPTH]);
-    let tx_buffer = UDP_SOURCE_TX_BUFFER.take();
-    let packet = UDP_SOURCE_PACKET.take();
+#[embassy_executor::task(pool_size = 2)]
+async fn udp_tx_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
+    let resources = resources(network_interface);
+    let rx_metadata = resources
+        .udp_source_rx_metadata
+        .init_with(|| [PacketMetadata::EMPTY; UDP_AUXILIARY_QUEUE_DEPTH]);
+    let tx_metadata = resources
+        .udp_source_tx_metadata
+        .init_with(|| [PacketMetadata::EMPTY; UDP_TX_QUEUE_DEPTH]);
+    let tx_buffer = resources.udp_source_tx_buffer.take();
+    let packet = resources.udp_source_packet.take();
     // The TX benchmark payload is a fixed 0x5a pattern apart from its leading
     // sequence. Paint every reusable PSRAM socket slot once before readiness;
     // the measured hot path then writes only the four-byte sequence, without
@@ -141,12 +185,13 @@ async fn udp_tx_task(stack: Stack<'static>) {
             stack,
             UdpSocketBuffers::new(
                 rx_metadata,
-                UDP_SOURCE_RX_BUFFER.take(),
+                resources.udp_source_rx_buffer.take(),
                 tx_metadata,
                 tx_buffer,
             ),
             packet,
             UdpTxBenchmarkConfig {
+                network_interface,
                 source_port: 4_324,
                 queue_depth: UDP_TX_QUEUE_DEPTH,
                 payload_capacity: UDP_PAYLOAD_CAPACITY,
@@ -163,8 +208,8 @@ async fn udp_tx_task(stack: Stack<'static>) {
                 drain: Duration::from_millis(250),
                 code_address: runtime_code_marker as *const () as usize,
                 session_source: UdpTxSessionSource {
-                    sessions: &BIDIRECTIONAL_TX_SESSIONS,
-                    results: &BIDIRECTIONAL_RESULTS,
+                    sessions: &resources.bidirectional_tx_sessions,
+                    results: &resources.bidirectional_results,
                 },
             },
             &AGGREGATE_TX,
@@ -175,15 +220,17 @@ async fn udp_tx_task(stack: Stack<'static>) {
     .await;
 }
 
-#[embassy_executor::task]
-async fn tcp_task(stack: Stack<'static>) {
+#[embassy_executor::task(pool_size = 2)]
+async fn tcp_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
+    let resources = resources(network_interface);
     log::info!("OPEN_RADIO_HIL stage=traffic-workload-start mode=runtime-dispatch");
     observe_open_radio_task_polls(
         run_open_radio_tcp_benchmark(
             stack,
-            TCP_RX_BUFFER.take(),
-            TCP_TX_BUFFER.take(),
+            resources.tcp_rx_buffer.take(),
+            resources.tcp_tx_buffer.take(),
             TcpBenchmarkConfig {
+                network_interface,
                 local_port: 4_325,
                 maximum_payload_bytes: crate::product_hil::OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
                 receive_buffer_capacity: TCP_RX_BUFFER_CAPACITY,
@@ -193,7 +240,7 @@ async fn tcp_task(stack: Stack<'static>) {
             },
             &RX_PIPELINE,
             &AGGREGATE_TX,
-            &TCP_SESSIONS,
+            &resources.tcp_sessions,
         ),
         TASK_POLLS.tcp(),
         OPEN_RADIO_TASK_POLL_TELEMETRY,
@@ -207,10 +254,24 @@ async fn tcp_task(stack: Stack<'static>) {
 /// ready branch can distort progress of the other branch. Separate Embassy
 /// tasks retain bounded socket ownership and let the executor schedule each
 /// ready data plane independently.
-pub(in crate::product_hil) fn start_connected_traffic(spawner: Spawner, stack: Stack<'static>) {
+pub(in crate::product_hil) fn start_traffic_dispatcher(spawner: Spawner) {
     spawner.spawn(session_dispatcher_task().expect("session dispatcher task must allocate once"));
-    spawner.spawn(udp_session_coordinator_task().expect("UDP coordinator task must allocate once"));
-    spawner.spawn(udp_rx_task(stack).expect("UDP RX task must allocate once"));
-    spawner.spawn(udp_tx_task(stack).expect("UDP TX task must allocate once"));
-    spawner.spawn(tcp_task(stack).expect("TCP task must allocate once"));
+}
+
+pub(in crate::product_hil) fn start_connected_traffic(
+    spawner: Spawner,
+    stack: Stack<'static>,
+    network_interface: WifiNetworkInterface,
+) {
+    spawner.spawn(
+        udp_session_coordinator_task(network_interface)
+            .expect("UDP coordinator task pool must fit both roles"),
+    );
+    spawner.spawn(
+        udp_rx_task(stack, network_interface).expect("UDP RX task pool must fit both roles"),
+    );
+    spawner.spawn(
+        udp_tx_task(stack, network_interface).expect("UDP TX task pool must fit both roles"),
+    );
+    spawner.spawn(tcp_task(stack, network_interface).expect("TCP task pool must fit both roles"));
 }

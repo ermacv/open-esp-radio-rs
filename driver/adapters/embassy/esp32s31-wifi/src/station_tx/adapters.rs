@@ -193,6 +193,10 @@ where
         async move { self.start_network(hardware, frame, network) }
     }
 
+    fn last_started_frame_count(&self) -> usize {
+        self.active_network_frame_count()
+    }
+
     fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
         Esp32s31ConnectedTx::wait_deadline(self)
     }

@@ -31,8 +31,9 @@ pub use message::{
     WifiAccessPointRequestError, WifiChannelWidth, WifiDataPlanePlacement,
     WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource,
     WifiMonitorFrameChunk, WifiMonitorFrameChunkError, WifiMonitorObserved, WifiMonitorPhyEvidence,
-    WifiMonitorPhyFormat, WifiMonitorRequest, WifiRole, WifiRoleFailureEvidence,
-    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
-    WifiScanRequest, WireBody, WireKind,
+    WifiMonitorPhyFormat, WifiMonitorRequest, WifiNetworkInterface, WifiRole,
+    WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
+    WifiStationAccessPointStopEvidence, WireBody, WireKind,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};

@@ -196,6 +196,15 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         aggregate.standby_prepared, aggregate.standby_published, aggregate.standby_cancelled,
     ));
     yield_now().await;
+    runtime_log(format_args!(
+        "OAMPA ap_udp_claimed={} backward={} first={} after={} maximum_distance={}",
+        aggregate.ap_udp_claimed,
+        aggregate.ap_udp_claim_backward,
+        aggregate.ap_udp_claim_first_sequence,
+        aggregate.ap_udp_claim_first_previous,
+        aggregate.ap_udp_claim_maximum_distance,
+    ));
+    yield_now().await;
 }
 
 pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(

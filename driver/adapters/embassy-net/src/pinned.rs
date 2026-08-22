@@ -2,7 +2,7 @@
 
 use core::{
     pin::Pin,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
     task::{Context, Poll},
 };
 
@@ -11,6 +11,7 @@ use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
     signal::Signal,
+    waitqueue::GenericAtomicWaker,
 };
 use open_esp_radio_dma::{
     DmaIndexReturn, PinnedDmaTxNetworkLease, PinnedDmaTxPool, PinnedDmaTxRadioLease,
@@ -36,10 +37,43 @@ impl NetworkInterfaceId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct PinnedTxReady {
-    interface: NetworkInterfaceId,
-    index: u8,
+const PINNED_TX_CREDIT_WAKER_SLOTS: usize = 8;
+
+/// Per-endpoint notification for one shared physical TX credit pool.
+///
+/// `embassy_sync::Channel` intentionally stores one receiver waker. Multiple
+/// logical network devices may consume this physical free queue, so polling
+/// the channel directly would make their distinct task wakers replace and
+/// wake each other forever while the queue is empty. The queue remains the
+/// sole owner of free indices; this table only broadcasts real credit-return
+/// edges to the independently scheduled endpoints.
+struct PinnedTxCreditWakers<M: RawMutex> {
+    slots: [GenericAtomicWaker<M>; PINNED_TX_CREDIT_WAKER_SLOTS],
+}
+
+impl<M: RawMutex> PinnedTxCreditWakers<M> {
+    const fn new() -> Self {
+        Self {
+            slots: [const { GenericAtomicWaker::new(M::INIT) }; PINNED_TX_CREDIT_WAKER_SLOTS],
+        }
+    }
+
+    fn register(&self, interface: NetworkInterfaceId, cx: &mut Context<'_>) {
+        self.slots[usize::from(interface.value())].register(cx.waker());
+    }
+
+    fn wake_all(&self) {
+        for slot in &self.slots {
+            slot.wake();
+        }
+    }
+
+    fn validate(interface: NetworkInterfaceId) {
+        assert!(
+            usize::from(interface.value()) < PINNED_TX_CREDIT_WAKER_SLOTS,
+            "network interface exceeds the physical TX credit notification table"
+        );
+    }
 }
 
 /// One publication frontier shared by copied and externally-backed RX slots.
@@ -214,8 +248,14 @@ pub struct PinnedTxResources<
     const TX_QUEUE_DEPTH: usize,
 > {
     free_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
-    ready_tx: Channel<M, PinnedTxReady, TX_QUEUE_DEPTH>,
+    /// Per-VIF FIFO publication frontiers sharing one finite physical credit
+    /// pool. Cross-VIF order is chosen by the physical consumer; within each
+    /// VIF, publication order is immutable.
+    ready_tx: [Channel<M, u8, TX_QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    next_interface: AtomicU32,
+    tx_outstanding: [AtomicU32; PINNED_TX_CREDIT_WAKER_SLOTS],
     tx_published: Signal<M, ()>,
+    tx_credit_wakers: PinnedTxCreditWakers<M>,
     split: AtomicBool,
 }
 
@@ -259,8 +299,11 @@ impl<
     pub const fn new() -> Self {
         Self {
             free_tx: Channel::new(),
-            ready_tx: Channel::new(),
+            ready_tx: [const { Channel::new() }; PINNED_TX_CREDIT_WAKER_SLOTS],
+            next_interface: AtomicU32::new(0),
+            tx_outstanding: [const { AtomicU32::new(0) }; PINNED_TX_CREDIT_WAKER_SLOTS],
             tx_published: Signal::new(),
+            tx_credit_wakers: PinnedTxCreditWakers::new(),
             split: AtomicBool::new(false),
         }
     }
@@ -295,15 +338,19 @@ impl<
             PinnedTxProvider {
                 free_tx: resources.free_tx.receiver(),
                 free_tx_return: resources.free_tx.sender(),
-                ready_tx: resources.ready_tx.sender(),
+                ready_tx: &resources.ready_tx,
                 tx_published: &resources.tx_published,
+                tx_credit_wakers: &resources.tx_credit_wakers,
+                tx_outstanding: &resources.tx_outstanding,
                 tx_pool: pool,
             },
             PinnedTxConsumer {
                 free_tx: resources.free_tx.sender(),
-                ready_tx: resources.ready_tx.receiver(),
-                ready_tx_return: resources.ready_tx.sender(),
+                ready_tx: &resources.ready_tx,
+                next_interface: &resources.next_interface,
                 tx_published: &resources.tx_published,
+                tx_credit_wakers: &resources.tx_credit_wakers,
+                tx_outstanding: &resources.tx_outstanding,
                 tx_pool: pool,
             },
         )
@@ -367,6 +414,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
             !self.split.swap(true, Ordering::AcqRel),
             "pinned endpoint resources may only be split once"
         );
+        PinnedTxCreditWakers::<M>::validate(interface);
         for index in 0..RX_QUEUE_DEPTH {
             self.free_rx
                 .try_send(index as u8)
@@ -383,12 +431,15 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 ready_tx: tx.ready_tx,
                 interface,
                 tx_published: tx.tx_published,
+                tx_credit_wakers: tx.tx_credit_wakers,
+                tx_outstanding: &tx.tx_outstanding[usize::from(interface.value())],
                 tx_pool: tx.tx_pool,
                 link: &resources.link,
                 hardware_address,
                 ingress_tx: None,
                 application_tx: None,
                 reserve_ingress_tx: false,
+                tx_credit_limit: TX_QUEUE_DEPTH,
                 tx_reservation: (),
             },
             SplitPinnedRxRunner {
@@ -423,8 +474,10 @@ pub struct PinnedTxProvider<
 > {
     free_tx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
     free_tx_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    ready_tx: Sender<'resources, M, PinnedTxReady, QUEUE_DEPTH>,
+    ready_tx: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     tx_published: &'resources Signal<M, ()>,
+    tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
+    tx_outstanding: &'resources [AtomicU32; PINNED_TX_CREDIT_WAKER_SLOTS],
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
 
@@ -455,9 +508,11 @@ pub struct SplitPinnedDevice<
     rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     free_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
     free_tx_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
-    ready_tx: Sender<'resources, M, PinnedTxReady, TX_QUEUE_DEPTH>,
+    ready_tx: &'resources [Channel<M, u8, TX_QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
+    tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
+    tx_outstanding: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
     hardware_address: [u8; 6],
@@ -466,6 +521,9 @@ pub struct SplitPinnedDevice<
     ingress_tx: Option<u8>,
     application_tx: Option<u8>,
     reserve_ingress_tx: bool,
+    /// Maximum number of physical credits which this logical endpoint may
+    /// retain in reserved, ready, aggregate or active hardware state.
+    tx_credit_limit: usize,
     tx_reservation: (),
 }
 
@@ -491,19 +549,74 @@ impl<
     /// Keep one TX credit unavailable to ordinary application egress so an
     /// incoming frame can always receive the paired `TxToken` required by the
     /// embassy-net driver contract. Resource profiles enabling this must add
-    /// one credit beyond their advertised application capacity.
+    /// one credit per permanent endpoint beyond their advertised application
+    /// capacity.
     pub fn with_ingress_tx_reserve(mut self) -> Self {
         assert!(
             TX_QUEUE_DEPTH > 1,
             "ingress TX reserve needs an application credit"
         );
         self.reserve_ingress_tx = true;
+        self.ingress_tx = Some(
+            self.try_take_free_tx()
+                .expect("an ingress-enabled endpoint needs one dedicated TX credit"),
+        );
         self
+    }
+
+    /// Bound one logical interface's share of the common physical TX pool.
+    ///
+    /// This is an ownership quota rather than a software queue preference:
+    /// the count remains charged while a frame is queued, aggregated,
+    /// retried or owned by hardware. It therefore prevents one saturated VIF
+    /// from consuming every credit before another VIF can publish work.
+    pub fn with_tx_credit_limit(mut self, limit: usize) -> Self {
+        assert!(limit > 0, "a TX endpoint needs at least one credit");
+        assert!(
+            limit <= TX_QUEUE_DEPTH,
+            "a logical TX credit limit cannot exceed the physical pool"
+        );
+        assert!(
+            usize::try_from(self.tx_outstanding.load(Ordering::Acquire)).unwrap_or(usize::MAX)
+                <= limit,
+            "the new TX credit limit is below already-owned credits"
+        );
+        self.tx_credit_limit = limit;
+        self
+    }
+
+    fn try_take_free_tx(&self) -> Option<u8> {
+        let outstanding =
+            usize::try_from(self.tx_outstanding.load(Ordering::Acquire)).unwrap_or(usize::MAX);
+        if outstanding >= self.tx_credit_limit {
+            return None;
+        }
+        let index = self.free_tx.try_receive().ok()?;
+        let previous = self.tx_outstanding.fetch_add(1, Ordering::AcqRel);
+        assert!(
+            usize::try_from(previous).unwrap_or(usize::MAX) < self.tx_credit_limit,
+            "one endpoint exceeded its physical TX credit limit"
+        );
+        Some(index)
+    }
+
+    fn poll_free_tx(&self, cx: &mut Context<'_>) -> Poll<u8> {
+        if let Some(index) = self.try_take_free_tx() {
+            return Poll::Ready(index);
+        }
+        // Register outside Channel's single receiver-waker slot, then repeat
+        // the ownership probe so a credit returned across the registration
+        // edge cannot be lost.
+        self.tx_credit_wakers.register(self.interface, cx);
+        match self.try_take_free_tx() {
+            Some(index) => Poll::Ready(index),
+            None => Poll::Pending,
+        }
     }
 
     fn poll_reserve_ingress_tx(&mut self, cx: &mut Context<'_>) -> bool {
         if self.ingress_tx.is_none()
-            && let Poll::Ready(index) = self.free_tx.poll_receive(cx)
+            && let Poll::Ready(index) = self.poll_free_tx(cx)
         {
             self.ingress_tx = Some(index);
         }
@@ -514,12 +627,14 @@ impl<
         if self.application_tx.is_some() {
             return true;
         }
-        // Move the last free credit out of the application-visible queue. A
-        // later RX poll can consume it even if application egress stays full.
-        if self.reserve_ingress_tx && self.ingress_tx.is_none() && self.free_tx.len() <= 1 {
-            let _ = self.poll_reserve_ingress_tx(cx);
+        // Re-establish this endpoint's ingress credit before admitting more
+        // application egress. Multiple permanent endpoints share the physical
+        // pool, so protecting only the final global credit can starve one of
+        // them indefinitely.
+        if self.reserve_ingress_tx && !self.poll_reserve_ingress_tx(cx) {
+            return false;
         }
-        if let Poll::Ready(index) = self.free_tx.poll_receive(cx) {
+        if let Poll::Ready(index) = self.poll_free_tx(cx) {
             self.application_tx = Some(index);
         }
         self.application_tx.is_some()
@@ -543,6 +658,8 @@ impl<
             ready_tx: self.ready_tx,
             interface: self.interface,
             tx_published: self.tx_published,
+            tx_credit_wakers: self.tx_credit_wakers,
+            tx_outstanding: self.tx_outstanding,
             lease: Some(lease),
             _reservation: &mut self.tx_reservation,
         }
@@ -720,6 +837,9 @@ impl<
             if let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index) {
                 unreachable!("reserved pinned TX index was lost");
             }
+            let previous = self.tx_outstanding.fetch_sub(1, Ordering::AcqRel);
+            assert!(previous > 0, "reserved TX credit accounting underflow");
+            self.tx_credit_wakers.wake_all();
         }
     }
 }
@@ -734,9 +854,11 @@ pub struct PinnedTransmitToken<
     const QUEUE_DEPTH: usize,
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    ready_tx: Sender<'resources, M, PinnedTxReady, QUEUE_DEPTH>,
+    ready_tx: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
+    tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
+    tx_outstanding: &'resources AtomicU32,
     lease: Option<PinnedDmaTxNetworkLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
     _reservation: &'device mut (),
 }
@@ -760,10 +882,8 @@ impl<
         );
         let lease = self.lease.take().expect("TX token consumed once");
         let (index, result) = lease.publish(length, f);
-        if let Err(TrySendError::Full(_)) = self.ready_tx.try_send(PinnedTxReady {
-            interface: self.interface,
-            index,
-        }) {
+        let ready = &self.ready_tx[usize::from(self.interface.value())];
+        if let Err(TrySendError::Full(_)) = ready.try_send(index) {
             unreachable!("one ready entry exists per non-free pinned TX slot");
         }
         self.tx_published.signal(());
@@ -785,6 +905,9 @@ impl<
             if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
                 unreachable!("dropped pinned TX token returns its unique index");
             }
+            let previous = self.tx_outstanding.fetch_sub(1, Ordering::AcqRel);
+            assert!(previous > 0, "dropped TX token credit accounting underflow");
+            self.tx_credit_wakers.wake_all();
         }
     }
 }
@@ -1240,17 +1363,19 @@ pub struct PinnedTxConsumer<
     const QUEUE_DEPTH: usize,
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    ready_tx: Receiver<'resources, M, PinnedTxReady, QUEUE_DEPTH>,
-    ready_tx_return: Sender<'resources, M, PinnedTxReady, QUEUE_DEPTH>,
+    ready_tx: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    next_interface: &'resources AtomicU32,
     tx_published: &'resources Signal<M, ()>,
+    tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
+    tx_outstanding: &'resources [AtomicU32; PINNED_TX_CREDIT_WAKER_SLOTS],
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
 
 /// TX consumer narrowed to one logical interface.
 ///
 /// Aggregate encoders receive this capability instead of the physical
-/// consumer. They may extend or requeue a batch, but can never claim a lease
-/// published by another VIF sharing the same hardware queue.
+/// consumer. They may extend a batch from their immutable per-VIF FIFO, but
+/// can never claim a lease published by another VIF sharing the hardware.
 pub struct PinnedTxInterfaceConsumer<
     'resources,
     M: RawMutex,
@@ -1298,6 +1423,25 @@ impl<
     const QUEUE_DEPTH: usize,
 > PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
+    fn claim(
+        &self,
+        interface: NetworkInterfaceId,
+        index: u8,
+    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
+        self.tx_published.signal(());
+        TaggedStableDmaBacking::new(
+            interface,
+            ReturningStableDmaBacking::new(
+                self.tx_pool.claim_radio(index),
+                PinnedTxReturn {
+                    free_tx: self.free_tx,
+                    tx_credit_wakers: self.tx_credit_wakers,
+                    tx_outstanding: &self.tx_outstanding[usize::from(interface.value())],
+                },
+            ),
+        )
+    }
+
     pub const fn for_interface(
         self,
         interface: NetworkInterfaceId,
@@ -1312,72 +1456,50 @@ impl<
     pub fn try_receive(
         &self,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
-        match self.ready_tx.try_receive() {
-            Ok(ready) => Some(TaggedStableDmaBacking::new(
-                ready.interface,
-                ReturningStableDmaBacking::new(
-                    self.tx_pool.claim_radio(ready.index),
-                    PinnedTxReturn {
-                        free_tx: self.free_tx,
-                    },
-                ),
-            )),
-            Err(TryReceiveError::Empty) => None,
+        let start = self.next_interface.fetch_add(1, Ordering::Relaxed) as usize
+            % PINNED_TX_CREDIT_WAKER_SLOTS;
+        for offset in 0..PINNED_TX_CREDIT_WAKER_SLOTS {
+            let interface = (start + offset) % PINNED_TX_CREDIT_WAKER_SLOTS;
+            if let Ok(index) = self.ready_tx[interface].try_receive() {
+                self.next_interface.store(
+                    ((interface + 1) % PINNED_TX_CREDIT_WAKER_SLOTS) as u32,
+                    Ordering::Relaxed,
+                );
+                return Some(self.claim(NetworkInterfaceId::new(interface as u8), index));
+            }
         }
+        None
     }
 
     pub async fn receive(
         &self,
     ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
-        let ready = self.ready_tx.receive().await;
-        TaggedStableDmaBacking::new(
-            ready.interface,
-            ReturningStableDmaBacking::new(
-                self.tx_pool.claim_radio(ready.index),
-                PinnedTxReturn {
-                    free_tx: self.free_tx,
-                },
-            ),
-        )
+        loop {
+            if let Some(frame) = self.try_receive() {
+                return frame;
+            }
+            self.wait_publication().await;
+        }
     }
 
     pub fn queue_len(&self) -> usize {
-        self.ready_tx.len()
+        self.ready_tx.iter().map(Channel::len).sum()
     }
 
-    /// Claim the first frame for one logical interface without destroying or
-    /// decoding frames published by another interface. A complete bounded
-    /// scan preserves every unmatched lease by requeueing it in the same
-    /// physical ready queue.
+    /// Claim the oldest frame published by one logical interface.
     pub fn try_receive_for(
         &self,
         interface: NetworkInterfaceId,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
-        let available = self.queue_len();
-        for _ in 0..available {
-            let frame = self.try_receive()?;
-            if *frame.tag() == interface {
-                return Some(frame);
-            }
-            self.requeue(frame);
-        }
-        None
+        let index = self.ready_tx[usize::from(interface.value())]
+            .try_receive()
+            .ok()?;
+        Some(self.claim(interface, index))
     }
 
-    /// Count ready frames for one logical interface without releasing their
-    /// pinned ownership. This is intentionally bounded by the physical queue
-    /// depth and is used only by a role-specific scheduler frontier.
+    /// Count the immutable FIFO frontier for one logical interface.
     pub fn queue_len_for(&self, interface: NetworkInterfaceId) -> usize {
-        let available = self.queue_len();
-        let mut matching = 0;
-        for _ in 0..available {
-            let Some(frame) = self.try_receive() else {
-                break;
-            };
-            matching += usize::from(*frame.tag() == interface);
-            self.requeue(frame);
-        }
-        matching
+        self.ready_tx[usize::from(interface.value())].len()
     }
 
     pub async fn receive_for(
@@ -1406,22 +1528,11 @@ impl<
     }
 
     pub async fn wait_ready(&self) {
-        self.ready_tx.ready_to_receive().await;
-    }
-
-    /// Return a claimed but unmodified frame to the front-end ready queue.
-    ///
-    /// Aggregate builders use this when the next Ethernet frame belongs to a
-    /// different peer. The claim removed one queue entry, so publishing the
-    /// exact released index cannot exceed the bounded queue capacity.
-    pub fn requeue(
-        &self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-    ) {
-        let (interface, index) = frame.take_requeued_parts();
-        let ready = PinnedTxReady { interface, index };
-        if let Err(TrySendError::Full(_)) = self.ready_tx_return.try_send(ready) {
-            unreachable!("a claimed pinned TX index leaves capacity for requeue");
+        loop {
+            if self.queue_len() != 0 {
+                return;
+            }
+            self.wait_publication().await;
         }
     }
 }
@@ -1442,13 +1553,25 @@ impl<
     pub fn try_receive(
         &self,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
-        self.physical.try_receive_for(self.interface)
+        let frame = self.physical.try_receive_for(self.interface);
+        frame.inspect(|frame| {
+            assert_eq!(
+                *frame.tag(),
+                self.interface,
+                "interface-narrowed TX endpoint received another VIF's lease"
+            );
+        })
     }
 
     pub async fn receive(
         &self,
     ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
-        self.physical.receive_for(self.interface).await
+        loop {
+            if let Some(frame) = self.try_receive() {
+                return frame;
+            }
+            self.physical.wait_publication().await;
+        }
     }
 
     pub fn queue_len(&self) -> usize {
@@ -1456,19 +1579,12 @@ impl<
     }
 
     pub async fn wait_ready(&self) {
-        self.physical.wait_ready_for(self.interface).await;
-    }
-
-    pub fn requeue(
-        &self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-    ) {
-        assert_eq!(
-            *frame.tag(),
-            self.interface,
-            "interface-narrowed TX owner cannot requeue another VIF's frame"
-        );
-        self.physical.requeue(frame);
+        loop {
+            if self.queue_len() != 0 {
+                return;
+            }
+            self.physical.wait_publication().await;
+        }
     }
 }
 
@@ -1742,6 +1858,8 @@ impl<
 #[doc(hidden)]
 pub struct PinnedTxReturn<'resources, M: RawMutex, const QUEUE_DEPTH: usize> {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
+    tx_outstanding: &'resources AtomicU32,
 }
 
 impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_, M, QUEUE_DEPTH> {
@@ -1749,6 +1867,9 @@ impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_
         if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
             unreachable!("radio lease returns its unique pinned TX index");
         }
+        let previous = self.tx_outstanding.fetch_sub(1, Ordering::AcqRel);
+        assert!(previous > 0, "radio TX credit accounting underflow");
+        self.tx_credit_wakers.wake_all();
     }
 }
 

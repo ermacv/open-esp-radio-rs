@@ -1,9 +1,9 @@
 schema = 3
 id = "station-ap-loss"
 description = "Station detects controlled AP loss and reconnects"
-image = "qualification"
+image = "diagnostic-psram-stack"
 isolation = "reset"
-tags = ["qualification", "station", "lifecycle"]
+tags = ["diagnostic", "psram-stack", "station", "lifecycle"]
 
 [link]
 phy = "ht40"

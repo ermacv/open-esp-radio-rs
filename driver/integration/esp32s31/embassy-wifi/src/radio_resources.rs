@@ -27,7 +27,9 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
 };
-use open_esp_radio_wifi_embassy::station_network::{RunningStationNetwork, StationNetworkResources};
+use open_esp_radio_wifi_embassy::station_network::{
+    RunningStationNetwork, StationNetworkResources,
+};
 use static_cell::{ConstStaticCell, StaticCell};
 
 pub(super) const NETWORK_TX_HEADROOM: usize =
@@ -92,12 +94,8 @@ pub(super) type RadioNetworkRunner = DualPinnedNetworkRunner<
     NETWORK_TX_QUEUE_DEPTH,
 >;
 pub(super) type NetworkRunner = &'static RadioNetworkRunner;
-pub(super) type RadioAmpduStorage = AggregateTxResources<
-    'static,
-    RadioTxBacking,
-    TX_AMPDU_FRAME_COUNT,
-    TX_AMPDU_BUFFER_SIZE,
->;
+pub(super) type RadioAmpduStorage =
+    AggregateTxResources<'static, RadioTxBacking, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
 pub type WifiNetworkResources = StationNetworkResources<(), NetworkRunner, ()>;
 pub(super) type RunningWifiNetwork = RunningStationNetwork<(), NetworkRunner>;
 
@@ -184,9 +182,11 @@ pub(super) fn initialize_network(
     (
         Esp32s31WifiDevices {
             station: station_device
+                .with_tx_credit_limit(NETWORK_TX_QUEUE_DEPTH / 2)
                 .with_ingress_tx_reserve()
                 .with_shared_rx(station_shared),
             access_point: access_point_device
+                .with_tx_credit_limit(NETWORK_TX_QUEUE_DEPTH / 2)
                 .with_ingress_tx_reserve()
                 .with_shared_rx(access_point_shared),
         },

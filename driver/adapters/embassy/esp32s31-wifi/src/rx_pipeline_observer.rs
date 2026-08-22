@@ -12,6 +12,9 @@ pub struct RxServiceObservation {
     pub queue_credits: usize,
     pub admitted: usize,
     pub staged_bytes: usize,
+    pub overload_discarded: usize,
+    pub critical_reserve_admitted: usize,
+    pub critical_admission_blocked: bool,
     pub micros: u64,
     /// Hardware counter sampled immediately before this service transaction.
     pub hardware_buffer_full_before: Option<u16>,
@@ -24,6 +27,7 @@ pub struct RxServiceObservation {
 pub enum RxStageDiscard {
     Empty,
     TooLong,
+    OverloadBulk,
 }
 
 /// Result of one bounded publication into the network adapter.

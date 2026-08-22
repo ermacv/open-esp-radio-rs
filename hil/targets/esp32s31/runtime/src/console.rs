@@ -5,6 +5,7 @@
 //! and the asynchronous logging transport may not be running yet.
 
 use core::{
+    cell::RefCell,
     fmt::{Arguments, Write},
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
@@ -12,7 +13,11 @@ use embassy_futures::{
     select::{Either, Either3, select, select3},
     yield_now,
 };
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use embassy_sync::{
+    blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
+    channel::Channel,
+    mutex::Mutex as AsyncMutex,
+};
 use embassy_time::{Instant, Timer};
 use embedded_io_async::{Read as _, Write as _};
 use esp_hal::{
@@ -21,8 +26,8 @@ use esp_hal::{
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
 use open_esp_radio_hil_protocol::{
-    Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, Finished,
-    FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials, NetworkIpv4Configuration,
+    Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
+    Finished, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials, NetworkIpv4Configuration,
     PROTOCOL_VERSION, RejectReason, ResultSummary, RxDeliveryEvidence,
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState, StartupArtifactChunk,
     StartupArtifactDisposition, StartupArtifactStatus, StateChange, StationEpochEvidence,
@@ -30,7 +35,8 @@ use open_esp_radio_hil_protocol::{
     TransportEvidence, WifiAccessPointEvidence, WifiAccessPointRequest, WifiMonitorCaptureRequest,
     WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiRole,
     WifiRoleFailureEvidence, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
-    evidence_crc32c, startup_artifact_crc32c,
+    WifiStationAccessPointRequest, WifiStationAccessPointStopEvidence, evidence_crc32c,
+    startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -56,6 +62,11 @@ static BOOT_ID_LOW: AtomicU32 = AtomicU32::new(0);
 static BOOT_ID_HIGH: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
 static EVENT_SEQUENCE: AtomicU32 = AtomicU32::new(0);
+// Sequence reservation and queue insertion are one producer transaction.
+// Reserving before an async `send` permits a later task to enqueue sequence
+// N+1 ahead of N, which makes an otherwise lossless wire stream fail closed.
+#[unsafe(link_section = ".critical.data.logging")]
+static EVENT_PUBLISH: AsyncMutex<CriticalSectionRawMutex, ()> = AsyncMutex::new(());
 #[unsafe(link_section = ".critical.data.logging")]
 static PROTOCOL_DROPPED: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
@@ -128,6 +139,13 @@ pub enum WifiControlRequest {
         request: WifiAccessPointRequest,
     },
     StopAccessPoint {
+        request_id: u32,
+    },
+    StartStationAccessPoint {
+        request_id: u32,
+        request: WifiStationAccessPointRequest,
+    },
+    StopStationAccessPoint {
         request_id: u32,
     },
 }
@@ -230,6 +248,53 @@ struct SessionResult {
     tx_timing: Option<open_esp_radio_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ProtocolSession {
+    active: ActiveSession,
+    state: SessionState,
+}
+
+static RETAINED_SESSION_RESULTS: Mutex<
+    CriticalSectionRawMutex,
+    RefCell<[Option<SessionResult>; 2]>,
+> = Mutex::new(RefCell::new([None; 2]));
+
+fn retained_session_result(session_id: u64) -> Option<SessionResult> {
+    RETAINED_SESSION_RESULTS.lock(|results| {
+        results
+            .borrow()
+            .iter()
+            .flatten()
+            .copied()
+            .find(|result| result.session_id == session_id)
+    })
+}
+
+fn retain_session_result(result: SessionResult) -> bool {
+    RETAINED_SESSION_RESULTS.lock(|results| {
+        let mut results = results.borrow_mut();
+        let Some(slot) = results.iter_mut().find(|slot| slot.is_none()) else {
+            return false;
+        };
+        *slot = Some(result);
+        true
+    })
+}
+
+fn discard_session_result(session_id: u64) -> bool {
+    RETAINED_SESSION_RESULTS.lock(|results| {
+        let mut results = results.borrow_mut();
+        let Some(slot) = results
+            .iter_mut()
+            .find(|slot| slot.is_some_and(|result| result.session_id == session_id))
+        else {
+            return false;
+        };
+        *slot = None;
+        true
+    })
 }
 
 unsafe extern "C" {
@@ -353,6 +418,7 @@ pub fn set_wifi_role(role: WifiRole) {
         WifiRole::Station => 2,
         WifiRole::Monitor => 3,
         WifiRole::AccessPoint => 4,
+        WifiRole::StationAccessPoint => 5,
     };
     WIFI_ROLE_STATE.store(encoded, Ordering::Release);
 }
@@ -363,6 +429,7 @@ fn wifi_role_is(role: WifiRole) -> bool {
         WifiRole::Station => 2,
         WifiRole::Monitor => 3,
         WifiRole::AccessPoint => 4,
+        WifiRole::StationAccessPoint => 5,
     };
     WIFI_ROLE_STATE.load(Ordering::Acquire) == expected
 }
@@ -374,6 +441,10 @@ fn boot_id() -> u64 {
 
 /// Queues a typed event without making a radio or network task wait for USB.
 pub fn publish_event(session_id: u64, request_id: u32, body: Event) {
+    let Ok(_publisher) = EVENT_PUBLISH.try_lock() else {
+        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
     let message_sequence = EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let event = Envelope::new(boot_id(), message_sequence, session_id, request_id, body);
     if EVENTS.try_send(event).is_err() {
@@ -484,6 +555,19 @@ pub async fn complete_access_point_stop(request_id: u32, evidence: WifiAccessPoi
     wait_until_serialized(sequence).await;
 }
 
+pub async fn complete_station_access_point_stop(
+    request_id: u32,
+    evidence: WifiStationAccessPointStopEvidence,
+) {
+    let sequence = queue_event_reliably(
+        0,
+        request_id,
+        Event::WifiStationAccessPointStopped(evidence),
+    )
+    .await;
+    wait_until_serialized(sequence).await;
+}
+
 pub async fn complete_wifi_role_failure(request_id: u32, evidence: WifiRoleFailureEvidence) {
     let sequence = queue_event_reliably(0, request_id, Event::WifiRoleFailed(evidence)).await;
     wait_until_serialized(sequence).await;
@@ -556,6 +640,7 @@ pub(crate) async fn publish_event_reliably(session_id: u64, request_id: u32, bod
 }
 
 async fn queue_event_reliably(session_id: u64, request_id: u32, body: Event) -> u32 {
+    let _publisher = EVENT_PUBLISH.lock().await;
     let message_sequence = EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     EVENTS
         .send(Envelope::new(
@@ -586,8 +671,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
     .await;
     let mut initialized = false;
     let mut state = SessionState::WaitingForInitialization;
-    let mut configured = None::<ActiveSession>;
-    let mut last_result = None::<SessionResult>;
+    // One slot per physical STA+AP network endpoint. A slot is keyed by its
+    // opaque session ID and no two live slots may target the same interface.
+    let mut sessions = [None::<ProtocolSession>; 2];
     let mut startup_artifact = StartupArtifactAssembler::new();
     loop {
         match select(COMMANDS.receive(), SESSION_RESULTS.receive()).await {
@@ -600,12 +686,15 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                     }
                     Command::QueryStackUsage => {
-                        let response =
-                            if initialized && state == SessionState::Idle && session_id == 0 {
-                                Event::StackUsage(crate::stack_usage_snapshot())
-                            } else {
-                                Event::Rejected(RejectReason::InvalidState)
-                            };
+                        let response = if initialized
+                            && state == SessionState::Idle
+                            && sessions.iter().all(Option::is_none)
+                            && session_id == 0
+                        {
+                            Event::StackUsage(crate::stack_usage_snapshot())
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::QueryLinkHealth => {
@@ -670,6 +759,10 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         }
                     }
                     Command::Configure(config) => {
+                        let duplicate_interface = sessions.iter().flatten().any(|session| {
+                            session.active.config.network_interface == config.network_interface
+                        });
+                        let free = sessions.iter().position(Option::is_none);
                         let rejection = if !capabilities.features.runtime_configuration {
                             Some(RejectReason::Unsupported)
                         } else if !initialized || state != SessionState::Idle {
@@ -678,6 +771,8 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Some(RejectReason::SessionId)
                         } else if !valid_session_config(config, capabilities) {
                             Some(RejectReason::InvalidConfiguration)
+                        } else if duplicate_interface || free.is_none() {
+                            Some(RejectReason::Busy)
                         } else {
                             None
                         };
@@ -685,11 +780,17 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(session_id, request_id, Event::Rejected(reason))
                                 .await;
                         } else {
-                            configured = Some(ActiveSession { session_id, config });
-                            last_result = None;
+                            let index = free.expect("validated session capacity has a free slot");
+                            sessions[index] = Some(ProtocolSession {
+                                active: ActiveSession { session_id, config },
+                                state: SessionState::Idle,
+                            });
                             publish_event_reliably(session_id, request_id, Event::Accepted).await;
                             transition_state(
-                                &mut state,
+                                &mut sessions[index]
+                                    .as_mut()
+                                    .expect("configured slot remains owned")
+                                    .state,
                                 SessionState::Configured,
                                 session_id,
                                 request_id,
@@ -698,9 +799,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         }
                     }
                     Command::Arm => {
-                        if state != SessionState::Configured
-                            || configured.is_none_or(|session| session.session_id != session_id)
-                        {
+                        let slot = sessions.iter().position(|slot| {
+                            slot.is_some_and(|session| session.active.session_id == session_id)
+                        });
+                        if slot.is_none_or(|index| {
+                            sessions[index]
+                                .is_none_or(|session| session.state != SessionState::Configured)
+                        }) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
@@ -708,9 +813,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             )
                             .await;
                         } else {
+                            let index = slot.expect("validated arm has a session slot");
                             publish_event_reliably(session_id, request_id, Event::Accepted).await;
                             transition_state(
-                                &mut state,
+                                &mut sessions[index]
+                                    .as_mut()
+                                    .expect("armed slot remains owned")
+                                    .state,
                                 SessionState::Armed,
                                 session_id,
                                 request_id,
@@ -719,10 +828,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         }
                     }
                     Command::Start => {
-                        let session = configured.filter(|configured| {
-                            state == SessionState::Armed && configured.session_id == session_id
+                        let slot = sessions.iter().position(|slot| {
+                            slot.is_some_and(|session| {
+                                session.active.session_id == session_id
+                                    && session.state == SessionState::Armed
+                            })
                         });
-                        if let Some(session) = session {
+                        if let Some(index) = slot {
+                            let session = sessions[index]
+                                .expect("located session slot remains owned")
+                                .active;
                             if SESSION_STARTS.try_send(session).is_err() {
                                 publish_event_reliably(
                                     session_id,
@@ -734,7 +849,10 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(session_id, request_id, Event::Accepted)
                                     .await;
                                 transition_state(
-                                    &mut state,
+                                    &mut sessions[index]
+                                        .as_mut()
+                                        .expect("running slot remains owned")
+                                        .state,
                                     SessionState::Running,
                                     session_id,
                                     request_id,
@@ -751,28 +869,48 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         }
                     }
                     Command::GetStatus => {
+                        let session = sessions.iter().flatten().find(|session| {
+                            session_id == 0 || session.active.session_id == session_id
+                        });
                         publish_event_reliably(
                             session_id,
                             request_id,
                             Event::OperationStatus(open_esp_radio_hil_protocol::OperationStatus {
-                                state,
-                                configured_session_id: configured.map(|value| value.session_id),
-                                completed_session_id: last_result.map(|value| value.session_id),
+                                state: session.map_or(state, |session| session.state),
+                                configured_session_id: session
+                                    .map(|session| session.active.session_id),
+                                completed_session_id: session
+                                    .and_then(|session| {
+                                        retained_session_result(session.active.session_id)
+                                    })
+                                    .map(|result| result.session_id),
                             }),
                         )
                         .await;
                     }
                     Command::Cancel => {
-                        if matches!(state, SessionState::Configured | SessionState::Armed)
-                            && configured.is_some_and(|session| session.session_id == session_id)
-                        {
-                            configured = None;
+                        let slot = sessions.iter().position(|slot| {
+                            slot.is_some_and(|session| {
+                                session.active.session_id == session_id
+                                    && matches!(
+                                        session.state,
+                                        SessionState::Configured | SessionState::Armed
+                                    )
+                            })
+                        });
+                        if let Some(index) = slot {
+                            let previous = sessions[index]
+                                .expect("located cancel slot remains owned")
+                                .state;
+                            sessions[index] = None;
                             publish_event_reliably(session_id, request_id, Event::Accepted).await;
-                            transition_state(
-                                &mut state,
-                                SessionState::Idle,
+                            publish_event_reliably(
                                 session_id,
                                 request_id,
+                                Event::State(StateChange {
+                                    previous,
+                                    current: SessionState::Idle,
+                                }),
                             )
                             .await;
                         } else {
@@ -785,9 +923,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         }
                     }
                     Command::ReplayResult => {
-                        if let Some(result) =
-                            last_result.filter(|result| result.session_id == session_id)
-                        {
+                        if let Some(result) = retained_session_result(session_id) {
                             publish_result(result, request_id).await;
                         } else {
                             publish_event_reliably(
@@ -799,17 +935,24 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         }
                     }
                     Command::AcknowledgeResult => {
-                        if state == SessionState::Finished
-                            && last_result.is_some_and(|result| result.session_id == session_id)
-                        {
-                            configured = None;
-                            last_result = None;
+                        let slot = sessions.iter().position(|slot| {
+                            slot.is_some_and(|session| {
+                                session.active.session_id == session_id
+                                    && session.state == SessionState::Finished
+                                    && retained_session_result(session_id).is_some()
+                            })
+                        });
+                        if let Some(index) = slot {
+                            let _ = discard_session_result(session_id);
+                            sessions[index] = None;
                             publish_event_reliably(session_id, request_id, Event::Accepted).await;
-                            transition_state(
-                                &mut state,
-                                SessionState::Idle,
+                            publish_event_reliably(
                                 session_id,
                                 request_id,
+                                Event::State(StateChange {
+                                    previous: SessionState::Finished,
+                                    current: SessionState::Idle,
+                                }),
                             )
                             .await;
                         } else {
@@ -822,15 +965,29 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         }
                     }
                     Command::Recover => {
-                        if matches!(state, SessionState::Finished | SessionState::Failed) {
-                            configured = None;
-                            last_result = None;
+                        let slot = sessions.iter().position(|slot| {
+                            slot.is_some_and(|session| {
+                                session.active.session_id == session_id
+                                    && matches!(
+                                        session.state,
+                                        SessionState::Finished | SessionState::Failed
+                                    )
+                            })
+                        });
+                        if let Some(index) = slot {
+                            let previous = sessions[index]
+                                .expect("located recovery slot remains owned")
+                                .state;
+                            sessions[index] = None;
+                            let _ = discard_session_result(session_id);
                             publish_event_reliably(session_id, request_id, Event::Accepted).await;
-                            transition_state(
-                                &mut state,
-                                SessionState::Idle,
+                            publish_event_reliably(
                                 session_id,
                                 request_id,
+                                Event::State(StateChange {
+                                    previous,
+                                    current: SessionState::Idle,
+                                }),
                             )
                             .await;
                         } else {
@@ -847,6 +1004,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Station)
                         {
@@ -866,6 +1024,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Station)
                         {
@@ -887,6 +1046,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
@@ -914,6 +1074,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
@@ -940,6 +1101,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
@@ -962,6 +1124,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Monitor)
                         {
@@ -983,6 +1146,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
@@ -1005,12 +1169,58 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::AccessPoint)
                         {
                             Event::Rejected(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::StopAccessPoint { request_id })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::StartStationAccessPoint(request) => {
+                        let response = if !capabilities.features.simultaneous_station_access_point {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if request.validate().is_err() {
+                            Event::Rejected(RejectReason::InvalidConfiguration)
+                        } else if !initialized
+                            || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Idle)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::StartStationAccessPoint {
+                                request_id,
+                                request,
+                            })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::StopStationAccessPoint => {
+                        let response = if !capabilities.features.simultaneous_station_access_point {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !initialized
+                            || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::StationAccessPoint)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::StopStationAccessPoint { request_id })
                             .is_err()
                         {
                             Event::Rejected(RejectReason::Busy)
@@ -1029,6 +1239,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
+                            || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
@@ -1049,15 +1260,53 @@ pub async fn protocol_task(capabilities: Capabilities) {
                 }
             }
             Either::Second(result) => {
-                if state == SessionState::Running
-                    && configured.is_some_and(|session| session.session_id == result.session_id)
-                {
-                    transition_state(&mut state, SessionState::Draining, result.session_id, 0)
-                        .await;
+                let slot = sessions.iter().position(|slot| {
+                    slot.is_some_and(|session| {
+                        session.state == SessionState::Running
+                            && session.active.session_id == result.session_id
+                    })
+                });
+                if let Some(index) = slot {
+                    transition_state(
+                        &mut sessions[index]
+                            .as_mut()
+                            .expect("completed slot remains owned")
+                            .state,
+                        SessionState::Draining,
+                        result.session_id,
+                        0,
+                    )
+                    .await;
                     publish_result(result, 0).await;
-                    last_result = Some(result);
-                    transition_state(&mut state, SessionState::Finished, result.session_id, 0)
+                    if !retain_session_result(result) {
+                        publish_event_reliably(
+                            result.session_id,
+                            0,
+                            Event::Failed(FailureCode::EvidenceOverflow),
+                        )
                         .await;
+                        transition_state(
+                            &mut sessions[index]
+                                .as_mut()
+                                .expect("failed slot remains owned")
+                                .state,
+                            SessionState::Failed,
+                            result.session_id,
+                            0,
+                        )
+                        .await;
+                        continue;
+                    }
+                    transition_state(
+                        &mut sessions[index]
+                            .as_mut()
+                            .expect("finished slot remains owned")
+                            .state,
+                        SessionState::Finished,
+                        result.session_id,
+                        0,
+                    )
+                    .await;
                 } else {
                     publish_event_reliably(
                         result.session_id,
@@ -1339,6 +1588,7 @@ async fn write_event_async(
                 | Event::WifiMonitorCaptureCompleted(_)
                 | Event::WifiAccessPointStarted(_)
                 | Event::WifiAccessPointStopped(_)
+                | Event::WifiStationAccessPointStopped(_)
                 | Event::WifiRoleFailed(_)
         ) {
             SERIALIZED_WIFI_EVENT_NEXT

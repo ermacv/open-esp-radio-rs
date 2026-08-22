@@ -184,6 +184,7 @@ pub struct Esp32s31ConnectedStaTxHandoffFailure<
 pub struct Esp32s31ConnectedStaControlResources<'resources, M: RawMutex, const CAPACITY: usize> {
     pub receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
     pub reorder_commands: RxReorderCommandSender<'resources, M>,
+    pub rx_block_ack: &'resources Esp32s31StaApRxBlockAck,
 }
 
 /// Final owner graph immediately before the connected services begin running.

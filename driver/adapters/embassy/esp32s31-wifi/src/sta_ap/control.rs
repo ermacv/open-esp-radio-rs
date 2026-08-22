@@ -21,6 +21,7 @@ pub trait Esp32s31StaApStationControlRole<H, PhysicalTx> {
         hardware: &'a mut H,
         physical_tx: &'a mut PhysicalTx,
         context: WdevControlContext,
+        retain_physical_tx: bool,
     ) -> impl Future<Output = Result<WdevControlProgress<Self::Exit>, Self::Error>> + 'a;
 
     /// Wait for role-local work without borrowing the shared physical TX.
@@ -46,6 +47,7 @@ pub trait Esp32s31StaApAccessPointControlRole<H, PhysicalTx> {
         hardware: &mut H,
         physical_tx: &mut PhysicalTx,
         now_micros: u64,
+        retain_physical_tx: bool,
     ) -> Result<Esp32s31StaApAccessPointControlProgress, Self::Error>;
 
     fn service_access_point_stop(
@@ -120,12 +122,35 @@ where
         station: &'a mut Station,
         access_point: &'a mut AccessPoint,
         context: WdevControlContext,
+        retained_tx: Option<WdevPairRole>,
     ) -> impl Future<Output = Result<WdevPairedControlProgress<Self::Exit>, Self::Error>> + 'a {
         async move {
             let now = Instant::now().as_micros();
+            if retained_tx == Some(WdevPairRole::Second) {
+                return access_point
+                    .service_access_point_control(hardware, physical_tx, now, true)
+                    .map(Self::map_access_point_progress)
+                    .map_err(Esp32s31StaApControlError::AccessPoint);
+            }
+            if retained_tx == Some(WdevPairRole::First) {
+                return match station
+                    .service_station_control(hardware, physical_tx, context, true)
+                    .await
+                    .map_err(Esp32s31StaApControlError::Station)?
+                {
+                    WdevControlProgress::Idle => Ok(WdevPairedControlProgress::Idle),
+                    WdevControlProgress::More => Ok(WdevPairedControlProgress::More),
+                    WdevControlProgress::TxPending => {
+                        Ok(WdevPairedControlProgress::TxPending(WdevPairRole::First))
+                    }
+                    WdevControlProgress::Exit(exit) => Ok(WdevPairedControlProgress::Exit(
+                        Esp32s31StaApControlExit::Station(exit),
+                    )),
+                };
+            }
             if access_point.beacon_publication_due(now as u32) {
                 let progress = access_point
-                    .service_access_point_control(hardware, physical_tx, now)
+                    .service_access_point_control(hardware, physical_tx, now, false)
                     .map_err(Esp32s31StaApControlError::AccessPoint)?;
                 if progress != Esp32s31StaApAccessPointControlProgress::Idle {
                     return Ok(Self::map_access_point_progress(progress));
@@ -133,7 +158,7 @@ where
             }
 
             match station
-                .service_station_control(hardware, physical_tx, context)
+                .service_station_control(hardware, physical_tx, context, false)
                 .await
                 .map_err(Esp32s31StaApControlError::Station)?
             {
@@ -151,7 +176,7 @@ where
 
             let now = Instant::now().as_micros();
             let progress = access_point
-                .service_access_point_control(hardware, physical_tx, now)
+                .service_access_point_control(hardware, physical_tx, now, false)
                 .map_err(Esp32s31StaApControlError::AccessPoint)?;
             if progress == Esp32s31StaApAccessPointControlProgress::Idle {
                 self.next_access_point_delay_millis = access_point
@@ -213,6 +238,7 @@ mod tests {
             _hardware: &'a mut (),
             _physical_tx: &'a mut (),
             _context: WdevControlContext,
+            _retain_physical_tx: bool,
         ) -> impl Future<Output = Result<WdevControlProgress<Self::Exit>, Self::Error>> + 'a
         {
             async move {
@@ -244,6 +270,7 @@ mod tests {
             _hardware: &mut (),
             _physical_tx: &mut (),
             _now_micros: u64,
+            _retain_physical_tx: bool,
         ) -> Result<Esp32s31StaApAccessPointControlProgress, Self::Error> {
             self.calls += 1;
             Ok(self.progress)
@@ -269,6 +296,14 @@ mod tests {
         station: &mut Station,
         access_point: &mut AccessPoint,
     ) -> WdevPairedControlProgress<Esp32s31StaApControlExit<u8>> {
+        service_with_retained(station, access_point, None)
+    }
+
+    fn service_with_retained(
+        station: &mut Station,
+        access_point: &mut AccessPoint,
+        retained: Option<WdevPairRole>,
+    ) -> WdevPairedControlProgress<Esp32s31StaApControlExit<u8>> {
         embassy_futures::block_on(WdevPairedControlService::service(
             &mut Esp32s31StaApControlArbiter::new(),
             &mut (),
@@ -276,6 +311,7 @@ mod tests {
             station,
             access_point,
             WdevControlContext::IDLE,
+            retained,
         ))
         .unwrap()
     }
@@ -337,6 +373,46 @@ mod tests {
             WdevPairedControlProgress::TxPending(WdevPairRole::Second)
         );
         assert_eq!(station.calls, 1);
+        assert_eq!(access_point.calls, 1);
+    }
+
+    #[test]
+    fn retained_station_tx_excludes_access_point_control() {
+        let mut station = Station {
+            calls: 0,
+            progress: WdevControlProgress::Idle,
+        };
+        let mut access_point = AccessPoint {
+            due: true,
+            calls: 0,
+            progress: Esp32s31StaApAccessPointControlProgress::TxPending,
+        };
+
+        assert_eq!(
+            service_with_retained(&mut station, &mut access_point, Some(WdevPairRole::First)),
+            WdevPairedControlProgress::Idle
+        );
+        assert_eq!(station.calls, 1);
+        assert_eq!(access_point.calls, 0);
+    }
+
+    #[test]
+    fn retained_access_point_tx_excludes_station_control() {
+        let mut station = Station {
+            calls: 0,
+            progress: WdevControlProgress::TxPending,
+        };
+        let mut access_point = AccessPoint {
+            due: false,
+            calls: 0,
+            progress: Esp32s31StaApAccessPointControlProgress::Idle,
+        };
+
+        assert_eq!(
+            service_with_retained(&mut station, &mut access_point, Some(WdevPairRole::Second)),
+            WdevPairedControlProgress::Idle
+        );
+        assert_eq!(station.calls, 0);
         assert_eq!(access_point.calls, 1);
     }
 }

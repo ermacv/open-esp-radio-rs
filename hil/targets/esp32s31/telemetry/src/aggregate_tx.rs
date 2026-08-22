@@ -26,6 +26,12 @@ pub const AGGREGATE_TX_PUBLICATION_BUCKETS: usize = 5;
 /// Relaxed atomics keep a HIL observer from adding synchronization to the
 /// radio path it is measuring.
 pub struct AggregateTxCounters {
+    ap_udp_claim_highest: AtomicU32,
+    ap_udp_claimed: AtomicU32,
+    ap_udp_claim_backward: AtomicU32,
+    ap_udp_claim_first_previous: AtomicU32,
+    ap_udp_claim_first_sequence: AtomicU32,
+    ap_udp_claim_maximum_distance: AtomicU32,
     block_ack_operational_tids: AtomicU32,
     block_ack_operational_transitions: AtomicU32,
     network_single_mpdu_started: AtomicU32,
@@ -95,6 +101,12 @@ impl AggregateTxCounters {
 
     pub const fn new() -> Self {
         Self {
+            ap_udp_claim_highest: AtomicU32::new(u32::MAX),
+            ap_udp_claimed: AtomicU32::new(0),
+            ap_udp_claim_backward: AtomicU32::new(0),
+            ap_udp_claim_first_previous: AtomicU32::new(u32::MAX),
+            ap_udp_claim_first_sequence: AtomicU32::new(u32::MAX),
+            ap_udp_claim_maximum_distance: AtomicU32::new(0),
             block_ack_operational_tids: AtomicU32::new(0),
             block_ack_operational_transitions: AtomicU32::new(0),
             network_single_mpdu_started: AtomicU32::new(0),
@@ -163,6 +175,17 @@ impl AggregateTxCounters {
 
     pub fn snapshot(&self) -> AggregateTxCounterSnapshot {
         AggregateTxCounterSnapshot {
+            ap_udp_claimed: self.ap_udp_claimed.load(Ordering::Relaxed),
+            ap_udp_claim_backward: self.ap_udp_claim_backward.load(Ordering::Relaxed),
+            ap_udp_claim_first_previous: self
+                .ap_udp_claim_first_previous
+                .load(Ordering::Relaxed),
+            ap_udp_claim_first_sequence: self
+                .ap_udp_claim_first_sequence
+                .load(Ordering::Relaxed),
+            ap_udp_claim_maximum_distance: self
+                .ap_udp_claim_maximum_distance
+                .load(Ordering::Relaxed),
             block_ack_operational_tids: self.block_ack_operational_tids.load(Ordering::Acquire),
             block_ack_operational_transitions: self
                 .block_ack_operational_transitions
@@ -575,6 +598,42 @@ impl AggregateTxObserver for AggregateTxCounters {
             }
         }
     }
+
+    fn observe_access_point_network_claim(&self, ethernet: &[u8]) {
+        let Some(sequence) = qualification_udp_sequence(ethernet) else {
+            return;
+        };
+        self.ap_udp_claimed.fetch_add(1, Ordering::Relaxed);
+        let previous = self.ap_udp_claim_highest.load(Ordering::Relaxed);
+        if previous == u32::MAX || sequence > previous {
+            self.ap_udp_claim_highest.store(sequence, Ordering::Relaxed);
+            return;
+        }
+        self.ap_udp_claim_backward.fetch_add(1, Ordering::Relaxed);
+        if self.ap_udp_claim_first_sequence.load(Ordering::Relaxed) == u32::MAX {
+            self.ap_udp_claim_first_previous
+                .store(previous, Ordering::Relaxed);
+            self.ap_udp_claim_first_sequence
+                .store(sequence, Ordering::Relaxed);
+        }
+        self.ap_udp_claim_maximum_distance
+            .fetch_max(previous - sequence, Ordering::Relaxed);
+    }
+}
+
+fn qualification_udp_sequence(ethernet: &[u8]) -> Option<u32> {
+    let ip = 14_usize;
+    let version_ihl = *ethernet.get(ip)?;
+    if version_ihl >> 4 != 4 || version_ihl & 0x0f < 5 || *ethernet.get(ip + 9)? != 17 {
+        return None;
+    }
+    let udp = ip + usize::from(version_ihl & 0x0f) * 4;
+    if u16::from_be_bytes(ethernet.get(udp..udp + 2)?.try_into().ok()?) != 4_324 {
+        return None;
+    }
+    Some(u32::from_be_bytes(
+        ethernet.get(udp + 8..udp + 12)?.try_into().ok()?,
+    ))
 }
 
 impl Default for AggregateTxCounters {
@@ -590,6 +649,11 @@ impl Default for AggregateTxCounters {
 /// remain exact monotonic observations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AggregateTxCounterSnapshot {
+    pub ap_udp_claimed: u32,
+    pub ap_udp_claim_backward: u32,
+    pub ap_udp_claim_first_previous: u32,
+    pub ap_udp_claim_first_sequence: u32,
+    pub ap_udp_claim_maximum_distance: u32,
     /// Current operational TX BlockAck TID bitmap, not an interval delta.
     pub block_ack_operational_tids: u32,
     pub block_ack_operational_transitions: u32,
@@ -667,6 +731,13 @@ pub struct AggregateTxCounterSnapshot {
 impl AggregateTxCounterSnapshot {
     pub fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
+            ap_udp_claimed: self.ap_udp_claimed.wrapping_sub(earlier.ap_udp_claimed),
+            ap_udp_claim_backward: self
+                .ap_udp_claim_backward
+                .wrapping_sub(earlier.ap_udp_claim_backward),
+            ap_udp_claim_first_previous: self.ap_udp_claim_first_previous,
+            ap_udp_claim_first_sequence: self.ap_udp_claim_first_sequence,
+            ap_udp_claim_maximum_distance: self.ap_udp_claim_maximum_distance,
             block_ack_operational_tids: self.block_ack_operational_tids,
             block_ack_operational_transitions: self
                 .block_ack_operational_transitions
@@ -688,9 +759,7 @@ impl AggregateTxCounterSnapshot {
                 .wrapping_sub(earlier.network_single_fresh_aggregate_capacity),
             network_single_fresh_capacity_lifetime_max_ethernet_length: self
                 .network_single_fresh_capacity_lifetime_max_ethernet_length,
-            rate_selections: self
-                .rate_selections
-                .wrapping_sub(earlier.rate_selections),
+            rate_selections: self.rate_selections.wrapping_sub(earlier.rate_selections),
             last_bandwidth_mhz: self.last_bandwidth_mhz,
             last_nominal_rate_kbps: self.last_nominal_rate_kbps,
             aggregates_prepared: self

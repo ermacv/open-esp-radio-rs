@@ -45,8 +45,8 @@ reason = "one-time radio start future returns the complete initialized radio own
 [[reviewed_frames]]
 function_contains = "::station::composer::Esp32s31StationEngine<"
 source_ends_with = "driver/adapters/embassy/esp32s31-wifi/src/station/composer.rs"
-max_bytes = 18432
-reason = "station attempt future retains every recoverable phase owner until disposition"
+max_bytes = 19456
+reason = "station attempt future retains every recoverable phase owner, including typed RX overload disposition state, until disposition on the PSRAM task stack"
 
 [[reviewed_frames]]
 function_contains = "::runtime::new::{closure#0}"
@@ -63,14 +63,20 @@ reason = "role epoch future retains separate physical, station, AP and monitor r
 [[reviewed_frames]]
 function_contains = "run_access_point_service::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime/access_point.rs"
-max_bytes = 14336
-reason = "AP epoch future retains the distinct DMA producer and ordered protocol-consumer owners, one optional deferred frame, the typed protocol-action mailbox, the exact STA resume frontier and both affine A-MPDU arenas until teardown; it runs on the PSRAM task stack while runtime painting still enforces 16-KiB CPU-stack headroom"
+max_bytes = 15360
+reason = "AP epoch future retains the distinct DMA producer and ordered protocol-consumer owners, one optional deferred frame, one complete four-frame typed protocol-action quantum, the exact STA resume frontier and both affine A-MPDU arenas until teardown; it runs on the PSRAM task stack while runtime painting still enforces 16-KiB CPU-stack headroom"
 
 [[reviewed_frames]]
 function_contains = "::__wifi_role_task_task::__wifi_role_task_task_inner_function::{closure#0}"
 source_ends_with = "hil/targets/esp32s31/runtime/src/product_hil.rs"
+max_bytes = 10496
+reason = "HIL role dispatcher poll retains exactly one affine public STA, AP, paired STA+AP, monitor or idle owner plus the explicit paired request handoff; its Embassy task storage is static PSRAM data and runtime painting separately enforces CPU-stack headroom"
+
+[[reviewed_frames]]
+function_contains = "::__protocol_task_task::__protocol_task_task_inner_function::{closure#0}"
+source_ends_with = "hil/targets/esp32s31/runtime/src/console.rs"
 max_bytes = 10240
-reason = "HIL role dispatcher poll retains exactly one affine public STA, AP, monitor or idle owner; runtime painting still enforces aggregate CPU-stack headroom"
+reason = "HIL protocol task retains two bounded interface-addressed session configs and one decoded command while terminal evidence lives in separate static storage; Embassy task storage is PSRAM and runtime painting independently enforces CPU-stack headroom"
 
 [[reviewed_frames]]
 function_contains = "::product_hil::run::{closure#0}"
@@ -87,8 +93,26 @@ reason = "connected transition future preserves the exact join and teardown owne
 [[reviewed_frames]]
 function_contains = "::connected::run_connected::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/connected.rs"
+max_bytes = 20480
+reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck, WPA2 rekey, key, network, Rust rate-control frontier and the parked paired-role scratch lease on the PSRAM task stack"
+
+[[reviewed_frames]]
+function_contains = "::advance_station_to_paired_frontier::{closure#0}"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime/station_access_point.rs"
 max_bytes = 15360
-reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck, WPA2 rekey, key, network and Rust rate-control frontier"
+reason = "finite paired cutover reuses the complete production STA lifecycle and returns either the exact connected owner graph or the reusable stopped frontier"
+
+[[reviewed_frames]]
+function_contains = "::run_station_access_point_service::{closure#0}"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime/station_access_point.rs"
+max_bytes = 12288
+reason = "paired service validates association and channel policy while retaining the independent AP, monitor and connected station owners before active composition"
+
+[[reviewed_frames]]
+function_contains = "::run_station_access_point_active::{closure#0}"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime/station_access_point.rs"
+max_bytes = 32768
+reason = "temporary cutover frame retains the sole RX producer, TX owner, IRQ epoch, both role graphs and their exact inverse on the PSRAM task stack; post-HIL complexity cleanup must split setup and teardown further"
 
 [[reviewed_frames]]
 function_contains = "::attempt::Esp32s31StaAttempt<"
@@ -99,8 +123,14 @@ reason = "shared initial/reconnect attempt future retains the exact phase owner 
 [[reviewed_frames]]
 function_contains = "run_esp32s31_station_supervisor_epoch"
 source_ends_with = "driver/radio/src/esp32s31/supervisor.rs"
-max_bytes = 12800
-reason = "chip station supervisor retains the typed dual-VIF role return, Rust rate-control owner and AP retry report across one epoch"
+max_bytes = 13312
+reason = "chip station supervisor retains the typed dual-VIF role return, shared RX BlockAck capability reference, RX overload disposition, Rust rate-control owner and AP retry report across one epoch on the PSRAM task stack"
+
+[[reviewed_frames]]
+function_contains = "::run_standalone_scan::{closure#0}"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime.rs"
+max_bytes = 8448
+reason = "standalone scan retains the role-neutral stopped owner graph while the shared RX BlockAck allocator remains statically rooted; runtime painting independently enforces PSRAM stack headroom"
 
 [[reviewed_frames]]
 function_contains = "::station::lifecycle::Esp32s31StationTask<"
@@ -117,5 +147,5 @@ reason = "radio supervisor retains the affine Wi-Fi role owner plus bounded dual
 [[reviewed_frames]]
 function_contains = "TaskStorage<open_esp_radio_hil_esp32s31_runtime"
 source_ends_with = "embassy-executor-0.10.0/src/raw/mod.rs"
-max_bytes = 10240
-reason = "static Embassy storage owns the Wi-Fi role dispatcher future; it is not allocated on either CPU stack"
+max_bytes = 10496
+reason = "static Embassy PSRAM storage owns the Wi-Fi role dispatcher future including the explicit paired-role request; it is not allocated on either CPU stack"

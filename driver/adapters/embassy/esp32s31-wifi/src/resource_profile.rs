@@ -27,7 +27,9 @@ pub const ESP32S31_DEFAULT_RX_STAGE_CAPACITY: usize = 1_700;
 // These slots form the latency-critical copy-before-DMA-reload working set and
 // stay in SRAM. Two complete negotiated reorder windows let RX copy one burst
 // while the protocol consumer owns another; descriptor reclaim itself follows
-// the frozen hardware LAST and does not reserve a fixed suffix.
+// the frozen hardware LAST and does not reserve a fixed suffix. Paired mode
+// must service the protocol consumer instead of hiding sustained backpressure
+// by growing this latency-critical SRAM pool.
 pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 32;
 // Keep one complete negotiated HT BlockAck window of DMA descriptors in
 // reserve while software copies and republishes the preceding window. A
@@ -41,10 +43,11 @@ pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
 // PSRAM. This prevents the network consumer from extending ownership of the
 // latency-critical SRAM staging pool.
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 64;
-// One additional credit is reserved by the network adapter for the TX token
-// paired with ingress. Application egress therefore retains two complete
-// 32-MPDU arenas even while saturated. TX frame backing is DMA-visible SRAM.
-pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 65;
+// One additional credit per permanent network endpoint is reserved for the
+// TX token paired with ingress. Combined STA+AP therefore needs two reserves;
+// application egress still retains two complete 32-MPDU arenas while
+// saturated. TX frame backing is DMA-visible SRAM.
+pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 66;
 pub const ESP32S31_DEFAULT_NETWORK_TX_TRAILER: usize = 12;
 pub const ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT: usize = 32;
 
@@ -81,7 +84,6 @@ pub type Esp32s31DefaultScanTable = ScanTable<ESP32S31_DEFAULT_SCAN_RECORD_CAPAC
 pub struct Esp32s31DefaultWifiMemory<M: RawMutex> {
     claimed: AtomicBool,
     rx_dma: ConstStaticCell<Esp32s31DefaultRxDmaStorage>,
-    rx_buffer_addresses: ConstStaticCell<[u32; ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT]>,
     tx_dma: ConstStaticCell<TxDmaStorage<ESP32S31_DEFAULT_TX_BUFFER_SIZE>>,
     scan_table: StaticCell<Esp32s31DefaultScanTable>,
     ap_beacon: ConstStaticCell<[u8; WPA2_BEACON_CAPACITY]>,
@@ -94,7 +96,6 @@ impl<M: RawMutex> Esp32s31DefaultWifiMemory<M> {
         Self {
             claimed: AtomicBool::new(false),
             rx_dma: ConstStaticCell::new(Esp32s31DefaultRxDmaStorage::new()),
-            rx_buffer_addresses: ConstStaticCell::new([0; ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT]),
             tx_dma: ConstStaticCell::new(TxDmaStorage::new()),
             scan_table: StaticCell::new(),
             ap_beacon: ConstStaticCell::new([0; WPA2_BEACON_CAPACITY]),
@@ -116,7 +117,6 @@ impl<M: RawMutex> Esp32s31DefaultWifiMemory<M> {
         }
         Ok(Esp32s31DefaultWifiMemoryLease {
             rx_dma: self.rx_dma.take(),
-            rx_buffer_addresses: self.rx_buffer_addresses.take(),
             tx_dma: self.tx_dma.take(),
             scan_table: self.scan_table.init_with(ScanTable::new),
             ap_beacon: self.ap_beacon.take(),
@@ -135,7 +135,6 @@ impl<M: RawMutex> Default for Esp32s31DefaultWifiMemory<M> {
 /// Exact owners acquired from one default station arena.
 pub struct Esp32s31DefaultWifiMemoryLease<M: RawMutex + 'static> {
     pub rx_dma: &'static mut Esp32s31DefaultRxDmaStorage,
-    pub rx_buffer_addresses: &'static mut [u32; ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT],
     pub tx_dma: &'static mut TxDmaStorage<ESP32S31_DEFAULT_TX_BUFFER_SIZE>,
     pub scan_table: &'static mut Esp32s31DefaultScanTable,
     pub ap_beacon: &'static mut [u8; WPA2_BEACON_CAPACITY],
@@ -182,7 +181,7 @@ mod tests {
 
         let lease = MEMORY.claim().expect("fresh station memory is available");
         assert_eq!(
-            lease.rx_buffer_addresses.len(),
+            lease.rx_dma.buffers().len(),
             ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT
         );
         assert_eq!(lease.scan_frame.len(), ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY);

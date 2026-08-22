@@ -37,13 +37,12 @@ mod runtime;
 mod wifi_network;
 
 pub use access_point_status::{Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot};
+pub use connected::Esp32s31WifiProtocolRunner;
 #[cfg(feature = "qualification")]
 pub use connected::{
     Esp32s31ConnectedRxObserver, Esp32s31MacIrqObservation, Esp32s31QualificationSnapshot,
     Esp32s31QualificationTxVector,
 };
-pub use connected::Esp32s31WifiProtocolRunner;
-pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
 pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
@@ -58,6 +57,7 @@ pub use open_esp_radio::esp32s31::wifi::sta::connected_control::ConnectedDisconn
 pub use open_esp_radio_esp32s31_wifi_embassy::network_rx::{
     RxNetworkDeliveryEvent, RxNetworkDeliveryObserver,
 };
+pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
 pub use runtime::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
 pub use wifi_network::{Esp32s31WifiNetworkRunner, new_wifi_network};
 
@@ -138,7 +138,7 @@ pub struct Esp32s31QualificationHooks {
 /// Value-only terminal AP epoch evidence emitted after TX, RX and IRQ have
 /// quiesced but before their typed owners return to role-neutral Wi-Fi.
 #[cfg(feature = "qualification")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31AccessPointObservation {
     pub channel: u8,
     pub bandwidth_mhz: u16,
@@ -196,6 +196,9 @@ pub struct Esp32s31AccessPointObservation {
     pub rx_hardware_fifo_overflow: u16,
     pub retained_rx_descriptors: u32,
     pub discarded_rx_units: u32,
+    pub rx_overload_discarded_units: u32,
+    pub rx_critical_reserve_admissions: u32,
+    pub rx_critical_admission_blocked: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
     pub rx_quarantined_frames: u32,
@@ -212,7 +215,9 @@ pub struct Esp32s31AccessPointObservation {
     pub network_tx_rejected_destination: u32,
     pub network_tx_frames_rejected: u32,
     pub rx_ht_data_frames: u32,
-    pub rx_ht_ampdu_data_frames: u32,
+    /// MPDUs whose copied HT-SIG metadata has the Aggregation bit set.
+    /// This is not an aggregate-PPDU count and does not imply aggregate depth.
+    pub rx_ht_mpdus_with_aggregation_bit: u32,
     pub rx_rssi_samples: u32,
     pub rx_rssi_sum_dbm: i32,
     pub rx_rssi_min_dbm: i8,
@@ -239,6 +244,10 @@ pub struct Esp32s31AccessPointObservation {
     pub protected_data_unauthorized: u32,
     pub protected_data_foreign: u32,
     pub protected_data_duplicates: u32,
+    pub rx_reorder_buffered_mpdus: u32,
+    pub rx_reorder_dispatched_mpdus: u32,
+    pub rx_reorder_hardware_window_resets: u32,
+    pub rx_reorder_gap_timeouts: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
 }

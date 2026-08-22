@@ -50,17 +50,17 @@ count = 64
 element_capacity = 1700
 
 [[rules]]
-symbol = "*::connected::NETWORK_TX_POOL"
+symbol = "*::radio_resources::NETWORK_TX_POOL"
 owner = "wifi.tx.pinned-network"
 scope = "adapter"
 reason = "hardware-dma"
 placement = "required-sram"
 region = "internal-sram"
-count = 64
+count = 66
 element_capacity = 1648
 
 [[rules]]
-symbol = "*::connected::NETWORK_RESOURCES"
+symbol = "*::radio_resources::NETWORK_RESOURCES"
 owner = "wifi.network-handoff"
 scope = "adapter"
 reason = "cpu-only"
@@ -68,7 +68,15 @@ placement = "required-psram"
 region = "external-psram"
 
 [[rules]]
-symbol = "*::connected::TX_AMPDU_STORAGE"
+symbol = "*::radio_resources::ACCESS_POINT_NETWORK_RESOURCES"
+owner = "wifi.network-handoff"
+scope = "adapter"
+reason = "cpu-only"
+placement = "required-psram"
+region = "external-psram"
+
+[[rules]]
+symbol = "*::radio_resources::TX_AMPDU_STORAGE"
 owner = "wifi.tx.ampdu-state"
 scope = "adapter"
 reason = "cpu-only"
@@ -76,7 +84,7 @@ placement = "required-psram"
 region = "external-psram"
 
 [[rules]]
-symbol = "*::connected::TX_AMPDU_DMA_STORAGE"
+symbol = "*::radio_resources::TX_AMPDU_DMA_STORAGE"
 owner = "wifi.tx.ampdu-descriptors"
 scope = "adapter"
 reason = "hardware-dma"
@@ -84,7 +92,7 @@ placement = "required-sram"
 region = "internal-sram"
 
 [[rules]]
-symbol = "*::connected::TX_AMPDU_RETENTION"
+symbol = "*::radio_resources::TX_AMPDU_RETENTION"
 owner = "wifi.tx.ampdu-retention"
 scope = "adapter"
 reason = "cpu-only"
@@ -92,7 +100,7 @@ placement = "required-psram"
 region = "external-psram"
 
 [[rules]]
-symbol = "*::connected::TX_AMPDU_STANDBY_STORAGE"
+symbol = "*::radio_resources::TX_AMPDU_STANDBY_STORAGE"
 owner = "wifi.tx.ampdu-standby-state"
 scope = "adapter"
 reason = "cpu-only"
@@ -100,7 +108,7 @@ placement = "required-psram"
 region = "external-psram"
 
 [[rules]]
-symbol = "*::connected::TX_AMPDU_STANDBY_DMA_STORAGE"
+symbol = "*::radio_resources::TX_AMPDU_STANDBY_DMA_STORAGE"
 owner = "wifi.tx.ampdu-standby-descriptors"
 scope = "adapter"
 reason = "hardware-dma"
@@ -108,7 +116,7 @@ placement = "required-sram"
 region = "internal-sram"
 
 [[rules]]
-symbol = "*::connected::TX_AMPDU_STANDBY_RETENTION"
+symbol = "*::radio_resources::TX_AMPDU_STANDBY_RETENTION"
 owner = "wifi.tx.ampdu-standby-retention"
 scope = "adapter"
 reason = "cpu-only"

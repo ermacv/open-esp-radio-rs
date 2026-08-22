@@ -151,6 +151,37 @@ where
         }
     }
 
+    /// Finish a queue-independent processor and return its role-local sink.
+    ///
+    /// Paired STA+AP owns an additional Ethernet batch scratch inside the
+    /// sink. The outer composition must recover that exact allocation during
+    /// rollback; dropping it would make the next paired epoch impossible even
+    /// though DMA and protocol reorder state were cleanly stopped.
+    pub fn into_stopped_with_sink(
+        mut self,
+    ) -> (
+        Esp32s31ConnectedRxProtocolStopped<'scratch, 'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
+        S,
+    ) {
+        let shutdown = self.shutdown_discard();
+        let Self {
+            sink,
+            mpdu,
+            ethernet,
+            runtime,
+            ..
+        } = self;
+        (
+            ConnectedRxProtocolStopped {
+                shutdown,
+                mpdu,
+                ethernet,
+                runtime,
+            },
+            sink,
+        )
+    }
+
     pub(super) fn into_stopped_parts(
         self,
     ) -> (

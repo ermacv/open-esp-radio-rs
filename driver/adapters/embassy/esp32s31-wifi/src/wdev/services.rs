@@ -92,6 +92,11 @@ pub trait WdevNetworkTxService<
         >,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
 
+    /// Network leases claimed by the most recent successful start.
+    fn last_started_frame_count(&self) -> usize {
+        1
+    }
+
     fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_;
 
     fn service<'a>(
@@ -314,6 +319,10 @@ where
                 .await
                 .map_err(WdevServiceError::Tx)
         }
+    }
+
+    fn last_started_tx_frame_count(&self) -> usize {
+        self.tx.last_started_frame_count()
     }
 
     fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {

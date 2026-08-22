@@ -1,6 +1,6 @@
 use core::{
     future::{Future, pending, ready},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
     task::{Context, Poll},
 };
 
@@ -18,6 +18,12 @@ const FRAME_CAPACITY: usize = 64;
 const HEADROOM: usize = 32;
 const TRAILER: usize = 8;
 const QUEUE_DEPTH: usize = 1;
+
+static RX_UNMASK_CALLS: AtomicU32 = AtomicU32::new(0);
+
+fn record_rx_unmask() {
+    RX_UNMASK_CALLS.fetch_add(1, Ordering::Relaxed);
+}
 
 type Resources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
 type Pool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
@@ -158,7 +164,7 @@ fn runner_returns_both_addressed_rx_owners_after_combined_service() {
 }
 
 #[test]
-fn paired_runner_preserves_physical_tx_order_and_narrows_each_vif() {
+fn paired_runner_arbitrates_both_vifs_and_narrows_each_lease() {
     type PairEndpoint = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
     type PairTxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 2>;
     type PairPool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, 2>;
@@ -237,8 +243,8 @@ fn paired_runner_preserves_physical_tx_order_and_narrows_each_vif() {
     assert_eq!(
         *order.lock().unwrap(),
         std::vec![
-            crate::sta_ap::AP_NETWORK_INTERFACE_ID,
             crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+            crate::sta_ap::AP_NETWORK_INTERFACE_ID,
         ]
     );
 }
@@ -349,7 +355,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
                 if self.repost_rx_when_backpressured {
                     self.irq.publish(MAC_INT_RX_SUCCESS);
                 }
-                return Ok(WdevRxProgress::StagingBackpressured);
+                return Ok(WdevRxProgress::CriticalAdmissionBlocked);
             }
             if self.queue_control_on_rx {
                 self.control_pending = true;
@@ -621,6 +627,7 @@ impl crate::wdev::paired::WdevPairedControlService<(), PairedPhysicalTx, PairedR
         first_tx: &'a mut PairedRoleTx,
         second_tx: &'a mut PairedRoleTx,
         _context: WdevControlContext,
+        _retained_tx: Option<crate::wdev::paired::WdevPairRole>,
     ) -> impl Future<
         Output = Result<crate::wdev::paired::WdevPairedControlProgress<Self::Exit>, Self::Error>,
     > + 'a {
@@ -1090,6 +1097,41 @@ fn aggregate_batch_window_includes_the_first_published_frame() {
 }
 
 #[test]
+fn drained_rx_is_unmasked_before_the_cooperative_yield() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = split_network!(resources, pool);
+    RX_UNMASK_CALLS.store(0, Ordering::Relaxed);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new_with_rx_moderation(record_rx_unmask),
+    ));
+    irq.begin_rx_moderation();
+    let services = Backend {
+        irq,
+        order: [0; 3],
+        count: 0,
+        publish_irq: false,
+        deadline_ready: false,
+        tx_wake: None,
+        queue_control_on_rx: false,
+        control_pending: false,
+        complete_tx_before_control: false,
+        disconnect: false,
+        network_pending_seen: false,
+        backpressure_once: false,
+        repost_rx_when_backpressured: false,
+        software_rx_work: false,
+        stop_after_tx: None,
+    };
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
+    let mut service = std::boxed::Box::pin(runner.service_rx());
+    let mut context = Context::from_waker(core::task::Waker::noop());
+
+    assert_eq!(service.as_mut().poll(&mut context), Poll::Pending);
+    assert_eq!(RX_UNMASK_CALLS.load(Ordering::Relaxed), 1);
+}
+
+#[test]
 fn control_boundary_precedes_prepared_network_publication() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
@@ -1424,7 +1466,7 @@ fn rx_is_serviced_before_tx_when_both_irqs_are_ready() {
 }
 
 #[test]
-fn staging_backpressure_gates_new_rx_edges_but_not_tx_completion() {
+fn critical_admission_block_gates_new_rx_edges_but_not_tx_completion() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
     let (mut device, network) = split_network!(resources, pool);

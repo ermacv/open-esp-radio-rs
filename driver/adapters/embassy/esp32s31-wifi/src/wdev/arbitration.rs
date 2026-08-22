@@ -72,13 +72,21 @@ where
                 stopping = true;
             }
             if stopping {
+                // An error returned from RX-during-TX retains the exact live
+                // transaction. Resume it to its terminal IRQ/deadline edge
+                // before asking either paired role to acquire physical TX
+                // for shutdown control.
+                if self.active_tx_interface.is_some() {
+                    self.drive_active_tx_for_stop().await?;
+                    continue;
+                }
                 self.services.cancel_prepared_tx()?;
                 self.prepared_tx_interface = None;
                 match self.services.service_stop()? {
                     WdevStopProgress::More => continue,
                     WdevStopProgress::TxPending => {
                         self.active_tx_interface = Some(self.reported_active_tx_interface());
-                        self.drive_active_tx().await?;
+                        self.drive_active_tx(false).await?;
                         continue;
                     }
                     WdevStopProgress::Stopped => {
@@ -98,7 +106,7 @@ where
                 WdevControlProgress::More => continue,
                 WdevControlProgress::TxPending => {
                     self.active_tx_interface = Some(self.reported_active_tx_interface());
-                    self.drive_active_tx().await?;
+                    self.drive_active_tx(true).await?;
                     continue;
                 }
                 WdevControlProgress::Exit(exit) => {
@@ -130,7 +138,10 @@ where
             // reposted RX signal remains pending for the following boundary.
             let rx_can_run = matches!(
                 self.rx_progress,
-                WdevRxProgress::Drained | WdevRxProgress::ProbePending
+                WdevRxProgress::Drained
+                    | WdevRxProgress::ProbePending
+                    | WdevRxProgress::BudgetExhausted
+                    | WdevRxProgress::UpperLayerBlockedButDroppable
             );
             if rx_can_run
                 && self.irq.rx_signaled()
@@ -179,13 +190,19 @@ where
                         }
                         let admitted = self.services.prepared_tx_frame_count().max(1);
                         self.account_tx_frames(admitted);
+                        self.account_pair_tx_frames(interface, admitted);
                         let network_tx = self.tx_consumer_for(interface);
                         let progress = self.services.start_prepared_tx(&network_tx).await?;
                         self.prepared_tx_interface =
                             self.services.has_prepared_tx().then_some(interface);
                         if progress == WifiTxProgress::Pending {
                             self.active_tx_interface = Some(interface);
-                            self.drive_active_tx().await?;
+                            // A retained standby already consumed this role's
+                            // look-ahead allowance.  Do not prepare a second
+                            // standby while it runs: the following boundary
+                            // must return the physical owner to paired control
+                            // and the peer VIF.
+                            self.drive_active_tx(false).await?;
                         }
                         continue;
                     }
@@ -194,12 +211,14 @@ where
                         continue;
                     };
                     let interface = self.tx_interface_for(&frame);
-                    self.account_tx_frames(1);
                     let network_tx = self.tx_consumer_for(interface);
                     let progress = self.services.start_tx(frame, &network_tx).await?;
+                    let admitted = self.services.last_started_tx_frame_count().max(1);
+                    self.account_tx_frames(admitted);
+                    self.account_pair_tx_frames(interface, admitted);
                     if progress == WifiTxProgress::Pending {
                         self.active_tx_interface = Some(interface);
-                        self.drive_active_tx().await?;
+                        self.drive_active_tx(true).await?;
                     }
                     continue;
                 }
@@ -212,7 +231,7 @@ where
             let network_rx = &mut self.network_rx;
             let wait_rx = async move {
                 match rx_progress {
-                    WdevRxProgress::StagingBackpressured => irq.wait_rx_capacity().await,
+                    WdevRxProgress::CriticalAdmissionBlocked => irq.wait_rx_capacity().await,
                     // Network ownership can remain unavailable for multiple
                     // milliseconds. RX DMA is an independent lower frontier:
                     // wake on either capacity or a new completion so a role
@@ -225,7 +244,10 @@ where
                         )
                         .await;
                     }
-                    WdevRxProgress::Drained | WdevRxProgress::ProbePending => irq.wait_rx().await,
+                    WdevRxProgress::Drained
+                    | WdevRxProgress::ProbePending
+                    | WdevRxProgress::BudgetExhausted
+                    | WdevRxProgress::UpperLayerBlockedButDroppable => irq.wait_rx().await,
                 }
             };
             let network = &self.network;

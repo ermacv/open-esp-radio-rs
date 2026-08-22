@@ -21,7 +21,8 @@ use open_esp_radio_ieee80211::station_power_save::{StaNullDataFrame, StaPowerMan
 use open_esp_radio_wifi_softmac::{MacTxPlan, MacTxQueueState};
 
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{
-    OrdinaryTxError, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE, TX_METADATA_SIZE,
+    OrdinaryTxError, OrdinaryTxOwner, OrdinaryTxParked, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
+    TX_METADATA_SIZE,
 };
 pub use open_esp_radio_esp32s31_wifi::ordinary_tx::{
     OrdinaryTxOutcome as SingleMpduTxOutcome, OrdinaryTxReport as SingleMpduTxReport,
@@ -121,6 +122,12 @@ pub struct Esp32s31SingleMpduTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
     config: SingleMpduTxConfig,
 }
 
+/// Opaque station-local state retained while another VIF owns physical TX.
+pub struct Esp32s31SingleMpduTxParked {
+    ordinary: OrdinaryTxParked,
+    handoff: ConnectedTxHandoff,
+}
+
 impl<'slot, P, E, T, const BUFFER_SIZE: usize> Esp32s31SingleMpduTx<'slot, P, E, T, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
@@ -138,6 +145,26 @@ where
         } = handoff;
         Self {
             ordinary: OrdinaryTxOwner::new(resources),
+            key,
+            sequences,
+            config,
+        }
+    }
+
+    /// Resume from the exact opaque station state produced by
+    /// [`Self::try_park`].
+    pub fn resume(
+        resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
+        parked: Esp32s31SingleMpduTxParked,
+    ) -> Self {
+        let Esp32s31SingleMpduTxParked { ordinary, handoff } = parked;
+        let ConnectedTxHandoff {
+            key,
+            sequences,
+            config,
+        } = handoff;
+        Self {
+            ordinary: OrdinaryTxOwner::resume(resources, ordinary),
             key,
             sequences,
             config,
@@ -253,6 +280,45 @@ where
                     key,
                     sequences,
                     config,
+                },
+            )),
+            Err(ordinary) => Err(Self {
+                ordinary,
+                key,
+                sequences,
+                config,
+            }),
+        }
+    }
+
+    /// Separate idle physical resources from opaque station-local callback,
+    /// key and sequence state without losing a terminal TX observation.
+    #[allow(clippy::result_large_err)]
+    pub fn try_park(
+        self,
+    ) -> Result<
+        (
+            WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
+            Esp32s31SingleMpduTxParked,
+        ),
+        Self,
+    > {
+        let Self {
+            ordinary,
+            key,
+            sequences,
+            config,
+        } = self;
+        match ordinary.try_park() {
+            Ok((resources, ordinary)) => Ok((
+                resources,
+                Esp32s31SingleMpduTxParked {
+                    ordinary,
+                    handoff: ConnectedTxHandoff {
+                        key,
+                        sequences,
+                        config,
+                    },
                 },
             )),
             Err(ordinary) => Err(Self {

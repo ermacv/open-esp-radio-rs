@@ -303,13 +303,13 @@ pub struct RxBlockAckSessions<const PEER_CAPACITY: usize = 1> {
 }
 
 impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         assert!(
             PEER_CAPACITY != 0,
             "RX BlockAck peer table must not be empty"
         );
         assert!(
-            PEER_CAPACITY <= usize::from(u8::MAX),
+            PEER_CAPACITY <= u8::MAX as usize,
             "RX BlockAck peer index must fit its compact owner"
         );
         Self {
@@ -328,7 +328,7 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
     /// The composition layer uses this when its independent staging pool must
     /// retain credits beyond the negotiated reorder window. Hardware still
     /// receives its separately qualified 64-entry agreement geometry.
-    pub fn with_maximum_window(maximum_window: u16) -> Result<Self, RxBlockAckSessionsError> {
+    pub const fn with_maximum_window(maximum_window: u16) -> Result<Self, RxBlockAckSessionsError> {
         if maximum_window == 0 || maximum_window > RX_BLOCK_ACK_MAX_WINDOW {
             return Err(RxBlockAckSessionsError::InvalidWindow(maximum_window));
         }

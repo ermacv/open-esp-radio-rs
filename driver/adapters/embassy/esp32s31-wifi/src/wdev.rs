@@ -815,6 +815,16 @@ pub trait WdevServices<
         >,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
 
+    /// Number of network leases claimed by the most recent successful
+    /// [`Self::start_tx`] call.
+    ///
+    /// Aggregate encoders may synchronously drain more ready leases after the
+    /// first frame is transferred by the runner. Fairness must charge every
+    /// claimed lease, not merely the explicit first argument.
+    fn last_started_tx_frame_count(&self) -> usize {
+        1
+    }
+
     /// Wait for the executor deadline of the active TX transaction.
     ///
     /// This future is created only after [`Self::start_tx`] returned
@@ -908,6 +918,11 @@ pub struct WdevRunner<
     /// transactions so a large aggregate cannot erase the RX credit it
     /// consumed merely because the old unsigned counter saturated at zero.
     rx_frame_deficit: i64,
+    /// Relative network frames admitted for each VIF while both members of a
+    /// pair are backlogged. Selection follows the smaller total, so unequal
+    /// aggregate sizes do not turn transaction round-robin into airtime-sized
+    /// starvation. The counters reset whenever only one VIF is runnable.
+    pair_tx_served_frames: [u64; 2],
 }
 
 mod arbitration;

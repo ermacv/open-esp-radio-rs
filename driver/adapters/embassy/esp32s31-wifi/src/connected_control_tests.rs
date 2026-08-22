@@ -861,7 +861,7 @@ fn station_shutdown_preserves_access_point_rx_block_ack_banks() {
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
     control
-        .rx_block_ack
+        .rx_block_ack()
         .offer(RxBlockAckRequest {
             interface: MacInterface::AccessPoint,
             peer: [0x30, 0x31, 0x32, 0x33, 0x34, 0x35],
@@ -873,9 +873,9 @@ fn station_shutdown_preserves_access_point_rx_block_ack_banks() {
             starting_sequence: 7,
         })
         .unwrap();
-    let activation = control.rx_block_ack.begin_pending().unwrap().unwrap();
+    let activation = control.rx_block_ack().begin_pending().unwrap().unwrap();
     let ap_agreement = activation.negotiated();
-    control.rx_block_ack.commit(activation).unwrap();
+    control.rx_block_ack().commit(activation).unwrap();
 
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();

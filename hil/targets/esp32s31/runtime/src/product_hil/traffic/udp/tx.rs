@@ -32,6 +32,7 @@ pub(in crate::product_hil) struct UdpTxSessionSource {
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
+    pub network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface,
     pub source_port: u16,
     pub queue_depth: usize,
     pub payload_capacity: usize,
@@ -65,6 +66,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         0,
         0,
         HilEvent::ServiceReady(ServiceInfo {
+            network_interface: config.network_interface,
             transport: HilTransport::Udp,
             direction: HilDirection::Tx,
             local_port: config.source_port,

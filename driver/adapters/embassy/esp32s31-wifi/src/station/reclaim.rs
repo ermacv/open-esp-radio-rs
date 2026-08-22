@@ -295,7 +295,7 @@ pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
         Esp32s31StationServicePhase::InitialJoin { station, .. }
         | Esp32s31StationServicePhase::RunningScan { station, .. }
         | Esp32s31StationServicePhase::Reconnected { station, .. } => {
-            match WifiChannel::mhz20(station.access_point.channel) {
+            match station.selected_channel() {
                 Ok(channel) => Some(channel),
                 Err(error) => {
                     return Err(Esp32s31StationPhaseReclaimFailure {

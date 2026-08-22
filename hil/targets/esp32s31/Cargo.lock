@@ -1320,6 +1320,7 @@ dependencies = [
  "log",
  "open-esp-radio",
  "open-esp-radio-embassy-net",
+ "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-embassy",
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "open-esp-radio-wifi-embassy",

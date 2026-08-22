@@ -424,17 +424,6 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
         self.live = false;
         self.index
     }
-
-    fn requeue(mut self) -> u8 {
-        self.slot.claim(
-            self.index,
-            SLOT_RADIO,
-            SLOT_READY,
-            "only the live radio lease may requeue a pinned TX slot",
-        );
-        self.live = false;
-        self.index
-    }
 }
 
 // SAFETY: this non-Clone lease retains a separately pinned pool slot in the
@@ -460,24 +449,11 @@ pub trait IndexedStableDmaLease: StableDmaBacking {
     fn release_index(self) -> u8;
 }
 
-/// Stable lease which can return an unmodified radio claim to its ready queue.
-pub trait RequeueStableDmaLease: IndexedStableDmaLease {
-    fn requeue_index(self) -> u8;
-}
-
 impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> IndexedStableDmaLease
     for PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>
 {
     fn release_index(self) -> u8 {
         self.release()
-    }
-}
-
-impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> RequeueStableDmaLease
-    for PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>
-{
-    fn requeue_index(self) -> u8 {
-        self.requeue()
     }
 }
 
@@ -515,14 +491,6 @@ impl<T, B> TaggedStableDmaBacking<T, B> {
     }
 }
 
-impl<T: Copy, B: RequeueStableDmaLease, R: DmaIndexReturn>
-    TaggedStableDmaBacking<T, ReturningStableDmaBacking<B, R>>
-{
-    pub fn take_requeued_parts(self) -> (T, u8) {
-        (self.tag, self.backing.take_requeued_index())
-    }
-}
-
 impl<T, B> Deref for TaggedStableDmaBacking<T, B> {
     type Target = B;
 
@@ -555,23 +523,6 @@ impl<B: IndexedStableDmaLease, R: DmaIndexReturn> ReturningStableDmaBacking<B, R
             backing: Some(backing),
             returner,
         }
-    }
-
-    /// Return an unmodified radio claim to its producer without publishing
-    /// its index through the normal free-slot capability.
-    ///
-    /// This is used by a queue owner which immediately republishes the same
-    /// index to a different owned queue. Taking the backing first makes the
-    /// wrapper's `Drop` implementation a no-op, so the index cannot be
-    /// returned twice.
-    pub fn take_requeued_index(mut self) -> u8
-    where
-        B: RequeueStableDmaLease,
-    {
-        self.backing
-            .take()
-            .expect("returning DMA backing remains live until requeue")
-            .requeue_index()
     }
 }
 
@@ -685,27 +636,6 @@ mod tests {
         assert_eq!(returned.get(), None);
         drop(backing);
         assert_eq!(returned.get(), Some(0));
-        assert_eq!(pool.claim_network(0).release(), 0);
-    }
-
-    #[test]
-    fn tagged_requeue_preserves_metadata_without_free_queue_publication() {
-        let pool = TestPool::new();
-        let returned = Cell::new(None);
-        let backing = ReturningStableDmaBacking::new(
-            prepared_radio(&pool),
-            ReturnProbe {
-                pool: &pool,
-                returned: &returned,
-            },
-        );
-        let tagged = TaggedStableDmaBacking::new(7_u8, backing);
-
-        let (tag, index) = tagged.take_requeued_parts();
-        assert_eq!((tag, index), (7, 0));
-        assert_eq!(returned.get(), None);
-        assert_eq!(pool.slots[0].state.load(Ordering::Acquire), SLOT_READY);
-        drop(pool.claim_radio(index));
         assert_eq!(pool.claim_network(0).release(), 0);
     }
 

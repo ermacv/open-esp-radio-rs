@@ -11,8 +11,9 @@ use core::{future::Future, marker::PhantomData};
 
 use open_esp_radio_esp32s31_wifi_mac::tx::TxCompletion;
 use open_esp_radio_ieee80211::{
+    channel::{WifiChannel, WifiChannelError, WifiChannelWidth},
     scan::ScanRecord,
-    station::{StaAssociationPreference, StaTxSequenceCounters},
+    station::{StaAssociationPreference, StaTxSequenceCounters, select_sta_association},
 };
 use open_esp_radio_wifi_sta::{
     join::{StaAssociationSuccess, StaAuthenticationSuccess},
@@ -33,6 +34,22 @@ pub struct Esp32s31StaAttemptStation {
     pub station_address: [u8; 6],
     pub access_point: ScanRecord,
     pub association_preference: StaAssociationPreference,
+}
+
+impl Esp32s31StaAttemptStation {
+    /// Exact portable channel selected by the same policy that programs the
+    /// ESP32-S31 PHY. Reclaim and paired-role composition must preserve this
+    /// width instead of manufacturing a 20-MHz role context from the primary
+    /// channel number alone.
+    pub fn selected_channel(&self) -> Result<WifiChannel, WifiChannelError> {
+        let selection = select_sta_association(&self.access_point, self.association_preference);
+        let width = match selection.cbw {
+            2 => WifiChannelWidth::Mhz40Above,
+            3 => WifiChannelWidth::Mhz40Below,
+            _ => WifiChannelWidth::Mhz20,
+        };
+        WifiChannel::new_2_4_ghz(selection.primary_channel, width)
+    }
 }
 
 /// Station identity and association policy before candidate selection.
@@ -702,6 +719,27 @@ mod tests {
         Esp32s31StaAttemptStage::Wpa2KeyInstall,
         Esp32s31StaAttemptStage::ConnectedEntry,
     ];
+
+    #[test]
+    fn selected_channel_preserves_negotiated_ht40_geometry() {
+        let mut access_point = ScanRecord {
+            channel: 6,
+            ht_capability_ie_present: true,
+            ht_operation_ie_present: true,
+            ..ScanRecord::EMPTY
+        };
+        access_point.ht_capability_ie[0..4].copy_from_slice(&[45, 26, 0x02, 0]);
+        access_point.ht_operation_ie[0..4].copy_from_slice(&[61, 22, 6, 0x05]);
+        let station = Esp32s31StaAttemptStation {
+            station_address: [0; 6],
+            access_point,
+            association_preference: StaAssociationPreference::Automatic,
+        };
+        assert_eq!(
+            station.selected_channel(),
+            WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above)
+        );
+    }
 
     #[test]
     fn complete_attempt_orders_every_phase_once() {

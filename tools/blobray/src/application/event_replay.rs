@@ -146,7 +146,7 @@ enum ReplayExpectation {
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct ReplayCall {
     symbol: String,
-    returns: Vec<u32>,
+    returns: Vec<ReplayValue>,
 }
 
 pub(crate) fn execute(
@@ -247,6 +247,9 @@ pub(crate) fn execute(
             scenario.call_responses.insert(
                 call.symbol,
                 call.returns
+                    .iter()
+                    .map(|value| value.resolve(&image))
+                    .collect::<Result<Vec<_>>>()?
                     .into_iter()
                     .map(execution::ModeledCallResponse::scalar)
                     .collect(),
@@ -637,4 +640,32 @@ fn validate_tables(
         workspace.validate_table_instance(table)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ReplayManifest, ReplayValue};
+
+    #[test]
+    fn modeled_call_return_may_reference_a_linked_symbol() {
+        let manifest: ReplayManifest = toml_edit::de::from_str(
+            r#"
+schema = 2
+
+[[phases]]
+name = "symbolic-return"
+symbol = "entry"
+
+[[phases.calls]]
+symbol = "allocate"
+returns = [{ symbol = "fixture", offset = 4 }]
+"#,
+        )
+        .expect("symbolic modeled-call return must deserialize");
+
+        assert!(matches!(
+            manifest.phases[0].calls[0].returns.as_slice(),
+            [ReplayValue::Symbol { symbol, offset: 4 }] if symbol == "fixture"
+        ));
+    }
 }

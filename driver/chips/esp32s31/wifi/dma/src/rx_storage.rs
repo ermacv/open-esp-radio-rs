@@ -86,6 +86,17 @@ pub enum RxDmaStorageError {
     AddressWidth,
 }
 
+/// First immutable DMA-address binding that no longer matches its arena.
+///
+/// This is fault evidence only. It exposes neither descriptor mutation nor a
+/// way to repair a live ring after adjacent memory corruption.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxBufferAddressMismatch {
+    pub index: usize,
+    pub expected: u32,
+    pub observed: u32,
+}
+
 /// Read authority for one completed descriptor and its matching DMA buffer.
 ///
 /// The token retains the unique mutable borrow of the live ring. Consequently
@@ -552,6 +563,50 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ))
     }
 
+    /// Copy bytes from the first descriptor of the first complete unit without
+    /// transferring descriptor ownership.
+    ///
+    /// This is a deliberately narrow admission-preview boundary. The ordered
+    /// LAST/NEXT cursor proves that the first unit is complete, while copying
+    /// values into caller-owned storage prevents a DMA buffer reference from
+    /// escaping or surviving recycle. The operation neither marks the unit as
+    /// observed nor changes the live ring generation.
+    #[allow(
+        unsafe_code,
+        reason = "the frozen completed-unit frontier proves temporary CPU read ownership"
+    )]
+    pub fn copy_first_completed_unit_bytes_through_cursor(
+        &self,
+        ring: &RxRingLive<'_, COUNT>,
+        last_descriptor_low: u32,
+        next_descriptor_low: u32,
+        offset: usize,
+        output: &mut [u8],
+    ) -> Result<bool, RxRingError> {
+        self.validate_live_ring(ring)?;
+        let frontier = ring.first_completed_unit_frontier_through_cursor_with(
+            last_descriptor_low,
+            next_descriptor_low,
+            |index| self.buffers[index].leading_guard_overwritten(),
+        );
+        if frontier.unit_count == 0 {
+            return Ok(false);
+        }
+        let index = ring.recycle_start();
+        let available = crate::descriptor::length(ring.descriptors()[index].word0()) as usize;
+        let Some(end) = offset
+            .checked_add(output.len())
+            .filter(|end| *end <= available)
+        else {
+            return Ok(false);
+        };
+        // SAFETY: the frozen cursor and terminal unit frontier establish that
+        // DMA has released this descriptor. Only values are copied, and the
+        // immutable view ends before this function returns.
+        output.copy_from_slice(unsafe { &self.buffers[index].completed()[offset..end] });
+        Ok(true)
+    }
+
     pub fn take_completed_unit<'owner, 'ring>(
         &'owner self,
         ring: &'owner mut RxRingLive<'ring, COUNT>,
@@ -620,7 +675,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         buffer_addresses: &[u32; COUNT],
     ) -> Result<(), RxRingError> {
         if !core::ptr::eq(descriptors, &self.descriptors) {
-            return Err(RxRingError::Address);
+            return Err(RxRingError::DescriptorOwnerAddress);
         }
         self.validate_descriptor_base(descriptor_base)?;
         self.validate_buffer_addresses(buffer_addresses)
@@ -631,7 +686,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         if u32::try_from(self.descriptors.as_ptr().addr()).map_err(|_| RxRingError::Address)?
             != descriptor_base
         {
-            return Err(RxRingError::Address);
+            return Err(RxRingError::DescriptorBaseAddress);
         }
         #[cfg(not(target_pointer_width = "32"))]
         let _ = descriptor_base;
@@ -646,14 +701,37 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         // addresses and a mock that never touches host memory; descriptor
         // identity remains checked by `validate_ring_layout` there.
         #[cfg(target_pointer_width = "32")]
-        for (buffer, &address) in self.buffers.iter().zip(buffer_addresses) {
+        for (index, (buffer, &address)) in self.buffers.iter().zip(buffer_addresses).enumerate() {
             if buffer.dma_address().map_err(|_| RxRingError::Address)? != address {
-                return Err(RxRingError::Address);
+                return Err(if index + 1 == COUNT {
+                    RxRingError::TailBufferAddress
+                } else {
+                    RxRingError::BufferAddress
+                });
             }
         }
         #[cfg(not(target_pointer_width = "32"))]
         let _ = buffer_addresses;
         Ok(())
+    }
+
+    /// Report the first changed address-table entry without changing the
+    /// fail-closed ring state.
+    pub fn first_buffer_address_mismatch(
+        &self,
+        buffer_addresses: &[u32; COUNT],
+    ) -> Option<RxBufferAddressMismatch> {
+        for (index, (buffer, &observed)) in self.buffers.iter().zip(buffer_addresses).enumerate() {
+            let expected = buffer.dma_address().ok()?;
+            if expected != observed {
+                return Some(RxBufferAddressMismatch {
+                    index,
+                    expected,
+                    observed,
+                });
+            }
+        }
+        None
     }
 }
 

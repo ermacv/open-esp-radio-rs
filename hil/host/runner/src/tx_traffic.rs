@@ -53,6 +53,9 @@ pub(crate) struct Burst {
     pub(crate) datagrams: u64,
     pub(crate) missing: u64,
     pub(crate) reordered: u64,
+    pub(crate) first_reordered_after: Option<u32>,
+    pub(crate) first_reordered_sequence: Option<u32>,
+    pub(crate) maximum_reorder_distance: u32,
     pub(crate) duplicates: u64,
     pub(crate) elapsed_us: u64,
     pub(crate) started_at_zero: bool,
@@ -118,6 +121,14 @@ impl ActiveBurst {
             self.evidence.duplicates = self.evidence.duplicates.saturating_add(1);
         } else if sequence < self.highest_sequence {
             self.evidence.reordered = self.evidence.reordered.saturating_add(1);
+            if self.evidence.first_reordered_sequence.is_none() {
+                self.evidence.first_reordered_after = Some(self.highest_sequence);
+                self.evidence.first_reordered_sequence = Some(sequence);
+            }
+            self.evidence.maximum_reorder_distance = self
+                .evidence
+                .maximum_reorder_distance
+                .max(self.highest_sequence - sequence);
         }
         self.lowest_sequence = self.lowest_sequence.min(sequence);
         self.highest_sequence = self.highest_sequence.max(sequence);
@@ -218,6 +229,7 @@ pub(crate) fn run(
     };
 
     let session = match capture.start_session(SessionConfig {
+        network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
         direction: Direction::Tx,
         completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),

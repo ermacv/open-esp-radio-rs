@@ -296,6 +296,20 @@ impl<'pool, H, PhysicalTx, const CAPACITY: usize, const SLOTS: usize>
         Ok(crate::sta_ap::Esp32s31RoutedRxDisposition::Processed)
     }
 
+    fn service_access_point_rx_during_tx(
+        &mut self,
+        frame: crate::connected_rx_protocol::Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
+    ) -> Result<
+        crate::sta_ap::Esp32s31RoutedRxDisposition<
+            crate::connected_rx_protocol::Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
+        >,
+        Self::Error,
+    > {
+        self.frames += 1;
+        drop(frame);
+        Ok(crate::sta_ap::Esp32s31RoutedRxDisposition::Processed)
+    }
+
     fn has_pending_rx(&self) -> bool {
         false
     }
@@ -703,7 +717,7 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::ProbePending),
+        Ok(WdevRxProgress::CriticalAdmissionBlocked),
     );
     assert_eq!(pool.claimed_slots(), 1);
     assert_eq!(pool.network_slots(), 1);
@@ -1032,7 +1046,7 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::ProbePending),
+        Ok(WdevRxProgress::BudgetExhausted),
     );
     assert_eq!(service.report().completed_descriptors, 32);
     assert_eq!(service.report().recycled_descriptors, 32);
@@ -1046,6 +1060,131 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
+}
+
+#[test]
+fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical_credit() {
+    const COUNT: usize = 40;
+    const COMPLETED: usize = 34;
+    const FRAME_LENGTH: usize = PUBLIC_HEADER_SIZE + 24;
+    const STAGED: usize = VENDOR_LARGE_RX_SLOT_COUNT - 1;
+
+    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    for index in 0..COMPLETED {
+        storage.buffer_mut(index).unwrap()[PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + 2]
+            .copy_from_slice(&0x4008_u16.to_le_bytes());
+    }
+    let addresses = core::array::from_fn(|index| 0x2f00_2000 + index as u32 * 0x1200);
+    let mut hardware = MockRxDma::default();
+    let stopped = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &addresses,
+        ESP32S31_RX_BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
+    for index in 0..COMPLETED {
+        storage.descriptors()[index].write_word0(
+            ESP32S31_RX_BUFFER_SIZE as u32
+                | ((FRAME_LENGTH as u32) << LENGTH_SHIFT)
+                | BIT_30
+                | BIT_31,
+        );
+    }
+    hardware.release_through(COMPLETED - 1, Some(COMPLETED));
+
+    let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, ESP32S31_RX_BUFFER_SIZE>::new();
+    let queue = Esp32s31StagedRxQueue::<
+        NoopRawMutex,
+        VENDOR_LARGE_RX_SLOT_COUNT,
+        ESP32S31_RX_BUFFER_SIZE,
+        VENDOR_LARGE_RX_SLOT_COUNT,
+    >::new();
+    let (sender, receiver) = queue.split();
+    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
+
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::BudgetExhausted),
+    );
+    assert_eq!(pool.claimed_slots(), STAGED as u32);
+    assert_eq!(service.report().overload_discarded_units, 1);
+    assert_eq!(service.report().overload_recycled_descriptors, 1);
+    assert_eq!(service.report().overload_standalone_units, 1);
+    assert_eq!(service.report().critical_reserve_admissions, 0);
+    assert_eq!(service.report().critical_admission_blocked, 0);
+    assert_eq!(service.report().minimum_pool_credits, Some(1));
+    assert_eq!(service.report().minimum_queue_credits, Some(1));
+
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::ProbePending),
+    );
+    assert_eq!(service.report().overload_discarded_units, 3);
+    assert_eq!(service.report().overload_recycled_descriptors, 3);
+    assert_eq!(service.ring().recycle_start(), COMPLETED);
+    assert_eq!(pool.available_slots(), 1);
+
+    for _ in 0..STAGED {
+        drop(receiver.try_receive().expect("ordinary staged bulk frame"));
+    }
+    assert_eq!(pool.claimed_slots(), 0);
+}
+
+#[test]
+fn critical_frame_consumes_the_reserved_final_staging_credit() {
+    const COUNT: usize = VENDOR_LARGE_RX_SLOT_COUNT;
+    const FRAME_LENGTH: usize = PUBLIC_HEADER_SIZE + 24;
+    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    for index in 0..COUNT {
+        let frame_control: u16 = if index + 1 == COUNT { 0x0000 } else { 0x4008 };
+        storage.buffer_mut(index).unwrap()[PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + 2]
+            .copy_from_slice(&frame_control.to_le_bytes());
+    }
+    let addresses = core::array::from_fn(|index| 0x2f00_2000 + index as u32 * 0x1200);
+    let mut hardware = MockRxDma::default();
+    let stopped = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &addresses,
+        ESP32S31_RX_BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
+    for index in 0..COUNT {
+        storage.descriptors()[index].write_word0(
+            ESP32S31_RX_BUFFER_SIZE as u32
+                | ((FRAME_LENGTH as u32) << LENGTH_SHIFT)
+                | BIT_30
+                | BIT_31,
+        );
+    }
+    hardware.release_through(COUNT - 1, None);
+    let pool = RxStagePool::<COUNT, ESP32S31_RX_BUFFER_SIZE>::new();
+    let queue = Esp32s31StagedRxQueue::<NoopRawMutex, COUNT, ESP32S31_RX_BUFFER_SIZE, COUNT>::new();
+    let (sender, _receiver) = queue.split();
+    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
+
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::ProbePending),
+    );
+    assert_eq!(pool.claimed_slots(), COUNT as u32);
+    assert_eq!(service.report().critical_reserve_admissions, 1);
+    assert_eq!(service.report().overload_discarded_units, 0);
+    assert_eq!(service.report().minimum_pool_credits, Some(0));
+    assert_eq!(service.report().minimum_queue_credits, Some(0));
 }
 
 #[test]
@@ -1169,7 +1308,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::ProbePending),
+        Ok(WdevRxProgress::Drained),
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1219,7 +1358,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WdevRxProgress::ProbePending),
     );
-    assert_eq!(service.ring().recycle_start(), 1);
+    assert_eq!(service.ring().recycle_start(), 0);
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
     assert_eq!(pool.claimed_slots(), 0);
@@ -1231,7 +1370,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::ProbePending),
+        Ok(WdevRxProgress::Drained),
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1304,16 +1443,6 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WdevRxProgress::ProbePending),
     );
-    assert_eq!(admission.0.load(Ordering::Acquire), 2);
-    assert!(matches!(
-        receiver.try_receive(),
-        Err(TryReceiveError::Empty)
-    ));
-
-    assert_eq!(
-        embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::ProbePending),
-    );
     assert_eq!(admission.0.load(Ordering::Acquire), 3);
     assert_eq!(
         receiver
@@ -1322,6 +1451,16 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
             .length(),
         4
     );
+
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::Drained),
+    );
+    assert_eq!(admission.0.load(Ordering::Acquire), 3);
+    assert!(matches!(
+        receiver.try_receive(),
+        Err(TryReceiveError::Empty)
+    ));
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1377,7 +1516,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::ProbePending),
+        Ok(WdevRxProgress::Drained),
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),

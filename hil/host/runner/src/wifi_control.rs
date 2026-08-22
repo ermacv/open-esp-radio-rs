@@ -8,7 +8,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    WifiMonitorRequest, WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    WifiMonitorRequest, WifiNetworkInterface, WifiRole, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
 };
 
 use crate::{
@@ -30,6 +31,7 @@ enum Operation {
     Scan,
     Monitor,
     AccessPoint,
+    StationAccessPoint,
     Roundtrip,
 }
 
@@ -41,6 +43,7 @@ impl Operation {
             "scan" => Ok(Self::Scan),
             "monitor" => Ok(Self::Monitor),
             "ap" => Ok(Self::AccessPoint),
+            "sta-ap" => Ok(Self::StationAccessPoint),
             "roundtrip" => Ok(Self::Roundtrip),
             _ => Err(format!("unknown Wi-Fi lifecycle operation `{value}`").into()),
         }
@@ -53,6 +56,7 @@ impl Operation {
             Self::Scan => "scan",
             Self::Monitor => "monitor",
             Self::AccessPoint => "ap",
+            Self::StationAccessPoint => "sta-ap",
             Self::Roundtrip => "roundtrip",
         }
     }
@@ -146,7 +150,7 @@ fn qualify(
             return Err(format!("access point returned inconsistent evidence: {stopped:?}").into());
         }
         println!(
-            "wifi_ap_generation={} channel={} bandwidth_mhz={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} auth_timeouts={} wpa2_windows={} wpa2_pending_on_stop={} wpa2_retries={} wpa2_failures={} wpa2_timeouts={} inactivity_timeouts={} disassoc_prepared={} disassoc_published={} disassoc_acked={} deauth_prepared={} deauth_published={} deauth_acked={} rx_units={} rx_descriptors={} recycled_rx_descriptors={} retained_rx_descriptors={} hardware_buffer_full={} hardware_fifo_overflow={} discarded_rx_units={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} data_tx_attempts={} data_tx_retried={} data_tx_max_attempts={} data_tx_min_rate_kbps={} data_tx_ack_snr={}/{}/{} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
+            "wifi_ap_generation={} channel={} bandwidth_mhz={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} auth_timeouts={} wpa2_windows={} wpa2_pending_on_stop={} wpa2_retries={} wpa2_failures={} wpa2_timeouts={} inactivity_timeouts={} disassoc_prepared={} disassoc_published={} disassoc_acked={} deauth_prepared={} deauth_published={} deauth_acked={} rx_units={} rx_descriptors={} recycled_rx_descriptors={} retained_rx_descriptors={} hardware_buffer_full={} hardware_fifo_overflow={} discarded_rx_units={} overload_dropped={} critical_reserve={} critical_blocked={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} data_tx_attempts={} data_tx_retried={} data_tx_max_attempts={} data_tx_min_rate_kbps={} data_tx_ack_snr={}/{}/{} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
             stopped.generation,
             stopped.channel,
             stopped.bandwidth_mhz,
@@ -177,6 +181,9 @@ fn qualify(
             stopped.rx_hardware_buffer_full,
             stopped.rx_hardware_fifo_overflow,
             stopped.discarded_rx_units,
+            stopped.rx_overload_discarded_units,
+            stopped.rx_critical_reserve_admissions,
+            stopped.rx_critical_admission_blocked,
             stopped.ignored_rx_frames,
             stopped.control_frames_staged,
             stopped.control_frames_dropped_while_busy,
@@ -197,6 +204,67 @@ fn qualify(
         );
         start_station(capture, lab, options.timeout)?;
         report_stack(capture, options.timeout, "station-restarted")?;
+        return Ok(());
+    }
+
+    if operation == Operation::StationAccessPoint {
+        if !capabilities.features.simultaneous_station_access_point {
+            return Err("firmware does not advertise simultaneous STA+AP".into());
+        }
+        let mut access_point = lab.access_point.protocol_request()?;
+        if let Some(channel) = options.monitor_channel {
+            access_point.channel = channel;
+        }
+        let request = WifiStationAccessPointRequest {
+            station_credentials: lab.station.protocol_credentials()?,
+            access_point,
+        };
+        let started = capture.wait_wifi_role_transition(
+            capture.request_station_access_point_start(request)?,
+            options.timeout,
+        )?;
+        require_transition(started, WifiRole::Idle, WifiRole::StationAccessPoint)?;
+        let deadline = std::time::Instant::now() + options.timeout;
+        while std::time::Instant::now() < deadline {
+            let station = capture.observed_protocol_ipv4(WifiNetworkInterface::Station);
+            let access_point = capture.observed_protocol_ipv4(WifiNetworkInterface::AccessPoint);
+            if let (Some(station), Some(access_point)) = (station, access_point) {
+                println!("wifi_sta_ap_station_ipv4={station}");
+                println!("wifi_sta_ap_access_point_ipv4={access_point}");
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        if capture
+            .observed_protocol_ipv4(WifiNetworkInterface::Station)
+            .is_none()
+            || capture
+                .observed_protocol_ipv4(WifiNetworkInterface::AccessPoint)
+                .is_none()
+        {
+            return Err("paired role did not publish both network endpoints".into());
+        }
+        thread::sleep(options.monitor_duration);
+        let stopped = capture.wait_station_access_point_stop(
+            capture.request_station_access_point_stop()?,
+            options.timeout,
+        )?;
+        require_transition(
+            stopped.transition,
+            WifiRole::StationAccessPoint,
+            WifiRole::Idle,
+        )?;
+        if stopped.transition.generation != started.generation {
+            return Err("paired start/stop generations differ".into());
+        }
+        println!(
+            "wifi_sta_ap_beacons={} missed={} maximum_lateness_micros={} buffer_full={} fifo_overflow={}",
+            stopped.access_point.beacons_transmitted,
+            stopped.access_point.missed_beacon_intervals,
+            stopped.access_point.maximum_beacon_lateness_micros,
+            stopped.access_point.rx_hardware_buffer_full,
+            stopped.access_point.rx_hardware_fifo_overflow,
+        );
         return Ok(());
     }
 

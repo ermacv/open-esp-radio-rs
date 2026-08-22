@@ -62,6 +62,12 @@ impl<'storage, O> Esp32s31StaApStationRxSink<'storage, O> {
         self.failed || self.offset != self.used
     }
 
+    /// Return the role-local batch allocation and fact observer after the
+    /// paired protocol processor has stopped.
+    pub fn into_parts(self) -> (&'storage mut [u8], O) {
+        (self.storage, self.observer)
+    }
+
     fn publish_pending(
         &mut self,
         network: &mut dyn WdevNetworkRx,

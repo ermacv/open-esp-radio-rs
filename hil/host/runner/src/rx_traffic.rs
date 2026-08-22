@@ -79,6 +79,7 @@ pub(crate) fn run(
     )?;
     let duration_millis = u32::try_from(options.duration.as_millis())?;
     let session = capture.start_session(SessionConfig {
+        network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Udp,
         direction: Direction::Rx,
         completion: Completion::DurationMillis(duration_millis),

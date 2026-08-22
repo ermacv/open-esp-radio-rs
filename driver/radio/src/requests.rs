@@ -664,6 +664,10 @@ pub enum WifiServiceRequestError {
     UnexpectedTopologyRole,
     NotStandaloneMonitorTopology,
     MonitorPolicyMismatch,
+    /// The station associated on a different physical channel than the
+    /// requested same-channel SoftAP. Production does not time-slice the two
+    /// roles or silently retune an associated station.
+    StationAccessPointChannelMismatch,
 }
 
 impl fmt::Display for WifiServiceRequestError {
@@ -686,6 +690,9 @@ impl fmt::Display for WifiServiceRequestError {
             }
             Self::MonitorPolicyMismatch => {
                 "monitor runtime policy differs from the checked monitor topology"
+            }
+            Self::StationAccessPointChannelMismatch => {
+                "station association channel differs from the requested access-point channel"
             }
         })
     }

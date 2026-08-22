@@ -61,7 +61,7 @@ where
         self.complete_rx_service(progress).await;
         if self.services.active_tx_interface().is_some() {
             self.active_tx_interface = Some(self.reported_active_tx_interface());
-            self.drive_active_tx().await?;
+            self.drive_active_tx(true).await?;
         }
         Ok(())
     }
@@ -85,22 +85,29 @@ where
 
     async fn complete_rx_service(&mut self, progress: WdevRxProgress) {
         self.rx_progress = progress;
-        // One service call owns exactly the completion frontier captured at
-        // its start. Yield at that hardware epoch boundary so a separate
-        // protocol task can consume staged ownership before another RX epoch.
-        yield_now().await;
-        if progress == WdevRxProgress::Drained {
+        if matches!(
+            progress,
+            WdevRxProgress::Drained | WdevRxProgress::UpperLayerBlockedButDroppable
+        ) {
             // S31 exposes a level CPU route. A completion racing the final
             // ownership probe stays latched while masked and asserts the
             // route as soon as this ordered unmask completes; adding a
             // software probe here would duplicate every idle drain edge.
             let _ = self.irq.unmask_rx_after_drain();
-        } else if progress == WdevRxProgress::ProbePending {
+        } else if matches!(
+            progress,
+            WdevRxProgress::ProbePending | WdevRxProgress::BudgetExhausted
+        ) {
             // Direct BASE publication of an exhausted list has no reload
-            // interrupt. Repost only after the cooperative boundary so the
-            // next service observes hardware after a distinct executor turn.
+            // interrupt. Repost before surrendering the executor so the next
+            // service remains runnable while another task consumes a turn.
             self.irq.notify_rx_handoff();
         }
+        // One service call owns exactly the completion frontier captured at
+        // its start. Publish the terminal IRQ ownership edge before yielding:
+        // otherwise an unrelated long executor poll can leave RX masked for
+        // milliseconds after the durable frontier was already drained.
+        yield_now().await;
     }
 
     pub(super) const fn network_turn_owed(&self) -> bool {
@@ -124,13 +131,19 @@ where
     /// network future. Without this bounded non-blocking probe, completion
     /// immediately publishes a standby batch which may contain only its first
     /// frame, even though the rest of the producer burst is already queued.
-    async fn prepare_ready_tx_before_completion(&mut self) -> Result<(), B::Error> {
-        if !self.services.can_prepare_tx() {
+    async fn prepare_ready_tx_before_completion(
+        &mut self,
+        allow_standby: bool,
+    ) -> Result<(), B::Error> {
+        if !allow_standby || !self.services.can_prepare_tx() {
             return Ok(());
         }
         let interface = self
             .active_tx_interface
             .expect("active TX preparation requires one VIF owner");
+        if self.competing_tx_pending(interface) {
+            return Ok(());
+        }
         let Some(frame) = self.network.try_receive_tx(interface) else {
             return Ok(());
         };
@@ -150,7 +163,15 @@ where
         Ok(progress)
     }
 
-    pub(super) async fn drive_active_tx(&mut self) -> Result<(), B::Error> {
+    pub(super) async fn drive_active_tx(&mut self, allow_standby: bool) -> Result<(), B::Error> {
+        // A same-channel pair must expose a finite physical ownership edge
+        // after every transaction. Both role encoders already drain all
+        // immediately queued leases into the current negotiated aggregate;
+        // retaining a second DMA arena across completion would postpone the
+        // other VIF's protocol/control work and can exhaust the shared RX
+        // staging pool. Single-VIF runners keep the throughput look-ahead.
+        let allow_standby =
+            allow_standby && matches!(self.interfaces, WdevInterfaceScope::Single(_));
         let mut progress = WifiTxProgress::Pending;
         let mut rx_producer_serviced = false;
         while progress == WifiTxProgress::Pending {
@@ -160,7 +181,8 @@ where
             // enough to release the captured RX frontier; the next latched
             // completion belongs to the active affine TX owner.
             if rx_producer_serviced && let Some(events) = self.irq.try_take_tx() {
-                self.prepare_ready_tx_before_completion().await?;
+                self.prepare_ready_tx_before_completion(allow_standby)
+                    .await?;
                 progress = self
                     .service_active_tx(WifiTxWake::Interrupt { events })
                     .await?;
@@ -170,13 +192,16 @@ where
             let irq = self.irq;
             let rx_progress = self.rx_progress;
             let service_rx_during_tx = self.services.can_service_rx_during_tx();
+            let active_tx_interface = self.active_tx_interface;
+            let competing_tx_pending =
+                active_tx_interface.is_some_and(|interface| self.competing_tx_pending(interface));
             let network_rx = &mut self.network_rx;
             let wait_rx = async move {
                 if !service_rx_during_tx {
                     pending().await
                 } else {
                     match rx_progress {
-                        WdevRxProgress::StagingBackpressured => irq.wait_rx_capacity().await,
+                        WdevRxProgress::CriticalAdmissionBlocked => irq.wait_rx_capacity().await,
                         WdevRxProgress::NetworkBackpressured => {
                             let _ = select(
                                 core::future::poll_fn(|context| network_rx.poll_any_ready(context)),
@@ -184,14 +209,15 @@ where
                             )
                             .await;
                         }
-                        WdevRxProgress::Drained | WdevRxProgress::ProbePending => {
-                            irq.wait_rx().await
-                        }
+                        WdevRxProgress::Drained
+                        | WdevRxProgress::ProbePending
+                        | WdevRxProgress::BudgetExhausted
+                        | WdevRxProgress::UpperLayerBlockedButDroppable => irq.wait_rx().await,
                     }
                 }
             };
-            let can_prepare = self.services.can_prepare_tx();
-            let active_tx_interface = self.active_tx_interface;
+            let can_prepare =
+                allow_standby && self.services.can_prepare_tx() && !competing_tx_pending;
             let wait_network = async {
                 if can_prepare {
                     let interface = active_tx_interface
@@ -214,7 +240,8 @@ where
                     rx_producer_serviced = true;
                 }
                 Either4::Second(events) => {
-                    self.prepare_ready_tx_before_completion().await?;
+                    self.prepare_ready_tx_before_completion(allow_standby)
+                        .await?;
                     progress = self
                         .service_active_tx(WifiTxWake::Interrupt { events })
                         .await?;
@@ -235,6 +262,29 @@ where
                     if self.services.has_prepared_tx() {
                         self.prepared_tx_interface = Some(interface);
                     }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Finish an already-live physical TX while rolling back a failed role.
+    ///
+    /// A protocol/DMA service error may be reported while `drive_active_tx`
+    /// still retains the affine TX owner. A subsequent stop transaction must
+    /// not attempt to activate another role first. RX remains masked and is
+    /// stopped by the outer rollback after this terminal TX edge.
+    pub(super) async fn drive_active_tx_for_stop(&mut self) -> Result<(), B::Error> {
+        let mut progress = WifiTxProgress::Pending;
+        while progress == WifiTxProgress::Pending {
+            match select(self.irq.wait_tx(), self.services.wait_tx_deadline()).await {
+                Either::First(events) => {
+                    progress = self
+                        .service_active_tx(WifiTxWake::Interrupt { events })
+                        .await?;
+                }
+                Either::Second(()) => {
+                    progress = self.service_active_tx(WifiTxWake::Deadline).await?;
                 }
             }
         }

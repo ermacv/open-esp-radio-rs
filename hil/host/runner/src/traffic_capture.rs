@@ -22,7 +22,8 @@ use open_esp_radio_hil_protocol::{
     StateChange, StationEpochEvidence, StationLifecycleEvent, TimebaseProbeEvidence,
     TimebaseProbeRequest, Transport, TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence,
     WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
-    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    WifiNetworkInterface, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -1233,6 +1234,20 @@ impl SerialCapture {
         self.request_wifi_command(Command::StopAccessPoint, "access-point stop")
     }
 
+    pub(crate) fn request_station_access_point_start(
+        &self,
+        request: open_esp_radio_hil_protocol::WifiStationAccessPointRequest,
+    ) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(
+            Command::StartStationAccessPoint(request),
+            "station-access-point start",
+        )
+    }
+
+    pub(crate) fn request_station_access_point_stop(&self) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::StopStationAccessPoint, "station-access-point stop")
+    }
+
     pub(crate) fn request_monitor_capture(
         &self,
         request: WifiMonitorCaptureRequest,
@@ -1248,12 +1263,18 @@ impl SerialCapture {
         let event = self
             .wait_for_protocol_after(handle.first_event, timeout, |message| {
                 message.request_id == handle.request_id
-                    && matches!(message.body, Event::WifiRoleTransitioned(_))
+                    && matches!(
+                        message.body,
+                        Event::WifiRoleTransitioned(_) | Event::WifiRoleFailed(_)
+                    )
             })
             .ok_or("device did not complete the Wi-Fi role transition")?;
         match event.body {
             Event::WifiRoleTransitioned(evidence) => Ok(evidence),
-            _ => unreachable!("role-transition predicate accepted only its completion event"),
+            Event::WifiRoleFailed(failure) => {
+                Err(format!("Wi-Fi role transition failed: {failure:?}").into())
+            }
+            _ => unreachable!("role-transition predicate accepted only terminal role events"),
         }
     }
 
@@ -1334,6 +1355,29 @@ impl SerialCapture {
                 Err(format!("access-point stop failed: {failure:?}").into())
             }
             _ => unreachable!("AP-stop predicate accepted only terminal AP events"),
+        }
+    }
+
+    pub(crate) fn wait_station_access_point_stop(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<open_esp_radio_hil_protocol::WifiStationAccessPointStopEvidence> {
+        let event = self
+            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(
+                        message.body,
+                        Event::WifiStationAccessPointStopped(_) | Event::WifiRoleFailed(_)
+                    )
+            })
+            .ok_or("device did not complete the station-access-point stop")?;
+        match event.body {
+            Event::WifiStationAccessPointStopped(evidence) => Ok(evidence),
+            Event::WifiRoleFailed(failure) => {
+                Err(format!("station-access-point stop failed: {failure:?}").into())
+            }
+            _ => unreachable!("paired-stop predicate accepted only terminal paired events"),
         }
     }
 
@@ -1486,7 +1530,10 @@ impl SerialCapture {
         latest_boot_id_in(&messages)
     }
 
-    pub(crate) fn observed_protocol_ipv4(&self) -> Option<Ipv4Addr> {
+    pub(crate) fn observed_protocol_ipv4(
+        &self,
+        network_interface: WifiNetworkInterface,
+    ) -> Option<Ipv4Addr> {
         let messages = self
             .protocol
             .messages
@@ -1497,7 +1544,10 @@ impl SerialCapture {
             .iter()
             .rev()
             .find_map(|message| match message.body {
-                Event::NetworkReady(network) if message.boot_id == boot_id => {
+                Event::NetworkReady(network)
+                    if message.boot_id == boot_id
+                        && network.network_interface == network_interface =>
+                {
                     Some(Ipv4Addr::from(network.address))
                 }
                 _ => None,
@@ -1522,11 +1572,22 @@ impl SerialCapture {
         }
     }
 
-    fn observed_udp_service(&self, direction: Direction, port: u16) -> bool {
-        self.observed_service(Transport::Udp, direction, port)
+    fn observed_udp_service(
+        &self,
+        network_interface: WifiNetworkInterface,
+        direction: Direction,
+        port: u16,
+    ) -> bool {
+        self.observed_service(network_interface, Transport::Udp, direction, port)
     }
 
-    fn observed_service(&self, transport: Transport, direction: Direction, port: u16) -> bool {
+    fn observed_service(
+        &self,
+        network_interface: WifiNetworkInterface,
+        transport: Transport,
+        direction: Direction,
+        port: u16,
+    ) -> bool {
         let messages = self
             .protocol
             .messages
@@ -1538,6 +1599,7 @@ impl SerialCapture {
         messages.iter().any(|message| match message.body {
             Event::ServiceReady(service) => {
                 message.boot_id == boot_id
+                    && service.network_interface == network_interface
                     && service.transport == transport
                     && service.direction == direction
                     && service.local_port == port
@@ -1828,9 +1890,13 @@ pub(crate) fn await_tcp_ready(
     }
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        let address = capture.observed_protocol_ipv4();
-        if capture.observed_service(Transport::Tcp, direction, port)
-            && let Some(address) = address
+        let address = capture.observed_protocol_ipv4(WifiNetworkInterface::Station);
+        if capture.observed_service(
+            WifiNetworkInterface::Station,
+            Transport::Tcp,
+            direction,
+            port,
+        ) && let Some(address) = address
         {
             return Ok(TcpReady { address });
         }
@@ -1852,7 +1918,7 @@ pub(crate) fn await_network_ready(
     capture.prepare_station(lab, timeout)?;
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if let Some(address) = capture.observed_protocol_ipv4() {
+        if let Some(address) = capture.observed_protocol_ipv4(WifiNetworkInterface::Station) {
             return Ok(address);
         }
         thread::sleep(Duration::from_millis(20));
@@ -1928,7 +1994,14 @@ pub(crate) fn probe_udp_rx_ready(
     port: u16,
     timeout: Duration,
 ) -> Result<UdpRxReady> {
-    probe_udp_rx_ready_via(capture, address_hint, None, port, timeout)
+    probe_udp_rx_ready_via(
+        capture,
+        WifiNetworkInterface::Station,
+        address_hint,
+        None,
+        port,
+        timeout,
+    )
 }
 
 /// Prove UDP RX readiness while an explicit routed peer owns the host path.
@@ -1939,6 +2012,7 @@ pub(crate) fn probe_udp_rx_ready(
 /// forwards traffic from the wired HIL generator to the DUT AP.
 pub(crate) fn probe_udp_rx_ready_via(
     capture: &SerialCapture,
+    network_interface: WifiNetworkInterface,
     address_hint: Ipv4Addr,
     traffic_address: Option<Ipv4Addr>,
     port: u16,
@@ -1955,7 +2029,7 @@ pub(crate) fn probe_udp_rx_ready_via(
     let deadline = Instant::now() + timeout;
 
     while Instant::now() < deadline {
-        if let Some(discovered) = capture.observed_protocol_ipv4()
+        if let Some(discovered) = capture.observed_protocol_ipv4(network_interface)
             && discovered != address
         {
             address = discovered;
@@ -1964,9 +2038,13 @@ pub(crate) fn probe_udp_rx_ready_via(
                 socket.connect(SocketAddrV4::new(connected_address, port))?;
             }
         }
-        let rx_service_ready = capture.observed_udp_service(Direction::Rx, port);
-        let tx_service_ready = capture.observed_udp_service(Direction::Tx, 4_324);
-        if !rx_service_ready || !tx_service_ready || capture.observed_protocol_ipv4().is_none() {
+        let rx_service_ready = capture.observed_udp_service(network_interface, Direction::Rx, port);
+        let tx_service_ready =
+            capture.observed_udp_service(network_interface, Direction::Tx, 4_324);
+        if !rx_service_ready
+            || !tx_service_ready
+            || capture.observed_protocol_ipv4(network_interface).is_none()
+        {
             thread::sleep(Duration::from_millis(20));
             continue;
         }
@@ -2018,10 +2096,11 @@ pub(crate) fn await_udp_tx_ready(
     }
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if capture.observed_udp_service(Direction::Tx, 4_324) {
+        if capture.observed_udp_service(WifiNetworkInterface::Station, Direction::Tx, 4_324) {
             let discovery_deadline = Instant::now() + DHCP_DISCOVERY_GRACE;
             while Instant::now() < discovery_deadline {
-                if let Some(address) = capture.observed_protocol_ipv4() {
+                if let Some(address) = capture.observed_protocol_ipv4(WifiNetworkInterface::Station)
+                {
                     return Ok(UdpTxReady { address });
                 }
                 thread::sleep(Duration::from_millis(10));
@@ -2072,6 +2151,7 @@ mod tests {
                     station_epoch_control: true,
                     wifi_role_control: true,
                     wifi_access_point: true,
+                    simultaneous_station_access_point: true,
                     wifi_monitor_capture: true,
                     station_lifecycle_events: true,
                     rx_delivery_evidence: true,

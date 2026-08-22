@@ -1,0 +1,139 @@
+# Concrete evidence for the vendor RX upper-buffer boundary. The failure
+# phase proves that allocation pressure discards/recycles the hardware frame
+# immediately. The success phase proves that the copied upper-layer buffer,
+# rather than the hardware descriptor, continues into lmacRxDone.
+schema = 2
+
+[[phases]]
+name = "allocation-failure-discards-hardware-frame"
+symbol = "wDev_IndicateFrame"
+arguments = [1, 0, { symbol = "replay_rx_descriptor" }, 1, 0]
+goal = { kind = "reach-symbol", symbol = "wDev_DiscardFrame" }
+max-steps = 256
+
+[[phases.memory]]
+symbol = "wDevCtrl"
+width = 32
+value = { symbol = "replay_rx_descriptor" }
+
+[[phases.memory]]
+symbol = "pTxRx"
+width = 32
+value = { symbol = "replay_rx_context" }
+
+[[phases.memory]]
+symbol = "replay_rx_context"
+offset = 0x40c
+width = 32
+value = 64
+
+[[phases.memory]]
+symbol = "replay_rx_descriptor"
+width = 32
+value = 0x007d4000 # 501-byte descriptor payload in bits 14..27.
+
+[[phases.calls]]
+symbol = "esf_buf_alloc"
+returns = [0]
+
+[[phases.calls]]
+symbol = "wifi_gpio_debug"
+returns = [0, 0]
+
+[[phases.expectations]]
+kind = "call"
+symbol = "esf_buf_alloc"
+count = 1
+
+[[phases.expectations]]
+kind = "call"
+symbol = "wDev_DiscardFrame"
+count = 1
+
+[[phases.expectations]]
+kind = "call"
+symbol = "lmacRxDone"
+count = 0
+
+[[phases]]
+name = "allocation-success-copies-recycles-and-publishes"
+symbol = "wDev_IndicateFrame"
+arguments = [0, 0, { symbol = "replay_rx_descriptor" }, 1, 0]
+goal = { kind = "reach-symbol", symbol = "lmacRxDone" }
+max-steps = 512
+
+[[phases.memory]]
+symbol = "wDevCtrl"
+width = 32
+value = { symbol = "replay_rx_descriptor" }
+
+[[phases.memory]]
+symbol = "pTxRx"
+width = 32
+value = { symbol = "replay_rx_context" }
+
+[[phases.memory]]
+symbol = "replay_rx_context"
+offset = 0x40c
+width = 32
+value = 64
+
+[[phases.memory]]
+symbol = "replay_rx_descriptor"
+width = 32
+value = 0x00100000 # 64-byte descriptor payload in bits 14..27.
+
+[[phases.memory]]
+symbol = "replay_rx_descriptor"
+offset = 4
+width = 32
+value = { symbol = "replay_rx_source" }
+
+[[phases.memory]]
+symbol = "replay_rx_ebuf"
+offset = 4
+width = 32
+value = { symbol = "replay_rx_ebuf_inner" }
+
+[[phases.memory]]
+symbol = "replay_rx_ebuf"
+offset = 52
+width = 32
+value = { symbol = "replay_rx_metadata" }
+
+[[phases.memory]]
+symbol = "replay_rx_ebuf_inner"
+offset = 4
+width = 32
+value = { symbol = "replay_rx_output" }
+
+[[phases.calls]]
+symbol = "esf_buf_alloc"
+returns = [{ symbol = "replay_rx_ebuf" }]
+
+[[phases.calls]]
+symbol = "get_sublen_offset"
+returns = [56]
+
+[[phases.calls]]
+symbol = "wifi_gpio_debug"
+returns = [0]
+
+[[phases.calls]]
+symbol = "wDev_DiscardFrame"
+returns = [0]
+
+[[phases.expectations]]
+kind = "call"
+symbol = "esf_buf_alloc"
+count = 1
+
+[[phases.expectations]]
+kind = "call"
+symbol = "wDev_DiscardFrame"
+count = 1
+
+[[phases.expectations]]
+kind = "call"
+symbol = "lmacRxDone"
+count = 1

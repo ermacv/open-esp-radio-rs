@@ -121,6 +121,7 @@ fn run(
     options.device = ready.address;
     reject_overlapping_ipv4_links(options.device)?;
     let session = capture.start_session(SessionConfig {
+        network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
         transport: Transport::Tcp,
         direction,
         completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),

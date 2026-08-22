@@ -402,13 +402,33 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
     .unwrap();
     tx.set_block_ack_agreement(0, Some((3, true)));
 
+    assert_eq!(
+        ConnectedControlTx::start_action(
+            &mut tx,
+            &mut hardware,
+            &[3, 0],
+            ActionTxConfig::VENDOR_MANAGEMENT,
+        ),
+        Ok(WdevControlProgress::TxPending),
+    );
+    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx);
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete),
+    );
+
     let (ordinary, aggregate, parked) = tx
         .try_park()
         .unwrap_or_else(|_| panic!("idle station TX must lend both physical owners"));
     assert_eq!(ordinary.slot.state(), TxSlotState::Free);
     assert_eq!(aggregate.primary().state(), TxSlotState::Free);
 
-    let tx = Esp32s31ConnectedTx::<
+    let mut tx = Esp32s31ConnectedTx::<
         NoopRawMutex,
         _,
         _,
@@ -423,11 +443,15 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
     >::resume(ordinary, aggregate, parked);
     assert_eq!(tx.block_ack_window(0), Some(3));
     assert!(tx.block_ack_amsdu(0));
+    assert!(matches!(
+        tx.take_last_ordinary_outcome(),
+        Some(SingleMpduTxOutcome::Success(_))
+    ));
 
     let returned = tx
         .try_into_station_parts()
         .unwrap_or_else(|_| panic!("resumed station TX remains cleanly reclaimable"));
-    assert_eq!(returned.sequences.peek_non_qos(), 7);
+    assert_eq!(returned.sequences.peek_non_qos(), 8);
     returned.pairwise_key.clear(&mut hardware);
 }
 

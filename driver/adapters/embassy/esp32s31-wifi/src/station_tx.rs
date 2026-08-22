@@ -40,8 +40,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
-    ActionTxConfig, ConnectedTxHandoff, Esp32s31SingleMpduTx, SingleMpduTxError,
-    SingleMpduTxOutcome, WifiTxResources,
+    ActionTxConfig, ConnectedTxHandoff, Esp32s31SingleMpduTx, Esp32s31SingleMpduTxParked,
+    SingleMpduTxError, SingleMpduTxOutcome, WifiTxResources,
 };
 use open_esp_radio_ieee80211::{
     data::DataHeControl,
@@ -85,7 +85,7 @@ pub struct Esp32s31ConnectedTxTeardownParts<R, A> {
 /// capability. Resuming it requires both exact physical owners returned by
 /// the other role.
 pub struct Esp32s31ConnectedTxParked<'observer, const SLOTS: usize> {
-    handoff: ConnectedTxHandoff,
+    ordinary: Esp32s31SingleMpduTxParked,
     block_ack_windows: [u8; 8],
     config: AggregateTxConfig,
     rate_control: StaRateControlAssociation,
@@ -239,10 +239,6 @@ impl<T> TeardownResource<T> {
 
     fn is_present(&self) -> bool {
         self.0.is_some()
-    }
-
-    fn restore(&mut self, resource: T) {
-        assert!(self.0.replace(resource).is_none());
     }
 }
 

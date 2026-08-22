@@ -11,8 +11,8 @@ use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, ServiceInfo,
-    SessionReady, Transport as HilTransport, TransportEvidence, fill_stream_pattern,
-    stream_pattern_matches,
+    SessionReady, Transport as HilTransport, TransportEvidence, WifiNetworkInterface,
+    fill_stream_pattern, stream_pattern_matches,
 };
 
 use crate::console::{complete_session, publish_event_reliably, runtime_log};
@@ -28,6 +28,7 @@ use super::{
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct TcpBenchmarkConfig {
+    pub network_interface: WifiNetworkInterface,
     pub local_port: u16,
     pub maximum_payload_bytes: u16,
     pub receive_buffer_capacity: usize,
@@ -74,6 +75,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             0,
             0,
             HilEvent::ServiceReady(ServiceInfo {
+                network_interface: config.network_interface,
                 transport: HilTransport::Tcp,
                 direction,
                 local_port: config.local_port,

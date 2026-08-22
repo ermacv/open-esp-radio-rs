@@ -12,7 +12,12 @@ pub enum WdevRxProgress {
     /// The durable completion frontier was drained within this pass.
     Drained,
     /// Completed descriptors remain but the role's independent staging is full.
-    StagingBackpressured,
+    CriticalAdmissionBlocked,
+    /// The finite poll budget ended with another completed DMA unit pending.
+    BudgetExhausted,
+    /// Upper staging was saturated, but bulk units were deliberately dropped
+    /// and their descriptors recycled instead of blocking hardware.
+    UpperLayerBlockedButDroppable,
     /// A decoded frame is retained while the final network RX queue is full.
     ///
     /// This is not permission to stop the independent DMA frontier: an

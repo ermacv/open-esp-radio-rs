@@ -15,19 +15,14 @@ use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio::esp32s31::wifi::mac::rx::PUBLIC_HEADER_SIZE;
 use open_esp_radio::{
-    esp32s31::wifi::{
-        mac::rx::decode_rx_phy_info,
-        sta::connected_rx::ConnectedRxEvent,
-    },
+    esp32s31::wifi::{mac::rx::decode_rx_phy_info, sta::connected_rx::ConnectedRxEvent},
     wifi::ieee80211::data::EthernetFrameParts,
 };
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_embassy_net::{FrameLengthError, RxEnqueueError};
 use open_esp_radio_esp32s31_embassy_wifi::Esp32s31ConnectedRxObserver;
 #[cfg(feature = "rx-delivery-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::{
-    RxNetworkDeliveryEvent, RxNetworkDeliveryObserver,
-};
+use open_esp_radio_esp32s31_embassy_wifi::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_esp32s31_telemetry::rx_delivery::{NetworkDropReason, RxDeliveryTracker};
 use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
@@ -162,11 +157,7 @@ impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
         };
         RX_DELIVERY.lock(|tracker| {
             if let Some(tracker) = tracker.borrow_mut().as_mut() {
-                tracker.dropped(
-                    sequence,
-                    event.raw.and_then(public_qos_sequence),
-                    reason,
-                );
+                tracker.dropped(sequence, event.raw.and_then(public_qos_sequence), reason);
             }
         });
     }

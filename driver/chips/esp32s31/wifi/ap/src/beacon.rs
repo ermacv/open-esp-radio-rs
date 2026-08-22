@@ -110,7 +110,11 @@ impl<'storage> Esp32s31ApBeacon<'storage> {
     pub const fn publication_due(&self, now_micros: u32) -> bool {
         match self.next_publication_tick {
             Some(next) => now_micros.wrapping_sub(next) < 0x8000_0000,
-            None => false,
+            // A newly started AP has no TBTT cursor until its first beacon is
+            // handed to hardware.  Treat that uninitialized epoch as due so
+            // every composition (standalone or paired VIF) establishes the
+            // same absolute schedule before it attempts to wait on it.
+            None => true,
         }
     }
 
@@ -157,6 +161,8 @@ mod tests {
             3,
         )
         .unwrap();
+        assert!(beacon.publication_due(102_400));
+        assert_eq!(beacon.next_delay(102_400), None);
         let frame = beacon.prepare(102_400, 4, true, 0x02).unwrap();
         let (offset, count, period) = dtim(frame).unwrap();
         assert_eq!((count, period), (0, 2));

@@ -1,0 +1,17 @@
+schema = 3
+id = "station-access-point-lifecycle"
+description = "One same-channel production STA+AP owner exposes both network endpoints and returns every owner on stop"
+image = "diagnostic-psram-stack"
+isolation = "reset"
+tags = ["diagnostic", "psram-stack", "wifi", "station", "access-point", "lifecycle"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "wifi-role"
+operation = "station-access-point"
+timeout_seconds = 120
+dwell_seconds = 5
+
+[criteria]

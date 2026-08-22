@@ -25,11 +25,13 @@ default `single-core` topology keeps radio, RX protocol, `embassy-net` and
 socket workloads on CPU0. `split-radio-network` retains radio and RX protocol
 on CPU0 and moves only `embassy-net` plus sockets to CPU1; it is a comparative
 last-resort optimization. Network ingress is time-bounded at 250 us and owns
-one TX credit beyond the 64 application credits, so saturated egress cannot
-prevent the RX/TX-token handoff required by `embassy-net`.
+one dedicated TX credit per permanent endpoint beyond the 64 application
+credits. Saturated egress therefore cannot prevent either STA or AP from
+receiving the paired RX/TX-token handoff required by `embassy-net`.
 
 Initialization ends at `WifiIdle`. Credentials arrive only with a STA/AP role
-request; scan and monitor do not require a temporary STA. One persistent
-`embassy-net` device follows the active role: DHCP/static STA policy is
-restored after AP, while AP uses the request's isolated static address. The
-target never owns scenario criteria, expected hashes or stored lab secrets.
+request; scan and monitor do not require a temporary STA. Permanent STA and
+AP `embassy-net` devices retain distinct IP/link/RX state while sharing one
+tagged physical TX fabric. Role transitions publish link state instead of
+reconstructing either device. The target never owns scenario criteria,
+expected hashes or stored lab secrets.

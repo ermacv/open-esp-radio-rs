@@ -376,7 +376,12 @@ mod tests {
 
     #[test]
     fn command_envelope_remains_small_enough_for_embedded_queues() {
-        assert!(core::mem::size_of::<Envelope<Command>>() <= 256);
+        let size = core::mem::size_of::<Envelope<Command>>();
+        // The largest command owns two independent WPA2 credential sets for
+        // one atomic STA+AP request. Keep the complete decoded queue element
+        // within an explicit embedded budget instead of splitting that
+        // ownership across hidden compatibility state.
+        assert!(size <= 288, "command envelope occupies {size} bytes");
     }
 
     #[test]
@@ -604,6 +609,39 @@ mod tests {
     }
 
     #[test]
+    fn station_access_point_request_round_trips_as_one_owned_command() {
+        use crate::{
+            NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest, WifiChannelWidth,
+            WifiStationAccessPointRequest,
+        };
+
+        let request = WifiStationAccessPointRequest {
+            station_credentials: NetworkCredentials::try_new(b"upstream-ap", b"upstream-password")
+                .unwrap(),
+            access_point: WifiAccessPointRequest {
+                credentials: NetworkCredentials::try_new(b"open-radio-ap", b"downstream-password")
+                    .unwrap(),
+                channel: 6,
+                channel_width: WifiChannelWidth::Mhz40Above,
+                client_limit: 1,
+                ipv4: NetworkIpv4Configuration::Static {
+                    address: [192, 168, 4, 1],
+                    prefix_length: 24,
+                    gateway: None,
+                },
+            },
+        };
+        assert_eq!(request.validate(), Ok(()));
+        let expected = Envelope::new(7, 1, 0, 3, Command::StartStationAccessPoint(request));
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn asymmetric_bidirectional_session_round_trips() {
         let expected = Envelope::new(
             7,
@@ -611,6 +649,7 @@ mod tests {
             11,
             3,
             Command::Configure(SessionConfig {
+                network_interface: crate::WifiNetworkInterface::Station,
                 transport: Transport::Udp,
                 direction: Direction::Bidirectional,
                 completion: Completion::DurationMillis(12_000),

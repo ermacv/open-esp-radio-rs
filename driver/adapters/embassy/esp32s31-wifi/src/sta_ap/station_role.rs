@@ -891,6 +891,7 @@ where
             ORDINARY_BUFFER_SIZE,
         >,
         context: WdevControlContext,
+        retain_physical_tx: bool,
     ) -> impl Future<Output = Result<WdevControlProgress<Self::Exit>, Self::Error>> + 'a {
         async move {
             if self.tx.is_parked() {
@@ -910,6 +911,7 @@ where
                 .map_err(Esp32s31StaApStationControlError::Operation);
             let tx_pending = self.tx.active().is_some_and(Esp32s31ConnectedTx::active);
             if !tx_pending
+                && !retain_physical_tx
                 && let Err(error) = self.park_tx(physical)
                 && result.is_ok()
             {
@@ -1032,6 +1034,12 @@ where
 {
     type Error = Esp32s31StaApStationTxError;
 
+    fn last_started_frame_count(&self) -> usize {
+        self.tx
+            .active()
+            .map_or(1, Esp32s31ConnectedTx::active_network_frame_count)
+    }
+
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
@@ -1073,7 +1081,11 @@ where
                 .start(hardware, frame, network)
                 .await
                 .map_err(Esp32s31StaApStationTxError::Operation)?;
-            if progress == WifiTxProgress::Complete {
+            let retained = self
+                .tx
+                .active()
+                .is_some_and(Esp32s31ConnectedTx::has_prepared_network_tx);
+            if progress == WifiTxProgress::Complete && !retained {
                 self.park_tx(physical)
                     .map_err(Esp32s31StaApStationTxError::Ownership)?;
             }
@@ -1140,7 +1152,11 @@ where
                 .service(hardware, wake)
                 .await
                 .map_err(Esp32s31StaApStationTxError::Operation)?;
-            if progress == WifiTxProgress::Complete {
+            let retained = self
+                .tx
+                .active()
+                .is_some_and(Esp32s31ConnectedTx::has_prepared_network_tx);
+            if progress == WifiTxProgress::Complete && !retained {
                 self.park_tx(physical)
                     .map_err(Esp32s31StaApStationTxError::Ownership)?;
             }
@@ -1204,7 +1220,11 @@ where
                 .start_prepared(hardware, network)
                 .await
                 .map_err(Esp32s31StaApStationTxError::Operation)?;
-            if progress == WifiTxProgress::Complete {
+            let retained = self
+                .tx
+                .active()
+                .is_some_and(Esp32s31ConnectedTx::has_prepared_network_tx);
+            if progress == WifiTxProgress::Complete && !retained {
                 self.park_tx(physical)
                     .map_err(Esp32s31StaApStationTxError::Ownership)?;
             }

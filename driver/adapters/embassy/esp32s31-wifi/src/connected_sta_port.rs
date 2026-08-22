@@ -51,6 +51,7 @@ use crate::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandReceiver, RxReorderCommandSender,
         RxReorderFrameStorage,
     },
+    sta_ap::Esp32s31StaApRxBlockAck,
     station_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
     wdev::services::WdevServiceSet,
 };

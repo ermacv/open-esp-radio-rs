@@ -155,11 +155,13 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
 
     let control_resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (_, receiver) = control_resources.split();
+    let rx_block_ack = Esp32s31StaApRxBlockAck::with_maximum_window(32).unwrap();
     let control = Esp32s31ConnectedStaPort::build_control(
         &plan,
         Esp32s31ConnectedStaControlResources {
             receiver,
             reorder_commands: reorder_sender,
+            rx_block_ack: &rx_block_ack,
         },
     );
     assert_eq!(control.rx_block_ack().maximum_window(), 32);

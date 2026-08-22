@@ -616,6 +616,10 @@ where
         }
     }
 
+    fn last_started_tx_frame_count(&self) -> usize {
+        self.network_tx.last_started_frame_count()
+    }
+
     fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
         async move {
             self.network_tx.wait_deadline(self.control).await;

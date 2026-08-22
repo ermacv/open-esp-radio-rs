@@ -4,8 +4,9 @@
 //! logical interfaces consume them. Role-local protocol state must not create
 //! another physical owner.
 
-use core::future::Future;
+use core::{cell::RefCell, future::Future};
 
+use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use embassy_sync::channel::{Channel, Receiver, Sender};
 use open_esp_radio_dma::TaggedStableDmaBacking;
 use open_esp_radio_embassy_net::{NetworkInterfaceId, PinnedRxPublisher, RawMutex};
@@ -13,7 +14,10 @@ use open_esp_radio_esp32s31_wifi_mac::MacInterface;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
     RxError, RxIngressConfig, RxSegment, view_normalized_rx_frame,
 };
-use open_esp_radio_esp32s31_wifi_mac::rx_ampdu::RxBlockAckSessions;
+use open_esp_radio_esp32s31_wifi_mac::rx_ampdu::{
+    RX_BLOCK_ACK_BANK_COUNT, RxBlockAckActivation, RxBlockAckRequest, RxBlockAckSessions,
+    RxBlockAckSessionsError, RxBlockAckSnapshot,
+};
 use open_esp_radio_esp32s31_wifi_mac::rx_pool::{
     VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
 };
@@ -191,11 +195,118 @@ where
 pub const STA_AP_RX_BLOCK_ACK_PEER_CAPACITY: usize =
     open_esp_radio_esp32s31_wifi_ap::protocol::AP_MAX_CLIENTS + 1;
 
-/// Unique software owner of the eight physical ordinary RX BlockAck banks.
+/// Serialized software owner of the eight physical ordinary RX BlockAck banks.
 ///
-/// The larger peer table tracks logical identities; it does not manufacture
-/// more hardware banks. Every operation remains keyed by its MAC interface.
-pub type Esp32s31StaApRxBlockAck = RxBlockAckSessions<STA_AP_RX_BLOCK_ACK_PEER_CAPACITY>;
+/// The ordinary station and primary SoftAP hardware paths share the same
+/// direct banks. Both roles may therefore retain this shared reference, but
+/// every mutation is serialized here and the session allocator exists only
+/// once. The larger peer table tracks logical identities; it does not
+/// manufacture more hardware banks.
+pub struct Esp32s31StaApRxBlockAck {
+    sessions: Mutex<
+        CriticalSectionRawMutex,
+        RefCell<RxBlockAckSessions<STA_AP_RX_BLOCK_ACK_PEER_CAPACITY>>,
+    >,
+}
+
+impl Esp32s31StaApRxBlockAck {
+    pub const fn new() -> Self {
+        Self {
+            sessions: Mutex::new(RefCell::new(RxBlockAckSessions::new())),
+        }
+    }
+
+    pub const fn with_maximum_window(maximum_window: u16) -> Result<Self, RxBlockAckSessionsError> {
+        match RxBlockAckSessions::with_maximum_window(maximum_window) {
+            Ok(sessions) => Ok(Self {
+                sessions: Mutex::new(RefCell::new(sessions)),
+            }),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(crate) fn with_sessions<R>(
+        &self,
+        operation: impl FnOnce(&mut RxBlockAckSessions<STA_AP_RX_BLOCK_ACK_PEER_CAPACITY>) -> R,
+    ) -> R {
+        self.sessions
+            .lock(|sessions| operation(&mut sessions.borrow_mut()))
+    }
+
+    pub fn maximum_window(&self) -> u16 {
+        self.sessions
+            .lock(|sessions| sessions.borrow().maximum_window())
+    }
+
+    pub fn reset_after_hardware_reset(&self) {
+        self.with_sessions(RxBlockAckSessions::reset_after_hardware_reset);
+    }
+
+    pub fn prepare_interface(
+        &self,
+        interface: MacInterface,
+    ) -> Result<(), RxBlockAckSessionsError> {
+        self.with_sessions(|sessions| sessions.prepare_interface(interface))
+    }
+
+    pub fn offer(&self, request: RxBlockAckRequest) -> Result<(), RxBlockAckSessionsError> {
+        self.with_sessions(|sessions| sessions.offer(request))
+    }
+
+    pub fn begin_pending(&self) -> Result<Option<RxBlockAckActivation>, RxBlockAckSessionsError> {
+        self.with_sessions(RxBlockAckSessions::begin_pending)
+    }
+
+    pub fn commit(
+        &self,
+        activation: RxBlockAckActivation,
+    ) -> Result<RxBlockAckSnapshot, RxBlockAckSessionsError> {
+        self.with_sessions(|sessions| sessions.commit(activation))
+    }
+
+    pub fn cancel(&self, activation: RxBlockAckActivation) -> Result<(), RxBlockAckSessionsError> {
+        self.with_sessions(|sessions| sessions.cancel(activation))
+    }
+
+    pub fn stop(
+        &self,
+        interface: MacInterface,
+        peer: [u8; 6],
+        tid: u8,
+    ) -> Option<RxBlockAckSnapshot> {
+        self.with_sessions(|sessions| sessions.stop(interface, peer, tid))
+    }
+
+    pub fn discard_pending(&self, interface: MacInterface, peer: [u8; 6], tid: u8) -> bool {
+        self.with_sessions(|sessions| sessions.discard_pending(interface, peer, tid))
+    }
+
+    pub fn stop_peer(
+        &self,
+        interface: MacInterface,
+        peer: [u8; 6],
+    ) -> [Option<RxBlockAckSnapshot>; RX_BLOCK_ACK_BANK_COUNT] {
+        self.with_sessions(|sessions| sessions.stop_peer(interface, peer))
+    }
+
+    pub fn snapshots(&self) -> [Option<RxBlockAckSnapshot>; RX_BLOCK_ACK_BANK_COUNT] {
+        self.sessions.lock(|sessions| sessions.borrow().snapshots())
+    }
+
+    pub fn snapshots_for(
+        &self,
+        interface: MacInterface,
+    ) -> [Option<RxBlockAckSnapshot>; RX_BLOCK_ACK_BANK_COUNT] {
+        self.sessions
+            .lock(|sessions| sessions.borrow().snapshots_for(interface))
+    }
+}
+
+impl Default for Esp32s31StaApRxBlockAck {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Lower the role-neutral logical-interface identity only at the chip edge.
 pub const fn lower_sta_ap_vif(interface: StaApVif) -> MacInterface {
@@ -601,6 +712,35 @@ mod tests {
             Some(StaApVif::Station)
         );
         assert_eq!(sta_ap_vif(NetworkInterfaceId::new(2)), None);
+    }
+
+    #[test]
+    fn shared_rx_block_ack_owner_allocates_distinct_station_and_ap_banks() {
+        let sessions = Esp32s31StaApRxBlockAck::with_maximum_window(16).unwrap();
+        for (interface, peer) in [
+            (MacInterface::Station, UPLINK),
+            (MacInterface::AccessPoint, PEER),
+        ] {
+            sessions
+                .offer(RxBlockAckRequest {
+                    interface,
+                    peer,
+                    dialog_token: 1,
+                    tid: 0,
+                    immediate: true,
+                    requested_window: 16,
+                    timeout_tu: 0,
+                    starting_sequence: 7,
+                })
+                .unwrap();
+            let activation = sessions.begin_pending().unwrap().unwrap();
+            sessions.commit(activation).unwrap();
+        }
+
+        let station = sessions.snapshots_for(MacInterface::Station)[0].unwrap();
+        let access_point = sessions.snapshots_for(MacInterface::AccessPoint)[1].unwrap();
+        assert_eq!(station.hardware_index, 0);
+        assert_eq!(access_point.hardware_index, 1);
     }
 
     #[test]

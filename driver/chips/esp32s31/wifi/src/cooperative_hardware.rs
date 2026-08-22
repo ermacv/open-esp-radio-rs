@@ -19,7 +19,10 @@ use open_esp_radio_esp32s31_hal::types::{
     MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
+use open_esp_radio_esp32s31_wifi_mac::sta_ap_registers::StaApRegisterHardware;
 use open_esp_radio_esp32s31_wifi_mac::{
+    ap_policy::ApRxPolicyHardware,
+    ap_tsf::ApTsfHardware,
     crypto::{CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, replace_sta_group_ccmp},
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
@@ -90,6 +93,18 @@ impl<'arena> CooperativeRadioHardware<'arena> {
             .expect("a synchronous RX DMA snapshot must not overlap another MMIO transaction")
     }
 
+    /// Read the value-only MAC RX counters through the same serialized owner.
+    /// This grants no register access and is used only to delimit one typed
+    /// qualification epoch around a live cooperative service.
+    pub fn receive_statistics_snapshot(
+        &self,
+    ) -> open_esp_radio_esp32s31_hal::wifi_mac::MacRxStatisticsSnapshot {
+        self.registers
+            .access()
+            .try_receive_statistics_snapshot()
+            .expect("an RX statistics snapshot must not overlap another MMIO transaction")
+    }
+
     /// Recover the exact PAC owner after every child task and synchronous
     /// register transaction has returned.
     pub fn try_into_registers(
@@ -120,6 +135,13 @@ impl CcmpKeyHardware for CooperativeRadioHardware<'_> {
             .expect("CCMP installation must not overlap another MMIO transaction")
     }
 
+    fn install_ap_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
+        self.registers
+            .access()
+            .try_install_access_point_ccmp_entry(index, words)
+            .expect("AP CCMP installation must not overlap another MMIO transaction")
+    }
+
     fn clear_ccmp_entry(&mut self, index: u8) {
         self.registers
             .access()
@@ -132,6 +154,40 @@ impl CcmpKeyHardware for CooperativeRadioHardware<'_> {
             .access()
             .try_ccmp_entry_is_valid(index)
             .expect("CCMP observation must not overlap another MMIO transaction")
+    }
+}
+
+impl ApRxPolicyHardware for CooperativeRadioHardware<'_> {
+    fn apply_ap_link_policy(&mut self, access_point: [u8; 6]) {
+        self.wifi_mac_hal()
+            .configure_access_point_receive_policy(access_point);
+    }
+}
+
+impl ApTsfHardware for CooperativeRadioHardware<'_> {
+    fn reset_and_start_access_point_tsf(&mut self) {
+        self.wifi_mac_hal().reset_and_start_access_point_tsf();
+    }
+
+    fn stop_access_point_tsf(&mut self) {
+        self.wifi_mac_hal().stop_access_point_tsf();
+    }
+}
+
+impl StaApRegisterHardware for CooperativeRadioHardware<'_> {
+    fn apply_sta_ap_receive_registers(
+        &mut self,
+        plan: open_esp_radio_esp32s31_hal::wifi_mac::MacStaApReceivePlan,
+    ) {
+        self.wifi_mac_hal().configure_sta_ap_receive_plan(plan);
+    }
+
+    fn disable_station_receive_registers(&mut self) {
+        self.wifi_mac_hal().disable_station_receive_policy();
+    }
+
+    fn disable_access_point_receive_registers(&mut self) {
+        self.wifi_mac_hal().disable_access_point_receive_policy();
     }
 }
 

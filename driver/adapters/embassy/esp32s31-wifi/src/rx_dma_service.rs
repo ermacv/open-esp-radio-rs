@@ -15,12 +15,16 @@ use embassy_sync::channel::{Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped},
+    rx::{
+        PUBLIC_HEADER_SIZE, RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted, RxRingLive,
+        RxRingStopped,
+    },
     rx_pool::{
         RxDmaDeferredStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError,
         VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
     },
 };
+use open_esp_radio_ieee80211::vif::{StaApRxRoute, StaApVif, classify_sta_ap_rx};
 
 use crate::{
     connected_rx_protocol::Esp32s31StagedRxFrame,
@@ -64,6 +68,48 @@ pub struct Esp32s31RxCompletedUnit {
     pub payload_length: usize,
 }
 
+/// Fact-only traffic class visible at the DMA/staging admission boundary.
+///
+/// Only an IEEE 802.11 frame-control value copied from the completed unit is
+/// interpreted. No association, authorization or hardware meaning is
+/// inferred here. Protected data is the sole bulk class; management, control
+/// and unprotected data (including pre-key EAPOL) remain critical.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31RxIngressClass {
+    BulkProtectedData,
+    Critical,
+    Unclassified,
+}
+
+/// Fact-only logical route for overload accounting.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31RxIngressRoute {
+    Standalone,
+    Station,
+    AccessPoint,
+    Foreign,
+    Ambiguous,
+    Malformed,
+}
+
+/// Value-only preview used before staging ownership is transferred.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31RxCompletedUnitPreview {
+    pub unit: Esp32s31RxCompletedUnit,
+    pub frame_control: Option<u16>,
+    pub class: Esp32s31RxIngressClass,
+    pub route: Esp32s31RxIngressRoute,
+}
+
+/// Policy decision when ordinary staging credits are unavailable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxStageUnavailableDisposition {
+    /// Preserve the final staging credit for control/management/EAPOL input.
+    PreserveForCriticalAdmission,
+    /// Drop the upper copy but return the completed descriptor immediately.
+    DiscardAndRecycle,
+}
+
 /// A completed ingress transaction observed after its ownership edge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31RxIngressObservation {
@@ -74,6 +120,14 @@ pub enum Esp32s31RxIngressObservation {
     },
     /// The copied unit was published into the independent staging queue.
     Staged(Esp32s31RxCompletedUnit),
+    /// A bulk unit could not acquire an upper-layer credit and followed the
+    /// reviewed vendor discard/append path.
+    OverloadDiscardedAndRecycled(Esp32s31RxCompletedUnitPreview),
+    /// A critical unit consumed the reserved final staging credit.
+    CriticalReserveAdmitted(Esp32s31RxCompletedUnitPreview),
+    /// No reserved credit remained for a critical unit. Descriptor ownership
+    /// was deliberately not transferred, so a later capacity wake retries it.
+    CriticalAdmissionBlocked(Esp32s31RxCompletedUnitPreview),
 }
 
 /// Cumulative ownership progress of one live staged-RX producer epoch.
@@ -89,6 +143,18 @@ pub struct Esp32s31StagedRxProducerReport {
     pub staged_bytes: u32,
     pub discarded_units: u32,
     pub recycled_descriptors: u32,
+    pub overload_discarded_units: u32,
+    pub overload_recycled_descriptors: u32,
+    pub overload_station_units: u32,
+    pub overload_access_point_units: u32,
+    pub overload_foreign_units: u32,
+    pub overload_ambiguous_units: u32,
+    pub overload_malformed_units: u32,
+    pub overload_standalone_units: u32,
+    pub critical_reserve_admissions: u32,
+    pub critical_admission_blocked: u32,
+    pub minimum_pool_credits: Option<usize>,
+    pub minimum_queue_credits: Option<usize>,
 }
 
 /// Admission policy at the completed-DMA-unit/staging boundary.
@@ -107,6 +173,27 @@ pub trait Esp32s31RxStageAdmissionPolicy {
     }
 
     fn observe(&self, _observation: Esp32s31RxIngressObservation) {}
+
+    /// Number of staging/queue credits unavailable to ordinary bulk data.
+    fn critical_reserved_credits(&self) -> usize {
+        1
+    }
+
+    /// Decide whether a unit may be discarded when only the critical reserve
+    /// remains. The default is deliberately conservative for unknown input.
+    fn unavailable_disposition(
+        &self,
+        preview: Esp32s31RxCompletedUnitPreview,
+    ) -> RxStageUnavailableDisposition {
+        match preview.class {
+            Esp32s31RxIngressClass::BulkProtectedData => {
+                RxStageUnavailableDisposition::DiscardAndRecycle
+            }
+            Esp32s31RxIngressClass::Critical | Esp32s31RxIngressClass::Unclassified => {
+                RxStageUnavailableDisposition::PreserveForCriticalAdmission
+            }
+        }
+    }
 }
 
 impl<T: Esp32s31RxStageAdmissionPolicy + ?Sized> Esp32s31RxStageAdmissionPolicy for &T {
@@ -120,6 +207,17 @@ impl<T: Esp32s31RxStageAdmissionPolicy + ?Sized> Esp32s31RxStageAdmissionPolicy 
 
     fn observe(&self, observation: Esp32s31RxIngressObservation) {
         T::observe(*self, observation);
+    }
+
+    fn critical_reserved_credits(&self) -> usize {
+        T::critical_reserved_credits(*self)
+    }
+
+    fn unavailable_disposition(
+        &self,
+        preview: Esp32s31RxCompletedUnitPreview,
+    ) -> RxStageUnavailableDisposition {
+        T::unavailable_disposition(*self, preview)
     }
 }
 
@@ -206,6 +304,54 @@ impl<
         match self {
             Self::Standalone(frames) => frames.len(),
             Self::StaAp { frames, .. } => frames.len(),
+        }
+    }
+
+    fn preview(
+        &self,
+        unit: Esp32s31RxCompletedUnit,
+        bytes: [u8; 24],
+    ) -> Esp32s31RxCompletedUnitPreview {
+        let frame_control = Some(u16::from_le_bytes([bytes[0], bytes[1]]));
+        let class = match frame_control {
+            Some(value) if value & 0x000c == 0x0008 && value & 0x4000 != 0 => {
+                Esp32s31RxIngressClass::BulkProtectedData
+            }
+            Some(_) => Esp32s31RxIngressClass::Critical,
+            None => Esp32s31RxIngressClass::Unclassified,
+        };
+        let route = match self {
+            Self::Standalone(_) => Esp32s31RxIngressRoute::Standalone,
+            Self::StaAp { addresses, .. } => match classify_sta_ap_rx(&bytes, *addresses) {
+                StaApRxRoute::Interface(StaApVif::Station) => Esp32s31RxIngressRoute::Station,
+                StaApRxRoute::Interface(StaApVif::AccessPoint) => {
+                    Esp32s31RxIngressRoute::AccessPoint
+                }
+                StaApRxRoute::Foreign => Esp32s31RxIngressRoute::Foreign,
+                StaApRxRoute::Ambiguous => Esp32s31RxIngressRoute::Ambiguous,
+                StaApRxRoute::Malformed => Esp32s31RxIngressRoute::Malformed,
+            },
+        };
+        Esp32s31RxCompletedUnitPreview {
+            unit,
+            frame_control,
+            class,
+            route,
+        }
+    }
+
+    const fn unclassified_preview(
+        &self,
+        unit: Esp32s31RxCompletedUnit,
+    ) -> Esp32s31RxCompletedUnitPreview {
+        Esp32s31RxCompletedUnitPreview {
+            unit,
+            frame_control: None,
+            class: Esp32s31RxIngressClass::Unclassified,
+            route: match self {
+                Self::Standalone(_) => Esp32s31RxIngressRoute::Standalone,
+                Self::StaAp { .. } => Esp32s31RxIngressRoute::Malformed,
+            },
         }
     }
 

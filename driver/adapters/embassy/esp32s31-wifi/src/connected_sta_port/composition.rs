@@ -263,11 +263,12 @@ impl Esp32s31ConnectedStaPort {
             plan.config.block_ack.tid0_amsdu,
         )
         .expect("connected STA plan validated TX BlockAck policy");
-        let mut control = Esp32s31ConnectedControl::new(
+        let mut control = Esp32s31ConnectedControl::new_shared(
             resources.receiver,
             plan.link.bssid,
             plan.link.association_phy == StaAssociationPhy::He20,
             tx_block_ack,
+            resources.rx_block_ack,
         )
         .with_rx_block_ack_maximum_window(plan.config.block_ack.rx_block_ack_maximum_window)
         .expect("connected STA plan validated RX BlockAck policy")

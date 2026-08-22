@@ -757,6 +757,10 @@ where
 {
     type Error = Esp32s31StaApAccessPointTxError;
 
+    fn last_started_frame_count(&self) -> usize {
+        self.network_tx.last_started_frame_count()
+    }
+
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
@@ -801,7 +805,7 @@ where
                 )
                 .await
                 .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
-            if progress == WifiTxProgress::Complete {
+            if progress == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
                 self.park_tx(physical)
                     .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
             }
@@ -870,7 +874,7 @@ where
                 .service(&mut active.aggregate, &mut active.processor, hardware, wake)
                 .await
                 .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
-            if progress == WifiTxProgress::Complete {
+            if progress == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
                 self.park_tx(physical)
                     .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
             }
@@ -940,7 +944,7 @@ where
                     network,
                 )
                 .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
-            if progress == WifiTxProgress::Complete {
+            if progress == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
                 self.park_tx(physical)
                     .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
             }
@@ -1275,6 +1279,40 @@ where
         result
     }
 
+    fn service_access_point_rx_during_tx(
+        &mut self,
+        frame: Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+    ) -> Result<
+        crate::sta_ap::Esp32s31RoutedRxDisposition<
+            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+        >,
+        Self::Error,
+    > {
+        let Some(active) = self.protocol.active_mut() else {
+            // The physical ordinary-TX owner belongs to the station role.
+            // Keep the exact ordered AP head until that transaction ends;
+            // recovering AP TX resources here would violate affine ownership.
+            return Ok(crate::sta_ap::Esp32s31RoutedRxDisposition::Deferred(frame));
+        };
+        let (nonce, replay_counter) = (self.security_material)();
+        active
+            .processor
+            .service_routed_rx_during_tx::<H, _, _>(
+                frame,
+                nonce,
+                replay_counter,
+                Instant::now().as_micros(),
+                &mut self.publish_shared_rx,
+                #[cfg(feature = "rx-delivery-observation")]
+                self.delivery_observer,
+            )
+            .map_err(|error| {
+                Esp32s31StaApAccessPointPairedRxError::Role(
+                    Esp32s31StaApAccessPointRxError::Control(error),
+                )
+            })
+    }
+
     fn has_pending_rx(&self) -> bool {
         self.protocol.active().map_or_else(
             || {
@@ -1345,7 +1383,7 @@ impl<
         SharedRx,
     >
 where
-    H: TxHardware + Esp32s31ApRuntimeHardware,
+    H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
@@ -1374,27 +1412,36 @@ where
             crate::ampdu_resources::AggregateTxResources<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
         >,
         now_micros: u64,
+        retain_physical_tx: bool,
     ) -> Result<crate::sta_ap::Esp32s31StaApAccessPointControlProgress, Self::Error> {
         if self.protocol.is_parked() {
             self.activate_tx(physical_tx)
                 .map_err(Esp32s31StaApAccessPointPairedControlError::Ownership)?;
         }
-        let progress = self
+        let processor = &mut self
             .protocol
             .active_mut()
             .expect("AP control activated the physical TX owner")
-            .processor
+            .processor;
+        processor
+            .apply_pending_protocol_actions(hardware)
+            .map_err(Esp32s31StaApAccessPointPairedControlError::Role)?;
+        let progress = processor
             .service_control(hardware, now_micros)
             .map_err(Esp32s31StaApAccessPointPairedControlError::Role)?;
         match progress {
             WdevControlProgress::Idle => {
-                self.park_tx(physical_tx)
-                    .map_err(Esp32s31StaApAccessPointPairedControlError::Ownership)?;
+                if !retain_physical_tx {
+                    self.park_tx(physical_tx)
+                        .map_err(Esp32s31StaApAccessPointPairedControlError::Ownership)?;
+                }
                 Ok(crate::sta_ap::Esp32s31StaApAccessPointControlProgress::Idle)
             }
             WdevControlProgress::More => {
-                self.park_tx(physical_tx)
-                    .map_err(Esp32s31StaApAccessPointPairedControlError::Ownership)?;
+                if !retain_physical_tx {
+                    self.park_tx(physical_tx)
+                        .map_err(Esp32s31StaApAccessPointPairedControlError::Ownership)?;
+                }
                 Ok(crate::sta_ap::Esp32s31StaApAccessPointControlProgress::More)
             }
             WdevControlProgress::TxPending => {

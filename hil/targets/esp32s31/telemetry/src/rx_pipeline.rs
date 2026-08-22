@@ -29,6 +29,10 @@ pub struct RxPipelineCounters {
     staged_bytes: AtomicU32,
     stage_empty_discards: AtomicU32,
     stage_too_long_discards: AtomicU32,
+    stage_overload_bulk_discards: AtomicU32,
+    overload_discarded_units: AtomicU32,
+    critical_reserve_admissions: AtomicU32,
+    critical_admission_blocked_services: AtomicU32,
     backpressured_services: AtomicU32,
     pool_credit_limited_services: AtomicU32,
     queue_credit_limited_services: AtomicU32,
@@ -118,6 +122,10 @@ impl RxPipelineCounters {
             staged_bytes: AtomicU32::new(0),
             stage_empty_discards: AtomicU32::new(0),
             stage_too_long_discards: AtomicU32::new(0),
+            stage_overload_bulk_discards: AtomicU32::new(0),
+            overload_discarded_units: AtomicU32::new(0),
+            critical_reserve_admissions: AtomicU32::new(0),
+            critical_admission_blocked_services: AtomicU32::new(0),
             backpressured_services: AtomicU32::new(0),
             pool_credit_limited_services: AtomicU32::new(0),
             queue_credit_limited_services: AtomicU32::new(0),
@@ -266,6 +274,12 @@ impl RxPipelineCounters {
             staged_bytes: self.staged_bytes.load(Ordering::Relaxed),
             stage_empty_discards: self.stage_empty_discards.load(Ordering::Relaxed),
             stage_too_long_discards: self.stage_too_long_discards.load(Ordering::Relaxed),
+            stage_overload_bulk_discards: self.stage_overload_bulk_discards.load(Ordering::Relaxed),
+            overload_discarded_units: self.overload_discarded_units.load(Ordering::Relaxed),
+            critical_reserve_admissions: self.critical_reserve_admissions.load(Ordering::Relaxed),
+            critical_admission_blocked_services: self
+                .critical_admission_blocked_services
+                .load(Ordering::Relaxed),
             backpressured_services: self.backpressured_services.load(Ordering::Relaxed),
             pool_credit_limited_services: self.pool_credit_limited_services.load(Ordering::Relaxed),
             queue_credit_limited_services: self
@@ -284,9 +298,7 @@ impl RxPipelineCounters {
             service_lifetime_max_micros: self.service_lifetime_max_micros.load(Ordering::Relaxed),
             reload_transactions: self.reload_transactions.load(Ordering::Relaxed),
             reload_micros: self.reload_micros.load(Ordering::Relaxed),
-            reload_lifetime_max_micros: self
-                .reload_lifetime_max_micros
-                .load(Ordering::Relaxed),
+            reload_lifetime_max_micros: self.reload_lifetime_max_micros.load(Ordering::Relaxed),
             dma_buffer_full_increments: self.dma_buffer_full_increments.load(Ordering::Relaxed),
             dma_buffer_full_service_samples: self
                 .dma_buffer_full_service_samples
@@ -372,6 +384,9 @@ impl RxPipelineCounters {
             queue_credits,
             admitted,
             staged_bytes,
+            overload_discarded,
+            critical_reserve_admitted,
+            critical_admission_blocked,
             micros,
             hardware_buffer_full_before: _,
             hardware_buffer_full_after: _,
@@ -390,6 +405,12 @@ impl RxPipelineCounters {
         Self::add_usize(&self.completion_frontier_frames, frontier);
         Self::add_usize(&self.admitted_frames, admitted);
         Self::add_usize(&self.staged_bytes, staged_bytes);
+        Self::add_usize(&self.overload_discarded_units, overload_discarded);
+        Self::add_usize(&self.critical_reserve_admissions, critical_reserve_admitted);
+        if critical_admission_blocked {
+            self.critical_admission_blocked_services
+                .fetch_add(1, Ordering::Relaxed);
+        }
         self.maximum_frontier.fetch_max(
             u32::try_from(frontier).unwrap_or(u32::MAX),
             Ordering::Relaxed,
@@ -505,6 +526,7 @@ impl RxPipelineCounters {
         match error {
             RxStageDiscard::Empty => &self.stage_empty_discards,
             RxStageDiscard::TooLong => &self.stage_too_long_discards,
+            RxStageDiscard::OverloadBulk => &self.stage_overload_bulk_discards,
         }
         .fetch_add(1, Ordering::Relaxed);
     }
@@ -726,6 +748,11 @@ pub struct RxPipelineCounterSnapshot {
     pub staged_bytes: u32,
     pub stage_empty_discards: u32,
     pub stage_too_long_discards: u32,
+    /// Bulk data units deliberately discarded and exactly recycled under overload.
+    pub stage_overload_bulk_discards: u32,
+    pub overload_discarded_units: u32,
+    pub critical_reserve_admissions: u32,
+    pub critical_admission_blocked_services: u32,
     pub backpressured_services: u32,
     pub pool_credit_limited_services: u32,
     pub queue_credit_limited_services: u32,
@@ -852,6 +879,18 @@ impl RxPipelineCounterSnapshot {
             stage_too_long_discards: self
                 .stage_too_long_discards
                 .wrapping_sub(earlier.stage_too_long_discards),
+            stage_overload_bulk_discards: self
+                .stage_overload_bulk_discards
+                .wrapping_sub(earlier.stage_overload_bulk_discards),
+            overload_discarded_units: self
+                .overload_discarded_units
+                .wrapping_sub(earlier.overload_discarded_units),
+            critical_reserve_admissions: self
+                .critical_reserve_admissions
+                .wrapping_sub(earlier.critical_reserve_admissions),
+            critical_admission_blocked_services: self
+                .critical_admission_blocked_services
+                .wrapping_sub(earlier.critical_admission_blocked_services),
             backpressured_services: self
                 .backpressured_services
                 .wrapping_sub(earlier.backpressured_services),
@@ -1014,12 +1053,16 @@ mod tests {
             queue_credits: 5,
             admitted: 3,
             staged_bytes: 4_500,
+            overload_discarded: 2,
+            critical_reserve_admitted: 1,
+            critical_admission_blocked: true,
             micros: 70,
             hardware_buffer_full_before: None,
             hardware_buffer_full_after: None,
         });
         counters.record_stage_discard(RxStageDiscard::Empty);
         counters.record_stage_discard(RxStageDiscard::TooLong);
+        counters.record_stage_discard(RxStageDiscard::OverloadBulk);
         counters.record_network_ready_wait(2);
         counters.record_network_publish(1_514, 13, RxNetworkPublicationOutcome::Enqueued);
         counters.record_network_publish(1_514, 17, RxNetworkPublicationOutcome::Dropped);
@@ -1038,6 +1081,10 @@ mod tests {
         assert_eq!(delta.reload_lifetime_max_micros, 7);
         assert_eq!(delta.stage_empty_discards, 1);
         assert_eq!(delta.stage_too_long_discards, 1);
+        assert_eq!(delta.stage_overload_bulk_discards, 1);
+        assert_eq!(delta.overload_discarded_units, 2);
+        assert_eq!(delta.critical_reserve_admissions, 1);
+        assert_eq!(delta.critical_admission_blocked_services, 1);
         assert_eq!(delta.backpressured_services, 1);
         assert_eq!(delta.pool_credit_limited_services, 1);
         assert_eq!(delta.queue_credit_limited_services, 0);
@@ -1077,6 +1124,9 @@ mod tests {
             queue_credits: 32,
             admitted: 32,
             staged_bytes: 48_000,
+            overload_discarded: 0,
+            critical_reserve_admitted: 0,
+            critical_admission_blocked: false,
             micros: 80,
             hardware_buffer_full_before: None,
             hardware_buffer_full_after: None,
@@ -1088,6 +1138,9 @@ mod tests {
             queue_credits: 32,
             admitted: 0,
             staged_bytes: 0,
+            overload_discarded: 0,
+            critical_reserve_admitted: 0,
+            critical_admission_blocked: false,
             micros: 1,
             hardware_buffer_full_before: None,
             hardware_buffer_full_after: None,
@@ -1127,6 +1180,9 @@ mod tests {
             queue_credits: 64,
             admitted: 1,
             staged_bytes: 1_600,
+            overload_discarded: 0,
+            critical_reserve_admitted: 0,
+            critical_admission_blocked: false,
             micros: 20,
             hardware_buffer_full_before: Some(0xfffe),
             hardware_buffer_full_after: Some(0xfffe),
@@ -1139,6 +1195,9 @@ mod tests {
             queue_credits: 61,
             admitted: 7,
             staged_bytes: 11_200,
+            overload_discarded: 0,
+            critical_reserve_admitted: 0,
+            critical_admission_blocked: false,
             micros: 73,
             hardware_buffer_full_before: Some(1),
             hardware_buffer_full_after: Some(1),
@@ -1172,6 +1231,9 @@ mod tests {
             queue_credits: 32,
             admitted: 32,
             staged_bytes: 48_000,
+            overload_discarded: 0,
+            critical_reserve_admitted: 0,
+            critical_admission_blocked: false,
             micros: 810,
             hardware_buffer_full_before: Some(7),
             hardware_buffer_full_after: Some(9),

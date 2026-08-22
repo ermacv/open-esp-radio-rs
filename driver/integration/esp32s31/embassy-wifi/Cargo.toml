@@ -18,6 +18,7 @@ embassy-time = "0.5.1"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 log = { version = "0.4.29", optional = true }
 open-esp-radio = { path = "../../../radio", default-features = false, features = ["esp32s31-wifi-embassy"] }
+open-esp-radio-esp32s31-wifi = { path = "../../../chips/esp32s31/wifi" }
 open-esp-radio-embassy-net = { path = "../../../adapters/embassy-net" }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../adapters/embassy/esp32s31-wifi" }
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../adapters/esp-hal/esp32s31-wifi", features = ["esp32s31"] }

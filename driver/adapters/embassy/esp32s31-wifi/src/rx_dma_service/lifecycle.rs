@@ -568,6 +568,14 @@ impl<
         &self.ring
     }
 
+    /// Preserve exact immutable layout evidence after a fail-closed RX exit.
+    pub fn first_buffer_address_mismatch(
+        &self,
+    ) -> Option<open_esp_radio_esp32s31_wifi_dma::rx_storage::RxBufferAddressMismatch> {
+        self.storage
+            .first_buffer_address_mismatch(self.ring.buffer_addresses())
+    }
+
     pub fn queued_frames(&self) -> usize {
         self.frames.len()
     }

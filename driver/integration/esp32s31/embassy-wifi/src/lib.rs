@@ -141,7 +141,17 @@ impl Esp32s31RadioConfig {
 #[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy)]
 pub struct Esp32s31DiagnosticObservers {
-    pub rx_pipeline: &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::RxPipelineObserver,
+    /// Intrusive per-stage timing/counter observer. Correctness images leave
+    /// this unset; only dedicated pipeline diagnostics may charge the RX hot
+    /// path for these observations.
+    pub rx_pipeline: Option<
+        &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::RxPipelineObserver,
+    >,
+    /// Low-frequency typed BlockAck agreement observer used by correctness
+    /// images without attaching the per-frame pipeline profiler.
+    pub rx_reorder: Option<
+        &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::RxReorderAgreementObserver,
+    >,
     pub aggregate_tx: &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::AggregateTxObserver,
     pub connected_rx: &'static dyn Esp32s31ConnectedRxObserver,
     pub rx_delivery: Option<

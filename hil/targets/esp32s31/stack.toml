@@ -57,7 +57,7 @@ reason = "one-time production constructor initializes and transfers the complete
 
 [[reviewed_frames]]
 function_contains = "ProductionWifiEpochRunner as"
-source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/mod.rs"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/role_dispatch.rs"
 max_bytes = 18176
 reason = "role epoch future retains separate physical, station, AP and monitor return owners, including interface-scoped BlockAck state, the Rust rate-control owner and typed AP retry counters"
 

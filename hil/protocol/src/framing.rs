@@ -813,6 +813,26 @@ mod tests {
     }
 
     #[test]
+    fn control_mailbox_overflow_disconnect_round_trips_on_current_protocol() {
+        let expected = Envelope::new(
+            7,
+            5,
+            0,
+            43,
+            Event::StationLifecycle(crate::StationLifecycleEvent::Disconnected {
+                generation: 11,
+                reason: StationDisconnectReason::ControlMailboxOverflow,
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn maximum_startup_artifact_chunk_fits_and_round_trips() {
         let bytes = [0x5a; crate::STARTUP_ARTIFACT_CHUNK_MAX_LEN];
         let checksum = startup_artifact_crc32c(&bytes);

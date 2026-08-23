@@ -28,7 +28,10 @@ use open_esp_radio_wifi_softmac::MacRxMetadata;
 #[cfg(test)]
 use crate::datapath::rx::staging::Esp32s31StagedRxQueue;
 #[cfg(any(feature = "diagnostics", test))]
-use crate::diagnostics::rx_pipeline::{RxPipelineObservation, RxPipelineObserver};
+use crate::diagnostics::rx_pipeline::{
+    RxPipelineObservation, RxPipelineObserver, RxReorderAgreementObservation,
+    RxReorderAgreementObserver,
+};
 use crate::{
     datapath::irq::EmbassyMacIrqRuntime,
     datapath::rx::ethernet::PackedEthernetWriter,
@@ -321,6 +324,8 @@ pub struct Esp32s31ConnectedRxProcessor<
     ethernet: &'scratch mut [u8],
     #[cfg(any(feature = "diagnostics", test))]
     pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
+    #[cfg(any(feature = "diagnostics", test))]
+    reorder_observer: Option<&'queue dyn RxReorderAgreementObserver>,
     reorder_commands: Option<RxReorderCommandReceiver<'queue, M>>,
     reorder_storage: Option<&'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>>,
     reorder_scratch: Option<&'scratch mut [u8]>,

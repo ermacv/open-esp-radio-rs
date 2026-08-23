@@ -25,7 +25,7 @@ use crate::{
         QualificationRequester, qualification_sample, rx_qualification,
         traffic::{
             BidirectionalResultChannel, BidirectionalSessionChannel,
-            OpenRadioBidirectionalDirection, UdpSequenceEvidence,
+            OpenRadioBidirectionalDirection, OpenRadioBidirectionalResult, UdpSequenceEvidence,
             complete_open_radio_bidirectional_direction, iperf2_udp_sequence,
             log_open_radio_rx_pipeline_interval, log_open_radio_task_poll_interval,
         },
@@ -482,13 +482,15 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         });
         complete_open_radio_bidirectional_direction(
             config.session_source.results,
-            session.session_id,
-            OpenRadioBidirectionalDirection::Rx,
-            evidence,
-            radio,
-            None,
-            rx_delivery,
-            passed,
+            OpenRadioBidirectionalResult::new(
+                session.session_id,
+                OpenRadioBidirectionalDirection::Rx,
+                evidence,
+                radio,
+                None,
+                rx_delivery,
+                passed,
+            ),
         )
         .await;
     }

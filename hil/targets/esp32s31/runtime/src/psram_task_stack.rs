@@ -82,8 +82,8 @@ pub(crate) unsafe fn install_current_hart_interrupt_stack() {
     // while initializing the second core. Preserve that ownership: replace
     // only the hardware-vector slots in whichever table is currently active.
     // Slot zero is not an interrupt entry and remains untouched.
-    for index in 1..48 {
-        let entry = unsafe { ptr::addr_of!(_runtime_psram_mtvt_source[index]).read_volatile() };
+    for (index, source) in unsafe { _runtime_psram_mtvt_source.iter().enumerate().skip(1) } {
+        let entry = unsafe { ptr::from_ref(source).read_volatile() };
         unsafe { table.add(index).write_volatile(entry) };
     }
     unsafe {

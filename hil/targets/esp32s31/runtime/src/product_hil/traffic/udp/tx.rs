@@ -13,7 +13,8 @@ use crate::{
     console::{publish_event_reliably, runtime_log},
     product_hil::traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
-        aggregate_tx_evidence, complete_open_radio_bidirectional_direction,
+        OpenRadioBidirectionalResult, aggregate_tx_evidence,
+        complete_open_radio_bidirectional_direction,
         log_open_radio_ampdu_interval, log_open_radio_task_poll_interval,
         wait_session_link_requirements,
     },
@@ -308,13 +309,15 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             .map(aggregate_tx_evidence);
         complete_open_radio_bidirectional_direction(
             config.session_source.results,
-            session.session_id,
-            OpenRadioBidirectionalDirection::Tx,
-            evidence,
-            aggregate_evidence.map(|(radio, _)| radio),
-            aggregate_evidence.map(|(_, timing)| timing),
-            None,
-            send_errors == 0,
+            OpenRadioBidirectionalResult::new(
+                session.session_id,
+                OpenRadioBidirectionalDirection::Tx,
+                evidence,
+                aggregate_evidence.map(|(radio, _)| radio),
+                aggregate_evidence.map(|(_, timing)| timing),
+                None,
+                send_errors == 0,
+            ),
         )
         .await;
     }

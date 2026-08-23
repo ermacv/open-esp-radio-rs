@@ -37,7 +37,10 @@ use open_esp_radio_wifi_softmac::{
 use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};
 
 #[cfg(any(feature = "diagnostics", test))]
-use crate::diagnostics::{aggregate_tx::AggregateTxObserver, rx_pipeline::RxPipelineObserver};
+use crate::diagnostics::{
+    aggregate_tx::AggregateTxObserver,
+    rx_pipeline::{RxPipelineObserver, RxReorderAgreementObserver},
+};
 use crate::{
     datapath::irq::EmbassyMacIrqRuntime,
     datapath::rx::reorder::{

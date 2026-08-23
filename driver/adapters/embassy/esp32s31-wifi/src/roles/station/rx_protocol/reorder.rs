@@ -39,14 +39,21 @@ where
         }
         let bank = bank.expect("active reorder has one hardware-bank identity");
         #[cfg(any(feature = "diagnostics", test))]
-        if let Some(start) = self.runtime.reorder_first_starts[bank].take()
-            && let Some(observer) = self.pipeline_observer
-        {
-            observer.observe(RxPipelineObservation::ReorderFirst {
-                tid: key.tid,
-                start,
-                sequence: key.sequence,
-            });
+        if let Some(start) = self.runtime.reorder_first_starts[bank].take() {
+            if let Some(observer) = self.pipeline_observer {
+                observer.observe(RxPipelineObservation::ReorderFirst {
+                    tid: key.tid,
+                    start,
+                    sequence: key.sequence,
+                });
+            }
+            if let Some(observer) = self.reorder_observer {
+                observer.observe(RxReorderAgreementObservation::First {
+                    tid: key.tid,
+                    start,
+                    sequence: key.sequence,
+                });
+            }
         }
 
         let retain = match self
@@ -206,6 +213,14 @@ where
                         window: agreement.window,
                     });
                 }
+                #[cfg(any(feature = "diagnostics", test))]
+                if let Some(observer) = self.reorder_observer {
+                    observer.observe(RxReorderAgreementObservation::Started {
+                        tid: agreement.tid,
+                        starting_sequence: agreement.starting_sequence,
+                        window: agreement.window,
+                    });
+                }
                 match released {
                     Some(release) => self.dispatch_release(release).await,
                     None => None,
@@ -246,6 +261,10 @@ where
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderStopped);
+        }
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.reorder_observer {
+            observer.observe(RxReorderAgreementObservation::Stopped);
         }
         #[cfg(any(feature = "diagnostics", test))]
         self.record_reorder_occupied();

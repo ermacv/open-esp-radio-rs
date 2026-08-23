@@ -151,6 +151,8 @@ for required in \
     supervisor/station.rs \
     supervisor/access_point.rs \
     supervisor/concurrent.rs \
+    supervisor/station_epoch.rs \
+    supervisor/role_dispatch.rs \
     status/mod.rs \
     diagnostics.rs
 do
@@ -159,6 +161,10 @@ do
         exit 1
     }
 done
+if test "$(wc -l < "$integration_source/supervisor/mod.rs")" -gt 1000; then
+    echo "integration supervisor facade became monolithic again" >&2
+    exit 1
+fi
 for removed in connected.rs runtime.rs access_point_status.rs station_status.rs; do
     if test -e "$integration_source/$removed"; then
         echo "legacy integration monolith survived: $removed" >&2
@@ -167,12 +173,16 @@ for removed in connected.rs runtime.rs access_point_status.rs station_status.rs;
 done
 
 runner_source="hil/host/runner/src"
-for responsibility in transport traffic evidence qualification reporting; do
+for responsibility in device image transport traffic evidence qualification reporting; do
     test -f "$runner_source/$responsibility/mod.rs" || {
         echo "HIL runner responsibility module is missing: $responsibility" >&2
         exit 1
     }
 done
+if test "$(wc -l < "$runner_source/main.rs")" -gt 900; then
+    echo "HIL runner entry point owns implementation responsibilities again" >&2
+    exit 1
+fi
 if find "$runner_source" -maxdepth 1 -type f \
     \( -name '*traffic*.rs' -o -name '*qualification*.rs' -o -name '*fixture*.rs' \) | rg .
 then

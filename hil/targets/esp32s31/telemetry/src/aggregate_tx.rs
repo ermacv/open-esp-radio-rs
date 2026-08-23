@@ -397,9 +397,8 @@ impl AggregateTxCounters {
             &self.exchange_lifetime_max_micros,
             micros,
         );
-        let publication_bucket = usize::from(publications)
-            .max(1)
-            .min(AGGREGATE_TX_PUBLICATION_BUCKETS - 1);
+        let publication_bucket =
+            usize::from(publications).clamp(1, AGGREGATE_TX_PUBLICATION_BUCKETS - 1);
         self.exchanges_by_publications[publication_bucket].fetch_add(1, Ordering::Relaxed);
         Self::record_time(
             &self.exchange_micros_by_publications[publication_bucket],
@@ -904,7 +903,7 @@ impl AggregateTxCounterSnapshot {
     }
 
     pub fn prepared_in_range(&self, minimum: usize, maximum: usize) -> u32 {
-        let start = minimum.max(1).min(AGGREGATE_TX_HISTOGRAM_BUCKETS);
+        let start = minimum.clamp(1, AGGREGATE_TX_HISTOGRAM_BUCKETS);
         let end = maximum
             .saturating_add(1)
             .min(AGGREGATE_TX_HISTOGRAM_BUCKETS);

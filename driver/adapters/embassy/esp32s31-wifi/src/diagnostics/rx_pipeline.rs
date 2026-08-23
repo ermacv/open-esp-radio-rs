@@ -45,6 +45,31 @@ pub enum RxNetworkPublicationOutcome {
     Dropped,
 }
 
+/// Low-frequency BlockAck agreement facts required by correctness images.
+///
+/// This boundary is deliberately separate from [`RxPipelineObserver`]: an
+/// agreement observer is called only on lifecycle edges and the first frame,
+/// never for every DMA, protocol, or network phase.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxReorderAgreementObservation {
+    Started {
+        tid: u8,
+        starting_sequence: u16,
+        window: u16,
+    },
+    Stopped,
+    First {
+        tid: u8,
+        start: u16,
+        sequence: u16,
+    },
+}
+
+/// Non-owning correctness hook for negotiated RX BlockAck state.
+pub trait RxReorderAgreementObserver: Sync {
+    fn observe(&self, observation: RxReorderAgreementObservation);
+}
+
 /// Value-only observations emitted by the production RX owner graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxPipelineObservation {

@@ -8,7 +8,8 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::{
-    RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver, RxServiceObservation,
+    RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver,
+    RxReorderAgreementObservation, RxReorderAgreementObserver, RxServiceObservation,
     RxStageDiscard,
 };
 
@@ -770,6 +771,43 @@ impl RxPipelineObserver for RxPipelineCounters {
     }
 }
 
+/// Minimal correctness observer for facts which must remain available in the
+/// ordinary correctness image.
+///
+/// It receives only agreement lifecycle edges, so attaching it introduces no
+/// platform timer reads or per-frame pipeline callbacks. Hardware health and
+/// network admission remain independently sampled by the product snapshot;
+/// full reorder distributions belong to a dedicated diagnostic image.
+pub struct RxCorrectnessObserver<'a> {
+    counters: &'a RxPipelineCounters,
+}
+
+impl<'a> RxCorrectnessObserver<'a> {
+    pub const fn new(counters: &'a RxPipelineCounters) -> Self {
+        Self { counters }
+    }
+}
+
+impl RxReorderAgreementObserver for RxCorrectnessObserver<'_> {
+    fn observe(&self, observation: RxReorderAgreementObservation) {
+        match observation {
+            RxReorderAgreementObservation::Started {
+                tid,
+                starting_sequence,
+                window,
+            } => self
+                .counters
+                .record_reorder_start(tid, starting_sequence, window),
+            RxReorderAgreementObservation::Stopped => self.counters.record_reorder_stop(),
+            RxReorderAgreementObservation::First {
+                tid,
+                start,
+                sequence,
+            } => self.counters.record_reorder_first(tid, start, sequence),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxPipelineCounterSnapshot {
     pub service_calls: u32,
@@ -1078,9 +1116,10 @@ impl RxPipelineCounterSnapshot {
 mod tests {
     use core::sync::atomic::{AtomicU64, Ordering};
 
-    use super::{RxPipelineCounters, RxServiceObservation};
+    use super::{RxCorrectnessObserver, RxPipelineCounters, RxServiceObservation};
     use open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::{
-        RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver, RxStageDiscard,
+        RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver,
+        RxReorderAgreementObservation, RxReorderAgreementObserver, RxStageDiscard,
     };
 
     static IRQ_CLOCK: AtomicU64 = AtomicU64::new(0);
@@ -1096,6 +1135,40 @@ mod tests {
 
     fn irq_skew_clock() -> u64 {
         IRQ_SKEW_CLOCK.load(Ordering::Relaxed)
+    }
+
+    #[test]
+    fn correctness_observer_keeps_required_facts_without_phase_profiling() {
+        let counters = RxPipelineCounters::new(test_clock);
+        let observer = RxCorrectnessObserver::new(&counters);
+
+        observer.observe(RxReorderAgreementObservation::Started {
+            tid: 3,
+            starting_sequence: 10,
+            window: 16,
+        });
+        observer.observe(RxReorderAgreementObservation::First {
+            tid: 3,
+            start: 10,
+            sequence: 11,
+        });
+
+        let snapshot = counters.snapshot();
+        assert_eq!(snapshot.service_calls, 0);
+        assert_eq!(snapshot.service_micros, 0);
+        assert_eq!(snapshot.protocol_frames, 0);
+        assert_eq!(snapshot.network_publications, 0);
+        assert_eq!(snapshot.network_enqueued, 0);
+        assert_eq!(snapshot.network_dropped, 0);
+        assert_eq!(snapshot.dma_buffer_full_increments, 0);
+        assert_eq!(snapshot.reorder_starts, 1);
+        assert_eq!(snapshot.reorder_first_samples, 1);
+        assert_eq!(snapshot.reorder_ingress, 0);
+        assert_eq!(snapshot.reorder_buffered, 0);
+        assert_eq!(snapshot.reorder_released, 0);
+        assert_eq!(snapshot.reorder_missing, 0);
+        assert_eq!(snapshot.reorder_current_occupied, 0);
+        assert_eq!(snapshot.reorder_maximum_occupied, 0);
     }
 
     #[test]

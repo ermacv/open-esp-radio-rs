@@ -61,6 +61,8 @@ where
             ethernet,
             #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: None,
+            #[cfg(any(feature = "diagnostics", test))]
+            reorder_observer: None,
             reorder_commands: None,
             reorder_storage: None,
             reorder_scratch: None,
@@ -98,6 +100,15 @@ where
     #[cfg(any(feature = "diagnostics", test))]
     pub fn with_pipeline_observer(mut self, observer: &'queue dyn RxPipelineObserver) -> Self {
         self.pipeline_observer = Some(observer);
+        self
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    pub fn with_reorder_observer(
+        mut self,
+        observer: &'queue dyn RxReorderAgreementObserver,
+    ) -> Self {
+        self.reorder_observer = Some(observer);
         self
     }
 
@@ -309,6 +320,15 @@ where
     #[cfg(any(feature = "diagnostics", test))]
     pub fn with_pipeline_observer(mut self, observer: &'queue dyn RxPipelineObserver) -> Self {
         self.processor.pipeline_observer = Some(observer);
+        self
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    pub fn with_reorder_observer(
+        mut self,
+        observer: &'queue dyn RxReorderAgreementObserver,
+    ) -> Self {
+        self.processor.reorder_observer = Some(observer);
         self
     }
 

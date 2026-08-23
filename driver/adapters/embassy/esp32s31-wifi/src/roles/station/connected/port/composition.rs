@@ -57,6 +57,8 @@ impl Esp32s31ConnectedStaPort {
             reorder_scratch,
             #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
+            #[cfg(any(feature = "diagnostics", test))]
+            reorder_observer,
         } = resources;
         let processor = Self::build_rx_processor(
             plan,
@@ -71,6 +73,8 @@ impl Esp32s31ConnectedStaPort {
                 reorder_scratch,
                 #[cfg(any(feature = "diagnostics", test))]
                 pipeline_observer,
+                #[cfg(any(feature = "diagnostics", test))]
+                reorder_observer,
             },
         );
         Esp32s31ConnectedRxProtocol::from_processor(frames, processor)
@@ -144,6 +148,10 @@ impl Esp32s31ConnectedStaPort {
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(counters) = resources.pipeline_observer {
             processor = processor.with_pipeline_observer(counters);
+        }
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = resources.reorder_observer {
+            processor = processor.with_reorder_observer(observer);
         }
         match resources.reorder_scratch {
             Some(scratch) => processor.with_rx_reorder_scratch(scratch),

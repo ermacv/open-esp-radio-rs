@@ -31,6 +31,28 @@ pub(in crate::product_hil) struct OpenRadioBidirectionalResult {
     passed: bool,
 }
 
+impl OpenRadioBidirectionalResult {
+    pub(in crate::product_hil) const fn new(
+        session_id: u64,
+        direction: OpenRadioBidirectionalDirection,
+        evidence: TransportEvidence,
+        radio: Option<RadioEvidence>,
+        tx_timing: Option<TxAggregateTimingEvidence>,
+        rx_delivery: Option<RxDeliveryEvidence>,
+        passed: bool,
+    ) -> Self {
+        Self {
+            session_id,
+            direction,
+            evidence,
+            radio,
+            tx_timing,
+            rx_delivery,
+            passed,
+        }
+    }
+}
+
 pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordinator(
     input: &'static SessionChannel,
     rx_sessions: &'static BidirectionalSessionChannel,
@@ -132,25 +154,9 @@ async fn complete_single_direction(
 
 pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(
     results: &'static BidirectionalResultChannel,
-    session_id: u64,
-    direction: OpenRadioBidirectionalDirection,
-    evidence: TransportEvidence,
-    radio: Option<RadioEvidence>,
-    tx_timing: Option<TxAggregateTimingEvidence>,
-    rx_delivery: Option<RxDeliveryEvidence>,
-    passed: bool,
+    result: OpenRadioBidirectionalResult,
 ) {
-    results
-        .send(OpenRadioBidirectionalResult {
-            session_id,
-            direction,
-            evidence,
-            radio,
-            tx_timing,
-            rx_delivery,
-            passed,
-        })
-        .await;
+    results.send(result).await;
 }
 
 fn merge_radio(

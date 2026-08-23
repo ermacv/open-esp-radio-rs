@@ -739,9 +739,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     Command::Initialize(configuration) => {
                         let (response, accepted) = if initialized {
                             (Event::Rejected(RejectReason::InvalidState), false)
-                        } else if !configuration.validate() {
-                            (Event::Rejected(RejectReason::InvalidConfiguration), false)
-                        } else if startup_artifact.started_but_incomplete() {
+                        } else if !configuration.validate()
+                            || startup_artifact.started_but_incomplete()
+                        {
                             (Event::Rejected(RejectReason::InvalidConfiguration), false)
                         } else if STARTUP_CONFIGURATIONS
                             .try_send(StartupConfiguration {

@@ -359,10 +359,10 @@ extern "C" fn runtime_main() -> ! {
                     #[cfg(feature = "psram-task-stack")]
                     unsafe {
                         // The ROM/ESP-HAL second-core entry requires its initial
-                        // stack in SRAM. Consume the captured token, abandon
-                        // that bootstrap call chain, and enter the non-returning
-                        // PSRAM task-stack trampoline.
-                        core::mem::forget(app_interrupt);
+                        // stack in SRAM. Consume the captured zero-drop token,
+                        // abandon that bootstrap call chain, and enter the
+                        // non-returning PSRAM task-stack trampoline.
+                        let _ = app_interrupt;
                         psram_task_stack::enter_cpu1_task_context();
                     }
                     #[cfg(not(feature = "psram-task-stack"))]

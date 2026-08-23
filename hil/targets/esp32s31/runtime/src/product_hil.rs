@@ -53,8 +53,18 @@ use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_esp32s31_telemetry::network_scheduler::NetworkSchedulerCounters;
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::AggregateTxCounters, mac_irq::MacIrqClassificationCounters,
-    rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
+    rx_pipeline::RxPipelineCounters,
+    task_poll::TaskPollSet,
 };
+#[cfg(all(
+    feature = "driver-observation",
+    not(any(
+        feature = "mac-irq-telemetry",
+        feature = "task-poll-telemetry",
+        feature = "rx-delivery-telemetry"
+    ))
+))]
+use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxCorrectnessObserver;
 use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials,
     NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationDisconnectReason,
@@ -747,6 +757,16 @@ fn log_station_rx_frontier(observation: Esp32s31StationAttemptObservation) {
 // cache traffic into the path being measured.
 #[unsafe(link_section = ".critical.data.open_radio_rx_telemetry")]
 pub(crate) static RX_PIPELINE: RxPipelineCounters = RxPipelineCounters::new(now_micros);
+#[cfg(all(
+    feature = "driver-observation",
+    not(any(
+        feature = "mac-irq-telemetry",
+        feature = "task-poll-telemetry",
+        feature = "rx-delivery-telemetry"
+    ))
+))]
+#[unsafe(link_section = ".critical.data.open_radio_rx_telemetry")]
+static RX_CORRECTNESS: RxCorrectnessObserver = RxCorrectnessObserver::new(&RX_PIPELINE);
 // This observer contains the non-zero `now_micros` function pointer. It must
 // be copied into SRAM as initialized data; placing it in a NOLOAD/BSS section
 // zeroes that pointer and traps on the first TX interrupt observation.
@@ -1458,7 +1478,42 @@ pub async fn run(
     .with_maximum_tx_power_quarter_dbm(MAXIMUM_TX_POWER_QUARTER_DBM);
     #[cfg(feature = "driver-observation")]
     let config = config.with_diagnostic_observers(Esp32s31DiagnosticObservers {
-        rx_pipeline: &RX_PIPELINE,
+        rx_pipeline: {
+            #[cfg(any(
+                feature = "mac-irq-telemetry",
+                feature = "task-poll-telemetry",
+                feature = "rx-delivery-telemetry"
+            ))]
+            {
+                Some(&RX_PIPELINE)
+            }
+            #[cfg(not(any(
+                feature = "mac-irq-telemetry",
+                feature = "task-poll-telemetry",
+                feature = "rx-delivery-telemetry"
+            )))]
+            {
+                None
+            }
+        },
+        rx_reorder: {
+            #[cfg(any(
+                feature = "mac-irq-telemetry",
+                feature = "task-poll-telemetry",
+                feature = "rx-delivery-telemetry"
+            ))]
+            {
+                None
+            }
+            #[cfg(not(any(
+                feature = "mac-irq-telemetry",
+                feature = "task-poll-telemetry",
+                feature = "rx-delivery-telemetry"
+            )))]
+            {
+                Some(&RX_CORRECTNESS)
+            }
+        },
         aggregate_tx: &AGGREGATE_TX,
         connected_rx: connected_rx_observer,
         rx_delivery: {

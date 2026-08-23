@@ -154,6 +154,7 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
             runtime: protocol_runtime,
             reorder_scratch: None,
             pipeline_observer: None,
+            reorder_observer: None,
         },
     );
     assert_eq!(protocol.dispatcher().config(), plan.rx_config());

@@ -202,21 +202,24 @@ pub(super) type ProductionAccessPointRxConsumer =
 pub(super) fn access_point_rx_pipeline(
     ring: open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
     storage: &'static RxStorage,
-    #[cfg(feature = "diagnostics")] pipeline_observer: &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::RxPipelineObserver,
+    #[cfg(feature = "diagnostics")] pipeline_observer: Option<
+        &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::RxPipelineObserver,
+    >,
 ) -> (
     ProductionAccessPointRxProducer,
     ProductionAccessPointRxConsumer,
 ) {
     #[cfg(feature = "diagnostics")]
-    return open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_halted_with_pipeline_observer(
-        ring,
-        storage,
-        &RX_STAGE_POOL,
-        &STAGED_RX_QUEUE,
-        EmbassyEsp32s31RxDmaObservationDelay,
-        pipeline_observer,
-    );
-    #[cfg(not(feature = "diagnostics"))]
+    if let Some(observer) = pipeline_observer {
+        return open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_halted_with_pipeline_observer(
+            ring,
+            storage,
+            &RX_STAGE_POOL,
+            &STAGED_RX_QUEUE,
+            EmbassyEsp32s31RxDmaObservationDelay,
+            observer,
+        );
+    }
     open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_halted(
         ring,
         storage,
@@ -1395,11 +1398,11 @@ pub(crate) async fn run_connected<'state, 'security>(
     #[cfg(feature = "diagnostics")]
     log_rx_ring_topology("started", &rx);
     #[cfg(feature = "diagnostics")]
-    let rx = rx.with_pipeline_observer(
-        diagnostics
-            .expect("diagnostics build must retain its configured pipeline observer")
-            .rx_pipeline,
-    );
+    let rx = if let Some(observer) = diagnostics.and_then(|hooks| hooks.rx_pipeline) {
+        rx.with_pipeline_observer(observer)
+    } else {
+        rx
+    };
 
     let network_rx = network_runner.rx_publisher(
         open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID,
@@ -1414,9 +1417,12 @@ pub(crate) async fn run_connected<'state, 'security>(
     let rx_sink = {
         let hooks =
             diagnostics.expect("diagnostics build must retain its configured pipeline observer");
-        rx_sink
-            .with_delivery_observer(hooks.rx_delivery)
-            .with_pipeline_observer(hooks.rx_pipeline)
+        let rx_sink = rx_sink.with_delivery_observer(hooks.rx_delivery);
+        if let Some(observer) = hooks.rx_pipeline {
+            rx_sink.with_pipeline_observer(observer)
+        } else {
+            rx_sink
+        }
     };
     #[cfg(feature = "diagnostics")]
     let rx_sink = ObservedConnectedRxSink {
@@ -1442,7 +1448,9 @@ pub(crate) async fn run_connected<'state, 'security>(
             runtime: rx_protocol_runtime,
             reorder_scratch: None,
             #[cfg(feature = "diagnostics")]
-            pipeline_observer: diagnostics.map(|hooks| hooks.rx_pipeline),
+            pipeline_observer: diagnostics.and_then(|hooks| hooks.rx_pipeline),
+            #[cfg(feature = "diagnostics")]
+            reorder_observer: diagnostics.and_then(|hooks| hooks.rx_reorder),
         },
         Esp32s31ConnectedStaTxResources {
             control: control_tx,

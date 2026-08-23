@@ -26,6 +26,8 @@ pub struct Esp32s31ConnectedStaRxProtocolResources<
     /// Optional observation-only counters used by qualification fixtures.
     #[cfg(any(feature = "diagnostics", test))]
     pub pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
+    #[cfg(any(feature = "diagnostics", test))]
+    pub reorder_observer: Option<&'queue dyn RxReorderAgreementObserver>,
 }
 
 /// Queue-independent connected-station RX resources.
@@ -55,6 +57,8 @@ pub struct Esp32s31ConnectedStaRxProcessorResources<
     pub reorder_scratch: Option<&'scratch mut [u8]>,
     #[cfg(any(feature = "diagnostics", test))]
     pub pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
+    #[cfg(any(feature = "diagnostics", test))]
+    pub reorder_observer: Option<&'queue dyn RxReorderAgreementObserver>,
 }
 
 /// Named resources consumed by the control-to-connected TX handoff.

@@ -67,7 +67,8 @@ async fn wait_session_link_requirements(
 
 pub(super) use bidirectional::{
     BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
-    complete_open_radio_bidirectional_direction, run_open_radio_bidirectional_session_coordinator,
+    OpenRadioBidirectionalResult, complete_open_radio_bidirectional_direction,
+    run_open_radio_bidirectional_session_coordinator,
 };
 pub(super) use evidence::{UdpSequenceEvidence, iperf2_udp_sequence};
 pub(super) use reporting::{

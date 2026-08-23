@@ -501,7 +501,9 @@ impl ProductionWifiEpochRunner {
                 runtime: rx_protocol_runtime,
                 reorder_scratch: None,
                 #[cfg(feature = "diagnostics")]
-                pipeline_observer: diagnostics.map(|hooks| hooks.rx_pipeline),
+                pipeline_observer: diagnostics.and_then(|hooks| hooks.rx_pipeline),
+                #[cfg(feature = "diagnostics")]
+                reorder_observer: diagnostics.and_then(|hooks| hooks.rx_reorder),
             },
         );
         let station_tx = Esp32s31ConnectedStaPort::build_tx(

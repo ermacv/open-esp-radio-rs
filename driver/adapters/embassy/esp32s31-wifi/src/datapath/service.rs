@@ -140,7 +140,11 @@ where
         admitted: usize,
         tx_batch_states: &mut [TxBatchState; 2],
     ) -> Result<(), B::Error> {
-        self.services.mark_prepared_tx_scheduler_entry();
+        #[cfg(any(feature = "diagnostics", test))]
+        self.services.mark_prepared_tx_scheduler_phase(
+            PreparedTxSchedulerPhase::PreparedEntry,
+            Instant::now().as_micros(),
+        );
         self.account_tx_frames(admitted);
         self.account_pair_tx_frames(interface, admitted);
         let network_tx = self.tx_consumer_for(interface);
@@ -304,6 +308,13 @@ where
                         self.prepared_tx_interface = Some(interface);
                     }
                 }
+            }
+            #[cfg(any(feature = "diagnostics", test))]
+            if progress == WifiTxProgress::Complete {
+                self.services.mark_prepared_tx_scheduler_phase(
+                    PreparedTxSchedulerPhase::ActiveServiceReturned,
+                    Instant::now().as_micros(),
+                );
             }
         }
         Ok(())

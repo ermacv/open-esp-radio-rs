@@ -22,6 +22,43 @@ pub enum AggregateBuildStop {
     QueueEmpty,
 }
 
+/// Diagnostic boundary crossed while a completed network transaction returns
+/// to the scheduler and its already-prepared successor becomes publishable.
+///
+/// The generic DATAPATH runner owns these boundaries. Role implementations
+/// only retain their timestamps when an observer is attached; ordinary builds
+/// do not read a clock or emit an event for them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparedTxSchedulerPhase {
+    /// The terminal TX service future returned to `drive_active_tx`.
+    ActiveServiceReturned,
+    /// The outer scheduler loop resumed after the active TX driver returned.
+    SchedulerLoopResumed,
+    /// The ordered non-blocking stop probe completed.
+    StopPollCompleted,
+    /// Stale TX wakes were drained and O(1) control readiness was sampled.
+    ControlReadinessChecked { ready: bool },
+    /// The scheduler committed to the already-prepared publication path.
+    PreparedEntry,
+}
+
+/// One complete diagnostic trace through the prepared-TX scheduler boundary.
+///
+/// Absolute timestamps keep policy out of the production adapter. The HIL
+/// observer decides which adjacent intervals to aggregate and report.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparedTxSchedulerTrace {
+    pub active_service_returned_micros: u64,
+    pub scheduler_loop_resumed_micros: u64,
+    pub stop_poll_completed_micros: u64,
+    pub control_readiness_checked_micros: u64,
+    pub prepared_entry_micros: u64,
+    /// Number of outer scheduler iterations between completion and entry.
+    pub scheduler_passes: u8,
+    /// Number of those iterations that found control work ready.
+    pub control_ready_passes: u8,
+}
+
 /// Value-only observations emitted by the production aggregate TX owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AggregateTxObservation {
@@ -65,9 +102,10 @@ pub enum AggregateTxObservation {
         /// Clock image captured immediately before queue programming began.
         at_micros: u64,
         program_micros: u64,
-        /// Entry into the already-prepared DATAPATH publication path. `None`
-        /// identifies an initial publication or a hardware retry.
-        prepared_entry_micros: Option<u64>,
+        /// Phase trace for an already-prepared DATAPATH publication. `None`
+        /// identifies an initial publication, hardware retry, or a path which
+        /// did not cross every required diagnostic boundary.
+        prepared_scheduler: Option<PreparedTxSchedulerTrace>,
     },
     /// One detached hardware A-MPDU completion after BlockAck classification.
     BlockAckProcessed {

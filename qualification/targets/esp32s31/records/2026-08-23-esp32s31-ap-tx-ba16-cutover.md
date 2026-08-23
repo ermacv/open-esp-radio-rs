@@ -195,6 +195,71 @@ continuation predicate to SRAM did not reduce it and was removed; broad
 scheduler placement in SRAM is not justified by this result. The strict
 less-than-50-us research target is therefore explicitly not closed.
 
+### Prepared scheduler phase diagnostic
+
+A follow-up diagnostic-only trace split the completion-to-prepared-entry
+boundary at the production async return, outer-loop resume, stop probe,
+control-readiness check and prepared-path commitment. The trace is retained
+locally by the AP TX owner and emitted once with the existing typed
+publication observation; no per-phase atomics or report policy enter the
+driver. Each generic DATAPATH boundary reads the same Embassy clock before
+forwarding its timestamp, so the adjacent interval does not include the next
+observer call. The ordinary image does not contain these clock reads, fields
+or marker calls.
+
+The final `diagnostic-mac-irq` image had runtime CRC `84bb3931` and application
+SHA-256
+`2284e51d907974d07f55d9b19132033769e060e11bcb1a54109a126c760812db`.
+The existing `access-point-single-client-ceiling-tx-diagnostic` scenario
+passed both 16-second OpenWrt cycles at 101.809 and 102.492 Mbit/s. Both cycles
+retained MCS7/HT40/SGI, zero peer retry/failure/AQM drops, zero hardware TX
+retry/timeout/collision and zero RX `BUFFER_FULL`/FIFO overflow.
+
+| Phase | Cycle 1 mean | Cycle 2 mean |
+| --- | ---: | ---: |
+| completion observer end -> active TX service return | 3.651 us | 3.651 us |
+| active TX service return -> outer scheduler loop | 39.373 us | 37.444 us |
+| non-blocking stop poll | 6.826 us | 6.782 us |
+| stale-wake drain + control-readiness check | 5.332 us | 5.354 us |
+| readiness check -> prepared-path entry | 13.083 us | 13.239 us |
+| reconciled completion -> prepared entry | 68.266 us | 66.470 us |
+
+The adjacent phases reconcile exactly with the existing total in each cycle.
+The runner averaged 1.018 scheduler passes per publication in both cycles;
+control was ready on 5.40% and 5.39% of samples. The dominant ordinary path
+cost is therefore the roughly 37--39 us unwind from the completed nested TX future to
+the next outer scheduler iteration, not the stop or O(1) readiness probes.
+
+This trace is intentionally more intrusive than the previous three-timestamp
+diagnostic. Four additional hot-path clock reads and their PSRAM code path
+raised the measured total from 54.20--58.32 us to 66.47--68.27 us and reduced
+diagnostic throughput. These absolute totals must not replace the less
+intrusive baseline; the phase proportions identify the next code boundary to
+inspect. The next optimization experiment should remove the nested async
+return from the terminal network-completion fast path or prove its generated
+state-machine cost before changing stop/control scheduling.
+
+### Rejected prepared-TX wrapper cutover
+
+A bounded follow-up made `start_prepared_network_tx` synchronous and moved its
+single `drive_active_tx` await directly into the two scheduler call sites. The
+change removed one source-level async wrapper without changing stop/control
+priority, DMA ownership, BA16, retry policy or the prepared-aggregate path.
+The diagnostic image had runtime CRC `e6c15d3f` and application SHA-256
+`62623b917a93374758def2d96925136282fcfd4b727c34d163e937b3e00c8466`.
+
+The experiment did not reduce the measured boundary. Across its two cycles,
+active-service-return to scheduler-loop-resume increased to 45.32 and 49.46
+us, while the reconciled completion-to-entry mean increased to 74.84 and
+83.16 us. The run still used BA16 at MCS7/HT40/SGI and retained zero hardware
+timeout/collision and zero RX `BUFFER_FULL`, so the result isolates a
+performance non-improvement rather than a functional failure. The source
+cutover was therefore removed: the source-level wrapper was already folded
+into the generated state machine sufficiently that deleting it did not remove
+the expensive continuation. Further work must target the generated active-TX
+continuation/code footprint or keep the next saturated publication inside the
+same terminal path; it must not retain this rejected API change.
+
 ## Remaining boundary
 
 The scheduler/DMA/peer-binding defects identified by the ceiling analysis are

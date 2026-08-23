@@ -181,6 +181,37 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         aggregate.prepared_entry_to_publication_lifetime_max_micros,
     ));
     yield_now().await;
+    let scheduler = aggregate.prepared_scheduler_timing;
+    runtime_log(format_args!(
+        "OAMPSP samples={} passes={} passes_max={} control_ready_passes={} \
+         completion_to_return_us={} completion_to_return_max_us={} \
+         return_to_loop_us={} return_to_loop_max_us={} \
+         stop_poll_us={} stop_poll_max_us={} readiness_us={} readiness_max_us={} \
+         readiness_to_entry_us={} readiness_to_entry_max_us={}",
+        scheduler.samples,
+        scheduler.scheduler_passes,
+        scheduler.scheduler_passes_lifetime_max,
+        scheduler.control_ready_passes,
+        scheduler.completion_to_active_service_return.micros,
+        scheduler
+            .completion_to_active_service_return
+            .lifetime_max_micros,
+        scheduler
+            .active_service_return_to_scheduler_loop
+            .micros,
+        scheduler
+            .active_service_return_to_scheduler_loop
+            .lifetime_max_micros,
+        scheduler.stop_poll.micros,
+        scheduler.stop_poll.lifetime_max_micros,
+        scheduler.control_readiness.micros,
+        scheduler.control_readiness.lifetime_max_micros,
+        scheduler.control_check_to_prepared_entry.micros,
+        scheduler
+            .control_check_to_prepared_entry
+            .lifetime_max_micros,
+    ));
+    yield_now().await;
     runtime_log(format_args!(
         "OAMPB operational_tids={:#04x} operational_transitions={} samples={} received={} \
          success_without={} nonzero_control={} start_outside={} start_lag_max={} \

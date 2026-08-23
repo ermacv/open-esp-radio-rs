@@ -65,12 +65,22 @@ where
         let mut stopping = false;
         let mut tx_batch_states = [TxBatchState::new(); 2];
         loop {
+            #[cfg(any(feature = "diagnostics", test))]
+            self.services.mark_prepared_tx_scheduler_phase(
+                PreparedTxSchedulerPhase::SchedulerLoopResumed,
+                Instant::now().as_micros(),
+            );
             // Poll the caller edge before servicing control. `ready(())`
             // makes this a non-blocking ordered probe, with stop winning an
             // exact tie before another transaction can begin.
             if !stopping && matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
                 stopping = true;
             }
+            #[cfg(any(feature = "diagnostics", test))]
+            self.services.mark_prepared_tx_scheduler_phase(
+                PreparedTxSchedulerPhase::StopPollCompleted,
+                Instant::now().as_micros(),
+            );
             if stopping {
                 // An error returned from RX-during-TX retains the exact live
                 // transaction. Resume it to its terminal IRQ/deadline edge
@@ -104,6 +114,13 @@ where
             self.discard_stale_tx_wakes();
             let control_ready = self.control_ready_latched
                 || self.services.control_ready(Instant::now().as_micros());
+            #[cfg(any(feature = "diagnostics", test))]
+            self.services.mark_prepared_tx_scheduler_phase(
+                PreparedTxSchedulerPhase::ControlReadinessChecked {
+                    ready: control_ready,
+                },
+                Instant::now().as_micros(),
+            );
             if control_ready {
                 self.control_ready_latched = false;
                 let control_context = DatapathControlContext {

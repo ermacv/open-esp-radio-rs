@@ -689,9 +689,14 @@ where
         self.network_tx.prepared_frame_count()
     }
 
-    fn mark_prepared_tx_scheduler_entry(&mut self) {
-        #[cfg(any(feature = "diagnostics", test))]
-        self.network_tx.mark_prepared_scheduler_entry();
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_tx_scheduler_phase(
+        &mut self,
+        phase: PreparedTxSchedulerPhase,
+        at_micros: u64,
+    ) {
+        self.network_tx
+            .mark_prepared_scheduler_phase(phase, at_micros);
     }
 
     fn can_prepare_tx(&self) -> bool {

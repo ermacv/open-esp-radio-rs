@@ -7,6 +7,8 @@ use core::future::{Future, pending, ready};
 
 use crate::datapath::irq::EmbassyMacIrqRuntime;
 use crate::datapath::network::{DatapathNetwork, DatapathNetworkRxSet};
+#[cfg(any(feature = "diagnostics", test))]
+use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
 use embassy_futures::{
     select::{Either, Either3, Either4, select, select3, select4},
     yield_now,
@@ -415,10 +417,16 @@ pub trait DatapathServices<
         0
     }
 
-    /// Mark entry into the scheduler's already-prepared publication path.
-    /// Diagnostic implementations may retain a timestamp for a later typed
-    /// publication observation; ordinary builds keep this a no-op.
-    fn mark_prepared_tx_scheduler_entry(&mut self) {}
+    /// Retain one diagnostic phase boundary for a later typed publication
+    /// observation. This method and all its call sites are absent from an
+    /// ordinary build.
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_tx_scheduler_phase(
+        &mut self,
+        _phase: PreparedTxSchedulerPhase,
+        _at_micros: u64,
+    ) {
+    }
 
     fn start_prepared_tx(
         &mut self,

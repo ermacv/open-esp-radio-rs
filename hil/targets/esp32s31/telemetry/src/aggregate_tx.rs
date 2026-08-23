@@ -8,6 +8,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::{
     AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
+    PreparedTxSchedulerTrace,
 };
 
 /// Number of histogram entries required for all currently legal A-MPDU sizes.
@@ -19,6 +20,137 @@ pub const AGGREGATE_TX_HISTOGRAM_BUCKETS: usize = 33;
 /// Per-exchange timing buckets for one through three publications and the
 /// terminal `4+` retry-policy bucket used by qualification.
 pub const AGGREGATE_TX_PUBLICATION_BUCKETS: usize = 5;
+
+struct PhaseTimingCounters {
+    micros: AtomicU32,
+    lifetime_max_micros: AtomicU32,
+}
+
+impl PhaseTimingCounters {
+    const fn new() -> Self {
+        Self {
+            micros: AtomicU32::new(0),
+            lifetime_max_micros: AtomicU32::new(0),
+        }
+    }
+
+    fn record(&self, micros: u32) {
+        self.micros.fetch_add(micros, Ordering::Relaxed);
+        self.lifetime_max_micros
+            .fetch_max(micros, Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> PhaseTimingSnapshot {
+        PhaseTimingSnapshot {
+            micros: self.micros.load(Ordering::Relaxed),
+            lifetime_max_micros: self.lifetime_max_micros.load(Ordering::Relaxed),
+        }
+    }
+}
+
+struct PreparedTxSchedulerTimingCounters {
+    samples: AtomicU32,
+    scheduler_passes: AtomicU32,
+    scheduler_passes_lifetime_max: AtomicU32,
+    control_ready_passes: AtomicU32,
+    completion_to_active_service_return: PhaseTimingCounters,
+    active_service_return_to_scheduler_loop: PhaseTimingCounters,
+    stop_poll: PhaseTimingCounters,
+    control_readiness: PhaseTimingCounters,
+    control_check_to_prepared_entry: PhaseTimingCounters,
+}
+
+impl PreparedTxSchedulerTimingCounters {
+    const fn new() -> Self {
+        Self {
+            samples: AtomicU32::new(0),
+            scheduler_passes: AtomicU32::new(0),
+            scheduler_passes_lifetime_max: AtomicU32::new(0),
+            control_ready_passes: AtomicU32::new(0),
+            completion_to_active_service_return: PhaseTimingCounters::new(),
+            active_service_return_to_scheduler_loop: PhaseTimingCounters::new(),
+            stop_poll: PhaseTimingCounters::new(),
+            control_readiness: PhaseTimingCounters::new(),
+            control_check_to_prepared_entry: PhaseTimingCounters::new(),
+        }
+    }
+
+    fn elapsed(start_micros: u32, end_micros: u64) -> Option<u32> {
+        let end = end_micros as u32 & AggregateTxCounters::IRQ_TIME_MASK;
+        let elapsed = end.wrapping_sub(start_micros) & AggregateTxCounters::IRQ_TIME_MASK;
+        (elapsed <= AggregateTxCounters::IRQ_TIME_MASK / 2).then_some(elapsed)
+    }
+
+    fn record(&self, completion_micros: u32, trace: PreparedTxSchedulerTrace) {
+        let active_return = trace.active_service_returned_micros as u32
+            & AggregateTxCounters::IRQ_TIME_MASK;
+        let scheduler_loop = trace.scheduler_loop_resumed_micros as u32
+            & AggregateTxCounters::IRQ_TIME_MASK;
+        let stop_poll = trace.stop_poll_completed_micros as u32
+            & AggregateTxCounters::IRQ_TIME_MASK;
+        let control_check = trace.control_readiness_checked_micros as u32
+            & AggregateTxCounters::IRQ_TIME_MASK;
+
+        let Some(completion_to_active_return) =
+            Self::elapsed(completion_micros, trace.active_service_returned_micros)
+        else {
+            return;
+        };
+        let Some(active_return_to_scheduler_loop) =
+            Self::elapsed(active_return, trace.scheduler_loop_resumed_micros)
+        else {
+            return;
+        };
+        let Some(stop_poll_micros) = Self::elapsed(scheduler_loop, trace.stop_poll_completed_micros)
+        else {
+            return;
+        };
+        let Some(control_readiness_micros) =
+            Self::elapsed(stop_poll, trace.control_readiness_checked_micros)
+        else {
+            return;
+        };
+        let Some(control_to_entry) = Self::elapsed(control_check, trace.prepared_entry_micros) else {
+            return;
+        };
+
+        self.samples.fetch_add(1, Ordering::Relaxed);
+        self.scheduler_passes
+            .fetch_add(u32::from(trace.scheduler_passes), Ordering::Relaxed);
+        self.scheduler_passes_lifetime_max
+            .fetch_max(u32::from(trace.scheduler_passes), Ordering::Relaxed);
+        self.control_ready_passes
+            .fetch_add(u32::from(trace.control_ready_passes), Ordering::Relaxed);
+        self.completion_to_active_service_return
+            .record(completion_to_active_return);
+        self.active_service_return_to_scheduler_loop
+            .record(active_return_to_scheduler_loop);
+        self.stop_poll.record(stop_poll_micros);
+        self.control_readiness.record(control_readiness_micros);
+        self.control_check_to_prepared_entry
+            .record(control_to_entry);
+    }
+
+    fn snapshot(&self) -> PreparedTxSchedulerTimingSnapshot {
+        PreparedTxSchedulerTimingSnapshot {
+            samples: self.samples.load(Ordering::Relaxed),
+            scheduler_passes: self.scheduler_passes.load(Ordering::Relaxed),
+            scheduler_passes_lifetime_max: self
+                .scheduler_passes_lifetime_max
+                .load(Ordering::Relaxed),
+            control_ready_passes: self.control_ready_passes.load(Ordering::Relaxed),
+            completion_to_active_service_return: self
+                .completion_to_active_service_return
+                .snapshot(),
+            active_service_return_to_scheduler_loop: self
+                .active_service_return_to_scheduler_loop
+                .snapshot(),
+            stop_poll: self.stop_poll.snapshot(),
+            control_readiness: self.control_readiness.snapshot(),
+            control_check_to_prepared_entry: self.control_check_to_prepared_entry.snapshot(),
+        }
+    }
+}
 
 /// Lock-free HIL observations of the production connected TX owner.
 ///
@@ -69,6 +201,7 @@ pub struct AggregateTxCounters {
     prepared_entry_to_publication_samples: AtomicU32,
     prepared_entry_to_publication_micros: AtomicU32,
     prepared_entry_to_publication_lifetime_max_micros: AtomicU32,
+    prepared_scheduler_timing: PreparedTxSchedulerTimingCounters,
     completion_core_micros: AtomicU32,
     completion_core_lifetime_max_micros: AtomicU32,
     backing_release_micros: AtomicU32,
@@ -163,6 +296,7 @@ impl AggregateTxCounters {
             prepared_entry_to_publication_samples: AtomicU32::new(0),
             prepared_entry_to_publication_micros: AtomicU32::new(0),
             prepared_entry_to_publication_lifetime_max_micros: AtomicU32::new(0),
+            prepared_scheduler_timing: PreparedTxSchedulerTimingCounters::new(),
             completion_core_micros: AtomicU32::new(0),
             completion_core_lifetime_max_micros: AtomicU32::new(0),
             backing_release_micros: AtomicU32::new(0),
@@ -280,6 +414,7 @@ impl AggregateTxCounters {
             prepared_entry_to_publication_lifetime_max_micros: self
                 .prepared_entry_to_publication_lifetime_max_micros
                 .load(Ordering::Relaxed),
+            prepared_scheduler_timing: self.prepared_scheduler_timing.snapshot(),
             completion_core_micros: self.completion_core_micros.load(Ordering::Relaxed),
             completion_core_lifetime_max_micros: self
                 .completion_core_lifetime_max_micros
@@ -428,7 +563,7 @@ impl AggregateTxCounters {
         &self,
         at_micros: u64,
         program_micros: u64,
-        prepared_entry_micros: Option<u64>,
+        prepared_scheduler: Option<PreparedTxSchedulerTrace>,
     ) {
         let at_modulo = at_micros as u32 & Self::IRQ_TIME_MASK;
         let completion = self.last_completion_micros.swap(0, Ordering::AcqRel);
@@ -444,7 +579,8 @@ impl AggregateTxCounters {
                     u64::from(elapsed),
                 );
             }
-            if let Some(entry_micros) = prepared_entry_micros {
+            if let Some(trace) = prepared_scheduler {
+                let entry_micros = trace.prepared_entry_micros;
                 let entry_modulo = entry_micros as u32 & Self::IRQ_TIME_MASK;
                 let completion_to_entry = entry_modulo
                     .wrapping_sub(completed_modulo)
@@ -468,6 +604,8 @@ impl AggregateTxCounters {
                         &self.prepared_entry_to_publication_lifetime_max_micros,
                         u64::from(entry_to_publication),
                     );
+                    self.prepared_scheduler_timing
+                        .record(completed_modulo, trace);
                 }
             }
         }
@@ -658,9 +796,9 @@ impl AggregateTxObserver for AggregateTxCounters {
             AggregateTxObservation::Published {
                 at_micros,
                 program_micros,
-                prepared_entry_micros,
+                prepared_scheduler,
             } => {
-                self.record_publication(at_micros, program_micros, prepared_entry_micros);
+                self.record_publication(at_micros, program_micros, prepared_scheduler);
             }
             AggregateTxObservation::BlockAckProcessed {
                 tx_status,
@@ -779,6 +917,65 @@ impl Default for AggregateTxCounters {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhaseTimingSnapshot {
+    pub micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub lifetime_max_micros: u32,
+}
+
+impl PhaseTimingSnapshot {
+    fn wrapping_delta_since(self, earlier: Self) -> Self {
+        Self {
+            micros: self.micros.wrapping_sub(earlier.micros),
+            lifetime_max_micros: self.lifetime_max_micros,
+        }
+    }
+}
+
+/// Diagnostic decomposition of completion-to-prepared-entry scheduler time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparedTxSchedulerTimingSnapshot {
+    pub samples: u32,
+    pub scheduler_passes: u32,
+    /// Maximum passes observed since boot, not an interval delta.
+    pub scheduler_passes_lifetime_max: u32,
+    pub control_ready_passes: u32,
+    pub completion_to_active_service_return: PhaseTimingSnapshot,
+    pub active_service_return_to_scheduler_loop: PhaseTimingSnapshot,
+    pub stop_poll: PhaseTimingSnapshot,
+    pub control_readiness: PhaseTimingSnapshot,
+    pub control_check_to_prepared_entry: PhaseTimingSnapshot,
+}
+
+impl PreparedTxSchedulerTimingSnapshot {
+    fn wrapping_delta_since(self, earlier: Self) -> Self {
+        Self {
+            samples: self.samples.wrapping_sub(earlier.samples),
+            scheduler_passes: self
+                .scheduler_passes
+                .wrapping_sub(earlier.scheduler_passes),
+            scheduler_passes_lifetime_max: self.scheduler_passes_lifetime_max,
+            control_ready_passes: self
+                .control_ready_passes
+                .wrapping_sub(earlier.control_ready_passes),
+            completion_to_active_service_return: self
+                .completion_to_active_service_return
+                .wrapping_delta_since(earlier.completion_to_active_service_return),
+            active_service_return_to_scheduler_loop: self
+                .active_service_return_to_scheduler_loop
+                .wrapping_delta_since(earlier.active_service_return_to_scheduler_loop),
+            stop_poll: self.stop_poll.wrapping_delta_since(earlier.stop_poll),
+            control_readiness: self
+                .control_readiness
+                .wrapping_delta_since(earlier.control_readiness),
+            control_check_to_prepared_entry: self
+                .control_check_to_prepared_entry
+                .wrapping_delta_since(earlier.control_check_to_prepared_entry),
+        }
+    }
+}
+
 /// One coherent-enough diagnostic observation of [`AggregateTxCounters`].
 ///
 /// The fields may straddle a live TX update, so interval qualification must
@@ -834,6 +1031,7 @@ pub struct AggregateTxCounterSnapshot {
     pub prepared_entry_to_publication_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub prepared_entry_to_publication_lifetime_max_micros: u32,
+    pub prepared_scheduler_timing: PreparedTxSchedulerTimingSnapshot,
     pub completion_core_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub completion_core_lifetime_max_micros: u32,
@@ -975,6 +1173,9 @@ impl AggregateTxCounterSnapshot {
                 .wrapping_sub(earlier.prepared_entry_to_publication_micros),
             prepared_entry_to_publication_lifetime_max_micros: self
                 .prepared_entry_to_publication_lifetime_max_micros,
+            prepared_scheduler_timing: self
+                .prepared_scheduler_timing
+                .wrapping_delta_since(earlier.prepared_scheduler_timing),
             completion_core_micros: self
                 .completion_core_micros
                 .wrapping_sub(earlier.completion_core_micros),
@@ -1177,12 +1378,12 @@ mod tests {
         counters.observe(AggregateTxObservation::Published {
             at_micros: 80,
             program_micros: 3,
-            prepared_entry_micros: None,
+            prepared_scheduler: None,
         });
         counters.observe(AggregateTxObservation::Published {
             at_micros: 95,
             program_micros: 5,
-            prepared_entry_micros: None,
+            prepared_scheduler: None,
         });
         counters.observe(AggregateTxObservation::Completed {
             acknowledged: 31,
@@ -1297,7 +1498,15 @@ mod tests {
         counters.observe(AggregateTxObservation::Published {
             at_micros: 175,
             program_micros: 4,
-            prepared_entry_micros: Some(160),
+            prepared_scheduler: Some(PreparedTxSchedulerTrace {
+                active_service_returned_micros: 110,
+                scheduler_loop_resumed_micros: 125,
+                stop_poll_completed_micros: 130,
+                control_readiness_checked_micros: 145,
+                prepared_entry_micros: 160,
+                scheduler_passes: 1,
+                control_ready_passes: 0,
+            }),
         });
 
         let delta = counters.snapshot().wrapping_delta_since(before);
@@ -1308,5 +1517,34 @@ mod tests {
         assert_eq!(delta.completion_to_prepared_entry_micros, 60);
         assert_eq!(delta.prepared_entry_to_publication_samples, 1);
         assert_eq!(delta.prepared_entry_to_publication_micros, 15);
+        assert_eq!(delta.prepared_scheduler_timing.samples, 1);
+        assert_eq!(delta.prepared_scheduler_timing.scheduler_passes, 1);
+        assert_eq!(delta.prepared_scheduler_timing.control_ready_passes, 0);
+        assert_eq!(
+            delta
+                .prepared_scheduler_timing
+                .completion_to_active_service_return
+                .micros,
+            10
+        );
+        assert_eq!(
+            delta
+                .prepared_scheduler_timing
+                .active_service_return_to_scheduler_loop
+                .micros,
+            15
+        );
+        assert_eq!(delta.prepared_scheduler_timing.stop_poll.micros, 5);
+        assert_eq!(
+            delta.prepared_scheduler_timing.control_readiness.micros,
+            15
+        );
+        assert_eq!(
+            delta
+                .prepared_scheduler_timing
+                .control_check_to_prepared_entry
+                .micros,
+            15
+        );
     }
 }

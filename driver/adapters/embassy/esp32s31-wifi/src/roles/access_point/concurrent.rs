@@ -973,6 +973,12 @@ where
         self.network_tx.prepared_frame_count()
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_scheduler_phase(&mut self, phase: PreparedTxSchedulerPhase, at_micros: u64) {
+        self.network_tx
+            .mark_prepared_scheduler_phase(phase, at_micros);
+    }
+
     fn start_prepared(
         &mut self,
         hardware: &mut H,

@@ -83,7 +83,8 @@ use crate::diagnostics::access_point::{
 };
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::{
-    AggregateBuildStop, AggregateTxObservation, AggregateTxObserver,
+    AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, PreparedTxSchedulerPhase,
+    PreparedTxSchedulerTrace,
 };
 #[cfg(feature = "diagnostics")]
 use crate::diagnostics::network::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};

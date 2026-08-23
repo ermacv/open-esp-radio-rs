@@ -11,6 +11,8 @@
 
 use core::future::{Future, pending};
 
+#[cfg(any(feature = "diagnostics", test))]
+use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
 use open_esp_radio_embassy_net::{
     NetworkInterfaceId, PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex,
 };
@@ -556,6 +558,10 @@ pub trait DatapathPairedNetworkTxService<
         0
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_scheduler_phase(&mut self, _phase: PreparedTxSchedulerPhase, _at_micros: u64) {
+    }
+
     fn start_prepared(
         &mut self,
         _hardware: &mut H,
@@ -1033,6 +1039,27 @@ where
             Some(DatapathPairRole::First) => self.first_tx.prepared_frame_count(),
             Some(DatapathPairRole::Second) => self.second_tx.prepared_frame_count(),
             None => 0,
+        }
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_tx_scheduler_phase(
+        &mut self,
+        phase: PreparedTxSchedulerPhase,
+        at_micros: u64,
+    ) {
+        match self.prepared.or_else(|| {
+            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
+        }) {
+            Some(DatapathPairRole::First) => {
+                self.first_tx
+                    .mark_prepared_scheduler_phase(phase, at_micros);
+            }
+            Some(DatapathPairRole::Second) => {
+                self.second_tx
+                    .mark_prepared_scheduler_phase(phase, at_micros);
+            }
+            None => {}
         }
     }
 

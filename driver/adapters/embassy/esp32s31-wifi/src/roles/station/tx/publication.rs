@@ -900,7 +900,7 @@ where
             observer.observe(AggregateTxObservation::Published {
                 at_micros: publication_started,
                 program_micros: publication_finished.wrapping_sub(publication_started),
-                prepared_entry_micros: None,
+                prepared_scheduler: None,
             });
         }
         active.deadline_micros = deadline;

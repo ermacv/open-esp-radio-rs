@@ -302,7 +302,16 @@ fn access_point_ht_width_is_one_end_to_end_typed_contract() {
     let ap_mac = fs::read_to_string(repository.join("driver/chips/esp32s31/wifi/ap/src/mac.rs"))
         .expect("read AP MAC policy owner");
     assert!(ap_mac.contains("pub fn aggregate_admission("));
-    assert!(ap_mac.contains("let rate = self.peer_ht_rate(peer)?;"));
+    assert!(
+        ap_mac.contains("let (binding, status) = self.engine.bind_aggregate_peer(peer).ok()?;")
+    );
+    assert!(ap_mac.contains("let rate = peer_ht_rate(self.engine.channel(), status.ht?)?;"));
+
+    let ap_engine =
+        fs::read_to_string(repository.join("driver/chips/esp32s31/wifi/ap/src/engine.rs"))
+            .expect("read AP engine");
+    assert!(ap_engine.contains("pub struct Esp32s31ApAggregateBinding"));
+    assert!(ap_engine.contains(".bound_peer_status(binding.peer)"));
 
     let protocol = fs::read_to_string(repository.join("hil/protocol/src/message.rs"))
         .expect("read HIL AP request");

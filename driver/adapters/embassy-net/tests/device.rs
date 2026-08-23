@@ -548,6 +548,56 @@ fn returned_shared_tx_credit_wakes_one_waiting_peer() {
 }
 
 #[test]
+fn aggregate_credit_return_publishes_one_readiness_edge() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 4>;
+    let station_resources = Box::leak(Box::new(EndpointResources::new()));
+    let access_point_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (provider, consumer) = tx_resources.split(pool);
+    let station_interface = NetworkInterfaceId::new(0);
+    let access_point_interface = NetworkInterfaceId::new(1);
+    let (mut station, station_rx) =
+        station_resources.split(provider, station_interface, [2, 0, 0, 0, 0, 1]);
+    let (mut access_point, access_point_rx) =
+        access_point_resources.split(provider, access_point_interface, [2, 0, 0, 0, 0, 2]);
+    station_rx.set_link_state(LinkState::Up);
+    access_point_rx.set_link_state(LinkState::Up);
+    for _ in 0..4 {
+        station
+            .transmit(&mut context())
+            .expect("each physical credit is initially free")
+            .consume(TEST_ETHERNET_LENGTH, |_| ());
+    }
+    let held = core::array::from_fn::<_, 4, _>(|_| {
+        consumer
+            .try_receive()
+            .expect("radio claims the complete aggregate batch")
+    });
+
+    let station_wakes = Arc::new(AtomicUsize::new(0));
+    let access_point_wakes = Arc::new(AtomicUsize::new(0));
+    let station_waker = Waker::from(Arc::new(CountWake(station_wakes.clone())));
+    let access_point_waker = Waker::from(Arc::new(CountWake(access_point_wakes.clone())));
+    assert!(
+        station
+            .transmit(&mut Context::from_waker(&station_waker))
+            .is_none()
+    );
+    assert!(
+        access_point
+            .transmit(&mut Context::from_waker(&access_point_waker))
+            .is_none()
+    );
+
+    drop(held);
+    assert_eq!(station_wakes.load(Ordering::Relaxed), 0);
+    assert_eq!(access_point_wakes.load(Ordering::Relaxed), 1);
+}
+
+#[test]
 fn dropped_pinned_tx_token_returns_its_reserved_slot() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;

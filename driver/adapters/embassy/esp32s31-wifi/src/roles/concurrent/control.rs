@@ -30,6 +30,8 @@ pub trait Esp32s31StaApStationControlRole<H, PhysicalTx> {
         retain_physical_tx: bool,
     ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a;
 
+    fn station_control_ready(&self, now_micros: u64) -> bool;
+
     /// Wait for role-local work without borrowing the shared physical TX.
     /// Holding that owner across a sleep would prevent the AP beacon timer
     /// from beginning its own finite transaction.
@@ -62,7 +64,10 @@ pub trait Esp32s31StaApAccessPointControlRole<H, PhysicalTx> {
         physical_tx: &mut PhysicalTx,
     ) -> Result<DatapathPairedStopProgress, Self::Error>;
 
-    fn next_access_point_control_delay_millis(&self, now_micros: u64) -> Result<u32, Self::Error>;
+    fn next_access_point_control_deadline_micros(
+        &self,
+        now_micros: u64,
+    ) -> Result<u64, Self::Error>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,13 +88,13 @@ pub enum Esp32s31StaApControlExit<StationExit> {
 /// step followed by one AP step. The arbiter never inspects protocol internals
 /// and reports the exact role for every resulting hardware TX transaction.
 pub struct Esp32s31StaApControlArbiter {
-    next_access_point_delay_millis: u32,
+    next_access_point_deadline_micros: u64,
 }
 
 impl Esp32s31StaApControlArbiter {
     pub const fn new() -> Self {
         Self {
-            next_access_point_delay_millis: 0,
+            next_access_point_deadline_micros: 0,
         }
     }
 
@@ -135,10 +140,15 @@ where
         async move {
             let now = Instant::now().as_micros();
             if retained_tx == Some(DatapathPairRole::Second) {
-                return access_point
+                let progress = access_point
                     .service_access_point_control(hardware, physical_tx, now, true)
-                    .map(Self::map_access_point_progress)
-                    .map_err(Esp32s31StaApControlError::AccessPoint);
+                    .map_err(Esp32s31StaApControlError::AccessPoint)?;
+                if progress == Esp32s31StaApAccessPointControlProgress::Idle {
+                    self.next_access_point_deadline_micros = access_point
+                        .next_access_point_control_deadline_micros(now)
+                        .map_err(Esp32s31StaApControlError::AccessPoint)?;
+                }
+                return Ok(Self::map_access_point_progress(progress));
             }
             if retained_tx == Some(DatapathPairRole::First) {
                 return match station
@@ -189,12 +199,17 @@ where
                 .service_access_point_control(hardware, physical_tx, now, false)
                 .map_err(Esp32s31StaApControlError::AccessPoint)?;
             if progress == Esp32s31StaApAccessPointControlProgress::Idle {
-                self.next_access_point_delay_millis = access_point
-                    .next_access_point_control_delay_millis(now)
+                self.next_access_point_deadline_micros = access_point
+                    .next_access_point_control_deadline_micros(now)
                     .map_err(Esp32s31StaApControlError::AccessPoint)?;
             }
             Ok(Self::map_access_point_progress(progress))
         }
+    }
+
+    fn ready(&self, station: &Station, _access_point: &AccessPoint, now_micros: u64) -> bool {
+        station.station_control_ready(now_micros)
+            || now_micros >= self.next_access_point_deadline_micros
     }
 
     fn stop(
@@ -218,7 +233,7 @@ where
         async move {
             match select(
                 station.wait_station_control_ready(),
-                Timer::after_millis(u64::from(self.next_access_point_delay_millis)),
+                Timer::at(Instant::from_micros(self.next_access_point_deadline_micros)),
             )
             .await
             {
@@ -260,6 +275,10 @@ mod tests {
         fn wait_station_control_ready(&mut self) -> impl Future<Output = ()> + '_ {
             pending()
         }
+
+        fn station_control_ready(&self, _now_micros: u64) -> bool {
+            false
+        }
     }
 
     struct AccessPoint {
@@ -294,11 +313,11 @@ mod tests {
             Ok(DatapathPairedStopProgress::Stopped)
         }
 
-        fn next_access_point_control_delay_millis(
+        fn next_access_point_control_deadline_micros(
             &self,
-            _now_micros: u64,
-        ) -> Result<u32, Self::Error> {
-            Ok(1)
+            now_micros: u64,
+        ) -> Result<u64, Self::Error> {
+            Ok(now_micros.saturating_add(1_000))
         }
     }
 
@@ -432,5 +451,34 @@ mod tests {
         );
         assert_eq!(station.calls, 0);
         assert_eq!(access_point.calls, 1);
+    }
+
+    #[test]
+    fn absolute_access_point_deadline_is_an_o1_readiness_edge() {
+        let arbiter = Esp32s31StaApControlArbiter {
+            next_access_point_deadline_micros: 10_000,
+        };
+        let station = Station {
+            calls: 0,
+            progress: DatapathControlProgress::Idle,
+        };
+        let access_point = AccessPoint {
+            due: false,
+            calls: 0,
+            progress: Esp32s31StaApAccessPointControlProgress::Idle,
+        };
+
+        assert!(!DatapathPairedControlService::ready(
+            &arbiter,
+            &station,
+            &access_point,
+            9_999,
+        ));
+        assert!(DatapathPairedControlService::ready(
+            &arbiter,
+            &station,
+            &access_point,
+            10_000,
+        ));
     }
 }

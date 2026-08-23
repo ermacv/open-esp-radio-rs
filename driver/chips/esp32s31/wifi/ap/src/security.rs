@@ -27,6 +27,20 @@ pub struct Esp32s31ApSecurityStopReport {
     pub group_hardware_index: u8,
 }
 
+/// O(1) identity of one installed pairwise hardware-key slot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApPairwiseBinding {
+    index: u8,
+    peer: [u8; 6],
+    hardware_index: u8,
+}
+
+impl Esp32s31ApPairwiseBinding {
+    pub const fn hardware_index(self) -> u8 {
+        self.hardware_index
+    }
+}
+
 pub struct Esp32s31ApSecurityStartFailure<'storage> {
     pub error: Esp32s31ApSecurityError,
     pub storage: &'storage mut Esp32s31ApPairwiseKeyStorage,
@@ -176,6 +190,48 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
         Ok(slot.next_tx_ccmp_header())
     }
 
+    pub fn bind_pairwise(
+        &self,
+        peer: [u8; 6],
+        association_id: u16,
+    ) -> Result<Esp32s31ApPairwiseBinding, Esp32s31ApSecurityError> {
+        let index = usize::from(
+            u8::try_from(
+                association_id
+                    .checked_sub(1)
+                    .ok_or(CryptoKeyError::InvalidAccessPointAssociationId)?,
+            )
+            .map_err(|_| CryptoKeyError::InvalidAccessPointAssociationId)?,
+        );
+        let slot = self
+            .slots()
+            .get(index)
+            .and_then(Option::as_ref)
+            .filter(|slot| slot.peer() == &peer)
+            .ok_or(Esp32s31ApSecurityError::WrongPeer)?;
+        Ok(Esp32s31ApPairwiseBinding {
+            index: u8::try_from(index)
+                .map_err(|_| CryptoKeyError::InvalidAccessPointAssociationId)?,
+            peer,
+            hardware_index: slot.hardware_index(),
+        })
+    }
+
+    pub fn next_bound_pairwise_tx_ccmp_header(
+        &mut self,
+        binding: Esp32s31ApPairwiseBinding,
+    ) -> Result<[u8; 8], Esp32s31ApSecurityError> {
+        let slot = self
+            .slots_mut()
+            .get_mut(usize::from(binding.index))
+            .and_then(Option::as_mut)
+            .filter(|slot| {
+                slot.peer() == &binding.peer && slot.hardware_index() == binding.hardware_index
+            })
+            .ok_or(Esp32s31ApSecurityError::WrongPeer)?;
+        Ok(slot.next_tx_ccmp_header())
+    }
+
     pub fn pairwise_hardware_index(&self, peer: [u8; 6]) -> Result<u8, Esp32s31ApSecurityError> {
         let slot = self
             .slots()
@@ -284,9 +340,17 @@ mod tests {
         security
             .install_pairwise(&mut hardware, [3; 6], 1, &ptk)
             .unwrap();
+        let binding = security.bind_pairwise([3; 6], 1).unwrap();
+        assert_eq!(binding.hardware_index(), 8);
         assert_eq!(
-            security.next_pairwise_tx_ccmp_header([3; 6]).unwrap(),
+            security
+                .next_bound_pairwise_tx_ccmp_header(binding)
+                .unwrap(),
             [3, 0, 0, 0x20, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            security.bind_pairwise([3; 6], 2),
+            Err(Esp32s31ApSecurityError::WrongPeer)
         );
         assert_eq!(security.pairwise_hardware_index([3; 6]), Ok(8));
         assert_eq!(

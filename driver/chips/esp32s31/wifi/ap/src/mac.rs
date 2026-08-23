@@ -455,10 +455,11 @@ where
         if peer[0] & 1 != 0 {
             return None;
         }
-        let agreement = self.engine.tx_block_ack_agreement(peer)?;
-        let rate = self.peer_ht_rate(peer)?;
+        let (binding, status) = self.engine.bind_aggregate_peer(peer).ok()?;
+        let agreement = status.tx_block_ack?;
+        let rate = peer_ht_rate(self.engine.channel(), status.ht?)?;
         Some(Esp32s31ApAggregateAdmission::new(
-            peer,
+            binding,
             rate,
             agreement.window,
         ))

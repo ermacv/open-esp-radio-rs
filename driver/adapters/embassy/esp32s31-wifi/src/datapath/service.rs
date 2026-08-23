@@ -59,8 +59,15 @@ where
             .rx_frame_deficit
             .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
         self.complete_rx_service(progress).await;
+        // A finite protocol RX turn may have staged a management response or
+        // changed a role-local deadline. Re-arm control without speculating
+        // about the role's protocol state.
+        self.control_ready_latched = true;
         if self.services.active_tx_interface().is_some() {
-            self.active_tx_interface = Some(self.reported_active_tx_interface());
+            self.begin_active_tx(
+                self.reported_active_tx_interface(),
+                DatapathTxOrigin::Control,
+            );
             self.drive_active_tx(true).await?;
         }
         Ok(())
@@ -80,6 +87,7 @@ where
             .rx_frame_deficit
             .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
         self.complete_rx_service(progress).await;
+        self.control_ready_latched = true;
         Ok(())
     }
 
@@ -120,6 +128,36 @@ where
             .saturating_sub(i64::try_from(frames.max(1)).unwrap_or(i64::MAX));
     }
 
+    /// Publish one complete software-owned standby transaction.
+    ///
+    /// Keeping this boundary in one helper lets the saturated scheduler use
+    /// the same accounting and ownership transition without re-entering the
+    /// generic queue/batch discovery path. The caller must still establish
+    /// stop, control and RX priority before invoking it.
+    pub(super) async fn start_prepared_network_tx(
+        &mut self,
+        interface: NetworkInterfaceId,
+        admitted: usize,
+        tx_batch_states: &mut [TxBatchState; 2],
+    ) -> Result<(), B::Error> {
+        self.services.mark_prepared_tx_scheduler_entry();
+        self.account_tx_frames(admitted);
+        self.account_pair_tx_frames(interface, admitted);
+        let network_tx = self.tx_consumer_for(interface);
+        let progress = self.services.start_prepared_tx(&network_tx)?;
+        let slot = self.tx_batch_state_slot(interface);
+        tx_batch_states[slot].note_started(admitted);
+        self.prepared_tx_interface = self.services.has_prepared_tx().then_some(interface);
+        if progress == WifiTxProgress::Pending {
+            self.begin_active_tx(interface, DatapathTxOrigin::Network);
+            // Standalone operation keeps the double-buffered pipeline live.
+            // A paired owner returns the physical owner at every transaction
+            // boundary and `drive_active_tx` disables look-ahead for it.
+            self.drive_active_tx(true).await?;
+        }
+        Ok(())
+    }
+
     pub(super) fn discard_stale_tx_wakes(&self) {
         while self.irq.try_take_tx().is_some() {}
     }
@@ -157,8 +195,10 @@ where
 
     async fn service_active_tx(&mut self, wake: WifiTxWake) -> Result<WifiTxProgress, B::Error> {
         let progress = self.services.service_tx(wake).await?;
-        if progress == WifiTxProgress::Complete {
-            self.active_tx_interface = None;
+        if progress == WifiTxProgress::Complete
+            && self.finish_active_tx() == DatapathTxOrigin::Control
+        {
+            self.control_ready_latched = true;
         }
         Ok(progress)
     }

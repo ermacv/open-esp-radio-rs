@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::{MacInterface, RadioRegisters};
+use crate::{MacHtTxProgram, MacInterface, RadioRegisters};
 
 impl RadioRegisters {
     pub fn validation_station_tsf(&self, low: Option<&mut u32>, high: Option<&mut u32>) {
@@ -63,5 +63,11 @@ impl RadioRegisters {
             contention_window,
             interface,
         )
+    }
+
+    /// Execute the exact production HT queue-programming transaction without
+    /// forging a DMA publication capability in an isolated comparison image.
+    pub fn validation_program_ht_mac_tx_ppdu(&mut self, queue: u8, program: MacHtTxProgram) {
+        self.program_ht_mac_tx_ppdu(queue, program);
     }
 }

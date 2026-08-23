@@ -98,27 +98,22 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
         self.mac.beacon_publication_due(now_micros)
     }
 
-    fn next_control_delay_millis(
+    fn next_control_deadline_micros(
         &self,
         now_micros: u64,
-    ) -> Result<u32, Esp32s31AccessPointControlError> {
-        let (_, beacon_delay_ms) = self
+    ) -> Result<u64, Esp32s31AccessPointControlError> {
+        let (beacon_tick, _) = self
             .mac
             .next_beacon_delay(now_micros as u32)
             .ok_or(Esp32s31AccessPointControlError::InvalidBeaconSchedule)?;
-        let deadline_delay = |deadline: u64| {
-            let remaining = deadline.saturating_sub(now_micros);
-            u32::try_from(remaining.saturating_add(999) / 1_000)
-                .unwrap_or(u32::MAX)
-                .max(1)
-        };
+        let beacon_deadline = now_micros
+            .saturating_add(u64::from(beacon_tick.wrapping_sub(now_micros as u32)));
         Ok(self
             .mac
             .next_control_deadline()
             .into_iter()
             .chain(self.rx_reorder.next_deadline())
-            .map(deadline_delay)
-            .fold(beacon_delay_ms, u32::min))
+            .fold(beacon_deadline, u64::min))
     }
 
     pub fn has_operational_tx_block_ack(&self) -> bool {

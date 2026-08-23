@@ -183,6 +183,17 @@ pub enum DatapathInterfaceScope {
     },
 }
 
+/// Semantic owner of the currently active physical TX transaction.
+///
+/// Network completion returns directly to data arbitration. Control completion
+/// re-arms the control machine because one terminal management edge may expose
+/// another finite protocol transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DatapathTxOrigin {
+    Network,
+    Control,
+}
+
 impl DatapathInterfaceScope {
     pub fn pair(first: NetworkInterfaceId, second: NetworkInterfaceId) -> Self {
         assert_ne!(first, second, "DATAPATH pair requires distinct interfaces");
@@ -300,6 +311,16 @@ pub trait DatapathServices<
         ready(Ok(DatapathControlProgress::Idle))
     }
 
+    /// Whether control work is ready at this transaction boundary.
+    ///
+    /// Implementations must make this an O(1) observation. Timed roles retain
+    /// one absolute deadline; mailbox-driven roles inspect their published
+    /// readiness state. The conservative default preserves custom services
+    /// which have not specialised their control scheduler.
+    fn control_ready(&self, _now_micros: u64) -> bool {
+        true
+    }
+
     /// VIF that owns a role-generated live TX transaction.
     ///
     /// Standalone runners infer their sole interface. A paired runner requires
@@ -394,9 +415,14 @@ pub trait DatapathServices<
         0
     }
 
-    fn start_prepared_tx<'a>(
-        &'a mut self,
-        _network: &'a PinnedTxInterfaceConsumer<
+    /// Mark entry into the scheduler's already-prepared publication path.
+    /// Diagnostic implementations may retain a timestamp for a later typed
+    /// publication observation; ordinary builds keep this a no-op.
+    fn mark_prepared_tx_scheduler_entry(&mut self) {}
+
+    fn start_prepared_tx(
+        &mut self,
+        _network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -404,8 +430,8 @@ pub trait DatapathServices<
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        ready(Ok(WifiTxProgress::Complete))
+    ) -> Result<WifiTxProgress, Self::Error> {
+        Ok(WifiTxProgress::Complete)
     }
 
     fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
@@ -453,7 +479,9 @@ pub struct DatapathRunner<
     network_rx: R,
     services: B,
     active_tx_interface: Option<NetworkInterfaceId>,
+    active_tx_origin: Option<DatapathTxOrigin>,
     prepared_tx_interface: Option<NetworkInterfaceId>,
+    control_ready_latched: bool,
     rx_progress: DatapathRxProgress,
     /// Signed RX-minus-TX frame balance. A negative value is retained across
     /// transactions so a large aggregate cannot erase the RX credit it

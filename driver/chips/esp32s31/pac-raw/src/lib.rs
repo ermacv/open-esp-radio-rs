@@ -14620,10 +14620,14 @@ pub mod wifi_mac_tx_queue_vector {
         pub type R = crate::R<PtiSpec>;
         #[doc = "Register `PTI%s` writer"]
         pub type W = crate::W<PtiSpec>;
+        #[doc = "Field `TXOP` reader - Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
+        pub type TxopR = crate::BitReader;
+        #[doc = "Field `TXOP` writer - Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
+        pub type TxopW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `LOW_UNKNOWN` reader - "]
         pub type LowUnknownR = crate::FieldReader;
         #[doc = "Field `LOW_UNKNOWN` writer - "]
-        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         #[doc = "Field `PTI_0` reader - "]
         pub type Pti0R = crate::FieldReader;
         #[doc = "Field `PTI_0` writer - "]
@@ -14645,10 +14649,15 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `COUNT` writer - Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count."]
         pub type CountW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:3"]
+            #[doc = "Bit 0 - Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
+            #[inline(always)]
+            pub fn txop(&self) -> TxopR {
+                TxopR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 1:3"]
             #[inline(always)]
             pub fn low_unknown(&self) -> LowUnknownR {
-                LowUnknownR::new((self.bits & 0x0f) as u8)
+                LowUnknownR::new(((self.bits >> 1) & 7) as u8)
             }
             #[doc = "Bits 4:7"]
             #[inline(always)]
@@ -14677,10 +14686,15 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         impl W {
-            #[doc = "Bits 0:3"]
+            #[doc = "Bit 0 - Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."]
+            #[inline(always)]
+            pub fn txop(&mut self) -> TxopW<'_, PtiSpec> {
+                TxopW::new(self, 0)
+            }
+            #[doc = "Bits 1:3"]
             #[inline(always)]
             pub fn low_unknown(&mut self) -> LowUnknownW<'_, PtiSpec> {
-                LowUnknownW::new(self, 0)
+                LowUnknownW::new(self, 1)
             }
             #[doc = "Bits 4:7"]
             #[inline(always)]

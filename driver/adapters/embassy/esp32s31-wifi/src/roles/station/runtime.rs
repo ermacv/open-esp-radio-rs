@@ -890,6 +890,14 @@ where
         }
     }
 
+    fn station_control_ready(&self, now_micros: u64) -> bool {
+        self.control().has_immediate_work()
+            || self
+                .control()
+                .next_alarm_deadline()
+                .is_some_and(|deadline| deadline <= now_micros)
+    }
+
     fn wait_station_control_ready(&mut self) -> impl Future<Output = ()> + '_ {
         self.control_mut().wait_ready_without_tx()
     }
@@ -1151,10 +1159,10 @@ where
             .map_or(0, Esp32s31ConnectedTx::prepared_network_frame_count)
     }
 
-    fn start_prepared<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        physical: &'a mut Esp32s31StaApStationPhysicalTx<
+    fn start_prepared(
+        &mut self,
+        hardware: &mut H,
+        physical: &mut Esp32s31StaApStationPhysicalTx<
             'resources,
             'slot,
             'ampdu,
@@ -1170,7 +1178,7 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        network: &'a PinnedTxInterfaceConsumer<
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1178,27 +1186,24 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async move {
-            let progress = self
-                .tx_mut()
-                .active_mut()
-                .ok_or(Esp32s31StaApStationTxError::Ownership(
-                    Esp32s31StaApStationTxOwnershipError::AlreadyParked,
-                ))?
-                .start_prepared(hardware, network)
-                .await
-                .map_err(Esp32s31StaApStationTxError::Operation)?;
-            let retained = self
-                .tx()
-                .active()
-                .is_some_and(Esp32s31ConnectedTx::has_prepared_network_tx);
-            if progress == WifiTxProgress::Complete && !retained {
-                self.park_tx(physical)
-                    .map_err(Esp32s31StaApStationTxError::Ownership)?;
-            }
-            Ok(progress)
+    ) -> Result<WifiTxProgress, Self::Error> {
+        let progress = self
+            .tx_mut()
+            .active_mut()
+            .ok_or(Esp32s31StaApStationTxError::Ownership(
+                Esp32s31StaApStationTxOwnershipError::AlreadyParked,
+            ))?
+            .start_prepared(hardware, network)
+            .map_err(Esp32s31StaApStationTxError::Operation)?;
+        let retained = self
+            .tx()
+            .active()
+            .is_some_and(Esp32s31ConnectedTx::has_prepared_network_tx);
+        if progress == WifiTxProgress::Complete && !retained {
+            self.park_tx(physical)
+                .map_err(Esp32s31StaApStationTxError::Ownership)?;
         }
+        Ok(progress)
     }
 
     fn cancel_prepared(
@@ -1431,10 +1436,10 @@ where
         self.tx().prepared_frame_count()
     }
 
-    fn start_prepared<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        network: &'a PinnedTxInterfaceConsumer<
+    fn start_prepared(
+        &mut self,
+        hardware: &mut H,
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1442,7 +1447,7 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+    ) -> Result<WifiTxProgress, Self::Error> {
         self.tx_mut().start_prepared(hardware, network)
     }
 

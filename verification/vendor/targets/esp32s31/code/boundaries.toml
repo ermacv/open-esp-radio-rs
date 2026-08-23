@@ -57,6 +57,10 @@ artifact-sha256 = "f850d4044a89888856a8d2ee50835e37c61f4dd92045ba4ea4dfa1b2cd7d7
 
 [[inputs]]
 source = "libpp"
+artifact-sha256 = "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
+
+[[inputs]]
+source = "libpp"
 artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
 
 [[inputs]]
@@ -64,12 +68,8 @@ source = "libpp"
 artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
 
 [[inputs]]
-source = "libpp"
-artifact-sha256 = "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
-
-[[inputs]]
 source = "libpp-replay"
-artifact-sha256 = "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+artifact-sha256 = "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
 
 [[inputs]]
 source = "libpp-replay"
@@ -85,7 +85,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "rust"
-artifact-sha256 = "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+artifact-sha256 = "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
 
 [[inputs]]
 source = "wifi-key-role"
@@ -101,7 +101,11 @@ artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b949
 
 [[inputs]]
 source = "wifi-registers"
-artifact-sha256 = "e3961939df8d25e4439ad71b65968d67e9febdab6af0448090198a1923729053"
+artifact-sha256 = "3ccccc24d2903ccf653c82497ff553ebda358364e0225341fe43fd61c34eff06"
+
+[[inputs]]
+source = "wifi-sta-ap-receive"
+artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
 
 [[inputs]]
 source = "wifi-sta-ap-receive"
@@ -109,15 +113,11 @@ artifact-sha256 = "92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8
 
 [[inputs]]
 source = "wifi-sta-ap-receive"
-artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
-
-[[inputs]]
-source = "wifi-sta-ap-receive"
 artifact-sha256 = "c4d958d54cbad4b1da93b3672a0574f2f762854b2edc19490c6ebd41bb14ce0c"
 
 [[inputs]]
 source = "wifi-sta-ap-receive"
-artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
 
 [[inputs]]
 source = "wifi-sta-ap-receive"

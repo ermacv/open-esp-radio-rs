@@ -65,6 +65,9 @@ pub enum AggregateTxObservation {
         /// Clock image captured immediately before queue programming began.
         at_micros: u64,
         program_micros: u64,
+        /// Entry into the already-prepared DATAPATH publication path. `None`
+        /// identifies an initial publication or a hardware retry.
+        prepared_entry_micros: Option<u64>,
     },
     /// One detached hardware A-MPDU completion after BlockAck classification.
     BlockAckProcessed {
@@ -75,6 +78,17 @@ pub enum AggregateTxObservation {
         starting_sequence: u16,
         subframes: u8,
         missing: u8,
+    },
+    /// Time spent sampling terminal hardware state, classifying BlockAck and
+    /// detaching the completed queue, before releasing retained network
+    /// leases. This exists only on diagnostic builds.
+    CompletionCoreCompleted {
+        micros: u64,
+    },
+    /// Time spent clearing the published descriptor prefix and returning the
+    /// retained network leases after the terminal completion was classified.
+    BackingReleaseCompleted {
+        micros: u64,
     },
     Completed {
         acknowledged: u8,

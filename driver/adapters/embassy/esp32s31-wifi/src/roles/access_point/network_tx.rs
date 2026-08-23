@@ -23,6 +23,10 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B> {
     deadline_micros: Option<u64>,
     #[cfg(any(feature = "diagnostics", test))]
     exchange_started_micros: Option<u64>,
+    #[cfg(any(feature = "diagnostics", test))]
+    terminal_acknowledged: Option<u8>,
+    #[cfg(any(feature = "diagnostics", test))]
+    prepared_scheduler_entry_micros: Option<u64>,
     prepared_first: Option<B>,
     prepared_second: Option<B>,
     prepared_standby: Option<PreparedStandby>,
@@ -46,6 +50,10 @@ where
             deadline_micros: None,
             #[cfg(any(feature = "diagnostics", test))]
             exchange_started_micros: None,
+            #[cfg(any(feature = "diagnostics", test))]
+            terminal_acknowledged: None,
+            #[cfg(any(feature = "diagnostics", test))]
+            prepared_scheduler_entry_micros: None,
             prepared_first: None,
             prepared_second: None,
             prepared_standby: None,
@@ -73,6 +81,28 @@ where
 
     pub(super) const fn last_started_frame_count(&self) -> usize {
         self.last_started_frames
+    }
+
+    /// Publish the terminal aggregate observation at the outer role-service
+    /// boundary, after role diagnostics have consumed the completed state.
+    /// This keeps completion-to-publication focused on DATAPATH scheduling
+    /// instead of charging unrelated observer bookkeeping to the scheduler.
+    #[cfg(any(feature = "diagnostics", test))]
+    pub(super) fn observe_service_boundary(&mut self) {
+        let Some(acknowledged) = self.terminal_acknowledged.take() else {
+            return;
+        };
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::Completed {
+                acknowledged,
+                individual_retry: false,
+            });
+        }
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    pub(super) fn mark_prepared_scheduler_entry(&mut self) {
+        self.prepared_scheduler_entry_micros = self.observer.map(AggregateTxObserver::now_micros);
     }
 
     pub(super) fn can_prepare<const SLOTS: usize, const BUFFER_SIZE: usize>(
@@ -207,7 +237,7 @@ where
             let first_length = frame.ethernet_length();
             let first_encoded = engine
                 .encode_aggregate_ethernet_in_place(
-                    peer,
+                    admission.binding(),
                     frame.storage_mut(),
                     first_offset,
                     first_length,
@@ -238,7 +268,7 @@ where
             let second_length = second.ethernet_length();
             let second_encoded = engine
                 .encode_aggregate_ethernet_in_place(
-                    peer,
+                    admission.binding(),
                     second.storage_mut(),
                     second_offset,
                     second_length,
@@ -270,7 +300,12 @@ where
                 let offset = next.ethernet_offset();
                 let length = next.ethernet_length();
                 let encoded = engine
-                    .encode_aggregate_ethernet_in_place(peer, next.storage_mut(), offset, length)
+                    .encode_aggregate_ethernet_in_place(
+                        admission.binding(),
+                        next.storage_mut(),
+                        offset,
+                        length,
+                    )
                     .map_err(|error| {
                         Esp32s31AccessPointDatapathError::Control(
                             Esp32s31AccessPointControlError::from(error),
@@ -282,7 +317,14 @@ where
                 admitted += 1;
             }
             #[cfg(any(feature = "diagnostics", test))]
+            let publication_started = self.observer.map(AggregateTxObserver::now_micros);
+            active
+                .publish(ordinary, hardware)
+                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
+                let finished = observer.now_micros();
+                let started = publication_started.unwrap_or(finished);
                 observe_aggregate_rate(observer, policy.rate());
                 observer.observe(AggregateTxObservation::Prepared {
                     subframes: u8::try_from(admitted).unwrap_or(u8::MAX),
@@ -293,23 +335,12 @@ where
                     },
                 });
                 observer.observe(AggregateTxObservation::PreparationCompleted {
-                    micros: observer
-                        .now_micros()
-                        .saturating_sub(preparation_started.unwrap_or(0)),
+                    micros: started.saturating_sub(preparation_started.unwrap_or(started)),
                 });
-            }
-            #[cfg(any(feature = "diagnostics", test))]
-            let publication_started = self.observer.map(AggregateTxObserver::now_micros);
-            active
-                .publish(ordinary, hardware)
-                .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
-            #[cfg(any(feature = "diagnostics", test))]
-            if let Some(observer) = self.observer {
-                let finished = observer.now_micros();
-                let started = publication_started.unwrap_or(finished);
                 observer.observe(AggregateTxObservation::Published {
                     at_micros: started,
                     program_micros: finished.saturating_sub(started),
+                    prepared_entry_micros: None,
                 });
                 self.exchange_started_micros = Some(started);
             }
@@ -393,7 +424,12 @@ where
             let encoded = control
                 .mac
                 .engine_mut()
-                .encode_aggregate_ethernet_in_place(peer, frame.storage_mut(), offset, length)
+                .encode_aggregate_ethernet_in_place(
+                    batch.admission.binding(),
+                    frame.storage_mut(),
+                    offset,
+                    length,
+                )
                 .map_err(|error| {
                     Esp32s31AccessPointDatapathError::Control(
                         Esp32s31AccessPointControlError::from(error),
@@ -436,7 +472,7 @@ where
             .mac
             .engine_mut()
             .encode_aggregate_ethernet_in_place(
-                peer,
+                admission.binding(),
                 first.storage_mut(),
                 first_offset,
                 first_length,
@@ -467,7 +503,12 @@ where
         let encoded = control
             .mac
             .engine_mut()
-            .encode_aggregate_ethernet_in_place(peer, frame.storage_mut(), offset, length)
+            .encode_aggregate_ethernet_in_place(
+                admission.binding(),
+                frame.storage_mut(),
+                offset,
+                length,
+            )
             .map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::from(
                     error,
@@ -542,6 +583,8 @@ where
             + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
+        #[cfg(any(feature = "diagnostics", test))]
+        let prepared_entry_micros = self.prepared_scheduler_entry_micros.take();
         while self.can_prepare(aggregate) {
             let Some(frame) = network.try_receive() else {
                 break;
@@ -558,21 +601,6 @@ where
                 .map_err(Esp32s31AccessPointDatapathError::Control);
         };
         #[cfg(any(feature = "diagnostics", test))]
-        if let Some(observer) = self.observer {
-            observe_aggregate_rate(observer, _batch.policy.rate());
-            observer.observe(AggregateTxObservation::Prepared {
-                subframes: u8::try_from(_batch.admitted).unwrap_or(u8::MAX),
-                stop: if _batch.admitted == usize::from(_batch.policy.frame_limit()) {
-                    AggregateBuildStop::FrameLimit
-                } else {
-                    AggregateBuildStop::QueueEmpty
-                },
-            });
-            observer.observe(AggregateTxObservation::PreparationCompleted {
-                micros: _batch.preparation_micros,
-            });
-        }
-        #[cfg(any(feature = "diagnostics", test))]
         let publication_started = self.observer.map(AggregateTxObserver::now_micros);
         let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
             Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(error))
@@ -587,16 +615,28 @@ where
             self.exchange_started_micros = publication_started;
         }
         #[cfg(any(feature = "diagnostics", test))]
-        control.observe_ht_aggregate(_batch.policy.rate());
-        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             let finished = observer.now_micros();
             let started = publication_started.unwrap_or(finished);
+            observe_aggregate_rate(observer, _batch.policy.rate());
+            observer.observe(AggregateTxObservation::Prepared {
+                subframes: u8::try_from(_batch.admitted).unwrap_or(u8::MAX),
+                stop: if _batch.admitted == usize::from(_batch.policy.frame_limit()) {
+                    AggregateBuildStop::FrameLimit
+                } else {
+                    AggregateBuildStop::QueueEmpty
+                },
+            });
+            observer.observe(AggregateTxObservation::PreparationCompleted {
+                micros: _batch.preparation_micros,
+            });
             observer.observe(AggregateTxObservation::Published {
                 at_micros: started,
                 program_micros: finished.saturating_sub(started),
+                prepared_entry_micros,
             });
             observer.observe(AggregateTxObservation::StandbyPublished);
+            control.observe_ht_aggregate(_batch.policy.rate());
         }
         Ok(WifiTxProgress::Pending)
     }
@@ -787,24 +827,51 @@ where
                 .service_completion(ordinary, hardware)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             #[cfg(any(feature = "diagnostics", test))]
-            if let Esp32s31ApAmpduProgress::Republished(_) = progress
-                && let Some(observer) = self.observer
-            {
+            if let Some(observer) = self.observer {
                 let finished = observer.now_micros();
                 let started = completion_started.unwrap_or(finished);
-                observer.observe(AggregateTxObservation::Published {
-                    at_micros: started,
-                    program_micros: finished.saturating_sub(started),
-                });
+                match progress {
+                    Esp32s31ApAmpduProgress::Republished(_) => {
+                        observer.observe(AggregateTxObservation::Published {
+                            at_micros: started,
+                            program_micros: finished.saturating_sub(started),
+                            prepared_entry_micros: None,
+                        });
+                    }
+                    Esp32s31ApAmpduProgress::CompletionReady(_) => {
+                        observer.observe(AggregateTxObservation::CompletionCoreCompleted {
+                            micros: finished.saturating_sub(started),
+                        });
+                    }
+                    Esp32s31ApAmpduProgress::Pending => {}
+                }
             }
             progress
         };
         match aggregate_progress {
-            Esp32s31ApAmpduProgress::Complete(completion) => {
+            Esp32s31ApAmpduProgress::CompletionReady(completion) => {
                 #[cfg(any(feature = "diagnostics", test))]
-                self.observe_completion(completion, false);
+                self.observe_completion_details(completion, false);
                 #[cfg(not(any(feature = "diagnostics", test)))]
                 let _ = completion;
+                #[cfg(any(feature = "diagnostics", test))]
+                let release_started = self.observer.map(AggregateTxObserver::now_micros);
+                aggregate
+                    .active_mut()
+                    .release_completed()
+                    .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+                #[cfg(any(feature = "diagnostics", test))]
+                if let Some(observer) = self.observer {
+                    let finished = observer.now_micros();
+                    observer.observe(AggregateTxObservation::BackingReleaseCompleted {
+                        micros: finished.saturating_sub(release_started.unwrap_or(finished)),
+                    });
+                }
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    debug_assert!(self.terminal_acknowledged.is_none());
+                    self.terminal_acknowledged = Some(completion.acknowledged);
+                }
                 self.deadline_micros = None;
                 #[cfg(any(feature = "diagnostics", test))]
                 {
@@ -814,7 +881,7 @@ where
             }
             Esp32s31ApAmpduProgress::Republished(completion) => {
                 #[cfg(any(feature = "diagnostics", test))]
-                self.observe_completion(completion, true);
+                self.observe_completion_details(completion, true);
                 #[cfg(not(any(feature = "diagnostics", test)))]
                 let _ = completion;
                 let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
@@ -841,7 +908,7 @@ where
     }
 
     #[cfg(any(feature = "diagnostics", test))]
-    fn observe_completion(&self, completion: Esp32s31ApAmpduCompletion, republished: bool) {
+    fn observe_completion_details(&self, completion: Esp32s31ApAmpduCompletion, republished: bool) {
         let Some(observer) = self.observer else {
             return;
         };
@@ -854,17 +921,11 @@ where
             subframes: completion.subframes,
             missing: completion.missing,
         });
-        if !republished {
-            observer.observe(AggregateTxObservation::Completed {
-                acknowledged: completion.acknowledged,
-                individual_retry: false,
+        if !republished && let Some(started) = self.exchange_started_micros {
+            observer.observe(AggregateTxObservation::ExchangeCompleted {
+                micros: observer.now_micros().saturating_sub(started),
+                publications: completion.aggregate_attempts,
             });
-            if let Some(started) = self.exchange_started_micros {
-                observer.observe(AggregateTxObservation::ExchangeCompleted {
-                    micros: observer.now_micros().saturating_sub(started),
-                    publications: completion.aggregate_attempts,
-                });
-            }
         }
     }
 }

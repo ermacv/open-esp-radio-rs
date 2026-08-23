@@ -1906,11 +1906,18 @@ impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_
         if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
             unreachable!("radio lease returns its unique pinned TX index");
         }
-        self.tx_credit_wakers.wake_waiter_after(
-            self.interface,
-            self.tx_active,
-            self.tx_credit_waiters,
-        );
+        // A terminal A-MPDU releases its retained leases synchronously. The
+        // first returned index changes the physical pool from empty to ready;
+        // the remaining indices are additional credits, not additional
+        // readiness edges. If another core drains the pool concurrently, a
+        // later return legitimately creates a new edge and wakes again.
+        if self.free_tx.len() == 1 {
+            self.tx_credit_wakers.wake_waiter_after(
+                self.interface,
+                self.tx_active,
+                self.tx_credit_waiters,
+            );
+        }
     }
 }
 

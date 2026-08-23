@@ -70,6 +70,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 aifsn: config.aifsn,
                 contention_window: config.contention_window,
                 interface: config.interface,
+                txop: false,
             },
             plcp0: image.plcp0,
         })

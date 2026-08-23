@@ -137,7 +137,7 @@ pub(super) struct Esp32s31AccessPointDatapathServices<
     pub(super) tx_pending_since_micros: Option<u64>,
     #[cfg(feature = "diagnostics")]
     pub(super) network_tx_pending: Option<NetworkTxPending>,
-    pub(super) next_control_delay_millis: u32,
+    pub(super) next_control_deadline_micros: u64,
 }
 
 impl<
@@ -197,12 +197,19 @@ where
     }
 
     fn observe_role_state(&mut self) {
-        let (status_revision, status, link_state) = self.control.role_observation();
-        if status_revision != self.last_status_revision {
-            (self.status_observer)(status);
-            self.last_status_revision = status_revision;
+        let status_revision = self.control.role_status_revision();
+        if status_revision == self.last_status_revision {
+            return;
         }
-        let authorized = link_state == LinkState::Up;
+        let status = self.control.role_status();
+        let authorized = status.authorized != 0;
+        #[cfg(any(feature = "diagnostics", test))]
+        self.block_ack_observation.update(
+            self.control.has_operational_tx_block_ack(),
+            self.aggregate_tx_observer,
+        );
+        (self.status_observer)(status);
+        self.last_status_revision = status_revision;
         if authorized != self.network_link_up {
             (self.set_link_state)(if authorized {
                 LinkState::Up
@@ -211,11 +218,6 @@ where
             });
             self.network_link_up = authorized;
         }
-        #[cfg(any(feature = "diagnostics", test))]
-        self.block_ack_observation.update(
-            self.control.has_operational_tx_block_ack(),
-            self.aggregate_tx_observer,
-        );
     }
 
     pub(super) fn clear_block_ack_observation(&mut self) {
@@ -598,20 +600,25 @@ where
         M: 'a,
     {
         async move {
+            let now_micros = Instant::now().as_micros();
             let progress = self
                 .control
-                .service_control(self.hardware, Instant::now().as_micros())
+                .service_control(self.hardware, now_micros)
                 .map_err(Esp32s31AccessPointDatapathError::Control)?;
             if progress == DatapathControlProgress::Idle {
-                self.next_control_delay_millis = self
+                self.next_control_deadline_micros = self
                     .control
-                    .next_control_delay_millis(Instant::now().as_micros())
+                    .next_control_deadline_micros(now_micros)
                     .map_err(Esp32s31AccessPointDatapathError::Control)?;
             }
             self.observe_role_state();
             self.observe_tx_started();
             Ok(progress)
         }
+    }
+
+    fn control_ready(&self, now_micros: u64) -> bool {
+        now_micros >= self.next_control_deadline_micros
     }
 
     fn service_stop(&mut self) -> Result<DatapathStopProgress, Self::Error> {
@@ -629,7 +636,7 @@ where
         'resources: 'a,
         M: 'a,
     {
-        Timer::after_millis(u64::from(self.next_control_delay_millis))
+        Timer::at(Instant::from_micros(self.next_control_deadline_micros))
     }
 
     fn start_tx<'a>(
@@ -682,6 +689,11 @@ where
         self.network_tx.prepared_frame_count()
     }
 
+    fn mark_prepared_tx_scheduler_entry(&mut self) {
+        #[cfg(any(feature = "diagnostics", test))]
+        self.network_tx.mark_prepared_scheduler_entry();
+    }
+
     fn can_prepare_tx(&self) -> bool {
         self.network_tx.can_prepare(self.aggregate)
     }
@@ -704,9 +716,9 @@ where
         }
     }
 
-    fn start_prepared_tx<'a>(
-        &'a mut self,
-        network: &'a PinnedTxInterfaceConsumer<
+    fn start_prepared_tx(
+        &mut self,
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -714,27 +726,22 @@ where
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async move {
-            let progress = self.network_tx.start_prepared(
-                self.aggregate,
-                self.control,
-                self.hardware,
-                network,
-            )?;
-            if progress == WifiTxProgress::Pending {
-                #[cfg(feature = "diagnostics")]
-                {
-                    debug_assert!(self.network_tx_pending.is_none());
-                    self.network_tx_pending = Some(NetworkTxPending {
-                        started_micros: Instant::now().as_micros(),
-                        attempts_before: self.control.mac_observation().data_tx.attempts,
-                    });
-                }
+    ) -> Result<WifiTxProgress, Self::Error> {
+        let progress =
+            self.network_tx
+                .start_prepared(self.aggregate, self.control, self.hardware, network)?;
+        if progress == WifiTxProgress::Pending {
+            #[cfg(feature = "diagnostics")]
+            {
+                debug_assert!(self.network_tx_pending.is_none());
+                self.network_tx_pending = Some(NetworkTxPending {
+                    started_micros: Instant::now().as_micros(),
+                    attempts_before: self.control.mac_observation().data_tx.attempts,
+                });
             }
-            self.observe_tx_started();
-            Ok(progress)
         }
+        self.observe_tx_started();
+        Ok(progress)
     }
 
     fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
@@ -778,6 +785,8 @@ where
             if progress == WifiTxProgress::Complete {
                 self.observe_network_tx_terminal();
             }
+            #[cfg(any(feature = "diagnostics", test))]
+            self.network_tx.observe_service_boundary();
             Ok(progress)
         }
     }

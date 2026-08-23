@@ -1,6 +1,26 @@
 schema = 1
 
 [[surfaces]]
+id = "wifi-ht40-ampdu-ppdu-publication"
+description = "The compiled production HT publisher preserves the complete ordered MMIO transaction for the reviewed queue-zero, two-MPDU, HT40 MCS7 SGI domain."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ht40-ampdu-ppdu-reviewed-domain"
+description = "The reviewed vendor object graph and canonical production program publish the same 36 MMIO events, including explicit TXOP replacement, HT-SIG/count/spacing, length, power and PTI order."
+suite = "libpp-tx-dma"
+source = "libpp"
+symbol = "hal_mac_tx_set_ppdu"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ht40-ampdu-ppdu-mmio-transaction"
+vendor = { source = "libpp", symbol = "hal_mac_tx_set_ppdu", fingerprint = "sha256:e151aafd7fa5ca9cb5d2fe7769e27f5107dabcacad5911b3151a64f44a55bb5c" }
+disposition = "verified"
+requirement = "ht40-ampdu-ppdu-reviewed-domain"
+rationale = "The fingerprint covers the canonical case name and ordered vendor event tuples (kind, width, address and value) for the sole reviewed queue-zero, two-MPDU HT40 MCS7 SGI case; suite evidence separately binds the same trace to the exact compiled production entry."
+
+[[surfaces]]
 id = "wifi-ordinary-tx-ack-timeout-state"
 description = "The compiled IRQ handoff and ordinary-TX retry owner preserve the reviewed vendor ACK-timeout counter transition, Retry-bit state and one retry publication across consecutive completions."
 kind = "bounded-property"

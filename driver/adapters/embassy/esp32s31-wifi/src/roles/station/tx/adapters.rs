@@ -226,10 +226,10 @@ where
         self.prepared_network_frame_count()
     }
 
-    fn start_prepared<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        network: &'a PinnedTxInterfaceConsumer<
+    fn start_prepared(
+        &mut self,
+        hardware: &mut H,
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -237,8 +237,8 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async move { self.start_prepared_network(hardware, network) }
+    ) -> Result<WifiTxProgress, Self::Error> {
+        self.start_prepared_network(hardware, network)
     }
 
     fn cancel_prepared(&mut self) -> Result<(), Self::Error> {

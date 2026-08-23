@@ -3,17 +3,6 @@
 version = 4
 
 [[package]]
-name = "aes"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b169f7a6d4742236a0a00c541b845991d0ac43e546831af1249753ab4c3aa3a0"
-dependencies = [
- "cfg-if",
- "cipher",
- "cpufeatures 0.2.17",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -107,16 +96,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "cipher"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
-dependencies = [
- "crypto-common 0.1.7",
- "inout",
-]
-
-[[package]]
 name = "const-default"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -130,15 +109,6 @@ checksum = "5b9ab7e0ca1d179628fa0172b2b97203c7fa0cd81be2448bd446fb9559ca9261"
 dependencies = [
  "loom",
  "tracing",
-]
-
-[[package]]
-name = "cpufeatures"
-version = "0.2.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -343,7 +313,6 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer 0.10.4",
  "crypto-common 0.1.7",
- "subtle",
 ]
 
 [[package]]
@@ -1066,15 +1035,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "hmac"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
-dependencies = [
- "digest 0.10.7",
-]
-
-[[package]]
 name = "hybrid-array"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1106,15 +1066,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79cf5c93f93228cf8efb3ba362535fb11199ac548a09ce117c9b1adc3030d706"
 dependencies = [
  "rustversion",
-]
-
-[[package]]
-name = "inout"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
-dependencies = [
- "generic-array",
 ]
 
 [[package]]
@@ -1289,24 +1240,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
-name = "open-esp-radio"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-ap",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-esp32s31-wifi-sta",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-ap",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wifi-sta",
- "open-esp-radio-wpa2",
-]
-
-[[package]]
 name = "open-esp-radio-dma"
 version = "0.1.0"
 
@@ -1358,21 +1291,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-esp32s31-wifi-ap"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-ap",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wpa2",
-]
-
-[[package]]
 name = "open-esp-radio-esp32s31-wifi-dma"
 version = "0.1.0"
 dependencies = [
@@ -1408,21 +1326,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-esp32s31-wifi-sta"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-softmac",
- "open-esp-radio-wifi-sta",
- "open-esp-radio-wpa2",
-]
-
-[[package]]
 name = "open-esp-radio-ieee80211"
 version = "0.1.0"
 
@@ -1445,17 +1348,13 @@ dependencies = [
  "esp-hal",
  "esp-phy",
  "esp-rtos",
- "open-esp-radio",
+ "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-esp-hal",
- "static_cell",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-ap"
-version = "0.1.0"
-dependencies = [
+ "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
- "open-esp-radio-wpa2",
+ "static_cell",
 ]
 
 [[package]]
@@ -1463,24 +1362,6 @@ name = "open-esp-radio-wifi-softmac"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-ieee80211",
-]
-
-[[package]]
-name = "open-esp-radio-wifi-sta"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-ieee80211",
-]
-
-[[package]]
-name = "open-esp-radio-wpa2"
-version = "0.1.0"
-dependencies = [
- "aes",
- "hmac",
- "pbkdf2",
- "sha1",
- "zeroize",
 ]
 
 [[package]]
@@ -1494,16 +1375,6 @@ name = "pastey"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
-
-[[package]]
-name = "pbkdf2"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
-dependencies = [
- "digest 0.10.7",
- "hmac",
-]
 
 [[package]]
 name = "pin-project"
@@ -1780,24 +1651,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha1"
-version = "0.10.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.2.17",
- "digest 0.10.7",
-]
-
-[[package]]
 name = "sha2"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.3.0",
+ "cpufeatures",
  "digest 0.11.3",
 ]
 
@@ -1910,12 +1770,6 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
-
-[[package]]
-name = "subtle"
-version = "2.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syn"
@@ -2189,26 +2043,6 @@ dependencies = [
 name = "xtensa-lx-rt-proc-macros"
 version = "0.5.0"
 source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "zeroize"
-version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
-dependencies = [
- "zeroize_derive",
-]
-
-[[package]]
-name = "zeroize_derive"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
 dependencies = [
  "proc-macro2",
  "quote",

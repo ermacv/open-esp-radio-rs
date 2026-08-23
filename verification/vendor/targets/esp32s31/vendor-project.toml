@@ -222,6 +222,7 @@ roots = [
     "libpp:hal_mac_txq_disable",
     "libpp:hal_mac_tx_config_edca",
     "libpp:hal_mac_tx_get_blockack",
+    "libpp:hal_mac_tx_set_ppdu",
 ]
 include-reachable = true
 

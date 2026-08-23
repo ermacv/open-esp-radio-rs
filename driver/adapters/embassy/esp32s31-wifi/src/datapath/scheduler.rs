@@ -85,7 +85,10 @@ where
                 match self.services.service_stop()? {
                     DatapathStopProgress::More => continue,
                     DatapathStopProgress::TxPending => {
-                        self.active_tx_interface = Some(self.reported_active_tx_interface());
+                        self.begin_active_tx(
+                            self.reported_active_tx_interface(),
+                            DatapathTxOrigin::Control,
+                        );
                         self.drive_active_tx(false).await?;
                         continue;
                     }
@@ -99,23 +102,54 @@ where
             // wakes before a control or network publication can create a new
             // generation.
             self.discard_stale_tx_wakes();
-            let control_context = DatapathControlContext {
-                network_tx_pending: self.network_tx_queue_len() != 0,
-            };
-            match self.services.service_control(control_context).await? {
-                DatapathControlProgress::More => continue,
-                DatapathControlProgress::TxPending => {
-                    self.active_tx_interface = Some(self.reported_active_tx_interface());
-                    self.drive_active_tx(true).await?;
+            let control_ready = self.control_ready_latched
+                || self.services.control_ready(Instant::now().as_micros());
+            if control_ready {
+                self.control_ready_latched = false;
+                let control_context = DatapathControlContext {
+                    network_tx_pending: self.network_tx_queue_len() != 0,
+                };
+                match self.services.service_control(control_context).await? {
+                    DatapathControlProgress::More => {
+                        self.control_ready_latched = true;
+                        continue;
+                    }
+                    DatapathControlProgress::TxPending => {
+                        self.begin_active_tx(
+                            self.reported_active_tx_interface(),
+                            DatapathTxOrigin::Control,
+                        );
+                        self.drive_active_tx(true).await?;
+                        continue;
+                    }
+                    DatapathControlProgress::Exit(exit) => {
+                        self.services.cancel_prepared_tx()?;
+                        self.prepared_tx_interface = None;
+                        self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                        return Ok(DatapathRunnerExit::Role(exit));
+                    }
+                    DatapathControlProgress::Idle => {}
+                }
+            }
+
+            // The active transaction can finish with a complete standby
+            // aggregate already owned by software. Once stop, control and RX
+            // priority have been established above, publish it directly.
+            // Re-running physical queue discovery, burst classification and
+            // collection-deadline calculation here creates an avoidable air
+            // gap on every saturated BA transaction.
+            if self.services.has_prepared_tx()
+                && !self.services.has_rx_work()
+                && !self.irq.rx_signaled()
+            {
+                let interface = self.retained_prepared_tx_interface();
+                let admitted = self.services.prepared_tx_frame_count().max(1);
+                let preferred = self.services.preferred_tx_batch_size_for(interface).max(1);
+                if admitted >= preferred {
+                    self.start_prepared_network_tx(interface, admitted, &mut tx_batch_states)
+                        .await?;
                     continue;
                 }
-                DatapathControlProgress::Exit(exit) => {
-                    self.services.cancel_prepared_tx()?;
-                    self.prepared_tx_interface = None;
-                    self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                    return Ok(DatapathRunnerExit::Role(exit));
-                }
-                DatapathControlProgress::Idle => {}
             }
 
             let network_tx_pending =
@@ -197,24 +231,8 @@ where
                             self.services.prepare_tx(frame, &network_tx).await?;
                         }
                         let admitted = self.services.prepared_tx_frame_count().max(1);
-                        self.account_tx_frames(admitted);
-                        self.account_pair_tx_frames(interface, admitted);
-                        let network_tx = self.tx_consumer_for(interface);
-                        let progress = self.services.start_prepared_tx(&network_tx).await?;
-                        let slot = self.tx_batch_state_slot(interface);
-                        tx_batch_states[slot].note_started(admitted);
-                        self.prepared_tx_interface =
-                            self.services.has_prepared_tx().then_some(interface);
-                        if progress == WifiTxProgress::Pending {
-                            self.active_tx_interface = Some(interface);
-                            // Standalone operation keeps the original double-
-                            // buffered pipeline live while this prepared
-                            // aggregate owns hardware. `drive_active_tx`
-                            // suppresses that look-ahead for a paired owner,
-                            // where every transaction must instead return the
-                            // physical owner to the peer VIF.
-                            self.drive_active_tx(true).await?;
-                        }
+                        self.start_prepared_network_tx(interface, admitted, &mut tx_batch_states)
+                            .await?;
                         continue;
                     }
 
@@ -230,7 +248,7 @@ where
                     let slot = self.tx_batch_state_slot(interface);
                     tx_batch_states[slot].note_started(admitted);
                     if progress == WifiTxProgress::Pending {
-                        self.active_tx_interface = Some(interface);
+                        self.begin_active_tx(interface, DatapathTxOrigin::Network);
                         self.drive_active_tx(true).await?;
                     }
                     continue;
@@ -292,7 +310,9 @@ where
                     stopping = true;
                 }
                 Either::Second(Either3::First(())) => self.service_rx().await?,
-                Either::Second(Either3::Second(())) => {}
+                Either::Second(Either3::Second(())) => {
+                    self.control_ready_latched = true;
+                }
                 Either::Second(Either3::Third(())) => {}
             }
         }

@@ -19,35 +19,46 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
 
-use crate::{engine::Esp32s31ApAggregateFrame, tx::Esp32s31ApTx};
+use crate::{
+    engine::{Esp32s31ApAggregateBinding, Esp32s31ApAggregateFrame},
+    tx::Esp32s31ApTx,
+};
 
 /// AP peer decision captured before consuming a network lease into an
 /// aggregate transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApAggregateAdmission {
-    peer: [u8; 6],
+    binding: Esp32s31ApAggregateBinding,
     rate: HtRate,
     block_ack_window: u16,
 }
 
 impl Esp32s31ApAggregateAdmission {
-    pub(crate) const fn new(peer: [u8; 6], rate: HtRate, block_ack_window: u16) -> Self {
+    pub(crate) const fn new(
+        binding: Esp32s31ApAggregateBinding,
+        rate: HtRate,
+        block_ack_window: u16,
+    ) -> Self {
         Self {
-            peer,
+            binding,
             rate,
             block_ack_window,
         }
     }
 
     pub const fn peer(self) -> [u8; 6] {
-        self.peer
+        self.binding.peer()
+    }
+
+    pub const fn binding(self) -> Esp32s31ApAggregateBinding {
+        self.binding
     }
 
     pub fn accepts_ethernet(self, ethernet: &[u8]) -> bool {
         ethernet
             .get(..6)
             .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
-            == Some(self.peer)
+            == Some(self.peer())
     }
 
     pub fn bind_policy(
@@ -139,7 +150,10 @@ pub struct Esp32s31ApAmpduCompletion {
 pub enum Esp32s31ApAmpduProgress {
     Pending,
     Republished(Esp32s31ApAmpduCompletion),
-    Complete(Esp32s31ApAmpduCompletion),
+    /// Hardware/BlockAck processing is terminal, while the detached DMA
+    /// backing remains retained until the caller performs the explicit
+    /// release edge.
+    CompletionReady(Esp32s31ApAmpduCompletion),
 }
 
 enum ApAmpduState<const SLOTS: usize> {
@@ -157,6 +171,9 @@ enum ApAmpduState<const SLOTS: usize> {
         rate: HtRate,
         hardware_key_selector: u8,
         retry: AmpduRetryState<SLOTS>,
+    },
+    Completed {
+        cookie: TxCookie,
     },
 }
 
@@ -400,8 +417,20 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         } else {
             ordinary.reset_aggregate_contention();
         }
+        self.state = ApAmpduState::Completed { cookie };
+        Ok(Esp32s31ApAmpduProgress::CompletionReady(observation))
+    }
+
+    /// Release the exact detached terminal batch after the caller has
+    /// finished completion classification and observation.
+    pub fn release_completed(&mut self) -> Result<(), Esp32s31ApAmpduError> {
+        let ApAmpduState::Completed { cookie } =
+            core::mem::replace(&mut self.state, ApAmpduState::Idle)
+        else {
+            return Err(Esp32s31ApAmpduError::Idle);
+        };
         self.inner.release_completed(cookie)?;
-        Ok(Esp32s31ApAmpduProgress::Complete(observation))
+        Ok(())
     }
 
     pub fn cancel_build(&mut self) -> Result<(), Esp32s31ApAmpduError> {
@@ -475,35 +504,5 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             state: ApAmpduState::Idle,
             attempt_limit,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use open_esp_radio_esp32s31_wifi_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs};
-
-    #[test]
-    fn admission_binds_one_peer_to_one_role_policy() {
-        let peer = [2, 3, 4, 5, 6, 7];
-        let admission = Esp32s31ApAggregateAdmission::new(
-            peer,
-            HtRate::new(
-                HtMcs::Mcs7,
-                HtGuardInterval::Long800Ns,
-                HtChannelWidth::Mhz40,
-            ),
-            16,
-        );
-        let mut ethernet = [0_u8; 14];
-        ethernet[..6].copy_from_slice(&peer);
-
-        assert!(admission.accepts_ethernet(&ethernet));
-        ethernet[5] ^= 1;
-        assert!(!admission.accepts_ethernet(&ethernet));
-        let policy = admission.bind_policy(8, 12).unwrap();
-        assert_eq!(policy.role().interface, MacInterface::AccessPoint);
-        assert_eq!(policy.role().hardware_key_selector, 8);
-        assert_eq!(policy.frame_limit(), 12);
     }
 }

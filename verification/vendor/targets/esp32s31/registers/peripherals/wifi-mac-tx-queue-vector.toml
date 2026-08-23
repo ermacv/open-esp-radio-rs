@@ -67,9 +67,15 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "TXOP"
+description = "Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value."
 bitOffset = 0
-bitWidth = 4
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "LOW_UNKNOWN"
+bitOffset = 1
+bitWidth = 3
 
 [[peripherals.registers.register.fields]]
 name = "PTI_0"

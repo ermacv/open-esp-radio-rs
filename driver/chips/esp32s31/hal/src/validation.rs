@@ -7,7 +7,8 @@
 #![forbid(unsafe_code)]
 
 use crate::types::{
-    MacInterface, MacInterruptSnapshot, MacPowerInterruptSnapshot, TxBlockAckPayload,
+    MacHtTxProgram, MacInterface, MacInterruptSnapshot, MacPowerInterruptSnapshot,
+    TxBlockAckPayload,
 };
 use crate::{
     RadioRuntimeOwner, validation_mac_interrupt_registers, validation_mac_interrupt_setup,
@@ -149,6 +150,14 @@ pub fn hal_mac_tx_config_edca(
     owner()
         .pac_mut()
         .validation_configure_mac_tx_edca(queue, aifsn, contention_window, interface)
+}
+
+#[inline(always)]
+pub fn hal_mac_tx_set_ppdu(queue: u8, program: MacHtTxProgram) -> u32 {
+    owner()
+        .pac_mut()
+        .validation_program_ht_mac_tx_ppdu(queue, program);
+    0
 }
 
 #[inline(always)]

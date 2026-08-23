@@ -477,6 +477,11 @@ pub trait DatapathPairedControlService<H, PhysicalTx, FirstTx, SecondTx> {
         retained_tx: Option<DatapathPairRole>,
     ) -> impl Future<Output = Result<DatapathPairedControlProgress<Self::Exit>, Self::Error>> + 'a;
 
+    /// O(1) readiness observation which borrows no physical TX capability.
+    fn ready(&self, _first_tx: &FirstTx, _second_tx: &SecondTx, _now_micros: u64) -> bool {
+        true
+    }
+
     fn stop(
         &mut self,
         hardware: &mut H,
@@ -551,11 +556,11 @@ pub trait DatapathPairedNetworkTxService<
         0
     }
 
-    fn start_prepared<'a>(
-        &'a mut self,
-        _hardware: &'a mut H,
-        _physical_tx: &'a mut PhysicalTx,
-        _network: &'a PinnedTxInterfaceConsumer<
+    fn start_prepared(
+        &mut self,
+        _hardware: &mut H,
+        _physical_tx: &mut PhysicalTx,
+        _network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -563,8 +568,8 @@ pub trait DatapathPairedNetworkTxService<
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        core::future::ready(Ok(WifiTxProgress::Complete))
+    ) -> Result<WifiTxProgress, Self::Error> {
+        Ok(WifiTxProgress::Complete)
     }
 
     fn cancel_prepared(&mut self, _physical_tx: &mut PhysicalTx) -> Result<(), Self::Error> {
@@ -865,6 +870,11 @@ where
         }
     }
 
+    fn control_ready(&self, now_micros: u64) -> bool {
+        self.control
+            .ready(&self.first_tx, &self.second_tx, now_micros)
+    }
+
     fn active_tx_interface(&self) -> Option<NetworkInterfaceId> {
         self.active.map(|role| self.interface_for(role))
     }
@@ -1026,9 +1036,9 @@ where
         }
     }
 
-    fn start_prepared_tx<'a>(
-        &'a mut self,
-        network: &'a PinnedTxInterfaceConsumer<
+    fn start_prepared_tx(
+        &mut self,
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -1036,36 +1046,29 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async move {
-            let role = self
-                .prepared
-                .or_else(|| {
-                    unique_prepared_role(
-                        self.first_tx.has_prepared(),
-                        self.second_tx.has_prepared(),
-                    )
-                })
-                .expect("prepared TX requires one retained role");
-            assert_eq!(self.interface_for(role), network.interface());
-            let progress = match role {
-                DatapathPairRole::First => self
-                    .first_tx
-                    .start_prepared(&mut self.hardware, &mut self.physical_tx, network)
-                    .await
-                    .map_err(DatapathPairedServiceError::FirstTx)?,
-                DatapathPairRole::Second => self
-                    .second_tx
-                    .start_prepared(&mut self.hardware, &mut self.physical_tx, network)
-                    .await
-                    .map_err(DatapathPairedServiceError::SecondTx)?,
-            };
-            self.prepared = None;
-            self.active = (progress == WifiTxProgress::Pending).then_some(role);
-            self.prepared =
-                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
-            Ok(progress)
-        }
+    ) -> Result<WifiTxProgress, Self::Error> {
+        let role = self
+            .prepared
+            .or_else(|| {
+                unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())
+            })
+            .expect("prepared TX requires one retained role");
+        assert_eq!(self.interface_for(role), network.interface());
+        let progress = match role {
+            DatapathPairRole::First => self
+                .first_tx
+                .start_prepared(&mut self.hardware, &mut self.physical_tx, network)
+                .map_err(DatapathPairedServiceError::FirstTx)?,
+            DatapathPairRole::Second => self
+                .second_tx
+                .start_prepared(&mut self.hardware, &mut self.physical_tx, network)
+                .map_err(DatapathPairedServiceError::SecondTx)?,
+        };
+        self.prepared = None;
+        self.active = (progress == WifiTxProgress::Pending).then_some(role);
+        self.prepared =
+            unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared());
+        Ok(progress)
     }
 
     fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {

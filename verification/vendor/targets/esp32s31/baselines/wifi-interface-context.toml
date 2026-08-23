@@ -4,26 +4,26 @@ schema = 2
 source = "libpp"
 symbol = "hal_mac_set_addr"
 kind = "whole-function-equivalence/profile:scenario/wifi-interface-address"
-digest = "f2f3a830b75013d6f8c86b3ae2bacb14971645a02d66c728d015d1165ec5acb2"
+digest = "6f0e091daa3afbe8ed47217630b2a5b25c89ef1168f56e52a8f853016dd1cd04"
 
 [evidence.components]
 comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
-execution-image = "e442fc3f9e12fd1c2039c8334078d29968a65f5f7978c01823e05e71b2fa6fd5"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
 execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
-execution-model = "00ce778b07ae14c32da41976976503f502aefb2b4442d74a3974825b2e9a05ee"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
 profile = "49a9180fadbfbf7fa3452cb441ecb46863eb18d1d4f284a8a1881b0a6844af99"
-profile-parser = "95836213fd2c4709927fa45ea8bbb091afaf5aaea917fcb6b6d7a46f99a5b924"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_set_bssid"
 kind = "whole-function-equivalence/profile:scenario/wifi-interface-bssid"
-digest = "25e3d755d8f6ab46185d570a725770feb52a7a90e7c3e8c72d3e2ac92ba1735a"
+digest = "4f8ed65e6c5f60464106ca1bc0b5ef779592653bebba83545739f5c3be2dba29"
 
 [evidence.components]
 comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
-execution-image = "e442fc3f9e12fd1c2039c8334078d29968a65f5f7978c01823e05e71b2fa6fd5"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
 execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
-execution-model = "00ce778b07ae14c32da41976976503f502aefb2b4442d74a3974825b2e9a05ee"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
 profile = "0cc58e5ebc2a8d75436a4ca267648d3e83fa82d241a28a46bd0a57290a2ab94f"
-profile-parser = "95836213fd2c4709927fa45ea8bbb091afaf5aaea917fcb6b6d7a46f99a5b924"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"

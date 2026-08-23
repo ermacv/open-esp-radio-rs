@@ -610,6 +610,13 @@ where
         Esp32s31ConnectedControl::service_with_context(self, hardware, tx, context)
     }
 
+    fn ready(&self, _tx: &X, now_micros: u64) -> bool {
+        self.has_immediate_work()
+            || self
+                .next_alarm_deadline()
+                .is_some_and(|deadline| deadline <= now_micros)
+    }
+
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a {
         Esp32s31ConnectedControl::wait_ready(self, tx)
     }

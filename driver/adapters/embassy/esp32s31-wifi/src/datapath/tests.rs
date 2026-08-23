@@ -338,6 +338,86 @@ struct Backend {
     stop_after_tx: Option<&'static AtomicBool>,
 }
 
+struct NonPollingControlBackend {
+    irq: &'static EmbassyMacIrqRuntime<NoopRawMutex>,
+    control_calls: usize,
+    control_tx_on_first: bool,
+    finish_on_second: bool,
+}
+
+impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for NonPollingControlBackend
+{
+    type Error = TestError;
+    type Exit = TestExit;
+
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn DatapathNetworkRxSet,
+        _context: DatapathRxServiceContext,
+    ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
+        ready(Ok(DatapathRxProgress::Drained))
+    }
+
+    fn service_control<'a>(
+        &'a mut self,
+        _context: DatapathControlContext,
+    ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a
+    where
+        'static: 'a,
+        NoopRawMutex: 'a,
+    {
+        self.control_calls += 1;
+        let progress = if self.control_tx_on_first && self.control_calls == 1 {
+            self.irq.publish(MAC_INT_TX_COMPLETE);
+            Ok(DatapathControlProgress::TxPending)
+        } else if self.finish_on_second && self.control_calls == 2 {
+            Err(TestError::Finished)
+        } else {
+            Ok(DatapathControlProgress::Idle)
+        };
+        ready(progress)
+    }
+
+    fn control_ready(&self, _now_micros: u64) -> bool {
+        false
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxInterfaceConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        self.irq.publish(MAC_INT_TX_COMPLETE);
+        ready(Ok(WifiTxProgress::Pending))
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        pending()
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        _wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        ready(Ok(WifiTxProgress::Complete))
+    }
+}
+
 impl Backend {
     fn push(&mut self, event: u8) {
         self.order[self.count] = event;
@@ -1078,9 +1158,9 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
         self.prepared
     }
 
-    fn start_prepared_tx<'a>(
-        &'a mut self,
-        _network: &'a PinnedTxInterfaceConsumer<
+    fn start_prepared_tx(
+        &mut self,
+        _network: &PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -1088,13 +1168,11 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async move {
-            self.prepared = false;
-            self.order[self.count] = 2;
-            self.count += 1;
-            Err(TestError::Finished)
-        }
+    ) -> Result<WifiTxProgress, Self::Error> {
+        self.prepared = false;
+        self.order[self.count] = 2;
+        self.count += 1;
+        Err(TestError::Finished)
     }
 
     fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
@@ -1219,6 +1297,56 @@ fn control_boundary_precedes_prepared_network_publication() {
         Err(TestError::Finished)
     );
     assert_eq!(runner.services().order, [1, 2]);
+}
+
+#[test]
+fn network_data_completion_does_not_repoll_idle_control() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (mut device, network) = split_network!(resources, pool);
+    enqueue_frame(&mut device);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = NonPollingControlBackend {
+        irq,
+        control_calls: 0,
+        control_tx_on_first: false,
+        finish_on_second: false,
+    };
+    let mut runner = DatapathRunner::new(irq, network, NetworkInterfaceId::new(0), services);
+    let mut run = std::boxed::Box::pin(runner.run());
+    let mut context = Context::from_waker(core::task::Waker::noop());
+
+    assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
+    drop(run);
+    assert_eq!(runner.services().control_calls, 1);
+    assert_eq!(runner.active_tx_origin, None);
+    assert!(!runner.control_ready_latched);
+}
+
+#[test]
+fn control_tx_completion_rearms_exactly_one_control_step() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = split_network!(resources, pool);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = NonPollingControlBackend {
+        irq,
+        control_calls: 0,
+        control_tx_on_first: true,
+        finish_on_second: true,
+    };
+    let mut runner = DatapathRunner::new(irq, network, NetworkInterfaceId::new(0), services);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run()),
+        Err(TestError::Finished)
+    );
+    assert_eq!(runner.services().control_calls, 2);
+    assert_eq!(runner.active_tx_origin, None);
 }
 
 #[test]

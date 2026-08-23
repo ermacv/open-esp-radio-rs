@@ -15,7 +15,7 @@
       "rust_probe": "open_coex_core_trace_event_duration_get",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/coex-core-event-duration-get",
-      "evidence_digest": "27d0ae53d7b90f0090ffc384c444c8783bd535f8436bb20b5ac9001a69cc1634",
+      "evidence_digest": "041c3b4426f4c47e5de80cab1a8234c596641f0b942436f46a64ea57e634987f",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -24,7 +24,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "9e40d99ac19456e8f93e30eeba85e4e7975ef3b24d0cc44b4215b83f41ac0c47"
+          "sha256": "269fcf6944b6e9e6e1863289fc076c3ee3a54e8279aa58af32598a4762212a16"
         },
         {
           "role": "profiles:0",
@@ -40,7 +40,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -77,7 +77,7 @@
       "rust_probe": "open_coex_core_trace_pti_get",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/coex-core-pti-get",
-      "evidence_digest": "99f08fc49cdb7024cedcf4fa0225d2fba3a00d0d7dc7d184344e7aff5f95b71c",
+      "evidence_digest": "8ee209833b330af854dc21b69dc29159cc6ef1d093078713b9670385698efd35",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -86,7 +86,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "9e40d99ac19456e8f93e30eeba85e4e7975ef3b24d0cc44b4215b83f41ac0c47"
+          "sha256": "269fcf6944b6e9e6e1863289fc076c3ee3a54e8279aa58af32598a4762212a16"
         },
         {
           "role": "profiles:0",
@@ -102,7 +102,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -139,7 +139,7 @@
       "rust_probe": "open_coex_core_trace_release",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-core-release",
-      "evidence_digest": "76ca8ae889532d64d9f8b07aad960bc08339f33e643a805683edc346ef24bd39",
+      "evidence_digest": "9a994ff7fbff32f983d430548a5c2aff0ecff9324227edaee5b60a398c02d02f",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -148,7 +148,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "9e40d99ac19456e8f93e30eeba85e4e7975ef3b24d0cc44b4215b83f41ac0c47"
+          "sha256": "269fcf6944b6e9e6e1863289fc076c3ee3a54e8279aa58af32598a4762212a16"
         },
         {
           "role": "profiles:0",
@@ -164,7 +164,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -197,7 +197,7 @@
       "rust_probe": "open_coex_core_trace_request",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/coex-core-request",
-      "evidence_digest": "a69e22f704bf4128b252f3e90b4b8eac24691304a656e2bf22b2e19416b8df44",
+      "evidence_digest": "e790771de45d7795adb7c00fbdebff6b0397aad5e4c2dd5837716dac965748d7",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -206,7 +206,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "9e40d99ac19456e8f93e30eeba85e4e7975ef3b24d0cc44b4215b83f41ac0c47"
+          "sha256": "269fcf6944b6e9e6e1863289fc076c3ee3a54e8279aa58af32598a4762212a16"
         },
         {
           "role": "profiles:0",
@@ -222,7 +222,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -255,7 +255,7 @@
       "rust_probe": "open_coex_core_trace_timer_idx_get",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-core-timer-index",
-      "evidence_digest": "172af2e309078957ed63eefcdeba9efc52dfa77967f874c78cdc4b0073daf754",
+      "evidence_digest": "62eedf018595c22f7c10df836fa159f78ed91d932d5d7bc58da81cca262b61a3",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -264,7 +264,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "9e40d99ac19456e8f93e30eeba85e4e7975ef3b24d0cc44b4215b83f41ac0c47"
+          "sha256": "269fcf6944b6e9e6e1863289fc076c3ee3a54e8279aa58af32598a4762212a16"
         },
         {
           "role": "profiles:0",
@@ -280,7 +280,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -317,7 +317,7 @@
       "rust_probe": "open_coex_trace_coex_hw_timer_disable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-hw-timer-disable",
-      "evidence_digest": "d15c4848cbc9949abced2511f9b7df911f1c379a7770e7c42e746481be4f542d",
+      "evidence_digest": "34be8af50764624ebe0c04e6eef14a363002ce82ee2cbba7dcec883449e6694d",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -326,7 +326,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "e617dcd74da838a42ce348b3ed5597e17d331eabb0739e72fa15dff9cdf5fa1a"
+          "sha256": "2b401fc0ed1a3956b886e3f1ba753e3fdac5830cd810ff65769645bd85987edf"
         },
         {
           "role": "profiles:0",
@@ -334,7 +334,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -367,7 +367,7 @@
       "rust_probe": "open_coex_trace_coex_hw_timer_enable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-hw-timer-enable",
-      "evidence_digest": "e446fcf1ddba211d59a9805429be223d60b9f4168aded3f586476a419aa9c530",
+      "evidence_digest": "d1986da144ff6ab2786319dcb432d50dc3f940b7b35c6f270e1de8e4b25fb630",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -376,7 +376,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "e617dcd74da838a42ce348b3ed5597e17d331eabb0739e72fa15dff9cdf5fa1a"
+          "sha256": "2b401fc0ed1a3956b886e3f1ba753e3fdac5830cd810ff65769645bd85987edf"
         },
         {
           "role": "profiles:0",
@@ -384,7 +384,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -417,7 +417,7 @@
       "rust_probe": "open_coex_trace_coex_hw_timer_force",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-hw-timer-force",
-      "evidence_digest": "e35c57c8b6c6d1b0cf4350e5bbd3d242806a0ebc06d33a2d9c8f10c77ab6ae04",
+      "evidence_digest": "3e5ecda81d1c5206ffa4d47e43bfdae6f97fc8da0bd99cd6d5f91f6375a083da",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -426,7 +426,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "e617dcd74da838a42ce348b3ed5597e17d331eabb0739e72fa15dff9cdf5fa1a"
+          "sha256": "2b401fc0ed1a3956b886e3f1ba753e3fdac5830cd810ff65769645bd85987edf"
         },
         {
           "role": "profiles:0",
@@ -434,7 +434,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -467,7 +467,7 @@
       "rust_probe": "open_coex_trace_coex_hw_timer_unforce",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-hw-timer-unforce",
-      "evidence_digest": "48edf0c526c44e25d74b3f6e5bdaf600fd67f9eff7ce97b6927d15da16fdd5d6",
+      "evidence_digest": "c5a2091371acdb974666bd4668d4a04ea1ec21df8baa5880bc0fbf215e5087ff",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -476,7 +476,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "e617dcd74da838a42ce348b3ed5597e17d331eabb0739e72fa15dff9cdf5fa1a"
+          "sha256": "2b401fc0ed1a3956b886e3f1ba753e3fdac5830cd810ff65769645bd85987edf"
         },
         {
           "role": "profiles:0",
@@ -484,7 +484,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -517,7 +517,7 @@
       "rust_probe": "open_coex_set_trace_coex_hw_timer_set",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/coex-hw-timer-set",
-      "evidence_digest": "78cec1323959a7ff75534da06316d091985f407298910fa7dc7435f48df01838",
+      "evidence_digest": "a1fda4b1c174255326abf15aebc75366eb9961c519b2554ee6ba69d13e197e21",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -526,7 +526,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "94e86389a459be9ce0c99656605b88199f0211b058362f4fecf4447d1cce7738"
+          "sha256": "0c9c99f64ca2c363a18b9e9be78cfbd1bf1c90bcdc74cccc4b7dc821476b0b8d"
         },
         {
           "role": "profiles:0",
@@ -534,7 +534,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:coex:artifact",
@@ -565,12 +565,12 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_disable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-disable",
-      "evidence_digest": "2ef2347097a8f3ba9f47306ca51ff0318c95e06331b399c04b038e9125f64e3c",
+      "evidence_digest": "1d4120a9ee48218bf21f0778bd6ac5ae2c8ae95c9901d6d3e147b8776b9f14d9",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
@@ -578,7 +578,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "36ed329e86f3c06fb06c1fd805d0c25fdd65d50b67287e327a2be79bb36197a6"
+          "sha256": "b475f8cd0594dc053d6b80175c8e82e2c84e3881c12fc87e9dbd09ab06e332d6"
         },
         {
           "role": "profiles:0",
@@ -586,11 +586,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -619,12 +619,12 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_enable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-enable",
-      "evidence_digest": "e86e352bbbfee80b3c11d719992ca309be0599a551987b1b4e8a3c57570ca7e6",
+      "evidence_digest": "1be9c8daa9748ea34d79bb1bd8b77e2f427f860b643c8e3b6fbe3b09619eb314",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
@@ -632,7 +632,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "36ed329e86f3c06fb06c1fd805d0c25fdd65d50b67287e327a2be79bb36197a6"
+          "sha256": "b475f8cd0594dc053d6b80175c8e82e2c84e3881c12fc87e9dbd09ab06e332d6"
         },
         {
           "role": "profiles:0",
@@ -640,11 +640,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -673,12 +673,12 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_get_last_dscr",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-get-last-descriptor",
-      "evidence_digest": "86e728df221ece53d7d1a4c8d1df4327c224137da00b559b8399b0034d39a92d",
+      "evidence_digest": "e25601d355b39418e7dc0f5564555b10cabef2b9bedcb7eae870f96d1762a52b",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
@@ -686,7 +686,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "36ed329e86f3c06fb06c1fd805d0c25fdd65d50b67287e327a2be79bb36197a6"
+          "sha256": "b475f8cd0594dc053d6b80175c8e82e2c84e3881c12fc87e9dbd09ab06e332d6"
         },
         {
           "role": "profiles:0",
@@ -694,11 +694,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -727,12 +727,12 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_is_dscr_reload",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-reload-pending",
-      "evidence_digest": "592f24e3a1877b4d7d231e19f0b9e508520763e8ba7cec38cfc8a158440f79fe",
+      "evidence_digest": "99f208bdb45205268b51395121f1cbc6f69d1ab584ebaa90c0530cf4052f43a0",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
@@ -740,7 +740,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "36ed329e86f3c06fb06c1fd805d0c25fdd65d50b67287e327a2be79bb36197a6"
+          "sha256": "b475f8cd0594dc053d6b80175c8e82e2c84e3881c12fc87e9dbd09ab06e332d6"
         },
         {
           "role": "profiles:0",
@@ -748,11 +748,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -781,12 +781,12 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_read_rxdscrlast",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-read-last-word",
-      "evidence_digest": "1929e979cbdef9e2de1f9506ad6861953d046f0a2e97a5084915e95f8d85d562",
+      "evidence_digest": "1f633a00d0abb148bb27542cc87d791884ab586b53e00d7f2206eb9d66ec3799",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
@@ -794,7 +794,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "36ed329e86f3c06fb06c1fd805d0c25fdd65d50b67287e327a2be79bb36197a6"
+          "sha256": "b475f8cd0594dc053d6b80175c8e82e2c84e3881c12fc87e9dbd09ab06e332d6"
         },
         {
           "role": "profiles:0",
@@ -802,11 +802,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -820,7 +820,7 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/hal/src/wifi_mac.rs",
-          "sha256": "1e3aedb0caa8e6dda9f5d6327f971a623424dec394d6cb8d9fc2ba26755dac0c"
+          "sha256": "2e4aabbfdda2c52d83460043f20744c484eae96eed6316ebdc313d2571e96819"
         }
       ],
       "release_blockers": [
@@ -839,12 +839,12 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_read_rxdscrnext",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-read-next-word",
-      "evidence_digest": "c7066b10b670ab599b7109c080979fff090149fc64fac2e60ec197bebba2f194",
+      "evidence_digest": "b8fae998b457fd0cb9afa9dafc17e611a17b2d876ff42a2751c0e9c582221cc7",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
@@ -852,7 +852,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "36ed329e86f3c06fb06c1fd805d0c25fdd65d50b67287e327a2be79bb36197a6"
+          "sha256": "b475f8cd0594dc053d6b80175c8e82e2c84e3881c12fc87e9dbd09ab06e332d6"
         },
         {
           "role": "profiles:0",
@@ -860,11 +860,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -878,7 +878,7 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/hal/src/wifi_mac.rs",
-          "sha256": "1e3aedb0caa8e6dda9f5d6327f971a623424dec394d6cb8d9fc2ba26755dac0c"
+          "sha256": "2e4aabbfdda2c52d83460043f20744c484eae96eed6316ebdc313d2571e96819"
         }
       ],
       "release_blockers": [
@@ -897,12 +897,12 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_set_base",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-set-base",
-      "evidence_digest": "a4922f41f406e15dd7cbe396bd3328a31af49b9e8d1c5e0e02d8d0182989aa08",
+      "evidence_digest": "9773ee15d1f777002f9fcafc5437c658099bb39b0e8f273f937cd2cddeb56c7d",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
@@ -910,7 +910,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "36ed329e86f3c06fb06c1fd805d0c25fdd65d50b67287e327a2be79bb36197a6"
+          "sha256": "b475f8cd0594dc053d6b80175c8e82e2c84e3881c12fc87e9dbd09ab06e332d6"
         },
         {
           "role": "profiles:0",
@@ -918,11 +918,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -951,12 +951,12 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_set_dscr_reload",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-request-reload",
-      "evidence_digest": "b9bd3779286767660959a182feff293374d8fcb6e6963ab535b4a6cf3c9aba46",
+      "evidence_digest": "7d3ced292132660efbc88caa89507a4ec6afbd41970f291d6fb60004cee0012b",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
@@ -964,7 +964,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "36ed329e86f3c06fb06c1fd805d0c25fdd65d50b67287e327a2be79bb36197a6"
+          "sha256": "b475f8cd0594dc053d6b80175c8e82e2c84e3881c12fc87e9dbd09ab06e332d6"
         },
         {
           "role": "profiles:0",
@@ -972,11 +972,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1005,32 +1005,32 @@
       "rust_probe": "open_libpp_tx_trace_hal_mac_is_txq_enabled",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-txq-enabled",
-      "evidence_digest": "6b1c5ae51092f65b8821dc676f144be1e5b37676b72ce31aaad6181ceab23c01",
+      "evidence_digest": "6ad644de67fbf8dc85218cd6205602fd88245d147a3abd6e857adeec73d10f20",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
-          "sha256": "1ab5d854b620d31b43a749941e8b0918b4f296da938c519ccb38825ef3a56592"
+          "sha256": "26c3cc52c0c42cf648403950fc7ee0e4ca82bdf670b32223c47c1b24481b38d4"
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "6db403dd0f2d2304f1376a36a15bd0df1828302c45740a350829cf4ede6d016f"
+          "sha256": "63fbdfed99fb950d12dad3cdb11221d39a420ecb46c7bcd0e60f26ea791fd489"
         },
         {
           "role": "profiles:0",
-          "sha256": "db4235c0c96d7d98a66cb40e5849e66d74a8db35a597395bdb8d3dd03aad872b"
+          "sha256": "862ca2eb6c78589ecb947117fb4a3e62d87e249e2b883e9baf1a608cde17f865"
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1059,32 +1059,32 @@
       "rust_probe": "open_libpp_tx_trace_hal_mac_is_txq_valid",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-txq-valid",
-      "evidence_digest": "9b1bf17b17f2e6ffd7a35f180b2316ccbca814d668b2cc388f96a545fe82fe5f",
+      "evidence_digest": "ecac3376c01bf75433969f9c810c7ca0cf638b1f171f7ff4d01232bbdf53988e",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
-          "sha256": "1ab5d854b620d31b43a749941e8b0918b4f296da938c519ccb38825ef3a56592"
+          "sha256": "26c3cc52c0c42cf648403950fc7ee0e4ca82bdf670b32223c47c1b24481b38d4"
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "6db403dd0f2d2304f1376a36a15bd0df1828302c45740a350829cf4ede6d016f"
+          "sha256": "63fbdfed99fb950d12dad3cdb11221d39a420ecb46c7bcd0e60f26ea791fd489"
         },
         {
           "role": "profiles:0",
-          "sha256": "db4235c0c96d7d98a66cb40e5849e66d74a8db35a597395bdb8d3dd03aad872b"
+          "sha256": "862ca2eb6c78589ecb947117fb4a3e62d87e249e2b883e9baf1a608cde17f865"
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1113,32 +1113,32 @@
       "rust_probe": "open_libpp_tx_trace_hal_mac_set_txq_invalid",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-set-txq-invalid",
-      "evidence_digest": "f49abe48098c690597793167ec0e3f0351cad43ce13dd28a4eef3ec922592384",
+      "evidence_digest": "711e8e764b0f715822ceea6f80087328357d9c47a96764cf970fa5b7eeda9812",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
-          "sha256": "1ab5d854b620d31b43a749941e8b0918b4f296da938c519ccb38825ef3a56592"
+          "sha256": "26c3cc52c0c42cf648403950fc7ee0e4ca82bdf670b32223c47c1b24481b38d4"
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "6db403dd0f2d2304f1376a36a15bd0df1828302c45740a350829cf4ede6d016f"
+          "sha256": "63fbdfed99fb950d12dad3cdb11221d39a420ecb46c7bcd0e60f26ea791fd489"
         },
         {
           "role": "profiles:0",
-          "sha256": "db4235c0c96d7d98a66cb40e5849e66d74a8db35a597395bdb8d3dd03aad872b"
+          "sha256": "862ca2eb6c78589ecb947117fb4a3e62d87e249e2b883e9baf1a608cde17f865"
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1167,32 +1167,32 @@
       "rust_probe": "open_libpp_tx_trace_hal_mac_tx_config_edca",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-configure-tx-edca",
-      "evidence_digest": "31506d6601a1bcdc3784c9869fadd0955b4bc15a3b89904ec139021a1b6ab5e1",
+      "evidence_digest": "daa32061238d8a2750bc7071f43571cb29221bbf3be73b16ff3e1ac2646b9ec2",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
-          "sha256": "1ab5d854b620d31b43a749941e8b0918b4f296da938c519ccb38825ef3a56592"
+          "sha256": "26c3cc52c0c42cf648403950fc7ee0e4ca82bdf670b32223c47c1b24481b38d4"
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "6db403dd0f2d2304f1376a36a15bd0df1828302c45740a350829cf4ede6d016f"
+          "sha256": "63fbdfed99fb950d12dad3cdb11221d39a420ecb46c7bcd0e60f26ea791fd489"
         },
         {
           "role": "profiles:0",
-          "sha256": "db4235c0c96d7d98a66cb40e5849e66d74a8db35a597395bdb8d3dd03aad872b"
+          "sha256": "862ca2eb6c78589ecb947117fb4a3e62d87e249e2b883e9baf1a608cde17f865"
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1221,32 +1221,32 @@
       "rust_probe": "open_libpp_tx_trace_hal_mac_tx_get_blockack",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/libpp-read-tx-blockack",
-      "evidence_digest": "fcbe95ccd5cb0f81ca0844cc5fab8687644420362db4c7c5541771773f0865b5",
+      "evidence_digest": "72f38f4c589fed7d98f707c3ae004726d2aaddead47774f88802dcf98661a73b",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
-          "sha256": "1ab5d854b620d31b43a749941e8b0918b4f296da938c519ccb38825ef3a56592"
+          "sha256": "26c3cc52c0c42cf648403950fc7ee0e4ca82bdf670b32223c47c1b24481b38d4"
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "6db403dd0f2d2304f1376a36a15bd0df1828302c45740a350829cf4ede6d016f"
+          "sha256": "63fbdfed99fb950d12dad3cdb11221d39a420ecb46c7bcd0e60f26ea791fd489"
         },
         {
           "role": "profiles:0",
-          "sha256": "db4235c0c96d7d98a66cb40e5849e66d74a8db35a597395bdb8d3dd03aad872b"
+          "sha256": "862ca2eb6c78589ecb947117fb4a3e62d87e249e2b883e9baf1a608cde17f865"
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1260,7 +1260,61 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/pac/src/mac_block_ack.rs",
-          "sha256": "7cd1982bbae98dd701d052b1244c3abbf2f3b205d77048114c8ffd3df1e62add"
+          "sha256": "cacd4c6eaf8a0f26a121d9bfd65288370c1a358ad02ed7d1ec6c43150951480e"
+        }
+      ]
+    },
+    {
+      "suite": "libpp-tx-dma",
+      "source": "libpp",
+      "symbol": "hal_mac_tx_set_ppdu",
+      "evidence_class": "production-trace",
+      "status": "bounded-match",
+      "release_eligible": true,
+      "rust_component": "open_esp_radio_esp32s31_pac::mac_tx::RadioRegisters::program_ht_mac_tx_ppdu",
+      "rust_probe": "open_libpp_tx_trace_hal_mac_tx_set_ppdu",
+      "claim": "reviewed-domain-equivalence",
+      "evidence_kind": "reviewed-domain-equivalence/profile:scenario/libpp-set-ht40-ampdu-ppdu",
+      "evidence_digest": "056f76b1bacf9a24c6abfd34d55864d8ca52255e5f7880463dc5ca2b8d4090f0",
+      "baseline_passed": true,
+      "artifact_hashes": [
+        {
+          "role": "auxiliary:libpp-replay",
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
+        },
+        {
+          "role": "dispositions:0",
+          "sha256": "26c3cc52c0c42cf648403950fc7ee0e4ca82bdf670b32223c47c1b24481b38d4"
+        },
+        {
+          "role": "evidence-baseline:0",
+          "sha256": "63fbdfed99fb950d12dad3cdb11221d39a420ecb46c7bcd0e60f26ea791fd489"
+        },
+        {
+          "role": "profiles:0",
+          "sha256": "862ca2eb6c78589ecb947117fb4a3e62d87e249e2b883e9baf1a608cde17f865"
+        },
+        {
+          "role": "rust-probes",
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
+        },
+        {
+          "role": "source:libpp:artifact",
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
+        },
+        {
+          "role": "source:libpp:companion",
+          "sha256": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+        },
+        {
+          "role": "source:libpp:inventory",
+          "sha256": "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
+        }
+      ],
+      "source_hashes": [
+        {
+          "path": "driver/chips/esp32s31/pac/src/mac_tx.rs",
+          "sha256": "ac762142be64000475b1a0a0d04d7a9f294146441a5e00aad27c4d5f50fe3cef"
         }
       ]
     },
@@ -1275,32 +1329,32 @@
       "rust_probe": "open_libpp_tx_trace_hal_mac_txq_disable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-disable-txq",
-      "evidence_digest": "2112a18e5d9cdbf3dc848a580614848b3e86d1766c103a40aec0ce882e20ed1b",
+      "evidence_digest": "084c13981ab512d769c97ef130ac90f5994c134db6b68b2857f5248822d3a047",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "dispositions:0",
-          "sha256": "1ab5d854b620d31b43a749941e8b0918b4f296da938c519ccb38825ef3a56592"
+          "sha256": "26c3cc52c0c42cf648403950fc7ee0e4ca82bdf670b32223c47c1b24481b38d4"
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "6db403dd0f2d2304f1376a36a15bd0df1828302c45740a350829cf4ede6d016f"
+          "sha256": "63fbdfed99fb950d12dad3cdb11221d39a420ecb46c7bcd0e60f26ea791fd489"
         },
         {
           "role": "profiles:0",
-          "sha256": "db4235c0c96d7d98a66cb40e5849e66d74a8db35a597395bdb8d3dd03aad872b"
+          "sha256": "862ca2eb6c78589ecb947117fb4a3e62d87e249e2b883e9baf1a608cde17f865"
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1329,7 +1383,7 @@
       "rust_probe": "open_libpp_tx_retry_trace_rc_get_rate",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/libpp-ordinary-rc-get-rate",
-      "evidence_digest": "b964590d1661f0de782fd99d0a3cf66f056bf36edb70c61989d8a3a1356cd370",
+      "evidence_digest": "bc5a7b15bf4eae397945a693a67d615f6eab44971b4efa7019bdda9288f3023e",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1338,7 +1392,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "386fa5c88fcbf35d30c5c84dab928baa6a88d6ffbe3eb8874291b775e0a1aefb"
+          "sha256": "9d14ea12ba3bf5e6b265d6bce2876852c3a56f9ab0ec86b40a28e183a9c75d57"
         },
         {
           "role": "profiles:0",
@@ -1346,11 +1400,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp-replay:artifact",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "source:libpp-replay:companion",
@@ -1358,7 +1412,7 @@
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1387,7 +1441,7 @@
       "rust_probe": "open_libpp_tx_retry_trace_ack_timeout_state",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:state/libpp-lmac-ack-timeout-state",
-      "evidence_digest": "4e6c8cd33f5ef4839f072616e4390273f6559a1a7d576caa24b2bbc9e12da443",
+      "evidence_digest": "c5526f30f4c06b8b01980ab456f4a6183e5934631fe2c2134d2e89cc2f36670d",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1396,7 +1450,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "386fa5c88fcbf35d30c5c84dab928baa6a88d6ffbe3eb8874291b775e0a1aefb"
+          "sha256": "9d14ea12ba3bf5e6b265d6bce2876852c3a56f9ab0ec86b40a28e183a9c75d57"
         },
         {
           "role": "profiles:0",
@@ -1404,11 +1458,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp-replay:artifact",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "source:libpp-replay:companion",
@@ -1416,7 +1470,7 @@
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1430,7 +1484,7 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/wifi/src/ordinary_tx.rs",
-          "sha256": "2d487212f7d06616e849e7c0f3965023dce028fc7f17440f8109f7d5b540e6ff"
+          "sha256": "57c88b4f0c9456c3c1ab5a86ca3176d49c36469490d86ead95aa22d793a1af5c"
         }
       ]
     },
@@ -1445,7 +1499,7 @@
       "rust_probe": "open_libpp_tx_retry_trace_lmac_process_tx_error",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/libpp-lmac-process-tx-error-dispatch",
-      "evidence_digest": "bd2cc6e6e15189f50bfdc97a98e13b95d06f951e76802cfaa89c32fdf1a7a1a2",
+      "evidence_digest": "3ee1fbcd0f6ae1b1d1b36a6b36b5538d2ac4496c0fce70b472d9e3c7ee6dbe2e",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1454,7 +1508,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "386fa5c88fcbf35d30c5c84dab928baa6a88d6ffbe3eb8874291b775e0a1aefb"
+          "sha256": "9d14ea12ba3bf5e6b265d6bce2876852c3a56f9ab0ec86b40a28e183a9c75d57"
         },
         {
           "role": "profiles:0",
@@ -1462,11 +1516,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp-replay:artifact",
-          "sha256": "542390568db1dfb29cd7c7f5dbc90b50e0668fbb11af60c6679de03536000cef"
+          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
         },
         {
           "role": "source:libpp-replay:companion",
@@ -1474,7 +1528,7 @@
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -1488,7 +1542,7 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/wifi/mac/src/tx.rs",
-          "sha256": "0d0d6a41bd52669b541bda7a9e03d734f80d77306aa53e45833b5ef7cacadcf7"
+          "sha256": "9f27148dfc5a6f619404ffdd86dee45cc9c4ba2ea5752f30b99137bda12435e8"
         }
       ]
     },
@@ -1502,7 +1556,7 @@
       "rust_probe": "open_phy_trace_ant_dft_cfg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-antenna-diversity",
-      "evidence_digest": "6cbd266bcf4f859d018a04e76a8929af0570e59c52014df1a9a33184393d9603",
+      "evidence_digest": "9c6e98ea484b9d0c0a1b6555122d442cdf77c5656043f759f1d094f152486b1c",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1511,7 +1565,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -1519,7 +1573,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -1559,7 +1613,7 @@
       "rust_probe": "open_phy_trace_ret_bb_wdt_get_status",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-watchdog-status",
-      "evidence_digest": "f08e69f4af88f045b180c71df7043acc827e7336cf259beb5394ae3aa3f32f44",
+      "evidence_digest": "ec0c11e993fdb3f77dd24554c438c1787eb73bcf00d6e6e3c22b3c753f932236",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1568,7 +1622,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -1576,7 +1630,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -1616,7 +1670,7 @@
       "rust_probe": "open_phy_trace_bb_wdt_int_enable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-watchdog-interrupt-enable",
-      "evidence_digest": "c5ef8d8cc421740bf312a11fe5d7f895943fd5bb34547040ad18e7f7dbf42b09",
+      "evidence_digest": "68f232b10b3dfd1679ff1cbd6b2b9287c16916e692bbf5e4066935c4a5d6f054",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1625,7 +1679,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -1633,7 +1687,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -1673,7 +1727,7 @@
       "rust_probe": "open_phy_trace_bb_wdt_rst_enable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-watchdog-reset-enable",
-      "evidence_digest": "1d5aca08b45a7443064a1d4b7e72d99007c8aee36a8a7ee2d405ab59af6bf204",
+      "evidence_digest": "6644e122cedb0d57a3882ebca6982301d094ee165fb66b27dfa517330465c2cd",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1682,7 +1736,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -1690,7 +1744,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -1730,7 +1784,7 @@
       "rust_probe": "open_phy_trace_bb_wdt_timeout_clear",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-watchdog-timeout-clear",
-      "evidence_digest": "c9f0cb5157ceedc11f8360c8067f86a50ebcca87187f3f79b628375f02d20911",
+      "evidence_digest": "1dbe3267012d9122850b824d5918e80129f72a72146b54f90429e9303466ef97",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1739,7 +1793,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -1747,7 +1801,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -1794,7 +1848,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -1802,7 +1856,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -1841,7 +1895,7 @@
       "rust_probe": "open_phy_trace_get_dc_value",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-dc-value-split",
-      "evidence_digest": "7d5ee13f33a6266d90c3169616cb2d0c150c3cc2a696f4c2c3d3cc77e4882499",
+      "evidence_digest": "c5b4dd938eb972911b483b720dc8716abe765cd97966798466513ec56388b5a0",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1850,7 +1904,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -1858,7 +1912,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -1905,7 +1959,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -1913,7 +1967,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -1952,7 +2006,7 @@
       "rust_probe": "open_phy_trace_phy_11p_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-dot11p-state",
-      "evidence_digest": "f7a01e07cf7b09087825352caeab4bdfc5a4500be196a0ee2cbdacbc91308271",
+      "evidence_digest": "5fca47081cfd05a9ebb7498d0be79242bc91eca9ff51c717fe4843cc46c7f79a",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -1961,7 +2015,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -1969,7 +2023,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2016,7 +2070,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2024,7 +2078,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2070,7 +2124,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2078,7 +2132,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2117,7 +2171,7 @@
       "rust_probe": "open_phy_trace_phy_ble_set_chan_base",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-ble-channel-base-state",
-      "evidence_digest": "f2fcb0efbe193567ca453082c8774d9c77de846c5e8011082950f8fed9542825",
+      "evidence_digest": "ceb01f4f4db2b7abb1940f5d7507c8cf6e0bc05c3fffeabae942badbb6217fe7",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -2126,7 +2180,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2134,7 +2188,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2174,7 +2228,7 @@
       "rust_probe": "open_phy_trace_phy_bt_power_track",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-bt-power-tracking-state",
-      "evidence_digest": "5d997b79b3e6099ed9fb79ce4a0b694582ad9aa6dc52c0fa69435bf236f2a70f",
+      "evidence_digest": "dfd2e67c50a634e175b5d6f8b2204313652dea4e0276348b48b22e08b6e8c863",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -2183,7 +2237,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2191,7 +2245,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2238,7 +2292,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2246,7 +2300,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2292,7 +2346,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2300,7 +2354,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2339,7 +2393,7 @@
       "rust_probe": "open_phy_trace_phy_current_level_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-current-level-state",
-      "evidence_digest": "cd78795c11f74b6dc265e2ded7eabf28fc5695c30b5d159520db8a8ade7e9232",
+      "evidence_digest": "ffc8aa8c60d1a9ba2a87d902077f33a9d11bf22d549a22e3816fec2506c49bf5",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -2348,7 +2402,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2356,7 +2410,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2403,7 +2457,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2411,7 +2465,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2457,7 +2511,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2465,7 +2519,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2504,7 +2558,7 @@
       "rust_probe": "open_phy_trace_phy_force_iccfr",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-force-iccfr",
-      "evidence_digest": "7ca99836d2b346fa28ebca39e6b3b0a77e578435a184a56b30e56a472da5e024",
+      "evidence_digest": "c44cef1e1d36474d42e050c92229d11e6f89b13ab1717866d6e1104c5185d9c3",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -2513,7 +2567,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2521,7 +2575,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2568,7 +2622,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2576,7 +2630,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2622,7 +2676,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2630,7 +2684,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2676,7 +2730,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2684,7 +2738,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2730,7 +2784,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2738,7 +2792,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2784,7 +2838,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2792,7 +2846,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2838,7 +2892,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2846,7 +2900,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2892,7 +2946,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2900,7 +2954,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2939,7 +2993,7 @@
       "rust_probe": "open_phy_trace_phy_i2c_master_command_mem_cfg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-i2c-command-memory-configuration",
-      "evidence_digest": "9c1692c36537cff75e2abac4a953f7ce5866389117aec7111eb5be1b1fc057b2",
+      "evidence_digest": "101633e0197bc5c5c5ed9e07f4588ab5e12314b16b6b2f0f5787969083fd5dd0",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -2948,7 +3002,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -2956,7 +3010,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -2996,7 +3050,7 @@
       "rust_probe": "open_phy_trace_phy_i2c_master_mem_cfg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-i2c-master-memory-configuration",
-      "evidence_digest": "a1e9d1948b1ff6a2bad027cb94197b4f9bee480967513ba275aaedbcbaf5cde9",
+      "evidence_digest": "f7a4c951b4316abaf1ab256df39b8f3ba93f91ec8cf701584a78ac63b2d9631f",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -3005,7 +3059,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3013,7 +3067,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3053,7 +3107,7 @@
       "rust_probe": "open_phy_trace_phy_iccfr_en",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-iccfr-enable",
-      "evidence_digest": "64fda7634a614a836b0a4f1c5facaa13412daf9d39b1e02179cdf39b548d6af8",
+      "evidence_digest": "35ac789310fb924bd2c8811dfdd619d8fe3c3889ac5005032b7dd472c824f9e1",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -3062,7 +3116,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3070,7 +3124,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3110,7 +3164,7 @@
       "rust_probe": "open_phy_trace_phy_init_param_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-initialization-parameter-state",
-      "evidence_digest": "ea08a7bf13b51af12ea37ca9cab6c2e245a48a89dc8598fe652d1bbc3bf98a07",
+      "evidence_digest": "5f720674ca5e62f609f70f4925065c25b56ea011db37fb86f864a06e5840a83f",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -3119,7 +3173,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3127,7 +3181,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3174,7 +3228,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3182,7 +3236,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3228,7 +3282,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3236,7 +3290,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3282,7 +3336,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3290,7 +3344,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3329,7 +3383,7 @@
       "rust_probe": "open_phy_trace_phy_reg_update_new",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-post-initialization-register-update",
-      "evidence_digest": "aefd1c66f4f46b2bcae28359d91c83033e136e7b3d77220a53e402e29e557595",
+      "evidence_digest": "7ae8f6c1a0d8c9afa590e4e2f627e8b2e15f9cf207080f6a878481828df116ad",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -3338,7 +3392,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3346,7 +3400,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3393,7 +3447,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3401,7 +3455,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3447,7 +3501,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3455,7 +3509,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3501,7 +3555,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3509,7 +3563,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3548,7 +3602,7 @@
       "rust_probe": "open_phy_trace_phy_track_temp_debug",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-temperature-tracking-debug-state",
-      "evidence_digest": "bb0b6fb6e5e1ef203b1ca7a422b9b8881d6aec014479f447fda3d86c46ab7e9c",
+      "evidence_digest": "71974e08ee73274d38eeed5f138636bc8c9ee7ab2dcd104dd712e8ad8c219801",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -3557,7 +3611,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3565,7 +3619,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3605,7 +3659,7 @@
       "rust_probe": "open_phy_trace_phy_tx_atten_comp",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-tx-attenuation-compensation",
-      "evidence_digest": "11803b836dd001994c5ef6de09057c0eae0e71d11ddcf5b49dcddf382ecae38b",
+      "evidence_digest": "3191fd81d83a3998fdfb1c5b11fa5caea6f2c8102f68f33bd8276162bb7b2c0b",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -3614,7 +3668,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3622,7 +3676,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3662,7 +3716,7 @@
       "rust_probe": "open_phy_trace_ret_read_hw_noisefloor",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-read-hardware-noise-floor",
-      "evidence_digest": "057e66522d400d0f5e144927701fa7656682f56afb07b2df5af1e78ab2c7c24b",
+      "evidence_digest": "882eee9345e499abb77bf69076b1ef85eac969762185f0ac4b426230007d8ab0",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -3671,7 +3725,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3679,7 +3733,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3726,7 +3780,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3734,7 +3788,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3773,7 +3827,7 @@
       "rust_probe": "open_phy_trace_ret_abs_temp",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-absolute-temperature",
-      "evidence_digest": "7b857496781b7dbe4c52f0a07c25b7ab7512e17f8df460631a283155215ed2a1",
+      "evidence_digest": "8de463388a40e78f9e6aabfdf57416402b544eecea93d9a01b5205bae74dd68f",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -3782,7 +3836,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3790,7 +3844,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3830,7 +3884,7 @@
       "rust_probe": "open_phy_trace_agc_reg_init",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-agc-register-init",
-      "evidence_digest": "12f1b33a34d37519fa7fc68534b3bbf296e40920f0f11ecb2e253de3c17da324",
+      "evidence_digest": "0a2e8fe9b1441ba13d2f29a3ac2565b56792bf11a8d486a5a2fb8b7f131ead24",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -3839,7 +3893,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3847,7 +3901,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3894,7 +3948,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3902,7 +3956,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3948,7 +4002,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -3956,7 +4010,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -3995,7 +4049,7 @@
       "rust_probe": "open_phy_trace_bb_cbw_chan_cfg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-channel-cbw",
-      "evidence_digest": "269909aee0784a717e02a3e6b3cddcb1e7451d56bcf3f710d6f477b5449420bf",
+      "evidence_digest": "fb6f5e328e08d909dbd4fa40004132d5f545be14f58710da820605a286e11294",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -4004,7 +4058,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4012,7 +4066,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4059,7 +4113,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4067,7 +4121,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4113,7 +4167,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4121,7 +4175,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4167,7 +4221,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4175,7 +4229,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4221,7 +4275,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4229,7 +4283,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4275,7 +4329,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4283,7 +4337,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4329,7 +4383,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4337,7 +4391,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4383,7 +4437,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4391,7 +4445,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4430,7 +4484,7 @@
       "rust_probe": "open_phy_trace_ret_bt_bb_to_index",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-bluetooth-baseband-to-index",
-      "evidence_digest": "7ae3850328dbb5afad4d060b97662186c126355dabbbcc5e6c774378a4d59b25",
+      "evidence_digest": "4dec6f28ef2e5c927d1d52660666a432748337a51dd80ab85da229c7e751bd67",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -4439,7 +4493,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4447,7 +4501,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4494,7 +4548,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4502,7 +4556,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4541,7 +4595,7 @@
       "rust_probe": "open_phy_trace_ret_bt_index_to_bb",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-bluetooth-index-to-baseband",
-      "evidence_digest": "97c2e2bae49daab5e2213fb21d151a2b75de2553a82a359e827b83ec393a906c",
+      "evidence_digest": "c5b6a54e82a8a2fa322901ae1f1072a722d74c93f5907a87dbbff39312a86cf9",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -4550,7 +4604,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4558,7 +4612,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4605,7 +4659,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4613,7 +4667,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4652,7 +4706,7 @@
       "rust_probe": "open_phy_trace_ret_byte_to_word",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-byte-to-word",
-      "evidence_digest": "e2ac8fd2ed3f9d8e0b77800cabbed4dabd98b832099660b1006c4091564b264f",
+      "evidence_digest": "815f4bd968d72bf4d1f0cf9ad685eb23ae36a8676f015a794c2953c66d941958",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -4661,7 +4715,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4669,7 +4723,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4716,7 +4770,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4724,7 +4778,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4770,7 +4824,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4778,7 +4832,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4824,7 +4878,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4832,7 +4886,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4871,7 +4925,7 @@
       "rust_probe": "open_phy_trace_dis_hw_set_freq",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-disable-hardware-frequency",
-      "evidence_digest": "cc0a1627c78bf9398810087b321fb9b5a00dbff4865cc1fcfe694e4424f30131",
+      "evidence_digest": "860acb516844ebbfb98871710736716452d7e0f782c5b201eb218b74960e3600",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -4880,7 +4934,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4888,7 +4942,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4935,7 +4989,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4943,7 +4997,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -4989,7 +5043,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -4997,7 +5051,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5043,7 +5097,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5051,7 +5105,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5097,7 +5151,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5105,7 +5159,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5151,7 +5205,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5159,7 +5213,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5205,7 +5259,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5213,7 +5267,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5252,7 +5306,7 @@
       "rust_probe": "open_phy_trace_ret_encode_i2c_master",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-encode-i2c-master",
-      "evidence_digest": "c59b58d72c2e4b1d436ab0078d7bb8d80dfcb394a38ff5f4156ee8e958f573c9",
+      "evidence_digest": "cef0d41df278d5b924e6e0e274a71fc772a90e559a62ffb6a237483c018c52c0",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -5261,7 +5315,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5269,7 +5323,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5316,7 +5370,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5324,7 +5378,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5370,7 +5424,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5378,7 +5432,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5424,7 +5478,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5432,7 +5486,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5471,7 +5525,7 @@
       "rust_probe": "open_phy_trace_freq_band_reg_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/frequency-band-registers",
-      "evidence_digest": "d8f638cbcbbd4ba9a0c3a437b4e60f87c36a91c60ea721cf2d932ae313e0e22d",
+      "evidence_digest": "dc44fca30d681f0387ddf08b9dd6f7298339f626e3cc3da218668d9c2abb0692",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -5480,7 +5534,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5488,7 +5542,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5528,7 +5582,7 @@
       "rust_probe": "open_phy_trace_freq_i2c_mem_write",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-frequency-i2c-memory-write",
-      "evidence_digest": "a8b360b9898e9505e6668ef7440d8be54692a03cd1d730c27a454f0167e734af",
+      "evidence_digest": "37f20f0c3490c6081bd201614cd29d156cf0d69212d2fd10ded3cdd727c641ca",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -5537,7 +5591,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5545,7 +5599,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5592,7 +5646,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5600,7 +5654,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5639,7 +5693,7 @@
       "rust_probe": "open_phy_trace_freq_reg_init",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-frequency-register-init",
-      "evidence_digest": "516c8ecde60a8732d95acf191502a97549a351b697a0b5a89b18b5a0a3cc2117",
+      "evidence_digest": "d220a5a170cfe903c8385aff30b62a7434ab97ac92e7ab54ac92f018de70210b",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -5648,7 +5702,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5656,7 +5710,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5696,7 +5750,7 @@
       "rust_probe": "open_phy_trace_ret_get_freq_mem_addr",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-frequency-memory-address",
-      "evidence_digest": "17c171c305590bc825cd351ddff6b24b62211d18d9f4288c51183ae856165c7d",
+      "evidence_digest": "ab56c3a804374092db12b9dd42339d26470873356fd2bfa6c6e4b56d203737fb",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -5705,7 +5759,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5713,7 +5767,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5760,7 +5814,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5768,7 +5822,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5807,7 +5861,7 @@
       "rust_probe": "open_phy_trace_i2c_txrate_init",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-i2c-tx-rate-init",
-      "evidence_digest": "2fd6689ecc852bd9e6ad36615f6a5e2f20e56a869d9366308a7d54890680571b",
+      "evidence_digest": "6a6ab56391dd6aec94a148b8cd77cfefdb7ba2e176d1f58e7901c06462835a9a",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -5816,7 +5870,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5824,7 +5878,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5871,7 +5925,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5879,7 +5933,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5925,7 +5979,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5933,7 +5987,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -5979,7 +6033,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -5987,7 +6041,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6033,7 +6087,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6041,7 +6095,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6080,7 +6134,7 @@
       "rust_probe": "open_phy_trace_nrx_freq_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-nrx-frequency",
-      "evidence_digest": "9261929dd80d39bd1c202fbc82b41c7c6f7135913a3b49758a46c94e112d1531",
+      "evidence_digest": "e41e4d0f0ea3112483ae42961f0ef197cdef42c02451a19335a899e5a04814e8",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6089,7 +6143,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6097,7 +6151,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6137,7 +6191,7 @@
       "rust_probe": "open_phy_trace_pbus_debugmode",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-pbus-debug-mode",
-      "evidence_digest": "7ca41a5893c5a20d8ebb9e2e8898bc75c74bf2599e53cf90c06a45659af6774a",
+      "evidence_digest": "ebde9dda0a8a0ca22e8676ae1361f7acbf022e66b3549d3a88cdf225dc4c3eb2",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6146,7 +6200,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6154,7 +6208,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6194,7 +6248,7 @@
       "rust_probe": "open_phy_trace_ret_read_hw_noisefloor",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-read-hardware-noise-floor",
-      "evidence_digest": "30d95120d5259a2e0475c5dcb26eaeafb0f02b13e1729ef10fa104e68eebff32",
+      "evidence_digest": "5d8010276dc1314b9f94253b651b14f82f00093c68c5f2583806852bbff5d7a9",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6203,7 +6257,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6211,7 +6265,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6251,7 +6305,7 @@
       "rust_probe": "open_phy_trace_rfrx_sat_rst",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-rf-rx-saturation-reset",
-      "evidence_digest": "f6535853efaf983b5f6846cff459d0da060ff5e6a5a4cfceac9e9828baa1b099",
+      "evidence_digest": "b7162444c4830f86aa019f296d72de283194f02d0c000ff12d5cefb43652f060",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6260,7 +6314,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6268,7 +6322,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6315,7 +6369,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6323,7 +6377,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6362,7 +6416,7 @@
       "rust_probe": "open_phy_trace_rx_11b_opt",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-rx-11b-optimization",
-      "evidence_digest": "cd28bee9289fa7ff245ef0f8fbd4c1e35b1c38b54437d1ee71f18aa3b23e4905",
+      "evidence_digest": "ca3d442a44a481fa8856c45bdc1c4ba8697ef86de0e8ea8578e967df42b7a126",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6371,7 +6425,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6379,7 +6433,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6419,7 +6473,7 @@
       "rust_probe": "open_phy_trace_save_pbus_reg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-save-pbus-registers",
-      "evidence_digest": "d041dc616eaf00f6ce415cf264c36948c055d5f8c4b5f917353f709ea8058d02",
+      "evidence_digest": "980d046dad1ea3666cc5a2b6b68bfd44e241184260a5a887d43f9efcf4220a8b",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6428,7 +6482,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6436,7 +6490,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6476,7 +6530,7 @@
       "rust_probe": "open_phy_trace_set_rxclk_en",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-rx-clock-enable",
-      "evidence_digest": "ec3efeb0146c7bcb608fa6ab0e6958fdac0b6d092415929f95673d27a8a2ee4a",
+      "evidence_digest": "39e8657a8a8f9e2182f226d19bc0215b6638eddb9eee97a12c1b0a62db41a9c2",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6485,7 +6539,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6493,7 +6547,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6533,7 +6587,7 @@
       "rust_probe": "open_phy_trace_set_txclk_en",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-tx-clock-enable",
-      "evidence_digest": "72261b629616b22ad340dfeda2576d3a2b65a920a6ef068a79d3b3f42d833621",
+      "evidence_digest": "fadfff227f63ae43267c01f03b0f98771bda3ad942e50d12899a9d858eb1e4f0",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6542,7 +6596,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6550,7 +6604,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6597,7 +6651,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6605,7 +6659,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6651,7 +6705,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6659,7 +6713,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6698,7 +6752,7 @@
       "rust_probe": "open_phy_trace_txpwr_track_slow",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/rom-tx-power-tracking-slow-state",
-      "evidence_digest": "8ea15c87b446276f34bd61e4c40955bb0f04e501b01226e38b0691859d4a47a3",
+      "evidence_digest": "f68909344972730507e27f31d264a87f8347abbb512eacb469cb2c4f8a53ed40",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6707,7 +6761,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6715,7 +6769,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6762,7 +6816,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6770,7 +6824,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6816,7 +6870,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "35e6c5375a91fe6e1983d5a749d4c834f86348dab68ef6667840a0303bbb2530"
+          "sha256": "0399bfe927b0489a5f6ca0833ac9f5277062908a24b0f0a271bee8b5853cf847"
         },
         {
           "role": "profiles:0",
@@ -6824,7 +6878,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:archive:artifact",
@@ -6864,7 +6918,7 @@
       "rust_probe": "open_rom_power_tsf_trace_hal_get_sta_tsf",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-sta-tsf-snapshot",
-      "evidence_digest": "121f7ebff62f8ffb359dbc602e1106b69c63adcf0dfd8cf81c72a7b611c4535a",
+      "evidence_digest": "8691bf04119935bdc046c328d626c273002229583648d817737454d2a3353ffa",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6873,7 +6927,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "d04471fa55e5c3b13c6b322dc3a8f40197066350c1efbab586d06322f64c1d99"
+          "sha256": "c114de98094b1eea178cee6374fa235a4bfa24d2e5e8e8db02a671d65e90609b"
         },
         {
           "role": "profiles:0",
@@ -6881,7 +6935,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:rom:artifact",
@@ -6910,7 +6964,7 @@
       "rust_probe": "open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/wifi-ap-tsf-start",
-      "evidence_digest": "4ae466b5a23e3bd3635d33f31ed53fe21489a34f59110649846714d9d10bf847",
+      "evidence_digest": "6603e5b0d407997c437e40d73f57a869fecdae10d7d729d96c5df5125526cf6e",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6919,7 +6973,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "b32f71fb4166b58b76786af8bcdd50284cebee9955e70323c99ab206dfdafa84"
+          "sha256": "5b5a1ece633c4df412ef70b5b373266171e7c61371bec155794457f4496e22ff"
         },
         {
           "role": "profiles:0",
@@ -6927,11 +6981,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -6960,7 +7014,7 @@
       "rust_probe": "open_libpp_ap_tsf_trace_hal_disable_softap_tsf",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/wifi-ap-tsf-stop",
-      "evidence_digest": "84a5c71c97c323c4bc67d89f48672af0497a2fb3d66083bfbe5ea72ff6c35386",
+      "evidence_digest": "9a72fbe516bcb77e563ed0b2a9bf8c84b70fc18328e2e8dc8b69f07203b5d294",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -6969,7 +7023,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "93c76da93059daa720d69fb05a1d49b59402e6c4be88f51c714cfa0bb0b82b85"
+          "sha256": "1ef1e5db4d5674b725c84e3041ab7373be83f4180ccb06b423c1da35e2daa5f2"
         },
         {
           "role": "profiles:0",
@@ -6977,11 +7031,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -7010,7 +7064,7 @@
       "rust_probe": "open_libpp_interface_trace_hal_mac_set_addr",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/wifi-interface-address",
-      "evidence_digest": "f2f3a830b75013d6f8c86b3ae2bacb14971645a02d66c728d015d1165ec5acb2",
+      "evidence_digest": "6f0e091daa3afbe8ed47217630b2a5b25c89ef1168f56e52a8f853016dd1cd04",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -7019,7 +7073,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "1a51680ad56835e66fc10a32962ba41137f3d2a7691b8836624f33ff03b1a610"
+          "sha256": "d5ba63d1648ea6afa76d22b14ca2abeaebba0f11001e8d190e06b20df3d4b148"
         },
         {
           "role": "profiles:0",
@@ -7027,11 +7081,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -7060,7 +7114,7 @@
       "rust_probe": "open_libpp_interface_trace_hal_mac_set_bssid",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/wifi-interface-bssid",
-      "evidence_digest": "25e3d755d8f6ab46185d570a725770feb52a7a90e7c3e8c72d3e2ac92ba1735a",
+      "evidence_digest": "4f8ed65e6c5f60464106ca1bc0b5ef779592653bebba83545739f5c3be2dba29",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -7069,7 +7123,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "1a51680ad56835e66fc10a32962ba41137f3d2a7691b8836624f33ff03b1a610"
+          "sha256": "d5ba63d1648ea6afa76d22b14ca2abeaebba0f11001e8d190e06b20df3d4b148"
         },
         {
           "role": "profiles:0",
@@ -7077,11 +7131,11 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:libpp:artifact",
-          "sha256": "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
         },
         {
           "role": "source:libpp:companion",
@@ -7095,7 +7149,7 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/pac/src/mac_rx_policy.rs",
-          "sha256": "96005a3062230a5c9adfcbec796e97dee9b8d63ee9faf97cc67663a698295b14"
+          "sha256": "345b25a108ecd0b7e0714ef9ec3f7ed4a163432b742983c8f964498b0623cfce"
         }
       ]
     },
@@ -7110,28 +7164,28 @@
       "rust_probe": "open_wifi_sta_ap_trace_wifi_set_rx_policy",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/wifi-sta-ap-receive-policy",
-      "evidence_digest": "d8113b0330de31611fab0c2e3545553b9c6e3210189d68238a8604965faf5490",
+      "evidence_digest": "f84ae5f36aa09059d975c42d8455fa46ab242a2f56fe82b546433c8a371daed7",
       "baseline_passed": true,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
-          "sha256": "ada7ea1c8573152a09cab9b2cecf825f4d369cfd44b1eae3c25db38492542062"
+          "sha256": "95cfd9834f0be0ec4815d1c5aa617d13055d4ce9230d85a8636c3d9e0cf1ef20"
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "5e930563a8a005ae74bffebd0f8bd54b5a9f0a58c3c4ac4646e0e7284da8c3a6"
+          "sha256": "2b2b53339ae62c9690e05ea6f3409833d5b58c86accc98eb93bd82c6de0acaf7"
         },
         {
           "role": "profiles:0",
-          "sha256": "a3af9cfbe54154565738f7887153723038c78776a56f2452a60fc399610bde40"
+          "sha256": "ed6c746a1bb3a646051232ec0a8ed11046ebccacfa392db9eb52f66333861dee"
         },
         {
           "role": "rust-probes",
-          "sha256": "e3961939df8d25e4439ad71b65968d67e9febdab6af0448090198a1923729053"
+          "sha256": "bb777d6612baa8ad6b6824e9548a2eb362ba6a36bf63ae31b6c442d60658a3fb"
         },
         {
           "role": "source:wifi-sta-ap-receive:artifact",
-          "sha256": "f4c9e33afc1446cb1fd6c010f6ab860b7d7823cebda899a6e4607ce0a67592d6"
+          "sha256": "c4d958d54cbad4b1da93b3672a0574f2f762854b2edc19490c6ebd41bb14ce0c"
         },
         {
           "role": "source:wifi-sta-ap-receive:companion",
@@ -7145,7 +7199,7 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/hal/src/wifi_mac.rs",
-          "sha256": "1e3aedb0caa8e6dda9f5d6327f971a623424dec394d6cb8d9fc2ba26755dac0c"
+          "sha256": "2e4aabbfdda2c52d83460043f20744c484eae96eed6316ebdc313d2571e96819"
         }
       ]
     },
@@ -7160,7 +7214,7 @@
       "rust_probe": "open_wifi_sta_trace_hal_disable_sta_beacon_filter",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/wifi-sta-disable-beacon-filter",
-      "evidence_digest": "133a8760746830b2a2b28a5bc28677f958814fddbb3dfedc7fe4b210599ac7a2",
+      "evidence_digest": "80a0f4f0e7d132de75a4005faa164abb416ecf5fb7fa9348502ca4d1a1533349",
       "baseline_passed": true,
       "artifact_hashes": [
         {
@@ -7169,7 +7223,7 @@
         },
         {
           "role": "evidence-baseline:0",
-          "sha256": "333e4e5b6088a0641af2727833253c63458c519d03ad72b8c6fd0d2d8c9099ad"
+          "sha256": "f88e5d295c5e70adbc8bd4c5fca1eea4e314922194fd1e7cd9f88f66a96ca3f8"
         },
         {
           "role": "profiles:0",
@@ -7177,7 +7231,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "4af318b3d145eb2675dc7fe5fe884cbc19491e184f4134dc7df41e4570fe42f8"
+          "sha256": "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
         },
         {
           "role": "source:wifi-sta-lifecycle:artifact",
@@ -7195,7 +7249,7 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/pac/src/mac_interrupt.rs",
-          "sha256": "1109c91361c6ae400ec5d8fec9126631e0d0802257957d3b8e782327951017b9"
+          "sha256": "3998bd69711c9f1f7f613bab9298690fb64fc2b2ac9c9360057d502a125ebf42"
         }
       ]
     }

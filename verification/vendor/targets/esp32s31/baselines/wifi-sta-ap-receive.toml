@@ -4,12 +4,12 @@ schema = 2
 source = "wifi-sta-ap-receive"
 symbol = "wifi_set_rx_policy"
 kind = "reviewed-domain-equivalence/profile:scenario/wifi-sta-ap-receive-policy"
-digest = "d8113b0330de31611fab0c2e3545553b9c6e3210189d68238a8604965faf5490"
+digest = "f84ae5f36aa09059d975c42d8455fa46ab242a2f56fe82b546433c8a371daed7"
 
 [evidence.components]
 comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
-execution-image = "e442fc3f9e12fd1c2039c8334078d29968a65f5f7978c01823e05e71b2fa6fd5"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
 execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
-execution-model = "00ce778b07ae14c32da41976976503f502aefb2b4442d74a3974825b2e9a05ee"
-profile = "a82c30d67e9907335990c3791e32dea2b16b409985a5701e9c02eda1cfd6fbf4"
-profile-parser = "95836213fd2c4709927fa45ea8bbb091afaf5aaea917fcb6b6d7a46f99a5b924"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
+profile = "6871a123d0ceef7c64fa0fc6bffbc1052c11b382d9127f061441a2662d14c674"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"

@@ -63,6 +63,16 @@ pub struct AggregateTxCounters {
     completion_to_publication_samples: AtomicU32,
     completion_to_publication_micros: AtomicU32,
     completion_to_publication_lifetime_max_micros: AtomicU32,
+    completion_to_prepared_entry_samples: AtomicU32,
+    completion_to_prepared_entry_micros: AtomicU32,
+    completion_to_prepared_entry_lifetime_max_micros: AtomicU32,
+    prepared_entry_to_publication_samples: AtomicU32,
+    prepared_entry_to_publication_micros: AtomicU32,
+    prepared_entry_to_publication_lifetime_max_micros: AtomicU32,
+    completion_core_micros: AtomicU32,
+    completion_core_lifetime_max_micros: AtomicU32,
+    backing_release_micros: AtomicU32,
+    backing_release_lifetime_max_micros: AtomicU32,
     exchange_micros: AtomicU32,
     exchange_lifetime_max_micros: AtomicU32,
     single_publication_exchanges: AtomicU32,
@@ -147,6 +157,16 @@ impl AggregateTxCounters {
             completion_to_publication_samples: AtomicU32::new(0),
             completion_to_publication_micros: AtomicU32::new(0),
             completion_to_publication_lifetime_max_micros: AtomicU32::new(0),
+            completion_to_prepared_entry_samples: AtomicU32::new(0),
+            completion_to_prepared_entry_micros: AtomicU32::new(0),
+            completion_to_prepared_entry_lifetime_max_micros: AtomicU32::new(0),
+            prepared_entry_to_publication_samples: AtomicU32::new(0),
+            prepared_entry_to_publication_micros: AtomicU32::new(0),
+            prepared_entry_to_publication_lifetime_max_micros: AtomicU32::new(0),
+            completion_core_micros: AtomicU32::new(0),
+            completion_core_lifetime_max_micros: AtomicU32::new(0),
+            backing_release_micros: AtomicU32::new(0),
+            backing_release_lifetime_max_micros: AtomicU32::new(0),
             exchange_micros: AtomicU32::new(0),
             exchange_lifetime_max_micros: AtomicU32::new(0),
             single_publication_exchanges: AtomicU32::new(0),
@@ -241,6 +261,32 @@ impl AggregateTxCounters {
                 .load(Ordering::Relaxed),
             completion_to_publication_lifetime_max_micros: self
                 .completion_to_publication_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            completion_to_prepared_entry_samples: self
+                .completion_to_prepared_entry_samples
+                .load(Ordering::Relaxed),
+            completion_to_prepared_entry_micros: self
+                .completion_to_prepared_entry_micros
+                .load(Ordering::Relaxed),
+            completion_to_prepared_entry_lifetime_max_micros: self
+                .completion_to_prepared_entry_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            prepared_entry_to_publication_samples: self
+                .prepared_entry_to_publication_samples
+                .load(Ordering::Relaxed),
+            prepared_entry_to_publication_micros: self
+                .prepared_entry_to_publication_micros
+                .load(Ordering::Relaxed),
+            prepared_entry_to_publication_lifetime_max_micros: self
+                .prepared_entry_to_publication_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            completion_core_micros: self.completion_core_micros.load(Ordering::Relaxed),
+            completion_core_lifetime_max_micros: self
+                .completion_core_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            backing_release_micros: self.backing_release_micros.load(Ordering::Relaxed),
+            backing_release_lifetime_max_micros: self
+                .backing_release_lifetime_max_micros
                 .load(Ordering::Relaxed),
             exchange_micros: self.exchange_micros.load(Ordering::Relaxed),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros.load(Ordering::Relaxed),
@@ -378,7 +424,12 @@ impl AggregateTxCounters {
         );
     }
 
-    pub(crate) fn record_publication(&self, at_micros: u64, program_micros: u64) {
+    pub(crate) fn record_publication(
+        &self,
+        at_micros: u64,
+        program_micros: u64,
+        prepared_entry_micros: Option<u64>,
+    ) {
         let at_modulo = at_micros as u32 & Self::IRQ_TIME_MASK;
         let completion = self.last_completion_micros.swap(0, Ordering::AcqRel);
         if completion != 0 {
@@ -392,6 +443,32 @@ impl AggregateTxCounters {
                     &self.completion_to_publication_lifetime_max_micros,
                     u64::from(elapsed),
                 );
+            }
+            if let Some(entry_micros) = prepared_entry_micros {
+                let entry_modulo = entry_micros as u32 & Self::IRQ_TIME_MASK;
+                let completion_to_entry = entry_modulo
+                    .wrapping_sub(completed_modulo)
+                    & Self::IRQ_TIME_MASK;
+                let entry_to_publication =
+                    at_modulo.wrapping_sub(entry_modulo) & Self::IRQ_TIME_MASK;
+                if completion_to_entry <= Self::IRQ_TIME_MASK / 2
+                    && entry_to_publication <= Self::IRQ_TIME_MASK / 2
+                {
+                    self.completion_to_prepared_entry_samples
+                        .fetch_add(1, Ordering::Relaxed);
+                    Self::record_time(
+                        &self.completion_to_prepared_entry_micros,
+                        &self.completion_to_prepared_entry_lifetime_max_micros,
+                        u64::from(completion_to_entry),
+                    );
+                    self.prepared_entry_to_publication_samples
+                        .fetch_add(1, Ordering::Relaxed);
+                    Self::record_time(
+                        &self.prepared_entry_to_publication_micros,
+                        &self.prepared_entry_to_publication_lifetime_max_micros,
+                        u64::from(entry_to_publication),
+                    );
+                }
             }
         }
         self.last_publication_micros.store(
@@ -407,15 +484,20 @@ impl AggregateTxCounters {
     }
 
     pub(crate) fn record_complete(&self, acknowledged: u8, individual_retry: bool) {
-        let now_modulo = (self.now_micros)() as u32 & Self::IRQ_TIME_MASK;
-        self.last_completion_micros
-            .store(Self::IRQ_TIME_VALID | now_modulo, Ordering::Release);
         self.aggregates_completed.fetch_add(1, Ordering::Relaxed);
         self.subframes_acknowledged
             .fetch_add(u32::from(acknowledged), Ordering::Relaxed);
         if individual_retry {
             self.individual_retries.fetch_add(1, Ordering::Relaxed);
         }
+        // Correlate the next publication with the end of this diagnostic
+        // observer, not with its first bookkeeping operation. Otherwise the
+        // observer's own PSRAM/atomic cost is charged to the production
+        // completion-to-publication scheduler boundary that it is measuring.
+        // Release pairs the completed counters with the boundary timestamp.
+        let now_modulo = (self.now_micros)() as u32 & Self::IRQ_TIME_MASK;
+        self.last_completion_micros
+            .store(Self::IRQ_TIME_VALID | now_modulo, Ordering::Release);
     }
 
     pub(crate) fn record_hardware_timeout(&self) {
@@ -576,8 +658,9 @@ impl AggregateTxObserver for AggregateTxCounters {
             AggregateTxObservation::Published {
                 at_micros,
                 program_micros,
+                prepared_entry_micros,
             } => {
-                self.record_publication(at_micros, program_micros);
+                self.record_publication(at_micros, program_micros, prepared_entry_micros);
             }
             AggregateTxObservation::BlockAckProcessed {
                 tx_status,
@@ -623,6 +706,20 @@ impl AggregateTxObserver for AggregateTxCounters {
                 } else {
                     self.partial_block_ack.fetch_add(1, Ordering::Relaxed);
                 }
+            }
+            AggregateTxObservation::CompletionCoreCompleted { micros } => {
+                Self::record_time(
+                    &self.completion_core_micros,
+                    &self.completion_core_lifetime_max_micros,
+                    micros,
+                );
+            }
+            AggregateTxObservation::BackingReleaseCompleted { micros } => {
+                Self::record_time(
+                    &self.backing_release_micros,
+                    &self.backing_release_lifetime_max_micros,
+                    micros,
+                );
             }
             AggregateTxObservation::Completed {
                 acknowledged,
@@ -729,6 +826,20 @@ pub struct AggregateTxCounterSnapshot {
     pub completion_to_publication_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub completion_to_publication_lifetime_max_micros: u32,
+    pub completion_to_prepared_entry_samples: u32,
+    pub completion_to_prepared_entry_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub completion_to_prepared_entry_lifetime_max_micros: u32,
+    pub prepared_entry_to_publication_samples: u32,
+    pub prepared_entry_to_publication_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub prepared_entry_to_publication_lifetime_max_micros: u32,
+    pub completion_core_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub completion_core_lifetime_max_micros: u32,
+    pub backing_release_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub backing_release_lifetime_max_micros: u32,
     pub exchange_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub exchange_lifetime_max_micros: u32,
@@ -848,6 +959,30 @@ impl AggregateTxCounterSnapshot {
                 .wrapping_sub(earlier.completion_to_publication_micros),
             completion_to_publication_lifetime_max_micros: self
                 .completion_to_publication_lifetime_max_micros,
+            completion_to_prepared_entry_samples: self
+                .completion_to_prepared_entry_samples
+                .wrapping_sub(earlier.completion_to_prepared_entry_samples),
+            completion_to_prepared_entry_micros: self
+                .completion_to_prepared_entry_micros
+                .wrapping_sub(earlier.completion_to_prepared_entry_micros),
+            completion_to_prepared_entry_lifetime_max_micros: self
+                .completion_to_prepared_entry_lifetime_max_micros,
+            prepared_entry_to_publication_samples: self
+                .prepared_entry_to_publication_samples
+                .wrapping_sub(earlier.prepared_entry_to_publication_samples),
+            prepared_entry_to_publication_micros: self
+                .prepared_entry_to_publication_micros
+                .wrapping_sub(earlier.prepared_entry_to_publication_micros),
+            prepared_entry_to_publication_lifetime_max_micros: self
+                .prepared_entry_to_publication_lifetime_max_micros,
+            completion_core_micros: self
+                .completion_core_micros
+                .wrapping_sub(earlier.completion_core_micros),
+            completion_core_lifetime_max_micros: self.completion_core_lifetime_max_micros,
+            backing_release_micros: self
+                .backing_release_micros
+                .wrapping_sub(earlier.backing_release_micros),
+            backing_release_lifetime_max_micros: self.backing_release_lifetime_max_micros,
             exchange_micros: self.exchange_micros.wrapping_sub(earlier.exchange_micros),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros,
             single_publication_exchanges: self
@@ -1042,10 +1177,12 @@ mod tests {
         counters.observe(AggregateTxObservation::Published {
             at_micros: 80,
             program_micros: 3,
+            prepared_entry_micros: None,
         });
         counters.observe(AggregateTxObservation::Published {
             at_micros: 95,
             program_micros: 5,
+            prepared_entry_micros: None,
         });
         counters.observe(AggregateTxObservation::Completed {
             acknowledged: 31,
@@ -1160,11 +1297,16 @@ mod tests {
         counters.observe(AggregateTxObservation::Published {
             at_micros: 175,
             program_micros: 4,
+            prepared_entry_micros: Some(160),
         });
 
         let delta = counters.snapshot().wrapping_delta_since(before);
         assert_eq!(delta.completion_to_publication_samples, 1);
         assert_eq!(delta.completion_to_publication_micros, 75);
         assert_eq!(delta.completion_to_publication_lifetime_max_micros, 75);
+        assert_eq!(delta.completion_to_prepared_entry_samples, 1);
+        assert_eq!(delta.completion_to_prepared_entry_micros, 60);
+        assert_eq!(delta.prepared_entry_to_publication_samples, 1);
+        assert_eq!(delta.prepared_entry_to_publication_micros, 15);
     }
 }

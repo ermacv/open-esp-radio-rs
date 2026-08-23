@@ -3034,6 +3034,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             aifsn: config.aifsn,
             contention_window: config.contention_window,
             interface: config.interface,
+            txop: false,
         };
         let publication = slot.dma.publication().map_err(map_dma_storage_error)?;
         if !hardware.prepare_bound_ht_tx(&publication, index, program) {

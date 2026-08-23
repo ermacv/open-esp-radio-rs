@@ -4,82 +4,96 @@ schema = 2
 source = "libpp"
 symbol = "hal_mac_is_txq_enabled"
 kind = "whole-function-equivalence/profile:scenario/libpp-txq-enabled"
-digest = "6b1c5ae51092f65b8821dc676f144be1e5b37676b72ce31aaad6181ceab23c01"
+digest = "6ad644de67fbf8dc85218cd6205602fd88245d147a3abd6e857adeec73d10f20"
 
 [evidence.components]
 comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
-execution-image = "e442fc3f9e12fd1c2039c8334078d29968a65f5f7978c01823e05e71b2fa6fd5"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
 execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
-execution-model = "00ce778b07ae14c32da41976976503f502aefb2b4442d74a3974825b2e9a05ee"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
 profile = "ce941cad87ac4c7f5f8e4ce2bdc5fa7b81b3037b318ed8fa30bc7c8b026430aa"
-profile-parser = "95836213fd2c4709927fa45ea8bbb091afaf5aaea917fcb6b6d7a46f99a5b924"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_is_txq_valid"
 kind = "whole-function-equivalence/profile:scenario/libpp-txq-valid"
-digest = "9b1bf17b17f2e6ffd7a35f180b2316ccbca814d668b2cc388f96a545fe82fe5f"
+digest = "ecac3376c01bf75433969f9c810c7ca0cf638b1f171f7ff4d01232bbdf53988e"
 
 [evidence.components]
 comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
-execution-image = "e442fc3f9e12fd1c2039c8334078d29968a65f5f7978c01823e05e71b2fa6fd5"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
 execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
-execution-model = "00ce778b07ae14c32da41976976503f502aefb2b4442d74a3974825b2e9a05ee"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
 profile = "5156cbd89d05fef00d1dde083ece04d27055e0fa82b48c69f702a606166cfdb1"
-profile-parser = "95836213fd2c4709927fa45ea8bbb091afaf5aaea917fcb6b6d7a46f99a5b924"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_set_txq_invalid"
 kind = "whole-function-equivalence/profile:scenario/libpp-set-txq-invalid"
-digest = "f49abe48098c690597793167ec0e3f0351cad43ce13dd28a4eef3ec922592384"
+digest = "711e8e764b0f715822ceea6f80087328357d9c47a96764cf970fa5b7eeda9812"
 
 [evidence.components]
 comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
-execution-image = "e442fc3f9e12fd1c2039c8334078d29968a65f5f7978c01823e05e71b2fa6fd5"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
 execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
-execution-model = "00ce778b07ae14c32da41976976503f502aefb2b4442d74a3974825b2e9a05ee"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
 profile = "74e4cb5e75085443bbb5a8aa5fe2b45d1d07e7abf58b01885834a40b2cf0b5c5"
-profile-parser = "95836213fd2c4709927fa45ea8bbb091afaf5aaea917fcb6b6d7a46f99a5b924"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_tx_config_edca"
 kind = "whole-function-equivalence/profile:scenario/libpp-configure-tx-edca"
-digest = "31506d6601a1bcdc3784c9869fadd0955b4bc15a3b89904ec139021a1b6ab5e1"
+digest = "daa32061238d8a2750bc7071f43571cb29221bbf3be73b16ff3e1ac2646b9ec2"
 
 [evidence.components]
 comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
-execution-image = "e442fc3f9e12fd1c2039c8334078d29968a65f5f7978c01823e05e71b2fa6fd5"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
 execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
-execution-model = "00ce778b07ae14c32da41976976503f502aefb2b4442d74a3974825b2e9a05ee"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
 profile = "233e4d7316de1f103a54f2937c8a1eb6c6450ca1fc6fc709c1272e55d7bcc455"
-profile-parser = "95836213fd2c4709927fa45ea8bbb091afaf5aaea917fcb6b6d7a46f99a5b924"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_tx_get_blockack"
 kind = "whole-function-equivalence/profile:state/libpp-read-tx-blockack"
-digest = "fcbe95ccd5cb0f81ca0844cc5fab8687644420362db4c7c5541771773f0865b5"
+digest = "72f38f4c589fed7d98f707c3ae004726d2aaddead47774f88802dcf98661a73b"
 
 [evidence.components]
 comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
-execution-image = "e442fc3f9e12fd1c2039c8334078d29968a65f5f7978c01823e05e71b2fa6fd5"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
 execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
-execution-model = "00ce778b07ae14c32da41976976503f502aefb2b4442d74a3974825b2e9a05ee"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
 profile = "2a00e883fa8ab44cdb57d368ce06d5cd8fe546c2c3cde1a84086dda734b2972b"
-profile-parser = "95836213fd2c4709927fa45ea8bbb091afaf5aaea917fcb6b6d7a46f99a5b924"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"
+
+[[evidence]]
+source = "libpp"
+symbol = "hal_mac_tx_set_ppdu"
+kind = "reviewed-domain-equivalence/profile:scenario/libpp-set-ht40-ampdu-ppdu"
+digest = "056f76b1bacf9a24c6abfd34d55864d8ca52255e5f7880463dc5ca2b8d4090f0"
+
+[evidence.components]
+comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
+execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
+profile = "b0f292f5c097b4e76d2698b8f147f20669d8979d9ad23ddc1cf41c2b71462f42"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_txq_disable"
 kind = "whole-function-equivalence/profile:scenario/libpp-disable-txq"
-digest = "2112a18e5d9cdbf3dc848a580614848b3e86d1766c103a40aec0ce882e20ed1b"
+digest = "084c13981ab512d769c97ef130ac90f5994c134db6b68b2857f5248822d3a047"
 
 [evidence.components]
 comparison-orchestrator = "30947cdc8a9871ff36398d85b1632d1a42e2bcd075bc246bf664e49592fe5d72"
-execution-image = "e442fc3f9e12fd1c2039c8334078d29968a65f5f7978c01823e05e71b2fa6fd5"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
 execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
-execution-model = "00ce778b07ae14c32da41976976503f502aefb2b4442d74a3974825b2e9a05ee"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
 profile = "440bbf29fc65603298858af27439549044893a84f5c248284bcd9eb1d5810e85"
-profile-parser = "95836213fd2c4709927fa45ea8bbb091afaf5aaea917fcb6b6d7a46f99a5b924"
+profile-parser = "07f3fa3298d34a63c8a8ebfa61479fe12a48f1856a66ce46a167e28ffb0bd8ae"

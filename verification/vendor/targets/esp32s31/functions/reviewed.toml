@@ -15,7 +15,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 [[inputs]]
 profile = "libpp-all"
 source = "libpp"
-artifact-sha256 = "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+artifact-sha256 = "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
 
 [[inputs]]
 profile = "libnet80211-all"
@@ -192,7 +192,7 @@ accept-incomplete = true
 [[functions]]
 profile = "libpp-all"
 source = "libpp"
-identity = "libpp::wDev_AppendRxBlocks@0x1001b54a"
+identity = "libpp::wDev_AppendRxBlocks@0x1001b804"
 status = "reviewed"
 name = "append_rx_descriptor_chain"
 role = "wifi.rx-descriptor-queue"
@@ -214,7 +214,7 @@ evidence = "Reviewed full CFG plus critical-section and memory-effect evidence i
 id = "null-head-assert"
 class = "diagnostic"
 summary = "Reports a violated caller precondition through wifi_assert."
-evidence = "Relocated wifi_assert call at runtime PC 0x1001b576."
+evidence = "Relocated wifi_assert call at runtime PC 0x1001b830."
 
 # LMAC initialization ABI recovered from complete linked and relocatable
 # bodies. These signatures constrain presentation and call arguments; they do
@@ -314,7 +314,7 @@ accept-incomplete = true
 [[functions]]
 profile = "libpp-all"
 source = "libpp"
-identity = "libpp::get_estimated_batime@0x10018984"
+identity = "libpp::get_estimated_batime@0x10018bcc"
 status = "reviewed"
 name = "estimated_block_ack_time"
 role = "wifi.ampdu-block-ack-time"

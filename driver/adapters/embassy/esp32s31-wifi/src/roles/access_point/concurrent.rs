@@ -881,6 +881,8 @@ where
                 self.park_tx(physical)
                     .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
             }
+            #[cfg(any(feature = "diagnostics", test))]
+            self.network_tx.observe_service_boundary();
             Ok(progress)
         }
     }
@@ -971,10 +973,10 @@ where
         self.network_tx.prepared_frame_count()
     }
 
-    fn start_prepared<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        physical: &'a mut DatapathPairedPhysicalTx<
+    fn start_prepared(
+        &mut self,
+        hardware: &mut H,
+        physical: &mut DatapathPairedPhysicalTx<
             WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
             crate::datapath::tx::resources::AggregateTxResources<
                 'ampdu,
@@ -990,7 +992,7 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        network: &'a PinnedTxInterfaceConsumer<
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -998,29 +1000,27 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async move {
-            let active =
-                self.protocol
-                    .active_mut()
-                    .ok_or(Esp32s31StaApAccessPointTxError::Ownership(
-                        Esp32s31StaApAccessPointTxOwnershipError::AlreadyParked,
-                    ))?;
-            let progress = self
-                .network_tx
-                .start_prepared(
-                    &mut active.aggregate,
-                    &mut active.processor,
-                    hardware,
-                    network,
-                )
-                .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
-            if progress == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
-                self.park_tx(physical)
-                    .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
-            }
-            Ok(progress)
+    ) -> Result<WifiTxProgress, Self::Error> {
+        let active =
+            self.protocol
+                .active_mut()
+                .ok_or(Esp32s31StaApAccessPointTxError::Ownership(
+                    Esp32s31StaApAccessPointTxOwnershipError::AlreadyParked,
+                ))?;
+        let progress = self
+            .network_tx
+            .start_prepared(
+                &mut active.aggregate,
+                &mut active.processor,
+                hardware,
+                network,
+            )
+            .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
+        if progress == WifiTxProgress::Complete && !self.network_tx.has_prepared() {
+            self.park_tx(physical)
+                .map_err(Esp32s31StaApAccessPointTxError::Ownership)?;
         }
+        Ok(progress)
     }
 
     fn cancel_prepared(
@@ -1606,15 +1606,18 @@ where
         }
     }
 
-    fn next_access_point_control_delay_millis(&self, now_micros: u64) -> Result<u32, Self::Error> {
+    fn next_access_point_control_deadline_micros(
+        &self,
+        now_micros: u64,
+    ) -> Result<u64, Self::Error> {
         if let Some(active) = self.protocol.active() {
-            active.processor.next_control_delay_millis(now_micros)
+            active.processor.next_control_deadline_micros(now_micros)
         } else {
             self.protocol
                 .parked_state()
                 .expect("paired AP role is active or parked")
                 .processor
-                .next_control_delay_millis(now_micros)
+                .next_control_deadline_micros(now_micros)
         }
         .map_err(Esp32s31StaApAccessPointPairedControlError::Role)
     }

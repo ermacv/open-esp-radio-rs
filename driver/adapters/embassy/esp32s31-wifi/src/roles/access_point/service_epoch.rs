@@ -112,7 +112,8 @@ where
         interrupts.mac_runtime().notify_rx_handoff();
         self.publish_beacon(hardware, Instant::now().as_micros())
             .map_err(Esp32s31AccessPointRunError::Control)?;
-        let (last_status_revision, status, _) = self.role_observation();
+        let last_status_revision = self.role_status_revision();
+        let status = self.role_status();
         status_observer(status);
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = aggregate_tx_observer {
@@ -150,7 +151,7 @@ where
             tx_pending_since_micros: Some(Instant::now().as_micros()),
             #[cfg(feature = "diagnostics")]
             network_tx_pending: None,
-            next_control_delay_millis: 1,
+            next_control_deadline_micros: 0,
         };
         let mut runner = DatapathRunner::new(
             interrupts.mac_runtime(),

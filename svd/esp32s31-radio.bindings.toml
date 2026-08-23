@@ -14073,10 +14073,17 @@ register-method = "pti"
 register-index = 0
 
 [[registers.fields]]
+svd-name = "TXOP"
+method = "txop"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "LOW_UNKNOWN"
 method = "low_unknown"
-bit-offset = 0
-bit-width = 4
+bit-offset = 1
+bit-width = 3
 access = "read-write"
 
 [[registers.fields]]
@@ -14939,10 +14946,17 @@ register-method = "pti"
 register-index = 1
 
 [[registers.fields]]
+svd-name = "TXOP"
+method = "txop"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "LOW_UNKNOWN"
 method = "low_unknown"
-bit-offset = 0
-bit-width = 4
+bit-offset = 1
+bit-width = 3
 access = "read-write"
 
 [[registers.fields]]
@@ -15805,10 +15819,17 @@ register-method = "pti"
 register-index = 2
 
 [[registers.fields]]
+svd-name = "TXOP"
+method = "txop"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "LOW_UNKNOWN"
 method = "low_unknown"
-bit-offset = 0
-bit-width = 4
+bit-offset = 1
+bit-width = 3
 access = "read-write"
 
 [[registers.fields]]
@@ -16671,10 +16692,17 @@ register-method = "pti"
 register-index = 3
 
 [[registers.fields]]
+svd-name = "TXOP"
+method = "txop"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "LOW_UNKNOWN"
 method = "low_unknown"
-bit-offset = 0
-bit-width = 4
+bit-offset = 1
+bit-width = 3
 access = "read-write"
 
 [[registers.fields]]

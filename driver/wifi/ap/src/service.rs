@@ -300,12 +300,14 @@ struct ApPeer {
 /// static address instead.
 pub struct AccessPointPeerStorage {
     peers: [Option<ApPeer>; AP_MAX_CLIENTS],
+    generation: u32,
 }
 
 impl AccessPointPeerStorage {
     pub const fn new() -> Self {
         Self {
             peers: [const { None }; AP_MAX_CLIENTS],
+            generation: 0,
         }
     }
 }
@@ -335,6 +337,24 @@ impl ApPeer {
             last_activity_micros: now_micros,
             deadline_micros: now_micros.saturating_add(AP_ASSOCIATION_DEADLINE_MICROS),
         }
+    }
+}
+
+/// O(1) identity of one peer-table generation.
+///
+/// A slot may be reused after disconnect, so its index alone is not authority.
+/// Every bound access validates both generation and address before exposing
+/// peer state to a hot data-path operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApPeerBinding {
+    index: u8,
+    generation: u32,
+    address: [u8; 6],
+}
+
+impl ApPeerBinding {
+    pub const fn address(self) -> [u8; 6] {
+        self.address
     }
 }
 
@@ -399,6 +419,9 @@ pub struct AccessPointService<'peers> {
     next_data_sequence: u16,
     next_qos_sequences: [u16; 8],
     status_revision: u32,
+    associated_count: u8,
+    authorized_count: u8,
+    smallest_operational_tx_block_ack_window: Option<u16>,
 }
 
 impl<'peers> AccessPointService<'peers> {
@@ -411,6 +434,10 @@ impl<'peers> AccessPointService<'peers> {
         peer_storage: &'peers mut AccessPointPeerStorage,
     ) -> Self {
         peer_storage.peers.fill_with(|| None);
+        peer_storage.generation = peer_storage
+            .generation
+            .checked_add(1)
+            .expect("AP peer generation space is not reusable");
         Self {
             address,
             pmk,
@@ -422,6 +449,9 @@ impl<'peers> AccessPointService<'peers> {
             next_data_sequence: 0,
             next_qos_sequences: [0; 8],
             status_revision: 0,
+            associated_count: 0,
+            authorized_count: 0,
+            smallest_operational_tx_block_ack_window: None,
         }
     }
 
@@ -452,6 +482,33 @@ impl<'peers> AccessPointService<'peers> {
             })
     }
 
+    /// Resolve a peer address once at aggregate admission. Subsequent MPDUs
+    /// use [`Self::bound_peer_status`] instead of rescanning the table.
+    pub fn bind_peer(&self, address: [u8; 6]) -> Option<ApPeerBinding> {
+        let index = self.peer_index(address)?;
+        self.storage().peers[index].as_ref()?;
+        Some(ApPeerBinding {
+            index: u8::try_from(index).ok()?,
+            generation: self.storage().generation,
+            address,
+        })
+    }
+
+    pub fn bound_peer_status(&self, binding: ApPeerBinding) -> Option<ApPeerStatus> {
+        let peer = self.bound_peer(binding)?;
+        Some(ApPeerStatus {
+            address: peer.address,
+            association_id: peer.association_id,
+            phase: peer.phase,
+            maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+            ht: peer.ht,
+            qos_supported: peer.qos_supported,
+            tx_block_ack: peer.tx_block_ack.operational(),
+            last_activity_micros: peer.last_activity_micros,
+            deadline_micros: peer.deadline_micros,
+        })
+    }
+
     pub fn peers(&self) -> impl Iterator<Item = ApPeerStatus> + '_ {
         self.storage()
             .peers
@@ -480,21 +537,15 @@ impl<'peers> AccessPointService<'peers> {
     /// must not wait for more frames than any operational peer can admit. The
     /// per-peer agreement remains authoritative when the aggregate is built.
     pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
-        self.peers()
-            .filter_map(|peer| peer.tx_block_ack.map(|agreement| agreement.window))
-            .min()
+        self.smallest_operational_tx_block_ack_window
     }
 
-    pub fn associated_count(&self) -> u8 {
-        self.peers()
-            .filter(|peer| matches!(peer.phase, ApPeerPhase::Securing | ApPeerPhase::Authorized))
-            .count() as u8
+    pub const fn associated_count(&self) -> u8 {
+        self.associated_count
     }
 
-    pub fn authorized_count(&self) -> u8 {
-        self.peers()
-            .filter(|peer| peer.phase == ApPeerPhase::Authorized)
-            .count() as u8
+    pub const fn authorized_count(&self) -> u8 {
+        self.authorized_count
     }
 
     #[inline(always)]
@@ -523,8 +574,8 @@ impl<'peers> AccessPointService<'peers> {
         }
         AccessPointServiceStatus {
             client_limit: self.client_limit,
-            associated: self.associated_count(),
-            authorized: self.authorized_count(),
+            associated: self.associated_count,
+            authorized: self.authorized_count,
             peers,
         }
     }
@@ -532,6 +583,31 @@ impl<'peers> AccessPointService<'peers> {
     /// Monotonic public peer-table revision for cheap change detection.
     pub const fn status_revision(&self) -> u32 {
         self.status_revision
+    }
+
+    /// Refresh summaries on the rare peer-state mutation, keeping scheduler
+    /// and link-state queries O(1) on the saturated data path.
+    fn revise_status(&mut self) {
+        let mut associated = 0_u8;
+        let mut authorized = 0_u8;
+        let mut smallest_window = None;
+        for peer in self.storage().peers.iter().flatten() {
+            if matches!(peer.phase, ApPeerPhase::Securing | ApPeerPhase::Authorized) {
+                associated = associated.saturating_add(1);
+            }
+            if peer.phase == ApPeerPhase::Authorized {
+                authorized = authorized.saturating_add(1);
+            }
+            if let Some(agreement) = peer.tx_block_ack.operational() {
+                smallest_window = Some(smallest_window.map_or(agreement.window, |current: u16| {
+                    current.min(agreement.window)
+                }));
+            }
+        }
+        self.associated_count = associated;
+        self.authorized_count = authorized;
+        self.smallest_operational_tx_block_ack_window = smallest_window;
+        self.status_revision = self.status_revision.wrapping_add(1);
     }
 
     pub fn next_management_sequence(&mut self) -> u16 {
@@ -569,6 +645,7 @@ impl<'peers> AccessPointService<'peers> {
                 .as_ref()
                 .expect("peer index resolves an occupied entry")
                 .association_id;
+            self.advance_peer_generation();
             self.storage_mut().peers[index] =
                 Some(ApPeer::authenticated(peer, association_id, now_micros));
             (AP_STATUS_SUCCESS, true)
@@ -576,6 +653,7 @@ impl<'peers> AccessPointService<'peers> {
             (AP_STATUS_TOO_MANY_STATIONS, false)
         } else if let Some(index) = self.storage().peers.iter().position(Option::is_none) {
             let association_id = u16::try_from(index + 1).expect("fifteen AIDs fit u16");
+            self.advance_peer_generation();
             self.storage_mut().peers[index] =
                 Some(ApPeer::authenticated(peer, association_id, now_micros));
             (AP_STATUS_SUCCESS, true)
@@ -583,7 +661,7 @@ impl<'peers> AccessPointService<'peers> {
             (AP_STATUS_TOO_MANY_STATIONS, false)
         };
         if changed {
-            self.status_revision = self.status_revision.wrapping_add(1);
+            self.revise_status();
         }
         ApMlmeAction::AuthenticationResponse { peer, status }
     }
@@ -631,7 +709,7 @@ impl<'peers> AccessPointService<'peers> {
         existing.last_activity_micros = now_micros;
         existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
         let association_id = existing.association_id;
-        self.status_revision = self.status_revision.wrapping_add(1);
+        self.revise_status();
         Ok(ApMlmeAction::AssociationResponse {
             peer,
             status: AP_STATUS_SUCCESS,
@@ -670,7 +748,7 @@ impl<'peers> AccessPointService<'peers> {
         match action {
             BlockAckAction::AddbaResponse { .. } => {
                 let response = peer.tx_block_ack.on_response_action(action)?;
-                self.status_revision = self.status_revision.wrapping_add(1);
+                self.revise_status();
                 Ok(Some(response))
             }
             // This owner represents only AP-originated TX aggregation. A
@@ -684,7 +762,7 @@ impl<'peers> AccessPointService<'peers> {
                 ..
             } if tid == AP_TX_BLOCK_ACK_TID => {
                 peer.tx_block_ack.stop();
-                self.status_revision = self.status_revision.wrapping_add(1);
+                self.revise_status();
                 Ok(None)
             }
             _ => Ok(None),
@@ -850,7 +928,7 @@ impl<'peers> AccessPointService<'peers> {
                     maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
                 };
                 peer.phase = ApPeerPhase::Closing;
-                self.status_revision = self.status_revision.wrapping_add(1);
+                self.revise_status();
                 Ok(ApWpa2RetryProgress::Close(close))
             }
         }
@@ -1023,7 +1101,7 @@ impl<'peers> AccessPointService<'peers> {
         existing.wpa2_retry_alarm = None;
         existing.last_activity_micros = now_micros;
         existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
-        self.status_revision = self.status_revision.wrapping_add(1);
+        self.revise_status();
         Ok(())
     }
 
@@ -1074,7 +1152,7 @@ impl<'peers> AccessPointService<'peers> {
             maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
         };
         peer.phase = ApPeerPhase::Closing;
-        self.status_revision = self.status_revision.wrapping_add(1);
+        self.revise_status();
         Some(close)
     }
 
@@ -1095,7 +1173,7 @@ impl<'peers> AccessPointService<'peers> {
             maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
         };
         peer.phase = ApPeerPhase::Closing;
-        self.status_revision = self.status_revision.wrapping_add(1);
+        self.revise_status();
         Ok(close)
     }
 
@@ -1113,14 +1191,15 @@ impl<'peers> AccessPointService<'peers> {
             maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
         };
         peer.phase = ApPeerPhase::Closing;
-        self.status_revision = self.status_revision.wrapping_add(1);
+        self.revise_status();
         Some(close)
     }
 
     pub fn remove_peer(&mut self, peer: [u8; 6]) -> Result<ApMlmeAction, ApServiceError> {
         let index = self.peer_index(peer).ok_or(ApServiceError::UnknownPeer)?;
         self.storage_mut().peers[index] = None;
-        self.status_revision = self.status_revision.wrapping_add(1);
+        self.advance_peer_generation();
+        self.revise_status();
         Ok(ApMlmeAction::PeerRemoved { peer })
     }
 
@@ -1143,6 +1222,26 @@ impl<'peers> AccessPointService<'peers> {
             .peers
             .iter()
             .position(|existing| existing.as_ref().is_some_and(|value| value.address == peer))
+    }
+
+    fn bound_peer(&self, binding: ApPeerBinding) -> Option<&ApPeer> {
+        if self.storage().generation != binding.generation {
+            return None;
+        }
+        self.storage()
+            .peers
+            .get(usize::from(binding.index))?
+            .as_ref()
+            .filter(|peer| peer.address == binding.address)
+    }
+
+    fn advance_peer_generation(&mut self) {
+        let generation = self
+            .storage()
+            .generation
+            .checked_add(1)
+            .expect("AP peer generation space is not reusable");
+        self.storage_mut().generation = generation;
     }
 
     fn occupied_count(&self) -> u8 {
@@ -1262,6 +1361,22 @@ mod tests {
         assert_eq!(service.peers().count(), 2);
         assert_eq!(service.peer_status(PEER).unwrap().association_id, 1);
         assert_eq!(service.peer_status(OTHER).unwrap().association_id, 2);
+    }
+
+    #[test]
+    fn peer_binding_rejects_a_reused_slot_generation() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
+        service.authenticate_open(PEER, 0);
+        let first = service.bind_peer(PEER).unwrap();
+        assert_eq!(service.bound_peer_status(first).unwrap().address, PEER);
+
+        service.remove_peer(PEER).unwrap();
+        service.authenticate_open(OTHER, 1);
+        let second = service.bind_peer(OTHER).unwrap();
+        assert_eq!(service.bound_peer_status(first), None);
+        assert_eq!(service.bound_peer_status(second).unwrap().address, OTHER);
+        assert_ne!(first, second);
     }
 
     #[test]
@@ -1673,6 +1788,7 @@ mod tests {
         service.checked_peer_mut(OTHER).unwrap().phase = ApPeerPhase::Authorized;
 
         let request = service.begin_tx_block_ack(PEER, 100).unwrap().unwrap();
+        assert_eq!(service.smallest_operational_tx_block_ack_window(), None);
         assert!(service.begin_tx_block_ack(PEER, 101).unwrap().is_none());
         assert!(service.begin_tx_block_ack(OTHER, 101).unwrap().is_none());
         let response = BlockAckAction::AddbaResponse {
@@ -1696,6 +1812,10 @@ mod tests {
         ));
         assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_some());
         assert!(service.peer_status(OTHER).unwrap().tx_block_ack.is_none());
+        assert_eq!(
+            service.smallest_operational_tx_block_ack_window(),
+            Some(AP_TX_BLOCK_ACK_WINDOW)
+        );
 
         service
             .on_tx_block_ack_action(
@@ -1711,6 +1831,10 @@ mod tests {
             service.peer_status(PEER).unwrap().tx_block_ack.is_some(),
             "peer-originated RX DELBA cannot revoke the AP-originated TX agreement"
         );
+        assert_eq!(
+            service.smallest_operational_tx_block_ack_window(),
+            Some(AP_TX_BLOCK_ACK_WINDOW)
+        );
 
         service
             .on_tx_block_ack_action(
@@ -1723,5 +1847,6 @@ mod tests {
             )
             .unwrap();
         assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_none());
+        assert_eq!(service.smallest_operational_tx_block_ack_window(), None);
     }
 }

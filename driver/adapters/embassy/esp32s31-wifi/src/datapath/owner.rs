@@ -87,7 +87,11 @@ where
             network_rx,
             services,
             active_tx_interface: None,
+            active_tx_origin: None,
             prepared_tx_interface: None,
+            // Every control machine receives one initial finite step so it can
+            // establish its first absolute deadline and publish startup work.
+            control_ready_latched: true,
             rx_progress: DatapathRxProgress::Drained,
             rx_frame_deficit: 0,
             pair_tx_served_frames: [0; 2],
@@ -100,6 +104,28 @@ where
 
     pub fn services_mut(&mut self) -> &mut B {
         &mut self.services
+    }
+
+    pub(super) fn begin_active_tx(
+        &mut self,
+        interface: NetworkInterfaceId,
+        origin: DatapathTxOrigin,
+    ) {
+        debug_assert!(self.active_tx_interface.is_none());
+        debug_assert!(self.active_tx_origin.is_none());
+        self.active_tx_interface = Some(interface);
+        self.active_tx_origin = Some(origin);
+    }
+
+    pub(super) fn finish_active_tx(&mut self) -> DatapathTxOrigin {
+        let interface = self
+            .active_tx_interface
+            .take()
+            .expect("terminal TX retains its VIF owner");
+        debug_assert!(self.interfaces.contains(interface));
+        self.active_tx_origin
+            .take()
+            .expect("terminal TX retains its semantic origin")
     }
 
     /// Return the network and hardware owners after the runner exits.

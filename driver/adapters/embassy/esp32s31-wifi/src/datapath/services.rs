@@ -42,6 +42,11 @@ pub trait DatapathControlService<H, X> {
         context: DatapathControlContext,
     ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a;
 
+    /// O(1) readiness observation used at a physical TX boundary.
+    fn ready(&self, _tx: &X, _now_micros: u64) -> bool {
+        true
+    }
+
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a;
 }
 
@@ -59,6 +64,10 @@ impl<H, X> DatapathControlService<H, X> for NoDatapathControl {
         _context: DatapathControlContext,
     ) -> impl Future<Output = Result<DatapathControlProgress<Self::Exit>, Self::Error>> + 'a {
         ready(Ok(DatapathControlProgress::Idle))
+    }
+
+    fn ready(&self, _tx: &X, _now_micros: u64) -> bool {
+        false
     }
 
     fn wait_ready<'a>(&'a mut self, _tx: &'a mut X) -> impl Future<Output = ()> + 'a {
@@ -125,10 +134,10 @@ pub trait DatapathNetworkTxService<
         0
     }
 
-    fn start_prepared<'a>(
-        &'a mut self,
-        _hardware: &'a mut H,
-        _network: &'a PinnedTxInterfaceConsumer<
+    fn start_prepared(
+        &mut self,
+        _hardware: &mut H,
+        _network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -136,8 +145,8 @@ pub trait DatapathNetworkTxService<
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        ready(Ok(WifiTxProgress::Complete))
+    ) -> Result<WifiTxProgress, Self::Error> {
+        Ok(WifiTxProgress::Complete)
     }
 
     /// Release a software-owned standby batch at stop/disconnect.
@@ -353,6 +362,10 @@ where
         }
     }
 
+    fn control_ready(&self, now_micros: u64) -> bool {
+        self.role.control.ready(&self.role.tx, now_micros)
+    }
+
     fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a
     where
         'resources: 'a,
@@ -415,9 +428,9 @@ where
         self.role.tx.prepared_frame_count()
     }
 
-    fn start_prepared_tx<'a>(
-        &'a mut self,
-        network: &'a PinnedTxInterfaceConsumer<
+    fn start_prepared_tx(
+        &mut self,
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -425,14 +438,11 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async move {
-            self.role
-                .tx
-                .start_prepared(&mut self.hardware, network)
-                .await
-                .map_err(DatapathServiceError::Tx)
-        }
+    ) -> Result<WifiTxProgress, Self::Error> {
+        self.role
+            .tx
+            .start_prepared(&mut self.hardware, network)
+            .map_err(DatapathServiceError::Tx)
     }
 
     fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {

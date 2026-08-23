@@ -196,6 +196,164 @@ arguments = [3]
 address = 0x20104d40
 value = 0x87654321
 
+# Bounded HT40 MCS7/SGI A-MPDU projection of the complete vendor
+# hal_mac_tx_set_ppdu transaction against the exact compiled production HT
+# queue publisher. The two sides intentionally own different RAM layouts:
+# vendor PP objects below and CanonicalHtTxProgram on the Rust side.
+[[profiles]]
+name = "libpp-set-ht40-ampdu-ppdu"
+claim = "reviewed-domain-equivalence"
+precondition = "ordinary-queue-zero-two-mpdu-ht40-mcs7-sgi-no-software-cts"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_tx_set_ppdu"
+rust-symbol = "open_libpp_tx_trace_hal_mac_tx_set_ppdu"
+compare-return = false
+[[profiles.argument-values]]
+index = 0
+values = [0x3fff1000]
+[[profiles.argument-values]]
+index = 1
+values = [0x3fff1600]
+
+[[profiles.cases]]
+name = "queue-0-two-mpdu"
+arguments = [0x3fff1000, 0x3fff1600]
+max-steps = 100000
+
+vendor-ram = [
+    { address = 0x3fff1000, value = 0x3fff1100 },
+    { address = 0x3fff1004, value = 0 },
+    { address = 0x3fff1100, value = 0 },
+    { address = 0x3fff1104, value = 0x3fff1200 },
+    { address = 0x3fff1108, value = 0 },
+    { address = 0x3fff110c, value = 0 },
+    { address = 0x3fff1110, value = 0 },
+    # Two halfword lengths summed by the bounded HT A-MPDU branch in
+    # mac_tx_set_len. The second halfword remains zero.
+    { address = 0x3fff1114, value = 0x00000c2e },
+    { address = 0x3fff1118, value = 0 },
+    { address = 0x3fff111c, value = 0 },
+    { address = 0x3fff1120, value = 0 },
+    { address = 0x3fff1124, value = 0 },
+    { address = 0x3fff1128, value = 0 },
+    { address = 0x3fff112c, value = 0x3fff1500 },
+    { address = 0x3fff1130, value = 0 },
+    { address = 0x3fff1134, value = 0x3fff1300 },
+    { address = 0x3fff1200, value = 0x3fff1400 },
+    { address = 0x3fff1204, value = 0x00008000 },
+    { address = 0x3fff1208, value = 0 },
+    { address = 0x3fff120c, value = 0 },
+    # Word-zero bit 14 enables the guarded channel-width branch; word-two bit
+    # 15 below selects 40 MHz inside that branch.
+    { address = 0x3fff1300, value = 0x004c6009 },
+    { address = 0x3fff1304, value = 0 },
+    # Rate word-two bit 15 is the reviewed HT40 selector consumed by both
+    # mac_tx_set_plcp1 and mac_tx_set_htsig.
+    { address = 0x3fff1308, value = 0x00008000 },
+    { address = 0x3fff130c, value = 0x00000021 },
+    { address = 0x3fff1310, value = 0 },
+    { address = 0x3fff1314, value = 0 },
+    { address = 0x3fff1318, value = 0 },
+    { address = 0x3fff131c, value = 0 },
+    { address = 0x3fff1320, value = 0x00010001 },
+    { address = 0x3fff1324, value = 0 },
+    { address = 0x3fff1328, value = 0x00020000 },
+    { address = 0x3fff132c, value = 0x00020000 },
+    { address = 0x3fff1330, value = 0 },
+    { address = 0x3fff1334, value = 0 },
+    { address = 0x3fff1338, value = 0 },
+    { address = 0x3fff133c, value = 0 },
+    { address = 0x3fff1400, value = 0 },
+    { address = 0x3fff1500, value = 0 },
+    { address = 0x3fff1580, value = 0x00280000 },
+    { address = 0x3fff1584, value = 0x00040000 },
+    { address = 0x3fff1588, value = 0 },
+    { address = 0x3fff1590, value = 0 },
+    { address = 0x3fff1594, value = 0 },
+    { address = 0x3fff1600, value = 0 },
+    # The selected pTxRx rate row contributes entry class one to both packed
+    # length words at byte offsets 0x40 and 0x41.
+    { address = 0x3fff1640, value = 0x00000101 },
+    { address = 0x3fff1644, value = 0x00000c2e },
+    { address = 0x3fff1648, value = 0 },
+]
+
+vendor-ram-symbols = [
+    { target-symbol = "pTxRx", offset = 0, value = 0x3fff1600, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x00, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x04, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x08, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x0c, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x10, value = 0x02020201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x14, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x18, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x1c, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x20, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x24, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x28, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x2c, value = 0x01010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x30, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x34, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x38, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x3c, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x40, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x44, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x48, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x4c, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x50, value = 0x02010201, observe = false },
+    { target-symbol = "s_phy_get_max_pwr", offset = 0x54, value = 0x00000201, observe = false },
+]
+
+rust-ram = [
+    { address = 0x3fff1000, value = 0 },
+    { address = 0x3fff1004, value = 0x026f1200 },
+    { address = 0x3fff1008, value = 0x22001000 },
+    { address = 0x3fff100c, value = 0x8f0c2e87 },
+    { address = 0x3fff1010, value = 0x70400c2e },
+    { address = 0x3fff1014, value = 0x02020101 },
+    { address = 0x3fff1018, value = 0x00400244 },
+    { address = 0x3fff101c, value = 0x00000202 },
+    { address = 0x3fff1020, value = 40 },
+    { address = 0x3fff1024, value = 0 },
+    { address = 0x3fff1028, value = 1 },
+    { address = 0x3fff102c, value = 1 },
+    { address = 0x3fff1030, value = 1 },
+    { address = 0x3fff1034, value = 0 },
+    { address = 0x3fff1038, value = 0 },
+    { address = 0x3fff103c, value = 0 },
+    { address = 0x3fff1040, value = 0 },
+]
+
+mmio-initial = [
+    { address = 0x20104d64, value = 0 },
+    { address = 0x20104d68, value = 0 },
+    { address = 0x20104d6c, value = 0 },
+    { address = 0x20104d70, value = 0 },
+    { address = 0x201054d8, value = 0 },
+    { address = 0x201054e0, value = 0 },
+    { address = 0x201054e8, value = 0 },
+    { address = 0x20105500, value = 0 },
+    { address = 0x20105504, value = 0 },
+    { address = 0x2010550c, value = 0 },
+    { address = 0x20105510, value = 0 },
+]
+
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::wifi-osi-v9"
+base-address = 0x3fff1800
+layout-size = 0x1ac
+pointer-cells = []
+pointer-cell-symbols = ["g_osi_funcs_p"]
+slots = [
+    { offset = 0x1a8, target = { kind = "modeled-symbol", value = "coex_pti_clamp" } },
+]
+
+[[profiles.cases.vendor-calls]]
+symbol = "coex_pti_clamp"
+outputs = [
+    { kind = "private-stack", pointer-argument = 1, width = 8, value = 1 },
+]
+
 [[profiles]]
 name = "libpp-configure-tx-edca"
 claim = "whole-function-equivalence"

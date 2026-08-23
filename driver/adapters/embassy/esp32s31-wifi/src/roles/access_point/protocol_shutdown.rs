@@ -359,16 +359,12 @@ where
         Ok(WifiTxProgress::Pending)
     }
 
-    fn role_observation(&self) -> (u32, AccessPointServiceStatus, LinkState) {
-        (
-            self.mac.engine().service_status_revision(),
-            self.mac.engine().service_status(),
-            if self.mac.engine().authorized_peer_count() == 0 {
-                LinkState::Down
-            } else {
-                LinkState::Up
-            },
-        )
+    fn role_status_revision(&self) -> u32 {
+        self.mac.engine().service_status_revision()
+    }
+
+    fn role_status(&self) -> AccessPointServiceStatus {
+        self.mac.engine().service_status()
     }
 
     /// Advance AP timer and peer policy by one finite DATAPATH control step.
@@ -418,23 +414,18 @@ where
             self.publish_peer_close(hardware, close)?;
             return Ok(DatapathControlProgress::TxPending);
         }
-        self.next_control_delay_millis(now_micros)?;
         Ok(DatapathControlProgress::Idle)
     }
 
-    fn next_control_delay_millis(
+    fn next_control_deadline_micros(
         &self,
         now_micros: u64,
-    ) -> Result<u32, Esp32s31AccessPointControlError> {
-        let (_, beacon_delay_ms) = self
+    ) -> Result<u64, Esp32s31AccessPointControlError> {
+        let (beacon_tick, _) = self
             .next_beacon_delay(now_micros as u32)
             .ok_or(Esp32s31AccessPointControlError::InvalidBeaconSchedule)?;
-        let deadline_delay = |deadline: u64| {
-            let remaining = deadline.saturating_sub(now_micros);
-            u32::try_from(remaining.saturating_add(999) / 1_000)
-                .unwrap_or(u32::MAX)
-                .max(1)
-        };
+        let beacon_deadline = now_micros
+            .saturating_add(u64::from(beacon_tick.wrapping_sub(now_micros as u32)));
         Ok(self
             .mac
             .engine()
@@ -443,8 +434,7 @@ where
             .chain(self.mac.engine().next_wpa2_retry_deadline())
             .chain(self.mac.next_tx_block_ack_deadline())
             .chain(self.rx_reorder.next_deadline())
-            .map(deadline_delay)
-            .fold(beacon_delay_ms, u32::min))
+            .fold(beacon_deadline, u64::min))
     }
 
     /// Advance AP shutdown by one finite DATAPATH transition.

@@ -7,6 +7,12 @@ linker-scripts = [
     "link.x",
 ]
 archives = ["../../../../../../_oracles/libpp.a"]
+symbol-providers = [
+    # This ROM-owned runtime table is consumed by hal_mac_tx_set_ppdu. Import
+    # its authenticated address before relaxation so the linked analysis image
+    # retains the real pointer materialization instead of a poisoned zero.
+    { path = "../../../../../../_oracles/esp32s31_rev0_rom.elf", symbols = ["esp_wifi_cert_tx_bcc", "g_osi_funcs_p", "pTxRx", "s_mplen_be_high_bitmap", "s_mplen_txq_bitmap", "s_phy_get_max_pwr"] },
+]
 stub-symbols = [
     "__adddf3",
     "__clzsi2",
@@ -31,6 +37,10 @@ fixture-data-symbols = [
     { name = "esp_test_rx_statistics", size = 8, alignment = 4 },
     { name = "g_dbg_interp_tsf", size = 4, alignment = 4 },
     { name = "g_dbg_interp_tsf_end", size = 4, alignment = 4 },
+    # Platform-owned build configuration is absent from libpp.a and the ROM
+    # image. Keep the exact reviewed ABI extent used by the replay image; each
+    # concrete scenario still has to seed any value it consumes.
+    { name = "g_wifi_menuconfig", size = 104, alignment = 4 },
 ]
 whole-archive = true
 emit-relocations = true

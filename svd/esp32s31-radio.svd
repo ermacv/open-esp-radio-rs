@@ -5821,9 +5821,15 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>LOW_UNKNOWN</name>
+              <name>TXOP</name>
+              <description>Complete hal_mac_tx_set_ppdu sets or clears this bit from descriptor word-zero bit 29 before mac_tx_set_pti publishes the four coexistence lanes. The bit is independent of those lanes and must not retain the preceding queue transaction's value.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LOW_UNKNOWN</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>3</bitWidth>
             </field>
             <field>
               <name>PTI_0</name>

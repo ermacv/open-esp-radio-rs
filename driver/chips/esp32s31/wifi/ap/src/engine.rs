@@ -3,8 +3,8 @@
 use crate::{
     beacon::Esp32s31ApBeacon,
     security::{
-        Esp32s31ApPairwiseKeyStorage, Esp32s31ApSecurity, Esp32s31ApSecurityError,
-        Esp32s31ApSecurityStopReport,
+        Esp32s31ApPairwiseBinding, Esp32s31ApPairwiseKeyStorage, Esp32s31ApSecurity,
+        Esp32s31ApSecurityError, Esp32s31ApSecurityStopReport,
     },
 };
 use open_esp_radio_esp32s31_wifi_mac::{
@@ -27,8 +27,9 @@ use open_esp_radio_ieee80211::{
     ssid::WifiSsid,
 };
 use open_esp_radio_wifi_ap::{
-    AccessPointService, ApAssociationCapabilities, ApMlmeAction, ApPeerClose, ApPeerCloseKind,
-    ApPeerPhase, ApPeerStatus, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    AccessPointService, ApAssociationCapabilities, ApMlmeAction, ApPeerBinding, ApPeerClose,
+    ApPeerCloseKind, ApPeerPhase, ApPeerStatus, ApServiceError, ApWpa2Error, ApWpa2Progress,
+    ApWpa2RetryProgress,
 };
 use open_esp_radio_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
 
@@ -110,6 +111,20 @@ pub struct Esp32s31ApAggregateFrame {
     pub encoded: EncodedApFrame,
     pub hardware_key_selector: u8,
     pub sequence_number: u16,
+}
+
+/// Peer and key-slot identity captured once before an aggregate claims its
+/// first DMA lease. Every MPDU validates these O(1) generation-bound owners.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApAggregateBinding {
+    peer: ApPeerBinding,
+    security: Esp32s31ApPairwiseBinding,
+}
+
+impl Esp32s31ApAggregateBinding {
+    pub const fn peer(self) -> [u8; 6] {
+        self.peer.address()
+    }
 }
 
 pub struct Esp32s31ApEngineStop<'storage> {
@@ -643,6 +658,28 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.service.peer_status(peer)?.tx_block_ack
     }
 
+    pub fn bind_aggregate_peer(
+        &self,
+        peer: [u8; 6],
+    ) -> Result<(Esp32s31ApAggregateBinding, ApPeerStatus), Esp32s31ApEngineError> {
+        let service_binding = self
+            .service
+            .bind_peer(peer)
+            .ok_or(ApServiceError::UnknownPeer)?;
+        let status = self
+            .service
+            .bound_peer_status(service_binding)
+            .ok_or(ApServiceError::UnknownPeer)?;
+        let security = self.security.bind_pairwise(peer, status.association_id)?;
+        Ok((
+            Esp32s31ApAggregateBinding {
+                peer: service_binding,
+                security,
+            },
+            status,
+        ))
+    }
+
     pub fn has_operational_tx_block_ack(&self) -> bool {
         self.service.has_operational_tx_block_ack()
     }
@@ -823,16 +860,26 @@ impl<'storage> Esp32s31ApEngine<'storage> {
 
     /// AP-specific adapter from a network allocation to the role-neutral
     /// retained A-MPDU backing contract.
+    ///
+    /// Saturated AP TX executes this leaf once per MPDU (roughly 150,000
+    /// calls per 16-second BA16 HIL interval). The PSRAM-code profile keeps
+    /// only this measured synchronous encoder leaf in the semantic hot-text
+    /// class; the linker, not the portable AP model, selects physical SRAM.
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".hot.text.open_radio_ap_tx_encode")
+    )]
+    #[inline(never)]
     pub fn encode_aggregate_ethernet_in_place(
         &mut self,
-        peer: [u8; 6],
+        binding: Esp32s31ApAggregateBinding,
         storage: &mut [u8],
         ethernet_offset: usize,
         ethernet_length: usize,
     ) -> Result<Esp32s31ApAggregateFrame, Esp32s31ApEngineError> {
         let status = self
             .service
-            .peer_status(peer)
+            .bound_peer_status(binding.peer)
             .ok_or(ApServiceError::UnknownPeer)?;
         if status.phase != ApPeerPhase::Authorized
             || !status.qos_supported
@@ -840,8 +887,11 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         {
             return Err(ApServiceError::WrongPeerPhase.into());
         }
-        let hardware_key_selector = self.security.pairwise_hardware_index(peer)?;
-        let ccmp_header = self.security.next_pairwise_tx_ccmp_header(peer)?;
+        let peer = binding.peer();
+        let hardware_key_selector = binding.security.hardware_index();
+        let ccmp_header = self
+            .security
+            .next_bound_pairwise_tx_ccmp_header(binding.security)?;
         let sequence_number = self
             .service
             .current_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)

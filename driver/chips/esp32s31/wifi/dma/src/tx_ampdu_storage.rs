@@ -117,6 +117,10 @@ pub struct AmpduDmaStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     buffers: [AmpduDmaBuffer<BUFFER_SIZE>; SLOTS],
     state: AmpduDmaState,
     lease_generation: u64,
+    /// Exact descriptor prefix published by the current or most recently
+    /// detached transaction. It belongs to the pinned arena rather than the
+    /// movable capability so lifecycle futures do not carry DMA bookkeeping.
+    published_count: usize,
     #[pin]
     _pin: PhantomPinned,
 }
@@ -128,6 +132,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> AmpduDmaStorage<SLOTS, BUFFER
             buffers: [const { AmpduDmaBuffer([0; BUFFER_SIZE]) }; SLOTS],
             state: AmpduDmaState::Free,
             lease_generation: 0,
+            published_count: 0,
             _pin: PhantomPinned,
         }
     }
@@ -379,6 +384,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
                 next_address,
             );
         }
+        *self.storage.as_mut().project().published_count = entries.len();
 
         Ok(AmpduDmaPublication { owner: self })
     }
@@ -479,10 +485,20 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
         if self.state() != expected {
             return Err(AmpduDmaStorageError::State);
         }
-        for descriptor in &self.storage.as_ref().get_ref().descriptors {
+        let published_count = self.storage.as_ref().get_ref().published_count;
+        for descriptor in self
+            .storage
+            .as_ref()
+            .get_ref()
+            .descriptors
+            .iter()
+            .take(published_count)
+        {
             descriptor.publish_owned(0, 0, 0);
         }
-        *self.storage.as_mut().project().state = AmpduDmaState::Free;
+        let storage = self.storage.as_mut().project();
+        *storage.published_count = 0;
+        *storage.state = AmpduDmaState::Free;
         Ok(())
     }
 }
@@ -1092,6 +1108,7 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
                 next_address,
             );
         }
+        *self.dma_mut().storage.as_mut().project().published_count = entries.len();
 
         Ok(RetainedAmpduDmaPublication { owner: self })
     }
@@ -1149,6 +1166,7 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
                 next_address,
             );
         }
+        *self.dma_mut().storage.as_mut().project().published_count = count;
 
         Ok(RetainedAmpduDmaPublication { owner: self })
     }
@@ -1426,6 +1444,48 @@ mod tests {
             .unwrap();
         assert_eq!(storage.detached_buffer(0).unwrap()[0], 0x11);
         storage.release_detached().unwrap();
+        assert_eq!(storage.state(), AmpduDmaState::Free);
+    }
+
+    #[test]
+    fn terminal_release_clears_only_the_last_published_prefix() {
+        let mut storage = storage();
+        let entry = AmpduInternalDescriptor {
+            buffer_capacity: 256,
+            transfer_length: 100,
+        };
+        storage.begin().unwrap();
+        storage
+            .publish_internal_chain(&[entry; 4])
+            .unwrap()
+            .commit(|_| {});
+        storage.mark_completed().unwrap();
+        storage
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
+
+        // Model a selective retry over the detached owner. Descriptors two
+        // and three become an unreachable suffix once descriptor one is
+        // terminal, but retain their old image until this arena publishes a
+        // future transaction which actually uses them.
+        storage
+            .transition(AmpduDmaState::Detached, AmpduDmaState::Reserved)
+            .unwrap();
+        storage
+            .publish_internal_chain(&[entry; 2])
+            .unwrap()
+            .commit(|_| {});
+        let stale_suffix = storage.descriptor_word0(2).unwrap();
+        assert_ne!(stale_suffix, 0);
+        storage.mark_completed().unwrap();
+        storage
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
+        storage.release_detached().unwrap();
+
+        assert_eq!(storage.descriptor_word0(0), Some(0));
+        assert_eq!(storage.descriptor_word0(1), Some(0));
+        assert_eq!(storage.descriptor_word0(2), Some(stale_suffix));
         assert_eq!(storage.state(), AmpduDmaState::Free);
     }
 

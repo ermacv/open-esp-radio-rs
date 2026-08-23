@@ -567,6 +567,22 @@ mod tests {
             "crate_a::module::run",
             "crate_a::module::runner"
         ));
+        assert!(compiled_matches(
+            "crate_a::registers::RadioRegisters::publish",
+            "<crate_a::RadioRegisters>::publish"
+        ));
+        assert!(!compiled_matches(
+            "crate_a::registers::RadioRegisters::publish",
+            "<crate_b::RadioRegisters>::publish"
+        ));
+        assert!(!compiled_matches(
+            "crate_a::registers::RadioRegisters::publish",
+            "<crate_a::OtherRegisters>::publish"
+        ));
+        assert!(!compiled_matches(
+            "crate_a::registers::RadioRegisters::publish",
+            "<crate_a::RadioRegisters>::publisher"
+        ));
     }
 
     #[test]

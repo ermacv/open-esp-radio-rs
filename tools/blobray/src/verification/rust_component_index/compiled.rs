@@ -100,6 +100,9 @@ pub(crate) fn compiled_matches(component: &str, demangled: &str) -> bool {
     {
         return true;
     }
+    if root_reexported_impl_method_matches(component, demangled) {
+        return true;
+    }
     let mut cursor = 0usize;
     for segment in component.split("::") {
         let Some(relative) = demangled[cursor..].find(segment) else {
@@ -115,6 +118,35 @@ pub(crate) fn compiled_matches(component: &str, demangled: &str) -> bool {
         cursor = end;
     }
     true
+}
+
+/// Match a method whose source owner lives in a module but whose receiver is
+/// re-exported from the crate root.
+///
+/// Rust source ownership uses `crate::module::Type::method`, while DWARF names
+/// the same compiled frame `<crate::Type>::method` when `Type` is defined at or
+/// re-exported through the crate root. Keep this fallback deliberately narrow:
+/// only the module path may disappear, and the crate, receiver and method must
+/// still match exactly.
+fn root_reexported_impl_method_matches(component: &str, demangled: &str) -> bool {
+    let segments = component.split("::").collect::<Vec<_>>();
+    let [crate_name, .., receiver, method] = segments.as_slice() else {
+        return false;
+    };
+    if segments.len() < 4 {
+        return false;
+    }
+    let Some((compiled_receiver, compiled_method)) = demangled
+        .strip_prefix('<')
+        .and_then(|name| name.split_once(">::"))
+    else {
+        return false;
+    };
+    compiled_receiver == format!("{crate_name}::{receiver}")
+        && (compiled_method == *method
+            || compiled_method
+                .strip_prefix(method)
+                .is_some_and(|suffix| suffix.starts_with("::") || suffix.starts_with('<')))
 }
 
 const fn rust_identifier_byte(byte: u8) -> bool {

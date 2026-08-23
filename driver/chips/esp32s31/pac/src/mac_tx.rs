@@ -78,6 +78,13 @@ pub struct MacHtTxProgram {
     pub aifsn: u8,
     pub contention_window: u16,
     pub interface: MacInterface,
+    /// Value published into the independent TXOP bit in the low PTI nibble.
+    ///
+    /// SOURCE: complete `hal_mac_tx_set_ppdu` tests descriptor word-zero bit
+    /// 29 and then sets or clears PTI bit zero before `mac_tx_set_pti`
+    /// updates the four coexistence lanes. This edge must not inherit a stale
+    /// bit from the preceding queue transaction.
+    pub txop: bool,
 }
 
 /// Complete bounded queue-vector image for one HE SU A-MPDU.
@@ -456,35 +463,67 @@ impl RadioRegisters {
     /// This is deliberately separate from the legacy routine: an HT PPDU has
     /// two additional vector words and three descriptor-count RMW edges which
     /// must not be silently omitted by a shared "mostly legacy" formatter.
-    fn prepare_ht_mac_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
+    pub(crate) fn prepare_ht_mac_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
+        assert!(program.timeout <= 0x0fff);
+        assert!(program.aifsn <= 0x0f);
+        assert!(program.contention_window <= 0x03ff);
+
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        let bank = physical_bank(queue);
+        {
+            let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
+            let control = control_bank.control(bank);
+            if control.read().bits() & ENABLE_VALID_MASK != 0 {
+                return false;
+            }
+
+            // SOURCE: complete hal_mac_tx_config_timeout, followed by the
+            // hal_mac_tx_set_ppdu non-HE HT branch.
+            control_bank
+                .config(bank)
+                .modify(|_, w| w.timeout().set(program.timeout));
+        }
+
+        self.program_ht_mac_tx_ppdu(queue, program);
+
+        mac_tx_queue::configure_edca(
+            &self.peripherals.wifi_mac_tx_queue_control,
+            u32::from(queue),
+            program.aifsn,
+            program.contention_window,
+            program.interface,
+        );
+        true
+    }
+
+    /// Publish the complete non-HE HT responsibility of vendor
+    /// `hal_mac_tx_set_ppdu` for one already-idle ordinary queue.
+    ///
+    /// Queue readiness, timeout, EDCA and the final ENABLE|VALID ownership
+    /// edge belong to the surrounding production transaction. Keeping this
+    /// slice explicit lets the compiled production implementation be compared
+    /// to the same vendor responsibility without a shadow register model.
+    pub(crate) fn program_ht_mac_tx_ppdu(&mut self, queue: u8, program: MacHtTxProgram) {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         assert!(program.descriptor_count_a <= 0x7f);
         assert!(program.descriptor_count_b <= 0x7f);
         assert!(program.protection_spacing <= 0x03ff);
-        assert!(program.timeout <= 0x0fff);
         assert!(program.scheduler_priority <= 0x0f);
         assert!(program.packet_priority <= 0x0f);
         assert!(program.priority_count <= 0x0fff);
-        assert!(program.aifsn <= 0x0f);
-        assert!(program.contention_window <= 0x03ff);
 
         let bank = physical_bank(queue);
         let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
-        let control = control_bank.control(bank);
-        if control.read().bits() & ENABLE_VALID_MASK != 0 {
-            return false;
-        }
-
-        // SOURCE: complete hal_mac_tx_config_timeout, followed by the
-        // hal_mac_tx_set_ppdu non-HE HT branch.
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.timeout().set(program.timeout));
         super::generated::publish_mac_tx_control(
             control_bank,
             bank,
             super::generated::MacTxControlImage::new(program.plcp0),
         );
+        // `mac_tx_set_plcp0` publishes the control image and immediately
+        // clears software CTS through one fresh-read protection update.
+        control_bank
+            .protection(bank)
+            .modify(|_, w| w.software_cts().clear_bit());
         super::generated::publish_mac_tx_plcp1(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
@@ -494,15 +533,16 @@ impl RadioRegisters {
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
-        control_bank
-            .protection(bank)
-            .modify(|_, w| w.software_cts().clear_bit());
 
-        // SOURCE: complete mac_tx_set_htsig writes HT-SIG first, then uses the
-        // separate vector word at 0x20105504-q*0x7c to copy descriptor byte
-        // 0x2a into count A and its second lane, and byte 0x2e into count B.
-        // Keep the three fresh-read hardware edges distinct. In particular,
-        // these fields do not belong to the 0x20104d64 protection word above.
+        // The parent owns this independent PTI-low edge. `mac_tx_set_pti`
+        // follows later and intentionally preserves it while updating the
+        // four PTI lanes and the count.
+        let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
+        pti.modify(|_, writer| writer.txop().bit(program.txop));
+
+        // The bounded HT branch enters `mac_tx_set_htsig` here. It publishes
+        // HT-SIG, the three descriptor-count edges, the three negotiated
+        // minimum-MPDU spacing edges and the two length words.
         super::generated::publish_mac_tx_ht_signal(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
@@ -517,12 +557,6 @@ impl RadioRegisters {
         descriptor_counts
             .modify(|_, w| w.descriptor_count_a_copy().set(program.descriptor_count_a));
 
-        // SOURCE: complete mac_tx_set_htsig offsets 0x1da..0x21a. The peer's
-        // finite spacing value from rcUpdateAMPDUParam is copied into the
-        // CBW20/CBW40/CBW80 minimum-MPDU lanes through three fresh-read RMW
-        // edges. Complete dbg_read_txq_conf2 supplies those lane names.
-        // HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29 observed value 40 in all
-        // three fields (whole word 0x0280_a028) on a hardware-owned HT queue.
         let protection = control_bank.protection(bank);
         protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw20()
@@ -537,8 +571,6 @@ impl RadioRegisters {
                 .set(program.protection_spacing)
         });
 
-        // SOURCE: complete mac_tx_set_len followed by the HT power branch in
-        // hal_mac_tx_set_ppdu.
         super::generated::publish_mac_tx_length_control(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
@@ -557,21 +589,11 @@ impl RadioRegisters {
         control_bank
             .config(bank)
             .modify(|_, w| w.scheduler_priority().set(program.scheduler_priority));
-        let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
         pti.modify(|_, w| w.pti_2().set(program.packet_priority));
         pti.modify(|_, w| w.pti_1().set(program.packet_priority));
         pti.modify(|_, w| w.pti_0().set(program.packet_priority));
         pti.modify(|_, w| w.pti_3().set(program.packet_priority));
         pti.modify(|_, w| w.count().set(program.priority_count));
-
-        mac_tx_queue::configure_edca(
-            control_bank,
-            u32::from(queue),
-            program.aifsn,
-            program.contention_window,
-            program.interface,
-        );
-        true
     }
 
     /// Program one HE SU A-MPDU up to its final ENABLE|VALID edge.

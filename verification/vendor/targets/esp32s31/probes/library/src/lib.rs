@@ -448,6 +448,74 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_config_edca(
 }
 
 #[repr(C)]
+struct CanonicalHtTxProgram {
+    queue: u32,
+    plcp0: u32,
+    plcp1: u32,
+    ht_signal: u32,
+    data_length: u32,
+    power: u32,
+    length_control: u32,
+    descriptor_counts: u32,
+    protection_spacing: u32,
+    timeout: u32,
+    scheduler_priority: u32,
+    packet_priority: u32,
+    priority_count: u32,
+    aifsn: u32,
+    contention_window: u32,
+    interface: u32,
+    txop: u32,
+}
+
+/// Reviewed ABI projection around the exact compiled production HT queue
+/// transaction. The vendor side receives its pointer-rich PP context at `a0`;
+/// the Rust side receives this canonical register/program image at the same
+/// address. The profile owns both layouts independently.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_set_ppdu(
+    program_address: u32,
+    _vendor_auxiliary: u32,
+) -> u32 {
+    use open_esp_radio_esp32s31_hal::types::{MacHtTxProgram, MacInterface};
+
+    let program = program_address as *const CanonicalHtTxProgram;
+    // SAFETY: the verification profile supplies one initialized, aligned and
+    // immutable CanonicalHtTxProgram for the duration of this call.
+    let program = unsafe { &*program };
+    let interface = match program.interface {
+        0 => MacInterface::Station,
+        1 => MacInterface::AccessPoint,
+        2 => MacInterface::Context2,
+        3 => MacInterface::Context3,
+        _ => panic!("verification MAC interface is out of range"),
+    };
+    open_esp_radio_esp32s31_hal::validation::hal_mac_tx_set_ppdu(
+        program.queue as u8,
+        MacHtTxProgram {
+            plcp0: program.plcp0,
+            plcp1: program.plcp1,
+            ht_signal: program.ht_signal,
+            data_length: program.data_length,
+            power: program.power,
+            length_control: program.length_control,
+            descriptor_count_a: program.descriptor_counts as u8,
+            descriptor_count_b: (program.descriptor_counts >> 8) as u8,
+            protection_spacing: program.protection_spacing as u16,
+            timeout: program.timeout as u16,
+            scheduler_priority: program.scheduler_priority as u8,
+            packet_priority: program.packet_priority as u8,
+            priority_count: program.priority_count as u16,
+            aifsn: program.aifsn as u8,
+            contention_window: program.contention_window as u16,
+            interface,
+            txop: program.txop != 0,
+        },
+    )
+}
+
+#[repr(C)]
 pub struct CanonicalTxBlockAck {
     pub control: u8,
     pub reserved: u8,
@@ -833,7 +901,7 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
     // Route the hardware completion through the exact production Embassy
     // interrupt handoff. This keeps the compiled comparison from bypassing
     // the adapter boundary by constructing `WifiTxWake` directly.
-    let irq = open_esp_radio_esp32s31_wifi_embassy::embassy_irq::EmbassyMacIrqRuntime::<
+    let irq = open_esp_radio_esp32s31_wifi_embassy::datapath::irq::EmbassyMacIrqRuntime::<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
     >::new();
     irq.publish(open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE);
@@ -1674,6 +1742,7 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_disable as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_config_edca as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_get_blockack as *const ());
+    core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_set_ppdu as *const ());
     core::hint::black_box(open_libpp_tx_retry_trace_rc_get_rate as *const ());
     core::hint::black_box(open_libpp_tx_retry_trace_lmac_process_tx_error as *const ());
     core::hint::black_box(open_libpp_tx_retry_trace_ack_timeout_state as *const ());

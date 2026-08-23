@@ -7,6 +7,8 @@ record are therefore evidence, not current usage instructions.
 
 Current records:
 
+- [ESP32-S31 AP TX BA16 datapath cutover](2026-08-23-esp32s31-ap-tx-ba16-cutover.md);
+- [ESP32-S31 AP TX ceiling analysis](2026-08-23-esp32s31-ap-tx-ceiling-analysis.md);
 - [ESP32-S31 AP PSRAM-stack load characterization](2026-08-17-esp32s31-ap-psram-stack-load.md);
 - [ESP32-S31 HE RX A-MPDU containment](2026-08-04-esp32s31-he-rx-ampdu-containment.md);
 - [ESP32-S31 direct HT RX aggregation metadata](2026-08-04-esp32s31-ht-rx-aggregation-metadata.md);

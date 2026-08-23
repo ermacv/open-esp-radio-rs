@@ -207,12 +207,13 @@ where
                             self.services.has_prepared_tx().then_some(interface);
                         if progress == WifiTxProgress::Pending {
                             self.active_tx_interface = Some(interface);
-                            // A retained standby already consumed this role's
-                            // look-ahead allowance.  Do not prepare a second
-                            // standby while it runs: the following boundary
-                            // must return the physical owner to paired control
-                            // and the peer VIF.
-                            self.drive_active_tx(false).await?;
+                            // Standalone operation keeps the original double-
+                            // buffered pipeline live while this prepared
+                            // aggregate owns hardware. `drive_active_tx`
+                            // suppresses that look-ahead for a paired owner,
+                            // where every transaction must instead return the
+                            // physical owner to the peer VIF.
+                            self.drive_active_tx(true).await?;
                         }
                         continue;
                     }

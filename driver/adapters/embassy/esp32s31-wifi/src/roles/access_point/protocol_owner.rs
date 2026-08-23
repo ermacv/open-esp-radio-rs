@@ -124,4 +124,8 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
     pub fn has_operational_tx_block_ack(&self) -> bool {
         self.mac.has_operational_tx_block_ack()
     }
+
+    pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
+        self.mac.smallest_operational_tx_block_ack_window()
+    }
 }

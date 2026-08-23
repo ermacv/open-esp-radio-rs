@@ -960,11 +960,10 @@ where
 
     fn preferred_batch_size(&self) -> usize {
         self.protocol.active().map_or(1, |active| {
-            if active.processor.has_operational_tx_block_ack() {
-                AMPDU_SLOTS
-            } else {
-                1
-            }
+            access_point_tx_batch_target(
+                active.processor.smallest_operational_tx_block_ack_window(),
+                AMPDU_SLOTS,
+            )
         })
     }
 

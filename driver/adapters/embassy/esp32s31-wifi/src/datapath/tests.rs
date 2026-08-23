@@ -1144,6 +1144,25 @@ fn adaptive_batching_sends_isolated_frames_and_collects_proven_bursts() {
 }
 
 #[test]
+fn prepared_tx_keeps_lookahead_only_for_a_single_interface() {
+    let first = NetworkInterfaceId::new(0);
+    let second = NetworkInterfaceId::new(1);
+
+    assert!(tx_lookahead_allowed(
+        true,
+        DatapathInterfaceScope::Single(first)
+    ));
+    assert!(!tx_lookahead_allowed(
+        false,
+        DatapathInterfaceScope::Single(first)
+    ));
+    assert!(!tx_lookahead_allowed(
+        true,
+        DatapathInterfaceScope::Pair { first, second }
+    ));
+}
+
+#[test]
 fn drained_rx_is_unmasked_before_the_cooperative_yield() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));

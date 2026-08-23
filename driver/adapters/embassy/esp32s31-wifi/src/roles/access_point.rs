@@ -108,6 +108,10 @@ use open_esp_radio_esp32s31_wifi_ap::ampdu::Esp32s31ApAmpduCompletion;
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 const EAPOL_CAPACITY: usize = 512;
 
+fn access_point_tx_batch_target(operational_window: Option<u16>, arena_capacity: usize) -> usize {
+    operational_window.map_or(1, |window| usize::from(window).min(arena_capacity).max(1))
+}
+
 #[cfg(any(feature = "diagnostics", test))]
 fn observe_aggregate_rate(observer: &dyn AggregateTxObserver, rate: HtRate) {
     observer.observe(AggregateTxObservation::RateSelected {

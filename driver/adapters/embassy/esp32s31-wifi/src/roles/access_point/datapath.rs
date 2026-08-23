@@ -783,17 +783,23 @@ where
     }
 
     fn preferred_tx_batch_size(&self) -> usize {
-        if self.control.has_operational_tx_block_ack() {
-            AMPDU_SLOTS
-        } else {
-            1
-        }
+        access_point_tx_batch_target(
+            self.control.smallest_operational_tx_block_ack_window(),
+            AMPDU_SLOTS,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_target_uses_negotiated_window_instead_of_physical_arena_capacity() {
+        assert_eq!(access_point_tx_batch_target(Some(16), 32), 16);
+        assert_eq!(access_point_tx_batch_target(Some(8), 32), 8);
+        assert_eq!(access_point_tx_batch_target(None, 32), 1);
+    }
 
     #[derive(Default)]
     struct RecordingObserver(std::sync::Mutex<std::vec::Vec<AggregateTxObservation>>);

@@ -244,6 +244,12 @@ where
         self.mac.engine().has_operational_tx_block_ack()
     }
 
+    pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
+        self.mac
+            .engine()
+            .smallest_operational_tx_block_ack_window()
+    }
+
     pub const fn tx_pending(&self) -> bool {
         self.mac.tx_pending()
     }
@@ -573,4 +579,3 @@ where
         })
     }
 }
-

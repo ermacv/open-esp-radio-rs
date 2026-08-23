@@ -170,8 +170,7 @@ where
         // retaining a second DMA arena across completion would postpone the
         // other VIF's protocol/control work and can exhaust the shared RX
         // staging pool. Single-VIF runners keep the throughput look-ahead.
-        let allow_standby =
-            allow_standby && matches!(self.interfaces, DatapathInterfaceScope::Single(_));
+        let allow_standby = tx_lookahead_allowed(allow_standby, self.interfaces);
         let mut progress = WifiTxProgress::Pending;
         let mut rx_producer_serviced = false;
         while progress == WifiTxProgress::Pending {

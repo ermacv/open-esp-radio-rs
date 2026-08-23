@@ -41,6 +41,10 @@ const TX_BURST_ENTRY_GAP: Duration = Duration::from_millis(2);
 const TX_BURST_QUIET_TIMEOUT: Duration = Duration::from_millis(4);
 const RX_TX_FAIRNESS_QUANTUM_FRAMES: u32 = 8;
 
+const fn tx_lookahead_allowed(requested: bool, interfaces: DatapathInterfaceScope) -> bool {
+    requested && matches!(interfaces, DatapathInterfaceScope::Single(_))
+}
+
 #[derive(Clone, Copy, Debug)]
 struct TxBatchState {
     /// A started transaction may be followed directly by a prepared standby

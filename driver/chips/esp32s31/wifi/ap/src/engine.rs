@@ -647,6 +647,10 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.service.has_operational_tx_block_ack()
     }
 
+    pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
+        self.service.smallest_operational_tx_block_ack_window()
+    }
+
     pub fn observe_tx_block_ack_alarm(
         &mut self,
         peer: [u8; 6],

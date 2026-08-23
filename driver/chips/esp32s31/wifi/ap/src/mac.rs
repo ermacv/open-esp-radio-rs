@@ -237,6 +237,10 @@ impl Esp32s31ApMacParked<'_> {
     pub fn has_operational_tx_block_ack(&self) -> bool {
         self.engine.has_operational_tx_block_ack()
     }
+
+    pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
+        self.engine.smallest_operational_tx_block_ack_window()
+    }
 }
 
 impl<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize>

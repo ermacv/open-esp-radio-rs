@@ -471,7 +471,18 @@ impl<'peers> AccessPointService<'peers> {
     }
 
     pub fn has_operational_tx_block_ack(&self) -> bool {
-        self.peers().any(|peer| peer.tx_block_ack.is_some())
+        self.smallest_operational_tx_block_ack_window().is_some()
+    }
+
+    /// Smallest currently operational downlink Block Ack window.
+    ///
+    /// A scheduler choosing a batch before it inspects the destination peer
+    /// must not wait for more frames than any operational peer can admit. The
+    /// per-peer agreement remains authoritative when the aggregate is built.
+    pub fn smallest_operational_tx_block_ack_window(&self) -> Option<u16> {
+        self.peers()
+            .filter_map(|peer| peer.tx_block_ack.map(|agreement| agreement.window))
+            .min()
     }
 
     pub fn associated_count(&self) -> u8 {

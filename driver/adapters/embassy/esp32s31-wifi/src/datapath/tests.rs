@@ -1113,13 +1113,34 @@ fn enqueue_frame(device: &mut Device) {
 }
 
 #[test]
-fn aggregate_batch_window_includes_the_first_published_frame() {
-    assert!(!should_collect_network_batch(1, 1));
-    assert!(should_collect_network_batch(32, 1));
-    assert!(should_collect_network_batch(32, 2));
-    assert!(should_collect_network_batch(32, 31));
-    assert!(!should_collect_network_batch(32, 32));
-    assert!(!should_collect_network_batch(32, 0));
+fn adaptive_batching_sends_isolated_frames_and_collects_proven_bursts() {
+    let start = Instant::from_millis(100);
+    let mut state = TxBatchState::new();
+
+    assert_eq!(state.collection_deadline(1, 1, start), None);
+    assert_eq!(state.collection_deadline(32, 1, start), None);
+
+    state.note_started(1);
+    // A prepared standby proves continuation even when the active hardware
+    // transaction itself took longer than the time used for an empty gap.
+    let second = start + Duration::from_millis(10);
+    let deadline = state
+        .collection_deadline(32, 1, second)
+        .expect("a standby without an observed empty boundary proves a burst");
+    assert_eq!(deadline, second + TX_BATCH_MAX_WAIT);
+    assert_eq!(state.collection_deadline(32, 2, second), Some(deadline));
+    assert_eq!(state.collection_deadline(32, 32, second), None);
+
+    state.note_started(16);
+    state.note_idle(second);
+    let warm = second + Duration::from_millis(3);
+    assert!(state.collection_deadline(32, 1, warm).is_some());
+
+    state.note_started(1);
+    state.note_idle(warm);
+    let quiet = warm + TX_BURST_QUIET_TIMEOUT + Duration::from_millis(1);
+    assert_eq!(state.collection_deadline(32, 1, quiet), None);
+    assert!(state.collection_deadline(32, 2, quiet).is_some());
 }
 
 #[test]

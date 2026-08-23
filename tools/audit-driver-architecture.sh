@@ -128,6 +128,71 @@ then
     echo "legacy datapath-level network forwarding surface survived" >&2
     exit 1
 fi
+
+# Role and integration cutovers have one path each. Reintroducing a flat
+# connected facade or a generic `runtime` bucket would recreate parallel APIs
+# and make ownership ambiguous again.
+test -f "$adapter_source/roles/station/connected/mod.rs"
+test -f "$adapter_source/roles/access_point/concurrent.rs"
+if find "$adapter_source/roles/station" -maxdepth 1 \
+    \( -name 'connected_*.rs' -o -name 'port.rs' -o -name port \) | rg .
+then
+    echo "flat/legacy connected-station path survived the station SPI cutover" >&2
+    exit 1
+fi
+if test -e "$adapter_source/roles/access_point/runtime.rs"; then
+    echo "ambiguous AP runtime module survived the concurrent-role cutover" >&2
+    exit 1
+fi
+
+integration_source="driver/integration/esp32s31/embassy-wifi/src"
+for required in \
+    supervisor/mod.rs \
+    supervisor/station.rs \
+    supervisor/access_point.rs \
+    supervisor/concurrent.rs \
+    status/mod.rs \
+    diagnostics.rs
+do
+    test -f "$integration_source/$required" || {
+        echo "required integration responsibility module is missing: $required" >&2
+        exit 1
+    }
+done
+for removed in connected.rs runtime.rs access_point_status.rs station_status.rs; do
+    if test -e "$integration_source/$removed"; then
+        echo "legacy integration monolith survived: $removed" >&2
+        exit 1
+    fi
+done
+
+runner_source="hil/host/runner/src"
+for responsibility in transport traffic evidence qualification reporting; do
+    test -f "$runner_source/$responsibility/mod.rs" || {
+        echo "HIL runner responsibility module is missing: $responsibility" >&2
+        exit 1
+    }
+done
+if find "$runner_source" -maxdepth 1 -type f \
+    \( -name '*traffic*.rs' -o -name '*qualification*.rs' -o -name '*fixture*.rs' \) | rg .
+then
+    echo "flat HIL transport/traffic/qualification module survived" >&2
+    exit 1
+fi
+
+# HIL consumes stable decoded integration observations. Raw public-header
+# parsing and chip MAC/STA/IEEE implementation dependencies belong below that
+# boundary and must not return to the runtime image.
+hil_runtime="hil/targets/esp32s31/runtime"
+if rg -n \
+    'open-esp-radio-(esp32s31-wifi-(mac|sta)|ieee80211)' \
+    "$hil_runtime/Cargo.toml" \
+    || rg -n 'PUBLIC_HEADER_SIZE|decode_rx_phy_info|ConnectedRxEvent|public_qos_sequence' \
+        "$hil_runtime/src" --glob '*.rs'
+then
+    echo "raw or low-level RX decoding survived in HIL runtime" >&2
+    exit 1
+fi
 if rg -n '^qualification[[:space:]]*=' driver --glob Cargo.toml
 then
     echo "qualification feature survived in a production manifest" >&2
@@ -138,6 +203,41 @@ if rg -n 'rx-delivery-observation' \
     driver/integration/esp32s31/embassy-wifi
 then
     echo "obsolete narrow diagnostics feature survived the adapter cutover" >&2
+    exit 1
+fi
+
+# Ordinary production images must not retain observer pointers or hard-IRQ
+# accounting. A disabled callback is still state and branching in the hot
+# owner graph, so every observer field and the RX-post counter must be removed
+# by cfg, not merely initialized to None/zero.
+ordinary_diagnostics_sources=(
+    "$adapter_source/datapath/irq/mac_runtime.rs"
+    "$adapter_source/datapath/rx"
+    "$adapter_source/roles"
+)
+if ! awk '
+    function guarded() {
+        return $0 ~ /#\[cfg\(/ || previous ~ /#\[cfg\(/ || before_previous ~ /#\[cfg\(/
+    }
+    {
+        if (($0 ~ /(pipeline_observer|aggregate_tx_observer|terminal_observer|delivery_observer):[[:space:]]*Option</ ||
+             $0 ~ /observer:[[:space:]]*Option<&.*(AggregateTxObserver|RxPipelineObserver)/ ||
+             $0 ~ /rx_post_count:[[:space:]]*AtomicU32/) && !guarded()) {
+            print FILENAME ":" FNR ": ordinary-build diagnostic state: " $0 > "/dev/stderr"
+            failed = 1
+        }
+        before_previous = previous
+        previous = $0
+    }
+    END { exit failed }
+' $(find "${ordinary_diagnostics_sources[@]}" -type f -name '*.rs' -print | sort); then
+    echo "observer or hard-IRQ diagnostic state survived the ordinary driver graph" >&2
+    exit 1
+fi
+if rg -n '\.dropped_events\(\)|dropped:[[:space:]]*AtomicU32' \
+    "$adapter_source/roles/station/control"* --glob '*.rs'
+then
+    echo "lossy station control-mailbox accounting survived the correctness cutover" >&2
     exit 1
 fi
 

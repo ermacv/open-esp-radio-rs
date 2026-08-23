@@ -1009,6 +1009,13 @@ where
         }
     }
 
+    fn preferred_tx_batch_size_for(&self, interface: NetworkInterfaceId) -> usize {
+        match self.role_for(interface) {
+            DatapathPairRole::First => self.first_tx.preferred_batch_size(),
+            DatapathPairRole::Second => self.second_tx.preferred_batch_size(),
+        }
+    }
+
     fn prepared_tx_frame_count(&self) -> usize {
         match self.prepared.or_else(|| {
             unique_prepared_role(self.first_tx.has_prepared(), self.second_tx.has_prepared())

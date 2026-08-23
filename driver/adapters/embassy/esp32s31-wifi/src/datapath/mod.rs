@@ -27,15 +27,110 @@ pub mod rx;
 pub mod services;
 pub mod tx;
 
-/// Maximum latency added while collecting an aggregate-sized network burst.
-/// The target itself comes from the negotiated BlockAck window; this deadline
-/// prevents sparse/control traffic from waiting indefinitely for that target.
-// At the qualified 100+ Mbit/s offer rate, filling a negotiated 32-MPDU BA
-// window from an empty network queue takes roughly 2 ms. Keep that latency
-// explicit and bounded: a full window starts immediately, while sparse
-// traffic cannot be held beyond this deadline.
+/// Maximum latency added while collecting one already-detected network burst.
+// This is a burst-only deadline: the first frame after an observed quiet
+// period bypasses it completely.
 const TX_BATCH_MAX_WAIT: Duration = Duration::from_millis(2);
+/// Maximum gap between single-frame admissions that still identifies one
+/// continuous producer burst. Isolated traffic never enters batching mode.
+const TX_BURST_ENTRY_GAP: Duration = Duration::from_millis(2);
+/// Keep a proven burst warm across a short, explicitly observed empty
+/// producer frontier. The next frame after a longer idle interval returns to
+/// the immediate path; time spent inside an active hardware transaction does
+/// not count as producer silence.
+const TX_BURST_QUIET_TIMEOUT: Duration = Duration::from_millis(4);
 const RX_TX_FAIRNESS_QUANTUM_FRAMES: u32 = 8;
+
+#[derive(Clone, Copy, Debug)]
+struct TxBatchState {
+    /// A started transaction may be followed directly by a prepared standby
+    /// without the scheduler ever observing an empty publication frontier.
+    continuation_armed: bool,
+    burst: bool,
+    idle_since: Option<Instant>,
+    collection_deadline: Option<Instant>,
+}
+
+impl TxBatchState {
+    const fn new() -> Self {
+        Self {
+            continuation_armed: false,
+            burst: false,
+            idle_since: None,
+            collection_deadline: None,
+        }
+    }
+
+    /// Return a bounded collection deadline only after queue history proves a
+    /// burst. The first frame after a quiet period always remains immediate.
+    fn collection_deadline(
+        &mut self,
+        preferred: usize,
+        ready_frames: usize,
+        now: Instant,
+    ) -> Option<Instant> {
+        if preferred <= 1 || ready_frames == 0 || ready_frames >= preferred {
+            self.collection_deadline = None;
+            if ready_frames >= preferred && preferred > 1 {
+                self.burst = true;
+            }
+            return None;
+        }
+
+        if let Some(idle_since) = self.idle_since.take() {
+            let quiet_for = now.duration_since(idle_since);
+            if self.burst {
+                if quiet_for >= TX_BURST_QUIET_TIMEOUT {
+                    self.burst = false;
+                    self.continuation_armed = false;
+                }
+            } else if self.continuation_armed && quiet_for <= TX_BURST_ENTRY_GAP {
+                self.burst = true;
+            } else {
+                self.continuation_armed = false;
+            }
+        } else if self.continuation_armed {
+            // No empty scheduler boundary separated this publication from the
+            // preceding active transaction. This is a proven continuation
+            // even when the hardware transaction itself exceeded the entry
+            // time used for an observed empty gap.
+            self.burst = true;
+        }
+
+        if ready_frames >= 2 {
+            self.burst = true;
+        }
+
+        if !self.burst {
+            self.collection_deadline = None;
+            return None;
+        }
+
+        let deadline = *self
+            .collection_deadline
+            .get_or_insert(now + TX_BATCH_MAX_WAIT);
+        if now < deadline {
+            Some(deadline)
+        } else {
+            self.collection_deadline = None;
+            None
+        }
+    }
+
+    fn note_started(&mut self, frames: usize) {
+        self.continuation_armed = true;
+        self.idle_since = None;
+        self.collection_deadline = None;
+        if frames >= 2 {
+            self.burst = true;
+        }
+    }
+
+    fn note_idle(&mut self, now: Instant) {
+        self.idle_since.get_or_insert(now);
+        self.collection_deadline = None;
+    }
+}
 
 /// Scheduler-owned limit for one role-specific protocol RX turn.
 ///
@@ -55,10 +150,6 @@ fn rx_protocol_frame_budget(rx_frame_deficit: i64, network_tx_pending: bool) -> 
         .saturating_sub(rx_frame_deficit)
         .max(1);
     Some(usize::try_from(remaining).unwrap_or(usize::MAX))
-}
-
-const fn should_collect_network_batch(preferred: usize, available: usize) -> bool {
-    preferred > 1 && available != 0 && available < preferred
 }
 
 /// Terminal, non-error outcome of one role-neutral radio event loop.
@@ -284,6 +375,14 @@ pub trait DatapathServices<
     /// Non-aggregate services keep the default immediate single-frame path.
     fn preferred_tx_batch_size(&self) -> usize {
         1
+    }
+
+    /// Preferred batch for a concrete logical interface before its first
+    /// frame is claimed. Standalone services use one policy; paired services
+    /// override this to preserve independent STA/AP aggregation contracts.
+    fn preferred_tx_batch_size_for(&self, interface: NetworkInterfaceId) -> usize {
+        let _ = interface;
+        self.preferred_tx_batch_size()
     }
 
     /// MPDUs already retained in the software-owned standby arena.

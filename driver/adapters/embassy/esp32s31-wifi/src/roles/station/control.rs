@@ -409,10 +409,6 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.take_doze_permit()
     }
 
-    pub fn dropped_events(&self) -> u32 {
-        self.receiver.dropped()
-    }
-
     pub fn shutdown<H, X>(
         &mut self,
         hardware: &mut H,
@@ -442,9 +438,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     }
 
     pub fn has_immediate_work(&self) -> bool {
-        self.security
-            .as_ref()
-            .is_some_and(ConnectedWpa2Security::tx_in_flight)
+        self.receiver.overflowed()
+            || self
+                .security
+                .as_ref()
+                .is_some_and(ConnectedWpa2Security::tx_in_flight)
             || self.core.has_immediate_work(!self.receiver.is_empty())
     }
 
@@ -543,6 +541,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                     context,
                 )
             });
+        }
+
+        if self.receiver.overflowed() {
+            return Ok(DatapathControlProgress::Exit(
+                ConnectedDisconnectReason::ControlMailboxOverflow,
+            ));
         }
 
         // A peer disconnect keeps terminal priority once TX ownership is

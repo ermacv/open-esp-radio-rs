@@ -83,7 +83,7 @@ owner driver/chips/esp32s31/wifi/dma/src/rx_ring.rs complete_pending_reload
 owner driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/hardware.rs complete_staged_rx_reload
 owner driver/adapters/embassy/esp32s31-wifi/src/datapath/mod.rs DatapathRunner
 owner driver/adapters/embassy/esp32s31-wifi/src/roles/station/tx.rs Esp32s31ConnectedTx
-owner driver/adapters/embassy/esp32s31-wifi/src/roles/station/port.rs Esp32s31ConnectedStaPort
+owner driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port.rs Esp32s31ConnectedStaPort
 owner driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs Esp32s31ConnectedStaTeardownPort
 owner driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/dma.rs Esp32s31PreparedRx
 owner driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/reorder.rs RxReorderFrameStorage
@@ -104,8 +104,8 @@ test driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/dma/tests.rs finite_s
 test driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/reorder.rs board_profile_selects_the_allocated_reorder_slot_count
 test driver/chips/esp32s31/wifi/sta/src/connected_rx.rs dispatches_protected_ethernet_and_owns_duplicate_history
 test driver/chips/esp32s31/wifi/sta/src/tx_epoch.rs epoch_never_overwrites_or_duplicates_the_phase_owner
-test driver/adapters/embassy/esp32s31-wifi/src/roles/station/port/tests.rs port_binds_rx_and_control_to_one_validated_peer_plan
-test driver/adapters/embassy/esp32s31-wifi/src/roles/station/port/tests.rs compact_profile_rejects_rx_window_larger_than_reorder_storage
+test driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port/tests.rs port_binds_rx_and_control_to_one_validated_peer_plan
+test driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port/tests.rs compact_profile_rejects_rx_window_larger_than_reorder_storage
 vendor-anchor verification/vendor/targets/esp32s31/registers/evidence/vendor-rom.toml wDev_AppendRxBlocks
 vendor-anchor verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml hal_mac_tx_config_timeout
 vendor-anchor verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml dbg_dump_rx_ppdu
@@ -242,7 +242,7 @@ owner driver/chips/esp32s31/wifi/sta/src/attempt.rs Esp32s31StaAttempt
 owner driver/chips/esp32s31/wifi/sta/src/peer.rs Esp32s31StaPeerPort
 owner driver/chips/esp32s31/wifi/sta/src/wpa2.rs Esp32s31Wpa2HandshakePort
 owner driver/chips/esp32s31/wifi/sta/src/wpa2.rs Esp32s31Wpa2KeyPort
-owner driver/adapters/embassy/esp32s31-wifi/src/roles/station/port.rs Esp32s31ConnectedStaPort
+owner driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port.rs Esp32s31ConnectedStaPort
 owner driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs Esp32s31ConnectedStaTeardownPort
 owner driver/adapters/embassy/esp32s31-wifi/src/roles/station/epoch.rs Esp32s31DisconnectedStaEpoch
 owner driver/adapters/embassy/esp32s31-wifi/src/roles/station/epoch.rs Esp32s31ReconnectedStaEpoch
@@ -275,7 +275,7 @@ test driver/adapters/embassy/esp32s31-wifi/src/roles/station/join_port/tests.rs 
 test driver/chips/esp32s31/wifi/sta/src/attempt.rs every_borrowed_phase_failure_returns_the_exact_owner_and_frontier
 test driver/chips/esp32s31/wifi/sta/src/peer.rs port_owns_scan_and_association_peer_programming
 test driver/chips/esp32s31/wifi/sta/src/wpa2.rs eapol_copy_accepts_only_the_selected_station_link
-test driver/adapters/embassy/esp32s31-wifi/src/roles/station/port/tests.rs invalid_config_returns_the_exact_peer_before_owner_handoff
+test driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port/tests.rs invalid_config_returns_the_exact_peer_before_owner_handoff
 test driver/adapters/embassy/esp32s31-wifi/src/roles/station/epoch.rs running_scan_round_trip_and_reconnect_preserve_every_owner
 test driver/adapters/embassy/esp32s31-wifi/src/roles/station/tests.rs peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it
 test driver/adapters/embassy/wifi/src/connected_tasks.rs missed_group_deadline_remains_a_pending_stop

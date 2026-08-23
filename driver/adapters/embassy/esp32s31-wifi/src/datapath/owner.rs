@@ -133,41 +133,73 @@ where
         }
     }
 
+    /// Select the VIF that owns the next network TX boundary without claiming
+    /// its frame or advancing the paired fairness accounting.
+    pub(super) fn next_network_tx_interface(&self) -> Option<NetworkInterfaceId> {
+        if let Some(interface) = self.prepared_tx_interface {
+            return Some(interface);
+        }
+        if self.services.has_prepared_tx() {
+            return Some(self.retained_prepared_tx_interface());
+        }
+        match self.interfaces {
+            DatapathInterfaceScope::Single(interface) => {
+                (self.network.tx_queue_len(interface) != 0).then_some(interface)
+            }
+            DatapathInterfaceScope::Pair { first, second } => {
+                let pending = [
+                    self.network.tx_queue_len(first) != 0,
+                    self.network.tx_queue_len(second) != 0,
+                ];
+                match select_pair_tx_slot(pending, self.pair_tx_served_frames) {
+                    Some(0) => Some(first),
+                    Some(1) => Some(second),
+                    None => None,
+                    Some(_) => unreachable!("paired TX has exactly two slots"),
+                }
+            }
+        }
+    }
+
+    pub(super) fn tx_batch_state_slot(&self, interface: NetworkInterfaceId) -> usize {
+        match self.interfaces {
+            DatapathInterfaceScope::Single(owned) => {
+                assert_eq!(interface, owned);
+                0
+            }
+            DatapathInterfaceScope::Pair { first, second: _ } if interface == first => 0,
+            DatapathInterfaceScope::Pair { first: _, second } => {
+                assert_eq!(interface, second);
+                1
+            }
+        }
+    }
+
+    /// Whether one logical interface owns queued or retained network TX at
+    /// the current hardware-idle boundary. This is deliberately per VIF: a
+    /// busy peer must not keep an inactive role's batching history warm.
+    pub(super) fn network_tx_pending_for(&self, interface: NetworkInterfaceId) -> bool {
+        let _ = self.tx_batch_state_slot(interface);
+        self.network.tx_queue_len(interface) != 0
+            || (self.services.has_prepared_tx()
+                && self.retained_prepared_tx_interface() == interface)
+    }
+
     pub(super) fn try_receive_network_tx(
         &mut self,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
     {
-        if let Some(interface) = self.prepared_tx_interface {
-            return self.network.try_receive_tx(interface);
-        }
-        match self.interfaces {
-            DatapathInterfaceScope::Single(interface) => self.network.try_receive_tx(interface),
-            DatapathInterfaceScope::Pair { first, second } => {
-                let first_pending = self.network.tx_queue_len(first) != 0;
-                let second_pending = self.network.tx_queue_len(second) != 0;
-                let slot = select_pair_tx_slot(
-                    [first_pending, second_pending],
-                    self.pair_tx_served_frames,
-                );
-                let interface = match slot {
-                    Some(0) => {
-                        if !second_pending {
-                            self.pair_tx_served_frames = [0; 2];
-                        }
-                        first
-                    }
-                    Some(1) => {
-                        if !first_pending {
-                            self.pair_tx_served_frames = [0; 2];
-                        }
-                        second
-                    }
-                    None => return None,
-                    Some(_) => unreachable!("paired TX has exactly two slots"),
-                };
-                self.network.try_receive_tx(interface)
+        let interface = self.next_network_tx_interface()?;
+        if let DatapathInterfaceScope::Pair { first, second } = self.interfaces
+            && self.prepared_tx_interface.is_none()
+        {
+            let first_pending = self.network.tx_queue_len(first) != 0;
+            let second_pending = self.network.tx_queue_len(second) != 0;
+            if !first_pending || !second_pending {
+                self.pair_tx_served_frames = [0; 2];
             }
         }
+        self.network.try_receive_tx(interface)
     }
 
     pub(super) fn account_pair_tx_frames(&mut self, interface: NetworkInterfaceId, frames: usize) {

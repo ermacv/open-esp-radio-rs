@@ -15,7 +15,8 @@ use open_esp_radio_wifi_sta::station::{
     StaLifecycleStage, StaReconnectPolicy,
 };
 
-use super::connected_epoch::{
+use super::connected::{
+    Esp32s31ConnectedStationExit, Esp32s31StationReconnectSource,
     coalesce_disconnected_station_command, complete_connected_station_command,
 };
 use super::*;

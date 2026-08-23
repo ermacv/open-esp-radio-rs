@@ -56,10 +56,12 @@ impl BoundedRxTurn {
 }
 
 #[derive(Default)]
+#[cfg(any(feature = "diagnostics", test))]
 pub(super) struct BlockAckObservationState {
     operational: bool,
 }
 
+#[cfg(any(feature = "diagnostics", test))]
 impl BlockAckObservationState {
     fn update(&mut self, operational: bool, observer: Option<&dyn AggregateTxObserver>) {
         if operational == self.operational {
@@ -121,11 +123,13 @@ pub(super) struct Esp32s31AccessPointDatapathServices<
     pub(super) security_material: S,
     pub(super) set_link_state: L,
     pub(super) publish_shared_rx: Q,
+    #[cfg(any(feature = "diagnostics", test))]
     pub(super) aggregate_tx_observer: Option<&'run dyn AggregateTxObserver>,
     #[cfg(feature = "diagnostics")]
     pub(super) delivery_observer: Option<&'run dyn RxNetworkDeliveryObserver>,
     pub(super) last_status_revision: u32,
     pub(super) network_link_up: bool,
+    #[cfg(any(feature = "diagnostics", test))]
     pub(super) block_ack_observation: BlockAckObservationState,
     #[cfg(feature = "diagnostics")]
     pub(super) network_backpressure_since_micros: Option<u64>,
@@ -207,6 +211,7 @@ where
             });
             self.network_link_up = authorized;
         }
+        #[cfg(any(feature = "diagnostics", test))]
         self.block_ack_observation.update(
             self.control.has_operational_tx_block_ack(),
             self.aggregate_tx_observer,
@@ -214,6 +219,7 @@ where
     }
 
     pub(super) fn clear_block_ack_observation(&mut self) {
+        #[cfg(any(feature = "diagnostics", test))]
         self.block_ack_observation
             .update(false, self.aggregate_tx_observer);
     }
@@ -294,7 +300,7 @@ where
             let result = network.try_send_parts(frame);
             #[cfg(feature = "diagnostics")]
             let result = {
-                let delivery = RxNetworkDeliveryEvent { frame, raw: None };
+                let delivery = RxNetworkDeliveryEvent::decoded(frame, None);
                 let observer = self.delivery_observer;
                 let mut before_publish = || {
                     if let Some(observer) = observer {
@@ -337,7 +343,7 @@ where
                     #[cfg(feature = "diagnostics")]
                     if let Some(observer) = self.delivery_observer {
                         observer.dropped(
-                            RxNetworkDeliveryEvent { frame, raw: None },
+                            RxNetworkDeliveryEvent::decoded(frame, None),
                             RxEnqueueError::InvalidLength(error),
                         );
                     }
@@ -740,6 +746,7 @@ where
         wake: WifiTxWake,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
         async move {
+            #[cfg(any(feature = "diagnostics", test))]
             if matches!(wake, WifiTxWake::Interrupt { .. })
                 && let Some(observer) = self.aggregate_tx_observer
             {

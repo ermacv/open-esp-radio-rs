@@ -2,8 +2,6 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_wifi_softmac::MacRxEvidence;
-
 pub const RX_HE_MCS_BUCKETS: usize = 12;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -88,15 +86,17 @@ impl RxSmpduCounters {
         }
     }
 
-    pub fn observe(&self, evidence: MacRxEvidence<bool>) {
-        let counter = match evidence {
-            MacRxEvidence::HardwareObserved(true) => &self.s_mpdu_frames,
-            MacRxEvidence::HardwareObserved(false) => &self.not_s_mpdu_frames,
-            MacRxEvidence::ProtocolValidated(_) | MacRxEvidence::Unavailable => {
-                &self.unavailable_frames
-            }
+    pub fn observe_hardware(&self, value: bool) {
+        let counter = if value {
+            &self.s_mpdu_frames
+        } else {
+            &self.not_s_mpdu_frames
         };
         counter.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn observe_unavailable(&self) {
+        self.unavailable_frames.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn snapshot(&self) -> RxSmpduSnapshot {
@@ -172,27 +172,34 @@ impl RxAmpduCounters {
         }
     }
 
-    pub fn observe(&self, evidence: MacRxEvidence<bool>) {
-        let (total, provenance) = match evidence {
-            MacRxEvidence::HardwareObserved(true) => {
+    pub fn observe_hardware(&self, value: bool) {
+        let (total, provenance) = match value {
+            true => {
                 (&self.ampdu_frames, &self.hardware_ampdu_frames)
             }
-            MacRxEvidence::HardwareObserved(false) => {
+            false => {
                 (&self.not_ampdu_frames, &self.hardware_not_ampdu_frames)
-            }
-            MacRxEvidence::ProtocolValidated(true) => {
-                (&self.ampdu_frames, &self.protocol_ampdu_frames)
-            }
-            MacRxEvidence::ProtocolValidated(false) => {
-                (&self.not_ampdu_frames, &self.protocol_not_ampdu_frames)
-            }
-            MacRxEvidence::Unavailable => {
-                self.unavailable_frames.fetch_add(1, Ordering::Relaxed);
-                return;
             }
         };
         total.fetch_add(1, Ordering::Relaxed);
         provenance.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn observe_protocol(&self, value: bool) {
+        let (total, provenance) = match value {
+            true => {
+                (&self.ampdu_frames, &self.protocol_ampdu_frames)
+            }
+            false => {
+                (&self.not_ampdu_frames, &self.protocol_not_ampdu_frames)
+            }
+        };
+        total.fetch_add(1, Ordering::Relaxed);
+        provenance.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn observe_unavailable(&self) {
+        self.unavailable_frames.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn snapshot(&self) -> RxAmpduSnapshot {
@@ -221,15 +228,15 @@ mod tests {
     #[test]
     fn evidence_keeps_hardware_protocol_and_unavailable_provenance_distinct() {
         let smpdu = RxSmpduCounters::new();
-        smpdu.observe(MacRxEvidence::HardwareObserved(true));
-        smpdu.observe(MacRxEvidence::ProtocolValidated(true));
+        smpdu.observe_hardware(true);
+        smpdu.observe_unavailable();
         assert_eq!(smpdu.snapshot().s_mpdu_frames, 1);
         assert_eq!(smpdu.snapshot().unavailable_frames, 1);
 
         let ampdu = RxAmpduCounters::new();
-        ampdu.observe(MacRxEvidence::HardwareObserved(true));
-        ampdu.observe(MacRxEvidence::ProtocolValidated(true));
-        ampdu.observe(MacRxEvidence::Unavailable);
+        ampdu.observe_hardware(true);
+        ampdu.observe_protocol(true);
+        ampdu.observe_unavailable();
         let snapshot = ampdu.snapshot();
         assert_eq!(snapshot.ampdu_frames, 2);
         assert_eq!(snapshot.hardware_ampdu_frames, 1);

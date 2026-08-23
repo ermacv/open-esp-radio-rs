@@ -13,5 +13,4 @@ network-scheduler = ["dep:embassy-net", "embassy-net/cooperative-scheduler-telem
 embassy-net = { workspace = true, optional = true }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../../driver/chips/esp32s31/wifi/mac" }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../driver/adapters/embassy/esp32s31-wifi" }
-open-esp-radio-wifi-softmac = { path = "../../../../driver/wifi/softmac" }
 open-esp-radio-hil-protocol = { path = "../../../protocol" }

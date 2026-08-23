@@ -12,39 +12,11 @@ use clap::{Parser, Subcommand};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-mod access_point_qualification;
-mod bidirectional;
-mod controlled_ap;
-mod controlled_client;
-mod controlled_openwrt_client;
-mod fixture_lock;
-mod icmp_latency;
-mod lab_config;
-mod local_air_monitor;
-mod local_linux_fixture;
-mod network_helper;
-mod openwrt_fixture;
-mod openwrt_tx_monitor;
-mod paced_tcp;
-mod paced_udp;
-mod rx_delivery;
-mod rx_traffic;
-mod scenario;
-mod stack_audit;
-mod startup_artifact;
-mod station_access_point_qualification;
-mod station_access_point_reconnect;
-mod station_ap_absence;
-mod station_ap_loss;
-mod station_fixture;
-mod station_lifecycle;
-mod tcp_traffic;
-mod timebase;
-mod traffic_capture;
-mod tx_traffic;
-mod udp_socket;
-mod wifi_capture;
-mod wifi_control;
+mod evidence;
+mod qualification;
+mod reporting;
+mod traffic;
+mod transport;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -144,8 +116,12 @@ enum ScenarioCommand {
 
 #[derive(Debug, Subcommand)]
 enum ImageCommand {
-    Build { class: scenario::ImageClass },
-    Flash { class: scenario::ImageClass },
+    Build {
+        class: qualification::scenario::ImageClass,
+    },
+    Flash {
+        class: qualification::scenario::ImageClass,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -158,12 +134,12 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     let lab_path = cli
         .lab_config
-        .unwrap_or(lab_config::LabConfig::default_path()?);
+        .unwrap_or(transport::lab_config::LabConfig::default_path()?);
     let catalog_path = root.join("hil/scenarios");
     match cli.command {
-        CliCommand::Doctor => doctor(&root, &lab_config::LabConfig::load(&lab_path)?),
+        CliCommand::Doctor => doctor(&root, &transport::lab_config::LabConfig::load(&lab_path)?),
         CliCommand::Scenario { command } => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let catalog = qualification::scenario::Catalog::load(&catalog_path)?;
             match command {
                 ScenarioCommand::List => {
                     println!("{}", serde_json::to_string_pretty(catalog.all())?);
@@ -176,7 +152,7 @@ fn run() -> Result<()> {
                     println!(
                         "{}",
                         serde_json::json!({
-                            "schema": scenario::SCENARIO_SCHEMA,
+                            "schema": qualification::scenario::SCENARIO_SCHEMA,
                             "scenarios": catalog.all().len(),
                             "status": "valid"
                         })
@@ -192,8 +168,8 @@ fn run() -> Result<()> {
             };
             let artifacts = build(&root, class)?;
             if flash_requested {
-                let lab = lab_config::LabConfig::load(&lab_path)?;
-                let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+                let lab = transport::lab_config::LabConfig::load(&lab_path)?;
+                let _fixture = transport::fixture_lock::FixtureLock::acquire(&root)?;
                 flash(&root, &artifacts, &lab.device.serial)?;
             }
             print_artifacts(class, &artifacts, flash_requested)
@@ -201,21 +177,21 @@ fn run() -> Result<()> {
         CliCommand::Device {
             command: DeviceCommand::Status,
         } => {
-            let lab = lab_config::LabConfig::load(&lab_path)?;
-            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            let lab = transport::lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = transport::fixture_lock::FixtureLock::acquire(&root)?;
             device_status(&root, &lab)
         }
         CliCommand::Run { scenario: id } => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let catalog = qualification::scenario::Catalog::load(&catalog_path)?;
             let selected = catalog.get(&id)?.clone();
-            let lab = lab_config::LabConfig::load(&lab_path)?;
-            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            let lab = transport::lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = transport::fixture_lock::FixtureLock::acquire(&root)?;
             run_scenario(&root, &lab, &selected)
         }
         CliCommand::RunAll { tag } => {
-            let catalog = scenario::Catalog::load(&catalog_path)?;
-            let lab = lab_config::LabConfig::load(&lab_path)?;
-            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            let catalog = qualification::scenario::Catalog::load(&catalog_path)?;
+            let lab = transport::lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = transport::fixture_lock::FixtureLock::acquire(&root)?;
             run_all(&root, &lab, &catalog, &tag)
         }
     }
@@ -230,7 +206,7 @@ fn repository_root() -> Result<PathBuf> {
         .ok_or_else(|| "HIL runner must live inside the repository".into())
 }
 
-fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
+fn doctor(root: &std::path::Path, lab: &transport::lab_config::LabConfig) -> Result<()> {
     let firmware = root.join("hil/targets/esp32s31/Cargo.toml");
     if !firmware.is_file() {
         return Err(format!("missing embedded HIL workspace: {}", firmware.display()).into());
@@ -249,22 +225,22 @@ fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
     }
     println!("serial_device=PASS");
     match &lab.station_fixture {
-        lab_config::StationFixtureConfig::LocalLinux(_) => {
-            controlled_ap::doctor_local()?;
+        transport::lab_config::StationFixtureConfig::LocalLinux(_) => {
+            transport::controlled_ap::doctor_local()?;
             println!("station_fixture=local-linux status=PASS");
         }
-        lab_config::StationFixtureConfig::OpenWrt(config) => {
-            openwrt_fixture::doctor(config)?;
-            openwrt_tx_monitor::doctor(config)?;
-            local_air_monitor::doctor(config)?;
-            controlled_openwrt_client::doctor(&lab.access_point, config)?;
+        transport::lab_config::StationFixtureConfig::OpenWrt(config) => {
+            transport::openwrt_fixture::doctor(config)?;
+            transport::openwrt_tx_monitor::doctor(config)?;
+            transport::local_air_monitor::doctor(config)?;
+            transport::controlled_openwrt_client::doctor(&lab.access_point, config)?;
             println!("station_fixture=openwrt status=PASS");
         }
-        lab_config::StationFixtureConfig::External(_) => {
+        transport::lab_config::StationFixtureConfig::External(_) => {
             println!("station_fixture=external status=UNMANAGED");
         }
     }
-    controlled_client::doctor()?;
+    transport::controlled_client::doctor()?;
     println!("controlled_client=PASS");
     for program in [
         "cargo",
@@ -297,7 +273,7 @@ struct ArtifactReport<'a> {
 }
 
 fn print_artifacts(
-    class: scenario::ImageClass,
+    class: qualification::scenario::ImageClass,
     artifacts: &Artifacts,
     flashed: bool,
 ) -> Result<()> {
@@ -321,12 +297,12 @@ fn sha256_file(path: &Path) -> Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
-fn device_status(root: &Path, lab: &lab_config::LabConfig) -> Result<()> {
+fn device_status(root: &Path, lab: &transport::lab_config::LabConfig) -> Result<()> {
     device_status_at(&root.join("target/hil/esp32s31/device-status"), lab)
 }
 
-fn device_status_at(output: &Path, lab: &lab_config::LabConfig) -> Result<()> {
-    let capture = traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
+fn device_status_at(output: &Path, lab: &transport::lab_config::LabConfig) -> Result<()> {
+    let capture = evidence::traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
     let result = (|| -> Result<_> {
         let capabilities = capture.prepare_protocol(lab)?;
         let operation = capture.query_operation_status(std::time::Duration::from_secs(10))?;
@@ -346,8 +322,8 @@ fn device_status_at(output: &Path, lab: &lab_config::LabConfig) -> Result<()> {
     Ok(())
 }
 
-fn boot_smoke(output: &Path, lab: &lab_config::LabConfig) -> Result<()> {
-    let capture = traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
+fn boot_smoke(output: &Path, lab: &transport::lab_config::LabConfig) -> Result<()> {
+    let capture = evidence::traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
     let result = capture.wait_for_boot_smoke(std::time::Duration::from_secs(10));
     capture.finish_to(output)?;
     result
@@ -355,8 +331,8 @@ fn boot_smoke(output: &Path, lab: &lab_config::LabConfig) -> Result<()> {
 
 fn run_all(
     root: &Path,
-    lab: &lab_config::LabConfig,
-    catalog: &scenario::Catalog,
+    lab: &transport::lab_config::LabConfig,
+    catalog: &qualification::scenario::Catalog,
     tags: &[String],
 ) -> Result<()> {
     let selected = catalog
@@ -372,7 +348,7 @@ fn run_all(
             lab.station_fixture.require_phy(link.phy)?;
         }
     }
-    for class in scenario::ImageClass::ALL {
+    for class in qualification::scenario::ImageClass::ALL {
         let class_scenarios = selected
             .iter()
             .copied()
@@ -396,8 +372,8 @@ fn run_all(
 
 fn run_scenario(
     root: &Path,
-    lab: &lab_config::LabConfig,
-    selected: &scenario::Scenario,
+    lab: &transport::lab_config::LabConfig,
+    selected: &qualification::scenario::Scenario,
 ) -> Result<()> {
     if let Some(link) = selected.link {
         lab.station_fixture.require_phy(link.phy)?;
@@ -468,8 +444,8 @@ fn run_scenario(
 
 fn run_scenario_attempt(
     root: &Path,
-    lab: &lab_config::LabConfig,
-    selected: &scenario::Scenario,
+    lab: &transport::lab_config::LabConfig,
+    selected: &qualification::scenario::Scenario,
     output: &Path,
 ) -> Result<()> {
     let result = validate_flashed_image(lab, selected.image, output)
@@ -501,14 +477,14 @@ fn run_scenario_attempt(
 }
 
 fn validate_flashed_image(
-    lab: &lab_config::LabConfig,
-    expected: scenario::ImageClass,
+    lab: &transport::lab_config::LabConfig,
+    expected: qualification::scenario::ImageClass,
     output: &Path,
 ) -> Result<()> {
-    if expected == scenario::ImageClass::BootSmoke {
+    if expected == qualification::scenario::ImageClass::BootSmoke {
         return Ok(());
     }
-    let capture = traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
+    let capture = evidence::traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
     let capabilities = capture.request_capabilities(std::time::Duration::from_secs(10));
     let capture_result = capture.finish_to(&output.join("image-preflight"));
     let capabilities = capabilities?;
@@ -521,11 +497,13 @@ fn validate_flashed_image(
         capabilities.features.mac_irq_evidence,
         capabilities.features.psram_task_stack,
     ) {
-        (false, false, false, false, true) => scenario::ImageClass::Performance,
-        (true, false, false, false, true) => scenario::ImageClass::Correctness,
-        (true, false, false, true, true) => scenario::ImageClass::DiagnosticMacIrq,
-        (true, true, false, false, true) => scenario::ImageClass::DiagnosticTaskPoll,
-        (true, false, true, false, true) => scenario::ImageClass::DiagnosticRxDelivery,
+        (false, false, false, false, true) => qualification::scenario::ImageClass::Performance,
+        (true, false, false, false, true) => qualification::scenario::ImageClass::Correctness,
+        (true, false, false, true, true) => qualification::scenario::ImageClass::DiagnosticMacIrq,
+        (true, true, false, false, true) => qualification::scenario::ImageClass::DiagnosticTaskPoll,
+        (true, false, true, false, true) => {
+            qualification::scenario::ImageClass::DiagnosticRxDelivery
+        }
         _ => {
             return Err(
                 "flashed image advertises mutually exclusive diagnostic capabilities".into(),
@@ -545,11 +523,11 @@ fn validate_flashed_image(
 
 fn execute_workload(
     root: &Path,
-    lab: &lab_config::LabConfig,
-    selected: &scenario::Scenario,
+    lab: &transport::lab_config::LabConfig,
+    selected: &qualification::scenario::Scenario,
     output: &Path,
 ) -> Result<()> {
-    use scenario::{Direction, Workload};
+    use qualification::scenario::{Direction, Workload};
 
     lab.set_data_plane(selected.data_plane);
 
@@ -565,7 +543,7 @@ fn execute_workload(
             | Workload::StationAccessPoint { .. }
     )
     .then(|| {
-        controlled_ap::ControlledAp::start(
+        transport::controlled_ap::ControlledAp::start(
             &lab.station,
             &lab.station_fixture,
             selected
@@ -582,8 +560,8 @@ fn execute_workload(
             boots,
             intervals,
             period_millis,
-        } => timebase::run(
-            timebase::Config {
+        } => transport::timebase::run(
+            transport::timebase::Config {
                 boots: *boots,
                 intervals: *intervals,
                 period_millis: *period_millis,
@@ -620,13 +598,13 @@ fn execute_workload(
                     if let Some(floor) = selected.criteria.minimum_rx_bps {
                         push_option(&mut arguments, "--floor", floor);
                     }
-                    rx_traffic::run(
+                    traffic::rx_traffic::run(
                         arguments,
                         output,
                         lab,
                         selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
-                        selected.image != scenario::ImageClass::Performance,
+                        selected.image != qualification::scenario::ImageClass::Performance,
                     )
                 }
                 Direction::Tx => {
@@ -636,13 +614,13 @@ fn execute_workload(
                     if let Some(floor) = selected.criteria.minimum_tx_bps {
                         push_option(&mut arguments, "--floor", floor);
                     }
-                    tx_traffic::run(
+                    traffic::tx_traffic::run(
                         arguments,
                         output,
                         lab,
                         selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
-                        selected.image != scenario::ImageClass::Performance,
+                        selected.image != qualification::scenario::ImageClass::Performance,
                     )
                 }
                 Direction::Bidirectional => {
@@ -663,11 +641,11 @@ fn execute_workload(
                     if let Some(floor) = selected.criteria.minimum_combined_bps {
                         push_option(&mut arguments, "--combined-floor", floor);
                     }
-                    bidirectional::run(
+                    traffic::bidirectional::run(
                         arguments,
                         output,
                         lab,
-                        bidirectional::RunPolicy {
+                        traffic::bidirectional::RunPolicy {
                             require_exact_delivery: selected.criteria.exact_delivery,
                             require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
                             capture_openwrt_tx_monitor_rx: selected.evidence.openwrt_tx_monitor_rx,
@@ -675,7 +653,7 @@ fn execute_workload(
                                 .evidence
                                 .independent_laptop_monitor_rx,
                             require_driver_observation: selected.image
-                                != scenario::ImageClass::Performance,
+                                != qualification::scenario::ImageClass::Performance,
                         },
                     )
                 }
@@ -704,19 +682,19 @@ fn execute_workload(
                 push_option(&mut arguments, "--rx-floor", floor);
             }
             match direction {
-                Direction::Rx => tcp_traffic::run_rx(
+                Direction::Rx => traffic::tcp_traffic::run_rx(
                     arguments,
                     output,
                     lab,
                     selected.criteria.require_no_beacon_loss,
                 ),
-                Direction::Tx => tcp_traffic::run_tx(
+                Direction::Tx => traffic::tcp_traffic::run_tx(
                     arguments,
                     output,
                     lab,
                     selected.criteria.require_no_beacon_loss,
                 ),
-                Direction::Bidirectional => tcp_traffic::run_bidirectional(
+                Direction::Bidirectional => traffic::tcp_traffic::run_bidirectional(
                     arguments,
                     output,
                     lab,
@@ -741,7 +719,7 @@ fn execute_workload(
             if let Some(maximum) = selected.criteria.maximum_p95_ms {
                 push_option(&mut arguments, "--max-p95-ms", maximum);
             }
-            icmp_latency::run(
+            traffic::icmp_latency::run(
                 arguments,
                 output,
                 lab,
@@ -757,7 +735,7 @@ fn execute_workload(
             push_option(&mut arguments, "--cycles", cycles);
             push_option(&mut arguments, "--boots", boots);
             push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            station_lifecycle::run(
+            qualification::station_lifecycle::run(
                 arguments,
                 output,
                 lab,
@@ -767,7 +745,7 @@ fn execute_workload(
         Workload::StationApLoss { timeout_seconds } => {
             let mut arguments = Vec::new();
             push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            station_ap_loss::run(
+            qualification::station_ap_loss::run(
                 arguments,
                 output,
                 lab,
@@ -780,7 +758,7 @@ fn execute_workload(
         Workload::StationApAbsence { timeout_seconds } => {
             let mut arguments = Vec::new();
             push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            station_ap_absence::run(
+            qualification::station_ap_absence::run(
                 arguments,
                 output,
                 lab,
@@ -808,7 +786,7 @@ fn execute_workload(
             if let Some(length) = snapshot_length {
                 push_option(&mut arguments, "--snapshot-length", length);
             }
-            wifi_control::run(
+            transport::wifi_control::run(
                 operation.id(),
                 arguments,
                 output,
@@ -840,7 +818,7 @@ fn execute_workload(
                 push_option(&mut arguments, "--channel", channel);
             }
             push_option(&mut arguments, "--snapshot-length", snapshot_length);
-            wifi_capture::run(
+            transport::wifi_capture::run(
                 arguments,
                 output,
                 lab,
@@ -856,8 +834,8 @@ fn execute_workload(
             timeout_seconds,
             client,
             traffic,
-        } => access_point_qualification::run(
-            access_point_qualification::Config {
+        } => qualification::access_point::run(
+            qualification::access_point::Config {
                 cycles: *cycles,
                 boots: *boots,
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
@@ -865,9 +843,10 @@ fn execute_workload(
                 traffic: traffic.clone(),
                 criteria: selected.criteria.clone(),
                 expected_link: selected.link,
-                require_driver_observation: selected.image != scenario::ImageClass::Performance,
+                require_driver_observation: selected.image
+                    != qualification::scenario::ImageClass::Performance,
                 require_rx_delivery_evidence: selected.image
-                    == scenario::ImageClass::DiagnosticRxDelivery,
+                    == qualification::scenario::ImageClass::DiagnosticRxDelivery,
             },
             output,
             lab,
@@ -879,8 +858,8 @@ fn execute_workload(
             minimum_bps_per_flow,
             maximum_fairness_skew_percent,
             payload_bytes,
-        } => station_access_point_qualification::run(
-            station_access_point_qualification::Config {
+        } => qualification::station_access_point::run(
+            qualification::station_access_point::Config {
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 duration: std::time::Duration::from_secs(u64::from(*duration_seconds)),
                 rate_bps_per_flow: *rate_bps_per_flow,
@@ -892,7 +871,7 @@ fn execute_workload(
             lab,
         ),
         Workload::StationAccessPointReconnect { timeout_seconds } => {
-            station_access_point_reconnect::run(
+            qualification::station_access_point_reconnect::run(
                 std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 output,
                 lab,
@@ -918,7 +897,7 @@ struct Artifacts {
     application_image: PathBuf,
 }
 
-fn build(root: &Path, class: scenario::ImageClass) -> Result<Artifacts> {
+fn build(root: &Path, class: qualification::scenario::ImageClass) -> Result<Artifacts> {
     let local_esp_hal = local_esp_hal_override()?;
     if local_esp_hal.is_none() {
         return build_resolved(root, class, None);
@@ -941,7 +920,7 @@ fn build(root: &Path, class: scenario::ImageClass) -> Result<Artifacts> {
 
 fn build_resolved(
     root: &Path,
-    class: scenario::ImageClass,
+    class: qualification::scenario::ImageClass,
     local_esp_hal: Option<&Path>,
 ) -> Result<Artifacts> {
     ensure_no_old_application_dependency(root)?;
@@ -983,11 +962,11 @@ fn build_resolved(
         runtime.arg("--locked");
     }
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
-    stack_audit::enable_stack_checks(&mut runtime, &stack_budget);
+    evidence::stack_audit::enable_stack_checks(&mut runtime, &stack_budget);
     run_command(&mut runtime, "build stage-two runtime")?;
     require_file(&runtime_elf, "runtime ELF")?;
 
-    let stack_report = stack_audit::analyze_elf_stack(&runtime_elf, &stack_budget)?;
+    let stack_report = evidence::stack_audit::analyze_elf_stack(&runtime_elf, &stack_budget)?;
     let stack_report_path = output.join("runtime-stack.txt");
     fs::write(
         &stack_report_path,
@@ -1018,10 +997,11 @@ fn build_resolved(
         bootstrap.arg("--locked");
     }
     add_local_esp_hal_patches(&mut bootstrap, local_esp_hal);
-    stack_audit::enable_stack_checks(&mut bootstrap, &stack_budget);
+    evidence::stack_audit::enable_stack_checks(&mut bootstrap, &stack_budget);
     run_command(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&bootstrap_elf, "bootstrap ELF")?;
-    let bootstrap_stack_report = stack_audit::analyze_elf_stack(&bootstrap_elf, &stack_budget)?;
+    let bootstrap_stack_report =
+        evidence::stack_audit::analyze_elf_stack(&bootstrap_elf, &stack_budget)?;
     let bootstrap_stack_report_path = output.join("bootstrap-stack.txt");
     fs::write(
         &bootstrap_stack_report_path,
@@ -1435,7 +1415,11 @@ fn crc32(bytes: &[u8]) -> u32 {
     !crc
 }
 
-fn audit_runtime(elf: &Path, binary: &Path, class: scenario::ImageClass) -> Result<String> {
+fn audit_runtime(
+    elf: &Path,
+    binary: &Path,
+    class: qualification::scenario::ImageClass,
+) -> Result<String> {
     let output = Command::new(program_from_env("LLVM_NM", "llvm-nm"))
         .args(["--defined-only", "--numeric-sort"])
         .arg(elf)
@@ -1480,7 +1464,7 @@ fn audit_runtime(elf: &Path, binary: &Path, class: scenario::ImageClass) -> Resu
     let stack_bottom = symbol("_stack_end")?;
     let stack_top = symbol("_stack_start")?;
     let binary_bytes = fs::metadata(binary)?.len();
-    let initialized_observers_valid = if class == scenario::ImageClass::BootSmoke {
+    let initialized_observers_valid = if class == qualification::scenario::ImageClass::BootSmoke {
         true
     } else {
         ["RX_PIPELINE", "AGGREGATE_TX", "MAC_IRQ", "TASK_POLLS"]
@@ -1641,28 +1625,34 @@ mod tests {
 
     #[test]
     fn image_classes_are_stable_and_do_not_use_workload_environment() {
-        assert_eq!(scenario::ImageClass::ALL.len(), 6);
+        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 6);
         assert!(
-            scenario::ImageClass::ALL
+            qualification::scenario::ImageClass::ALL
                 .into_iter()
-                .all(scenario::ImageClass::uses_psram_task_stack)
+                .all(qualification::scenario::ImageClass::uses_psram_task_stack)
         );
-        assert_eq!(scenario::ImageClass::Performance.id(), "performance");
-        assert_eq!(scenario::ImageClass::Correctness.id(), "correctness");
         assert_eq!(
-            scenario::ImageClass::Correctness.runtime_features(),
+            qualification::scenario::ImageClass::Performance.id(),
+            "performance"
+        );
+        assert_eq!(
+            qualification::scenario::ImageClass::Correctness.id(),
+            "correctness"
+        );
+        assert_eq!(
+            qualification::scenario::ImageClass::Correctness.runtime_features(),
             "open-radio-hil,driver-observation,psram-task-stack,code-psram,profile-psram-data"
         );
         assert_eq!(
-            scenario::ImageClass::DiagnosticMacIrq.runtime_features(),
+            qualification::scenario::ImageClass::DiagnosticMacIrq.runtime_features(),
             "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
         );
         assert_eq!(
-            scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
+            qualification::scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
             "open-radio-hil,psram-task-stack,task-poll-telemetry,network-scheduler-telemetry,code-psram,profile-psram-data"
         );
         assert_eq!(
-            scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
+            qualification::scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
             "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
         );
     }

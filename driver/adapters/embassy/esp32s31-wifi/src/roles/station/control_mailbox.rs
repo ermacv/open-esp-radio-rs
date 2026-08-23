@@ -5,7 +5,7 @@
 
 //! Bounded handoff from borrowed RX dispatch to the connected control owner.
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_futures::select::select3;
 use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
@@ -110,7 +110,7 @@ pub struct ConnectedControlResources<M: RawMutex, const CAPACITY: usize> {
     channel: Channel<M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Channel<M, ConnectedRxControlEvent, 1>,
     security: Channel<M, OwnedEapolFrame, 1>,
-    dropped: AtomicU32,
+    overflowed: AtomicBool,
 }
 
 impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> {
@@ -119,7 +119,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
             channel: Channel::new(),
             terminal: Channel::new(),
             security: Channel::new(),
-            dropped: AtomicU32::new(0),
+            overflowed: AtomicBool::new(false),
         }
     }
 
@@ -139,19 +139,19 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
         ConnectedControlReceiver<'_, M, CAPACITY>,
     ) {
         let resources: &Self = self;
+        resources.overflowed.store(false, Ordering::Release);
         (
             ConnectedControlPublisher {
                 sender: resources.channel.sender(),
                 terminal: resources.terminal.sender(),
                 security: resources.security.sender(),
-                dropped: &resources.dropped,
+                overflowed: &resources.overflowed,
             },
             ConnectedControlReceiver {
                 receiver: resources.channel.receiver(),
                 terminal: resources.terminal.receiver(),
                 security: resources.security.receiver(),
-                dropped: &resources.dropped,
-                dropped_at_start: resources.dropped.load(Ordering::Relaxed),
+                overflowed: &resources.overflowed,
             },
         )
     }
@@ -170,7 +170,7 @@ pub struct ConnectedControlPublisher<'resources, M: RawMutex, const CAPACITY: us
     sender: Sender<'resources, M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Sender<'resources, M, ConnectedRxControlEvent, 1>,
     security: Sender<'resources, M, OwnedEapolFrame, 1>,
-    dropped: &'resources AtomicU32,
+    overflowed: &'resources AtomicBool,
 }
 
 impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
@@ -185,7 +185,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
                     .ok()
                     .map(|frame| self.security.try_send(frame));
             if !matches!(result, Some(Ok(()))) {
-                self.dropped.fetch_add(1, Ordering::Relaxed);
+                self.overflowed.store(true, Ordering::Release);
             }
             return;
         }
@@ -198,7 +198,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
             self.sender.try_send(event)
         };
         if let Err(TrySendError::Full(_)) = result {
-            self.dropped.fetch_add(1, Ordering::Relaxed);
+            self.overflowed.store(true, Ordering::Release);
         }
     }
 }
@@ -208,8 +208,7 @@ pub struct ConnectedControlReceiver<'resources, M: RawMutex, const CAPACITY: usi
     receiver: Receiver<'resources, M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Receiver<'resources, M, ConnectedRxControlEvent, 1>,
     security: Receiver<'resources, M, OwnedEapolFrame, 1>,
-    dropped: &'resources AtomicU32,
-    dropped_at_start: u32,
+    overflowed: &'resources AtomicBool,
 }
 
 impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACITY> {
@@ -249,10 +248,13 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
         self.len() == 0
     }
 
-    pub fn dropped(&self) -> u32 {
-        self.dropped
-            .load(Ordering::Relaxed)
-            .wrapping_sub(self.dropped_at_start)
+    /// Whether this mailbox epoch has lost any semantic control event.
+    ///
+    /// This is functional protocol state, not a diagnostic counter. Once set,
+    /// the connected owner must fail closed and may only clear it by returning
+    /// every endpoint and starting a fresh split epoch.
+    pub fn overflowed(&self) -> bool {
+        self.overflowed.load(Ordering::Acquire)
     }
 }
 
@@ -326,7 +328,7 @@ mod tests {
         });
 
         assert_eq!(receiver.len(), 1);
-        assert_eq!(receiver.dropped(), 1);
+        assert!(receiver.overflowed());
         assert_eq!(
             receiver.try_receive(),
             Some(ConnectedRxControlEvent::BlockAck(first))
@@ -355,7 +357,7 @@ mod tests {
         publisher.publish(ConnectedRxEvent::PeerDisconnect(disconnect));
 
         assert_eq!(receiver.len(), 2);
-        assert_eq!(receiver.dropped(), 0);
+        assert!(!receiver.overflowed());
         assert_eq!(
             receiver.try_receive(),
             Some(ConnectedRxControlEvent::PeerDisconnect(disconnect))
@@ -397,7 +399,7 @@ mod tests {
             .expect("EAPOL must use the security lane");
         assert_eq!(received.peer(), &ap);
         assert_eq!(received.as_bytes(), packet.as_bytes());
-        assert_eq!(receiver.dropped(), 0);
+        assert!(!receiver.overflowed());
     }
 
     #[test]
@@ -427,7 +429,7 @@ mod tests {
                 action,
                 body: &[3, 2, 0, 0, 8, 0],
             });
-            assert_eq!(receiver.dropped(), 1);
+            assert!(receiver.overflowed());
             assert_eq!(
                 receiver.try_receive(),
                 Some(ConnectedRxControlEvent::BlockAck(action))
@@ -435,7 +437,7 @@ mod tests {
         }
 
         let (mut publisher, receiver) = resources.split();
-        assert_eq!(receiver.dropped(), 0);
+        assert!(!receiver.overflowed());
         publisher.publish(ConnectedRxEvent::BlockAck {
             action,
             body: &[3, 2, 0, 0, 8, 0],

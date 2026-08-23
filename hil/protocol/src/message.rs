@@ -1097,6 +1097,12 @@ pub enum StationDisconnectReason {
     LinkPolicy,
     /// The host/application requested a healthy connected-epoch cycle.
     ReconnectRequested,
+    /// The bounded connected-control mailbox overflowed, so the event stream
+    /// can no longer be processed as complete.
+    ///
+    /// Kept at the end so the discriminants of the existing wire vocabulary
+    /// remain stable.
+    ControlMailboxOverflow,
 }
 
 /// Stable station stage vocabulary used by HIL lifecycle evidence.

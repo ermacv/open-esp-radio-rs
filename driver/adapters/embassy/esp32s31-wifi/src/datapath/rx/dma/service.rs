@@ -53,9 +53,11 @@ where
         hardware: &'a mut H,
     ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
         async move {
+            #[cfg(any(feature = "diagnostics", test))]
             let service_started = self
                 .pipeline_observer
                 .map(|observer| observer.begin_service());
+            #[cfg(any(feature = "diagnostics", test))]
             let hardware_buffer_full_before = self
                 .pipeline_observer
                 .and_then(|_| hardware.buffer_full_count());
@@ -208,6 +210,7 @@ where
                     overload_discarded = overload_discarded.saturating_add(1);
                     overload_recycled_descriptors =
                         overload_recycled_descriptors.saturating_add(unit_descriptor_count);
+                    #[cfg(any(feature = "diagnostics", test))]
                     if let Some(observer) = self.pipeline_observer {
                         observer.observe(RxPipelineObservation::StageDiscarded(
                             RxStageDiscard::OverloadBulk,
@@ -236,6 +239,7 @@ where
                             // sole radio owner. It remains part of the same
                             // observed descriptor epoch and is reclaimed with the
                             // other copied/discarded units at the terminal tail.
+                            #[cfg(any(feature = "diagnostics", test))]
                             if let Some(observer) = self.pipeline_observer {
                                 let discard = match error {
                                     RxStageError::Empty => RxStageDiscard::Empty,
@@ -275,10 +279,12 @@ where
                 // doorbell and conditional BASE-repair suffix. Preserve that
                 // transaction boundary so a later completion cannot replace
                 // the cursor observation used to settle this append.
+                #[cfg(any(feature = "diagnostics", test))]
                 let reload_started = self.pipeline_observer.map(RxPipelineObserver::now_micros);
                 self.ring
                     .complete_pending_reload(hardware)
                     .map_err(RxStageTransactionError::Ring)?;
+                #[cfg(any(feature = "diagnostics", test))]
                 if let (Some(observer), Some(started)) = (self.pipeline_observer, reload_started) {
                     observer.observe(RxPipelineObservation::ReloadCompleted {
                         micros: observer.elapsed_micros_since(started),
@@ -338,10 +344,12 @@ where
             // and descriptor republication. With only the entry sample the
             // counter increment was incorrectly paired with the following
             // service context.
+            #[cfg(any(feature = "diagnostics", test))]
             let hardware_buffer_full_after = self
                 .pipeline_observer
                 .and_then(|_| hardware.buffer_full_count());
 
+            #[cfg(any(feature = "diagnostics", test))]
             if let (Some(observer), Some(started)) = (self.pipeline_observer, service_started) {
                 observer.observe(RxPipelineObservation::ServiceCompleted(
                     RxServiceObservation {

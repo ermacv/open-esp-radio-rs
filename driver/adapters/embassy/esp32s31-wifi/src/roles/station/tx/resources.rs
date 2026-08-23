@@ -72,6 +72,7 @@ where
             .ok_or(AggregateTxError::InvalidPublicationState)?;
         standby.cancel(cookie)?;
         standby.release_free_backings()?;
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::StandbyCancelled);
         }

@@ -1498,11 +1498,8 @@ dependencies = [
  "open-esp-radio-esp32s31-embassy-wifi",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi-esp-hal",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-hil-esp32s31-telemetry",
  "open-esp-radio-hil-protocol",
- "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-embassy",
  "postcard",
  "serde",
@@ -1517,7 +1514,6 @@ dependencies = [
  "open-esp-radio-esp32s31-wifi-embassy",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-hil-protocol",
- "open-esp-radio-wifi-softmac",
 ]
 
 [[package]]

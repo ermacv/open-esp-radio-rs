@@ -17,15 +17,12 @@ use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_embassy_net::{FrameLengthError, RxEnqueueError};
 #[cfg(feature = "driver-observation")]
-use open_esp_radio_esp32s31_embassy_wifi::Esp32s31ConnectedRxObserver;
+use open_esp_radio_esp32s31_embassy_wifi::{
+    Esp32s31ConnectedRxObservation, Esp32s31ConnectedRxObserver, Esp32s31RxEvidence,
+    RxObservedEthernetFrame,
+};
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
-#[cfg(feature = "rx-delivery-telemetry")]
-use open_esp_radio_esp32s31_wifi_mac::rx::PUBLIC_HEADER_SIZE;
-#[cfg(feature = "driver-observation")]
-use open_esp_radio_esp32s31_wifi_mac::rx::decode_rx_phy_info;
-#[cfg(feature = "driver-observation")]
-use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxEvent;
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_esp32s31_telemetry::rx_delivery::{NetworkDropReason, RxDeliveryTracker};
 use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
@@ -33,8 +30,6 @@ use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
 };
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_protocol::{RxDeliveryEvidence, RxReorderDeliveryEvidence};
-#[cfg(feature = "driver-observation")]
-use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
 pub(crate) static RX_PHY: RxPhyCounters = RxPhyCounters::new();
 pub(crate) static RX_S_MPDU: RxSmpduCounters = RxSmpduCounters::new();
@@ -96,27 +91,29 @@ impl HilConnectedRxObserver {
 
 #[cfg(feature = "driver-observation")]
 impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
-    fn observe(&self, event: &ConnectedRxEvent<'_>) {
-        match *event {
-            ConnectedRxEvent::Beacon { metadata, .. } => {
-                BEACON_S_MPDU.observe(metadata.s_mpdu);
+    fn requests_phy(&self, frame: RxObservedEthernetFrame<'_>) -> bool {
+        ipv4_udp_destination_port(frame) == Some(self.udp_port)
+            && self.phy_sample_cursor.fetch_add(1, Ordering::Relaxed) & 63 == 0
+    }
+
+    fn observe(&self, event: Esp32s31ConnectedRxObservation<'_>) {
+        match event {
+            Esp32s31ConnectedRxObservation::Beacon { s_mpdu } => {
+                observe_s_mpdu(&BEACON_S_MPDU, s_mpdu);
             }
-            ConnectedRxEvent::Ethernet {
+            Esp32s31ConnectedRxObservation::Ethernet {
                 frame,
-                raw,
-                metadata,
-                ..
+                s_mpdu,
+                ampdu,
+                phy,
             } if ipv4_udp_destination_port(frame) == Some(self.udp_port) => {
-                RX_S_MPDU.observe(metadata.s_mpdu);
-                RX_AMPDU.observe(metadata.ampdu);
-                if self.phy_sample_cursor.fetch_add(1, Ordering::Relaxed) & 63 == 0
-                    && let Some(phy) = decode_rx_phy_info(raw)
-                {
-                    LAST_FORMAT.store(u32::from(phy.baseband_format().raw()), Ordering::Relaxed);
-                    let mut packed =
-                        u32::from(phy.baseband_format().raw()) | (u32::from(phy.rate) << 4);
-                    if let Some(signal) = phy.he_su_signal() {
-                        let bandwidth = match signal.bandwidth.mhz() {
+                observe_s_mpdu(&RX_S_MPDU, s_mpdu);
+                observe_ampdu(&RX_AMPDU, ampdu);
+                if let Some(phy) = available(phy) {
+                    LAST_FORMAT.store(u32::from(phy.baseband_format), Ordering::Relaxed);
+                    let mut packed = u32::from(phy.baseband_format) | (u32::from(phy.rate) << 4);
+                    if let Some(signal) = phy.he_su {
+                        let bandwidth = match signal.bandwidth_mhz {
                             20 => 0,
                             40 => 1,
                             80 => 2,
@@ -124,7 +121,7 @@ impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
                         };
                         packed |= (1 << 31)
                             | (u32::from(signal.mcs) << 9)
-                            | (u32::from(signal.guard_interval_and_ltf.encoding()) << 13)
+                            | (u32::from(signal.guard_interval_and_ltf) << 13)
                             | (bandwidth << 15)
                             | (u32::from(signal.dcm) << 17)
                             | (u32::from(signal.ldpc) << 18);
@@ -148,7 +145,10 @@ impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
         };
         RX_DELIVERY.lock(|tracker| {
             if let Some(tracker) = tracker.borrow_mut().as_mut() {
-                tracker.admitted(sequence, event.raw.and_then(public_qos_sequence));
+                tracker.admitted(
+                    sequence,
+                    event.qos_sequence.map(|qos| (qos.tid, qos.sequence)),
+                );
             }
         });
     }
@@ -165,14 +165,18 @@ impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
         };
         RX_DELIVERY.lock(|tracker| {
             if let Some(tracker) = tracker.borrow_mut().as_mut() {
-                tracker.dropped(sequence, event.raw.and_then(public_qos_sequence), reason);
+                tracker.dropped(
+                    sequence,
+                    event.qos_sequence.map(|qos| (qos.tid, qos.sequence)),
+                    reason,
+                );
             }
         });
     }
 }
 
 #[cfg(feature = "driver-observation")]
-fn ipv4_udp_destination_port(frame: EthernetFrameParts<'_>) -> Option<u16> {
+fn ipv4_udp_destination_port(frame: RxObservedEthernetFrame<'_>) -> Option<u16> {
     if frame.ether_type != 0x0800 {
         return None;
     }
@@ -191,7 +195,7 @@ fn ipv4_udp_destination_port(frame: EthernetFrameParts<'_>) -> Option<u16> {
 }
 
 #[cfg(feature = "rx-delivery-telemetry")]
-fn ipv4_udp_sequence(frame: EthernetFrameParts<'_>, destination_port: u16) -> Option<i32> {
+fn ipv4_udp_sequence(frame: RxObservedEthernetFrame<'_>, destination_port: u16) -> Option<i32> {
     if ipv4_udp_destination_port(frame) != Some(destination_port) {
         return None;
     }
@@ -205,21 +209,29 @@ fn ipv4_udp_sequence(frame: EthernetFrameParts<'_>, destination_port: u16) -> Op
     Some(i32::from_be_bytes(encoded))
 }
 
-#[cfg(feature = "rx-delivery-telemetry")]
-fn public_qos_sequence(raw: &[u8]) -> Option<(u8, u16)> {
-    const DATA_TYPE: u16 = 0x0008;
-    const DATA_TYPE_MASK: u16 = 0x000c;
-    const QOS_SUBTYPE: u16 = 0x0080;
-    const TO_FROM_DS: u16 = 0x0300;
-
-    let frame_offset = PUBLIC_HEADER_SIZE;
-    let frame_control = u16::from_le_bytes([*raw.get(frame_offset)?, *raw.get(frame_offset + 1)?]);
-    if frame_control & (DATA_TYPE_MASK | QOS_SUBTYPE) != DATA_TYPE | QOS_SUBTYPE {
-        return None;
+#[cfg(feature = "driver-observation")]
+fn observe_s_mpdu(counter: &RxSmpduCounters, evidence: Esp32s31RxEvidence<bool>) {
+    match evidence {
+        Esp32s31RxEvidence::Hardware(value) => counter.observe_hardware(value),
+        Esp32s31RxEvidence::Protocol(_) | Esp32s31RxEvidence::Unavailable => {
+            counter.observe_unavailable();
+        }
     }
-    let sequence_control =
-        u16::from_le_bytes([*raw.get(frame_offset + 22)?, *raw.get(frame_offset + 23)?]);
-    let qos_offset = frame_offset + 24 + usize::from(frame_control & TO_FROM_DS == TO_FROM_DS) * 6;
-    let tid = *raw.get(qos_offset)? & 0x0f;
-    Some((tid, sequence_control >> 4))
+}
+
+#[cfg(feature = "driver-observation")]
+fn observe_ampdu(counter: &RxAmpduCounters, evidence: Esp32s31RxEvidence<bool>) {
+    match evidence {
+        Esp32s31RxEvidence::Hardware(value) => counter.observe_hardware(value),
+        Esp32s31RxEvidence::Protocol(value) => counter.observe_protocol(value),
+        Esp32s31RxEvidence::Unavailable => counter.observe_unavailable(),
+    }
+}
+
+#[cfg(feature = "driver-observation")]
+fn available<T>(evidence: Esp32s31RxEvidence<T>) -> Option<T> {
+    match evidence {
+        Esp32s31RxEvidence::Hardware(value) | Esp32s31RxEvidence::Protocol(value) => Some(value),
+        Esp32s31RxEvidence::Unavailable => None,
+    }
 }

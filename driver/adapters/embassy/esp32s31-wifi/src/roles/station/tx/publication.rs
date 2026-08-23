@@ -97,9 +97,12 @@ where
             );
         }
 
+        #[cfg(any(feature = "diagnostics", test))]
         let preparation_started = self.observer.map(|_| self.ordinary.now_micros());
         let prepared = self.prepare_aggregate(first, network)?;
+        #[cfg(any(feature = "diagnostics", test))]
         self.observe_prepared(&prepared);
+        #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.observer, preparation_started) {
             observer.observe(AggregateTxObservation::PreparationCompleted {
                 micros: self.ordinary.now_micros().wrapping_sub(started),
@@ -115,14 +118,16 @@ where
         &mut self,
         hardware: &mut H,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        reason: NetworkSingleMpduReason,
+        _reason: NetworkSingleMpduReason,
     ) -> Result<WifiTxProgress, AggregateTxError> {
+        #[cfg(any(feature = "diagnostics", test))]
         let ethernet_length = first.ethernet_length();
         let progress = self.ordinary.start(hardware, first.ethernet())?;
         drop(first);
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::NetworkSingleMpdu {
-                reason,
+                reason: _reason,
                 ethernet_length,
             });
         }
@@ -251,6 +256,7 @@ where
             original_subframes: aggregate.subframes,
             first_sequence,
             build_stop,
+            #[cfg(any(feature = "diagnostics", test))]
             preparation_micros: 0,
         };
         Ok(prepared)
@@ -305,6 +311,7 @@ where
         Ok(prepared)
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     fn observe_prepared(&self, prepared: &AggregatePrepared<SLOTS>) {
         if let Some(observer) = self.observer {
             let bandwidth_mhz = match self.config.rate {
@@ -336,6 +343,7 @@ where
             retry: prepared.retry,
             original_subframes: prepared.original_subframes,
             deadline_micros: 0,
+            #[cfg(any(feature = "diagnostics", test))]
             first_publication_micros: None,
         });
         Ok(())
@@ -462,6 +470,7 @@ where
             return;
         }
 
+        #[cfg(any(feature = "diagnostics", test))]
         let started = self.observer.map(|_| self.ordinary.now_micros());
         assert!(
             self.ampdu.swap_active_standby(),
@@ -469,11 +478,13 @@ where
         );
         core::mem::swap(&mut self.cookie, &mut self.standby_cookie);
         let previous = self.standby_prepared.take();
+        #[cfg(any(feature = "diagnostics", test))]
         let extending = previous.is_some();
         let result = match previous {
             Some(prepared) => self.extend_reserved(first, network, prepared),
             None => self.prepare_aggregate(first, network),
         };
+        #[cfg(any(feature = "diagnostics", test))]
         let elapsed = started.map(|started| self.ordinary.now_micros().wrapping_sub(started));
         if result.is_err() && self.cookie.is_some() {
             self.cancel_current_reservation();
@@ -485,11 +496,17 @@ where
         );
 
         match result {
-            Ok(mut prepared) => {
-                prepared.preparation_micros = prepared
-                    .preparation_micros
-                    .wrapping_add(elapsed.unwrap_or(0));
+            Ok(prepared) => {
+                #[cfg(any(feature = "diagnostics", test))]
+                let mut prepared = prepared;
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    prepared.preparation_micros = prepared
+                        .preparation_micros
+                        .wrapping_add(elapsed.unwrap_or(0));
+                }
                 self.standby_prepared = Some(prepared);
+                #[cfg(any(feature = "diagnostics", test))]
                 if !extending && let Some(observer) = self.observer {
                     observer.observe(AggregateTxObservation::StandbyPrepared);
                 }
@@ -520,7 +537,9 @@ where
             .standby_prepared
             .take()
             .ok_or(AggregateTxError::InvalidPublicationState)?;
+        #[cfg(any(feature = "diagnostics", test))]
         self.observe_prepared(&prepared);
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::PreparationCompleted {
                 micros: prepared.preparation_micros,
@@ -531,6 +550,7 @@ where
             "prepared standby retains its arena"
         );
         core::mem::swap(&mut self.cookie, &mut self.standby_cookie);
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::StandbyPublished);
         }
@@ -871,6 +891,7 @@ where
                 config,
             )?,
         }
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             let publication_finished = self.ordinary.now_micros();
             if active.first_publication_micros.is_none() {

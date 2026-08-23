@@ -63,7 +63,7 @@ where
     {
         let mut stop = core::pin::pin!(stop);
         let mut stopping = false;
-        let mut tx_batch_deadline = None;
+        let mut tx_batch_states = [TxBatchState::new(); 2];
         loop {
             // Poll the caller edge before servicing control. `ready(())`
             // makes this a non-blocking ordered probe, with stop winning an
@@ -120,6 +120,22 @@ where
 
             let network_tx_pending =
                 self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
+            let now = Instant::now();
+            match self.interfaces {
+                DatapathInterfaceScope::Single(interface) => {
+                    if !self.network_tx_pending_for(interface) {
+                        tx_batch_states[0].note_idle(now);
+                    }
+                }
+                DatapathInterfaceScope::Pair { first, second } => {
+                    if !self.network_tx_pending_for(first) {
+                        tx_batch_states[0].note_idle(now);
+                    }
+                    if !self.network_tx_pending_for(second) {
+                        tx_batch_states[1].note_idle(now);
+                    }
+                }
+            }
 
             // A staged protocol owner or reorder timeout has no new MAC IRQ
             // edge, but it is still charged to the same frame deficit as an
@@ -154,27 +170,19 @@ where
 
             let mut wait_for_batch_until = None;
             if network_tx_pending {
-                let preferred = self.services.preferred_tx_batch_size();
+                let interface = self
+                    .next_network_tx_interface()
+                    .expect("pending network TX has one VIF owner");
+                let preferred = self.services.preferred_tx_batch_size_for(interface);
                 let available = self
                     .services
                     .prepared_tx_frame_count()
-                    .saturating_add(self.network_tx_queue_len());
-                // Only an aggregate-capable service advertises a preferred
-                // batch larger than one. Give its first frame a bounded
-                // publication window in which a second frame can arrive;
-                // otherwise a producer that publishes one lease per
-                // executor turn can never reach the aggregate path. Sparse
-                // traffic still leaves at the explicit deadline.
-                if should_collect_network_batch(preferred, available) {
-                    let deadline = *tx_batch_deadline
-                        .get_or_insert_with(|| Instant::now() + TX_BATCH_MAX_WAIT);
-                    if Instant::now() < deadline {
-                        wait_for_batch_until = Some(deadline);
-                    }
-                }
+                    .saturating_add(self.network.tx_queue_len(interface));
+                let slot = self.tx_batch_state_slot(interface);
+                wait_for_batch_until =
+                    tx_batch_states[slot].collection_deadline(preferred, available, Instant::now());
 
                 if wait_for_batch_until.is_none() {
-                    tx_batch_deadline = None;
                     // A partial standby arena and newly queued frames form
                     // one batch. Extend it once; the aggregate owner drains
                     // every immediately ready lease up to the negotiated
@@ -193,6 +201,8 @@ where
                         self.account_pair_tx_frames(interface, admitted);
                         let network_tx = self.tx_consumer_for(interface);
                         let progress = self.services.start_prepared_tx(&network_tx).await?;
+                        let slot = self.tx_batch_state_slot(interface);
+                        tx_batch_states[slot].note_started(admitted);
                         self.prepared_tx_interface =
                             self.services.has_prepared_tx().then_some(interface);
                         if progress == WifiTxProgress::Pending {
@@ -216,14 +226,14 @@ where
                     let admitted = self.services.last_started_tx_frame_count().max(1);
                     self.account_tx_frames(admitted);
                     self.account_pair_tx_frames(interface, admitted);
+                    let slot = self.tx_batch_state_slot(interface);
+                    tx_batch_states[slot].note_started(admitted);
                     if progress == WifiTxProgress::Pending {
                         self.active_tx_interface = Some(interface);
                         self.drive_active_tx(true).await?;
                     }
                     continue;
                 }
-            } else {
-                tx_batch_deadline = None;
             }
 
             let irq = self.irq;

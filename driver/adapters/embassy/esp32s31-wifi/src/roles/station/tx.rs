@@ -11,6 +11,8 @@
 //! Role-neutral completion, retry and retained-DMA mechanics live below this
 //! adapter in the MAC and common ESP32-S31 Wi-Fi crates.
 
+#[cfg(not(any(feature = "diagnostics", test)))]
+use core::marker::PhantomData;
 use core::{
     future::Future,
     mem,
@@ -55,13 +57,13 @@ use open_esp_radio_wifi_softmac::{
     MacAmpduTxResult, MacAmpduTxStatus, MacTxQueueState, MacTxResult,
 };
 
+#[cfg(any(feature = "diagnostics", test))]
+use crate::diagnostics::aggregate_tx::{AggregateTxObservation, AggregateTxObserver};
 use crate::{
     datapath::services::DatapathNetworkTxService,
     datapath::tx::resources::{AggregateTxArenaPair, AggregateTxResources},
     datapath::{DatapathControlProgress, WifiTxProgress, WifiTxWake},
-    diagnostics::aggregate_tx::{
-        AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
-    },
+    diagnostics::aggregate_tx::{AggregateBuildStop, NetworkSingleMpduReason},
     roles::station::control::{ConnectedControlTimer, ConnectedControlTx},
 };
 use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
@@ -99,7 +101,10 @@ pub struct Esp32s31ConnectedTxParked<'observer, const SLOTS: usize> {
     aggregate_rate_policy: StaTxRatePolicy,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
     pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
-    observer: Option<&'observer dyn AggregateTxObserver>,
+    #[cfg(any(feature = "diagnostics", test))]
+    observer: Option<&'observer dyn crate::diagnostics::aggregate_tx::AggregateTxObserver>,
+    #[cfg(not(any(feature = "diagnostics", test)))]
+    observer_lifetime: PhantomData<&'observer ()>,
     block_ack_status_sink: Option<StationTxBlockAckStatusSink>,
 }
 
@@ -202,6 +207,7 @@ struct AggregateActive<const SLOTS: usize> {
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
     deadline_micros: u64,
+    #[cfg(any(feature = "diagnostics", test))]
     first_publication_micros: Option<u64>,
 }
 
@@ -211,6 +217,7 @@ struct AggregatePrepared<const SLOTS: usize> {
     original_subframes: u8,
     first_sequence: u16,
     build_stop: AggregateBuildStop,
+    #[cfg(any(feature = "diagnostics", test))]
     preparation_micros: u64,
 }
 
@@ -310,7 +317,8 @@ pub struct Esp32s31ConnectedTx<
     active: ConnectedTxActive<SLOTS>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
     pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
-    observer: Option<&'ampdu dyn AggregateTxObserver>,
+    #[cfg(any(feature = "diagnostics", test))]
+    observer: Option<&'ampdu dyn crate::diagnostics::aggregate_tx::AggregateTxObserver>,
     block_ack_status_sink: Option<StationTxBlockAckStatusSink>,
 }
 

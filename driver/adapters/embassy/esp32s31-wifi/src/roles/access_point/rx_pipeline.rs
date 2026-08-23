@@ -12,6 +12,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx_pool::{RxStagePool, RxStageTransactionError},
 };
 
+#[cfg(any(feature = "diagnostics", test))]
+use crate::diagnostics::rx_pipeline::RxPipelineObserver;
 use crate::{
     datapath::DatapathRxProgress,
     datapath::rx::dma::{Esp32s31RxDmaStorage, Esp32s31StagedRxEpoch},
@@ -20,7 +22,6 @@ use crate::{
     datapath::rx::staging::{
         Esp32s31StagedRxFrame, Esp32s31StagedRxQueue, StagedEthernetPublication,
     },
-    diagnostics::rx_pipeline::RxPipelineObserver,
 };
 
 #[doc(hidden)]
@@ -196,6 +197,7 @@ where
 
     /// Attach value-only pipeline observations without exposing descriptor
     /// ownership to the AP protocol layer.
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn from_halted_with_pipeline_observer(
         ring: RxRingHalted<'storage, COUNT>,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,

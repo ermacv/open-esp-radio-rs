@@ -35,25 +35,28 @@ macro_rules! diagnostics_debug {
     }};
 }
 
-mod access_point_status;
 mod composition;
-mod connected;
+#[cfg(feature = "diagnostics")]
+mod diagnostics;
 mod facade;
 mod monitor;
 mod radio_resources;
-mod runtime;
-mod station_status;
+mod status;
+mod supervisor;
 mod wifi_network;
 
-pub use access_point_status::{Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot};
-pub use connected::Esp32s31WifiProtocolRunner;
+pub use supervisor::station::Esp32s31WifiProtocolRunner;
 #[cfg(feature = "diagnostics")]
-pub use connected::{
-    Esp32s31ConnectedRxObserver, Esp32s31DiagnosticRxStatistics, Esp32s31DiagnosticSnapshot,
-    Esp32s31DiagnosticTxVector,
+pub use supervisor::station::{
+    Esp32s31DiagnosticRxStatistics, Esp32s31DiagnosticSnapshot, Esp32s31DiagnosticTxVector,
+};
+#[cfg(feature = "diagnostics")]
+pub use diagnostics::{
+    Esp32s31ConnectedRxObservation, Esp32s31ConnectedRxObserver,
+    Esp32s31DecodedRxPhyObservation, Esp32s31HeSuRxObservation, Esp32s31RxEvidence,
 };
 #[cfg(feature = "mac-irq-diagnostics")]
-pub use connected::Esp32s31MacIrqObservation;
+pub use supervisor::station::Esp32s31MacIrqObservation;
 pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
@@ -65,14 +68,16 @@ pub use monitor::{
 };
 #[cfg(feature = "diagnostics")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
-    RxNetworkDeliveryEvent, RxNetworkDeliveryObserver,
+    RxNetworkDeliveryEvent, RxNetworkDeliveryObserver, RxObservedEthernetFrame,
+    RxQosSequenceObservation,
 };
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
-pub use runtime::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
-pub use station_status::{
-    Esp32s31StationLinkState, Esp32s31StationStatus, Esp32s31StationStatusSnapshot,
+pub use status::{
+    Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot, Esp32s31StationLinkState,
+    Esp32s31StationStatus, Esp32s31StationStatusSnapshot,
 };
+pub use supervisor::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
 pub use wifi_network::Esp32s31WifiNetworkRunner;
 
 /// Board-derived radio identity. Reading eFuse remains an application

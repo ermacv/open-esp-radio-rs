@@ -59,6 +59,7 @@ where
             sink,
             mpdu,
             ethernet,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: None,
             reorder_commands: None,
             reorder_storage: None,
@@ -94,6 +95,7 @@ where
         self
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn with_pipeline_observer(mut self, observer: &'queue dyn RxPipelineObserver) -> Self {
         self.pipeline_observer = Some(observer);
         self
@@ -304,6 +306,7 @@ where
         self
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn with_pipeline_observer(mut self, observer: &'queue dyn RxPipelineObserver) -> Self {
         self.processor.pipeline_observer = Some(observer);
         self

@@ -1284,6 +1284,9 @@ fn station_status_edge(state: Esp32s31StationLinkState) -> Option<StationLinkEdg
                 ConnectedDisconnectReason::GroupKeyHandshakeFailed => {
                     StationDisconnectReason::GroupKeyHandshakeFailed
                 }
+                ConnectedDisconnectReason::ControlMailboxOverflow => {
+                    StationDisconnectReason::ControlMailboxOverflow
+                }
             }),
         ),
         Esp32s31StationLinkState::Disconnected(None) => None,

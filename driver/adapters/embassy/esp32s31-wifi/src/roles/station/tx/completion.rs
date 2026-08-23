@@ -43,6 +43,7 @@ where
         hardware: &mut H,
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, AggregateTxError> {
+        #[cfg(any(feature = "diagnostics", test))]
         if matches!(wake, WifiTxWake::Interrupt { .. })
             && let Some(observer) = self.observer
         {
@@ -107,6 +108,7 @@ where
         {
             let completion = observed.completion;
             let current_subframes = observed.subframes;
+            #[cfg(any(feature = "diagnostics", test))]
             let current_first_sequence = observed.first_sequence;
             let decision = observed.decision;
             self.rate_control.observe_tx_completion(completion.tx);
@@ -124,6 +126,7 @@ where
                 observation,
                 Ok(_) | Err(AmpduRateObservationError::Unavailable)
             ));
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::BlockAckProcessed {
                     tx_status: completion.tx.status,
@@ -191,6 +194,7 @@ where
                     block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
                     ordinary_retry: None,
                 });
+                #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.observer {
                     observer.observe(AggregateTxObservation::Completed {
                         acknowledged: active.retry.acknowledged(),
@@ -216,6 +220,7 @@ where
                 block_acknowledged_subframes: u16::from(acknowledged),
                 ordinary_retry: None,
             });
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::Completed {
                     acknowledged: active.retry.acknowledged(),
@@ -263,6 +268,7 @@ where
                 block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
                 ordinary_retry: None,
             });
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::HardwareTimeout);
                 Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
@@ -286,6 +292,7 @@ where
                 block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
                 ordinary_retry: None,
             });
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::Collision);
                 Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
@@ -309,6 +316,7 @@ where
             .update_tx_per(u32::from(report.status.attempts.saturating_sub(1)));
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     fn record_exchange_time(
         observer: &dyn AggregateTxObserver,
         active: &AggregateActive<SLOTS>,

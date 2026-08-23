@@ -46,6 +46,7 @@ where
                     &mut self.sink,
                     self.mpdu,
                     segment,
+                    #[cfg(any(feature = "diagnostics", test))]
                     self.pipeline_observer,
                 )
                 .await
@@ -73,14 +74,17 @@ where
             return result;
         }
 
+        #[cfg(any(feature = "diagnostics", test))]
         let wait_started = self.pipeline_observer.map(|observer| observer.now_micros());
         self.sink.wait_staged_ready().await;
+        #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.pipeline_observer, wait_started) {
             observer.observe(RxPipelineObservation::NetworkReadyWait {
                 micros: observer.elapsed_micros_since(started),
             });
         }
 
+        #[cfg(any(feature = "diagnostics", test))]
         let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
         let segment = frame.segment();
         let (result, ethernet) = {
@@ -90,6 +94,7 @@ where
                 .dispatch(segment, self.mpdu, &mut [], &mut capture);
             (result, capture.captured)
         };
+        #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.pipeline_observer, dispatch_started) {
             let (data, amsdu, amsdu_subframes) = match result {
                 ConnectedRxDispatch::Data {
@@ -131,6 +136,7 @@ where
             &mut self.sink,
             self.mpdu,
             segment,
+            #[cfg(any(feature = "diagnostics", test))]
             self.pipeline_observer,
         )
         .await
@@ -140,6 +146,7 @@ where
         &mut self,
         segment: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
     ) -> ConnectedRxDispatch {
+        #[cfg(any(feature = "diagnostics", test))]
         let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
         let (result, used, metadata) = {
             let mut deferred = DeferredEthernetFrames::new(self.ethernet);
@@ -148,6 +155,7 @@ where
                 .dispatch(segment, self.mpdu, &mut [], &mut deferred);
             (result, deferred.used(), deferred.metadata)
         };
+        #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.pipeline_observer, dispatch_started) {
             let (data, amsdu, amsdu_subframes) = match result {
                 ConnectedRxDispatch::Data {
@@ -171,8 +179,10 @@ where
             crate::datapath::rx::ethernet::record_at(self.ethernet, used, offset)
                 .expect("the private A-MSDU writer produces valid records")
         {
+            #[cfg(any(feature = "diagnostics", test))]
             let wait_started = self.pipeline_observer.map(|observer| observer.now_micros());
             self.sink.wait_ready().await;
+            #[cfg(any(feature = "diagnostics", test))]
             if let (Some(observer), Some(started)) = (self.pipeline_observer, wait_started) {
                 observer.observe(RxPipelineObservation::NetworkReadyWait {
                     micros: observer.elapsed_micros_since(started),
@@ -253,22 +263,26 @@ async fn dispatch_non_amsdu_segment<
     sink: &mut S,
     mpdu: &mut [u8],
     segment: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
-    pipeline_observer: Option<&dyn RxPipelineObserver>,
+    #[cfg(any(feature = "diagnostics", test))] pipeline_observer: Option<&dyn RxPipelineObserver>,
 ) -> ConnectedRxDispatch {
     if dispatcher.may_publish_ethernet(segment) {
         // Keep the staging lease until the single-MSDU path owns its one
         // network output slot. A-MSDU uses the deferred streaming path
         // above and acquires one slot per decoded subframe.
+        #[cfg(any(feature = "diagnostics", test))]
         let wait_started = pipeline_observer.map(|observer| observer.now_micros());
         sink.wait_ready().await;
+        #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (pipeline_observer, wait_started) {
             observer.observe(RxPipelineObservation::NetworkReadyWait {
                 micros: observer.elapsed_micros_since(started),
             });
         }
     }
+    #[cfg(any(feature = "diagnostics", test))]
     let dispatch_started = pipeline_observer.map(|observer| observer.now_micros());
     let result = dispatcher.dispatch(segment, mpdu, &mut [], sink);
+    #[cfg(any(feature = "diagnostics", test))]
     if let (Some(observer), Some(started)) = (pipeline_observer, dispatch_started) {
         let (data, amsdu, amsdu_subframes) = match result {
             ConnectedRxDispatch::Data {

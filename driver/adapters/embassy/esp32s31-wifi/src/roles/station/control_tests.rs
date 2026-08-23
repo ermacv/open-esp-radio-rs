@@ -747,6 +747,46 @@ fn peer_deauthentication_disconnects_with_its_reason_code() {
 }
 
 #[test]
+fn mailbox_overflow_fails_closed_before_processing_an_incomplete_event_stream() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+    let (mut publisher, receiver) = resources.split();
+    let mut control = Esp32s31ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let action = BlockAckAction::Delba {
+        tid: 1,
+        initiator: true,
+        reason: 37,
+    };
+
+    publisher.publish(ConnectedRxEvent::BlockAck {
+        action,
+        body: &[3, 2, 0, 0, 2, 0],
+    });
+    publisher.publish(ConnectedRxEvent::BlockAck {
+        action,
+        body: &[3, 2, 0, 0, 2, 0],
+    });
+
+    assert!(control.has_immediate_work());
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::Exit(
+            open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::ControlMailboxOverflow,
+        ))
+    );
+}
+
+#[test]
 fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
     let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (mut publisher, receiver) = resources.split();

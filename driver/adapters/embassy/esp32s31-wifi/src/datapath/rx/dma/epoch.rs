@@ -235,10 +235,12 @@ where
             pool,
             frames: _,
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
         } = stopped;
         let resources =
             Esp32s31RxEpochResources::new_sta_ap(storage, pool, frames, ingress, addresses, delay);
+        #[cfg(any(feature = "diagnostics", test))]
         let resources = match pipeline_observer {
             Some(observer) => resources.with_pipeline_observer(observer),
             None => resources,
@@ -248,6 +250,7 @@ where
 
     /// Bind the same value-only pipeline observer used by a connected STA to
     /// a role-neutral halted RX epoch.
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn from_halted_with_pipeline_observer(
         ring: RxRingHalted<'storage, COUNT>,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
@@ -433,6 +436,7 @@ where
             pool,
             frames: _,
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
         } = stopped;
         Ok(Esp32s31StoppedRx {
@@ -441,6 +445,7 @@ where
             pool,
             frames: Esp32s31StagedRxPublisher::standalone(frames),
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
         })
     }

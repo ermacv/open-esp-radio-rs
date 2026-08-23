@@ -13,12 +13,13 @@ use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, Connected
 #[cfg(feature = "diagnostics")]
 use crate::diagnostics::network::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 
+#[cfg(any(feature = "diagnostics", test))]
+use crate::diagnostics::rx_pipeline::{
+    RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver,
+};
 use crate::{
     datapath::rx::staging::{
         Esp32s31StagedRxFrame, StagedEthernetPublication, StagedRxDisposition,
-    },
-    diagnostics::rx_pipeline::{
-        RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver,
     },
     roles::station::rx_protocol::ConnectedRxProtocolSink,
 };
@@ -37,6 +38,7 @@ pub struct EmbassyNetConnectedRxSink<
     network: PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>,
     shared: Option<SharedPinnedRxPublisher<'resources, M, STAGE_SLOTS>>,
     observer: O,
+    #[cfg(any(feature = "diagnostics", test))]
     pipeline_observer: Option<&'resources dyn RxPipelineObserver>,
     #[cfg(feature = "diagnostics")]
     delivery_observer: Option<&'resources dyn RxNetworkDeliveryObserver>,
@@ -61,6 +63,7 @@ impl<'resources, M: RawMutex, O, const FRAME_CAPACITY: usize, const QUEUE_DEPTH:
             network,
             shared: None,
             observer,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: None,
             #[cfg(feature = "diagnostics")]
             delivery_observer: None,
@@ -97,6 +100,7 @@ impl<
             network,
             shared: Some(shared),
             observer,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: None,
             #[cfg(feature = "diagnostics")]
             delivery_observer: None,
@@ -106,12 +110,15 @@ impl<
     #[cfg(feature = "diagnostics")]
     pub fn with_delivery_observer(
         mut self,
-        delivery_observer: Option<&'resources dyn RxNetworkDeliveryObserver>,
+        #[cfg(feature = "diagnostics")] delivery_observer: Option<
+            &'resources dyn RxNetworkDeliveryObserver,
+        >,
     ) -> Self {
         self.delivery_observer = delivery_observer;
         self
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn with_pipeline_observer(mut self, observer: &'resources dyn RxPipelineObserver) -> Self {
         self.pipeline_observer = Some(observer);
         self
@@ -159,6 +166,7 @@ impl<
                 self.observer.publish(event);
                 return;
             }
+            #[cfg(any(feature = "diagnostics", test))]
             let publish_started = self.pipeline_observer.map(|observer| observer.now_micros());
             #[cfg(not(feature = "diagnostics"))]
             let result = self.network.try_send_parts(
@@ -177,30 +185,25 @@ impl<
                     frame.payload,
                     || {
                         if let Some(observer) = delivery_observer {
-                            observer.admitted(RxNetworkDeliveryEvent {
-                                frame,
-                                raw: Some(raw),
-                            });
+                            observer.admitted(RxNetworkDeliveryEvent::decoded(frame, Some(raw)));
                         }
                     },
                 )
             };
+            #[cfg(any(feature = "diagnostics", test))]
             let outcome = match result {
                 Ok(()) => RxNetworkPublicationOutcome::Enqueued,
                 Err(_error) => {
                     #[cfg(feature = "diagnostics")]
                     if let Some(observer) = self.delivery_observer {
-                        observer.dropped(
-                            RxNetworkDeliveryEvent {
-                                frame,
-                                raw: Some(raw),
-                            },
-                            _error,
-                        );
+                        observer.dropped(RxNetworkDeliveryEvent::decoded(frame, Some(raw)), _error);
                     }
                     RxNetworkPublicationOutcome::Dropped
                 }
             };
+            #[cfg(not(any(feature = "diagnostics", test)))]
+            let _ = result;
+            #[cfg(any(feature = "diagnostics", test))]
             if let (Some(observer), Some(started)) = (self.pipeline_observer, publish_started) {
                 observer.observe(RxPipelineObservation::NetworkPublication {
                     bytes: frame.payload.len().saturating_add(14),
@@ -271,6 +274,7 @@ impl<
             return StagedRxDisposition::Released;
         };
 
+        #[cfg(any(feature = "diagnostics", test))]
         let publish_started = self.pipeline_observer.map(|observer| observer.now_micros());
         {
             let raw = frame.segment().buffer;
@@ -294,19 +298,20 @@ impl<
             }
             #[cfg(feature = "diagnostics")]
             if let Some(observer) = self.delivery_observer {
-                observer.admitted(RxNetworkDeliveryEvent {
-                    frame: open_esp_radio_ieee80211::data::EthernetFrameParts {
+                observer.admitted(RxNetworkDeliveryEvent::decoded(
+                    open_esp_radio_ieee80211::data::EthernetFrameParts {
                         destination: ethernet.destination,
                         source: ethernet.source,
                         ether_type: ethernet.ether_type,
                         payload,
                     },
-                    raw: Some(raw),
-                });
+                    Some(raw),
+                ));
             }
             self.observer.publish(event);
         }
 
+        #[cfg(any(feature = "diagnostics", test))]
         let ethernet_length = ethernet.payload_length.saturating_add(14);
         let index = match frame.publish_ethernet_in_place(
             ethernet.destination,
@@ -321,6 +326,7 @@ impl<
             }
         };
         shared.publish(index);
+        #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.pipeline_observer, publish_started) {
             observer.observe(RxPipelineObservation::NetworkPublication {
                 bytes: ethernet_length,

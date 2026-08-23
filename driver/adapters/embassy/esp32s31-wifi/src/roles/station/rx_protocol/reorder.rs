@@ -27,6 +27,7 @@ where
             key.tid,
         );
         let active = bank.is_some();
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderIngress {
                 active,
@@ -37,6 +38,7 @@ where
             return Some(self.dispatch_owned_frame(frame).await);
         }
         let bank = bank.expect("active reorder has one hardware-bank identity");
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(start) = self.runtime.reorder_first_starts[bank].take()
             && let Some(observer) = self.pipeline_observer
         {
@@ -56,6 +58,7 @@ where
         {
             Ok(retain) => retain,
             Err(error) => {
+                #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.pipeline_observer {
                     observer.observe(RxPipelineObservation::ReorderDiscarded);
                 }
@@ -77,6 +80,7 @@ where
             let Some(storage) = self.reorder_storage else {
                 // An agreement must never retain the finite hot staging pool
                 // when its independent backing was omitted by the composition.
+                #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.pipeline_observer {
                     observer.observe(RxPipelineObservation::ReorderDiscarded);
                 }
@@ -87,6 +91,7 @@ where
             match storage.try_reserve() {
                 Ok(reservation) => Some(reservation),
                 Err(_) => {
+                    #[cfg(any(feature = "diagnostics", test))]
                     if let Some(observer) = self.pipeline_observer {
                         observer.observe(RxPipelineObservation::ReorderDiscarded);
                     }
@@ -121,6 +126,7 @@ where
         {
             Ok(release) => release,
             Err(error) => {
+                #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.pipeline_observer {
                     observer.observe(RxPipelineObservation::ReorderDiscarded);
                 }
@@ -135,6 +141,7 @@ where
             }
         };
         self.update_gap_deadline(bank);
+        #[cfg(any(feature = "diagnostics", test))]
         self.record_reorder_occupied();
         if release.buffered {
             if retain_hot {
@@ -147,6 +154,7 @@ where
             let retained = match reservation.copy_from(frame.segment()) {
                 Ok(retained) => retained,
                 Err((_error, reservation)) => {
+                    #[cfg(any(feature = "diagnostics", test))]
                     if let Some(observer) = self.pipeline_observer {
                         observer.observe(RxPipelineObservation::ReorderDiscarded);
                     }
@@ -190,6 +198,7 @@ where
                 }
                 self.runtime.reorder_first_starts[bank] = Some(agreement.starting_sequence);
                 self.runtime.gap_deadlines[bank] = None;
+                #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.pipeline_observer {
                     observer.observe(RxPipelineObservation::ReorderStarted {
                         tid: agreement.tid,
@@ -234,9 +243,11 @@ where
         self.runtime.gap_deadlines[bank] = None;
         self.runtime.reorder_first_starts[bank] = None;
         let release = self.runtime.reorder_banks.stop_bank(bank)?;
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderStopped);
         }
+        #[cfg(any(feature = "diagnostics", test))]
         self.record_reorder_occupied();
         self.dispatch_release(release).await
     }
@@ -269,14 +280,17 @@ where
     pub(super) async fn expire_reorder_gap(&mut self, tid: usize) -> Option<ConnectedRxDispatch> {
         self.runtime.gap_deadlines[tid] = None;
         let release = self.runtime.reorder_banks.state_mut(tid)?.expire_gap();
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderGapExpired);
         }
         self.update_gap_deadline(tid);
+        #[cfg(any(feature = "diagnostics", test))]
         self.record_reorder_occupied();
         self.dispatch_release(release).await
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     fn record_reorder_occupied(&self) {
         let Some(observer) = self.pipeline_observer else {
             return;
@@ -286,6 +300,7 @@ where
     }
 
     async fn dispatch_release(&mut self, release: RxAmpduRelease) -> Option<ConnectedRxDispatch> {
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderReleased {
                 buffered: release.buffered,
@@ -315,6 +330,7 @@ where
         current_slot: usize,
         current_frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
     ) -> Option<ConnectedRxDispatch> {
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderReleased {
                 buffered: release.buffered,

@@ -106,6 +106,7 @@ where
             active: ConnectedTxActive::Idle,
             last_aggregate_status: None,
             pending_ordinary_retry: None,
+            #[cfg(any(feature = "diagnostics", test))]
             observer: None,
             block_ack_status_sink: None,
         })
@@ -199,6 +200,7 @@ where
 
     /// Attach optional observations without changing TX
     /// scheduling or completion ownership.
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn with_observer(mut self, observer: &'ampdu dyn AggregateTxObserver) -> Self {
         self.observer = Some(observer);
         self
@@ -249,6 +251,7 @@ where
             {
                 sink(tid, operational);
             }
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer
                 && was_operational != operational
             {
@@ -458,6 +461,7 @@ where
         let aggregate_rate_policy = self.aggregate_rate_policy;
         let last_aggregate_status = self.last_aggregate_status;
         let pending_ordinary_retry = self.pending_ordinary_retry;
+        #[cfg(any(feature = "diagnostics", test))]
         let observer = self.observer;
         let block_ack_status_sink = self.block_ack_status_sink;
 
@@ -476,7 +480,10 @@ where
                 aggregate_rate_policy,
                 last_aggregate_status,
                 pending_ordinary_retry,
+                #[cfg(any(feature = "diagnostics", test))]
                 observer,
+                #[cfg(not(any(feature = "diagnostics", test)))]
+                observer_lifetime: PhantomData,
                 block_ack_status_sink,
             },
         ))
@@ -503,7 +510,10 @@ where
             aggregate_rate_policy,
             last_aggregate_status,
             pending_ordinary_retry,
+            #[cfg(any(feature = "diagnostics", test))]
             observer,
+            #[cfg(not(any(feature = "diagnostics", test)))]
+                observer_lifetime: _,
             block_ack_status_sink,
         } = parked;
         let ordinary = Esp32s31SingleMpduTx::resume(resources, ordinary);
@@ -522,7 +532,10 @@ where
         owner.block_ack_windows = block_ack_windows;
         owner.last_aggregate_status = last_aggregate_status;
         owner.pending_ordinary_retry = pending_ordinary_retry;
-        owner.observer = observer;
+        #[cfg(any(feature = "diagnostics", test))]
+        {
+            owner.observer = observer;
+        }
         owner.block_ack_status_sink = block_ack_status_sink;
         owner
     }

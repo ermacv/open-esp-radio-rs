@@ -26,15 +26,14 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::vif::{StaApRxRoute, StaApVif, classify_sta_ap_rx};
 
+#[cfg(any(feature = "diagnostics", test))]
+use crate::diagnostics::rx_pipeline::{
+    RxPipelineObservation, RxPipelineObserver, RxServiceObservation,
+};
 use crate::{
-    datapath::DatapathRxProgress,
-    datapath::rx::hardware::RxDmaObservationDelay,
-    datapath::rx::staging::Esp32s31StagedRxFrame,
-    datapath::services::DatapathRxService,
-    diagnostics::rx_pipeline::{
-        RxPipelineObservation, RxPipelineObserver, RxServiceObservation, RxStageDiscard,
-    },
-    roles::concurrent::Esp32s31StaApStagedRxFrame,
+    datapath::DatapathRxProgress, datapath::rx::hardware::RxDmaObservationDelay,
+    datapath::rx::staging::Esp32s31StagedRxFrame, datapath::services::DatapathRxService,
+    diagnostics::rx_pipeline::RxStageDiscard, roles::concurrent::Esp32s31StaApStagedRxFrame,
 };
 
 /// Descriptor count and allocation geometry qualified by the ordinary S31
@@ -371,6 +370,7 @@ pub struct Esp32s31StagedRxProducer<
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
+    #[cfg(any(feature = "diagnostics", test))]
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
     admission: P,
     serviced_descriptors: u64,
@@ -400,6 +400,7 @@ pub struct Esp32s31StoppedRx<
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
+    #[cfg(any(feature = "diagnostics", test))]
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
 }
 
@@ -428,6 +429,7 @@ pub struct Esp32s31RxEpochResources<
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
+    #[cfg(any(feature = "diagnostics", test))]
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
 }
 
@@ -454,6 +456,7 @@ pub struct Esp32s31PreparedRx<
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
+    #[cfg(any(feature = "diagnostics", test))]
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
 }
 

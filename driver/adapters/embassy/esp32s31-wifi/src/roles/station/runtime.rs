@@ -31,7 +31,7 @@ use crate::{
         },
         services::{DatapathNetworkTxService, SingleRoleServices},
     },
-    roles::station::port::{Esp32s31ConnectedStaDrivers, Esp32s31ConnectedStaReport},
+    roles::station::connected::port::{Esp32s31ConnectedStaDrivers, Esp32s31ConnectedStaReport},
     roles::station::tx::{AggregateTxError, Esp32s31ConnectedTx, Esp32s31ConnectedTxParked},
     roles::{
         concurrent::{Esp32s31StaApStationControlRole, Esp32s31StaApStationRxRole},

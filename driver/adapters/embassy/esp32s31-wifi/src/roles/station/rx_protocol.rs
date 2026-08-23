@@ -27,6 +27,8 @@ use open_esp_radio_wifi_softmac::MacRxMetadata;
 
 #[cfg(test)]
 use crate::datapath::rx::staging::Esp32s31StagedRxQueue;
+#[cfg(any(feature = "diagnostics", test))]
+use crate::diagnostics::rx_pipeline::{RxPipelineObservation, RxPipelineObserver};
 use crate::{
     datapath::irq::EmbassyMacIrqRuntime,
     datapath::rx::ethernet::PackedEthernetWriter,
@@ -38,7 +40,6 @@ use crate::{
     datapath::rx::staging::{
         Esp32s31StagedRxFrame, StagedEthernetPublication, StagedRxDisposition,
     },
-    diagnostics::rx_pipeline::{RxPipelineObservation, RxPipelineObserver},
 };
 
 /// Maximum completed protocol dispatches in one cooperative service turn.
@@ -318,6 +319,7 @@ pub struct Esp32s31ConnectedRxProcessor<
     sink: S,
     mpdu: &'scratch mut [u8],
     ethernet: &'scratch mut [u8],
+    #[cfg(any(feature = "diagnostics", test))]
     pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
     reorder_commands: Option<RxReorderCommandReceiver<'queue, M>>,
     reorder_storage: Option<&'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>>,

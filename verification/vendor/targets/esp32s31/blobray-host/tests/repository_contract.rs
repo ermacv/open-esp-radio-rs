@@ -30,6 +30,21 @@ fn named_files(root: &Path, name: &str, output: &mut Vec<std::path::PathBuf>) {
     }
 }
 
+fn rust_source_tree(root: &Path) -> String {
+    let mut files = Vec::new();
+    if root.is_dir() {
+        rust_files(root, &mut files);
+    } else {
+        files.push(root.to_path_buf());
+    }
+    files.sort();
+    files
+        .into_iter()
+        .map(|path| fs::read_to_string(&path).expect("read Rust architecture owner"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
 fn closed_chip_pac_is_the_only_driver_dependency_on_the_raw_pac() {
     let repository = repository_root();
@@ -269,9 +284,9 @@ fn access_point_ht_width_is_one_end_to_end_typed_contract() {
     }
 
     let runtime = fs::read_to_string(
-        repository.join("driver/integration/esp32s31/embassy-wifi/src/runtime/access_point.rs"),
+        repository.join("driver/integration/esp32s31/embassy-wifi/src/supervisor/access_point.rs"),
     )
-    .expect("read AP runtime");
+    .expect("read AP supervisor");
     assert!(runtime.contains("lower_wifi_channel(requested_channel)"));
     assert!(runtime.contains("lowered_channel.channel_or_frequency"));
     assert!(runtime.contains("lowered_channel.cbw"));
@@ -309,8 +324,11 @@ fn lmac_and_datapath_boundaries_do_not_recover_role_policy_or_legacy_runners() {
             && adapter.join("datapath/services.rs").is_file(),
         "role-neutral datapath services must not return to a STA-connected module"
     );
-    let access_point =
-        fs::read_to_string(adapter.join("roles/access_point.rs")).expect("read AP adapter");
+    let access_point = format!(
+        "{}\n{}",
+        rust_source_tree(&adapter.join("roles/access_point.rs")),
+        rust_source_tree(&adapter.join("roles/access_point")),
+    );
     assert!(
         access_point.contains("DatapathRunner::new")
             && !access_point.contains("ApDataPlaneArbiter")
@@ -438,8 +456,8 @@ fn lmac_and_datapath_boundaries_do_not_recover_role_policy_or_legacy_runners() {
     ] {
         assert!(resources.contains(owner), "radio resources lost {owner}");
     }
-    let connected = fs::read_to_string(integration.join("connected.rs"))
-        .expect("read connected station composition");
+    let connected = fs::read_to_string(integration.join("supervisor/station.rs"))
+        .expect("read connected station supervisor");
     for stale in [
         "ConnectedTxBacking",
         "ConnectedAmpduStorage",
@@ -461,14 +479,13 @@ fn production_wifi_supervisor_keeps_physical_and_role_owners_separate() {
     .expect("read ESP32-S31 physical Wi-Fi supervisor composition");
     assert!(supervisor.contains("pub physical: H"));
 
-    let runtime = fs::read_to_string(
-        repository.join("driver/integration/esp32s31/embassy-wifi/src/runtime.rs"),
-    )
-    .expect("read production Wi-Fi runtime");
+    let runtime = rust_source_tree(
+        &repository.join("driver/integration/esp32s31/embassy-wifi/src/supervisor"),
+    );
     let access_point = fs::read_to_string(
-        repository.join("driver/integration/esp32s31/embassy-wifi/src/runtime/access_point.rs"),
+        repository.join("driver/integration/esp32s31/embassy-wifi/src/supervisor/access_point.rs"),
     )
-    .expect("read production AP runtime");
+    .expect("read production AP supervisor");
 
     for removed in [
         "ProductionAccessPointStationResources",
@@ -852,7 +869,7 @@ fn radio_arena_escape_surface_is_frozen() {
         assert!(!source.contains("borrow_mut()"));
     }
     let connected = fs::read_to_string(
-        repository.join("driver/integration/esp32s31/embassy-wifi/src/connected.rs"),
+        repository.join("driver/integration/esp32s31/embassy-wifi/src/supervisor/station.rs"),
     )
     .unwrap();
     assert!(connected.contains("try_prepare_connected_sta_without_power_save"));

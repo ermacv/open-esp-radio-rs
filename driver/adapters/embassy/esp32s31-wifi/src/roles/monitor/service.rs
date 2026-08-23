@@ -44,6 +44,7 @@ pub struct Esp32s31MonitorRunReport {
     /// Bottom-half service epochs, including the initial handoff probe.
     pub rx_service_wakes: u32,
     /// Actual hard-IRQ RX work posts observed during this run.
+    #[cfg(any(feature = "diagnostics", test))]
     pub rx_interrupt_posts: u32,
     pub receive: Esp32s31MonitorRxProgress,
     pub interrupt_drain: Esp32s31MacInterruptEpochDrain,
@@ -84,6 +85,7 @@ impl Esp32s31MonitorRunReport {
         self.receive.service_probe_pending = progress.service_probe_pending;
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     fn record_interrupt_posts(&mut self, start: u32, current: u32) {
         self.rx_interrupt_posts = current.wrapping_sub(start);
     }
@@ -300,6 +302,7 @@ where
         F: Future<Output = ()>,
     {
         let mut report = Esp32s31MonitorRunReport::default();
+        #[cfg(any(feature = "diagnostics", test))]
         let interrupt_posts_at_start = self.interrupts().mac_runtime().rx_post_count();
         let start = {
             let receive = self.receive.as_mut().expect("monitor RX owner exists");
@@ -310,6 +313,7 @@ where
             receive.start(hardware)
         };
         if let Err(error) = start {
+            #[cfg(any(feature = "diagnostics", test))]
             report.record_interrupt_posts(
                 interrupt_posts_at_start,
                 self.interrupts().mac_runtime().rx_post_count(),
@@ -338,6 +342,7 @@ where
                 }
                 Err(stop) => Esp32s31MonitorRunError::ActivateStop { activation, stop },
             };
+            #[cfg(any(feature = "diagnostics", test))]
             report.record_interrupt_posts(
                 interrupt_posts_at_start,
                 self.interrupts().mac_runtime().rx_post_count(),
@@ -379,6 +384,7 @@ where
                         }
                         Err(error) => {
                             let stop = self.stop().await.err();
+                            #[cfg(any(feature = "diagnostics", test))]
                             report.record_interrupt_posts(
                                 interrupt_posts_at_start,
                                 self.interrupts().mac_runtime().rx_post_count(),
@@ -396,6 +402,7 @@ where
         match self.stop().await {
             Ok(drain) => {
                 report.interrupt_drain = drain;
+                #[cfg(any(feature = "diagnostics", test))]
                 report.record_interrupt_posts(
                     interrupt_posts_at_start,
                     self.interrupts().mac_runtime().rx_post_count(),
@@ -403,6 +410,7 @@ where
                 Ok(report)
             }
             Err(error) => {
+                #[cfg(any(feature = "diagnostics", test))]
                 report.record_interrupt_posts(
                     interrupt_posts_at_start,
                     self.interrupts().mac_runtime().rx_post_count(),

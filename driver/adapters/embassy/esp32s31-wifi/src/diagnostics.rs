@@ -6,5 +6,6 @@
 #[cfg(any(feature = "diagnostics", test))]
 pub mod access_point;
 pub mod aggregate_tx;
+#[cfg(feature = "diagnostics")]
 pub mod network;
 pub mod rx_pipeline;

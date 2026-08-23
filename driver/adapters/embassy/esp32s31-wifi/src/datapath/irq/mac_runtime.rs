@@ -25,6 +25,7 @@ pub struct EmbassyMacIrqRuntime<M: RawMutex> {
     rx_capacity: Signal<M, ()>,
     tx: Signal<M, ()>,
     tx_pending: AtomicU32,
+    #[cfg(any(feature = "diagnostics", test))]
     rx_post_count: AtomicU32,
     rx_moderation_active: AtomicBool,
     unmask_rx_delivery: Option<fn()>,
@@ -46,6 +47,7 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
             rx_capacity: Signal::new(),
             tx: Signal::new(),
             tx_pending: AtomicU32::new(0),
+            #[cfg(any(feature = "diagnostics", test))]
             rx_post_count: AtomicU32::new(0),
             rx_moderation_active: AtomicBool::new(false),
             unmask_rx_delivery: None,
@@ -61,6 +63,7 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
             rx_capacity: Signal::new(),
             tx: Signal::new(),
             tx_pending: AtomicU32::new(0),
+            #[cfg(any(feature = "diagnostics", test))]
             rx_post_count: AtomicU32::new(0),
             rx_moderation_active: AtomicBool::new(false),
             unmask_rx_delivery: Some(unmask_rx_delivery),
@@ -108,6 +111,7 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
             pending &= !work.mac_bit();
             match work {
                 IrqWork::RxSuccess => {
+                    #[cfg(any(feature = "diagnostics", test))]
                     self.rx_post_count.fetch_add(1, Ordering::Relaxed);
                     if !self.rx.signaled() {
                         self.rx.signal(());
@@ -202,6 +206,7 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
     }
 
     /// Number of RX-success work publications, with wrapping semantics.
+    #[cfg(any(feature = "diagnostics", test))]
     #[inline]
     pub fn rx_post_count(&self) -> u32 {
         self.rx_post_count.load(Ordering::Relaxed)

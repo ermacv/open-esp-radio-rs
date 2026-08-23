@@ -27,7 +27,7 @@ use open_esp_radio_wifi_softmac::{
 };
 use static_cell::{ConstStaticCell, StaticCell};
 
-use crate::connected::monitor_interrupts;
+use crate::supervisor::station::monitor_interrupts;
 use open_esp_radio_esp32s31_wifi_embassy::composition::resources::{
     ESP32S31_DEFAULT_RX_BUFFER_SIZE as RX_BUFFER_SIZE,
     ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE as RX_STORAGE_SIZE,

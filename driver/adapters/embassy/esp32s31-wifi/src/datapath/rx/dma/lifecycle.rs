@@ -55,6 +55,7 @@ impl<
         &mut self.delay
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     pub const fn pipeline_observer(&self) -> Option<&'pool dyn RxPipelineObserver> {
         self.pipeline_observer
     }
@@ -89,6 +90,7 @@ impl<
             pool,
             frames,
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
         } = self;
         (
@@ -98,6 +100,7 @@ impl<
                 pool,
                 frames,
                 delay,
+                #[cfg(any(feature = "diagnostics", test))]
                 pipeline_observer,
             },
         )
@@ -137,6 +140,7 @@ impl<
             pool,
             frames,
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
         } = self;
         match storage.prepare_halted(ring, hardware) {
@@ -146,6 +150,7 @@ impl<
                 pool,
                 frames,
                 delay,
+                #[cfg(any(feature = "diagnostics", test))]
                 pipeline_observer,
             }),
             Err((ring, error)) => Err((
@@ -155,6 +160,7 @@ impl<
                     pool,
                     frames,
                     delay,
+                    #[cfg(any(feature = "diagnostics", test))]
                     pipeline_observer,
                 },
                 error,
@@ -208,6 +214,7 @@ impl<
             pool,
             frames: Esp32s31StagedRxPublisher::standalone(frames),
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: None,
         }
     }
@@ -235,10 +242,12 @@ impl<
             pool,
             frames: Esp32s31StagedRxPublisher::sta_ap(frames, ingress, addresses),
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: None,
         }
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn with_pipeline_observer(mut self, observer: &'pool dyn RxPipelineObserver) -> Self {
         self.pipeline_observer = Some(observer);
         self
@@ -287,6 +296,7 @@ impl<
             pool: self.pool,
             frames: self.frames,
             delay: self.delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: self.pipeline_observer,
         }
     }
@@ -315,6 +325,7 @@ impl<
             pool: self.pool,
             frames: self.frames,
             delay: self.delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: self.pipeline_observer,
             admission: FullRxStageAdmission,
             serviced_descriptors: 0,
@@ -390,6 +401,7 @@ impl<
             pool,
             frames,
             mut delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
         } = self;
         delay
@@ -402,6 +414,7 @@ impl<
                 pool,
                 frames,
                 delay,
+                #[cfg(any(feature = "diagnostics", test))]
                 pipeline_observer,
                 admission: FullRxStageAdmission,
                 serviced_descriptors: 0,
@@ -413,6 +426,7 @@ impl<
                     pool,
                     frames,
                     delay,
+                    #[cfg(any(feature = "diagnostics", test))]
                     pipeline_observer,
                 },
                 error,
@@ -466,6 +480,7 @@ impl<
             pool,
             frames: Esp32s31StagedRxPublisher::standalone(frames),
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: None,
             admission: FullRxStageAdmission,
             serviced_descriptors: 0,
@@ -497,12 +512,14 @@ impl<
             pool,
             frames: Esp32s31StagedRxPublisher::sta_ap(frames, ingress, addresses),
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: None,
             admission: FullRxStageAdmission,
             serviced_descriptors: 0,
         }
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn with_pipeline_observer(mut self, observer: &'pool dyn RxPipelineObserver) -> Self {
         self.pipeline_observer = Some(observer);
         self
@@ -536,6 +553,7 @@ impl<
             pool: self.pool,
             frames: self.frames,
             delay: self.delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer: self.pipeline_observer,
             admission,
             serviced_descriptors: self.serviced_descriptors,
@@ -624,6 +642,7 @@ impl<
             pool,
             frames,
             delay,
+            #[cfg(any(feature = "diagnostics", test))]
             pipeline_observer,
             admission,
             serviced_descriptors,
@@ -635,6 +654,7 @@ impl<
                 pool,
                 frames,
                 delay,
+                #[cfg(any(feature = "diagnostics", test))]
                 pipeline_observer,
             }),
             Err((ring, error)) => Err((
@@ -644,6 +664,7 @@ impl<
                     pool,
                     frames,
                     delay,
+                    #[cfg(any(feature = "diagnostics", test))]
                     pipeline_observer,
                     admission,
                     serviced_descriptors,

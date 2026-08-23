@@ -55,8 +55,16 @@ const BEACON_PROBE_ATTEMPT_LIMIT: u8 = 5;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedDisconnectReason {
     BeaconLoss,
-    PeerDeauthentication { reason_code: u16 },
-    PeerDisassociation { reason_code: u16 },
+    PeerDeauthentication {
+        reason_code: u16,
+    },
+    PeerDisassociation {
+        reason_code: u16,
+    },
+    /// The executor-side bounded mailbox lost a semantic control event.
+    /// Continuing would make the connected protocol state unknowable, so the
+    /// complete station epoch must be torn down and rebuilt.
+    ControlMailboxOverflow,
     ActiveStateRestoreFailed,
     GroupKeyHandshakeFailed,
 }

@@ -9,12 +9,7 @@ pub mod attempt;
 mod backend;
 mod command;
 mod composer;
-mod connected_assembly;
-mod connected_epoch;
-mod connected_preparation;
-mod connected_shutdown;
-mod connected_start;
-mod connected_transaction;
+pub mod connected;
 pub mod control;
 pub mod control_mailbox;
 pub mod epoch;
@@ -26,7 +21,6 @@ mod join_port;
 mod join_time;
 mod lifecycle;
 pub mod network;
-pub mod port;
 #[cfg(target_arch = "riscv32")]
 mod reclaim;
 mod resources;
@@ -62,69 +56,6 @@ pub use composer::{
     Esp32s31StationServicePhase, Esp32s31StationServicePhaseKind,
     NoopEsp32s31StationEngineObserver, complete_esp32s31_station_running_scan,
 };
-pub use connected_assembly::{
-    Esp32s31ConnectedDriverAssembly, Esp32s31ConnectedDriverAssemblyFailure,
-    Esp32s31ConnectedDriverAssemblyResources, assemble_esp32s31_connected_driver,
-};
-pub use connected_epoch::{
-    Esp32s31ConnectedEpochResources, Esp32s31ConnectedServiceParts,
-    Esp32s31ConnectedServiceResources, Esp32s31ConnectedStationExit,
-    Esp32s31StationReconnectSource, activate_esp32s31_connected_epoch,
-    run_esp32s31_connected_station_epoch,
-};
-pub use connected_preparation::{
-    Esp32s31ConnectedNetworkStarted, Esp32s31ConnectedNetworkStartedParts,
-    Esp32s31ConnectedServicePrepareFailure, Esp32s31PreparedConnectedService,
-    Esp32s31PreparedConnectedServiceParts, prepare_esp32s31_connected_service,
-};
-pub use connected_shutdown::{
-    Esp32s31ConnectedEpochQuiesceFailure, Esp32s31ConnectedEpochQuiesced,
-    Esp32s31ConnectedEpochRunnerOwner, Esp32s31ConnectedEpochTeardown,
-    Esp32s31ConnectedEpochTeardownFailure, quiesce_esp32s31_connected_epoch,
-};
-pub use connected_start::{
-    Esp32s31ConnectedEpochStartFailure, Esp32s31ConnectedEpochStartPhase,
-    Esp32s31ConnectedEpochStarted, Esp32s31ConnectedRxMaterializer,
-    Esp32s31InitialConnectedEpochResources, start_esp32s31_initial_connected_epoch,
-    start_esp32s31_reconnected_connected_epoch,
-};
-pub use connected_transaction::{
-    Esp32s31ConnectedEpochCompleted, Esp32s31ConnectedEpochStopped, Esp32s31ConnectedRunObserver,
-    Esp32s31ConnectedRunQuiesceFailure, Esp32s31ConnectedServiceTeardownFailure,
-    Esp32s31ConnectedStationRunner, NoopEsp32s31ConnectedRunObserver,
-    run_and_quiesce_esp32s31_connected_epoch,
-};
-/// Exact connected-driver teardown failure for the Embassy control service.
-///
-/// This alias keeps the concrete control scheduler private while preserving
-/// every owner at the station fault boundary.
-pub type Esp32s31ConnectedDriverTeardownFailure<
-    'resources,
-    M,
-    H,
-    R,
-    S,
-    X,
-    const CONTROL_CAPACITY: usize,
-    RE,
-> = crate::roles::station::teardown::Esp32s31ConnectedStaTeardownFailure<
-    H,
-    R,
-    S,
-    X,
-    crate::roles::station::control::Esp32s31ConnectedControl<'resources, M, CONTROL_CAPACITY>,
-    crate::roles::station::control::ConnectedControlError,
-    RE,
->;
-/// Concrete service aggregate used by the production DATAPATH runner while
-/// the Embassy control scheduler remains an implementation detail.
-pub type Esp32s31ConnectedDriverServices<'resources, M, H, R, X, const CONTROL_CAPACITY: usize> =
-    crate::datapath::services::SingleRoleServices<
-        H,
-        R,
-        X,
-        crate::roles::station::control::Esp32s31ConnectedControl<'resources, M, CONTROL_CAPACITY>,
-    >;
 #[cfg(target_arch = "riscv32")]
 pub use join::{
     Esp32s31StationJoinError, Esp32s31StationJoinOutcome, Esp32s31StationJoinResources,

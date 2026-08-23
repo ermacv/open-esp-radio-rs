@@ -4,17 +4,24 @@
 //! aggregate publication, retry, or completion policy.
 
 use super::*;
+#[cfg(not(any(feature = "diagnostics", test)))]
+use core::marker::PhantomData;
 
 struct PreparedStandby {
     admission: Esp32s31ApAggregateAdmission,
     policy: HtAmpduTxRolePolicy,
     admitted: usize,
+    #[cfg(any(feature = "diagnostics", test))]
     preparation_micros: u64,
 }
 
 pub struct Esp32s31AccessPointNetworkTx<'observer, B> {
+    #[cfg(any(feature = "diagnostics", test))]
     observer: Option<&'observer dyn AggregateTxObserver>,
+    #[cfg(not(any(feature = "diagnostics", test)))]
+    observer_lifetime: PhantomData<&'observer ()>,
     deadline_micros: Option<u64>,
+    #[cfg(any(feature = "diagnostics", test))]
     exchange_started_micros: Option<u64>,
     prepared_first: Option<B>,
     prepared_second: Option<B>,
@@ -26,10 +33,18 @@ impl<'observer, B> Esp32s31AccessPointNetworkTx<'observer, B>
 where
     B: StableDmaBacking,
 {
-    pub const fn new(observer: Option<&'observer dyn AggregateTxObserver>) -> Self {
+    pub const fn new(
+        #[cfg(any(feature = "diagnostics", test))] observer: Option<
+            &'observer dyn AggregateTxObserver,
+        >,
+    ) -> Self {
         Self {
+            #[cfg(any(feature = "diagnostics", test))]
             observer,
+            #[cfg(not(any(feature = "diagnostics", test)))]
+            observer_lifetime: PhantomData,
             deadline_micros: None,
+            #[cfg(any(feature = "diagnostics", test))]
             exchange_started_micros: None,
             prepared_first: None,
             prepared_second: None,
@@ -77,6 +92,16 @@ where
                     && self.prepared_second.is_none()
             }
         }
+    }
+}
+
+#[cfg(not(any(feature = "diagnostics", test)))]
+impl<'observer, B> Default for Esp32s31AccessPointNetworkTx<'observer, B>
+where
+    B: StableDmaBacking,
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -145,6 +170,7 @@ where
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
         self.last_started_frames = 1;
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe_access_point_network_claim(frame.as_slice());
         }
@@ -154,9 +180,11 @@ where
             && network.queue_len() != 0
             && let Some(mut second) = network.try_receive()
         {
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe_access_point_network_claim(second.as_slice());
             }
+            #[cfg(any(feature = "diagnostics", test))]
             let preparation_started = self.observer.map(AggregateTxObserver::now_micros);
             if !admission.accepts_ethernet(second.as_slice()) {
                 // This lease was older than every frame still in the network
@@ -230,6 +258,7 @@ where
                 let Some(mut next) = network.try_receive() else {
                     break;
                 };
+                #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.observer {
                     observer.observe_access_point_network_claim(next.as_slice());
                 }
@@ -252,6 +281,7 @@ where
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
                 admitted += 1;
             }
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observe_aggregate_rate(observer, policy.rate());
                 observer.observe(AggregateTxObservation::Prepared {
@@ -268,10 +298,12 @@ where
                         .saturating_sub(preparation_started.unwrap_or(0)),
                 });
             }
+            #[cfg(any(feature = "diagnostics", test))]
             let publication_started = self.observer.map(AggregateTxObserver::now_micros);
             active
                 .publish(ordinary, hardware)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 let finished = observer.now_micros();
                 let started = publication_started.unwrap_or(finished);
@@ -342,7 +374,9 @@ where
             (self.aggregate_pending() || self.has_prepared()) && aggregate.has_standby(),
             "DATAPATH must check AP standby ownership before claiming another ordered lease"
         );
+        #[cfg(any(feature = "diagnostics", test))]
         let started = self.observer.map(AggregateTxObserver::now_micros);
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe_access_point_network_claim(frame.as_slice());
         }
@@ -371,11 +405,14 @@ where
                 .push(peer, frame, encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             batch.admitted += 1;
-            batch.preparation_micros = batch.preparation_micros.saturating_add(
-                self.observer
-                    .map(|observer| observer.now_micros().saturating_sub(started.unwrap_or(0)))
-                    .unwrap_or(0),
-            );
+            #[cfg(any(feature = "diagnostics", test))]
+            {
+                batch.preparation_micros = batch.preparation_micros.saturating_add(
+                    self.observer
+                        .map(|observer| observer.now_micros().saturating_sub(started.unwrap_or(0)))
+                        .unwrap_or(0),
+                );
+            }
             return Ok(());
         }
 
@@ -445,11 +482,13 @@ where
             admission,
             policy,
             admitted: 2,
+            #[cfg(any(feature = "diagnostics", test))]
             preparation_micros: self
                 .observer
                 .map(|observer| observer.now_micros().saturating_sub(started.unwrap_or(0)))
                 .unwrap_or(0),
         });
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::StandbyPrepared);
         }
@@ -509,7 +548,7 @@ where
             };
             self.prepare(aggregate, control, frame, network)?;
         }
-        let Some(batch) = self.prepared_standby.take() else {
+        let Some(_batch) = self.prepared_standby.take() else {
             let Some(frame) = self.prepared_first.take() else {
                 return Ok(WifiTxProgress::Complete);
             };
@@ -518,20 +557,22 @@ where
                 .start_network_tx(hardware, frame.as_slice())
                 .map_err(Esp32s31AccessPointDatapathError::Control);
         };
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
-            observe_aggregate_rate(observer, batch.policy.rate());
+            observe_aggregate_rate(observer, _batch.policy.rate());
             observer.observe(AggregateTxObservation::Prepared {
-                subframes: u8::try_from(batch.admitted).unwrap_or(u8::MAX),
-                stop: if batch.admitted == usize::from(batch.policy.frame_limit()) {
+                subframes: u8::try_from(_batch.admitted).unwrap_or(u8::MAX),
+                stop: if _batch.admitted == usize::from(_batch.policy.frame_limit()) {
                     AggregateBuildStop::FrameLimit
                 } else {
                     AggregateBuildStop::QueueEmpty
                 },
             });
             observer.observe(AggregateTxObservation::PreparationCompleted {
-                micros: batch.preparation_micros,
+                micros: _batch.preparation_micros,
             });
         }
+        #[cfg(any(feature = "diagnostics", test))]
         let publication_started = self.observer.map(AggregateTxObserver::now_micros);
         let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
             Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(error))
@@ -541,9 +582,13 @@ where
             .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         let now = ordinary.now_micros();
         self.deadline_micros = Some(now.saturating_add(ordinary.publication_timeout_micros()));
-        self.exchange_started_micros = publication_started;
         #[cfg(any(feature = "diagnostics", test))]
-        control.observe_ht_aggregate(batch.policy.rate());
+        {
+            self.exchange_started_micros = publication_started;
+        }
+        #[cfg(any(feature = "diagnostics", test))]
+        control.observe_ht_aggregate(_batch.policy.rate());
+        #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
             let finished = observer.now_micros();
             let started = publication_started.unwrap_or(finished);
@@ -573,6 +618,7 @@ where
                 .expect("prepared batch owns standby arena")
                 .cancel_build()
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::StandbyCancelled);
             }
@@ -682,7 +728,11 @@ where
             }
             ordinary.reset_aggregate_contention();
             self.deadline_micros = None;
-            self.exchange_started_micros = None;
+            #[cfg(any(feature = "diagnostics", test))]
+            {
+                self.exchange_started_micros = None;
+            }
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::Collision);
             }
@@ -713,7 +763,11 @@ where
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             ordinary.reset_aggregate_contention();
             self.deadline_micros = None;
-            self.exchange_started_micros = None;
+            #[cfg(any(feature = "diagnostics", test))]
+            {
+                self.exchange_started_micros = None;
+            }
+            #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::HardwareTimeout);
             }
@@ -721,6 +775,7 @@ where
         }
 
         let aggregate_progress = {
+            #[cfg(any(feature = "diagnostics", test))]
             let completion_started = self.observer.map(AggregateTxObserver::now_micros);
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
@@ -731,6 +786,7 @@ where
                 .active_mut()
                 .service_completion(ordinary, hardware)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            #[cfg(any(feature = "diagnostics", test))]
             if let Esp32s31ApAmpduProgress::Republished(_) = progress
                 && let Some(observer) = self.observer
             {
@@ -745,13 +801,22 @@ where
         };
         match aggregate_progress {
             Esp32s31ApAmpduProgress::Complete(completion) => {
+                #[cfg(any(feature = "diagnostics", test))]
                 self.observe_completion(completion, false);
+                #[cfg(not(any(feature = "diagnostics", test)))]
+                let _ = completion;
                 self.deadline_micros = None;
-                self.exchange_started_micros = None;
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    self.exchange_started_micros = None;
+                }
                 Ok(WifiTxProgress::Complete)
             }
             Esp32s31ApAmpduProgress::Republished(completion) => {
+                #[cfg(any(feature = "diagnostics", test))]
                 self.observe_completion(completion, true);
+                #[cfg(not(any(feature = "diagnostics", test)))]
+                let _ = completion;
                 let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                     Esp32s31AccessPointDatapathError::Control(Esp32s31AccessPointControlError::Mac(
                         error,
@@ -775,6 +840,7 @@ where
         }
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     fn observe_completion(&self, completion: Esp32s31ApAmpduCompletion, republished: bool) {
         let Some(observer) = self.observer else {
             return;

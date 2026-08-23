@@ -32,7 +32,7 @@ use crate::{
     traffic::tx_traffic::{Burst, receive_bursts},
     transport::controlled_client::ControlledClient,
     transport::controlled_openwrt_client::{
-        ControlledOpenWrtClient, OpenWrtClientTxEvidence, OpenWrtClientTxObservation,
+        ControlledOpenWrtClient, OpenWrtClientLinkEvidence, OpenWrtClientLinkObservation,
         SecondaryClientProbeEvidence,
     },
     transport::lab_config::{LabConfig, StationFixtureConfig},
@@ -92,9 +92,9 @@ impl ConnectedClients {
         }
     }
 
-    fn begin_primary_tx_observation(&self) -> Result<Option<OpenWrtClientTxObservation>> {
+    fn begin_primary_link_observation(&self) -> Result<Option<OpenWrtClientLinkObservation>> {
         self.openwrt_primary()
-            .map(ControlledOpenWrtClient::begin_tx_observation)
+            .map(ControlledOpenWrtClient::begin_link_observation)
             .transpose()
     }
 }
@@ -116,7 +116,7 @@ struct CycleReport {
     cycle: u8,
     traffic: TrafficReport,
     secondary_client: Option<SecondaryClientProbeEvidence>,
-    primary_client_tx: Option<OpenWrtClientTxEvidence>,
+    primary_client_link: Option<OpenWrtClientLinkEvidence>,
     /// Intrusive driver-internal evidence is absent from observer-free
     /// performance images. An omitted field is deliberately different from a
     /// diagnostic snapshot whose counters all happened to be zero.
@@ -196,7 +196,7 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
     }
     fs::create_dir_all(output)?;
     let mut report = AccessPointReport {
-        schema: 2,
+        schema: 3,
         boots: Vec::with_capacity(usize::from(config.boots)),
     };
     for boot in 0..config.boots {
@@ -297,11 +297,11 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 traffic_duration(&config.traffic),
             )
         });
-        let primary_tx_observation = clients.begin_primary_tx_observation();
+        let primary_link_observation = clients.begin_primary_link_observation();
         let data_result = qualify_data_plane(capture, config, lab, &clients);
-        let primary_tx_result = primary_tx_observation.and_then(|observation| {
+        let primary_link_result = primary_link_observation.and_then(|observation| {
             observation
-                .map(OpenWrtClientTxObservation::finish)
+                .map(OpenWrtClientLinkObservation::finish)
                 .transpose()
         });
         let secondary_probe_result = secondary_probe.map(|probe| {
@@ -398,9 +398,13 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 data_error.push_str("; secondary AP client: ");
                 data_error.push_str(probe_error);
             }
-            match &primary_tx_result {
+            match &primary_link_result {
                 Ok(Some(evidence)) => data_error.push_str(&format!(
-                    "; OpenWrt AP-client TX: packets={} bytes={} retries={} failed={} duration_us={} tid0_aqm_drops={}",
+                    "; OpenWrt AP-client link: rx_packets={} rx_bytes={} rx_duration_us={:?} rx_bitrate={:?} tx_packets={} tx_bytes={} retries={} failed={} tx_duration_us={} tid0_aqm_drops={}",
+                    evidence.rx_packets,
+                    evidence.rx_bytes,
+                    evidence.rx_duration_micros,
+                    evidence.rx_bitrate,
                     evidence.tx_packets,
                     evidence.tx_bytes,
                     evidence.tx_retries,
@@ -409,7 +413,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     evidence.tid0_aqm_drops,
                 )),
                 Err(observation_error) => data_error.push_str(&format!(
-                    "; OpenWrt AP-client TX observation failed: {observation_error}"
+                    "; OpenWrt AP-client link observation failed: {observation_error}"
                 )),
                 Ok(None) => {}
             }
@@ -432,7 +436,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         }
         let traffic = data_result?;
         let secondary_client = secondary_probe_result.transpose()?;
-        let primary_client_tx = primary_tx_result?;
+        let primary_client_link = primary_link_result?;
         client_restore?;
         let stopped = stop_result?;
         stop_stack_result?;
@@ -446,7 +450,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             cycle,
             traffic,
             secondary_client,
-            primary_client_tx,
+            primary_client_link,
             access_point,
         });
     }
@@ -1720,21 +1724,21 @@ mod tests {
     #[test]
     fn performance_cycle_omits_unavailable_driver_observation() {
         let report = AccessPointReport {
-            schema: 2,
+            schema: 3,
             boots: vec![BootReport {
                 boot: 0,
                 cycles: vec![CycleReport {
                     cycle: 0,
                     traffic: TrafficReport::None,
                     secondary_client: None,
-                    primary_client_tx: None,
+                    primary_client_link: None,
                     access_point: None,
                 }],
             }],
         };
 
         let json = serde_json::to_value(report).unwrap();
-        assert_eq!(json["schema"], 2);
+        assert_eq!(json["schema"], 3);
         assert!(json["boots"][0]["cycles"][0].get("access_point").is_none());
     }
 }

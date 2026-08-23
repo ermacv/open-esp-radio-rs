@@ -59,6 +59,10 @@ pub struct AggregateTxCounters {
     publication_program_micros: AtomicU32,
     publication_program_lifetime_max_micros: AtomicU32,
     last_publication_micros: AtomicU32,
+    last_completion_micros: AtomicU32,
+    completion_to_publication_samples: AtomicU32,
+    completion_to_publication_micros: AtomicU32,
+    completion_to_publication_lifetime_max_micros: AtomicU32,
     exchange_micros: AtomicU32,
     exchange_lifetime_max_micros: AtomicU32,
     single_publication_exchanges: AtomicU32,
@@ -139,6 +143,10 @@ impl AggregateTxCounters {
             publication_program_micros: AtomicU32::new(0),
             publication_program_lifetime_max_micros: AtomicU32::new(0),
             last_publication_micros: AtomicU32::new(0),
+            last_completion_micros: AtomicU32::new(0),
+            completion_to_publication_samples: AtomicU32::new(0),
+            completion_to_publication_micros: AtomicU32::new(0),
+            completion_to_publication_lifetime_max_micros: AtomicU32::new(0),
             exchange_micros: AtomicU32::new(0),
             exchange_lifetime_max_micros: AtomicU32::new(0),
             single_publication_exchanges: AtomicU32::new(0),
@@ -224,6 +232,15 @@ impl AggregateTxCounters {
             publication_program_micros: self.publication_program_micros.load(Ordering::Relaxed),
             publication_program_lifetime_max_micros: self
                 .publication_program_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            completion_to_publication_samples: self
+                .completion_to_publication_samples
+                .load(Ordering::Relaxed),
+            completion_to_publication_micros: self
+                .completion_to_publication_micros
+                .load(Ordering::Relaxed),
+            completion_to_publication_lifetime_max_micros: self
+                .completion_to_publication_lifetime_max_micros
                 .load(Ordering::Relaxed),
             exchange_micros: self.exchange_micros.load(Ordering::Relaxed),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros.load(Ordering::Relaxed),
@@ -362,8 +379,23 @@ impl AggregateTxCounters {
     }
 
     pub(crate) fn record_publication(&self, at_micros: u64, program_micros: u64) {
+        let at_modulo = at_micros as u32 & Self::IRQ_TIME_MASK;
+        let completion = self.last_completion_micros.swap(0, Ordering::AcqRel);
+        if completion != 0 {
+            let completed_modulo = completion & Self::IRQ_TIME_MASK;
+            let elapsed = at_modulo.wrapping_sub(completed_modulo) & Self::IRQ_TIME_MASK;
+            if elapsed <= Self::IRQ_TIME_MASK / 2 {
+                self.completion_to_publication_samples
+                    .fetch_add(1, Ordering::Relaxed);
+                Self::record_time(
+                    &self.completion_to_publication_micros,
+                    &self.completion_to_publication_lifetime_max_micros,
+                    u64::from(elapsed),
+                );
+            }
+        }
         self.last_publication_micros.store(
-            Self::IRQ_TIME_VALID | (at_micros as u32 & Self::IRQ_TIME_MASK),
+            Self::IRQ_TIME_VALID | at_modulo,
             Ordering::Release,
         );
         self.aggregate_publications.fetch_add(1, Ordering::Relaxed);
@@ -375,6 +407,9 @@ impl AggregateTxCounters {
     }
 
     pub(crate) fn record_complete(&self, acknowledged: u8, individual_retry: bool) {
+        let now_modulo = (self.now_micros)() as u32 & Self::IRQ_TIME_MASK;
+        self.last_completion_micros
+            .store(Self::IRQ_TIME_VALID | now_modulo, Ordering::Release);
         self.aggregates_completed.fetch_add(1, Ordering::Relaxed);
         self.subframes_acknowledged
             .fetch_add(u32::from(acknowledged), Ordering::Relaxed);
@@ -690,6 +725,10 @@ pub struct AggregateTxCounterSnapshot {
     pub publication_program_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub publication_program_lifetime_max_micros: u32,
+    pub completion_to_publication_samples: u32,
+    pub completion_to_publication_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub completion_to_publication_lifetime_max_micros: u32,
     pub exchange_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub exchange_lifetime_max_micros: u32,
@@ -801,6 +840,14 @@ impl AggregateTxCounterSnapshot {
                 .publication_program_micros
                 .wrapping_sub(earlier.publication_program_micros),
             publication_program_lifetime_max_micros: self.publication_program_lifetime_max_micros,
+            completion_to_publication_samples: self
+                .completion_to_publication_samples
+                .wrapping_sub(earlier.completion_to_publication_samples),
+            completion_to_publication_micros: self
+                .completion_to_publication_micros
+                .wrapping_sub(earlier.completion_to_publication_micros),
+            completion_to_publication_lifetime_max_micros: self
+                .completion_to_publication_lifetime_max_micros,
             exchange_micros: self.exchange_micros.wrapping_sub(earlier.exchange_micros),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros,
             single_publication_exchanges: self
@@ -1099,5 +1146,25 @@ mod tests {
 
         assert_eq!(reads.get(), 1);
         assert_eq!(counters.snapshot().tx_irq_epochs, 64);
+    }
+
+    #[test]
+    fn terminal_completion_is_correlated_with_the_next_publication() {
+        let counters = AggregateTxCounters::with_clock(|| 100);
+        let before = counters.snapshot();
+
+        counters.observe(AggregateTxObservation::Completed {
+            acknowledged: 16,
+            individual_retry: false,
+        });
+        counters.observe(AggregateTxObservation::Published {
+            at_micros: 175,
+            program_micros: 4,
+        });
+
+        let delta = counters.snapshot().wrapping_delta_since(before);
+        assert_eq!(delta.completion_to_publication_samples, 1);
+        assert_eq!(delta.completion_to_publication_micros, 75);
+        assert_eq!(delta.completion_to_publication_lifetime_max_micros, 75);
     }
 }

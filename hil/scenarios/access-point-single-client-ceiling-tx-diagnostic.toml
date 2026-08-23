@@ -4,8 +4,8 @@ description = "Diagnostic single-client AP HT40 saturated UDP transmit character
 repetitions = 1
 image = "diagnostic-mac-irq"
 isolation = "reset"
-data_plane = "single-core"
-tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "tx"]
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "tx"]
 
 [link]
 phy = "ht40"

@@ -135,7 +135,8 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
     yield_now().await;
     runtime_log(format_args!(
         "OAMPT preparation_us={} preparation_max_us={} publication_us={} \
-         publication_max_us={} exchange_us={} exchange_max_us={} \
+         publication_max_us={} completion_to_publication={}/{} \
+         completion_to_publication_max_us={} exchange_us={} exchange_max_us={} \
          first_exchanges={} first_exchange_us={} first_exchange_max_us={} \
          retried_exchanges={} retry_publications={} retry_exchange_us={} retry_exchange_max_us={} \
          r2={}/{} r3={}/{} r4={}/{}",
@@ -143,6 +144,9 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         aggregate.preparation_lifetime_max_micros,
         aggregate.publication_program_micros,
         aggregate.publication_program_lifetime_max_micros,
+        aggregate.completion_to_publication_samples,
+        aggregate.completion_to_publication_micros,
+        aggregate.completion_to_publication_lifetime_max_micros,
         aggregate.exchange_micros,
         aggregate.exchange_lifetime_max_micros,
         aggregate.single_publication_exchanges,

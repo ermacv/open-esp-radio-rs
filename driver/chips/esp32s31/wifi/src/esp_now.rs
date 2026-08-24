@@ -7,10 +7,15 @@
 
 use core::fmt;
 
-use open_esp_radio_esp32s31_wifi_mac::tx::{LegacyRate, TxHardware, TxPhyRate};
+use open_esp_radio_esp32s31_wifi_mac::{
+    rate_schedule::{RateScheduleKind, RateScheduleRef},
+    tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxHardware, TxPhyRate},
+    tx_runtime::{OrdinaryRetryRatePolicy, P2pRetryRateSchedule},
+};
 use open_esp_radio_ieee80211::{channel::WifiChannel, wmm::WmmAccessCategory};
 use open_esp_radio_wifi_softmac::{
-    EspNowPhyMode, EspNowPreparedV1Tx, MacTxPlan, interface::BoundVirtualInterface,
+    EspNowHtGuardInterval, EspNowHtMcs, EspNowOfdmRate, EspNowPhyMode, EspNowPreparedV1Tx,
+    MacTxPlan, interface::BoundVirtualInterface,
 };
 
 use crate::{
@@ -101,8 +106,39 @@ where
             active: active_station,
         });
     }
-    let initial_rate = match prepared.phy_mode() {
-        EspNowPhyMode::LegacyDsss1M => TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
+    let (initial_rate, retry_rate_policy) = match prepared.phy_mode() {
+        EspNowPhyMode::LegacyDsss1M => (
+            TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
+            OrdinaryRetryRatePolicy::Normal,
+        ),
+        EspNowPhyMode::StandardP2pOfdm(rate) => {
+            let (rate, schedule_index) = p2p_ofdm_rate(rate);
+            (
+                TxPhyRate::Legacy(rate),
+                p2p_retry_policy(RateScheduleKind::P2pDot11G, schedule_index),
+            )
+        }
+        EspNowPhyMode::StandardP2pHt20(rate) => {
+            let mcs = esp_now_ht_mcs(rate.mcs());
+            let (guard_interval, schedule_index) = match rate.guard_interval() {
+                EspNowHtGuardInterval::Long800Ns => {
+                    (HtGuardInterval::Long800Ns, 8 - rate.mcs().index())
+                }
+                EspNowHtGuardInterval::Short400Ns if rate.mcs() == EspNowHtMcs::Mcs7 => {
+                    (HtGuardInterval::Short400Ns, 0)
+                }
+                EspNowHtGuardInterval::Short400Ns => {
+                    return Err(Esp32s31EspNowTxError::P2pHtRetryScheduleUnavailable {
+                        mcs: rate.mcs(),
+                        guard_interval: rate.guard_interval(),
+                    });
+                }
+            };
+            (
+                TxPhyRate::Ht(HtRate::new(mcs, guard_interval, HtChannelWidth::Mhz20)),
+                p2p_retry_policy(RateScheduleKind::P2pDot11N, schedule_index),
+            )
+        }
         // The recovered LR schedule and AGC enable leaf do not define the
         // missing LR PLCP/RX contract. Never reinterpret 0x29/0x2a here.
         EspNowPhyMode::LongRange => {
@@ -128,7 +164,7 @@ where
     };
 
     ordinary
-        .start(
+        .start_with_retry_rate_policy(
             hardware,
             OrdinaryTxPlan {
                 frame_length,
@@ -147,8 +183,43 @@ where
                 scheduler_priority: 1,
                 packet_priority: 1,
             },
+            retry_rate_policy,
         )
         .map_err(Esp32s31EspNowTxError::Tx)
+}
+
+fn p2p_retry_policy(kind: RateScheduleKind, index: u8) -> OrdinaryRetryRatePolicy {
+    let schedule = RateScheduleRef::new(kind, index)
+        .expect("ESP-NOW uses an in-range finite P2P schedule index");
+    let schedule = P2pRetryRateSchedule::new(schedule)
+        .expect("ESP-NOW selects only a standard P2P retry arena");
+    OrdinaryRetryRatePolicy::P2p(schedule)
+}
+
+const fn p2p_ofdm_rate(rate: EspNowOfdmRate) -> (LegacyRate, u8) {
+    match rate {
+        EspNowOfdmRate::Mbps54 => (LegacyRate::Ofdm54M, 0),
+        EspNowOfdmRate::Mbps48 => (LegacyRate::Ofdm48M, 1),
+        EspNowOfdmRate::Mbps36 => (LegacyRate::Ofdm36M, 2),
+        EspNowOfdmRate::Mbps24 => (LegacyRate::Ofdm24M, 3),
+        EspNowOfdmRate::Mbps18 => (LegacyRate::Ofdm18M, 4),
+        EspNowOfdmRate::Mbps12 => (LegacyRate::Ofdm12M, 5),
+        EspNowOfdmRate::Mbps9 => (LegacyRate::Ofdm9M, 6),
+        EspNowOfdmRate::Mbps6 => (LegacyRate::Ofdm6M, 7),
+    }
+}
+
+const fn esp_now_ht_mcs(mcs: EspNowHtMcs) -> HtMcs {
+    match mcs {
+        EspNowHtMcs::Mcs0 => HtMcs::Mcs0,
+        EspNowHtMcs::Mcs1 => HtMcs::Mcs1,
+        EspNowHtMcs::Mcs2 => HtMcs::Mcs2,
+        EspNowHtMcs::Mcs3 => HtMcs::Mcs3,
+        EspNowHtMcs::Mcs4 => HtMcs::Mcs4,
+        EspNowHtMcs::Mcs5 => HtMcs::Mcs5,
+        EspNowHtMcs::Mcs6 => HtMcs::Mcs6,
+        EspNowHtMcs::Mcs7 => HtMcs::Mcs7,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -160,6 +231,10 @@ pub enum Esp32s31EspNowTxError {
     StationBindingMismatch {
         prepared: BoundVirtualInterface,
         active: BoundVirtualInterface,
+    },
+    P2pHtRetryScheduleUnavailable {
+        mcs: EspNowHtMcs,
+        guard_interval: EspNowHtGuardInterval,
     },
     LongRangePlcpUnsupported,
     Wire(open_esp_radio_ieee80211::esp_now::EspNowV1WireError),
@@ -176,6 +251,13 @@ impl fmt::Display for Esp32s31EspNowTxError {
             Self::StationBindingMismatch { prepared, active } => write!(
                 formatter,
                 "ESP-NOW prepared station binding {prepared:?} differs from active binding {active:?}"
+            ),
+            Self::P2pHtRetryScheduleUnavailable {
+                mcs,
+                guard_interval,
+            } => write!(
+                formatter,
+                "ESP32-S31 has no recovered ESP-NOW P2P retry record for {mcs:?} {guard_interval:?}"
             ),
             Self::LongRangePlcpUnsupported => formatter.write_str(
                 "ESP32-S31 ESP-NOW LR transmit is unavailable until the LR PLCP contract is owned",

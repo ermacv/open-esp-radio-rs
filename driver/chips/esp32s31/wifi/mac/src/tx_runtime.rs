@@ -9,7 +9,10 @@ use open_esp_radio_ieee80211::wmm::WmmParameterSet;
 
 use crate::{
     edca::{EdcaContentionParameters, EdcaParametersError, EdcaQueues},
-    tx::{HtPeerAmpduParameters, LegacyTxQueue, TxCompletionDisposition, TxPhyRate},
+    rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
+    tx::{
+        HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue, TxCompletionDisposition, TxPhyRate,
+    },
     tx_ampdu::HtAmpduTxCompletion,
 };
 
@@ -102,7 +105,49 @@ pub const VENDOR_RTS_THRESHOLD_BYTES: u32 = 0x092a;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrdinaryRetryError {
     ZeroMpduRetryLimit,
-    RetryRateUnavailable { retry_index: u8 },
+    RetryRateUnavailable {
+        retry_index: u8,
+    },
+    P2pInitialRateMismatch {
+        initial: TxPhyRate,
+        scheduled: TxPhyRate,
+    },
+}
+
+/// One validated recovered standard-rate P2P retry record.
+///
+/// LR records are intentionally excluded: a retry policy cannot establish
+/// the missing LR PLCP, receive-status and scoped PHY ownership contracts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct P2pRetryRateSchedule(RateScheduleRef);
+
+impl P2pRetryRateSchedule {
+    pub const fn new(schedule: RateScheduleRef) -> Option<Self> {
+        if matches!(
+            schedule.kind,
+            RateScheduleKind::P2pDot11G | RateScheduleKind::P2pDot11N
+        ) && (schedule.index as usize) < schedule.kind.record_count()
+        {
+            Some(Self(schedule))
+        } else {
+            None
+        }
+    }
+
+    pub const fn schedule(self) -> RateScheduleRef {
+        self.0
+    }
+}
+
+/// Rate-ladder ownership for one retained ordinary MPDU.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OrdinaryRetryRatePolicy {
+    /// Use the ordinary associated-station Dot11G/Dot11N ladder selected from
+    /// the initial hardware rate.
+    #[default]
+    Normal,
+    /// Use one exact recovered P2P record for every retained publication.
+    P2p(P2pRetryRateSchedule),
 }
 
 /// Driver-owned action after one ordinary MPDU attempt.
@@ -140,6 +185,7 @@ pub struct OrdinaryRetryCounters {
 pub struct OrdinaryMpduRetryState {
     queue: LegacyTxQueue,
     initial_rate: TxPhyRate,
+    rate_policy: OrdinaryRetryRatePolicy,
     mpdu_retry_limit: u8,
     publications: u8,
     frame_class: OrdinaryFrameClass,
@@ -159,6 +205,7 @@ impl OrdinaryMpduRetryState {
         Ok(Self {
             queue,
             initial_rate,
+            rate_policy: OrdinaryRetryRatePolicy::Normal,
             mpdu_retry_limit,
             publications: 1,
             frame_class,
@@ -168,6 +215,31 @@ impl OrdinaryMpduRetryState {
                 long: 0,
             },
         })
+    }
+
+    /// Construct an ordinary retry owner with an explicit standard P2P
+    /// ladder. The first record rate must exactly match the published initial
+    /// rate, preventing a caller from changing PHY only after the first ACK
+    /// timeout.
+    pub fn new_with_rate_policy(
+        queue: LegacyTxQueue,
+        initial_rate: TxPhyRate,
+        rate_policy: OrdinaryRetryRatePolicy,
+        mpdu_retry_limit: u8,
+        frame_class: OrdinaryFrameClass,
+    ) -> Result<Self, OrdinaryRetryError> {
+        let mut state = Self::new(queue, initial_rate, mpdu_retry_limit, frame_class)?;
+        if let OrdinaryRetryRatePolicy::P2p(schedule) = rate_policy {
+            let scheduled = select_p2p_retry_rate(schedule, 0)?;
+            if scheduled != initial_rate {
+                return Err(OrdinaryRetryError::P2pInitialRateMismatch {
+                    initial: initial_rate,
+                    scheduled,
+                });
+            }
+        }
+        state.rate_policy = rate_policy;
+        Ok(state)
     }
 
     pub const fn publications(&self) -> u8 {
@@ -180,13 +252,19 @@ impl OrdinaryMpduRetryState {
 
     /// Select the rate for the current publication.
     ///
-    /// This is specifically the normal `rcGetRate` branch. The descriptor
-    /// bypass and context-fixed-rate branches remain separate production
-    /// modes and are not inferred here. The normal branch selects with
+    /// Both normal and P2P records use the `rcGetRate` retry counters. The
+    /// descriptor bypass and context-fixed-rate branches remain separate
+    /// production modes and are not inferred here. Selection uses
     /// `max(desc[5], desc[6])`; a long collision changes only `desc[7]` and
     /// therefore retains its current rate.
     pub fn current_rate(&self) -> Result<TxPhyRate, OrdinaryRetryError> {
-        select_ordinary_retry_rate(self.initial_rate, self.counters)
+        let retry_index = self.counters.mpdu.max(self.counters.short);
+        match self.rate_policy {
+            OrdinaryRetryRatePolicy::Normal => {
+                select_ordinary_retry_rate(self.initial_rate, self.counters)
+            }
+            OrdinaryRetryRatePolicy::P2p(schedule) => select_p2p_retry_rate(schedule, retry_index),
+        }
     }
 
     /// Apply one typed completion after the raw status/detail dispatcher.
@@ -296,6 +374,22 @@ pub fn select_ordinary_retry_rate(
             .unwrap_or(TxPhyRate::Ht(rate))),
         TxPhyRate::He(rate) => Ok(TxPhyRate::He(rate)),
     }
+}
+
+/// Select one attempt from an exact standard P2P record.
+///
+/// The dedicated P2P arenas never enter the proprietary LR or HE rate-code
+/// domains. HT values are decoded as 20-MHz one-stream rates; MCS32 therefore
+/// cannot be introduced through this path.
+#[inline(never)]
+pub fn select_p2p_retry_rate(
+    schedule: P2pRetryRateSchedule,
+    retry_index: u8,
+) -> Result<TxPhyRate, OrdinaryRetryError> {
+    let code = schedule_rate_after_failures(schedule.schedule(), retry_index)
+        .ok_or(OrdinaryRetryError::RetryRateUnavailable { retry_index })?;
+    TxPhyRate::from_code(code, HtChannelWidth::Mhz20)
+        .ok_or(OrdinaryRetryError::RetryRateUnavailable { retry_index })
 }
 
 /// Policy for retained A-MPDU retries.

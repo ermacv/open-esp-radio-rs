@@ -26,10 +26,10 @@ pub use configuration::{
 };
 pub use esp_now::{
     ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY, EspNowConfig,
-    EspNowConfigError, EspNowOwnedReceivedV1, EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity,
-    EspNowPeerTable, EspNowPeerTableError, EspNowPeers, EspNowPhyMode, EspNowPreparedV1Tx,
-    EspNowProtocol, EspNowReceiveError, EspNowReceivedV1, EspNowRxEpoch, EspNowRxOutcome,
-    EspNowSendError,
+    EspNowConfigError, EspNowHt20Rate, EspNowHtGuardInterval, EspNowHtMcs, EspNowOfdmRate,
+    EspNowOwnedReceivedV1, EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity, EspNowPeerTable,
+    EspNowPeerTableError, EspNowPeers, EspNowPhyMode, EspNowPreparedV1Tx, EspNowProtocol,
+    EspNowReceiveError, EspNowReceivedV1, EspNowRxEpoch, EspNowRxOutcome, EspNowSendError,
 };
 pub use monitor::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType, MonitorFrameTypeMask,

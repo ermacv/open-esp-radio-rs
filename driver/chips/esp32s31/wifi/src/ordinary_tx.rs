@@ -19,7 +19,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
     tx_runtime::{
         OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryCounters, OrdinaryRetryDecision,
-        OrdinaryRetryError, VENDOR_RTS_THRESHOLD_BYTES, WifiTxRuntimePolicy,
+        OrdinaryRetryError, OrdinaryRetryRatePolicy, VENDOR_RTS_THRESHOLD_BYTES,
+        WifiTxRuntimePolicy,
     },
 };
 use open_esp_radio_wifi_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
@@ -444,6 +445,20 @@ where
         hardware: &mut H,
         plan: OrdinaryTxPlan,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
+        self.start_with_retry_rate_policy(hardware, plan, OrdinaryRetryRatePolicy::Normal)
+    }
+
+    /// Start one ordinary MPDU with an explicitly owned retry-rate policy.
+    ///
+    /// Protocols should use [`Self::start`] unless they have a distinct,
+    /// reviewed rate arena such as the standard ESP-NOW P2P profile. DMA,
+    /// EDCA and terminal ownership remain identical to the normal path.
+    pub fn start_with_retry_rate_policy<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        plan: OrdinaryTxPlan,
+        retry_rate_policy: OrdinaryRetryRatePolicy,
+    ) -> Result<WifiTxProgress, OrdinaryTxError> {
         if self.active.is_some() {
             return Err(OrdinaryTxError::Busy);
         }
@@ -485,9 +500,10 @@ where
 
         let mut active = ActiveTx {
             cookie: TxCookie(0),
-            retry: OrdinaryMpduRetryState::new(
+            retry: OrdinaryMpduRetryState::new_with_rate_policy(
                 LegacyTxQueue::from_access_category(plan.exchange.access_category),
                 plan.exchange.initial_rate,
+                retry_rate_policy,
                 plan.exchange.publication_limit,
                 if hardware_frame_length > VENDOR_RTS_THRESHOLD_BYTES {
                     OrdinaryFrameClass::Long

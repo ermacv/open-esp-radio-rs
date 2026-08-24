@@ -49,7 +49,6 @@ use open_esp_radio_wifi_sta::{
 };
 use open_esp_radio_wpa2::{
     aes::{SoftwareAesKeyUnwrapError, Wpa2SoftwareAes},
-    keys::Wpa2KeyKind,
     supplicant::{
         Wpa2ConnectedAction, Wpa2ConnectedProcessError, Wpa2ConnectedSupplicant,
         Wpa2ConnectedSupplicantError,
@@ -104,6 +103,7 @@ pub enum ConnectedWpa2SecurityFailure {
     Protocol(Wpa2ConnectedSupplicantError),
     KeyUnwrap(SoftwareAesKeyUnwrapError),
     InvalidGroupKeyKind,
+    GroupReplayRotationUnavailable,
     KeyInstall(CryptoKeyError),
     TxStart(open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTxError),
     TxOutcome(open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTxOutcome),
@@ -218,22 +218,13 @@ impl ConnectedWpa2Security {
                 response
             }
             Wpa2ConnectedAction::InstallGroupKey(request) => {
-                let Wpa2KeyKind::Group { key_id, .. } = request.group().kind() else {
-                    return self.fail(ConnectedWpa2SecurityFailure::InvalidGroupKeyKind);
-                };
-                if let Err(error) = hardware.replace_sta_group_ccmp(
-                    &mut self.group,
-                    key_id,
-                    request.group().key().as_bytes(),
-                ) {
-                    let _ = self.supplicant.complete_group_key_install(request, false);
-                    return self.fail(ConnectedWpa2SecurityFailure::KeyInstall(error));
-                }
-                self.installed = self.installed.saturating_add(1);
-                match self.supplicant.complete_group_key_install(request, true) {
-                    Ok(response) => response,
-                    Err(error) => return self.fail(ConnectedWpa2SecurityFailure::Protocol(error)),
-                }
+                // The connected RX task owns the active GTK replay frontier.
+                // Replacing hardware key material without a reserved,
+                // acknowledged replay-epoch handoff creates a window where a
+                // same-KeyID GTK can accept PN reuse. Until that cross-task
+                // transaction exists, reject before touching the key slot.
+                let _ = self.supplicant.complete_group_key_install(request, false);
+                return self.fail(ConnectedWpa2SecurityFailure::GroupReplayRotationUnavailable);
             }
         };
         match tx.start_protected_eapol(hardware, response.as_bytes()) {

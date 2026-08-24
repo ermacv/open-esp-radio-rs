@@ -510,12 +510,20 @@ impl ProductionWifiEpochRunner {
                 Some(Esp32s31ConnectedStaGroupSecurity::Open),
             ),
             (
-                Esp32s31StaInstalledSecurity::Wpa2Personal { pairwise, group },
+                Esp32s31StaInstalledSecurity::Wpa2Personal {
+                    pairwise,
+                    group,
+                    replay,
+                },
                 Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { .. },
-            ) => (
-                ConnectedTxSecurity::Wpa2Personal(pairwise),
-                Some(Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group)),
-            ),
+            ) => {
+                plan.enable_ccmp_rx_replay(replay)
+                    .unwrap_or_else(|_| unreachable!("fresh WPA2 plan owns no replay epoch"));
+                (
+                    ConnectedTxSecurity::Wpa2Personal(pairwise),
+                    Some(Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group)),
+                )
+            }
             _ => unreachable!("paired security modes were validated before owner split"),
         };
         let (control_publisher, control_receiver) = control_resources.split();

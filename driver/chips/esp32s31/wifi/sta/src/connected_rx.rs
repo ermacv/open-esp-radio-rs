@@ -9,6 +9,10 @@
 use open_esp_radio_esp32s31_wifi::protected_data_rx::{view_protected_data, view_unprotected_data};
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
 use open_esp_radio_ieee80211::{
+    ccmp::{
+        CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane, CcmpRxReplayCandidate,
+        CcmpRxReplayState,
+    },
     data::{DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter},
     esp_now::{
         ESP_NOW_ACTION_CATEGORY, ESP_NOW_ORGANIZATION_IDENTIFIER, EspNowVersionError,
@@ -76,6 +80,116 @@ pub enum ConnectedRxProtection {
     Pairwise,
     Group,
     Other,
+}
+
+/// Association-scoped software anti-replay owner for the installed PTK and
+/// GTK. It is moved into the one connected RX dispatcher and is never cloned.
+/// BlockAck release happens before dispatcher entry, so each per-TID frontier
+/// observes sequence-ordered frames even when DMA completion order differed.
+#[derive(Debug, Eq, PartialEq)]
+pub struct StaCcmpRxReplayEpoch {
+    pairwise: CcmpRxReplayState,
+    group: CcmpRxReplayState,
+    group_key_id: CcmpKeyId,
+}
+
+impl StaCcmpRxReplayEpoch {
+    pub fn new(
+        pairwise_receive_sequence: [u8; 8],
+        group_key_id: u8,
+        group_receive_sequence: [u8; 8],
+    ) -> Result<Self, StaCcmpRxReplayError> {
+        let pairwise = CcmpRxReplayState::from_receive_sequence(pairwise_receive_sequence)
+            .map_err(|_| StaCcmpRxReplayError::InvalidPairwiseReceiveSequence)?;
+        let group = CcmpRxReplayState::from_receive_sequence(group_receive_sequence)
+            .map_err(|_| StaCcmpRxReplayError::InvalidGroupReceiveSequence)?;
+        let group_key_id = CcmpKeyId::new(group_key_id)
+            .ok_or(StaCcmpRxReplayError::InvalidGroupKeyId(group_key_id))?;
+        Ok(Self {
+            pairwise,
+            group,
+            group_key_id,
+        })
+    }
+
+    pub const fn group_key_id(&self) -> CcmpKeyId {
+        self.group_key_id
+    }
+
+    fn prepare(
+        &self,
+        protection: ConnectedRxProtection,
+        tid: Option<u8>,
+        header: CcmpHeader,
+    ) -> Result<StaCcmpRxReplayCandidate, StaCcmpRxReplayError> {
+        let lane = match tid {
+            Some(tid) => CcmpReplayLane::Tid(tid),
+            None => CcmpReplayLane::NonQos,
+        };
+        match protection {
+            ConnectedRxProtection::Pairwise => {
+                if header.key_id() != CcmpKeyId::PAIRWISE {
+                    return Err(StaCcmpRxReplayError::UnexpectedKeyId {
+                        protection,
+                        expected: CcmpKeyId::PAIRWISE,
+                        observed: header.key_id(),
+                    });
+                }
+                self.pairwise
+                    .prepare(lane, header.packet_number())
+                    .map(StaCcmpRxReplayCandidate::Pairwise)
+                    .map_err(StaCcmpRxReplayError::Replay)
+            }
+            ConnectedRxProtection::Group => {
+                if header.key_id() != self.group_key_id {
+                    return Err(StaCcmpRxReplayError::UnexpectedKeyId {
+                        protection,
+                        expected: self.group_key_id,
+                        observed: header.key_id(),
+                    });
+                }
+                self.group
+                    .prepare(lane, header.packet_number())
+                    .map(StaCcmpRxReplayCandidate::Group)
+                    .map_err(StaCcmpRxReplayError::Replay)
+            }
+            ConnectedRxProtection::Other => Err(StaCcmpRxReplayError::ForeignDestination),
+        }
+    }
+
+    fn commit(&mut self, candidate: StaCcmpRxReplayCandidate) -> Result<(), StaCcmpRxReplayError> {
+        match candidate {
+            StaCcmpRxReplayCandidate::Pairwise(candidate) => self
+                .pairwise
+                .commit(candidate)
+                .map_err(StaCcmpRxReplayError::Replay),
+            StaCcmpRxReplayCandidate::Group(candidate) => self
+                .group
+                .commit(candidate)
+                .map_err(StaCcmpRxReplayError::Replay),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StaCcmpRxReplayCandidate {
+    Pairwise(CcmpRxReplayCandidate),
+    Group(CcmpRxReplayCandidate),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaCcmpRxReplayError {
+    InvalidPairwiseReceiveSequence,
+    InvalidGroupReceiveSequence,
+    InvalidGroupKeyId(u8),
+    OwnerUnavailable,
+    ForeignDestination,
+    UnexpectedKeyId {
+        protection: ConnectedRxProtection,
+        expected: CcmpKeyId,
+        observed: CcmpKeyId,
+    },
+    Replay(CcmpReplayError),
 }
 
 /// MAC identity admitted for an associated HE control exchange.
@@ -274,6 +388,7 @@ pub enum ConnectedRxError {
     Data(DataDecapError),
     SecurityModeMismatch,
     PeerQosMismatch,
+    CcmpReplay(StaCcmpRxReplayError),
 }
 
 /// Result of consuming one independently owned staged RX frame.
@@ -314,6 +429,7 @@ pub enum ConnectedRxDispatch {
 pub struct ConnectedRxDispatcher {
     config: ConnectedRxConfig,
     duplicate_filter: RxDuplicateFilter,
+    ccmp_replay: Option<StaCcmpRxReplayEpoch>,
     esp_now: Option<EspNowRxEpoch>,
 }
 
@@ -322,8 +438,26 @@ impl ConnectedRxDispatcher {
         Self {
             config,
             duplicate_filter: RxDuplicateFilter::new(),
+            ccmp_replay: None,
             esp_now: None,
         }
+    }
+
+    /// Install the unique replay epoch created from this association's M3
+    /// pairwise/group RSC values. A WPA2 dispatcher without this owner rejects
+    /// protected data instead of silently accepting PN reuse.
+    pub fn with_ccmp_rx_replay(mut self, replay: StaCcmpRxReplayEpoch) -> Self {
+        assert_eq!(
+            self.config.security,
+            WifiSecurityMode::Wpa2Personal,
+            "CCMP replay state requires a WPA2 connected epoch"
+        );
+        self.ccmp_replay = Some(replay);
+        self
+    }
+
+    pub const fn ccmp_rx_replay_enabled(&self) -> bool {
+        self.ccmp_replay.is_some()
     }
 
     /// Attach one already station/channel-qualified ESP-NOW receive epoch.
@@ -728,7 +862,7 @@ impl ConnectedRxDispatcher {
         if observed_protected != expected_protected {
             return rejected(protection, ConnectedRxError::SecurityModeMismatch);
         }
-        let (mpdu, retry, sequence_control, tid, data) = match self.config.security {
+        let (mpdu, retry, sequence_control, tid, ccmp_header, data) = match self.config.security {
             WifiSecurityMode::Open => {
                 let view = match view_unprotected_data(segment, self.config.ingress) {
                     Ok(view) => view,
@@ -739,19 +873,32 @@ impl ConnectedRxDispatcher {
                     Ok(data) => data,
                     Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
                 };
-                (identity.0, identity.1, identity.2, identity.3, data)
+                (identity.0, identity.1, identity.2, identity.3, None, data)
             }
             WifiSecurityMode::Wpa2Personal => {
                 let view = match view_protected_data(segment, self.config.ingress) {
                     Ok(view) => view,
                     Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
                 };
-                let identity = (view.mpdu, view.retry, view.sequence_control, view.tid);
+                let identity = (
+                    view.mpdu,
+                    view.retry,
+                    view.sequence_control,
+                    view.tid,
+                    view.ccmp_header,
+                );
                 let data = match view.decapsulate(DataInterfaceRole::Station) {
                     Ok(data) => data,
                     Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
                 };
-                (identity.0, identity.1, identity.2, identity.3, data)
+                (
+                    identity.0,
+                    identity.1,
+                    identity.2,
+                    identity.3,
+                    Some(identity.4),
+                    data,
+                )
             }
         };
         if mpdu[10..16] != self.config.bssid {
@@ -759,6 +906,27 @@ impl ConnectedRxDispatcher {
         }
         if tid.is_some() && !self.config.peer_qos {
             return rejected(protection, ConnectedRxError::PeerQosMismatch);
+        }
+        if let Some(header) = ccmp_header {
+            let Some(replay) = self.ccmp_replay.as_mut() else {
+                return rejected(
+                    protection,
+                    ConnectedRxError::CcmpReplay(StaCcmpRxReplayError::OwnerUnavailable),
+                );
+            };
+            let candidate = match replay.prepare(protection, tid, header) {
+                Ok(candidate) => candidate,
+                Err(error) => {
+                    return rejected(protection, ConnectedRxError::CcmpReplay(error));
+                }
+            };
+            // Hardware MIC verification and associated-peer admission have
+            // both completed. Consume the PN before any Ethernet publication;
+            // an authenticated malformed payload may burn a PN but can never
+            // make it reusable.
+            if let Err(error) = replay.commit(candidate) {
+                return rejected(protection, ConnectedRxError::CcmpReplay(error));
+            }
         }
         if self
             .duplicate_filter
@@ -900,6 +1068,7 @@ mod tests {
                 ConnectedRxEvent::PowerSaveDelivery(_) => {}
                 ConnectedRxEvent::Trigger { .. }
                 | ConnectedRxEvent::Ndpa { .. }
+                | ConnectedRxEvent::IndividualTwt { .. }
                 | ConnectedRxEvent::EspNow { .. } => {}
             }
         }
@@ -1002,7 +1171,14 @@ mod tests {
                 csi_config: 0,
                 flags: 0,
             },
+            security: WifiSecurityMode::Wpa2Personal,
+            peer_qos: true,
         }
+    }
+
+    fn dispatcher() -> ConnectedRxDispatcher {
+        ConnectedRxDispatcher::new(config())
+            .with_ccmp_rx_replay(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
     }
 
     fn segment(storage: &[u8; 192], signal_length: usize) -> RxSegment<'_> {
@@ -1043,10 +1219,25 @@ mod tests {
         frame[HEADER + 8..HEADER + 16].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
         frame[HEADER + 16..HEADER + 20].copy_from_slice(&PAYLOAD);
 
-        let mut dispatcher = ConnectedRxDispatcher::new(config());
         let mut sink = RecordingSink::default();
         let mut mpdu = [0_u8; 128];
         let mut ethernet = [0_u8; 128];
+        let mut missing_replay = ConnectedRxDispatcher::new(config());
+        assert_eq!(
+            missing_replay.dispatch(
+                segment(&storage, SIGNAL),
+                &mut mpdu,
+                &mut ethernet,
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::CcmpReplay(StaCcmpRxReplayError::OwnerUnavailable),
+            }
+        );
+        assert!(sink.ethernet.is_empty());
+
+        let mut dispatcher = dispatcher();
         assert!(!dispatcher.may_publish_amsdu(segment(&storage, SIGNAL)));
         assert_eq!(
             dispatcher.dispatch(
@@ -1083,15 +1274,24 @@ mod tests {
         );
 
         storage[FRAME_OFFSET + 1] |= 0x08;
-        assert_eq!(
-            dispatcher.dispatch(
-                segment(&storage, SIGNAL),
-                &mut mpdu,
-                &mut ethernet,
-                &mut sink,
-            ),
-            ConnectedRxDispatch::Duplicate
+        let replay = dispatcher.dispatch(
+            segment(&storage, SIGNAL),
+            &mut mpdu,
+            &mut ethernet,
+            &mut sink,
         );
+        assert!(matches!(
+            replay,
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::CcmpReplay(StaCcmpRxReplayError::Replay(
+                    CcmpReplayError::Replayed {
+                        packet_number,
+                        highest,
+                    }
+                )),
+            } if packet_number.value() == 3 && highest.value() == 3
+        ));
     }
 
     #[test]
@@ -1125,7 +1325,7 @@ mod tests {
         frame[offset + 14..offset + 22].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]);
         frame[offset + 22..offset + 25].copy_from_slice(&[3, 4, 5]);
 
-        let mut dispatcher = ConnectedRxDispatcher::new(config());
+        let mut dispatcher = dispatcher();
         let segment = segment(&storage, SIGNAL);
         assert_eq!(
             dispatcher.reorder_key(segment),

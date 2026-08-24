@@ -1286,7 +1286,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         stack,
         network: network_runner,
         initial_network_task: stack_runner,
-        plan,
+        mut plan,
         installed_security,
         security,
     } = started.into_parts();
@@ -1425,15 +1425,23 @@ pub(crate) async fn run_connected<'state, 'security>(
             Esp32s31ConnectedStaGroupSecurity::Open,
         ),
         (
-            Esp32s31StaInstalledSecurity::Wpa2Personal { pairwise, group },
+            Esp32s31StaInstalledSecurity::Wpa2Personal {
+                pairwise,
+                group,
+                replay,
+            },
             Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
                 connected: Some(_),
                 ..
             },
-        ) => (
-            ConnectedTxSecurity::Wpa2Personal(pairwise),
-            Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group),
-        ),
+        ) => {
+            plan.enable_ccmp_rx_replay(replay)
+                .unwrap_or_else(|_| unreachable!("fresh WPA2 plan owns no replay epoch"));
+            (
+                ConnectedTxSecurity::Wpa2Personal(pairwise),
+                Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group),
+            )
+        }
         (installed_security, _) => {
             return ConnectedStationRunExit::Faulted(
                 ConnectedStationFault::SecurityOwnershipMismatch {

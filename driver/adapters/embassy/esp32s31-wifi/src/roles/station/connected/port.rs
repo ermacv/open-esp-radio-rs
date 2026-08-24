@@ -22,7 +22,9 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
     tx_ampdu::{StaTxBlockAckSessions, TxBlockAckError},
 };
-use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+    ConnectedRxConfig, ConnectedRxDispatcher, StaCcmpRxReplayEpoch,
+};
 use open_esp_radio_esp32s31_wifi_sta::peer::{Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink};
 use open_esp_radio_esp32s31_wifi_sta::{
     control_tx::Esp32s31ControlTx,
@@ -75,9 +77,9 @@ mod plan;
 mod resources;
 
 pub use plan::{
-    Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaConfig,
-    Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaEspNowRxError, Esp32s31ConnectedStaPlan,
-    Esp32s31ConnectedStaPrepareFailure, Esp32s31ConnectedStaRateConfig,
+    Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaCcmpReplayError,
+    Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaEspNowRxError,
+    Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure, Esp32s31ConnectedStaRateConfig,
     Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaTxPolicy,
 };
 pub use resources::{

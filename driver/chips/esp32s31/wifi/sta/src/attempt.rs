@@ -26,6 +26,7 @@ use open_esp_radio_wpa2::{
 };
 
 use crate::{
+    connected_rx::StaCcmpRxReplayEpoch,
     peer::Esp32s31StaPeerProgrammingReport,
     wpa2::{Esp32s31Wpa2HandshakeTelemetry, Esp32s31Wpa2Message4Protection},
 };
@@ -203,6 +204,7 @@ pub enum Esp32s31StaInstalledSecurity {
     Wpa2Personal {
         pairwise: StaPairwiseCcmpSlot,
         group: StaGroupCcmpSlot,
+        replay: StaCcmpRxReplayEpoch,
     },
 }
 

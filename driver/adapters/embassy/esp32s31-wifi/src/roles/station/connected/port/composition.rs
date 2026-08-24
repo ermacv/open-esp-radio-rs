@@ -123,12 +123,13 @@ impl Esp32s31ConnectedStaPort {
         M: RawMutex,
         S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
     {
-        let dispatcher = match plan.disable_esp_now_rx() {
-            Some(epoch) => {
-                ConnectedRxDispatcher::new(plan.rx_config()).with_esp_now_rx_epoch(epoch)
-            }
-            None => ConnectedRxDispatcher::new(plan.rx_config()),
-        };
+        let mut dispatcher = ConnectedRxDispatcher::new(plan.rx_config());
+        if let Some(replay) = plan.take_ccmp_rx_replay() {
+            dispatcher = dispatcher.with_ccmp_rx_replay(replay);
+        }
+        if let Some(epoch) = plan.disable_esp_now_rx() {
+            dispatcher = dispatcher.with_esp_now_rx_epoch(epoch);
+        }
         #[cfg(any(feature = "diagnostics", test))]
         let mut processor = Esp32s31ConnectedRxProcessor::new_with_reorder_slots(
             resources.irq,

@@ -109,7 +109,14 @@ pub struct Esp32s31ConnectedStaPlan {
     pub(super) beacon_loss: StaBeaconLossConfig,
     pub(super) power_save: Option<StaPowerSavePolicy>,
     pub(super) esp_now_rx: Option<EspNowRxEpoch>,
+    pub(super) ccmp_rx_replay: Option<StaCcmpRxReplayEpoch>,
     pub(super) security: open_esp_radio_ieee80211::security::WifiSecurityMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31ConnectedStaCcmpReplayError {
+    RequiresWpa2,
+    AlreadyInstalled,
 }
 
 /// Why a portable ESP-NOW RX epoch cannot join this connected STA plan.
@@ -189,6 +196,30 @@ impl Esp32s31ConnectedStaPlan {
     /// policy. A running dispatcher revokes its copy during RX shutdown.
     pub fn disable_esp_now_rx(&mut self) -> Option<EspNowRxEpoch> {
         self.esp_now_rx.take()
+    }
+
+    /// Move the association's unique PTK/GTK replay epoch into the connected
+    /// RX plan before the dispatcher is composed.
+    pub fn enable_ccmp_rx_replay(
+        &mut self,
+        replay: StaCcmpRxReplayEpoch,
+    ) -> Result<(), Esp32s31ConnectedStaCcmpReplayError> {
+        if self.security != open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal {
+            return Err(Esp32s31ConnectedStaCcmpReplayError::RequiresWpa2);
+        }
+        if self.ccmp_rx_replay.is_some() {
+            return Err(Esp32s31ConnectedStaCcmpReplayError::AlreadyInstalled);
+        }
+        self.ccmp_rx_replay = Some(replay);
+        Ok(())
+    }
+
+    pub const fn ccmp_rx_replay_enabled(&self) -> bool {
+        self.ccmp_rx_replay.is_some()
+    }
+
+    pub(super) fn take_ccmp_rx_replay(&mut self) -> Option<StaCcmpRxReplayEpoch> {
+        self.ccmp_rx_replay.take()
     }
 
     pub const fn rx_config(&self) -> ConnectedRxConfig {
@@ -503,6 +534,7 @@ impl Esp32s31ConnectedStaPort {
             beacon_loss,
             power_save,
             esp_now_rx: None,
+            ccmp_rx_replay: None,
             security,
         })
     }

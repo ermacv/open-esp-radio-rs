@@ -389,9 +389,12 @@ where
                 Ok(established) => {
                     owner.report.wpa2 = Some(established.metadata());
                     let (keys, connected) = established.into_parts();
-                    let (pairwise, group) = keys.into_parts();
-                    owner.installed_security =
-                        Some(Esp32s31StaInstalledSecurity::Wpa2Personal { pairwise, group });
+                    let (pairwise, group, replay) = keys.into_parts();
+                    owner.installed_security = Some(Esp32s31StaInstalledSecurity::Wpa2Personal {
+                        pairwise,
+                        group,
+                        replay,
+                    });
                     if !owner.security.set_connected(connected) {
                         return Err(Esp32s31StaAttemptStepError::terminal(
                             Esp32s31StaAttemptTargetError::State(

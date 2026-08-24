@@ -182,7 +182,7 @@ impl CcmpRxReplayCandidate {
 /// sequence-space owner must first release frames in order within each TID;
 /// only then is a strictly increasing CCMP PN meaningful. Separate lanes keep
 /// unrelated access categories from rejecting each other's valid PNs.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CcmpRxReplayState {
     highest: [CcmpPacketNumber; CCMP_REPLAY_LANE_COUNT],
     revisions: [u32; CCMP_REPLAY_LANE_COUNT],

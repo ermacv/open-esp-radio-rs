@@ -31,6 +31,7 @@ use open_esp_radio_esp32s31_wifi_sta::{
 use open_esp_radio_ieee80211::{
     he::HeDcmConstellation,
     station::{StaAssociationPhy, StaTxSequenceCounters},
+    station_power_save::StaAssociationId,
     wmm::WmmAccessCategory,
 };
 use open_esp_radio_wifi_softmac::{

@@ -23,7 +23,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
         TxBlockAckResponse,
     },
 };
-use open_esp_radio_ieee80211::station_power_save::StaPowerManagement;
+use open_esp_radio_ieee80211::station_power_save::{StaAssociationId, StaPowerManagement};
 use open_esp_radio_ieee80211::{
     station::{StaDisconnect, StaDisconnectKind},
     trigger::TriggerCommonInfo,
@@ -33,7 +33,8 @@ use open_esp_radio_wifi_sta::{
     power_save::{
         StaDozePermit, StaPowerManagementTxCompletion, StaPowerManagementTxOutcome,
         StaPowerSaveDecision, StaPowerSaveOpportunity, StaPowerSavePlanner, StaPowerSavePolicy,
-        StaPowerSaveState, StaTrafficState, UnexpectedStaPowerManagementCompletion,
+        StaPowerSaveState, StaPsPollServiceState, StaPsPollTxCompletion, StaPsPollTxOutcome,
+        StaTrafficState, UnexpectedStaPowerManagementCompletion,
     },
 };
 
@@ -100,6 +101,7 @@ pub enum ConnectedControlTxKind {
     TxAddbaRequest { tid: u8 },
     BeaconProbe,
     PowerManagement(StaPowerManagement),
+    PsPoll,
 }
 
 /// Validated Basic-Trigger request crossing from connected control into the
@@ -190,6 +192,7 @@ enum ControlInFlight {
     TxAddba { tid: u8 },
     BeaconProbe,
     PowerManagement(StaPowerManagement),
+    PsPoll,
 }
 
 impl ControlInFlight {
@@ -201,6 +204,7 @@ impl ControlInFlight {
             Self::TxAddba { tid } => ConnectedControlTxKind::TxAddbaRequest { tid: *tid },
             Self::BeaconProbe => ConnectedControlTxKind::BeaconProbe,
             Self::PowerManagement(mode) => ConnectedControlTxKind::PowerManagement(*mode),
+            Self::PsPoll => ConnectedControlTxKind::PsPoll,
         }
     }
 }
@@ -245,6 +249,14 @@ pub trait ConnectedControlTx {
         hardware: &mut H,
         power_management: StaPowerManagement,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
+
+    fn start_ps_poll<H: TxHardware>(
+        &mut self,
+        _hardware: &mut H,
+        _association_id: StaAssociationId,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
+        Err(SingleMpduTxError::PsPollUnsupported)
+    }
 
     fn start_protected_eapol<H: TxHardware>(
         &mut self,
@@ -323,6 +335,15 @@ where
         power_management: StaPowerManagement,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         Esp32s31SingleMpduTx::start_power_management_null(self, hardware, power_management)
+            .map(|_| DatapathControlProgress::TxPending)
+    }
+
+    fn start_ps_poll<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        association_id: StaAssociationId,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
+        Esp32s31SingleMpduTx::start_ps_poll(self, hardware, association_id)
             .map(|_| DatapathControlProgress::TxPending)
     }
 
@@ -439,8 +460,10 @@ pub struct Esp32s31ConnectedControlCore {
     beacon_probe_attempts: u8,
     beacon_lost: bool,
     power_save: Option<StaPowerSavePlanner>,
+    ps_poll_association_id: Option<StaAssociationId>,
     pending_doze_permit: Option<StaDozePermit>,
     power_save_wake_deadline_micros: Option<u64>,
+    ps_poll_delivery_deadline_micros: Option<u64>,
     observations: ConnectedControlObservations,
 }
 
@@ -458,8 +481,10 @@ impl Esp32s31ConnectedControlCore {
             beacon_probe_attempts: 0,
             beacon_lost: false,
             power_save: None,
+            ps_poll_association_id: None,
             pending_doze_permit: None,
             power_save_wake_deadline_micros: None,
+            ps_poll_delivery_deadline_micros: None,
             observations: ConnectedControlObservations::default(),
         }
     }
@@ -477,8 +502,17 @@ impl Esp32s31ConnectedControlCore {
 
     pub fn enable_power_save(&mut self, policy: StaPowerSavePolicy) {
         self.power_save = Some(StaPowerSavePlanner::new(policy));
+        self.ps_poll_association_id = None;
         self.pending_doze_permit = None;
         self.power_save_wake_deadline_micros = None;
+        self.ps_poll_delivery_deadline_micros = None;
+    }
+
+    /// Attach the validated association identifier required by legacy
+    /// PS-Poll. Without this capability a buffered-unicast TIM fails closed
+    /// through the existing acknowledged PM=0 transition.
+    pub fn enable_ps_poll(&mut self, association_id: StaAssociationId) {
+        self.ps_poll_association_id = Some(association_id);
     }
 
     /// Queue a bounded number of ADDBA publications for each recovered STA
@@ -548,6 +582,17 @@ impl Esp32s31ConnectedControlCore {
         self.power_save_wake_deadline_micros
     }
 
+    pub const fn ps_poll_delivery_deadline_micros(&self) -> Option<u64> {
+        self.ps_poll_delivery_deadline_micros
+    }
+
+    pub const fn ps_poll_delivery_armed(&self) -> bool {
+        match self.power_save.as_ref() {
+            Some(planner) => !matches!(planner.ps_poll_state(), StaPsPollServiceState::Idle),
+            None => false,
+        }
+    }
+
     /// Whether the next step must consume the shared TX completion before a
     /// newly delivered control event.
     pub const fn tx_in_flight(&self) -> bool {
@@ -571,8 +616,11 @@ impl Esp32s31ConnectedControlCore {
             .as_ref()
             .and_then(StaBeaconMonitor::deadline_micros);
         earliest_deadline(
-            earliest_deadline(block_ack, link),
-            self.power_save_wake_deadline_micros,
+            earliest_deadline(
+                earliest_deadline(block_ack, link),
+                self.power_save_wake_deadline_micros,
+            ),
+            self.ps_poll_delivery_deadline_micros,
         )
     }
 
@@ -604,6 +652,7 @@ impl Esp32s31ConnectedControlCore {
                 }
                 ControlInFlight::BeaconProbe => {}
                 ControlInFlight::PowerManagement(_) => {}
+                ControlInFlight::PsPoll => {}
             }
         }
 
@@ -639,8 +688,10 @@ impl Esp32s31ConnectedControlCore {
         self.beacon_probe_attempts = 0;
         self.beacon_lost = false;
         self.power_save = None;
+        self.ps_poll_association_id = None;
         self.pending_doze_permit = None;
         self.power_save_wake_deadline_micros = None;
+        self.ps_poll_delivery_deadline_micros = None;
 
         Ok(ConnectedControlCoreShutdown {
             rx_block_ack_agreements,
@@ -740,11 +791,67 @@ impl Esp32s31ConnectedControlCore {
                     }
                     return self.apply_power_save_decision(hardware, tx, decision);
                 }
+                ControlInFlight::PsPoll => {
+                    self.ps_poll_delivery_deadline_micros = None;
+                    let completion = StaPsPollTxCompletion {
+                        outcome: if success {
+                            StaPsPollTxOutcome::Acknowledged
+                        } else {
+                            StaPsPollTxOutcome::Failed
+                        },
+                    };
+                    let mut decision = match self
+                        .power_save
+                        .as_mut()
+                        .ok_or(ConnectedControlError::MissingPowerSavePlanner)?
+                        .complete_ps_poll(completion)
+                    {
+                        Ok(decision) => decision,
+                        Err(_) => self
+                            .power_save
+                            .as_mut()
+                            .expect("power-save planner was checked above")
+                            .abort_ps_poll_service(),
+                    };
+                    if self.has_pending_traffic(context, control_event_pending)
+                        && self
+                            .power_save
+                            .as_ref()
+                            .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
+                    {
+                        decision = self
+                            .power_save
+                            .as_mut()
+                            .expect("power-save planner was checked above")
+                            .request_active();
+                    }
+                    return self.apply_power_save_decision(hardware, tx, decision);
+                }
             }
             return Ok(DatapathControlProgress::More);
         }
 
         let now_micros = tx.now_micros();
+        if self
+            .ps_poll_delivery_deadline_micros
+            .is_some_and(|deadline| now_micros >= deadline)
+        {
+            self.ps_poll_delivery_deadline_micros = None;
+            let decision = match self
+                .power_save
+                .as_mut()
+                .ok_or(ConnectedControlError::MissingPowerSavePlanner)?
+                .expire_ps_poll_delivery()
+            {
+                Ok(decision) => decision,
+                Err(_) => self
+                    .power_save
+                    .as_mut()
+                    .expect("power-save planner was checked above")
+                    .abort_ps_poll_service(),
+            };
+            return self.apply_power_save_decision(hardware, tx, decision);
+        }
         if self
             .power_save_wake_deadline_micros
             .is_some_and(|deadline| now_micros >= deadline)
@@ -844,6 +951,37 @@ impl Esp32s31ConnectedControlCore {
         } = ports;
         if let ConnectedRxControlEvent::PeerDisconnect(disconnect) = event {
             return Ok(DatapathControlProgress::Exit(disconnect.into()));
+        }
+        if let ConnectedRxControlEvent::PowerSaveDelivery(delivery) = event {
+            self.ps_poll_delivery_deadline_micros = None;
+            let Some(planner) = self.power_save.as_mut() else {
+                return Ok(DatapathControlProgress::More);
+            };
+            let mut decision = match planner.observe_ps_poll_delivery(delivery) {
+                Ok(decision) => decision,
+                Err(_) => planner.abort_ps_poll_service(),
+            };
+            if self.has_pending_traffic(context, control_event_pending)
+                && self
+                    .power_save
+                    .as_ref()
+                    .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
+            {
+                decision = self
+                    .power_save
+                    .as_mut()
+                    .expect("power-save planner was checked above")
+                    .request_active();
+            }
+            return self.apply_power_save_decision(hardware, tx, decision);
+        }
+        if let ConnectedRxControlEvent::PowerSaveDeliveryRace = event {
+            self.ps_poll_delivery_deadline_micros = None;
+            let Some(planner) = self.power_save.as_mut() else {
+                return Ok(DatapathControlProgress::More);
+            };
+            let decision = planner.abort_ps_poll_service();
+            return self.apply_power_save_decision(hardware, tx, decision);
         }
         if let ConnectedRxControlEvent::Beacon(observation) = event {
             self.beacon_probe_attempts = 0;
@@ -1181,7 +1319,9 @@ impl Esp32s31ConnectedControlCore {
             ConnectedRxControlEvent::Beacon(_)
             | ConnectedRxControlEvent::ProbeResponse
             | ConnectedRxControlEvent::BlockAck(_)
-            | ConnectedRxControlEvent::PeerDisconnect(_) => DatapathControlProgress::Idle,
+            | ConnectedRxControlEvent::PeerDisconnect(_)
+            | ConnectedRxControlEvent::PowerSaveDelivery(_)
+            | ConnectedRxControlEvent::PowerSaveDeliveryRace => DatapathControlProgress::Idle,
         }
     }
 
@@ -1279,6 +1419,7 @@ impl Esp32s31ConnectedControlCore {
         self.beacon_lost = true;
         self.pending_doze_permit = None;
         self.power_save_wake_deadline_micros = None;
+        self.ps_poll_delivery_deadline_micros = None;
         Ok(DatapathControlProgress::Exit(
             ConnectedDisconnectReason::BeaconLoss,
         ))
@@ -1296,6 +1437,7 @@ impl Esp32s31ConnectedControlCore {
     {
         match decision {
             StaPowerSaveDecision::PermitDoze(permit) => {
+                self.ps_poll_delivery_deadline_micros = None;
                 let station_tsf = hardware.station_tsf();
                 let until_wake = permit.wake_tsf.wrapping_sub(station_tsf);
                 if until_wake == 0 || until_wake > i64::MAX as u64 {
@@ -1314,13 +1456,52 @@ impl Esp32s31ConnectedControlCore {
             StaPowerSaveDecision::SendPowerManagement(power_management) => {
                 self.pending_doze_permit = None;
                 self.power_save_wake_deadline_micros = None;
+                self.ps_poll_delivery_deadline_micros = None;
                 let progress = tx.start_power_management_null(hardware, power_management)?;
                 self.in_flight = Some(ControlInFlight::PowerManagement(power_management));
                 Ok(progress)
             }
+            StaPowerSaveDecision::SendPsPoll => {
+                self.pending_doze_permit = None;
+                self.power_save_wake_deadline_micros = None;
+                self.ps_poll_delivery_deadline_micros = None;
+                let Some(association_id) = self.ps_poll_association_id else {
+                    let fallback = self
+                        .power_save
+                        .as_mut()
+                        .ok_or(ConnectedControlError::MissingPowerSavePlanner)?
+                        .abort_ps_poll_service();
+                    return self.apply_power_save_decision(hardware, tx, fallback);
+                };
+                match tx.start_ps_poll(hardware, association_id) {
+                    Ok(progress) => {
+                        self.in_flight = Some(ControlInFlight::PsPoll);
+                        Ok(progress)
+                    }
+                    Err(_) => {
+                        let fallback = self
+                            .power_save
+                            .as_mut()
+                            .ok_or(ConnectedControlError::MissingPowerSavePlanner)?
+                            .abort_ps_poll_service();
+                        self.apply_power_save_decision(hardware, tx, fallback)
+                    }
+                }
+            }
+            StaPowerSaveDecision::AwaitPsPollDelivery { timeout_micros } => {
+                self.pending_doze_permit = None;
+                self.power_save_wake_deadline_micros = None;
+                self.ps_poll_delivery_deadline_micros = Some(
+                    tx.now_micros()
+                        .checked_add(timeout_micros)
+                        .ok_or(ConnectedControlError::PowerSaveDeadlineOverflow)?,
+                );
+                Ok(DatapathControlProgress::More)
+            }
             StaPowerSaveDecision::StayAwake(_) => {
                 self.pending_doze_permit = None;
                 self.power_save_wake_deadline_micros = None;
+                self.ps_poll_delivery_deadline_micros = None;
                 Ok(DatapathControlProgress::More)
             }
         }

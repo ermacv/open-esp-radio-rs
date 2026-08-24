@@ -390,6 +390,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
 
     pub fn enable_power_save(&mut self, policy: StaPowerSavePolicy) {
         self.core.enable_power_save(policy);
+        self.receiver.set_power_save_delivery_armed(false);
+    }
+
+    pub fn enable_ps_poll(
+        &mut self,
+        association_id: open_esp_radio_ieee80211::station_power_save::StaAssociationId,
+    ) {
+        self.core.enable_ps_poll(association_id);
     }
 
     pub fn with_he_trigger_based(
@@ -574,6 +582,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
+        self.receiver.set_power_save_delivery_armed(false);
         if let Some(restore) = self.doze_restore.take()
             && let Err(failure) = Self::restore_from_doze(restore, hardware)
         {
@@ -657,6 +666,40 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         }
     }
 
+    fn service_core_step<H, X>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        event: Option<ConnectedRxControlEvent>,
+        control_event_pending: bool,
+        context: DatapathControlContext,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+    {
+        let mut reorder = EmbassyReorderSink {
+            sender: self.rx_reorder_commands.as_ref(),
+        };
+        let result = self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
+            self.core.service_step(
+                ConnectedControlPorts {
+                    hardware,
+                    tx,
+                    reorder: &mut reorder,
+                    rx_block_ack,
+                },
+                event,
+                control_event_pending,
+                context,
+            )
+        });
+        let exiting = matches!(&result, Ok(DatapathControlProgress::Exit(_)));
+        self.receiver
+            .set_power_save_delivery_armed(!exiting && self.core.ps_poll_delivery_armed());
+        result
+    }
+
     pub fn service<'a, H, X>(
         &'a mut self,
         hardware: &'a mut H,
@@ -697,23 +740,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             return Ok(security.complete_tx(tx));
         }
 
-        let mut reorder = EmbassyReorderSink {
-            sender: self.rx_reorder_commands.as_ref(),
-        };
         if self.core.tx_in_flight() {
-            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
-                self.core.service_step(
-                    ConnectedControlPorts {
-                        hardware,
-                        tx,
-                        reorder: &mut reorder,
-                        rx_block_ack,
-                    },
-                    None,
-                    self.deferred_control_event.is_some() || !self.receiver.is_empty(),
-                    context,
-                )
-            });
+            return self.service_core_step(
+                hardware,
+                tx,
+                None,
+                self.deferred_control_event.is_some() || !self.receiver.is_empty(),
+                context,
+            );
         }
 
         if self.receiver.overflowed() {
@@ -732,37 +766,19 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                 .power_save()
                 .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
         {
-            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
-                self.core.service_step(
-                    ConnectedControlPorts {
-                        hardware,
-                        tx,
-                        reorder: &mut reorder,
-                        rx_block_ack,
-                    },
-                    None,
-                    true,
-                    context,
-                )
-            });
+            return self.service_core_step(hardware, tx, None, true, context);
         }
 
         // A peer disconnect keeps terminal priority once TX ownership is
         // free. GTK rekey then precedes non-terminal BlockAck work.
         if let Some(event) = self.receiver.try_receive_terminal() {
-            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
-                self.core.service_step(
-                    ConnectedControlPorts {
-                        hardware,
-                        tx,
-                        reorder: &mut reorder,
-                        rx_block_ack,
-                    },
-                    Some(event),
-                    !self.receiver.is_empty(),
-                    context,
-                )
-            });
+            return self.service_core_step(
+                hardware,
+                tx,
+                Some(event),
+                !self.receiver.is_empty(),
+                context,
+            );
         }
         if let Some(frame) = self.receiver.try_receive_security() {
             let Some(security) = self.security.as_mut() else {
@@ -775,6 +791,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         let event = self
             .deferred_control_event
             .take()
+            .or_else(|| self.receiver.try_receive_power_save_delivery())
             .or_else(|| self.receiver.try_receive_control())
             .or_else(|| self.receiver.try_receive_he_observation());
         if event.is_some_and(control_event_requires_active)
@@ -785,33 +802,15 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                 .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
         {
             self.deferred_control_event = event;
-            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
-                self.core.service_step(
-                    ConnectedControlPorts {
-                        hardware,
-                        tx,
-                        reorder: &mut reorder,
-                        rx_block_ack,
-                    },
-                    None,
-                    true,
-                    context,
-                )
-            });
+            return self.service_core_step(hardware, tx, None, true, context);
         }
-        self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
-            self.core.service_step(
-                ConnectedControlPorts {
-                    hardware,
-                    tx,
-                    reorder: &mut reorder,
-                    rx_block_ack,
-                },
-                event,
-                self.deferred_control_event.is_some() || !self.receiver.is_empty(),
-                context,
-            )
-        })
+        self.service_core_step(
+            hardware,
+            tx,
+            event,
+            self.deferred_control_event.is_some() || !self.receiver.is_empty(),
+            context,
+        )
     }
 }
 

@@ -7,7 +7,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use embassy_futures::select::select4;
+use embassy_futures::select::select5;
 use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
@@ -43,9 +43,12 @@ fn scheduled_connected_control(event: ConnectedRxEvent<'_>) -> Option<ConnectedR
         // beacon or ADDBA/DELBA transition in this bounded mailbox.
         event @ (ConnectedRxControlEvent::Beacon(_)
         | ConnectedRxControlEvent::ProbeResponse
-        | ConnectedRxControlEvent::BlockAck(_)) => Some(event),
+        | ConnectedRxControlEvent::BlockAck(_)
+        | ConnectedRxControlEvent::PowerSaveDelivery(_)) => Some(event),
         event @ ConnectedRxControlEvent::PeerDisconnect(_) => Some(event),
-        ConnectedRxControlEvent::Trigger { .. } | ConnectedRxControlEvent::Ndpa { .. } => None,
+        ConnectedRxControlEvent::Trigger { .. }
+        | ConnectedRxControlEvent::Ndpa { .. }
+        | ConnectedRxControlEvent::PowerSaveDeliveryRace => None,
     }
 }
 
@@ -58,8 +61,16 @@ fn scheduled_he_observation(event: ConnectedRxEvent<'_>) -> Option<ConnectedRxCo
         ConnectedRxControlEvent::Beacon(_)
         | ConnectedRxControlEvent::ProbeResponse
         | ConnectedRxControlEvent::BlockAck(_)
-        | ConnectedRxControlEvent::PeerDisconnect(_) => None,
+        | ConnectedRxControlEvent::PeerDisconnect(_)
+        | ConnectedRxControlEvent::PowerSaveDelivery(_)
+        | ConnectedRxControlEvent::PowerSaveDeliveryRace => None,
     }
+}
+
+#[derive(Clone, Copy)]
+struct PowerSaveDeliverySignal {
+    generation: u32,
+    event: ConnectedRxControlEvent,
 }
 
 impl<const CAPACITY: usize> ConnectedControlQueue<CAPACITY> {
@@ -123,6 +134,11 @@ pub struct ConnectedControlResources<M: RawMutex, const CAPACITY: usize> {
     terminal: Channel<M, ConnectedRxControlEvent, 1>,
     he_observation: Channel<M, ConnectedRxControlEvent, 1>,
     security: Channel<M, OwnedEapolFrame, 1>,
+    power_save_delivery: Channel<M, PowerSaveDeliverySignal, 1>,
+    power_save_delivery_generation: AtomicU32,
+    power_save_delivery_gate: AtomicU32,
+    power_save_delivery_claimed: AtomicU32,
+    power_save_delivery_raced: AtomicBool,
     overflowed: AtomicBool,
     dropped_he_observations: AtomicU32,
 }
@@ -134,6 +150,11 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
             terminal: Channel::new(),
             he_observation: Channel::new(),
             security: Channel::new(),
+            power_save_delivery: Channel::new(),
+            power_save_delivery_generation: AtomicU32::new(0),
+            power_save_delivery_gate: AtomicU32::new(0),
+            power_save_delivery_claimed: AtomicU32::new(0),
+            power_save_delivery_raced: AtomicBool::new(false),
             overflowed: AtomicBool::new(false),
             dropped_he_observations: AtomicU32::new(0),
         }
@@ -157,6 +178,15 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
         let resources: &Self = self;
         resources.overflowed.store(false, Ordering::Release);
         resources
+            .power_save_delivery_gate
+            .store(0, Ordering::Release);
+        resources
+            .power_save_delivery_claimed
+            .store(0, Ordering::Release);
+        resources
+            .power_save_delivery_raced
+            .store(false, Ordering::Release);
+        resources
             .dropped_he_observations
             .store(0, Ordering::Release);
         (
@@ -165,6 +195,10 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
                 terminal: resources.terminal.sender(),
                 he_observation: resources.he_observation.sender(),
                 security: resources.security.sender(),
+                power_save_delivery: resources.power_save_delivery.sender(),
+                power_save_delivery_gate: &resources.power_save_delivery_gate,
+                power_save_delivery_claimed: &resources.power_save_delivery_claimed,
+                power_save_delivery_raced: &resources.power_save_delivery_raced,
                 overflowed: &resources.overflowed,
                 dropped_he_observations: &resources.dropped_he_observations,
             },
@@ -173,6 +207,11 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
                 terminal: resources.terminal.receiver(),
                 he_observation: resources.he_observation.receiver(),
                 security: resources.security.receiver(),
+                power_save_delivery: resources.power_save_delivery.receiver(),
+                power_save_delivery_generation: &resources.power_save_delivery_generation,
+                power_save_delivery_gate: &resources.power_save_delivery_gate,
+                power_save_delivery_claimed: &resources.power_save_delivery_claimed,
+                power_save_delivery_raced: &resources.power_save_delivery_raced,
                 overflowed: &resources.overflowed,
                 dropped_he_observations: &resources.dropped_he_observations,
             },
@@ -194,6 +233,10 @@ pub struct ConnectedControlPublisher<'resources, M: RawMutex, const CAPACITY: us
     terminal: Sender<'resources, M, ConnectedRxControlEvent, 1>,
     he_observation: Sender<'resources, M, ConnectedRxControlEvent, 1>,
     security: Sender<'resources, M, OwnedEapolFrame, 1>,
+    power_save_delivery: Sender<'resources, M, PowerSaveDeliverySignal, 1>,
+    power_save_delivery_gate: &'resources AtomicU32,
+    power_save_delivery_claimed: &'resources AtomicU32,
+    power_save_delivery_raced: &'resources AtomicBool,
     overflowed: &'resources AtomicBool,
     dropped_he_observations: &'resources AtomicU32,
 }
@@ -211,6 +254,33 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
                     .map(|frame| self.security.try_send(frame));
             if !matches!(result, Some(Ok(()))) {
                 self.overflowed.store(true, Ordering::Release);
+            }
+            return;
+        }
+        if let ConnectedRxEvent::PowerSaveDelivery(delivery) = event {
+            let generation = self.power_save_delivery_gate.load(Ordering::Acquire);
+            if generation == 0 {
+                return;
+            }
+            if self
+                .power_save_delivery_claimed
+                .compare_exchange(0, generation, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                if self.power_save_delivery_gate.load(Ordering::Acquire) == generation {
+                    self.power_save_delivery_raced
+                        .store(true, Ordering::Release);
+                }
+                return;
+            }
+            if let Err(TrySendError::Full(_)) =
+                self.power_save_delivery.try_send(PowerSaveDeliverySignal {
+                    generation,
+                    event: ConnectedRxControlEvent::PowerSaveDelivery(delivery),
+                })
+            {
+                self.power_save_delivery_raced
+                    .store(true, Ordering::Release);
             }
             return;
         }
@@ -240,6 +310,11 @@ pub struct ConnectedControlReceiver<'resources, M: RawMutex, const CAPACITY: usi
     terminal: Receiver<'resources, M, ConnectedRxControlEvent, 1>,
     he_observation: Receiver<'resources, M, ConnectedRxControlEvent, 1>,
     security: Receiver<'resources, M, OwnedEapolFrame, 1>,
+    power_save_delivery: Receiver<'resources, M, PowerSaveDeliverySignal, 1>,
+    power_save_delivery_generation: &'resources AtomicU32,
+    power_save_delivery_gate: &'resources AtomicU32,
+    power_save_delivery_claimed: &'resources AtomicU32,
+    power_save_delivery_raced: &'resources AtomicBool,
     overflowed: &'resources AtomicBool,
     dropped_he_observations: &'resources AtomicU32,
 }
@@ -257,11 +332,63 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
         self.he_observation.try_receive().ok()
     }
 
+    pub fn set_power_save_delivery_armed(&self, armed: bool) {
+        if armed {
+            if self.power_save_delivery_gate.load(Ordering::Acquire) != 0 {
+                return;
+            }
+            while self.power_save_delivery.try_receive().is_ok() {}
+            self.power_save_delivery_claimed.store(0, Ordering::Release);
+            self.power_save_delivery_raced
+                .store(false, Ordering::Release);
+            let generation = self
+                .power_save_delivery_generation
+                .fetch_add(1, Ordering::AcqRel)
+                .wrapping_add(1)
+                .max(1);
+            self.power_save_delivery_gate
+                .store(generation, Ordering::Release);
+        } else {
+            self.power_save_delivery_gate.store(0, Ordering::Release);
+            while self.power_save_delivery.try_receive().is_ok() {}
+            self.power_save_delivery_claimed.store(0, Ordering::Release);
+            self.power_save_delivery_raced
+                .store(false, Ordering::Release);
+        }
+    }
+
+    pub fn try_receive_power_save_delivery(&self) -> Option<ConnectedRxControlEvent> {
+        if self.power_save_delivery.is_empty()
+            && !self.power_save_delivery_raced.load(Ordering::Acquire)
+        {
+            return None;
+        }
+        let active_generation = self.power_save_delivery_gate.swap(0, Ordering::AcqRel);
+        if active_generation == 0 {
+            while self.power_save_delivery.try_receive().is_ok() {}
+            self.power_save_delivery_raced
+                .store(false, Ordering::Release);
+            return None;
+        }
+        if self.power_save_delivery_raced.swap(false, Ordering::AcqRel) {
+            while self.power_save_delivery.try_receive().is_ok() {}
+            return Some(ConnectedRxControlEvent::PowerSaveDeliveryRace);
+        }
+        let Some(signal) = self.power_save_delivery.try_receive().ok() else {
+            return Some(ConnectedRxControlEvent::PowerSaveDeliveryRace);
+        };
+        if signal.generation != active_generation {
+            return Some(ConnectedRxControlEvent::PowerSaveDeliveryRace);
+        }
+        Some(signal.event)
+    }
+
     pub fn try_receive(&self) -> Option<ConnectedRxControlEvent> {
         if let Some(event) = self.try_receive_terminal() {
             return Some(event);
         }
-        self.try_receive_control()
+        self.try_receive_power_save_delivery()
+            .or_else(|| self.try_receive_control())
             .or_else(|| self.try_receive_he_observation())
     }
 
@@ -270,9 +397,10 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     }
 
     pub async fn ready(&self) {
-        select4(
+        select5(
             self.terminal.ready_to_receive(),
             self.security.ready_to_receive(),
+            self.power_save_delivery.ready_to_receive(),
             self.receiver.ready_to_receive(),
             self.he_observation.ready_to_receive(),
         )
@@ -280,7 +408,11 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     }
 
     pub fn len(&self) -> usize {
-        self.terminal.len() + self.security.len() + self.receiver.len() + self.he_observation.len()
+        self.terminal.len()
+            + self.security.len()
+            + self.power_save_delivery.len()
+            + self.receiver.len()
+            + self.he_observation.len()
     }
 
     pub fn is_empty(&self) -> bool {

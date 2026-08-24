@@ -158,12 +158,17 @@ where
     ) -> ConnectedRxDispatch {
         #[cfg(any(feature = "diagnostics", test))]
         let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
-        let (result, used, metadata) = {
+        let (result, used, metadata, power_save_delivery) = {
             let mut deferred = DeferredEthernetFrames::new(self.ethernet);
             let result = self
                 .dispatcher
                 .dispatch(segment, self.mpdu, &mut [], &mut deferred);
-            (result, deferred.used(), deferred.metadata)
+            (
+                result,
+                deferred.used(),
+                deferred.metadata,
+                deferred.power_save_delivery,
+            )
         };
         #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.pipeline_observer, dispatch_started) {
@@ -184,6 +189,10 @@ where
         }
         let raw = segment.buffer;
         let metadata = metadata.unwrap_or_else(MacRxMetadata::unavailable);
+        if let Some(delivery) = power_save_delivery {
+            self.sink
+                .publish(ConnectedRxEvent::PowerSaveDelivery(delivery));
+        }
         let mut offset = 0_usize;
         while let Some(record) =
             crate::datapath::rx::ethernet::record_at(self.ethernet, used, offset)

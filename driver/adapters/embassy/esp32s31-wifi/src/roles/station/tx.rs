@@ -51,7 +51,7 @@ use open_esp_radio_ieee80211::{
         STA_PROTECTED_QOS_ETHERNET_OVERHEAD, StaTxSequenceCounters, StationFrameError,
         sta_protected_amsdu_pair_frame_length,
     },
-    station_power_save::StaPowerManagement,
+    station_power_save::{StaAssociationId, StaPowerManagement},
 };
 use open_esp_radio_wifi_softmac::{
     MacAmpduTxResult, MacAmpduTxStatus, MacTxQueueState, MacTxResult,

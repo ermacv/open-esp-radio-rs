@@ -314,6 +314,9 @@ impl Esp32s31ConnectedStaPort {
         control.enable_beacon_loss(plan.beacon_loss);
         if let Some(policy) = plan.power_save {
             control.enable_power_save(policy);
+            if let Some(association_id) = StaAssociationId::new(plan.link.association_id) {
+                control.enable_ps_poll(association_id);
+            }
             control.enable_hardware_doze_boundary();
         }
         if plan.config.block_ack.request_initial_tx_block_ack

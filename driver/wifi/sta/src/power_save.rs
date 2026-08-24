@@ -132,6 +132,18 @@ pub enum StaPowerSaveState {
     AdvertisingActive,
 }
 
+/// Affine service state for one legacy PS-Poll exchange.
+///
+/// At most one PS-Poll may own TX or await its corresponding unicast MPDU.
+/// A new TIM, local-TX request, stop edge or unexpected delivery aborts this
+/// state before the planner advertises PM=0.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaPsPollServiceState {
+    Idle,
+    Transmitting,
+    AwaitingDelivery,
+}
+
 /// Association-owned reason selecting the next mandatory receive edge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaDozeWakeReason {
@@ -288,20 +300,29 @@ pub enum StaStayAwakeReason {
     NoFreshDozeWindow,
     WakeDeadlinePassed,
     AlreadyAwake,
+    PsPollServicePending,
+    PsPollServiceComplete,
+    PsPollServiceRace,
+    PsPollDeliveryTimeout,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaPowerSaveDecision {
     StayAwake(StaStayAwakeReason),
     SendPowerManagement(StaPowerManagement),
+    /// Publish one legacy PS-Poll while retaining AP-visible PM=1.
+    SendPsPoll,
+    /// Keep the receiver awake until one associated unicast MPDU arrives.
+    AwaitPsPollDelivery {
+        timeout_micros: u64,
+    },
     PermitDoze(StaDozePermit),
 }
 
 impl StaPowerSaveDecision {
     /// Whether safe progress requires leaving AP-visible power-save rather
-    /// than merely keeping the modem awake. Group delivery after a DTIM is
-    /// received while PM=1; unicast retrieval has no open PS-Poll/U-APSD
-    /// owner and therefore falls back to acknowledged PM=0.
+    /// than merely keeping the modem awake. Group delivery after a DTIM and a
+    /// bounded PS-Poll service exchange are both received while PM=1.
     pub const fn requires_active_advertisement(self) -> bool {
         matches!(
             self,
@@ -311,9 +332,46 @@ impl StaPowerSaveDecision {
                     | StaStayAwakeReason::InvalidTimPhase
                     | StaStayAwakeReason::UnicastBuffered
                     | StaStayAwakeReason::WakeDeadlinePassed
+                    | StaStayAwakeReason::PsPollServiceRace
+                    | StaStayAwakeReason::PsPollDeliveryTimeout
             )
         )
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaPsPollTxOutcome {
+    Acknowledged,
+    Failed,
+}
+
+/// Terminal outcome of the single in-flight PS-Poll transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaPsPollTxCompletion {
+    pub outcome: StaPsPollTxOutcome,
+}
+
+/// One BSSID- and receiver-validated protected unicast MPDU delivered while
+/// the PS-Poll owner is awake. `more_data` is the RX-observed MAC-header hint
+/// selecting whether another poll is required; it grants neither a doze
+/// permit nor unbounded service authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaPsPollDelivery {
+    pub more_data: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaPsPollServiceEdge {
+    TxCompletion,
+    Delivery,
+    DeliveryTimeout,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnexpectedStaPsPollServiceEdge {
+    pub power_save_state: StaPowerSaveState,
+    pub service_state: StaPsPollServiceState,
+    pub edge: StaPsPollServiceEdge,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -342,6 +400,7 @@ pub struct UnexpectedStaPowerManagementCompletion {
 pub struct StaPowerSavePlanner {
     policy: StaPowerSavePolicy,
     state: StaPowerSaveState,
+    ps_poll: StaPsPollServiceState,
     candidate: Option<StaDozePermit>,
 }
 
@@ -350,6 +409,7 @@ impl StaPowerSavePlanner {
         Self {
             policy,
             state: StaPowerSaveState::Awake,
+            ps_poll: StaPsPollServiceState::Idle,
             candidate: None,
         }
     }
@@ -366,27 +426,43 @@ impl StaPowerSavePlanner {
         self.candidate
     }
 
+    pub const fn ps_poll_state(&self) -> StaPsPollServiceState {
+        self.ps_poll
+    }
+
     /// Consume a BSSID-authenticated beacon at a runner-owned traffic
     /// boundary. Unsafe or incomplete observations fail closed and erase a
     /// previously cached permit.
     pub fn observe_beacon(&mut self, opportunity: StaPowerSaveOpportunity) -> StaPowerSaveDecision {
         if opportunity.traffic == StaTrafficState::Pending {
             self.candidate = None;
+            self.ps_poll = StaPsPollServiceState::Idle;
             return StaPowerSaveDecision::StayAwake(StaStayAwakeReason::TrafficPending);
         }
         let tim = match opportunity.beacon.tim {
             Some(tim) => tim,
             None => {
                 self.candidate = None;
+                self.ps_poll = StaPsPollServiceState::Idle;
                 return StaPowerSaveDecision::StayAwake(StaStayAwakeReason::MissingTim);
             }
         };
         if !valid_tim_phase(tim) {
             self.candidate = None;
+            self.ps_poll = StaPsPollServiceState::Idle;
             return StaPowerSaveDecision::StayAwake(StaStayAwakeReason::InvalidTimPhase);
+        }
+        if self.ps_poll != StaPsPollServiceState::Idle {
+            self.candidate = None;
+            self.ps_poll = StaPsPollServiceState::Idle;
+            return StaPowerSaveDecision::StayAwake(StaStayAwakeReason::PsPollServiceRace);
         }
         if tim.unicast_buffered {
             self.candidate = None;
+            if self.state == StaPowerSaveState::PowerSave {
+                self.ps_poll = StaPsPollServiceState::Transmitting;
+                return StaPowerSaveDecision::SendPsPoll;
+            }
             return StaPowerSaveDecision::StayAwake(StaStayAwakeReason::UnicastBuffered);
         }
         if tim.group_buffered {
@@ -478,6 +554,7 @@ impl StaPowerSavePlanner {
         match (completion.advertised, completion.outcome) {
             (StaPowerManagement::PowerSave, StaPowerManagementTxOutcome::Failed) => {
                 self.state = StaPowerSaveState::Awake;
+                self.ps_poll = StaPsPollServiceState::Idle;
                 self.candidate = None;
                 Ok(StaPowerSaveDecision::StayAwake(
                     StaStayAwakeReason::NoFreshDozeWindow,
@@ -489,6 +566,7 @@ impl StaPowerSavePlanner {
             }
             (StaPowerManagement::Active, StaPowerManagementTxOutcome::Acknowledged) => {
                 self.state = StaPowerSaveState::Awake;
+                self.ps_poll = StaPsPollServiceState::Idle;
                 self.candidate = None;
                 Ok(StaPowerSaveDecision::StayAwake(
                     StaStayAwakeReason::AlreadyAwake,
@@ -498,6 +576,7 @@ impl StaPowerSavePlanner {
                 // The radio is awake, but the AP must still conservatively be
                 // treated as believing that this station is in power-save.
                 self.state = StaPowerSaveState::PowerSave;
+                self.ps_poll = StaPsPollServiceState::Idle;
                 self.candidate = None;
                 Ok(StaPowerSaveDecision::StayAwake(
                     StaStayAwakeReason::NoFreshDozeWindow,
@@ -510,6 +589,7 @@ impl StaPowerSavePlanner {
     /// radio must already be awake before this decision is acted upon.
     pub fn request_active(&mut self) -> StaPowerSaveDecision {
         self.candidate = None;
+        self.ps_poll = StaPsPollServiceState::Idle;
         match self.state {
             StaPowerSaveState::PowerSave => {
                 self.state = StaPowerSaveState::AdvertisingActive;
@@ -521,6 +601,89 @@ impl StaPowerSavePlanner {
             StaPowerSaveState::AdvertisingPowerSave | StaPowerSaveState::AdvertisingActive => {
                 StaPowerSaveDecision::StayAwake(StaStayAwakeReason::PowerManagementTxPending)
             }
+        }
+    }
+
+    /// Commit one bounded PS-Poll TX result. An ACK only opens the receive
+    /// window; it is not evidence that the buffered MPDU was delivered.
+    pub fn complete_ps_poll(
+        &mut self,
+        completion: StaPsPollTxCompletion,
+    ) -> Result<StaPowerSaveDecision, UnexpectedStaPsPollServiceEdge> {
+        if self.state != StaPowerSaveState::PowerSave
+            || self.ps_poll != StaPsPollServiceState::Transmitting
+        {
+            return Err(self.unexpected_ps_poll_edge(StaPsPollServiceEdge::TxCompletion));
+        }
+        match completion.outcome {
+            StaPsPollTxOutcome::Acknowledged => {
+                self.ps_poll = StaPsPollServiceState::AwaitingDelivery;
+                Ok(StaPowerSaveDecision::AwaitPsPollDelivery {
+                    // This is a fail-safe runtime service bound, not a claim
+                    // about an AP's SIFS response timing. Missing one complete
+                    // association-owned beacon interval restores PM=0.
+                    timeout_micros: self.policy.beacon_interval_micros,
+                })
+            }
+            StaPsPollTxOutcome::Failed => {
+                self.ps_poll = StaPsPollServiceState::Idle;
+                Ok(self.request_active())
+            }
+        }
+    }
+
+    /// Consume exactly one associated unicast delivery for the outstanding
+    /// poll. `MoreData` retains PM=1 and starts the next bounded poll.
+    pub fn observe_ps_poll_delivery(
+        &mut self,
+        delivery: StaPsPollDelivery,
+    ) -> Result<StaPowerSaveDecision, UnexpectedStaPsPollServiceEdge> {
+        if self.state != StaPowerSaveState::PowerSave
+            || self.ps_poll != StaPsPollServiceState::AwaitingDelivery
+        {
+            return Err(self.unexpected_ps_poll_edge(StaPsPollServiceEdge::Delivery));
+        }
+        self.candidate = None;
+        if delivery.more_data {
+            self.ps_poll = StaPsPollServiceState::Transmitting;
+            Ok(StaPowerSaveDecision::SendPsPoll)
+        } else {
+            self.ps_poll = StaPsPollServiceState::Idle;
+            Ok(StaPowerSaveDecision::StayAwake(
+                StaStayAwakeReason::PsPollServiceComplete,
+            ))
+        }
+    }
+
+    /// Expire a receive window that did not produce its corresponding MPDU.
+    /// The returned decision always begins acknowledged PM=0 restoration.
+    pub fn expire_ps_poll_delivery(
+        &mut self,
+    ) -> Result<StaPowerSaveDecision, UnexpectedStaPsPollServiceEdge> {
+        if self.state != StaPowerSaveState::PowerSave
+            || self.ps_poll != StaPsPollServiceState::AwaitingDelivery
+        {
+            return Err(self.unexpected_ps_poll_edge(StaPsPollServiceEdge::DeliveryTimeout));
+        }
+        self.ps_poll = StaPsPollServiceState::Idle;
+        Ok(self.request_active())
+    }
+
+    /// Abort an unsupported or raced service edge before falling back to the
+    /// existing acknowledged PM=0 transaction.
+    pub fn abort_ps_poll_service(&mut self) -> StaPowerSaveDecision {
+        self.ps_poll = StaPsPollServiceState::Idle;
+        self.request_active()
+    }
+
+    const fn unexpected_ps_poll_edge(
+        &self,
+        edge: StaPsPollServiceEdge,
+    ) -> UnexpectedStaPsPollServiceEdge {
+        UnexpectedStaPsPollServiceEdge {
+            power_save_state: self.state,
+            service_state: self.ps_poll,
+            edge,
         }
     }
 

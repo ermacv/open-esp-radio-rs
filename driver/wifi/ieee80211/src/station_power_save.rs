@@ -1,18 +1,50 @@
 //! Station power-management signalling on the IEEE 802.11 wire.
 //!
-//! This module only constructs the Null Data frame by which an associated
-//! station tells its access point that its Power Management mode changed. It
-//! owns no timer, retry, sleep, MMIO or executor state. In particular, merely
-//! encoding a frame never grants permission to stop the radio: the runtime
-//! must first observe successful acknowledgement of the transmitted MPDU.
+//! This module constructs the Null Data frame by which an associated station
+//! tells its access point that its Power Management mode changed and the
+//! legacy PS-Poll control frame used to retrieve one buffered unicast MPDU.
+//! It owns no timer, retry, sleep, MMIO or executor state. In particular,
+//! merely encoding either frame never grants permission to stop the radio:
+//! the runtime must retain the corresponding acknowledged exchange.
 
 use crate::station::{StationFrameError, validate_peer};
 
 /// Length of a legacy Null Data MPDU, excluding the hardware-owned FCS.
 pub const STA_NULL_DATA_FRAME_LEN: usize = 24;
+/// Length of a legacy PS-Poll control MPDU, excluding the hardware-owned FCS.
+pub const STA_PS_POLL_FRAME_LEN: usize = 16;
 
 const NULL_DATA_TO_DS_FRAME_CONTROL: u16 = 0x0148;
+const PS_POLL_FRAME_CONTROL: u16 = 0x00a4;
+const PS_POLL_ASSOCIATION_ID_PREFIX: u16 = 0xc000;
 const POWER_MANAGEMENT_BIT: u16 = 0x1000;
+
+/// Nonzero association identifier carried by a legacy PS-Poll frame.
+///
+/// The constructor retains the exact 14-bit wire domain already decoded from
+/// successful Association Responses and admitted by the AP-side PS-Poll
+/// parser. Keeping the reserved high bits out of this value prevents a caller
+/// from manufacturing an invalid Duration/ID field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaAssociationId(u16);
+
+impl StaAssociationId {
+    pub const fn new(value: u16) -> Option<Self> {
+        if value != 0 && value <= 0x3fff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+
+    const fn duration_id(self) -> u16 {
+        PS_POLL_ASSOCIATION_ID_PREFIX | self.0
+    }
+}
 
 /// Power-management state advertised by a station to its access point.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,6 +95,38 @@ impl StaNullDataFrame {
         frame[16..22].copy_from_slice(&self.bssid);
         frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
         Ok(STA_NULL_DATA_FRAME_LEN)
+    }
+}
+
+/// Complete inputs for one station-originated legacy PS-Poll frame.
+///
+/// IEEE control-frame geometry places the BSSID in Address 1 and the station
+/// transmitter address in Address 2. PS-Poll has no sequence-control field;
+/// its Duration/ID field carries the associated station's validated AID.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaPsPollFrame {
+    pub station_address: [u8; 6],
+    pub bssid: [u8; 6],
+    pub association_id: StaAssociationId,
+}
+
+impl StaPsPollFrame {
+    /// Encode the complete control MPDU without an FCS.
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        validate_peer(self.bssid, 0)?;
+        if output.len() < STA_PS_POLL_FRAME_LEN {
+            return Err(StationFrameError::OutputTooSmall {
+                required: STA_PS_POLL_FRAME_LEN,
+            });
+        }
+
+        let frame = &mut output[..STA_PS_POLL_FRAME_LEN];
+        frame.fill(0);
+        frame[0..2].copy_from_slice(&PS_POLL_FRAME_CONTROL.to_le_bytes());
+        frame[2..4].copy_from_slice(&self.association_id.duration_id().to_le_bytes());
+        frame[4..10].copy_from_slice(&self.bssid);
+        frame[10..16].copy_from_slice(&self.station_address);
+        Ok(STA_PS_POLL_FRAME_LEN)
     }
 }
 

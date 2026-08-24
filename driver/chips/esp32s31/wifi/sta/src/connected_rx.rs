@@ -22,6 +22,7 @@ use open_esp_radio_wifi_softmac::{
 };
 #[cfg(test)]
 use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence};
+use open_esp_radio_wifi_sta::power_save::StaPsPollDelivery;
 
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{
@@ -45,6 +46,7 @@ const DATA_TYPE: u16 = 0x0008;
 const PROTECTED: u16 = 0x4000;
 const QOS_SUBTYPE: u16 = 0x0080;
 const TO_FROM_DS: u16 = 0x0300;
+const MORE_DATA: u16 = 0x2000;
 const QOS_AMSDU_PRESENT: u8 = 0x80;
 
 /// Immutable identity and descriptor-ingress policy for one connected STA.
@@ -128,6 +130,9 @@ pub enum ConnectedRxEvent<'frame> {
         metadata: MacRxMetadata<RxPhyInfo>,
     },
     PeerDisconnect(StaDisconnect),
+    /// One integrity-verified associated unicast MPDU that can complete the
+    /// currently armed legacy PS-Poll service transaction.
+    PowerSaveDelivery(StaPsPollDelivery),
     Ethernet {
         frame: EthernetFrameParts<'frame>,
         raw: &'frame [u8],
@@ -162,6 +167,11 @@ pub enum ConnectedRxControlEvent {
     },
     BlockAck(BlockAckAction),
     PeerDisconnect(StaDisconnect),
+    PowerSaveDelivery(StaPsPollDelivery),
+    /// More than one delivery crossed the single outstanding PS-Poll lane.
+    /// Connected control must restore PM=0 instead of guessing which poll an
+    /// overwritten observation belonged to.
+    PowerSaveDeliveryRace,
 }
 
 impl ConnectedRxEvent<'_> {
@@ -199,6 +209,9 @@ impl ConnectedRxEvent<'_> {
             Self::EspNow { .. } => None,
             Self::PeerDisconnect(disconnect) => {
                 Some(ConnectedRxControlEvent::PeerDisconnect(disconnect))
+            }
+            Self::PowerSaveDelivery(delivery) => {
+                Some(ConnectedRxControlEvent::PowerSaveDelivery(delivery))
             }
             Self::Ethernet { .. } => None,
         }
@@ -617,6 +630,11 @@ impl ConnectedRxDispatcher {
             Ok(data) => data,
             Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
         };
+        if protection == ConnectedRxProtection::Pairwise {
+            sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
+                more_data: public_frame_control & MORE_DATA != 0,
+            }));
+        }
         let mut frames = data.frames;
         let amsdu = data.amsdu;
         let mut count = 0_u8;
@@ -741,6 +759,7 @@ mod tests {
                 ConnectedRxEvent::PeerDisconnect(disconnect) => {
                     self.peer_disconnects.push(disconnect);
                 }
+                ConnectedRxEvent::PowerSaveDelivery(_) => {}
                 ConnectedRxEvent::Trigger { .. }
                 | ConnectedRxEvent::Ndpa { .. }
                 | ConnectedRxEvent::EspNow { .. } => {}

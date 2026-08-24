@@ -191,6 +191,7 @@ impl<S: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
 struct DeferredEthernetFrames<'storage> {
     frames: PackedEthernetWriter<'storage>,
     metadata: Option<MacRxMetadata<RxPhyInfo>>,
+    power_save_delivery: Option<open_esp_radio_wifi_sta::power_save::StaPsPollDelivery>,
 }
 
 impl<'storage> DeferredEthernetFrames<'storage> {
@@ -198,6 +199,7 @@ impl<'storage> DeferredEthernetFrames<'storage> {
         Self {
             frames: PackedEthernetWriter::new(storage),
             metadata: None,
+            power_save_delivery: None,
         }
     }
 
@@ -208,6 +210,10 @@ impl<'storage> DeferredEthernetFrames<'storage> {
 
 impl ConnectedRxSink for DeferredEthernetFrames<'_> {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
+        if let ConnectedRxEvent::PowerSaveDelivery(delivery) = event {
+            self.power_save_delivery = Some(delivery);
+            return;
+        }
         let ConnectedRxEvent::Ethernet {
             frame, metadata, ..
         } = event

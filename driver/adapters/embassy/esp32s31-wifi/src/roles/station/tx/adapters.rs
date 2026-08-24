@@ -75,6 +75,19 @@ impl<
         Ok(DatapathControlProgress::TxPending)
     }
 
+    fn start_ps_poll<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        association_id: StaAssociationId,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
+        if self.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        self.ordinary.start_ps_poll(hardware, association_id)?;
+        self.active = ConnectedTxActive::Ordinary;
+        Ok(DatapathControlProgress::TxPending)
+    }
+
     fn start_beacon_probe<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,

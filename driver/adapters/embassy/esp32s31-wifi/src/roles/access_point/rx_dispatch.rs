@@ -186,6 +186,7 @@ fn observe_protected_dispatch(
                 false
             }
         }
+        Esp32s31ApRxDispatch::FragmentBuffered { .. } => false,
         Esp32s31ApRxDispatch::Duplicate => {
             #[cfg(any(feature = "diagnostics", test))]
             {
@@ -237,7 +238,9 @@ fn observe_protected_dispatch(
             Esp32s31ApRxError::PeerQosMismatch
             | Esp32s31ApRxError::PairwiseKeyId(_)
             | Esp32s31ApRxError::Replay(_)
-            | Esp32s31ApRxError::KeyGenerationMismatch,
+            | Esp32s31ApRxError::KeyGenerationMismatch
+            | Esp32s31ApRxError::Fragment(_)
+            | Esp32s31ApRxError::ProtectedFragmentationUnsupported,
         ) => {
             #[cfg(any(feature = "diagnostics", test))]
             {
@@ -267,6 +270,7 @@ impl AccessPointProtectedFrameDispatch {
         publication: AccessPointRxPublication,
         current_buffer: usize,
         current_is_amsdu: bool,
+        now_micros: u64,
         deferred: &mut DeferredAccessPointRxSink<'_>,
         in_place: &mut InPlaceAccessPointRxSink,
         #[cfg(any(feature = "diagnostics", test))]
@@ -291,15 +295,16 @@ impl AccessPointProtectedFrameDispatch {
                 .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
             });
         let current = ordered.buffer.as_ptr() as usize == current_buffer;
-        let outcome = if can_publish_ap_rx_in_place(
+        let current_can_publish_in_place = can_publish_ap_rx_in_place(
             publication,
             current,
             current_is_amsdu,
             deferred.used(),
-        ) {
-            data_rx.dispatch(ordered, &mut admit, in_place)
+        );
+        let outcome = if data_rx.may_publish_in_place(ordered) && current_can_publish_in_place {
+            data_rx.dispatch_at(ordered, now_micros, &mut admit, in_place)
         } else {
-            data_rx.dispatch(ordered, &mut admit, deferred)
+            data_rx.dispatch_at(ordered, now_micros, &mut admit, deferred)
         };
         *produced_data |= observe_protected_dispatch(
             outcome,

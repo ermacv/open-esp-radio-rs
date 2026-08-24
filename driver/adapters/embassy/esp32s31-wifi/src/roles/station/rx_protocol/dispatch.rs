@@ -299,7 +299,7 @@ async fn dispatch_non_amsdu_segment<
     runtime_received_at_micros: Option<u64>,
     #[cfg(any(feature = "diagnostics", test))] pipeline_observer: Option<&dyn RxPipelineObserver>,
 ) -> ConnectedRxDispatch {
-    if dispatcher.may_publish_ethernet(segment) {
+    if dispatcher.may_publish_ethernet(segment) || dispatcher.may_complete_open_fragment(segment) {
         // Keep the staging lease until the single-MSDU path owns its one
         // network output slot. A-MSDU uses the deferred streaming path
         // above and acquires one slot per decoded subframe.

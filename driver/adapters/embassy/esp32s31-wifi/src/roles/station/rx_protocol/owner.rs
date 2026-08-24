@@ -132,6 +132,7 @@ where
         let _ = self.dispatcher.stop_ccmp_rx_replay();
         let mut shutdown = ConnectedRxProtocolShutdown {
             esp_now_duplicate_entries: self.dispatcher.stop_esp_now_rx_epoch(),
+            incomplete_fragment_contexts: self.dispatcher.clear_open_fragmentation(),
             ..ConnectedRxProtocolShutdown::default()
         };
         if let Some(commands) = &self.reorder_commands {
@@ -421,6 +422,7 @@ where
         shutdown.reorder_commands = retained.reorder_commands;
         shutdown.active_reorders = retained.active_reorders;
         shutdown.esp_now_duplicate_entries = retained.esp_now_duplicate_entries;
+        shutdown.incomplete_fragment_contexts = retained.incomplete_fragment_contexts;
         if shutdown.queued_frames != 0 {
             self.processor.irq.notify_rx_capacity();
         }

@@ -645,6 +645,7 @@ where
                                 publication,
                                 current_buffer as usize,
                                 current_is_amsdu,
+                                now_micros,
                                 &mut deferred,
                                 &mut in_place,
                                 #[cfg(any(feature = "diagnostics", test))]
@@ -1110,8 +1111,9 @@ where
         let mut sink = DeferredAccessPointRxSink::new(processor.rx_frame);
         let _ = processor.rx_reorder.stop(identity, |segment| {
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
-            let outcome = data_rx.dispatch(
+            let outcome = data_rx.dispatch_at(
                 segment,
+                now_micros,
                 |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
@@ -1171,8 +1173,9 @@ where
         let mut sink = DeferredAccessPointRxSink::new(processor.rx_frame);
         let pending_dispatched = processor.rx_reorder.dispatch_pending(|segment| {
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
-            let outcome = data_rx.dispatch(
+            let outcome = data_rx.dispatch_at(
                 segment,
+                now_micros,
                 |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
@@ -1189,8 +1192,9 @@ where
         } else {
             let dispatched = processor.rx_reorder.expire_due(now_micros, |segment| {
                 let peer = data_rx.reorder_key(segment).map(|key| key.peer);
-                let outcome = data_rx.dispatch(
+                let outcome = data_rx.dispatch_at(
                     segment,
+                    now_micros,
                     |request| mac.engine_mut().admit_rx_data(request),
                     &mut sink,
                 );

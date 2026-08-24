@@ -9,7 +9,10 @@
 use core::cell::RefCell;
 
 use critical_section::Mutex;
-use open_esp_radio_esp32s31_wifi::protected_data_rx::{view_protected_data, view_unprotected_data};
+use open_esp_radio_esp32s31_wifi::protected_data_rx::{
+    UnprotectedDataFragmentRxError, view_protected_data, view_unprotected_data,
+    view_unprotected_data_fragment,
+};
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
 use open_esp_radio_ieee80211::{
     ccmp::{
@@ -20,6 +23,11 @@ use open_esp_radio_ieee80211::{
     esp_now::{
         ESP_NOW_ACTION_CATEGORY, ESP_NOW_ORGANIZATION_IDENTIFIER, EspNowVersionError,
         EspNowWireVersion, esp_now_wire_version,
+    },
+    fragmentation::{
+        OPEN_DATA_FRAGMENT_TIMEOUT_MICROS, OPEN_DATA_REASSEMBLY_CAPACITY, OpenDataDefragmentation,
+        OpenDataDefragmenter, OpenDataFragmentError, OpenDataUnfragmentedAdmission,
+        parse_open_data_identity,
     },
     ndpa::{HeNdpa, HeNdpaError},
     security::WifiSecurityMode,
@@ -63,7 +71,9 @@ const PROTECTED: u16 = 0x4000;
 const QOS_SUBTYPE: u16 = 0x0080;
 const TO_FROM_DS: u16 = 0x0300;
 const MORE_DATA: u16 = 0x2000;
+const MORE_FRAGMENTS: u16 = 0x0400;
 const QOS_AMSDU_PRESENT: u8 = 0x80;
+const OPEN_FRAGMENT_CONTEXTS: usize = 2;
 
 /// Immutable identity and descriptor-ingress policy for one connected STA.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -825,8 +835,9 @@ pub enum ConnectedRxEvent<'frame> {
         payload: &'frame [u8],
     },
     PeerDisconnect(StaDisconnect),
-    /// One integrity-verified associated unicast MPDU that can complete the
-    /// currently armed legacy PS-Poll service transaction.
+    /// One admitted associated unicast delivery that can complete the
+    /// currently armed legacy PS-Poll service transaction. A fragmented Open
+    /// MSDU reaches this edge only after complete reassembly.
     PowerSaveDelivery(StaPsPollDelivery),
     Ethernet {
         frame: EthernetFrameParts<'frame>,
@@ -954,6 +965,11 @@ pub enum ConnectedRxError {
     SecurityModeMismatch,
     PeerQosMismatch,
     CcmpReplay(StaCcmpRxReplayError),
+    Fragment(OpenDataFragmentError),
+    /// CCMP replay is committed per integrity-verified MPDU. Protected MSDU
+    /// reassembly remains unavailable until those PN commits are owned by one
+    /// fragment-aware transaction instead of being guessed at this boundary.
+    ProtectedFragmentationUnsupported,
 }
 
 /// Result of consuming one independently owned staged RX frame.
@@ -983,6 +999,10 @@ pub enum ConnectedRxDispatch {
         ethernet_frames: u8,
         amsdu: bool,
     },
+    FragmentBuffered {
+        expired: u8,
+        evicted: bool,
+    },
     Duplicate,
     Ignored,
     Rejected {
@@ -997,6 +1017,7 @@ pub struct ConnectedRxDispatcher {
     duplicate_filter: RxDuplicateFilter,
     ccmp_replay: Option<StaCcmpRxReplayOwner>,
     esp_now: Option<EspNowRxEpoch>,
+    fragments: OpenDataDefragmenter<OPEN_FRAGMENT_CONTEXTS, OPEN_DATA_REASSEMBLY_CAPACITY>,
 }
 
 #[expect(
@@ -1015,6 +1036,7 @@ impl ConnectedRxDispatcher {
             duplicate_filter: RxDuplicateFilter::new(),
             ccmp_replay: None,
             esp_now: None,
+            fragments: OpenDataDefragmenter::new(OPEN_DATA_FRAGMENT_TIMEOUT_MICROS),
         }
     }
 
@@ -1085,6 +1107,11 @@ impl ConnectedRxDispatcher {
         epoch.reset_duplicate_history()
     }
 
+    /// Revoke incomplete Open MSDUs at the connected-epoch stop edge.
+    pub fn clear_open_fragmentation(&mut self) -> usize {
+        self.fragments.clear()
+    }
+
     pub const fn config(&self) -> ConnectedRxConfig {
         self.config
     }
@@ -1103,7 +1130,32 @@ impl ConnectedRxDispatcher {
             };
             frame_control & (DATA_TYPE_MASK | PROTECTED) == expected
                 && (self.config.peer_qos || frame_control & QOS_SUBTYPE == 0)
+                && !public_fragmented(segment.buffer, frame_control).unwrap_or(false)
         })
+    }
+
+    /// Return whether this Open fragment may complete an in-progress MSDU.
+    ///
+    /// The async adapter uses this immutable hint only to reserve copying
+    /// capacity. The reassembly owner still performs the exact sequence and
+    /// identity admission after the wait.
+    pub fn may_complete_open_fragment(&self, segment: RxSegment<'_>) -> bool {
+        if self.config.security != WifiSecurityMode::Open {
+            return false;
+        }
+        let Some(frame_control) = public_frame_control(segment.buffer) else {
+            return false;
+        };
+        if frame_control & (DATA_TYPE_MASK | PROTECTED) != DATA_TYPE
+            || (frame_control & QOS_SUBTYPE != 0 && !self.config.peer_qos)
+            || frame_control & MORE_FRAGMENTS != 0
+        {
+            return false;
+        }
+        segment
+            .buffer
+            .get(PUBLIC_HEADER_SIZE + 22)
+            .is_some_and(|sequence| sequence & 0x0f != 0)
     }
 
     /// Return whether a protected QoS data unit advertises A-MSDU payload.
@@ -1423,7 +1475,13 @@ impl ConnectedRxDispatcher {
                 sink.publish(ConnectedRxEvent::PeerDisconnect(disconnect));
                 ConnectedRxDispatch::PeerDisconnect
             }
-            _ => self.dispatch_data(segment, frame_control, protection, sink),
+            _ => self.dispatch_data(
+                segment,
+                frame_control,
+                protection,
+                runtime_received_at_micros,
+                sink,
+            ),
         }
     }
 
@@ -1450,6 +1508,7 @@ impl ConnectedRxDispatcher {
         segment: RxSegment<'_>,
         public_frame_control: u16,
         protection: ConnectedRxProtection,
+        runtime_received_at_micros: Option<u64>,
         sink: &mut S,
     ) -> ConnectedRxDispatch {
         if public_frame_control & DATA_TYPE_MASK != DATA_TYPE {
@@ -1457,11 +1516,29 @@ impl ConnectedRxDispatcher {
         }
         let observed_protected = public_frame_control & PROTECTED != 0;
         let expected_protected = self.config.security == WifiSecurityMode::Wpa2Personal;
+        let fragmented = public_fragmented(segment.buffer, public_frame_control).unwrap_or(false);
+        if fragmented && observed_protected {
+            return rejected(
+                protection,
+                ConnectedRxError::ProtectedFragmentationUnsupported,
+            );
+        }
+        if fragmented && expected_protected {
+            return rejected(protection, ConnectedRxError::SecurityModeMismatch);
+        }
         if expected_protected && !observed_protected {
             return self.dispatch_unprotected_eapol(segment, protection, sink);
         }
         if observed_protected != expected_protected {
             return rejected(protection, ConnectedRxError::SecurityModeMismatch);
+        }
+        if fragmented {
+            return self.dispatch_open_fragment(
+                segment,
+                protection,
+                runtime_received_at_micros,
+                sink,
+            );
         }
         let (mpdu, retry, sequence_control, tid, ccmp_header, data) = match self.config.security {
             WifiSecurityMode::Open => {
@@ -1469,6 +1546,33 @@ impl ConnectedRxDispatcher {
                     Ok(view) => view,
                     Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
                 };
+                let identity = match parse_open_data_identity(DataInterfaceRole::Station, view.mpdu)
+                {
+                    Ok(identity) => identity,
+                    Err(error) => {
+                        return rejected(protection, ConnectedRxError::Fragment(error));
+                    }
+                };
+                if identity.transmitter_address() != self.config.bssid
+                    || identity.receiver_address() != self.config.station_address
+                        && identity.receiver_address()[0] & 1 == 0
+                    || protection == ConnectedRxProtection::Other
+                {
+                    return ConnectedRxDispatch::Ignored;
+                }
+                match self.fragments.admit_unfragmented(
+                    identity,
+                    view.retry,
+                    runtime_received_at_micros,
+                ) {
+                    Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
+                    Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
+                        return ConnectedRxDispatch::Duplicate;
+                    }
+                    Err(error) => {
+                        return rejected(protection, ConnectedRxError::Fragment(error));
+                    }
+                }
                 let identity = (view.mpdu, view.retry, view.sequence_control, view.tid);
                 let data = match view.decapsulate(DataInterfaceRole::Station) {
                     Ok(data) => data,
@@ -1577,6 +1681,75 @@ impl ConnectedRxDispatcher {
         result
     }
 
+    fn dispatch_open_fragment<S: ConnectedRxSink>(
+        &mut self,
+        segment: RxSegment<'_>,
+        protection: ConnectedRxProtection,
+        runtime_received_at_micros: Option<u64>,
+        sink: &mut S,
+    ) -> ConnectedRxDispatch {
+        let Some(now_micros) = runtime_received_at_micros else {
+            return rejected(
+                protection,
+                ConnectedRxError::Fragment(OpenDataFragmentError::ClockUnavailable),
+            );
+        };
+        let view = match view_unprotected_data_fragment(
+            segment,
+            self.config.ingress,
+            DataInterfaceRole::Station,
+        ) {
+            Ok(view) => view,
+            Err(UnprotectedDataFragmentRxError::Radio(error)) => {
+                return rejected(protection, ConnectedRxError::Rx(error));
+            }
+            Err(UnprotectedDataFragmentRxError::Fragment(error)) => {
+                return rejected(protection, ConnectedRxError::Fragment(error));
+            }
+        };
+        let identity = view.fragment.identity();
+        if identity.transmitter_address() != self.config.bssid
+            || identity.receiver_address() != self.config.station_address
+                && identity.receiver_address()[0] & 1 == 0
+            || protection == ConnectedRxProtection::Other
+        {
+            return ConnectedRxDispatch::Ignored;
+        }
+        if identity.tid().is_some() && !self.config.peer_qos {
+            return rejected(protection, ConnectedRxError::PeerQosMismatch);
+        }
+        let power_save_delivery =
+            (protection == ConnectedRxProtection::Pairwise).then_some(StaPsPollDelivery {
+                more_data: u16::from_le_bytes([view.mpdu[0], view.mpdu[1]]) & MORE_DATA != 0,
+            });
+        let raw = view.raw;
+        let metadata = view.metadata;
+        match self.fragments.ingest(view.fragment, now_micros, |data| {
+            if let Some(delivery) = power_save_delivery {
+                sink.publish(ConnectedRxEvent::PowerSaveDelivery(delivery));
+            }
+            sink.publish(ConnectedRxEvent::Ethernet {
+                frame: data.ethernet_frame(),
+                raw,
+                amsdu: false,
+                metadata,
+            });
+        }) {
+            Ok(OpenDataDefragmentation::Buffered { expired, evicted }) => {
+                ConnectedRxDispatch::FragmentBuffered {
+                    expired,
+                    evicted: evicted.is_some(),
+                }
+            }
+            Ok(OpenDataDefragmentation::Duplicate { .. }) => ConnectedRxDispatch::Duplicate,
+            Ok(OpenDataDefragmentation::Complete { .. }) => ConnectedRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            },
+            Err(error) => rejected(protection, ConnectedRxError::Fragment(error)),
+        }
+    }
+
     fn dispatch_unprotected_eapol<S: ConnectedRxSink>(
         &mut self,
         segment: RxSegment<'_>,
@@ -1678,6 +1851,13 @@ fn public_protection(
     } else {
         Some(ConnectedRxProtection::Other)
     }
+}
+
+fn public_fragmented(raw: &[u8], frame_control: u16) -> Option<bool> {
+    if frame_control & MORE_FRAGMENTS != 0 {
+        return Some(true);
+    }
+    Some(*raw.get(PUBLIC_HEADER_SIZE + 22)? & 0x0f != 0)
 }
 
 #[cfg(test)]
@@ -2069,6 +2249,7 @@ mod tests {
         ethernet_metadata: Vec<MacRxMetadata<RxPhyInfo>>,
         block_ack: Vec<BlockAckAction>,
         peer_disconnects: Vec<StaDisconnect>,
+        power_save_deliveries: Vec<StaPsPollDelivery>,
         unprotected_eapol: Vec<Vec<u8>>,
     }
 
@@ -2097,7 +2278,9 @@ mod tests {
                 ConnectedRxEvent::PeerDisconnect(disconnect) => {
                     self.peer_disconnects.push(disconnect);
                 }
-                ConnectedRxEvent::PowerSaveDelivery(_) => {}
+                ConnectedRxEvent::PowerSaveDelivery(delivery) => {
+                    self.power_save_deliveries.push(delivery);
+                }
                 ConnectedRxEvent::UnprotectedEapol { payload, .. } => {
                     self.unprotected_eapol.push(payload.to_vec());
                 }
@@ -2245,6 +2428,214 @@ mod tests {
         storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
             &(((signal_length + 4) as u32) << 16 | signal_length as u32).to_le_bytes(),
         );
+    }
+
+    fn open_fragment(
+        storage: &mut [u8; 192],
+        sequence: u16,
+        fragment: u8,
+        more_fragments: bool,
+        retry: bool,
+        source: [u8; 6],
+        payload: &[u8],
+    ) -> usize {
+        let mpdu_length = 24 + payload.len();
+        let signal_length = mpdu_length + 4;
+        storage.fill(0);
+        set_tail(storage, signal_length);
+        let frame = &mut storage[FRAME_OFFSET..FRAME_OFFSET + mpdu_length];
+        let mut frame_control = 0x0208_u16;
+        if more_fragments {
+            frame_control |= MORE_FRAGMENTS;
+        }
+        if retry {
+            frame_control |= 0x0800;
+        }
+        frame[..2].copy_from_slice(&frame_control.to_le_bytes());
+        frame[4..10].copy_from_slice(&STATION);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&source);
+        frame[22..24].copy_from_slice(&((sequence << 4) | u16::from(fragment)).to_le_bytes());
+        frame[24..].copy_from_slice(payload);
+        signal_length
+    }
+
+    #[test]
+    fn open_station_reassembles_only_the_exact_fragment_identity() {
+        let first_payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1, 2];
+        let final_payload = [3, 4, 5];
+        let mut first_storage = [0_u8; 192];
+        let first_signal = open_fragment(
+            &mut first_storage,
+            0x123,
+            0,
+            true,
+            false,
+            SOURCE,
+            &first_payload,
+        );
+        let mut final_storage = [0_u8; 192];
+        let final_signal = open_fragment(
+            &mut final_storage,
+            0x123,
+            1,
+            false,
+            false,
+            SOURCE,
+            &final_payload,
+        );
+        let mut open = config();
+        open.security = WifiSecurityMode::Open;
+        open.peer_qos = false;
+        let mut dispatcher = ConnectedRxDispatcher::new(open);
+        let mut sink = RecordingSink::default();
+        let mut mpdu = [0_u8; 128];
+        let mut ethernet = [0_u8; 128];
+
+        assert!(!dispatcher.may_publish_ethernet(segment(&first_storage, first_signal)));
+        assert!(!dispatcher.may_complete_open_fragment(segment(&first_storage, first_signal)));
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&first_storage, first_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(10),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::FragmentBuffered {
+                expired: 0,
+                evicted: false,
+            }
+        );
+        assert!(sink.power_save_deliveries.is_empty());
+
+        // A retried first fragment is a defragmenter duplicate and cannot
+        // complete the one-shot PS-Poll delivery lane.
+        first_storage[FRAME_OFFSET + 1] |= 0x08;
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&first_storage, first_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(11),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Duplicate
+        );
+        assert!(sink.power_save_deliveries.is_empty());
+
+        // A retry cannot clear More Fragments and route its partial first
+        // body through ordinary decapsulation while the exact sequence is
+        // still retained.
+        first_storage[FRAME_OFFSET + 1] &= !0x04;
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&first_storage, first_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(11),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::Fragment(OpenDataFragmentError::MoreFragmentsMismatch),
+            }
+        );
+        first_storage[FRAME_OFFSET + 1] &= !0x08;
+        first_storage[FRAME_OFFSET + 1] |= 0x04;
+
+        final_storage[FRAME_OFFSET + 16] ^= 1;
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&final_storage, final_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(11),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::Fragment(OpenDataFragmentError::IdentityMismatch),
+            }
+        );
+        assert!(sink.ethernet.is_empty());
+
+        final_storage[FRAME_OFFSET + 16] ^= 1;
+        assert!(!dispatcher.may_publish_ethernet(segment(&final_storage, final_signal)));
+        assert!(dispatcher.may_complete_open_fragment(segment(&final_storage, final_signal)));
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&final_storage, final_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(12),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            }
+        );
+        assert_eq!(sink.ethernet.len(), 1);
+        assert_eq!(&sink.ethernet[0][..6], &STATION);
+        assert_eq!(&sink.ethernet[0][6..12], &SOURCE);
+        assert_eq!(&sink.ethernet[0][12..14], &0x0800_u16.to_be_bytes());
+        assert_eq!(&sink.ethernet[0][14..], &[1, 2, 3, 4, 5]);
+        assert_eq!(
+            sink.power_save_deliveries,
+            [StaPsPollDelivery { more_data: false }]
+        );
+
+        let _ = dispatcher.dispatch_with_runtime_received_at(
+            segment(&first_storage, first_signal),
+            &mut mpdu,
+            &mut ethernet,
+            Some(20),
+            &mut sink,
+        );
+        assert_eq!(dispatcher.clear_open_fragmentation(), 1);
+    }
+
+    #[test]
+    fn protected_fragments_fail_before_ccmp_or_plaintext_admission() {
+        let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1];
+        let mut storage = [0_u8; 192];
+        let signal = open_fragment(&mut storage, 7, 0, true, false, SOURCE, &payload);
+        storage[FRAME_OFFSET + 1] |= 0x40;
+        let mut dispatcher = dispatcher();
+        let mut sink = RecordingSink::default();
+        let mut mpdu = [0_u8; 128];
+        let mut ethernet = [0_u8; 128];
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&storage, signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(1),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::ProtectedFragmentationUnsupported,
+            }
+        );
+        assert!(sink.ethernet.is_empty());
+
+        storage[FRAME_OFFSET + 1] &= !0x40;
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&storage, signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(2),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::SecurityModeMismatch,
+            }
+        );
+        assert_eq!(dispatcher.clear_open_fragmentation(), 0);
     }
 
     #[test]

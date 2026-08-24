@@ -5,8 +5,9 @@
 //! runtime may recycle the descriptor.
 
 use open_esp_radio_esp32s31_wifi::protected_data_rx::{
-    ProtectedDataDecapsulation, ProtectedDataRxView, UnprotectedDataRxView, view_protected_data,
-    view_unprotected_data,
+    ProtectedDataDecapsulation, ProtectedDataRxView, UnprotectedDataFragmentRxError,
+    UnprotectedDataRxView, view_protected_data, view_unprotected_data,
+    view_unprotected_data_fragment,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{RxError, RxIngressConfig, RxPhyInfo, RxSegment, view_normalized_rx_frame},
@@ -16,9 +17,16 @@ use open_esp_radio_ieee80211::ccmp::{CcmpHeader, CcmpKeyId, CcmpReplayError, Ccm
 use open_esp_radio_ieee80211::data::{
     DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter,
 };
+use open_esp_radio_ieee80211::fragmentation::{
+    OPEN_DATA_FRAGMENT_TIMEOUT_MICROS, OPEN_DATA_REASSEMBLY_CAPACITY, OpenDataDefragmentation,
+    OpenDataDefragmenter, OpenDataFragmentError, OpenDataUnfragmentedAdmission,
+    parse_open_data_identity,
+};
 use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_wifi_ap::AP_MAX_CLIENTS;
 use open_esp_radio_wifi_softmac::MacRxMetadata;
+
+const OPEN_FRAGMENT_CONTEXTS: usize = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApRxConfig {
@@ -48,11 +56,17 @@ pub enum Esp32s31ApRxError {
     PairwiseKeyId(u8),
     Replay(CcmpReplayError),
     KeyGenerationMismatch,
+    Fragment(OpenDataFragmentError),
+    /// A protected fragment has an independently authenticated CCMP PN, but
+    /// this dispatcher has no fragment-aware replay transaction that can
+    /// safely commit the complete PN series.
+    ProtectedFragmentationUnsupported,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApRxDispatch {
     Data { ethernet_frames: u8, amsdu: bool },
+    FragmentBuffered { expired: u8, evicted: bool },
     Duplicate,
     ForeignPeer,
     Unauthorized,
@@ -129,6 +143,10 @@ impl Esp32s31ApRxDuplicateOwner {
     const fn slot(self) -> usize {
         self.slot as usize
     }
+
+    const fn fragmentation_epoch(self) -> u64 {
+        (self.association_epoch as u64) << 8 | self.slot as u64
+    }
 }
 
 /// Unforgeable result of consulting the live AP controlled-port and key
@@ -204,6 +222,7 @@ impl<'frame> ApDataRxView<'frame> {
 pub struct Esp32s31ApRxDispatcher {
     config: Esp32s31ApRxConfig,
     duplicates: [Option<ApPeerDuplicateState>; AP_MAX_CLIENTS],
+    fragments: OpenDataDefragmenter<OPEN_FRAGMENT_CONTEXTS, OPEN_DATA_REASSEMBLY_CAPACITY>,
 }
 
 impl Esp32s31ApRxDispatcher {
@@ -211,6 +230,7 @@ impl Esp32s31ApRxDispatcher {
         Self {
             config,
             duplicates: [const { None }; AP_MAX_CLIENTS],
+            fragments: OpenDataDefragmenter::new(OPEN_DATA_FRAGMENT_TIMEOUT_MICROS),
         }
     }
 
@@ -219,6 +239,7 @@ impl Esp32s31ApRxDispatcher {
     pub fn reset(&mut self, config: Esp32s31ApRxConfig) {
         self.config = config;
         self.duplicates.fill_with(|| None);
+        self.fragments.clear();
     }
 
     /// Release duplicate ownership when the AP peer close transaction reaches
@@ -226,15 +247,34 @@ impl Esp32s31ApRxDispatcher {
     /// cleanup is skipped because [`Esp32s31ApRxDuplicateOwner`] replaces the
     /// exact slot on epoch mismatch.
     pub fn forget_peer(&mut self, peer: [u8; 6]) -> bool {
+        let fragmented = self.fragments.forget_transmitter(peer) != 0;
         let Some(index) = self
             .duplicates
             .iter()
             .position(|entry| entry.as_ref().is_some_and(|state| state.address == peer))
         else {
-            return false;
+            return fragmented;
         };
         self.duplicates[index] = None;
         true
+    }
+
+    /// Revoke every incomplete Open MSDU at an AP stop/reset edge.
+    pub fn clear_open_fragmentation(&mut self) -> usize {
+        self.fragments.clear()
+    }
+
+    /// Return whether an ordinary dispatch can borrow its Ethernet payload
+    /// directly from the current staging frame. Reassembled payloads live in
+    /// the fragment owner and must take the adapter's copying slow path.
+    pub fn may_publish_in_place(&self, segment: RxSegment<'_>) -> bool {
+        let Ok(normalized) = view_normalized_rx_frame(&segment, self.config.ingress) else {
+            return false;
+        };
+        normalized
+            .mpdu
+            .get(..24)
+            .is_some_and(|mpdu| !fragmented_mpdu(mpdu))
     }
 
     /// Extract the same public ordering key used by connected-station RX.
@@ -251,6 +291,35 @@ impl Esp32s31ApRxDispatcher {
     pub fn dispatch<S, A>(
         &mut self,
         segment: RxSegment<'_>,
+        admit: A,
+        sink: &mut S,
+    ) -> Esp32s31ApRxDispatch
+    where
+        S: Esp32s31ApRxSink,
+        A: FnMut(Esp32s31ApRxAdmissionRequest) -> Esp32s31ApRxAdmission,
+    {
+        self.dispatch_inner(segment, None, admit, sink)
+    }
+
+    /// Dispatch with the runtime timestamp used for bounded fragment expiry.
+    pub fn dispatch_at<S, A>(
+        &mut self,
+        segment: RxSegment<'_>,
+        now_micros: u64,
+        admit: A,
+        sink: &mut S,
+    ) -> Esp32s31ApRxDispatch
+    where
+        S: Esp32s31ApRxSink,
+        A: FnMut(Esp32s31ApRxAdmissionRequest) -> Esp32s31ApRxAdmission,
+    {
+        self.dispatch_inner(segment, Some(now_micros), admit, sink)
+    }
+
+    fn dispatch_inner<S, A>(
+        &mut self,
+        segment: RxSegment<'_>,
+        now_micros: Option<u64>,
         mut admit: A,
         sink: &mut S,
     ) -> Esp32s31ApRxDispatch
@@ -272,8 +341,17 @@ impl Esp32s31ApRxDispatcher {
             return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(RxError::Bounds));
         };
         let protected = frame_control & 0x4000 != 0;
+        let fragmented = fragmented_mpdu(normalized.mpdu);
+        if fragmented && protected {
+            return Esp32s31ApRxDispatch::Rejected(
+                Esp32s31ApRxError::ProtectedFragmentationUnsupported,
+            );
+        }
         if protected != (self.config.security == WifiSecurityMode::Wpa2Personal) {
             return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::SecurityModeMismatch);
+        }
+        if fragmented {
+            return self.dispatch_open_fragment(segment, now_micros, &mut admit, sink);
         }
         let data = match self.config.security {
             WifiSecurityMode::Open => {
@@ -320,6 +398,28 @@ impl Esp32s31ApRxDispatcher {
                     return Esp32s31ApRxDispatch::Rejected(error);
                 }
             };
+        if ccmp_header.is_none() {
+            let identity = match parse_open_data_identity(DataInterfaceRole::AccessPoint, mpdu) {
+                Ok(identity) => identity,
+                Err(error) => {
+                    return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(error));
+                }
+            };
+            match self.fragments.admit_unfragmented_in_epoch(
+                identity,
+                duplicate_owner.fragmentation_epoch(),
+                retry,
+                now_micros,
+            ) {
+                Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
+                Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
+                    return Esp32s31ApRxDispatch::Duplicate;
+                }
+                Err(error) => {
+                    return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(error));
+                }
+            }
+        }
         let duplicates = self.duplicate_filter(peer, duplicate_owner);
         if duplicates.is_duplicate(retry, sequence_control, tid) {
             return Esp32s31ApRxDispatch::Duplicate;
@@ -343,6 +443,83 @@ impl Esp32s31ApRxDispatcher {
         Esp32s31ApRxDispatch::Data {
             ethernet_frames: count,
             amsdu,
+        }
+    }
+
+    fn dispatch_open_fragment<S, A>(
+        &mut self,
+        segment: RxSegment<'_>,
+        now_micros: Option<u64>,
+        admit: &mut A,
+        sink: &mut S,
+    ) -> Esp32s31ApRxDispatch
+    where
+        S: Esp32s31ApRxSink,
+        A: FnMut(Esp32s31ApRxAdmissionRequest) -> Esp32s31ApRxAdmission,
+    {
+        let Some(now_micros) = now_micros else {
+            return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(
+                OpenDataFragmentError::ClockUnavailable,
+            ));
+        };
+        let view = match view_unprotected_data_fragment(
+            segment,
+            self.config.ingress,
+            DataInterfaceRole::AccessPoint,
+        ) {
+            Ok(view) => view,
+            Err(UnprotectedDataFragmentRxError::Radio(error)) => {
+                return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(error));
+            }
+            Err(UnprotectedDataFragmentRxError::Fragment(error)) => {
+                return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(error));
+            }
+        };
+        let identity = view.fragment.identity();
+        if identity.receiver_address() != self.config.access_point {
+            return Esp32s31ApRxDispatch::ForeignPeer;
+        }
+        let peer = identity.transmitter_address();
+        let lane = identity
+            .tid()
+            .map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
+        let duplicate_owner =
+            match admit(Esp32s31ApRxAdmissionRequest::new(peer, lane, None)).outcome {
+                Esp32s31ApRxAdmissionOutcome::Authorized(owner) => owner,
+                Esp32s31ApRxAdmissionOutcome::Unauthorized => {
+                    return Esp32s31ApRxDispatch::Unauthorized;
+                }
+                Esp32s31ApRxAdmissionOutcome::Rejected(error) => {
+                    return Esp32s31ApRxDispatch::Rejected(error);
+                }
+            };
+        let raw = view.raw;
+        let metadata = view.metadata;
+        match self.fragments.ingest_in_epoch(
+            view.fragment,
+            duplicate_owner.fragmentation_epoch(),
+            now_micros,
+            |data| {
+                sink.publish(Esp32s31ApRxEvent {
+                    frame: data.ethernet_frame(),
+                    raw,
+                    amsdu: false,
+                    metadata,
+                });
+            },
+        ) {
+            Ok(OpenDataDefragmentation::Buffered { expired, evicted }) => {
+                Esp32s31ApRxDispatch::FragmentBuffered {
+                    expired,
+                    evicted: evicted.is_some(),
+                }
+            }
+            Ok(OpenDataDefragmentation::Duplicate { .. }) => Esp32s31ApRxDispatch::Duplicate,
+            Ok(OpenDataDefragmentation::Complete { .. }) => Esp32s31ApRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            },
+            Err(error) => Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(error)),
         }
     }
 
@@ -401,6 +578,14 @@ fn rejected_data(error: DataDecapError) -> Esp32s31ApRxDispatch {
     Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Data(error))
 }
 
+fn fragmented_mpdu(mpdu: &[u8]) -> bool {
+    let Some(header) = mpdu.get(..24) else {
+        return false;
+    };
+    let frame_control = u16::from_le_bytes([header[0], header[1]]);
+    frame_control & 0x000c == 0x0008 && (frame_control & 0x0400 != 0 || header[22] & 0x0f != 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,6 +626,13 @@ mod tests {
         }
     }
 
+    fn open_config() -> Esp32s31ApRxConfig {
+        Esp32s31ApRxConfig {
+            security: WifiSecurityMode::Open,
+            ..config()
+        }
+    }
+
     fn duplicate_owner(association_id: u16, epoch: u32) -> Esp32s31ApRxDuplicateOwner {
         Esp32s31ApRxDuplicateOwner::new(association_id, epoch).unwrap()
     }
@@ -452,6 +644,169 @@ mod tests {
             buffer: storage,
             next_descriptor_address: 0,
         }
+    }
+
+    fn open_fragment(
+        storage: &mut [u8; 192],
+        sequence: u16,
+        fragment: u8,
+        more_fragments: bool,
+        address3: [u8; 6],
+        payload: &[u8],
+    ) -> u32 {
+        let mpdu_length = 24 + payload.len();
+        let signal_length = mpdu_length + 4;
+        storage.fill(0);
+        storage[0x1f] = 1;
+        storage[TAIL..TAIL + 4].copy_from_slice(
+            &(((signal_length + 4) as u32) << 16 | signal_length as u32).to_le_bytes(),
+        );
+        let frame = &mut storage[PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + mpdu_length];
+        let mut frame_control = 0x0108_u16;
+        if more_fragments {
+            frame_control |= 0x0400;
+        }
+        frame[..2].copy_from_slice(&frame_control.to_le_bytes());
+        frame[4..10].copy_from_slice(&AP);
+        frame[10..16].copy_from_slice(&PEER);
+        frame[16..22].copy_from_slice(&address3);
+        frame[22..24].copy_from_slice(&((sequence << 4) | u16::from(fragment)).to_le_bytes());
+        frame[24..].copy_from_slice(payload);
+        192 | (((PUBLIC_HEADER_SIZE + signal_length) as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31
+    }
+
+    #[test]
+    fn open_ap_reassembly_requires_live_peer_admission_and_copying_publication() {
+        let first_payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1, 2];
+        let final_payload = [3, 4, 5];
+        let mut first_storage = [0_u8; 192];
+        let first_descriptor = open_fragment(
+            &mut first_storage,
+            0x123,
+            0,
+            true,
+            DESTINATION,
+            &first_payload,
+        );
+        let mut final_storage = [0_u8; 192];
+        let final_descriptor = open_fragment(
+            &mut final_storage,
+            0x123,
+            1,
+            false,
+            DESTINATION,
+            &final_payload,
+        );
+        let mut dispatcher = Esp32s31ApRxDispatcher::new(open_config());
+        let mut sink = Sink::default();
+
+        assert!(!dispatcher.may_publish_in_place(segment(&first_storage, first_descriptor)));
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&first_storage, first_descriptor),
+                10,
+                |_| Esp32s31ApRxAdmission::unauthorized(),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Unauthorized
+        );
+        assert_eq!(dispatcher.clear_open_fragmentation(), 0);
+
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&first_storage, first_descriptor),
+                11,
+                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 1)),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::FragmentBuffered {
+                expired: 0,
+                evicted: false,
+            }
+        );
+        first_storage[PUBLIC_HEADER_SIZE + 1] &= !0x04;
+        first_storage[PUBLIC_HEADER_SIZE + 1] |= 0x08;
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&first_storage, first_descriptor),
+                12,
+                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 1)),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(
+                OpenDataFragmentError::MoreFragmentsMismatch
+            ))
+        );
+        first_storage[PUBLIC_HEADER_SIZE + 1] &= !0x08;
+        first_storage[PUBLIC_HEADER_SIZE + 1] |= 0x04;
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&final_storage, final_descriptor),
+                13,
+                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 2)),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(
+                OpenDataFragmentError::IdentityMismatch
+            ))
+        );
+        assert!(sink.ethernet.is_empty());
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&final_storage, final_descriptor),
+                14,
+                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 1)),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            }
+        );
+        assert_eq!(sink.ethernet.len(), 1);
+        assert_eq!(&sink.ethernet[0][..6], &DESTINATION);
+        assert_eq!(&sink.ethernet[0][6..12], &PEER);
+        assert_eq!(&sink.ethernet[0][12..14], &0x0800_u16.to_be_bytes());
+        assert_eq!(&sink.ethernet[0][14..], &[1, 2, 3, 4, 5]);
+
+        let _ = dispatcher.dispatch_at(
+            segment(&first_storage, first_descriptor),
+            20,
+            |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 1)),
+            &mut sink,
+        );
+        assert!(dispatcher.forget_peer(PEER));
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&final_storage, final_descriptor),
+                21,
+                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 1)),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(
+                OpenDataFragmentError::Orphan { fragment_number: 1 }
+            ))
+        );
+    }
+
+    #[test]
+    fn ap_protected_fragment_rejects_before_replay_admission() {
+        let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1];
+        let mut storage = [0_u8; 192];
+        let descriptor = open_fragment(&mut storage, 7, 0, true, DESTINATION, &payload);
+        storage[PUBLIC_HEADER_SIZE + 1] |= 0x40;
+        let mut dispatcher = Esp32s31ApRxDispatcher::new(config());
+        let mut sink = Sink::default();
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&storage, descriptor),
+                1,
+                |_| panic!("protected fragment must not reach replay admission"),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::ProtectedFragmentationUnsupported)
+        );
+        assert!(sink.ethernet.is_empty());
     }
 
     #[test]

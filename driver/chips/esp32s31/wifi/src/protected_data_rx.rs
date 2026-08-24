@@ -12,6 +12,9 @@ use open_esp_radio_ieee80211::ccmp::CcmpHeader;
 use open_esp_radio_ieee80211::data::{
     DataDecapError, DataDecapsulation, DataInterfaceRole, decapsulate_data_frames,
 };
+use open_esp_radio_ieee80211::fragmentation::{
+    OpenDataFragment, OpenDataFragmentError, parse_open_data_fragment,
+};
 use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata};
 
 const RETRY: u16 = 0x0800;
@@ -180,4 +183,50 @@ impl<'frame> UnprotectedDataRxView<'frame> {
             metadata,
         })
     }
+}
+
+/// Validated Open-network view of one fragmented data MPDU.
+///
+/// Unlike [`UnprotectedDataRxView`], this value cannot be directly
+/// decapsulated. Its fragment token must cross the fixed-capacity reassembly
+/// owner before any Ethernet payload is exposed.
+#[derive(Clone, Copy, Debug)]
+pub struct UnprotectedDataFragmentRxView<'frame> {
+    pub raw: &'frame [u8],
+    pub mpdu: &'frame [u8],
+    pub fragment: OpenDataFragment<'frame>,
+    pub metadata: MacRxMetadata<RxPhyInfo>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnprotectedDataFragmentRxError {
+    Radio(RxError),
+    Fragment(OpenDataFragmentError),
+}
+
+/// Validate normalized S31 receive state and strictly parse one Open data
+/// fragment for the selected STA/AP address mapping.
+#[inline(always)]
+pub fn view_unprotected_data_fragment(
+    segment: RxSegment<'_>,
+    ingress: RxIngressConfig,
+    role: DataInterfaceRole,
+) -> Result<UnprotectedDataFragmentRxView<'_>, UnprotectedDataFragmentRxError> {
+    let normalized = view_normalized_rx_frame(&segment, ingress)
+        .map_err(UnprotectedDataFragmentRxError::Radio)?;
+    let mpdu = normalized.mpdu;
+    if normalized.logical_length != mpdu.len() {
+        return Err(UnprotectedDataFragmentRxError::Radio(RxError::Bounds));
+    }
+    let fragment =
+        parse_open_data_fragment(role, mpdu).map_err(UnprotectedDataFragmentRxError::Fragment)?;
+    let mut metadata = normalized.metadata;
+    metadata.crypto = MacRxEvidence::ProtocolValidated(MacRxCryptoStatus::Unprotected);
+    metadata.amsdu = MacRxEvidence::ProtocolValidated(false);
+    Ok(UnprotectedDataFragmentRxView {
+        raw: segment.buffer,
+        mpdu,
+        fragment,
+        metadata,
+    })
 }

@@ -68,6 +68,9 @@ pub struct ConnectedRxProtocolShutdown {
     pub active_reorders: usize,
     /// ESP-NOW peer fingerprints explicitly cleared before owner return.
     pub esp_now_duplicate_entries: usize,
+    /// Incomplete Open MSDUs revoked before the dispatcher leaves its
+    /// connected association epoch.
+    pub incomplete_fragment_contexts: usize,
 }
 
 /// Scratch and runtime-arena ownership returned only after a staged RX

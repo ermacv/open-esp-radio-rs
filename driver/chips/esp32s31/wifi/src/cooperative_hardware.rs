@@ -241,6 +241,17 @@ impl StaLinkRxPolicyHardware for CooperativeRadioHardware<'_> {
     }
 }
 
+impl open_esp_radio_esp32s31_wifi_mac::init::StaEspNowRxPolicyHardware
+    for CooperativeRadioHardware<'_>
+{
+    fn apply_sta_esp_now_policy(&mut self, bssid: [u8; 6]) {
+        self.registers
+            .access()
+            .try_configure_station_esp_now_receive_policy(bssid)
+            .expect("ESP-NOW STA policy configuration must not overlap another MMIO transaction");
+    }
+}
+
 impl StaNoiseFloorHardware for CooperativeRadioHardware<'_> {
     fn read_noise_floor_dbm(&self) -> i8 {
         self.registers

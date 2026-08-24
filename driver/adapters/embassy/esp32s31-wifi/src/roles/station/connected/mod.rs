@@ -30,12 +30,12 @@ pub use port::{
     Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaCompositionFailure,
     Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaConfigError,
     Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,
-    Esp32s31ConnectedStaDrivers, Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPlan,
-    Esp32s31ConnectedStaPort, Esp32s31ConnectedStaPrepareFailure, Esp32s31ConnectedStaRateConfig,
-    Esp32s31ConnectedStaReport, Esp32s31ConnectedStaRxPolicy,
-    Esp32s31ConnectedStaRxProcessorResources, Esp32s31ConnectedStaRxProtocolResources,
-    Esp32s31ConnectedStaTxHandoffFailure, Esp32s31ConnectedStaTxPolicy,
-    Esp32s31ConnectedStaTxResources,
+    Esp32s31ConnectedStaDrivers, Esp32s31ConnectedStaEspNowRxError,
+    Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPort,
+    Esp32s31ConnectedStaPrepareFailure, Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaReport,
+    Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaRxProcessorResources,
+    Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxHandoffFailure,
+    Esp32s31ConnectedStaTxPolicy, Esp32s31ConnectedStaTxResources,
 };
 pub use preparation::{
     Esp32s31ConnectedNetworkStarted, Esp32s31ConnectedNetworkStartedParts,
@@ -64,6 +64,11 @@ pub use super::command::{Esp32s31StationCommand, Esp32s31StationCommandReceiver}
 pub use super::control::{ConnectedControlShutdown, ConnectedWpa2Security};
 pub use super::control_mailbox::{ConnectedControlPublisher, ConnectedControlResources};
 pub use super::epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch};
+pub use super::esp_now_mailbox::{
+    EspNowMailboxConnectedRxSink, EspNowOwnedRxEvent, EspNowRxMailboxEpochError,
+    EspNowRxMailboxResources, EspNowRxMailboxShutdown, EspNowRxPublishOutcome, EspNowRxPublisher,
+    EspNowRxReceiver,
+};
 pub use super::network::EmbassyNetConnectedRxSink;
 pub use super::rx_protocol::{
     ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStopped,

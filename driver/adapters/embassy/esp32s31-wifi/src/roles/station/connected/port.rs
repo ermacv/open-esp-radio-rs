@@ -10,6 +10,7 @@ use open_esp_radio_embassy_net::{PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::{
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
+    init::{StaEspNowRxPolicyHardware, configure_sta_esp_now_receive_policy},
     rate_control::{StaRateControlAssociation, StaTxRatePolicy},
     rx::RxIngressConfig,
     rx_ampdu::{RxBlockAckSessions, RxBlockAckSessionsError},
@@ -31,7 +32,7 @@ use open_esp_radio_ieee80211::{
     wmm::WmmAccessCategory,
 };
 use open_esp_radio_wifi_softmac::{
-    MacServiceCapabilities, MacTxPlan, WifiPlan,
+    EspNowRxEpoch, MacServiceCapabilities, MacTxPlan, WifiPlan,
     interface::{BoundVirtualInterface, VifRole},
 };
 use open_esp_radio_wifi_sta::{
@@ -72,8 +73,9 @@ mod resources;
 
 pub use plan::{
     Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaConfig,
-    Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure,
-    Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaTxPolicy,
+    Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaEspNowRxError, Esp32s31ConnectedStaPlan,
+    Esp32s31ConnectedStaPrepareFailure, Esp32s31ConnectedStaRateConfig,
+    Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaTxPolicy,
 };
 pub use resources::{
     Esp32s31ConnectedStaCompositionFailure, Esp32s31ConnectedStaControlResources,

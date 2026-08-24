@@ -279,6 +279,19 @@ impl Esp32s31RadioOwnerArena {
         })
     }
 
+    /// Apply normal STA filtering/auto-ACK restoration followed by the exact
+    /// management-without-BSSID-check policy used by ESP-NOW normal RX.
+    pub fn try_configure_station_esp_now_receive_policy(
+        &self,
+        bssid: [u8; 6],
+    ) -> Result<(), Esp32s31RadioOwnerArenaError> {
+        self.try_with_mut(|registers| {
+            let mut hal = crate::wifi_mac::WifiMacHal::from_owned(registers);
+            hal.configure_station_receive_policy(bssid);
+            hal.configure_station_policy_six(bssid, crate::types::MacStaPolicyMode::Mode2);
+        })
+    }
+
     /// Read the current hardware noise floor as a bounded value observation.
     pub fn try_noise_floor_dbm(&self) -> Result<i8, Esp32s31RadioOwnerArenaError> {
         self.try_with_ref(|registers| registers.read_noise_floor_dbm())
@@ -488,6 +501,15 @@ impl<'arena> Esp32s31RadioAccess<'arena> {
         bssid: [u8; 6],
     ) -> Result<(), Esp32s31RadioOwnerArenaError> {
         self.arena.try_configure_station_receive_policy(bssid)
+    }
+
+    /// Apply serialized normal STA plus ESP-NOW management admission policy.
+    pub fn try_configure_station_esp_now_receive_policy(
+        &self,
+        bssid: [u8; 6],
+    ) -> Result<(), Esp32s31RadioOwnerArenaError> {
+        self.arena
+            .try_configure_station_esp_now_receive_policy(bssid)
     }
 
     /// Read the hardware noise floor without exposing the PAC owner.

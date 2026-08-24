@@ -494,7 +494,7 @@ impl ProductionWifiEpochRunner {
         let station_sink = Esp32s31StaApStationRxSink::new(sta_ap_rx_batch, control_publisher);
         let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
         let station_rx = Esp32s31ConnectedStaPort::build_rx_processor(
-            &plan,
+            &mut plan,
             Esp32s31ConnectedStaRxProcessorResources {
                 irq: &IRQ_RUNTIME,
                 sink: station_sink,

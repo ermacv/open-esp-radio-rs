@@ -1762,7 +1762,7 @@ impl HeRate {
         if self.dcm { limit / 2 } else { limit }
     }
 
-    /// Maximum APEP bytes for this rate and one EDCA TXOP limit.
+    /// Checked maximum APEP bytes for this rate and one EDCA TXOP limit.
     ///
     /// SOURCE: complete `libpp.a[trc.o]::
     /// rx11AXRate2AMPDULimit_update` (size `0x136`), complete
@@ -1784,13 +1784,49 @@ impl HeRate {
     /// - RU242 NDBPS: 117, 234, 351, 468, 702, 936, 1053, 1170, 1404, 1560.
     ///
     /// A zero limit retains the ROM table exposed by
-    /// [`Self::maximum_default_apep_bytes`]. Complete
-    /// `ppCheckTxHEAMPDUlength` applies the DCM divide-by-two after either
-    /// table lookup, which this method also reproduces.
+    /// [`Self::maximum_default_apep_bytes`]. A nonzero limit whose complete
+    /// duration calculation leaves no positive payload budget returns
+    /// `None`. The blob converts that negative signed result to an unsigned
+    /// table entry, but an untrusted peer can advertise such a short TXOP;
+    /// treating the wrap as a large APEP would fail open.
+    pub const fn checked_maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> Option<u32> {
+        if txop.is_default() {
+            return Some(self.maximum_default_apep_bytes() as u32);
+        }
+
+        let signed_bytes = self.nonzero_txop_apep_bytes(txop);
+        if signed_bytes <= 0 {
+            return None;
+        }
+        let limit = self.vendor_unchecked_maximum_apep_bytes(txop);
+        if limit == 0 { None } else { Some(limit) }
+    }
+
+    /// Fail-closed maximum used by compatibility callers which do not need
+    /// to distinguish a non-positive duration budget from a zero-byte limit.
     pub const fn maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> u32 {
+        match self.checked_maximum_apep_bytes(txop) {
+            Some(limit) => limit,
+            None => 0,
+        }
+    }
+
+    /// Preserve the complete blob conversion as a private comparison oracle.
+    /// Production admission calls [`Self::checked_maximum_apep_bytes`] first,
+    /// so a negative signed result can never become aggregate capacity.
+    /// The exact rational producer below is exhaustively compared with the
+    /// blob's f32 instruction sequence across every peer-admitted TXOP byte,
+    /// all three GI/LTF rows and all ten MCS values.
+    const fn vendor_unchecked_maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> u32 {
         if txop.is_default() {
             return self.maximum_default_apep_bytes() as u32;
         }
+        let limit = self.nonzero_txop_apep_bytes(txop) as u32;
+        if self.dcm { limit / 2 } else { limit }
+    }
+
+    const fn nonzero_txop_apep_bytes(self, txop: HeEdcaTxopLimit) -> i64 {
+        debug_assert!(!txop.is_default());
 
         const DATA_BITS_PER_SYMBOL_RU242: [i32; 10] =
             [117, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
@@ -1808,7 +1844,7 @@ impl HeRate {
         };
         let exchange_budget_us = txop.units_32_us() as i64 * 32 - 36;
         let data_bits_per_symbol = DATA_BITS_PER_SYMBOL_RU242[mcs] as i64;
-        let bytes = match self.guard_interval_and_ltf {
+        match self.guard_interval_and_ltf {
             crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
             | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => {
                 // ((budget - BA - 31.2) / 13.6 * NDBPS - 22) / 8
@@ -1828,12 +1864,7 @@ impl HeRate {
                     - 22 * 16)
                     / (16 * 8)
             }
-        };
-        // The exact rational form was exhaustively compared with the blob's
-        // f32 instruction sequence for all 256 values admitted by its WMM
-        // parser, all three rows, and all ten MCS values.
-        let limit = bytes as u32;
-        if self.dcm { limit / 2 } else { limit }
+        }
     }
 
     /// Minimum HE A-MPDU subframe length for a negotiated density.
@@ -2641,9 +2672,12 @@ impl HeAmpduTxConfig {
         ampdu_density: HtAmpduDensity,
         txop_limit: HeEdcaTxopLimit,
     ) -> Option<Self> {
+        let Some(maximum_apep_bytes) = rate.checked_maximum_apep_bytes(txop_limit) else {
+            return None;
+        };
         if bss_color > 0x3f
             || aggregate_length == 0
-            || (aggregate_length as u32) > rate.maximum_apep_bytes(txop_limit)
+            || (aggregate_length as u32) > maximum_apep_bytes
             || subframes == 0
             || subframes > 32
         {
@@ -2708,11 +2742,15 @@ impl HeAmpduTxConfig {
     }
 
     const fn valid(self) -> bool {
+        let apep_valid = match self.rate.checked_maximum_apep_bytes(self.txop_limit) {
+            Some(limit) => (self.aggregate_length as u32) <= limit,
+            None => false,
+        };
         self.bss_color <= 0x3f
             && self.spatial_reuse <= 0x0f
             && self.protection_spacing <= 0x03ff
             && self.aggregate_length != 0
-            && (self.aggregate_length as u32) <= self.rate.maximum_apep_bytes(self.txop_limit)
+            && apep_valid
             && self.subframes != 0
             && self.subframes <= 32
             && self.aifsn <= 0x0f
@@ -3581,6 +3619,7 @@ fn map_dma_storage_error(error: TxDmaStorageError) -> TxError {
 #[cfg(test)]
 mod completion_disposition_tests {
     use super::*;
+    use crate::rx::HeGuardIntervalAndLtf;
 
     fn completion(status: u8, detail: u8) -> TxCompletion {
         TxCompletion {
@@ -3647,5 +3686,46 @@ mod completion_disposition_tests {
         completion.used_alternate = true;
         assert_eq!(completion.detail(), 3);
         assert_eq!(completion.disposition(), TxCompletionDisposition::Collision);
+    }
+
+    #[test]
+    fn private_he_apep_oracle_preserves_the_complete_vendor_wrap_domain() {
+        let profiles = [
+            (HeGuardIntervalAndLtf::TwoLtf800Ns, 31.2_f32, 13.6_f32),
+            (HeGuardIntervalAndLtf::TwoLtf1600Ns, 32.0_f32, 14.4_f32),
+            (HeGuardIntervalAndLtf::FourLtf3200Ns, 40.0_f32, 16.0_f32),
+        ];
+        let data_bits_per_symbol = [117_i32, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
+        let estimated_block_ack_us = [68_i32, 44, 44, 32, 32, 32, 32, 32, 32, 32];
+
+        let mut wrapped = 0_u16;
+        for units_32_us in 1_u16..=u16::from(u8::MAX) {
+            let txop = HeEdcaTxopLimit::from_units_32_us(units_32_us).unwrap();
+            for (guard_interval_and_ltf, preamble_us, symbol_us) in profiles {
+                for mcs_index in 0..10 {
+                    let data_symbols = (((i32::from(units_32_us) * 32 - 36)
+                        - estimated_block_ack_us[mcs_index])
+                        as f32
+                        - preamble_us)
+                        / symbol_us;
+                    let expected = ((data_bits_per_symbol[mcs_index] as f32)
+                        .mul_add(data_symbols, -22.0_f32)
+                        as i32
+                        / 8) as u32;
+                    let rate = HeRate::new(
+                        HeMcs::from_index(mcs_index as u8).unwrap(),
+                        guard_interval_and_ltf,
+                    );
+                    assert_eq!(rate.vendor_unchecked_maximum_apep_bytes(txop), expected);
+                    if expected > i32::MAX as u32 {
+                        wrapped = wrapped.saturating_add(1);
+                    }
+                }
+            }
+        }
+        assert_ne!(
+            wrapped, 0,
+            "the private oracle retains wrapped blob outputs"
+        );
     }
 }

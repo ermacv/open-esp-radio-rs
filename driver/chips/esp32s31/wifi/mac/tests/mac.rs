@@ -4348,7 +4348,7 @@ fn he_nonzero_edca_txop_apep_limits_match_the_complete_blob_producer() {
 }
 
 #[test]
-fn he_integer_apep_producer_is_exhaustively_equivalent_to_blob_f32_domain() {
+fn he_checked_apep_producer_matches_positive_blob_domain_and_rejects_wrap() {
     let profiles = [
         (HeGuardIntervalAndLtf::TwoLtf800Ns, 31.2_f32, 13.6_f32),
         (HeGuardIntervalAndLtf::TwoLtf1600Ns, 32.0_f32, 14.4_f32),
@@ -4357,6 +4357,8 @@ fn he_integer_apep_producer_is_exhaustively_equivalent_to_blob_f32_domain() {
     let data_bits_per_symbol = [117_i32, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
     let estimated_block_ack_us = [68_i32, 44, 44, 32, 32, 32, 32, 32, 32, 32];
 
+    let mut rejected = 0_u16;
+    let mut rejected_short_limits = [0_u16; 4];
     for units_32_us in 1_u16..=u16::from(u8::MAX) {
         let txop = HeEdcaTxopLimit::from_units_32_us(units_32_us).unwrap();
         for (guard_interval_and_ltf, preamble_us, symbol_us) in profiles {
@@ -4368,17 +4370,46 @@ fn he_integer_apep_producer_is_exhaustively_equivalent_to_blob_f32_domain() {
                     / symbol_us;
                 // This is the complete blob's fsub/fdiv/fmadd/fcvt/div
                 // instruction sequence used as the independent test oracle.
-                let expected = ((data_bits_per_symbol[mcs_index] as f32)
+                let signed_expected = (data_bits_per_symbol[mcs_index] as f32)
                     .mul_add(data_symbols, -22.0_f32) as i32
-                    / 8) as u32;
+                    / 8;
                 let rate = HeRate::new(
                     HeMcs::from_index(mcs_index as u8).unwrap(),
                     guard_interval_and_ltf,
                 );
-                assert_eq!(rate.maximum_apep_bytes(txop), expected);
+                if signed_expected <= 0 {
+                    rejected = rejected.saturating_add(1);
+                    if let Some(count) =
+                        rejected_short_limits.get_mut(usize::from(units_32_us.saturating_sub(1)))
+                    {
+                        *count = count.saturating_add(1);
+                    }
+                    assert_eq!(rate.checked_maximum_apep_bytes(txop), None);
+                    assert_eq!(rate.maximum_apep_bytes(txop), 0);
+                    assert!(
+                        HeAmpduTxConfig::new_with_txop(
+                            rate,
+                            1,
+                            1,
+                            1,
+                            HtAmpduDensity::NoRestriction,
+                            txop,
+                        )
+                        .is_none()
+                    );
+                } else {
+                    let expected = signed_expected as u32;
+                    assert_eq!(rate.checked_maximum_apep_bytes(txop), Some(expected));
+                    assert_eq!(rate.maximum_apep_bytes(txop), expected);
+                }
             }
         }
     }
+    assert_ne!(rejected, 0, "the short-TXOP wrap domain remains covered");
+    assert!(
+        rejected_short_limits.into_iter().all(|count| count != 0),
+        "every AP-controlled 1..=4-unit limit covers a non-positive rate/GI budget"
+    );
 }
 
 #[test]

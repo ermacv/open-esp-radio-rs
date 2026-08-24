@@ -50,8 +50,8 @@ use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
 use open_esp_radio_ieee80211::{
     data::DataHeControl,
     station::{
-        STA_PROTECTED_QOS_ETHERNET_OVERHEAD, StaTxSequenceCounters, StationFrameError,
-        sta_protected_amsdu_pair_frame_length,
+        STA_PROTECTED_QOS_ETHERNET_HEADROOM, STA_PROTECTED_QOS_ETHERNET_OVERHEAD,
+        StaTxSequenceCounters, StationFrameError, sta_protected_amsdu_pair_frame_length,
     },
     station_power_save::{StaAssociationId, StaPowerManagement},
 };
@@ -101,6 +101,8 @@ pub struct Esp32s31ConnectedTxTeardownParts<R, A> {
 pub struct Esp32s31ConnectedTxParked<'observer, const SLOTS: usize> {
     ordinary: Esp32s31SingleMpduTxParked,
     block_ack_windows: [u8; 8],
+    block_ack_generations: [u32; 8],
+    block_ack_generation_exhausted: u8,
     config: AggregateTxConfig,
     rate_control: StaRateControlAssociation,
     aggregate_rate_policy: StaTxRatePolicy,
@@ -163,6 +165,12 @@ pub enum AggregateTxError {
     DmaPrefixGeometry {
         encoded_offset: usize,
         metadata_size: usize,
+    },
+    /// Control replaced or stopped the TX BlockAck agreement after a
+    /// software-owned aggregate consumed sequence numbers and PNs but before
+    /// that aggregate reached hardware.
+    BlockAckAgreementChanged {
+        tid: u8,
     },
     Encode(StationFrameError),
     Aggregate(HtAmpduTxError),
@@ -250,6 +258,7 @@ struct AggregateActive<const SLOTS: usize> {
 
 struct AggregatePrepared<const SLOTS: usize> {
     traffic: AggregateTraffic,
+    block_ack_generation: u32,
     aggregate_length: u16,
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
@@ -354,6 +363,14 @@ pub struct Esp32s31ConnectedTx<
         Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>,
     /// Peer-negotiated BlockAck window per QoS TID; zero means inactive.
     block_ack_windows: [u8; 8],
+    /// Generation of each agreement retained by software-prepared A-MPDUs.
+    /// A DELBA/re-negotiation cannot therefore leave an old arena eligible
+    /// merely because a later agreement happens to have the same window.
+    block_ack_generations: [u32; 8],
+    /// Sticky per-TID exhaustion for the monotonic agreement generation.
+    /// Once set, no later agreement in this connected epoch may admit an
+    /// aggregate whose prepared identity could alias an earlier generation.
+    block_ack_generation_exhausted: u8,
     config: AggregateTxConfig,
     rate_control: TeardownResource<StaRateControlAssociation>,
     aggregate_rate_policy: StaTxRatePolicy,

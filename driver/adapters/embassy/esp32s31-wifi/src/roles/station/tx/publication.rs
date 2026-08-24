@@ -100,6 +100,19 @@ where
             }
         };
 
+        // Ordinary TX validates Ethernet length before consuming sequence or
+        // CCMP state. Establish the extra in-place A-MPDU prefix geometry at
+        // the same pre-mutation boundary; otherwise a malformed netstack
+        // lease could consume aggregate metadata and only then fail encode.
+        if !self.frame_has_aggregate_geometry(&first) {
+            return self.start_network_ordinary(
+                hardware,
+                first,
+                selected,
+                NetworkSingleMpduReason::FreshAggregateCapacity,
+            );
+        }
+
         // BlockAck eligibility does not imply that every network frame fits
         // the peer/rate/TXOP ceiling of a fresh aggregate. In particular,
         // control-plane traffic can arrive immediately after ADDBA. Such a
@@ -212,12 +225,24 @@ where
         frame: &PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         traffic: AggregateTraffic,
     ) -> bool {
-        self.ordinary
-            .select_network_traffic(frame.ethernet())
-            .is_ok_and(|selected| {
-                selected.tid() == traffic.tid()
-                    && selected.access_category == traffic.selected.access_category
-            })
+        self.frame_has_aggregate_geometry(frame)
+            && self
+                .ordinary
+                .select_network_traffic(frame.ethernet())
+                .is_ok_and(|selected| {
+                    selected.tid() == traffic.tid()
+                        && selected.access_category == traffic.selected.access_category
+                })
+    }
+
+    fn frame_has_aggregate_geometry(
+        &self,
+        frame: &PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) -> bool {
+        frame.ethernet_length() >= 14
+            && frame.ethernet_offset()
+                >= STA_PROTECTED_QOS_ETHERNET_HEADROOM
+                    + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::TX_AMPDU_METADATA_SIZE
     }
 
     fn defer_network_frame(
@@ -323,6 +348,9 @@ where
         )?;
         let prepared = AggregatePrepared {
             traffic,
+            block_ack_generation: self
+                .block_ack_generation(traffic.tid())
+                .ok_or(AggregateTxError::MissingQosSequence(traffic.tid()))?,
             aggregate_length: aggregate.bytes,
             retry,
             original_subframes: aggregate.subframes,
@@ -492,9 +520,12 @@ where
             Some(prepared) => {
                 let traffic = prepared.traffic;
                 let frame_limit = self.aggregate_frame_limit(traffic.tid());
-                self.ampdu.standby().is_some_and(|owner| {
-                    owner.held_backing_count() < frame_limit && owner.held_backing_count() < SLOTS
-                }) && matches!(self.can_push_standby(FRAME_CAPACITY, traffic), Ok(true))
+                self.block_ack_generation(traffic.tid()) == Some(prepared.block_ack_generation)
+                    && self.ampdu.standby().is_some_and(|owner| {
+                        owner.held_backing_count() < frame_limit
+                            && owner.held_backing_count() < SLOTS
+                    })
+                    && matches!(self.can_push_standby(FRAME_CAPACITY, traffic), Ok(true))
             }
         }
     }
@@ -551,6 +582,15 @@ where
     ) {
         if !self.can_prepare_network_tx() {
             drop(first);
+            return;
+        }
+
+        // Retain an invalid immediate successor at the immutable FIFO
+        // boundary. The ordinary path will report its exact validation error
+        // after the hardware-owned predecessor completes, without spending a
+        // QoS sequence number or packet number in the standby arena.
+        if !self.frame_has_aggregate_geometry(&first) {
+            self.defer_network_frame(first);
             return;
         }
 
@@ -652,6 +692,14 @@ where
         }
         if let Some(error) = self.standby_error.take() {
             return Err(error);
+        }
+        if let Some(prepared) = self.standby_prepared.as_ref()
+            && self.block_ack_generation(prepared.traffic.tid())
+                != Some(prepared.block_ack_generation)
+        {
+            let tid = prepared.traffic.tid();
+            self.cancel_prepared_network()?;
+            return Err(AggregateTxError::BlockAckAgreementChanged { tid });
         }
         let Some(prepared) = self.standby_prepared.take() else {
             let first = self

@@ -238,8 +238,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if !self.can_commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)? {
             return Ok(false);
         }
-        Ok(u32::from(self.length_after_append(psdu_length, false)?)
-            <= rate.maximum_apep_bytes(txop_limit))
+        let aggregate_length = u32::from(self.length_after_append(psdu_length, false)?);
+        Ok(rate
+            .checked_maximum_apep_bytes(txop_limit)
+            .is_some_and(|limit| aggregate_length <= limit))
     }
 
     /// Check one referenced HE frame against allocation, APEP and TXOP limits.
@@ -271,8 +273,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         )? {
             return Ok(false);
         }
-        Ok(u32::from(self.length_after_append(psdu_length, false)?)
-            <= policy.rate().maximum_apep_bytes(policy.txop_limit()))
+        let aggregate_length = u32::from(self.length_after_append(psdu_length, false)?);
+        Ok(policy
+            .rate()
+            .checked_maximum_apep_bytes(policy.txop_limit())
+            .is_some_and(|limit| aggregate_length <= limit))
     }
 
     /// Check one referenced HE frame against a fresh aggregate without
@@ -296,7 +301,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         let aggregate_length = 4_u32 + u32::from(psdu_length);
         Ok(maximum_aggregate_bytes != 0
             && aggregate_length <= u32::from(maximum_aggregate_bytes)
-            && aggregate_length <= policy.rate().maximum_apep_bytes(policy.txop_limit()))
+            && policy
+                .rate()
+                .checked_maximum_apep_bytes(policy.txop_limit())
+                .is_some_and(|limit| aggregate_length <= limit))
     }
 
     fn fresh_referenced_psdu_length(
@@ -372,7 +380,9 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         )? {
             return Ok(false);
         }
-        Ok(u32::from(self.length_after_append(psdu_length, true)?)
-            <= rate.maximum_apep_bytes(txop_limit))
+        let aggregate_length = u32::from(self.length_after_append(psdu_length, true)?);
+        Ok(rate
+            .checked_maximum_apep_bytes(txop_limit)
+            .is_some_and(|limit| aggregate_length <= limit))
     }
 }

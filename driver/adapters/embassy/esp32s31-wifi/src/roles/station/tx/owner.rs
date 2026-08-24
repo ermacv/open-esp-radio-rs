@@ -101,6 +101,8 @@ where
             standby_error: None,
             deferred_network: None,
             block_ack_windows: [0; 8],
+            block_ack_generations: [0; 8],
+            block_ack_generation_exhausted: 0,
             config,
             rate_control: TeardownResource::new(rate_control),
             aggregate_rate_policy,
@@ -263,13 +265,24 @@ where
             .unwrap_or(0);
         let amsdu = agreement.is_some_and(|(_, amsdu)| amsdu);
         if let Some(entry) = self.block_ack_windows.get_mut(usize::from(tid)) {
+            let generation_bit = 1_u8 << tid;
             let encoded = window | if amsdu && window != 0 { 0x80 } else { 0 };
             if *entry == encoded {
                 return;
             }
-            let was_operational = *entry & 0x7f != 0;
+            let was_exhausted = self.block_ack_generation_exhausted & generation_bit != 0;
+            let was_operational = !was_exhausted && *entry & 0x7f != 0;
             *entry = encoded;
-            let operational = window != 0;
+            if !was_exhausted {
+                match self.block_ack_generations[usize::from(tid)].checked_add(1) {
+                    Some(generation) => {
+                        self.block_ack_generations[usize::from(tid)] = generation;
+                    }
+                    None => self.block_ack_generation_exhausted |= generation_bit,
+                }
+            }
+            let operational =
+                self.block_ack_generation_exhausted & generation_bit == 0 && window != 0;
             if was_operational != operational
                 && let Some(sink) = self.block_ack_status_sink
             {
@@ -285,9 +298,11 @@ where
     }
 
     pub fn block_ack_amsdu(&self, tid: u8) -> bool {
-        self.block_ack_windows
-            .get(usize::from(tid))
-            .is_some_and(|agreement| agreement & 0x80 != 0)
+        self.block_ack_generation(tid).is_some()
+            && self
+                .block_ack_windows
+                .get(usize::from(tid))
+                .is_some_and(|agreement| agreement & 0x80 != 0)
     }
 
     pub fn block_ack_operational(&self, tid: u8) -> bool {
@@ -295,6 +310,7 @@ where
     }
 
     pub fn block_ack_window(&self, tid: u8) -> Option<u16> {
+        self.block_ack_generation(tid)?;
         let window = self
             .block_ack_windows
             .get(usize::from(tid))
@@ -302,6 +318,12 @@ where
             .unwrap_or(0)
             & 0x7f;
         (window != 0).then_some(u16::from(window))
+    }
+
+    pub(super) fn block_ack_generation(&self, tid: u8) -> Option<u32> {
+        let generation = self.block_ack_generations.get(usize::from(tid)).copied()?;
+        let bit = 1_u8.checked_shl(u32::from(tid))?;
+        (self.block_ack_generation_exhausted & bit == 0).then_some(generation)
     }
 
     pub(super) fn aggregate_frame_limit(&self, tid: u8) -> usize {
@@ -501,6 +523,8 @@ where
 
         let rate_control = self.rate_control.take();
         let block_ack_windows = self.block_ack_windows;
+        let block_ack_generations = self.block_ack_generations;
+        let block_ack_generation_exhausted = self.block_ack_generation_exhausted;
         let config = self.config;
         let aggregate_rate_policy = self.aggregate_rate_policy;
         let he_trigger_based = self.he_trigger_based;
@@ -520,6 +544,8 @@ where
             Esp32s31ConnectedTxParked {
                 ordinary,
                 block_ack_windows,
+                block_ack_generations,
+                block_ack_generation_exhausted,
                 config,
                 rate_control,
                 aggregate_rate_policy,
@@ -551,6 +577,8 @@ where
         let Esp32s31ConnectedTxParked {
             ordinary,
             block_ack_windows,
+            block_ack_generations,
+            block_ack_generation_exhausted,
             config,
             rate_control,
             aggregate_rate_policy,
@@ -577,6 +605,8 @@ where
             ),
         };
         owner.block_ack_windows = block_ack_windows;
+        owner.block_ack_generations = block_ack_generations;
+        owner.block_ack_generation_exhausted = block_ack_generation_exhausted;
         owner.last_aggregate_status = last_aggregate_status;
         owner.pending_ordinary_retry = pending_ordinary_retry;
         owner.he_trigger_based = he_trigger_based;

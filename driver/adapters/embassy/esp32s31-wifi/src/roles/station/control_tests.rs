@@ -10,7 +10,7 @@ use open_esp_radio_esp32s31_hal::types::{
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     MacInterface,
-    crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
+    crypto::{CcmpKeyHardware, install_sta_group_ccmp, install_sta_pairwise_ccmp},
     rx_ampdu::{RxBlockAckRequest, RxBlockAckSnapshot},
     rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxHardware, TxSlot},
@@ -28,6 +28,12 @@ use open_esp_radio_ieee80211::station_power_save::StaPowerManagement;
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 use open_esp_radio_wifi_softmac::{MacRxMetadata, MacTxPlan};
 use open_esp_radio_wifi_sta::power_save::StaPowerSaveState;
+use open_esp_radio_wpa2::{
+    OwnedEapolFrame, Pmk, PtkContext, Wpa2Interface,
+    aes::{Wpa2SoftwareAes, software_aes128_key_wrap},
+    frames::{OwnedRsnIe, Wpa2Gtk, Wpa2PlainKeyData, Wpa2TxFrame},
+    supplicant::{Wpa2StaSupplicant, Wpa2StaSupplicantAction},
+};
 
 use crate::{
     datapath::rx::reorder::{
@@ -52,10 +58,12 @@ struct Hardware {
     clear_count: usize,
     he_tid: [Option<(u8, bool)>; 4],
     he_count: usize,
+    key_install_count: usize,
 }
 
 impl CcmpKeyHardware for Hardware {
     fn install_sta_ccmp_entry(&mut self, _index: u8, _words: &[u32; 6]) -> MacKeyInstallOutcome {
+        self.key_install_count += 1;
         MacKeyInstallOutcome::Installed
     }
 
@@ -321,6 +329,151 @@ fn beacon_event(observation: StaBeaconObservation) -> ConnectedRxEvent<'static> 
 
 fn power_save_policy() -> StaPowerSavePolicy {
     StaPowerSavePolicy::new(100, 2_000).unwrap()
+}
+
+const WPA2_RSN: [u8; 22] = [
+    0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
+];
+const WPA2_SNONCE: [u8; 32] = [3; 32];
+const WPA2_ANONCE: [u8; 32] = [4; 32];
+
+fn owned_station_eapol(frame: &Wpa2TxFrame<512>) -> OwnedEapolFrame {
+    OwnedEapolFrame::try_copy(Wpa2Interface::Station, BSSID, frame.as_bytes()).unwrap()
+}
+
+struct CompletedWpa2Fixture {
+    security: ConnectedWpa2Security,
+    duplicate_message3: OwnedEapolFrame,
+    bad_mic_message3: OwnedEapolFrame,
+    wrong_replay_message3: OwnedEapolFrame,
+}
+
+fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
+    let pmk = Pmk::derive(b"password", b"ssid").unwrap();
+    let ptk_context = PtkContext {
+        authenticator_address: BSSID,
+        supplicant_address: STATION,
+        authenticator_nonce: WPA2_ANONCE,
+        supplicant_nonce: WPA2_SNONCE,
+    };
+    let ptk = pmk.derive_ptk(ptk_context);
+    let mut supplicant =
+        Wpa2StaSupplicant::try_new(STATION, BSSID, WPA2_SNONCE, &WPA2_RSN, &WPA2_RSN, &[]).unwrap();
+    let mut aes = Wpa2SoftwareAes::new();
+    let message1 = Wpa2TxFrame::<512>::message1(STATION, 1, WPA2_ANONCE).unwrap();
+    let Wpa2StaSupplicantAction::Transmit(_) = embassy_futures::block_on(supplicant.on_frame(
+        owned_station_eapol(&message1),
+        &pmk,
+        &mut aes,
+    ))
+    .unwrap() else {
+        panic!("Message 1 must produce Message 2")
+    };
+    let rsn = OwnedRsnIe::<64>::try_copy(&WPA2_RSN).unwrap();
+    let gtk = Wpa2Gtk::new(1, false, [0x6a; 16]).unwrap();
+    let plain = Wpa2PlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes()).unwrap();
+    let message3 =
+        Wpa2TxFrame::<512>::message3(STATION, 2, WPA2_ANONCE, [0; 8], wrapped.as_bytes())
+            .unwrap()
+            .authenticate(&ptk);
+    let Wpa2StaSupplicantAction::InstallKeys(request) = embassy_futures::block_on(
+        supplicant.on_frame(owned_station_eapol(&message3), &pmk, &mut aes),
+    )
+    .unwrap() else {
+        panic!("Message 3 must produce the initial key transaction")
+    };
+    let Wpa2StaSupplicantAction::Transmit(_) = supplicant
+        .complete_key_install::<512>(request, true)
+        .unwrap()
+    else {
+        panic!("successful key publication must produce Message 4")
+    };
+
+    let wrong_replay =
+        Wpa2TxFrame::<512>::message3(STATION, 3, WPA2_ANONCE, [0; 8], wrapped.as_bytes())
+            .unwrap()
+            .authenticate(&ptk);
+    let mut forged = [0; 512];
+    let length = message3.as_bytes().len();
+    forged[..length].copy_from_slice(message3.as_bytes());
+    forged[81] ^= 1;
+    let bad_mic_message3 =
+        OwnedEapolFrame::try_copy(Wpa2Interface::Station, BSSID, &forged[..length]).unwrap();
+    let connected = supplicant.into_connected().unwrap();
+    let group = install_sta_group_ccmp(hardware, 1, &[0x6a; 16]).unwrap();
+    CompletedWpa2Fixture {
+        security: ConnectedWpa2Security::new(connected, group),
+        duplicate_message3: owned_station_eapol(&message3),
+        bad_mic_message3,
+        wrong_replay_message3: owned_station_eapol(&wrong_replay),
+    }
+}
+
+#[test]
+fn duplicate_message3_reuses_connected_key_and_pn_while_forged_frames_are_ignored() {
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let CompletedWpa2Fixture {
+        mut security,
+        duplicate_message3,
+        bad_mic_message3,
+        wrong_replay_message3,
+    } = completed_wpa2_fixture(&mut hardware);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    assert_eq!(hardware.key_install_count, 2);
+
+    let before = tx
+        .take_protected_metadata(0)
+        .unwrap()
+        .expect("WPA2 TX owns pairwise metadata");
+    assert_eq!(before.ccmp_header, [3, 0, 0, 0x20, 0, 0, 0, 0]);
+    assert_eq!(
+        security.process_duplicate_message3(&mut hardware, &mut tx, duplicate_message3),
+        DatapathControlProgress::TxPending
+    );
+    assert_eq!(hardware.key_install_count, 2);
+    assert_eq!(security.evidence().duplicate_message3, 1);
+    assert_eq!(security.evidence().retransmitted, 1);
+    finish_tx(&mut hardware, &mut tx, 0);
+    assert_eq!(security.complete_tx(&mut tx), DatapathControlProgress::More);
+
+    assert_eq!(
+        security.process_duplicate_message3(&mut hardware, &mut tx, bad_mic_message3),
+        DatapathControlProgress::More
+    );
+    assert_eq!(
+        security.process_duplicate_message3(&mut hardware, &mut tx, wrong_replay_message3),
+        DatapathControlProgress::More
+    );
+    let evidence = security.evidence();
+    assert_eq!(evidence.duplicate_message3, 3);
+    assert_eq!(evidence.ignored_duplicate_message3, 2);
+    assert_eq!(evidence.retransmitted, 1);
+    assert!(!evidence.tx_in_flight);
+    assert_eq!(evidence.last_failure, None);
+    assert_eq!(hardware.key_install_count, 2);
+
+    let (_resources, handoff) = match tx.try_into_parts() {
+        Ok(parts) => parts,
+        Err(_) => panic!("completed TX must be idle"),
+    };
+    let open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(
+        mut pairwise,
+    ) = handoff.security
+    else {
+        panic!("connected TX must retain its installed pairwise key")
+    };
+    assert_eq!(
+        pairwise.next_tx_ccmp_header().unwrap(),
+        [9, 0, 0, 0x20, 0, 0, 0, 0]
+    );
+    let (_supplicant, group) = security.into_parts();
+    group.clear(&mut hardware);
+    pairwise.clear(&mut hardware);
 }
 
 #[test]

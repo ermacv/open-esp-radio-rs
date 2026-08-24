@@ -17,6 +17,16 @@ use open_esp_radio_wpa2::{OwnedEapolFrame, Wpa2Interface};
 
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 
+/// Protection provenance retained across the borrowed RX-to-control handoff.
+///
+/// Connected WPA2 admits plaintext only through the dedicated duplicate-M3
+/// lane. Keeping that fact outside `OwnedEapolFrame` prevents the control task
+/// from treating an unprotected packet as a Group Message 1.
+pub(super) enum ConnectedSecurityFrame {
+    Protected(OwnedEapolFrame),
+    Unprotected(OwnedEapolFrame),
+}
+
 /// Explicit observer for profiles that intentionally ignore control-plane
 /// events. Production association/BlockAck state should supply a real sink.
 pub struct IgnoreConnectedControl;
@@ -135,7 +145,7 @@ pub struct ConnectedControlResources<M: RawMutex, const CAPACITY: usize> {
     channel: Channel<M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Channel<M, ConnectedRxControlEvent, 1>,
     he_observation: Channel<M, ConnectedRxControlEvent, 1>,
-    security: Channel<M, OwnedEapolFrame, 1>,
+    security: Channel<M, ConnectedSecurityFrame, 1>,
     power_save_delivery: Channel<M, PowerSaveDeliverySignal, 1>,
     power_save_delivery_generation: AtomicU32,
     power_save_delivery_gate: AtomicU32,
@@ -234,7 +244,7 @@ pub struct ConnectedControlPublisher<'resources, M: RawMutex, const CAPACITY: us
     sender: Sender<'resources, M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Sender<'resources, M, ConnectedRxControlEvent, 1>,
     he_observation: Sender<'resources, M, ConnectedRxControlEvent, 1>,
-    security: Sender<'resources, M, OwnedEapolFrame, 1>,
+    security: Sender<'resources, M, ConnectedSecurityFrame, 1>,
     power_save_delivery: Sender<'resources, M, PowerSaveDeliverySignal, 1>,
     power_save_delivery_gate: &'resources AtomicU32,
     power_save_delivery_claimed: &'resources AtomicU32,
@@ -247,13 +257,28 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
     for ConnectedControlPublisher<'_, M, CAPACITY>
 {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
+        if let ConnectedRxEvent::UnprotectedEapol { source, payload } = event {
+            let result = OwnedEapolFrame::try_copy(Wpa2Interface::Station, source, payload)
+                .ok()
+                .map(|frame| {
+                    self.security
+                        .try_send(ConnectedSecurityFrame::Unprotected(frame))
+                });
+            if !matches!(result, Some(Ok(()))) {
+                self.overflowed.store(true, Ordering::Release);
+            }
+            return;
+        }
         if let ConnectedRxEvent::Ethernet { frame, .. } = event
             && frame.ether_type == EAPOL_ETHERTYPE
         {
             let result =
                 OwnedEapolFrame::try_copy(Wpa2Interface::Station, frame.source, frame.payload)
                     .ok()
-                    .map(|frame| self.security.try_send(frame));
+                    .map(|frame| {
+                        self.security
+                            .try_send(ConnectedSecurityFrame::Protected(frame))
+                    });
             if !matches!(result, Some(Ok(()))) {
                 self.overflowed.store(true, Ordering::Release);
             }
@@ -311,7 +336,7 @@ pub struct ConnectedControlReceiver<'resources, M: RawMutex, const CAPACITY: usi
     receiver: Receiver<'resources, M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Receiver<'resources, M, ConnectedRxControlEvent, 1>,
     he_observation: Receiver<'resources, M, ConnectedRxControlEvent, 1>,
-    security: Receiver<'resources, M, OwnedEapolFrame, 1>,
+    security: Receiver<'resources, M, ConnectedSecurityFrame, 1>,
     power_save_delivery: Receiver<'resources, M, PowerSaveDeliverySignal, 1>,
     power_save_delivery_generation: &'resources AtomicU32,
     power_save_delivery_gate: &'resources AtomicU32,
@@ -394,7 +419,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
             .or_else(|| self.try_receive_he_observation())
     }
 
-    pub fn try_receive_security(&self) -> Option<OwnedEapolFrame> {
+    pub(super) fn try_receive_security(&self) -> Option<ConnectedSecurityFrame> {
         self.security.try_receive().ok()
     }
 
@@ -589,9 +614,42 @@ mod tests {
         });
 
         assert_eq!(receiver.try_receive(), None);
-        let received = receiver
+        let ConnectedSecurityFrame::Protected(received) = receiver
             .try_receive_security()
-            .expect("EAPOL must use the security lane");
+            .expect("EAPOL must use the security lane")
+        else {
+            panic!("Ethernet EAPOL must retain protected provenance")
+        };
+        assert_eq!(received.peer(), &ap);
+        assert_eq!(received.as_bytes(), packet.as_bytes());
+        assert!(!receiver.overflowed());
+    }
+
+    #[test]
+    fn plaintext_eapol_retains_its_narrow_security_provenance() {
+        let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+        let (mut publisher, receiver) = resources.split();
+        let ap = [2, 0, 0, 0, 0, 2];
+        let packet = open_esp_radio_wpa2::frames::Wpa2TxFrame::<512>::message3(
+            [2, 0, 0, 0, 0, 1],
+            3,
+            [4; 32],
+            [0; 8],
+            &[0x55; 8],
+        )
+        .unwrap();
+
+        publisher.publish(ConnectedRxEvent::UnprotectedEapol {
+            source: ap,
+            payload: packet.as_bytes(),
+        });
+
+        let ConnectedSecurityFrame::Unprotected(received) = receiver
+            .try_receive_security()
+            .expect("plaintext EAPOL must use the security lane")
+        else {
+            panic!("plaintext EAPOL must retain unprotected provenance")
+        };
         assert_eq!(received.peer(), &ap);
         assert_eq!(received.as_bytes(), packet.as_bytes());
         assert!(!receiver.overflowed());

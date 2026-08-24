@@ -60,7 +60,7 @@ use crate::{
     datapath::services::DatapathControlService,
     datapath::{DatapathControlContext, DatapathControlProgress},
     roles::concurrent::Esp32s31StaApRxBlockAck,
-    roles::station::control_mailbox::ConnectedControlReceiver,
+    roles::station::control_mailbox::{ConnectedControlReceiver, ConnectedSecurityFrame},
 };
 
 /// Executor deadline capability kept outside the finite control core.
@@ -114,6 +114,9 @@ pub enum ConnectedWpa2SecurityFailure {
 pub struct ConnectedWpa2SecurityEvidence {
     pub replay_counter: u64,
     pub group_message1: u32,
+    pub duplicate_message3: u32,
+    pub ignored_duplicate_message3: u32,
+    pub last_ignored_duplicate_message3: Option<Wpa2ConnectedSupplicantError>,
     pub installed: u32,
     pub retransmitted: u32,
     pub tx_in_flight: bool,
@@ -131,6 +134,9 @@ pub struct ConnectedWpa2Security {
     unwrap: Wpa2SoftwareAes,
     tx_in_flight: bool,
     group_message1: u32,
+    duplicate_message3: u32,
+    ignored_duplicate_message3: u32,
+    last_ignored_duplicate_message3: Option<Wpa2ConnectedSupplicantError>,
     installed: u32,
     retransmitted: u32,
     last_failure: Option<ConnectedWpa2SecurityFailure>,
@@ -144,6 +150,9 @@ impl ConnectedWpa2Security {
             unwrap: Wpa2SoftwareAes::new(),
             tx_in_flight: false,
             group_message1: 0,
+            duplicate_message3: 0,
+            ignored_duplicate_message3: 0,
+            last_ignored_duplicate_message3: None,
             installed: 0,
             retransmitted: 0,
             last_failure: None,
@@ -158,6 +167,9 @@ impl ConnectedWpa2Security {
         ConnectedWpa2SecurityEvidence {
             replay_counter: self.supplicant.replay_counter(),
             group_message1: self.group_message1,
+            duplicate_message3: self.duplicate_message3,
+            ignored_duplicate_message3: self.ignored_duplicate_message3,
+            last_ignored_duplicate_message3: self.last_ignored_duplicate_message3,
             installed: self.installed,
             retransmitted: self.retransmitted,
             tx_in_flight: self.tx_in_flight,
@@ -193,6 +205,51 @@ impl ConnectedWpa2Security {
     }
 
     async fn process<H: ConnectedControlHardware, X: ConnectedControlTx>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        frame: ConnectedSecurityFrame,
+    ) -> DatapathControlProgress<ConnectedDisconnectReason> {
+        match frame {
+            ConnectedSecurityFrame::Protected(frame) => {
+                self.process_group_message1(hardware, tx, frame).await
+            }
+            ConnectedSecurityFrame::Unprotected(frame) => {
+                self.process_duplicate_message3(hardware, tx, frame)
+            }
+        }
+    }
+
+    fn process_duplicate_message3<H: ConnectedControlHardware, X: ConnectedControlTx>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        frame: open_esp_radio_wpa2::OwnedEapolFrame,
+    ) -> DatapathControlProgress<ConnectedDisconnectReason> {
+        self.duplicate_message3 = self.duplicate_message3.saturating_add(1);
+        let response = match self.supplicant.on_duplicate_message3(frame) {
+            Ok(response) => response,
+            Err(error) => {
+                // A connected peer or nearby attacker may inject malformed or
+                // stale plaintext EAPOL. It has no authority to tear down the
+                // installed association; only an exact authenticated duplicate
+                // M3 is actionable.
+                self.ignored_duplicate_message3 = self.ignored_duplicate_message3.saturating_add(1);
+                self.last_ignored_duplicate_message3 = Some(error);
+                return DatapathControlProgress::More;
+            }
+        };
+        self.retransmitted = self.retransmitted.saturating_add(1);
+        match tx.start_protected_eapol(hardware, response.as_bytes()) {
+            Ok(progress) => {
+                self.tx_in_flight = true;
+                progress
+            }
+            Err(error) => self.fail(ConnectedWpa2SecurityFailure::TxStart(error)),
+        }
+    }
+
+    async fn process_group_message1<H: ConnectedControlHardware, X: ConnectedControlTx>(
         &mut self,
         hardware: &mut H,
         tx: &mut X,

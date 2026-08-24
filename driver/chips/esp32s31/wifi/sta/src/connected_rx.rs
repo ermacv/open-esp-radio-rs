@@ -35,6 +35,7 @@ use open_esp_radio_wifi_softmac::{
 #[cfg(test)]
 use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence};
 use open_esp_radio_wifi_sta::power_save::StaPsPollDelivery;
+use open_esp_radio_wpa2::{EapolKeyFrame, EapolParseError};
 
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{
@@ -261,6 +262,15 @@ pub enum ConnectedRxEvent<'frame> {
         received: EspNowReceivedV1<'frame>,
         metadata: MacRxMetadata<RxPhyInfo>,
     },
+    /// One plaintext EAPOL-Key packet on an otherwise protected station link.
+    ///
+    /// This event is constructed only by the narrow connected WPA2 admission
+    /// path. Ordinary plaintext Data, A-MSDU, foreign addresses and non-EAPOL
+    /// LLC payloads never reach a sink.
+    UnprotectedEapol {
+        source: [u8; 6],
+        payload: &'frame [u8],
+    },
     PeerDisconnect(StaDisconnect),
     /// One integrity-verified associated unicast MPDU that can complete the
     /// currently armed legacy PS-Poll service transaction.
@@ -343,6 +353,7 @@ impl ConnectedRxEvent<'_> {
                 Some(ConnectedRxControlEvent::IndividualTwt(action))
             }
             Self::EspNow { .. } => None,
+            Self::UnprotectedEapol { .. } => None,
             Self::PeerDisconnect(disconnect) => {
                 Some(ConnectedRxControlEvent::PeerDisconnect(disconnect))
             }
@@ -386,6 +397,7 @@ pub enum ConnectedRxError {
     EspNowVersion(EspNowVersionError),
     EspNowV2SinkUnavailable,
     Data(DataDecapError),
+    Eapol(EapolParseError),
     SecurityModeMismatch,
     PeerQosMismatch,
     CcmpReplay(StaCcmpRxReplayError),
@@ -413,6 +425,7 @@ pub enum ConnectedRxDispatch {
         peer: EspNowPeerId,
     },
     PeerDisconnect,
+    UnprotectedEapol,
     Data {
         ethernet_frames: u8,
         amsdu: bool,
@@ -859,6 +872,9 @@ impl ConnectedRxDispatcher {
         }
         let observed_protected = public_frame_control & PROTECTED != 0;
         let expected_protected = self.config.security == WifiSecurityMode::Wpa2Personal;
+        if expected_protected && !observed_protected {
+            return self.dispatch_unprotected_eapol(segment, protection, sink);
+        }
         if observed_protected != expected_protected {
             return rejected(protection, ConnectedRxError::SecurityModeMismatch);
         }
@@ -960,6 +976,55 @@ impl ConnectedRxDispatcher {
             amsdu,
         }
     }
+
+    fn dispatch_unprotected_eapol<S: ConnectedRxSink>(
+        &mut self,
+        segment: RxSegment<'_>,
+        protection: ConnectedRxProtection,
+        sink: &mut S,
+    ) -> ConnectedRxDispatch {
+        if protection != ConnectedRxProtection::Pairwise {
+            return rejected(protection, ConnectedRxError::SecurityModeMismatch);
+        }
+        let view = match view_unprotected_data(segment, self.config.ingress) {
+            Ok(view) => view,
+            Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+        };
+        if view.mpdu.get(4..10) != Some(&self.config.station_address)
+            || view.mpdu.get(10..16) != Some(&self.config.bssid)
+            || (view.tid.is_some() && !self.config.peer_qos)
+        {
+            return rejected(protection, ConnectedRxError::SecurityModeMismatch);
+        }
+        let data = match view.decapsulate(DataInterfaceRole::Station) {
+            Ok(data) => data,
+            Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
+        };
+        if data.amsdu {
+            return rejected(protection, ConnectedRxError::SecurityModeMismatch);
+        }
+        let mut frames = data.frames;
+        let frame = match frames.next() {
+            Some(Ok(frame)) => frame,
+            Some(Err(error)) => return rejected(protection, ConnectedRxError::Data(error)),
+            None => return rejected(protection, ConnectedRxError::SecurityModeMismatch),
+        };
+        if frames.next().is_some()
+            || frame.destination != self.config.station_address
+            || frame.source != self.config.bssid
+            || frame.ether_type != 0x888e
+        {
+            return rejected(protection, ConnectedRxError::SecurityModeMismatch);
+        }
+        if let Err(error) = EapolKeyFrame::parse(frame.payload) {
+            return rejected(protection, ConnectedRxError::Eapol(error));
+        }
+        sink.publish(ConnectedRxEvent::UnprotectedEapol {
+            source: frame.source,
+            payload: frame.payload,
+        });
+        ConnectedRxDispatch::UnprotectedEapol
+    }
 }
 
 impl Default for ConnectedRxDispatcher {
@@ -1038,6 +1103,7 @@ mod tests {
         ethernet_metadata: Vec<MacRxMetadata<RxPhyInfo>>,
         block_ack: Vec<BlockAckAction>,
         peer_disconnects: Vec<StaDisconnect>,
+        unprotected_eapol: Vec<Vec<u8>>,
     }
 
     impl ConnectedRxSink for RecordingSink {
@@ -1066,6 +1132,9 @@ mod tests {
                     self.peer_disconnects.push(disconnect);
                 }
                 ConnectedRxEvent::PowerSaveDelivery(_) => {}
+                ConnectedRxEvent::UnprotectedEapol { payload, .. } => {
+                    self.unprotected_eapol.push(payload.to_vec());
+                }
                 ConnectedRxEvent::Trigger { .. }
                 | ConnectedRxEvent::Ndpa { .. }
                 | ConnectedRxEvent::IndividualTwt { .. }
@@ -1191,6 +1260,18 @@ mod tests {
         }
     }
 
+    fn large_segment(storage: &[u8; 256], signal_length: usize) -> RxSegment<'_> {
+        RxSegment {
+            descriptor_address: 0x2f00_4000,
+            descriptor_word0: 256
+                | (((FRAME_OFFSET + signal_length) as u32) << LENGTH_SHIFT)
+                | BIT_30
+                | BIT_31,
+            buffer: storage,
+            next_descriptor_address: 0,
+        }
+    }
+
     fn set_tail(storage: &mut [u8; 192], signal_length: usize) {
         // Synthetic connected frames are standalone MPDUs unless a test
         // explicitly overrides the hardware `cur_single_mpdu` bit.
@@ -1292,6 +1373,101 @@ mod tests {
                 )),
             } if packet_number.value() == 3 && highest.value() == 3
         ));
+    }
+
+    #[test]
+    fn wpa2_admits_only_plaintext_eapol_from_the_exact_associated_link() {
+        const HEADER: usize = 24;
+        let message3 = open_esp_radio_wpa2::frames::Wpa2TxFrame::<512>::message3(
+            STATION, 2, [4; 32], [0; 8], &[0x55; 8],
+        )
+        .unwrap();
+        let mpdu_length = HEADER + 8 + message3.as_bytes().len();
+        let signal_length = mpdu_length + 4;
+        let mut storage = [0_u8; 256];
+        storage[0x1f] = 1;
+        storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+            &(((signal_length + 4) as u32) << 16 | signal_length as u32).to_le_bytes(),
+        );
+        let frame = &mut storage[FRAME_OFFSET..FRAME_OFFSET + mpdu_length];
+        frame[..2].copy_from_slice(&0x0208_u16.to_le_bytes());
+        frame[4..10].copy_from_slice(&STATION);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[HEADER..HEADER + 8].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e]);
+        frame[HEADER + 8..].copy_from_slice(message3.as_bytes());
+        let mut dispatcher = dispatcher();
+        let mut sink = RecordingSink::default();
+        let mut mpdu = [0_u8; 192];
+        let mut ethernet = [0_u8; 192];
+        assert!(!dispatcher.may_publish_ethernet(large_segment(&storage, signal_length)));
+        assert_eq!(
+            dispatcher.dispatch(
+                large_segment(&storage, signal_length),
+                &mut mpdu,
+                &mut ethernet,
+                &mut sink,
+            ),
+            ConnectedRxDispatch::UnprotectedEapol
+        );
+        assert_eq!(sink.unprotected_eapol, [message3.as_bytes()]);
+        assert!(sink.ethernet.is_empty());
+
+        storage[FRAME_OFFSET + 16] ^= 1;
+        assert_eq!(
+            dispatcher.dispatch(
+                large_segment(&storage, signal_length),
+                &mut mpdu,
+                &mut ethernet,
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::SecurityModeMismatch,
+            }
+        );
+        assert_eq!(sink.unprotected_eapol.len(), 1);
+
+        storage[FRAME_OFFSET + 16] ^= 1;
+        storage[FRAME_OFFSET + HEADER + 6..FRAME_OFFSET + HEADER + 8]
+            .copy_from_slice(&0x0800_u16.to_be_bytes());
+        assert_eq!(
+            dispatcher.dispatch(
+                large_segment(&storage, signal_length),
+                &mut mpdu,
+                &mut ethernet,
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::SecurityModeMismatch,
+            }
+        );
+        assert_eq!(sink.unprotected_eapol.len(), 1);
+
+        // Open associations keep their ordinary plaintext data semantics;
+        // the special EAPOL lane exists only for an installed WPA2 epoch.
+        storage[FRAME_OFFSET + HEADER + 6..FRAME_OFFSET + HEADER + 8]
+            .copy_from_slice(&0x888e_u16.to_be_bytes());
+        let mut open = config();
+        open.security = WifiSecurityMode::Open;
+        open.peer_qos = false;
+        let mut open_dispatcher = ConnectedRxDispatcher::new(open);
+        let mut open_sink = RecordingSink::default();
+        assert_eq!(
+            open_dispatcher.dispatch(
+                large_segment(&storage, signal_length),
+                &mut mpdu,
+                &mut ethernet,
+                &mut open_sink,
+            ),
+            ConnectedRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            }
+        );
+        assert_eq!(open_sink.ethernet.len(), 1);
+        assert!(open_sink.unprotected_eapol.is_empty());
     }
 
     #[test]

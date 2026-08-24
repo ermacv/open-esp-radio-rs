@@ -6,7 +6,7 @@
 //! WAL to carry large analysis payloads.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -31,6 +31,12 @@ const PACK_HEADER_BYTES: u64 = 8 + 32 + 8;
 const COMPACT_MIN_PACK_BYTES: u64 = 256 * 1024 * 1024;
 const COMPACT_MIN_RECLAIMABLE_BYTES: u64 = 64 * 1024 * 1024;
 static NEXT_RESTORE_ID: AtomicU64 = AtomicU64::new(0);
+
+struct PreparedFunctionFact<'a> {
+    query_key: &'a str,
+    value: &'a [u8],
+    result_digest: String,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct QueryKindStatistics {
@@ -814,43 +820,50 @@ impl QueryStore {
     /// in memory and publishes them here after the parallel phase, avoiding a
     /// transaction/fsync boundary for every analyzed symbol.
     fn put_function_fact_batch(&mut self, facts: &[(String, Vec<u8>)]) -> Result<()> {
-        let mut inserts = Vec::new();
+        self.put_function_fact_batch_observed(facts, |_| {})
+    }
+
+    fn put_function_fact_batch_observed(
+        &mut self,
+        facts: &[(String, Vec<u8>)],
+        observe_statement: impl FnMut(usize),
+    ) -> Result<()> {
+        // Canonicalize the complete caller batch before the first SQLite or
+        // pack access. Stable key order makes statement boundaries independent
+        // of worker completion order. Exact duplicates coalesce; conflicting
+        // duplicates fail before any persistent state can change.
+        let mut canonical: BTreeMap<&str, &[u8]> = BTreeMap::new();
+        let mut conflicting_keys = BTreeSet::new();
         for (query_key, value) in facts {
-            let result_digest = sha256_hex(value);
-            let existing = self
-                .connection
-                .query_row(
-                    "SELECT kind, input_fingerprint, result_digest
-                     FROM query_results WHERE query_key = ?1",
-                    [query_key],
-                    |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, String>(1)?,
-                            row.get::<_, String>(2)?,
-                        ))
-                    },
-                )
-                .optional()
-                .map_err(|error| store_error("look up immutable function fact", error))?;
-            if let Some((kind, inputs, digest)) = existing {
-                if kind == "function-direct-fact"
-                    && inputs == query_key.as_str()
-                    && digest == result_digest
-                {
-                    continue;
+            if let Some(existing) = canonical.get(query_key.as_str()) {
+                if *existing != value.as_slice() {
+                    conflicting_keys.insert(query_key.as_str());
                 }
-                return Err(crate::Error::invalid(format!(
-                    "function fact key {query_key:?} was reused for a different immutable result"
-                )));
+                continue;
             }
-            inserts.push((query_key, value, result_digest));
+            canonical.insert(query_key, value);
         }
+        if let Some(query_key) = conflicting_keys.first() {
+            return Err(crate::Error::invalid(format!(
+                "function fact key {query_key:?} was reused for a different immutable result within one batch"
+            )));
+        }
+        let prepared = canonical
+            .into_iter()
+            .map(|(query_key, value)| PreparedFunctionFact {
+                query_key,
+                value,
+                result_digest: sha256_hex(value),
+            })
+            .collect::<Vec<_>>();
+        let inserts = self.preflight_function_fact_batches(&prepared, observe_statement)?;
         if inserts.is_empty() {
             return Ok(());
         }
-        self.ensure_objects(inserts.iter().filter_map(|(_, value, digest)| {
-            (value.len() > INLINE_VALUE_LIMIT).then_some((digest.as_str(), value.as_slice()))
+        self.ensure_objects(inserts.iter().filter_map(|index| {
+            let fact = &prepared[*index];
+            (fact.value.len() > INLINE_VALUE_LIMIT)
+                .then_some((fact.result_digest.as_str(), fact.value))
         }))?;
         let transaction = self
             .connection
@@ -864,16 +877,17 @@ impl QueryStore {
                      ) VALUES (?1, 'function-direct-fact', ?1, ?2, ?3, ?4)",
                 )
                 .map_err(|error| store_error("prepare function-fact insert", error))?;
-            for (query_key, value, result_digest) in inserts {
-                let (inline_value, object_digest) = if value.len() <= INLINE_VALUE_LIMIT {
-                    (Some(value.as_slice()), None)
+            for index in inserts {
+                let fact = &prepared[index];
+                let (inline_value, object_digest) = if fact.value.len() <= INLINE_VALUE_LIMIT {
+                    (Some(fact.value), None)
                 } else {
-                    (None, Some(result_digest.as_str()))
+                    (None, Some(fact.result_digest.as_str()))
                 };
                 statement
                     .execute(params![
-                        query_key,
-                        result_digest,
+                        fact.query_key,
+                        fact.result_digest,
                         inline_value,
                         object_digest
                     ])
@@ -883,6 +897,51 @@ impl QueryStore {
         transaction
             .commit()
             .map_err(|error| store_error("commit function-fact transaction", error))
+    }
+
+    fn preflight_function_fact_batches(
+        &self,
+        facts: &[PreparedFunctionFact<'_>],
+        mut observe_statement: impl FnMut(usize),
+    ) -> Result<Vec<usize>> {
+        let full_key_count = facts.len() / FUNCTION_FACT_LOOKUP_BATCH * FUNCTION_FACT_LOOKUP_BATCH;
+        let (full_batches, tail) = facts.split_at(full_key_count);
+        let mut inserts = Vec::new();
+
+        if !full_batches.is_empty() {
+            let sql = function_fact_preflight_sql(FUNCTION_FACT_LOOKUP_BATCH);
+            let mut statement = self
+                .connection
+                .prepare(&sql)
+                .map_err(|error| store_error("prepare function-fact preflight", error))?;
+            for (batch_index, batch) in full_batches
+                .chunks_exact(FUNCTION_FACT_LOOKUP_BATCH)
+                .enumerate()
+            {
+                observe_statement(batch.len());
+                append_function_fact_preflight_batch(
+                    &mut statement,
+                    batch,
+                    batch_index * FUNCTION_FACT_LOOKUP_BATCH,
+                    &mut inserts,
+                )?;
+            }
+        }
+        if !tail.is_empty() {
+            let sql = function_fact_preflight_sql(tail.len());
+            let mut statement = self
+                .connection
+                .prepare(&sql)
+                .map_err(|error| store_error("prepare final function-fact preflight", error))?;
+            observe_statement(tail.len());
+            append_function_fact_preflight_batch(
+                &mut statement,
+                tail,
+                full_key_count,
+                &mut inserts,
+            )?;
+        }
+        Ok(inserts)
     }
 
     fn ensure_object(&mut self, digest: &str, value: &[u8]) -> Result<()> {
@@ -1382,6 +1441,84 @@ impl crate::analysis::FunctionFactStore for QueryStore {
     }
 }
 
+fn function_fact_preflight_sql(parameter_count: usize) -> String {
+    debug_assert!((1..=FUNCTION_FACT_LOOKUP_BATCH).contains(&parameter_count));
+    let mut sql = String::from("WITH requested(ordinal, query_key) AS (VALUES ");
+    for ordinal in 0..parameter_count {
+        if ordinal != 0 {
+            sql.push_str(", ");
+        }
+        std::fmt::Write::write_fmt(&mut sql, format_args!("({ordinal}, ?)"))
+            .expect("writing SQL into a String cannot fail");
+    }
+    sql.push_str(
+        ") SELECT requested.ordinal, result.kind, result.input_fingerprint, \
+         result.result_digest FROM requested LEFT JOIN query_results AS result \
+         ON result.query_key = requested.query_key ORDER BY requested.ordinal",
+    );
+    sql
+}
+
+fn append_function_fact_preflight_batch(
+    statement: &mut rusqlite::Statement<'_>,
+    facts: &[PreparedFunctionFact<'_>],
+    base_index: usize,
+    inserts: &mut Vec<usize>,
+) -> Result<()> {
+    let mut rows = statement
+        .query(rusqlite::params_from_iter(
+            facts.iter().map(|fact| fact.query_key),
+        ))
+        .map_err(|error| store_error("read function-fact preflight", error))?;
+    let mut position = 0_usize;
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| store_error("advance function-fact preflight", error))?
+    {
+        let ordinal = row
+            .get::<_, i64>(0)
+            .map_err(|error| store_error("decode function-fact preflight ordinal", error))?;
+        let ordinal = usize::try_from(ordinal)
+            .map_err(|_| crate::Error::invalid("function-fact preflight has a negative ordinal"))?;
+        if ordinal != position || position >= facts.len() {
+            return Err(crate::Error::invalid(
+                "function-fact preflight returned an invalid row order",
+            ));
+        }
+        let kind = row
+            .get::<_, Option<String>>(1)
+            .map_err(|error| store_error("decode function-fact preflight kind", error))?;
+        let inputs = row
+            .get::<_, Option<String>>(2)
+            .map_err(|error| store_error("decode function-fact preflight inputs", error))?;
+        let digest = row
+            .get::<_, Option<String>>(3)
+            .map_err(|error| store_error("decode function-fact preflight digest", error))?;
+        let fact = &facts[position];
+        match (kind, inputs, digest) {
+            (None, None, None) => inserts.push(base_index + position),
+            (Some(kind), Some(inputs), Some(digest))
+                if kind == "function-direct-fact"
+                    && inputs == fact.query_key
+                    && digest == fact.result_digest => {}
+            _ => {
+                return Err(crate::Error::invalid(format!(
+                    "function fact key {:?} was reused for a different immutable result",
+                    fact.query_key
+                )));
+            }
+        }
+        position += 1;
+    }
+    if position != facts.len() {
+        return Err(crate::Error::invalid(format!(
+            "function-fact preflight returned {position} rows for {} keys",
+            facts.len()
+        )));
+    }
+    Ok(())
+}
+
 fn function_fact_lookup_sql(parameter_count: usize) -> String {
     debug_assert!((1..=FUNCTION_FACT_LOOKUP_BATCH).contains(&parameter_count));
     let mut sql = String::from("WITH requested(ordinal, query_key) AS (VALUES ");
@@ -1699,6 +1836,19 @@ mod tests {
         let mut output = Vec::new();
         collect(root, root, &mut output);
         output
+    }
+
+    fn persistent_tree_snapshot(root: &Path) -> Vec<(PathBuf, Option<(u64, String)>)> {
+        snapshot_tree(root)
+            .into_iter()
+            .map(|(path, value)| {
+                if path.file_name().and_then(|name| name.to_str()) == Some("queries.sqlite3-shm") {
+                    (path, value.map(|(len, _)| (len, String::new())))
+                } else {
+                    (path, value)
+                }
+            })
+            .collect()
     }
 
     #[test]
@@ -2126,6 +2276,206 @@ mod tests {
                 "function-direct:large".to_owned(),
                 vec![0x5a; INLINE_VALUE_LIMIT + 1]
             )]
+        );
+    }
+
+    #[test]
+    fn function_fact_preflight_batches_mixed_hits_misses_and_cross_boundary_duplicates() {
+        let manifest = manifest("function-fact-batched-preflight");
+        let mut store = QueryStore::open(&manifest).unwrap();
+        let facts = (0..FUNCTION_FACT_LOOKUP_BATCH * 2 + 3)
+            .map(|index| {
+                (
+                    format!("function-direct:{index:04}"),
+                    format!("fact-{index:04}").into_bytes(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let existing = facts.iter().step_by(64).cloned().collect::<Vec<_>>();
+        store.put_function_fact_batch(&existing).unwrap();
+        let mut requested = facts.clone();
+        requested.push(facts[0].clone());
+        let mut statement_sizes = Vec::new();
+
+        store
+            .put_function_fact_batch_observed(&requested, |size| statement_sizes.push(size))
+            .unwrap();
+
+        assert_eq!(
+            statement_sizes,
+            vec![FUNCTION_FACT_LOOKUP_BATCH, FUNCTION_FACT_LOOKUP_BATCH, 3,]
+        );
+        assert!(
+            statement_sizes
+                .iter()
+                .all(|size| *size <= FUNCTION_FACT_LOOKUP_BATCH)
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM query_results", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            facts.len() as i64
+        );
+        assert_eq!(store.get(&facts[0].0).unwrap().unwrap(), facts[0].1);
+        assert_eq!(
+            store.get(&facts.last().unwrap().0).unwrap().unwrap(),
+            facts.last().unwrap().1
+        );
+    }
+
+    #[test]
+    fn function_fact_preflight_mismatch_in_final_batch_is_atomic() {
+        for mismatch in ["kind", "input", "digest"] {
+            let manifest = manifest(&format!("function-fact-preflight-{mismatch}"));
+            let mut store = QueryStore::open(&manifest).unwrap();
+            let facts = (0..FUNCTION_FACT_LOOKUP_BATCH * 2 + 3)
+                .map(|index| {
+                    let value = if index == 0 {
+                        vec![0x5a; INLINE_VALUE_LIMIT + 1]
+                    } else {
+                        format!("fact-{index:04}").into_bytes()
+                    };
+                    (format!("function-direct:{index:04}"), value)
+                })
+                .collect::<Vec<_>>();
+            let (last_key, last_value) = facts.last().unwrap();
+            match mismatch {
+                "kind" => {
+                    store
+                        .put(last_key, "project-stage", last_key, &[], last_value)
+                        .unwrap();
+                }
+                "input" => {
+                    store
+                        .put(
+                            last_key,
+                            "function-direct-fact",
+                            "wrong-input",
+                            &[],
+                            last_value,
+                        )
+                        .unwrap();
+                }
+                "digest" => {
+                    store
+                        .put(
+                            last_key,
+                            "function-direct-fact",
+                            last_key,
+                            &[],
+                            b"different-value",
+                        )
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let project_root = manifest.parent().unwrap();
+            let before = persistent_tree_snapshot(project_root);
+            let mut statement_sizes = Vec::new();
+
+            let error = store
+                .put_function_fact_batch_observed(&facts, |size| statement_sizes.push(size))
+                .unwrap_err();
+
+            assert!(error.to_string().contains("different immutable result"));
+            assert_eq!(
+                statement_sizes,
+                vec![FUNCTION_FACT_LOOKUP_BATCH, FUNCTION_FACT_LOOKUP_BATCH, 3,]
+            );
+            assert_eq!(persistent_tree_snapshot(project_root), before);
+            assert!(!store.pack_path.exists());
+            assert_eq!(
+                store
+                    .connection
+                    .query_row("SELECT COUNT(*) FROM query_results", [], |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .unwrap(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn function_fact_preflight_empty_idempotent_and_duplicate_inputs_are_explicit() {
+        let manifest = manifest("function-fact-preflight-idempotent");
+        let project_root = manifest.parent().unwrap();
+        let mut store = QueryStore::open(&manifest).unwrap();
+        let before_empty = snapshot_tree(project_root);
+        let mut empty_statements = Vec::new();
+        store
+            .put_function_fact_batch_observed(&[], |size| empty_statements.push(size))
+            .unwrap();
+        assert!(empty_statements.is_empty());
+        assert_eq!(snapshot_tree(project_root), before_empty);
+
+        let identical = vec![
+            ("function-direct:same".to_owned(), b"same-value".to_vec()),
+            ("function-direct:same".to_owned(), b"same-value".to_vec()),
+        ];
+        let mut first_statements = Vec::new();
+        store
+            .put_function_fact_batch_observed(&identical, |size| first_statements.push(size))
+            .unwrap();
+        assert_eq!(first_statements, vec![1]);
+
+        let before_idempotent = persistent_tree_snapshot(project_root);
+        let mut idempotent_statements = Vec::new();
+        store
+            .put_function_fact_batch_observed(&identical, |size| idempotent_statements.push(size))
+            .unwrap();
+        assert_eq!(idempotent_statements, vec![1]);
+        assert_eq!(persistent_tree_snapshot(project_root), before_idempotent);
+
+        let conflicting = vec![
+            (
+                "function-direct:z-conflict".to_owned(),
+                vec![0x11; INLINE_VALUE_LIMIT + 1],
+            ),
+            (
+                "function-direct:z-conflict".to_owned(),
+                vec![0x12; INLINE_VALUE_LIMIT + 1],
+            ),
+            (
+                "function-direct:a-conflict".to_owned(),
+                vec![0x21; INLINE_VALUE_LIMIT + 1],
+            ),
+            (
+                "function-direct:a-conflict".to_owned(),
+                vec![0x22; INLINE_VALUE_LIMIT + 1],
+            ),
+        ];
+        let before_conflict = snapshot_tree(project_root);
+        let mut conflicting_statements = Vec::new();
+        let error = store
+            .put_function_fact_batch_observed(&conflicting, |size| {
+                conflicting_statements.push(size)
+            })
+            .unwrap_err();
+        assert!(error.to_string().contains("different immutable result"));
+        assert!(error.to_string().contains("function-direct:a-conflict"));
+        assert!(conflicting_statements.is_empty());
+        assert_eq!(snapshot_tree(project_root), before_conflict);
+        assert!(!store.pack_path.exists());
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM objects", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM query_results", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            1
         );
     }
 

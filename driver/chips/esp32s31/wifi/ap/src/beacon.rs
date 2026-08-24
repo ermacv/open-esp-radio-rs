@@ -67,7 +67,7 @@ impl<'storage> Esp32s31ApBeacon<'storage> {
         executor_timestamp_micros: u64,
         management_sequence: u16,
         group_pending: bool,
-        unicast_tim_bitmap: u8,
+        unicast_tim_bitmap: u16,
     ) -> Option<&mut [u8]> {
         if management_sequence > 0x0fff {
             return None;
@@ -79,7 +79,11 @@ impl<'storage> Esp32s31ApBeacon<'storage> {
         )?;
         self.storage[22..24].copy_from_slice(&(management_sequence << 4).to_le_bytes());
         let (tim_offset, _, _) = dtim(&self.storage[..self.len])?;
-        self.storage[tim_offset + 5] = unicast_tim_bitmap;
+        if self.storage.get(tim_offset + 1).copied()? < 5 {
+            return None;
+        }
+        self.storage[tim_offset + 5..tim_offset + 7]
+            .copy_from_slice(&unicast_tim_bitmap.to_le_bytes());
         let now = executor_timestamp_micros as u32;
         let schedule_base = self.next_publication_tick.unwrap_or(now);
         let next = next_tbtt_delay(schedule_base, self.interval_micros, now)?.0;

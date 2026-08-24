@@ -82,6 +82,36 @@ revision or a semantic input covered by the current query domain creates a new
 key. Direct-function reuse remains intentionally conservative across resolver,
 MMIO and harness-semantic changes.
 
+## Updating vendor artifacts without losing review
+
+Capture an immutable snapshot before replacing caller-owned artifacts, run the
+normal analysis on the new revision, then capture and compare it:
+
+```console
+cargo blobray project revision snapshot vendor-2026-05 --project path/to/vendor-project.toml
+# update local artifact bindings, then run project analyze
+cargo blobray project revision snapshot vendor-2026-08 --project path/to/vendor-project.toml
+cargo blobray project revision diff vendor-2026-05 vendor-2026-08 \
+  --project path/to/vendor-project.toml --details
+cargo blobray project revision rebase vendor-2026-05 vendor-2026-08 \
+  --project path/to/vendor-project.toml \
+  --output generated/revisions/vendor-2026-08.rebase.json
+```
+
+Snapshots default to `generated/revisions/NAME.json`. They contain artifact
+digests, address-independent function feature fingerprints, MMIO/interface
+observations and complete serialized reviewed records, but no vendor bytes or
+disassembly. The portable fingerprint is a cross-version correlator and never
+replaces the address-bound evidence/cache identity.
+
+Diff classifies stable identities, unique moves, modifications, additions,
+removals, split/merge candidates and ambiguity. Only an unchanged stable
+subject or a one-to-one exact normalized-feature move is automatically
+carryable. Split, merge, ambiguity, removal, modified semantics and stale
+artifact applicability remain `review-required`. A rebase plan retains every
+old assertion/vendor-bug record with its provenance even when it cannot be
+carried, so an upgrade cannot silently discard research progress.
+
 Inspect the store before deciding whether cache growth needs investigation:
 
 ```console

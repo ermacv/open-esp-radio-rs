@@ -66,6 +66,11 @@ impl ResolutionNeeds {
             Command::ProjectFiles(_) | Command::ProjectCacheStats(_) => {
                 Self::new(true, false, false, false, false, false, false)
             }
+            Command::RevisionSnapshot(_)
+            | Command::RevisionDiff(_)
+            | Command::RevisionRebase(_) => {
+                Self::new(true, false, false, false, false, false, false)
+            }
             Command::ProjectAuditBindings(_) => {
                 Self::new(true, false, true, false, false, false, false)
             }

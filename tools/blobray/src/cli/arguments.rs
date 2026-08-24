@@ -122,6 +122,51 @@ pub(crate) struct ProjectCheckArgs {
     pub(crate) jobs: u8,
 }
 
+#[derive(Clone, Debug, Args)]
+pub(crate) struct RevisionSnapshotArgs {
+    /// Stable revision name used by the default generated snapshot path.
+    #[arg(value_name = "NAME")]
+    pub(crate) name: String,
+    /// Snapshot path; defaults to generated/revisions/NAME.json.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
+    /// Verify the existing snapshot without changing it.
+    #[arg(long)]
+    pub(crate) check: bool,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct RevisionDiffArgs {
+    /// Old snapshot name or path.
+    #[arg(value_name = "FROM")]
+    pub(crate) from: String,
+    /// New snapshot name or path.
+    #[arg(value_name = "TO")]
+    pub(crate) to: String,
+    /// Optional generated machine-readable diff report.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
+    /// Verify the configured output instead of writing it.
+    #[arg(long, requires = "output")]
+    pub(crate) check: bool,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct RevisionRebaseArgs {
+    /// Snapshot whose reviewed progress is being carried forward.
+    #[arg(value_name = "FROM")]
+    pub(crate) from: String,
+    /// Target snapshot receiving reviewed progress.
+    #[arg(value_name = "TO")]
+    pub(crate) to: String,
+    /// Optional generated rebase plan containing every old reviewed record.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
+    /// Verify the configured output instead of writing it.
+    #[arg(long, requires = "output")]
+    pub(crate) check: bool,
+}
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct CheckArgs {
     /// Compare generated output with the checked-in file without changing it.

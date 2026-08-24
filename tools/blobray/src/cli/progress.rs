@@ -22,6 +22,8 @@ fn command_message(command: &Command) -> Option<&'static str> {
         | Command::ProjectAuditBindings(_)
         | Command::ProjectStatus(_)
         | Command::ProjectBrowse(_)
+        | Command::RevisionDiff(_)
+        | Command::RevisionRebase(_)
         | Command::FunctionInitPack(_)
         | Command::CodeInitPack(_)
         | Command::InterfaceInitPack(_)
@@ -31,6 +33,7 @@ fn command_message(command: &Command) -> Option<&'static str> {
         Command::ProjectVerify(_) => "Project verification",
         Command::ProjectCheck(_) => "Project check",
         Command::ProjectPublish(_) => "Project publication",
+        Command::RevisionSnapshot(_) => "Revision snapshot",
         Command::FunctionValidate(_) => "Function validation",
         Command::FunctionReview(_) => "Function review",
         Command::CodeValidate(_) => "Code-boundary validation",

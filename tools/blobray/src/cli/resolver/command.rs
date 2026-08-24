@@ -11,7 +11,7 @@ use crate::{
 
 use super::model::{
     CodeWorkspaceCommand, FunctionWorkspaceCommand, InterfaceWorkspaceCommand,
-    RegisterWorkspaceCommand, ResolvedInvocation, TargetCommand,
+    RegisterWorkspaceCommand, ResolvedInvocation, RevisionWorkspaceCommand, TargetCommand,
 };
 
 pub(super) struct ResolvedEnvironment {
@@ -114,6 +114,18 @@ pub(super) fn resolve_command(
         },
         Command::ProjectPublish(arguments) => ResolvedInvocation::ProjectPublish {
             arguments,
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RevisionSnapshot(arguments) => ResolvedInvocation::RevisionWorkspace {
+            command: RevisionWorkspaceCommand::Snapshot(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RevisionDiff(arguments) => ResolvedInvocation::RevisionWorkspace {
+            command: RevisionWorkspaceCommand::Diff(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RevisionRebase(arguments) => ResolvedInvocation::RevisionWorkspace {
+            command: RevisionWorkspaceCommand::Rebase(arguments),
             session: Box::new(environment.into_project_session()?),
         },
         Command::FunctionInitPack(arguments) => {

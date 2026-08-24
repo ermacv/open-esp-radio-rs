@@ -26,6 +26,9 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
         ResolvedInvocation::ProjectCacheStats { project_path } => {
             commands::run_project_cache_stats(&project_path)
         }
+        ResolvedInvocation::RevisionWorkspace { command, session } => {
+            commands::run_revision_command(command, &session)
+        }
         ResolvedInvocation::ProjectAuditBindings(session) => {
             commands::run_project_audit_bindings(&session)
         }

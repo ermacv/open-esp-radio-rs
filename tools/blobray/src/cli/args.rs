@@ -308,6 +308,11 @@ enum ProjectCommand {
         #[command(subcommand)]
         command: ProjectCacheCommand,
     },
+    /// Snapshot and compare vendor revisions, then plan reviewed-fact rebases.
+    Revision {
+        #[command(subcommand)]
+        command: ProjectRevisionCommand,
+    },
     /// Audit the trust boundary between vendor evidence, probes and production Rust.
     Audit {
         #[command(subcommand)]
@@ -351,6 +356,7 @@ impl ProjectCommand {
             Self::Doctor(arguments) => Command::ProjectDoctor(arguments),
             Self::Files(arguments) => Command::ProjectFiles(arguments),
             Self::Cache { command } => command.into_command(),
+            Self::Revision { command } => command.into_command(),
             Self::Audit { command } => command.into_command(),
             Self::Status(arguments) => Command::ProjectStatus(arguments),
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
@@ -365,6 +371,15 @@ impl ProjectCommand {
 leaf_commands!(ProjectCacheCommand {
     /// Report cache size, query inventory, dependencies and reclaimable data.
     Stats(EmptyArgs) => Command::ProjectCacheStats, Empty,
+});
+
+leaf_commands!(ProjectRevisionCommand {
+    /// Capture portable function, MMIO, interface and reviewed-fact identities.
+    Snapshot(RevisionSnapshotArgs) => Command::RevisionSnapshot, RevisionSnapshot,
+    /// Classify entity changes between two immutable snapshots.
+    Diff(RevisionDiffArgs) => Command::RevisionDiff, RevisionDiff,
+    /// Produce a fail-closed carry/remap/review plan for every reviewed record.
+    Rebase(RevisionRebaseArgs) => Command::RevisionRebase, RevisionRebase,
 });
 
 leaf_commands!(ProjectAuditCommand {
@@ -542,6 +557,9 @@ pub(crate) enum Command {
     ProjectDoctor(EmptyArgs),
     ProjectFiles(EmptyArgs),
     ProjectCacheStats(EmptyArgs),
+    RevisionSnapshot(RevisionSnapshotArgs),
+    RevisionDiff(RevisionDiffArgs),
+    RevisionRebase(RevisionRebaseArgs),
     ProjectAuditBindings(EmptyArgs),
     ProjectStatus(ProjectStatusArgs),
     ProjectBrowse(EmptyArgs),

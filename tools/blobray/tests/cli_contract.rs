@@ -2520,3 +2520,62 @@ fn tooling_assets_come_from_the_canonical_cli_without_a_project() {
     assert!(manpage_text.contains(".TH blobray"));
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn revision_diff_is_a_typed_project_workflow() {
+    let (directory, manifest) = init_temporary_project("revision-diff");
+    let revision = |name: &str, function: &str| {
+        serde_json::json!({
+            "schema_version": 1,
+            "command": "revision snapshot",
+            "name": name,
+            "project": "revision-diff",
+            "artifacts": [],
+            "functions": [{
+                "id": function,
+                "source": "vendor",
+                "member": null,
+                "symbol": function,
+                "profiles": ["all"],
+                "fingerprint": "same-normalized-features",
+                "features": ["mmio:0x1000/32"],
+                "completeness": {
+                    "body": true,
+                    "call_targets": true,
+                    "transitive_effects": true,
+                    "executable": true
+                },
+                "blocker_roots": []
+            }],
+            "registers": [],
+            "interfaces": [],
+            "assertions": [],
+            "vendor_bugs": []
+        })
+    };
+    let old = directory.join("old.json");
+    let new = directory.join("new.json");
+    std::fs::write(&old, revision("old", "vendor:old").to_string()).unwrap();
+    std::fs::write(&new, revision("new", "vendor:new").to_string()).unwrap();
+
+    let output = blobray()
+        .current_dir(repository_root())
+        .args(["project", "revision", "diff"])
+        .arg(&old)
+        .arg(&new)
+        .args(["--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("diff revision snapshots");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["command"], "revision diff");
+    assert_eq!(document["summary"]["moved"], 1);
+    assert_eq!(document["changes"][0]["classification"], "moved");
+    std::fs::remove_dir_all(directory).unwrap();
+}

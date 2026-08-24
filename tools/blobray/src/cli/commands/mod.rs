@@ -34,6 +34,7 @@ mod project_inputs;
 mod project_ir_doctor;
 mod project_pipeline;
 mod project_publication;
+mod project_revision;
 pub(crate) mod project_status;
 mod project_verification;
 mod registers;
@@ -49,7 +50,7 @@ use super::{
     args::{CompletionArgs, ManpageArgs},
     resolver::{
         CodeWorkspaceCommand, FunctionWorkspaceCommand, InterfaceWorkspaceCommand,
-        RegisterWorkspaceCommand, TargetCommand,
+        RegisterWorkspaceCommand, RevisionWorkspaceCommand, TargetCommand,
     },
 };
 use crate::application::ProjectContext;
@@ -90,6 +91,13 @@ pub(super) fn run_project_files(context: ProjectContext<'_>) -> Result<bool> {
 
 pub(super) fn run_project_cache_stats(manifest: &std::path::Path) -> Result<bool> {
     project_cache::stats(manifest)
+}
+
+pub(super) fn run_revision_command(
+    command: RevisionWorkspaceCommand,
+    session: &crate::application::ProjectSession,
+) -> Result<bool> {
+    project_revision::run(command, session)
 }
 
 pub(super) fn run_project_audit_bindings(

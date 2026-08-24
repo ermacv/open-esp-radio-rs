@@ -48,7 +48,9 @@ Old inline `memory-map`, `svd`, `platform-pack`, `harness`, and
   claiming linker resolution;
 - pseudo-Rust and executable reference artifacts;
 - verification reports and evidence index;
-- SVD, raw PAC, bindings index, and restricted API output.
+- SVD, raw PAC, bindings index, and restricted API output;
+- revision snapshots, diffs and rebase plans. Snapshot schema 1 stores only
+  digests and normalized derived features, never vendor payloads.
 
 Generated outputs are disposable and reproducible. They must preserve source
 artifact identity/provenance and must not contain proprietary payloads or full

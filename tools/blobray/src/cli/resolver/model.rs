@@ -35,6 +35,10 @@ pub(in crate::cli) enum ResolvedInvocation {
     ProjectCacheStats {
         project_path: PathBuf,
     },
+    RevisionWorkspace {
+        command: RevisionWorkspaceCommand,
+        session: Box<ProjectSession>,
+    },
     ProjectAuditBindings(Box<ProjectSession>),
     ProjectStatus {
         arguments: ProjectStatusArgs,
@@ -105,6 +109,12 @@ pub(in crate::cli) enum FunctionWorkspaceCommand {
     InitPack(OutputArgs),
     Validate(ValidationArgs),
     Review(ReviewArgs),
+}
+
+pub(in crate::cli) enum RevisionWorkspaceCommand {
+    Snapshot(RevisionSnapshotArgs),
+    Diff(RevisionDiffArgs),
+    Rebase(RevisionRebaseArgs),
 }
 
 pub(in crate::cli) enum CodeWorkspaceCommand {

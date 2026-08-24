@@ -111,15 +111,11 @@ pub const fn ht_capability_ie_for_peer(
     // One receive spatial stream, MCS0 through MCS7.
     element[5] = 0xff;
     // Supported MCS Set byte 12: the ordinary TX MCS set is defined and equal
-    // to RX until an independently advertised receive-only mode changes it.
+    // to RX. Local RX MCS32 remains unadvertised until its runtime behavior has
+    // dedicated HIL proof; peer parsing and RX diagnostics remain independent.
     // `ieee80211_add_htcap_body` writes this at body offset 15; the complete
     // information element has a two-byte header, so the byte is index 17.
     element[17] = 0x01;
-    // MCS32 is the independent HT Duplicate receive bit. It is valid only for
-    // a 40-MHz HT BSS and must never be treated as a fifth spatial stream.
-    if HtDuplicateMcs32::supports_width(channel.width()) {
-        HtDuplicateMcs32::new().advertise_receive_only(&mut element);
-    }
     element
 }
 
@@ -253,6 +249,23 @@ mod tests {
         assert!(peer.supports_40_mhz());
         assert!(peer.supports_short_guard_interval(WifiChannelWidth::Mhz40Above));
         assert_eq!(peer.highest_rx_mcs(), 7);
+        assert!(!peer.supports_ht_duplicate_mcs32());
+        assert_eq!(capability[HtDuplicateMcs32::CAPABILITY_IE_BYTE], 0);
+        assert_eq!(capability[17], 0x01);
+    }
+
+    #[test]
+    fn peer_mcs32_is_still_parsed_without_local_advertisement() {
+        let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
+        let local = ht_capability_ie(channel);
+        let mut peer_record = local;
+        HtDuplicateMcs32::new().advertise_receive_only(&mut peer_record);
+
+        assert_eq!(local[HtDuplicateMcs32::CAPABILITY_IE_BYTE], 0);
+        assert_eq!(local[17], 0x01);
+        let peer = ht_peer_capabilities(&peer_record).unwrap();
+        assert!(peer.supports_ht_duplicate_mcs32());
+        assert_eq!(peer.ht_duplicate_mcs32(), Some(HtDuplicateMcs32::new()));
     }
 
     #[test]

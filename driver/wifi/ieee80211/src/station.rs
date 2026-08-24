@@ -11,7 +11,6 @@ use crate::{
         plan_data_encapsulation, plan_data_encapsulation_with_he_control,
     },
     he::{parse_he20_capabilities, parse_he20_operation},
-    ht::HtDuplicateMcs32,
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
     security::WifiSecurityMode,
@@ -42,7 +41,7 @@ const RSN_CAPABILITY_SPP_AMSDU_CAPABLE: u16 = 1 << 10;
 //
 // SOURCE[PROMOTED_HE20_PEER]: reviewed promoted HT20 capability image,
 // originally qualified by the strict ESP32-S31 STA WPA2/ADDBA throughput HIL.
-const HT20_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x0020, 0x00, None);
+const HT20_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x0020, 0x00);
 // One-stream HT40 with short guard intervals for both 20 and 40 MHz and
 // spatial multiplexing power save disabled. Although the S31 has one receive
 // stream, advertising static SMPS (`0x0062`) made the controlled Linux HT40 AP
@@ -58,11 +57,10 @@ const HT20_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x0020, 0x00, None
 // gated by the complete AP HT Capabilities/Operation IEs through
 // `ScanRecord::ht40_secondary_channel`; hardware CBW support is the complete
 // rev0 ROM `phy_bb_bss_cbw40` implementation promoted into the S31 PAC/HAL.
-// The independent MCS32 receive bit is a source-owned standard extension to
-// that base image, not part of the cited vendor capture. TX/RX MCS sets are
-// marked unequal because the S31 duplicate-mode TX encoding remains unknown.
-const HT40_CAPABILITY_IE: [u8; 28] =
-    station_ht_capability_ie(0x006e, 0x00, Some(HtDuplicateMcs32::new()));
+// The independent MCS32 receive bit remains clear until RX behavior has
+// runtime and HIL proof. The parser and diagnostics can still observe MCS32
+// from a peer without advertising it as a local receive capability.
+const HT40_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x006e, 0x00);
 // Exact HT20 capability carried beside the HE capability in the complete
 // vendor association request. It differs from the deliberately narrow
 // standalone HT20 profile above: SMPS is disabled, RX STBC is one stream,
@@ -71,20 +69,16 @@ const HT40_CAPABILITY_IE: [u8; 28] =
 // SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: qualified frame 7624.
 // SOURCE: complete `libnet80211.a[ieee80211_ht.o]::
 // ieee80211_add_htcap_body` produces the same capability fields.
-const HE20_HT_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x112c, 0x17, None);
+const HE20_HT_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x112c, 0x17);
 
 /// Build the complete vendor-shaped one-stream HT capability base.
 ///
 /// The Supported MCS Set begins at complete-IE byte five. Its byte 12 is the
 /// TX MCS parameters field, therefore it is complete-IE byte 17. Keeping this
-/// layout in one builder prevents AP/STA capability images from drifting. An
-/// optional standard MCS32 marker extends only the RX set and explicitly marks
-/// the independently unqualified TX set as unequal.
-const fn station_ht_capability_ie(
-    capability_info: u16,
-    ampdu_parameters: u8,
-    duplicate_mcs32: Option<HtDuplicateMcs32>,
-) -> [u8; 28] {
+/// layout in one builder prevents the STA capability images from drifting.
+/// The supported MCS set deliberately contains only the runtime-qualified
+/// one-stream MCS0 through MCS7 range.
+const fn station_ht_capability_ie(capability_info: u16, ampdu_parameters: u8) -> [u8; 28] {
     let mut element = [0_u8; 28];
     element[0] = 45;
     element[1] = 26;
@@ -93,9 +87,6 @@ const fn station_ht_capability_ie(
     element[4] = ampdu_parameters;
     element[5] = 0xff;
     element[17] = 0x01;
-    if let Some(duplicate_mcs32) = duplicate_mcs32 {
-        duplicate_mcs32.advertise_receive_only(&mut element);
-    }
     element
 }
 // Exact one-stream HE20 MCS0-9 capability captured from the vendor
@@ -127,11 +118,19 @@ const fn owned_he20_mcs9_capability_ie() -> [u8; 24] {
     // no TWT negotiation or wake transaction owner, so it must not inherit
     // that vendor claim.
     capability[3] &= !(1 << 1);
-    // The hardware beamforming-report sequence and its rate profile are
-    // Rust-owned, so keep the two beamforming-feedback bits. There is still
-    // no open triggered or non-triggered CQI report producer: advertising
-    // either capability could make an AP schedule a response the STA cannot
-    // generate. Clear only those two independently recovered claims.
+    // Hardware setup and report-rate programming exist, but the reachable
+    // software publication boundary rejects every NDPA feedback request and
+    // autonomous completion by the hardware has no runtime proof. Clear the
+    // SU beamformee bit and its under-80-MHz Max STS field, the two NG16
+    // feedback claims, and the SU/MU codebook plus triggered-feedback claims.
+    // Keeping dependent beamformee fields after clearing SU beamformee would
+    // itself publish a contradictory capability image.
+    capability[13] &= !(0x01 | 0x1c);
+    capability[14] &= !(0x40 | 0x80);
+    capability[15] &= !(0x01 | 0x02 | 0x04 | 0x08);
+    // There is also no open triggered or non-triggered CQI report producer:
+    // advertising either capability could make an AP schedule a response the
+    // STA cannot generate. Clear those two independent claims.
     //
     // SOURCE[HIL_OPEN_HE20_CQI_CAPABILITY_MASK_2026_07_30]: ESP32-S31 rev0
     // associated with FRITZ!Box 7530 FN on channel 1 after these exact two
@@ -148,15 +147,17 @@ const HE20_OWNED_MCS9_CAPABILITY_IE: [u8; 24] = owned_he20_mcs9_capability_ie();
 const HE_UL_MU_POWER_CAPABILITY_IE_LEN: usize = 14;
 const HE_UL_MU_POWER_CAPABILITY_EXTENSION_ID: u8 = 60;
 const POWER_CAPABILITY_IE_LEN: usize = 4;
-// Exact vendor Extended Capabilities IE adjacent to the HE/UL-MU capability
-// pair. Retain Event and Multiple BSSID, but clear Extended Capabilities bit
-// 77 (TWT requester) until negotiation and wake ownership exist.
+// Vendor-shaped Extended Capabilities IE adjacent to the HE/UL-MU capability
+// pair. Retain Event, but clear Multiple BSSID because the scan/profile and
+// hardware BSSID-index owners implement only BSSID zero. Extended
+// Capabilities bit 77 (TWT requester) also remains clear until negotiation and
+// wake ownership exist.
 //
 // SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: exact frame 7624 bytes.
 // SOURCE: complete `libnet80211.a[ieee80211_output.o]::
 // ieee80211_add_extcap` emits this 12-byte body for the captured STA state.
 const HE20_EXTENDED_CAPABILITY_IE: [u8; 14] =
-    [127, 12, 0x80, 0x00, 0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    [127, 12, 0x80, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 // WMM Information, version one, U-APSD disabled.
 //
 // SOURCE: the same promoted `sta_link.rs::WMM_INFORMATION_IE`, cross-checked
@@ -2245,7 +2246,8 @@ mod tests {
             assert_eq!(capability[18], 0);
         }
         assert_eq!(HT40_CAPABILITY_IE[5], 0xff);
-        assert_eq!(HT40_CAPABILITY_IE[17], 0x03);
+        assert_eq!(HT40_CAPABILITY_IE[9], 0);
+        assert_eq!(HT40_CAPABILITY_IE[17], 0x01);
         assert_eq!(HT40_CAPABILITY_IE[18], 0);
     }
 
@@ -2289,6 +2291,8 @@ mod tests {
         record.bssid = BSSID;
         record.channel = 6;
         record.privacy = true;
+        record.rsn = true;
+        record.rsn_ie_count = 1;
         record.supported_rates[..4].copy_from_slice(&[0x82, 0x84, 0x8b, 0x96]);
         record.supported_rates_len = 4;
         let mut offset = 2;
@@ -2532,6 +2536,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 1,
             phy: StaAssociationPhy::Legacy,
+            security: WifiSecurityMode::Wpa2Personal,
             power_capability: None,
             he_ul_mu_power: None,
         }
@@ -2560,6 +2565,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 1,
             phy: StaAssociationPhy::Ht20,
+            security: WifiSecurityMode::Wpa2Personal,
             power_capability: None,
             he_ul_mu_power: None,
         }
@@ -2586,6 +2592,7 @@ mod tests {
                 sequence_number: 2,
                 listen_interval: 1,
                 phy: StaAssociationPhy::Ht20,
+                security: WifiSecurityMode::Wpa2Personal,
                 power_capability: None,
                 he_ul_mu_power: None,
             }
@@ -2595,7 +2602,7 @@ mod tests {
     }
 
     #[test]
-    fn ht40_request_claims_width_short_gi_and_disabled_smps() {
+    fn ht40_request_claims_width_short_gi_without_unqualified_mcs32() {
         let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
         record.channel = 6;
         record.ht_capability_ie_present = true;
@@ -2609,6 +2616,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 1,
             phy: StaAssociationPhy::Ht40,
+            security: WifiSecurityMode::Wpa2Personal,
             power_capability: None,
             he_ul_mu_power: None,
         }
@@ -2616,6 +2624,16 @@ mod tests {
         .unwrap();
         let phy_start = length - HT40_CAPABILITY_IE.len() - WMM_INFORMATION_IE.len();
         assert_eq!(&output[phy_start..phy_start + 4], &[45, 26, 0x6e, 0]);
+        assert_eq!(
+            output[phy_start + 9],
+            0,
+            "the local RX MCS32 bit must remain clear"
+        );
+        assert_eq!(
+            output[phy_start + 17],
+            0x01,
+            "the ordinary one-stream TX and RX MCS sets remain equal"
+        );
     }
 
     #[test]
@@ -2786,7 +2804,7 @@ mod tests {
     }
 
     #[test]
-    fn he20_request_preserves_vendor_body_except_unowned_cqi_claims() {
+    fn he20_request_masks_unowned_power_save_and_feedback_claims() {
         let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
         let ssid = b"FRITZ!Box 7530 FN";
         record.ssid[..ssid.len()].copy_from_slice(ssid);
@@ -2818,6 +2836,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 3,
             phy: StaAssociationPhy::He20,
+            security: WifiSecurityMode::Wpa2Personal,
             power_capability: Some(StaPowerCapability::new(-11, 20).unwrap()),
             he_ul_mu_power: Some(power),
         }
@@ -2854,14 +2873,16 @@ mod tests {
         );
         assert_eq!(
             HE20_OWNED_MCS9_CAPABILITY_IE[15],
-            HE20_VENDOR_MCS9_CAPABILITY_IE[15] & !(1 << 4)
+            HE20_VENDOR_MCS9_CAPABILITY_IE[15] & !0x1f
         );
+        assert_eq!(HE20_OWNED_MCS9_CAPABILITY_IE[13], 0);
+        assert_eq!(HE20_OWNED_MCS9_CAPABILITY_IE[14], 0);
         assert_eq!(
             HE20_OWNED_MCS9_CAPABILITY_IE[18],
             HE20_VENDOR_MCS9_CAPABILITY_IE[18] & !(1 << 1)
         );
         for index in 0..HE20_VENDOR_MCS9_CAPABILITY_IE.len() {
-            if index != 3 && index != 15 && index != 18 {
+            if index != 3 && index != 13 && index != 14 && index != 15 && index != 18 {
                 assert_eq!(
                     HE20_OWNED_MCS9_CAPABILITY_IE[index],
                     HE20_VENDOR_MCS9_CAPABILITY_IE[index],
@@ -2880,6 +2901,16 @@ mod tests {
         );
         offset += WMM_INFORMATION_IE.len();
         assert_eq!(&tail[offset..], &HE20_EXTENDED_CAPABILITY_IE);
+        assert_eq!(
+            tail[offset + 2] & 0x80,
+            0x80,
+            "the independently retained Event capability must stay set"
+        );
+        assert_eq!(
+            tail[offset + 4] & 0x40,
+            0,
+            "Multiple BSSID must not be advertised without profile ownership"
+        );
     }
 
     #[test]
@@ -3317,7 +3348,16 @@ mod tests {
             supported_rates_len: 1,
             ..ScanRecord::EMPTY
         };
-        assert!(select_wpa2_psk_rsn(&record).unwrap().as_bytes().is_empty());
+        assert!(
+            select_association_rsn(&record, WifiSecurityMode::Open)
+                .unwrap()
+                .as_bytes()
+                .is_empty()
+        );
+        assert_eq!(
+            select_wpa2_psk_rsn(&record),
+            Err(StaSecurityError::SecurityModeMismatch)
+        );
     }
 
     #[test]

@@ -1146,7 +1146,13 @@ mod tests {
             parse_ap_management_request(&association, access_point),
             Some(ApManagementRequest::Association {
                 peer,
-                rsn_ie: Some(&association[39..42]),
+                security: ApAssociationSecurityObservation {
+                    privacy: false,
+                    rsn_ie: Some(&association[39..42]),
+                    rsn_ie_count: 1,
+                    legacy_wpa_present: false,
+                    malformed_elements: false,
+                },
                 maximum_legacy_rate_500kbps: 108,
                 ht_capabilities: None,
                 qos_supported: false,

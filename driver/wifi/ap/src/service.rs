@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use open_esp_radio_ieee80211::ap::ApPowerSaveObservation;
 use open_esp_radio_ieee80211::beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE;
 use open_esp_radio_ieee80211::block_ack::{
     AddbaRequest, BlockAckAction, OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckConfig,
@@ -156,6 +157,66 @@ pub enum ApPeerPhase {
     Closing,
 }
 
+/// AP-visible power-management state for one associated peer.
+///
+/// This state follows the peer's most recently admitted PM bit. It does not
+/// imply that a frame has already been moved into or out of the caller-owned
+/// downlink queue.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ApPeerPowerState {
+    #[default]
+    Active,
+    Sleeping,
+}
+
+/// Whether a newly arrived unicast frame may be transmitted immediately or
+/// must remain in the caller-owned AP power-save queue.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApDownlinkDisposition {
+    TransmitNow,
+    Buffer,
+}
+
+/// Semantic result of one admitted PM-bit or PS-Poll observation.
+///
+/// `ReleaseOne` reserves exactly one buffered-frame count until
+/// [`AccessPointService::complete_buffered_unicast_release`] commits or rolls
+/// the reservation back. The token is deliberately non-`Copy`.
+#[derive(Debug, Eq, PartialEq)]
+pub enum ApPowerSaveAction {
+    None,
+    StateChanged {
+        peer: [u8; 6],
+        state: ApPeerPowerState,
+        buffered_frames: u16,
+    },
+    ReleaseOne(ApBufferedUnicastRelease),
+}
+
+/// Affine reservation for one caller-owned buffered unicast frame.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ApBufferedUnicastRelease {
+    peer: [u8; 6],
+    association_id: u16,
+    generation: u32,
+    more_data: bool,
+}
+
+impl ApBufferedUnicastRelease {
+    pub const fn peer(&self) -> [u8; 6] {
+        self.peer
+    }
+
+    pub const fn association_id(&self) -> u16 {
+        self.association_id
+    }
+
+    /// Value for the 802.11 More Data bit on the released MPDU.
+    pub const fn more_data(&self) -> bool {
+        self.more_data
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApPeerCloseKind {
     AuthenticationTimeout,
@@ -204,6 +265,11 @@ pub enum ApMlmeAction {
 pub enum ApServiceError {
     UnknownPeer,
     WrongPeerPhase,
+    AssociationIdMismatch,
+    BufferedTrafficOverflow,
+    NoBufferedTraffic,
+    BufferedReleaseInFlight,
+    StaleBufferedRelease,
     Wpa2(Wpa2StateError),
     BlockAck(TxBlockAckError),
 }
@@ -288,6 +354,10 @@ struct ApPeer {
     ht: Option<HtPeerCapabilities>,
     qos_supported: bool,
     tx_block_ack: TxBlockAckSession,
+    power_state: ApPeerPowerState,
+    buffered_unicast_frames: u16,
+    buffered_release_in_flight: bool,
+    buffered_release_generation: u32,
     last_activity_micros: u64,
     deadline_micros: u64,
 }
@@ -334,6 +404,10 @@ impl ApPeer {
             ht: None,
             qos_supported: false,
             tx_block_ack: new_ap_tx_block_ack(),
+            power_state: ApPeerPowerState::Active,
+            buffered_unicast_frames: 0,
+            buffered_release_in_flight: false,
+            buffered_release_generation: 0,
             last_activity_micros: now_micros,
             deadline_micros: now_micros.saturating_add(AP_ASSOCIATION_DEADLINE_MICROS),
         }
@@ -391,6 +465,9 @@ pub struct ApPeerStatus {
     pub ht: Option<HtPeerCapabilities>,
     pub qos_supported: bool,
     pub tx_block_ack: Option<OperationalTxBlockAck>,
+    pub power_state: ApPeerPowerState,
+    pub buffered_unicast_frames: u16,
+    pub buffered_release_in_flight: bool,
     pub last_activity_micros: u64,
     pub deadline_micros: u64,
 }
@@ -400,6 +477,7 @@ pub struct AccessPointServiceStatus {
     pub client_limit: AccessPointClientLimit,
     pub associated: u8,
     pub authorized: u8,
+    pub buffered_group_frames: u16,
     pub peers: [Option<ApPeerStatus>; AP_MAX_CLIENTS],
 }
 
@@ -421,6 +499,7 @@ pub struct AccessPointService<'peers> {
     status_revision: u32,
     associated_count: u8,
     authorized_count: u8,
+    buffered_group_frames: u16,
     smallest_operational_tx_block_ack_window: Option<u16>,
 }
 
@@ -451,6 +530,7 @@ impl<'peers> AccessPointService<'peers> {
             status_revision: 0,
             associated_count: 0,
             authorized_count: 0,
+            buffered_group_frames: 0,
             smallest_operational_tx_block_ack_window: None,
         }
     }
@@ -477,6 +557,9 @@ impl<'peers> AccessPointService<'peers> {
                 ht: peer.ht,
                 qos_supported: peer.qos_supported,
                 tx_block_ack: peer.tx_block_ack.operational(),
+                power_state: peer.power_state,
+                buffered_unicast_frames: peer.buffered_unicast_frames,
+                buffered_release_in_flight: peer.buffered_release_in_flight,
                 last_activity_micros: peer.last_activity_micros,
                 deadline_micros: peer.deadline_micros,
             })
@@ -504,6 +587,9 @@ impl<'peers> AccessPointService<'peers> {
             ht: peer.ht,
             qos_supported: peer.qos_supported,
             tx_block_ack: peer.tx_block_ack.operational(),
+            power_state: peer.power_state,
+            buffered_unicast_frames: peer.buffered_unicast_frames,
+            buffered_release_in_flight: peer.buffered_release_in_flight,
             last_activity_micros: peer.last_activity_micros,
             deadline_micros: peer.deadline_micros,
         })
@@ -522,6 +608,9 @@ impl<'peers> AccessPointService<'peers> {
                 ht: peer.ht,
                 qos_supported: peer.qos_supported,
                 tx_block_ack: peer.tx_block_ack.operational(),
+                power_state: peer.power_state,
+                buffered_unicast_frames: peer.buffered_unicast_frames,
+                buffered_release_in_flight: peer.buffered_release_in_flight,
                 last_activity_micros: peer.last_activity_micros,
                 deadline_micros: peer.deadline_micros,
             })
@@ -557,6 +646,218 @@ impl<'peers> AccessPointService<'peers> {
             .any(|peer| peer.address == address && peer.phase == ApPeerPhase::Authorized)
     }
 
+    /// Decide ownership of a newly arrived downlink unicast frame.
+    ///
+    /// The service never stores the frame itself. A `Buffer` result requires
+    /// the caller to retain the frame first and only then call
+    /// [`Self::commit_buffered_unicast`].
+    pub fn downlink_disposition(
+        &self,
+        peer: [u8; 6],
+    ) -> Result<ApDownlinkDisposition, ApServiceError> {
+        let peer = self.checked_peer(peer)?;
+        if peer.phase != ApPeerPhase::Authorized {
+            return Err(ApServiceError::WrongPeerPhase);
+        }
+        Ok(match peer.power_state {
+            ApPeerPowerState::Active => ApDownlinkDisposition::TransmitNow,
+            ApPeerPowerState::Sleeping => ApDownlinkDisposition::Buffer,
+        })
+    }
+
+    /// Commit one frame already retained by the caller's per-peer queue.
+    pub fn commit_buffered_unicast(&mut self, peer: [u8; 6]) -> Result<u16, ApServiceError> {
+        let buffered = {
+            let peer = self.checked_peer_mut(peer)?;
+            if peer.phase != ApPeerPhase::Authorized
+                || peer.power_state != ApPeerPowerState::Sleeping
+            {
+                return Err(ApServiceError::WrongPeerPhase);
+            }
+            peer.buffered_unicast_frames = peer
+                .buffered_unicast_frames
+                .checked_add(1)
+                .ok_or(ApServiceError::BufferedTrafficOverflow)?;
+            peer.buffered_unicast_frames
+        };
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(buffered)
+    }
+
+    /// Reserve one buffered unicast frame for an awake peer or a PS-Poll.
+    ///
+    /// Forgetting the returned token intentionally leaves the peer blocked:
+    /// a second dequeue cannot overtake an unaccounted first frame.
+    pub fn begin_buffered_unicast_release(
+        &mut self,
+        peer: [u8; 6],
+    ) -> Result<Option<ApBufferedUnicastRelease>, ApServiceError> {
+        let token = {
+            let peer = self.checked_peer_mut(peer)?;
+            if peer.phase != ApPeerPhase::Authorized {
+                return Err(ApServiceError::WrongPeerPhase);
+            }
+            if peer.buffered_release_in_flight {
+                return Err(ApServiceError::BufferedReleaseInFlight);
+            }
+            if peer.buffered_unicast_frames == 0 {
+                return Ok(None);
+            }
+            peer.buffered_release_generation = peer
+                .buffered_release_generation
+                .checked_add(1)
+                .ok_or(ApServiceError::BufferedTrafficOverflow)?;
+            peer.buffered_release_in_flight = true;
+            ApBufferedUnicastRelease {
+                peer: peer.address,
+                association_id: peer.association_id,
+                generation: peer.buffered_release_generation,
+                more_data: peer.buffered_unicast_frames > 1,
+            }
+        };
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(Some(token))
+    }
+
+    /// Resolve one reserved queue release after the caller either transmitted
+    /// the exact retained frame or returned it to the same queue.
+    pub fn complete_buffered_unicast_release(
+        &mut self,
+        release: ApBufferedUnicastRelease,
+        delivered: bool,
+    ) -> Result<u16, ApServiceError> {
+        let remaining = {
+            let peer = self.checked_peer_mut(release.peer)?;
+            if peer.association_id != release.association_id {
+                return Err(ApServiceError::AssociationIdMismatch);
+            }
+            if !peer.buffered_release_in_flight
+                || peer.buffered_release_generation != release.generation
+            {
+                return Err(ApServiceError::StaleBufferedRelease);
+            }
+            if delivered {
+                peer.buffered_unicast_frames = peer
+                    .buffered_unicast_frames
+                    .checked_sub(1)
+                    .ok_or(ApServiceError::NoBufferedTraffic)?;
+            }
+            peer.buffered_release_in_flight = false;
+            peer.buffered_unicast_frames
+        };
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(remaining)
+    }
+
+    /// Apply one parsed peer PM edge after the caller has validated that the
+    /// frame belongs to this AP. PS-Poll reserves, but does not consume, one
+    /// caller-owned buffered frame.
+    pub fn observe_power_save(
+        &mut self,
+        observation: ApPowerSaveObservation,
+        now_micros: u64,
+    ) -> Result<ApPowerSaveAction, ApServiceError> {
+        let inactive_timeout_micros = self.inactive_timeout.micros();
+        match observation {
+            ApPowerSaveObservation::Sleeping { peer } | ApPowerSaveObservation::Active { peer } => {
+                let requested = if matches!(observation, ApPowerSaveObservation::Sleeping { .. }) {
+                    ApPeerPowerState::Sleeping
+                } else {
+                    ApPeerPowerState::Active
+                };
+                let (changed, buffered_frames) = {
+                    let existing = self.checked_peer_mut(peer)?;
+                    if existing.phase != ApPeerPhase::Authorized {
+                        return Err(ApServiceError::WrongPeerPhase);
+                    }
+                    let changed = existing.power_state != requested;
+                    existing.power_state = requested;
+                    existing.last_activity_micros = now_micros;
+                    existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+                    (changed, existing.buffered_unicast_frames)
+                };
+                if !changed {
+                    return Ok(ApPowerSaveAction::None);
+                }
+                self.status_revision = self.status_revision.wrapping_add(1);
+                Ok(ApPowerSaveAction::StateChanged {
+                    peer,
+                    state: requested,
+                    buffered_frames,
+                })
+            }
+            ApPowerSaveObservation::PsPoll {
+                peer,
+                association_id,
+            } => {
+                {
+                    let existing = self.checked_peer_mut(peer)?;
+                    if existing.phase != ApPeerPhase::Authorized
+                        || existing.power_state != ApPeerPowerState::Sleeping
+                    {
+                        return Err(ApServiceError::WrongPeerPhase);
+                    }
+                    if existing.association_id != association_id {
+                        return Err(ApServiceError::AssociationIdMismatch);
+                    }
+                    existing.last_activity_micros = now_micros;
+                    existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+                }
+                Ok(match self.begin_buffered_unicast_release(peer)? {
+                    Some(release) => ApPowerSaveAction::ReleaseOne(release),
+                    None => ApPowerSaveAction::None,
+                })
+            }
+        }
+    }
+
+    /// Two-octet TIM virtual bitmap for the public AP AID range 1..=15.
+    pub fn unicast_tim_bitmap(&self) -> u16 {
+        self.storage()
+            .peers
+            .iter()
+            .flatten()
+            .filter(|peer| {
+                peer.power_state == ApPeerPowerState::Sleeping
+                    && peer.buffered_unicast_frames != 0
+                    && (1..=AP_MAX_CLIENTS as u16).contains(&peer.association_id)
+            })
+            .fold(0_u16, |bitmap, peer| {
+                bitmap | (1_u16 << peer.association_id)
+            })
+    }
+
+    pub const fn buffered_group_frames(&self) -> u16 {
+        self.buffered_group_frames
+    }
+
+    pub const fn group_traffic_pending(&self) -> bool {
+        self.buffered_group_frames != 0
+    }
+
+    /// Commit one multicast/broadcast frame already retained by the caller.
+    pub fn commit_buffered_group(&mut self) -> Result<u16, ApServiceError> {
+        self.buffered_group_frames = self
+            .buffered_group_frames
+            .checked_add(1)
+            .ok_or(ApServiceError::BufferedTrafficOverflow)?;
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(self.buffered_group_frames)
+    }
+
+    /// Account one group frame only after its DTIM-scoped publication has
+    /// reached a terminal success. Failed frames remain advertised.
+    pub fn complete_buffered_group(&mut self, delivered: bool) -> Result<u16, ApServiceError> {
+        if delivered {
+            self.buffered_group_frames = self
+                .buffered_group_frames
+                .checked_sub(1)
+                .ok_or(ApServiceError::NoBufferedTraffic)?;
+            self.status_revision = self.status_revision.wrapping_add(1);
+        }
+        Ok(self.buffered_group_frames)
+    }
+
     pub fn status(&self) -> AccessPointServiceStatus {
         let mut peers = [None; AP_MAX_CLIENTS];
         for (destination, source) in peers.iter_mut().zip(self.storage().peers.iter()) {
@@ -568,6 +869,9 @@ impl<'peers> AccessPointService<'peers> {
                 ht: peer.ht,
                 qos_supported: peer.qos_supported,
                 tx_block_ack: peer.tx_block_ack.operational(),
+                power_state: peer.power_state,
+                buffered_unicast_frames: peer.buffered_unicast_frames,
+                buffered_release_in_flight: peer.buffered_release_in_flight,
                 last_activity_micros: peer.last_activity_micros,
                 deadline_micros: peer.deadline_micros,
             });
@@ -576,6 +880,7 @@ impl<'peers> AccessPointService<'peers> {
             client_limit: self.client_limit,
             associated: self.associated_count,
             authorized: self.authorized_count,
+            buffered_group_frames: self.buffered_group_frames,
             peers,
         }
     }

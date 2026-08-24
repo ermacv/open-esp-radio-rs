@@ -844,6 +844,9 @@ where
                 config.pti = queue.vendor_data_packet_priority();
                 config.pti_count = 1;
                 config.hardware_key_selector = key;
+                if let Some(trigger_based) = self.he_trigger_based {
+                    config = config.with_trigger_based(trigger_based);
+                }
                 Ok(AmpduTxConfig::He(config))
             }
             TxPhyRate::Legacy(_) => Err(AggregateTxError::UnsupportedRate),

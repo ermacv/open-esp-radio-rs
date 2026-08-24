@@ -258,6 +258,7 @@ impl Esp32s31ConnectedStaPort {
                 });
             }
         };
+        let he_trigger_based = plan.config.tx.he_trigger_based;
         let rate_control = plan
             .rate_control
             .take()
@@ -269,7 +270,8 @@ impl Esp32s31ConnectedStaPort {
             rate_control,
             plan.aggregate_rate_policy,
         )
-        .expect("connected STA config and idle aggregate storage were validated before handoff");
+        .expect("connected STA config and idle aggregate storage were validated before handoff")
+        .with_he_trigger_based(he_trigger_based);
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = resources.aggregate_tx_observer {
             tx = tx.with_observer(observer);

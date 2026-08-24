@@ -103,6 +103,7 @@ where
             config,
             rate_control: TeardownResource::new(rate_control),
             aggregate_rate_policy,
+            he_trigger_based: None,
             active: ConnectedTxActive::Idle,
             last_aggregate_status: None,
             pending_ordinary_retry: None,
@@ -211,6 +212,21 @@ where
     pub fn with_block_ack_status_sink(mut self, sink: StationTxBlockAckStatusSink) -> Self {
         self.block_ack_status_sink = Some(sink);
         self
+    }
+
+    /// Prepare every fresh HE A-MPDU queue for AP-triggered uplink service.
+    ///
+    /// The setting remains dormant while rate control selects HT or legacy.
+    /// It only installs the already recovered queue/MPLEN/BSR transaction; it
+    /// does not fabricate a trigger or turn the immediately submitted HE-SU
+    /// aggregate into a TB PPDU.
+    pub fn with_he_trigger_based(mut self, trigger_based: Option<HeTriggerBasedTxConfig>) -> Self {
+        self.he_trigger_based = trigger_based;
+        self
+    }
+
+    pub const fn he_trigger_based(&self) -> Option<HeTriggerBasedTxConfig> {
+        self.he_trigger_based
     }
 
     pub fn ordinary(&self) -> &Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE> {
@@ -459,6 +475,7 @@ where
         let block_ack_windows = self.block_ack_windows;
         let config = self.config;
         let aggregate_rate_policy = self.aggregate_rate_policy;
+        let he_trigger_based = self.he_trigger_based;
         let last_aggregate_status = self.last_aggregate_status;
         let pending_ordinary_retry = self.pending_ordinary_retry;
         #[cfg(any(feature = "diagnostics", test))]
@@ -478,6 +495,7 @@ where
                 config,
                 rate_control,
                 aggregate_rate_policy,
+                he_trigger_based,
                 last_aggregate_status,
                 pending_ordinary_retry,
                 #[cfg(any(feature = "diagnostics", test))]
@@ -508,6 +526,7 @@ where
             config,
             rate_control,
             aggregate_rate_policy,
+            he_trigger_based,
             last_aggregate_status,
             pending_ordinary_retry,
             #[cfg(any(feature = "diagnostics", test))]
@@ -532,6 +551,7 @@ where
         owner.block_ack_windows = block_ack_windows;
         owner.last_aggregate_status = last_aggregate_status;
         owner.pending_ordinary_retry = pending_ordinary_retry;
+        owner.he_trigger_based = he_trigger_based;
         #[cfg(any(feature = "diagnostics", test))]
         {
             owner.observer = observer;

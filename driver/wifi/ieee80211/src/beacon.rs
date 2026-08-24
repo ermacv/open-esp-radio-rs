@@ -41,8 +41,9 @@ pub enum ApBeaconBuildError {
 /// Build one visible WPA2-Personal HT/WMM beacon without allocating.
 ///
 /// The caller owns timestamp/DTIM progression through [`stamp`]. This builder
-/// publishes the fixed first-AP profile only: 100 TU, one-byte TIM bitmap,
-/// CCMP, PSK, WMM and coherent one-stream HT capability records.
+/// publishes the fixed first-AP profile only: 100 TU, a two-byte TIM bitmap
+/// covering the complete public AID 1..=15 range, CCMP, PSK, WMM and coherent
+/// one-stream HT capability records.
 pub fn write_wpa2_ht_beacon(
     output: &mut [u8],
     access_point: [u8; 6],
@@ -71,7 +72,7 @@ pub fn write_wpa2_ht_beacon(
         + 2
         + SUPPORTED_RATES.len()
         + 3
-        + 6
+        + 7
         + WPA2_PERSONAL_CCMP_PSK_RSN_IE.len()
         + 2
         + EXTENDED_RATES.len()
@@ -97,7 +98,15 @@ pub fn write_wpa2_ht_beacon(
     write_element(frame, &mut offset, 0, ssid.as_bytes());
     write_element(frame, &mut offset, 1, &SUPPORTED_RATES);
     write_element(frame, &mut offset, 3, &[channel.primary()]);
-    write_element(frame, &mut offset, 5, &[dtim_period - 1, dtim_period, 0, 0]);
+    // Bitmap offset zero plus two octets covers AID 1..=15 without aliasing
+    // AID 8..=15 onto the first byte. Bit zero of bitmap control remains the
+    // independent DTIM multicast indication maintained by `stamp`.
+    write_element(
+        frame,
+        &mut offset,
+        5,
+        &[dtim_period - 1, dtim_period, 0, 0, 0],
+    );
     copy_record(frame, &mut offset, &WPA2_PERSONAL_CCMP_PSK_RSN_IE);
     write_element(frame, &mut offset, 50, &EXTENDED_RATES);
     copy_record(frame, &mut offset, &WMM_PARAMETER_IE);

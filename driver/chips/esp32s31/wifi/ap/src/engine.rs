@@ -18,8 +18,9 @@ use open_esp_radio_ieee80211::block_ack::{
 use open_esp_radio_ieee80211::{
     ap::{
         ApActionFrame, ApAssociationResponseError, ApDataFrame, ApDataFrameError,
-        ApManagementRequest, ApPeerDisconnectKind, ApProtectedDataFrame, EncodedApFrame,
-        parse_ap_management_request, write_ap_peer_disconnect, write_ht_association_response_frame,
+        ApManagementRequest, ApPeerDisconnectKind, ApPowerSaveObservation, ApProtectedDataFrame,
+        EncodedApFrame, observe_ap_power_save, parse_ap_management_request,
+        write_ap_peer_disconnect, write_ht_association_response_frame,
         write_open_authentication_response,
     },
     beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, write_wpa2_ht_beacon},
@@ -27,9 +28,9 @@ use open_esp_radio_ieee80211::{
     ssid::WifiSsid,
 };
 use open_esp_radio_wifi_ap::{
-    AccessPointService, ApAssociationCapabilities, ApMlmeAction, ApPeerBinding, ApPeerClose,
-    ApPeerCloseKind, ApPeerPhase, ApPeerStatus, ApServiceError, ApWpa2Error, ApWpa2Progress,
-    ApWpa2RetryProgress,
+    AccessPointService, ApAssociationCapabilities, ApBufferedUnicastRelease, ApDownlinkDisposition,
+    ApMlmeAction, ApPeerBinding, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerStatus,
+    ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
 };
 use open_esp_radio_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
 
@@ -371,10 +372,15 @@ impl<'storage> Esp32s31ApEngine<'storage> {
     }
 
     pub fn prepare_beacon(&mut self, executor_timestamp_micros: u64) -> Option<&mut [u8]> {
+        let group_pending = self.service.group_traffic_pending();
+        let unicast_tim_bitmap = self.service.unicast_tim_bitmap();
         let management_sequence = self.service.next_management_sequence();
-        let beacon = self
-            .beacon
-            .prepare(executor_timestamp_micros, management_sequence, false, 0);
+        let beacon = self.beacon.prepare(
+            executor_timestamp_micros,
+            management_sequence,
+            group_pending,
+            unicast_tim_bitmap,
+        );
         if beacon.is_some() {
             #[cfg(any(feature = "diagnostics", test))]
             self.observer
@@ -929,6 +935,66 @@ impl<'storage> Esp32s31ApEngine<'storage> {
 
     pub fn peer_status(&self, peer: [u8; 6]) -> Option<ApPeerStatus> {
         self.service.peer_status(peer)
+    }
+
+    pub fn downlink_disposition(
+        &self,
+        peer: [u8; 6],
+    ) -> Result<ApDownlinkDisposition, Esp32s31ApEngineError> {
+        Ok(self.service.downlink_disposition(peer)?)
+    }
+
+    pub fn commit_buffered_unicast(&mut self, peer: [u8; 6]) -> Result<u16, Esp32s31ApEngineError> {
+        Ok(self.service.commit_buffered_unicast(peer)?)
+    }
+
+    pub fn begin_buffered_unicast_release(
+        &mut self,
+        peer: [u8; 6],
+    ) -> Result<Option<ApBufferedUnicastRelease>, Esp32s31ApEngineError> {
+        Ok(self.service.begin_buffered_unicast_release(peer)?)
+    }
+
+    pub fn complete_buffered_unicast_release(
+        &mut self,
+        release: ApBufferedUnicastRelease,
+        delivered: bool,
+    ) -> Result<u16, Esp32s31ApEngineError> {
+        Ok(self
+            .service
+            .complete_buffered_unicast_release(release, delivered)?)
+    }
+
+    pub fn observe_power_save(
+        &mut self,
+        observation: ApPowerSaveObservation,
+        now_micros: u64,
+    ) -> Result<ApPowerSaveAction, Esp32s31ApEngineError> {
+        Ok(self.service.observe_power_save(observation, now_micros)?)
+    }
+
+    /// Parse and apply an AP power-save edge from one complete 802.11 MPDU.
+    /// Non-PM frames are left to the ordinary receive classifier.
+    pub fn observe_power_save_frame(
+        &mut self,
+        frame: &[u8],
+        now_micros: u64,
+    ) -> Result<Option<ApPowerSaveAction>, Esp32s31ApEngineError> {
+        let Some(observation) = observe_ap_power_save(frame) else {
+            return Ok(None);
+        };
+        self.observe_power_save(observation, now_micros).map(Some)
+    }
+
+    pub fn commit_buffered_group(&mut self) -> Result<u16, Esp32s31ApEngineError> {
+        Ok(self.service.commit_buffered_group()?)
+    }
+
+    pub fn complete_buffered_group(
+        &mut self,
+        delivered: bool,
+    ) -> Result<u16, Esp32s31ApEngineError> {
+        Ok(self.service.complete_buffered_group(delivered)?)
     }
 
     #[inline(always)]

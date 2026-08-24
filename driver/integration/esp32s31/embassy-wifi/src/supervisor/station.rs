@@ -1137,6 +1137,7 @@ pub(super) const fn connected_config() -> Esp32s31ConnectedStaConfig {
             completion_timeout_us: 250_000,
             aggregate_frame_limit: TX_AMPDU_FRAME_COUNT as u8,
             aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+            he_trigger_based: None,
         },
         block_ack: Esp32s31ConnectedStaBlockAckPolicy {
             // Request exactly the number of MPDUs the retained TX arena can

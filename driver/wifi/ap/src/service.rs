@@ -865,9 +865,16 @@ impl<'peers> AccessPointService<'peers> {
     /// [`Self::commit_buffered_group`] only after that ownership transfer
     /// succeeds.
     pub fn group_downlink_disposition(&self) -> ApDownlinkDisposition {
-        if self.storage().peers.iter().flatten().any(|peer| {
-            peer.phase == ApPeerPhase::Authorized && peer.power_state == ApPeerPowerState::Sleeping
-        }) {
+        // Once a DTIM queue exists, retain later group frames behind it even
+        // if the last sleeping peer wakes before the advertised release. This
+        // preserves caller-owned FIFO order and prevents a fresh multicast
+        // frame from overtaking the DTIM-bound prefix.
+        if self.buffered_group_frames != 0
+            || self.storage().peers.iter().flatten().any(|peer| {
+                peer.phase == ApPeerPhase::Authorized
+                    && peer.power_state == ApPeerPowerState::Sleeping
+            })
+        {
             ApDownlinkDisposition::Buffer
         } else {
             ApDownlinkDisposition::TransmitNow

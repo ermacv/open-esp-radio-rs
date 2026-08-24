@@ -9,10 +9,14 @@
 
 use core::{future::Future, marker::PhantomData};
 
+use open_esp_radio_esp32s31_wifi_mac::crypto::{
+    StaGroupCcmpKeyMaterial, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
+};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxCompletion;
 use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelError, WifiChannelWidth},
     scan::ScanRecord,
+    security::WifiSecurityMode,
     station::{StaAssociationPreference, StaTxSequenceCounters, select_sta_association},
 };
 use open_esp_radio_wifi_sta::{
@@ -24,6 +28,7 @@ use open_esp_radio_wpa2::{
 };
 
 use crate::{
+    connected_rx::StaCcmpRxReplayEpoch,
     peer::Esp32s31StaPeerProgrammingReport,
     wpa2::{Esp32s31Wpa2HandshakeTelemetry, Esp32s31Wpa2Message4Protection},
 };
@@ -34,6 +39,7 @@ pub struct Esp32s31StaAttemptStation {
     pub station_address: [u8; 6],
     pub access_point: ScanRecord,
     pub association_preference: StaAssociationPreference,
+    pub security: WifiSecurityMode,
 }
 
 impl Esp32s31StaAttemptStation {
@@ -61,6 +67,7 @@ impl Esp32s31StaAttemptStation {
 pub struct Esp32s31StaIdentity {
     pub station_address: [u8; 6],
     pub association_preference: StaAssociationPreference,
+    pub security: WifiSecurityMode,
 }
 
 impl Esp32s31StaIdentity {
@@ -69,6 +76,7 @@ impl Esp32s31StaIdentity {
             station_address: self.station_address,
             access_point,
             association_preference: self.association_preference,
+            security: self.security,
         }
     }
 }
@@ -79,12 +87,19 @@ impl Esp32s31StaIdentity {
 /// complete station owner can move into an executor task without becoming
 /// self-referential. A supervisor can replace credentials only after this
 /// value returns through the finite task's terminal edge.
+pub enum Esp32s31StaAttemptSecurityMaterial {
+    Open,
+    Wpa2Personal {
+        pmk: Pmk,
+        supplicant_nonce: [u8; 32],
+        message4_protection: Esp32s31Wpa2Message4Protection,
+        connected: Option<Wpa2ConnectedSupplicant>,
+    },
+}
+
 pub struct Esp32s31StaAttemptSecurity<'role> {
-    pub pmk: Pmk,
-    pub supplicant_nonce: [u8; 32],
     pub sequences: StaTxSequenceCounters,
-    pub message4_protection: Esp32s31Wpa2Message4Protection,
-    pub connected: Option<Wpa2ConnectedSupplicant>,
+    material: Esp32s31StaAttemptSecurityMaterial,
     role: PhantomData<&'role mut ()>,
 }
 
@@ -96,13 +111,79 @@ impl Esp32s31StaAttemptSecurity<'_> {
         message4_protection: Esp32s31Wpa2Message4Protection,
     ) -> Self {
         Self {
-            pmk,
-            supplicant_nonce,
             sequences,
-            message4_protection,
-            connected: None,
+            material: Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
+                pmk,
+                supplicant_nonce,
+                message4_protection,
+                connected: None,
+            },
             role: PhantomData,
         }
+    }
+
+    pub const fn open(sequences: StaTxSequenceCounters) -> Self {
+        Self {
+            sequences,
+            material: Esp32s31StaAttemptSecurityMaterial::Open,
+            role: PhantomData,
+        }
+    }
+
+    pub const fn mode(&self) -> WifiSecurityMode {
+        match self.material {
+            Esp32s31StaAttemptSecurityMaterial::Open => WifiSecurityMode::Open,
+            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { .. } => {
+                WifiSecurityMode::Wpa2Personal
+            }
+        }
+    }
+
+    pub const fn wpa2_material(&self) -> Option<(&Pmk, [u8; 32], Esp32s31Wpa2Message4Protection)> {
+        match &self.material {
+            Esp32s31StaAttemptSecurityMaterial::Open => None,
+            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
+                pmk,
+                supplicant_nonce,
+                message4_protection,
+                ..
+            } => Some((pmk, *supplicant_nonce, *message4_protection)),
+        }
+    }
+
+    pub fn wpa2_handshake_parts(&mut self) -> Option<(&Pmk, [u8; 32], &mut StaTxSequenceCounters)> {
+        match &self.material {
+            Esp32s31StaAttemptSecurityMaterial::Open => None,
+            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
+                pmk,
+                supplicant_nonce,
+                ..
+            } => Some((pmk, *supplicant_nonce, &mut self.sequences)),
+        }
+    }
+
+    pub fn set_connected(&mut self, value: Wpa2ConnectedSupplicant) -> bool {
+        match &mut self.material {
+            Esp32s31StaAttemptSecurityMaterial::Open => false,
+            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } => {
+                *connected = Some(value);
+                true
+            }
+        }
+    }
+
+    pub const fn has_connected_wpa2(&self) -> bool {
+        matches!(
+            &self.material,
+            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
+                connected: Some(_),
+                ..
+            }
+        )
+    }
+
+    pub fn into_parts(self) -> (StaTxSequenceCounters, Esp32s31StaAttemptSecurityMaterial) {
+        (self.sequences, self.material)
     }
 
     /// Retag the owned security state for the next finite role scope.
@@ -111,12 +192,34 @@ impl Esp32s31StaAttemptSecurity<'_> {
     /// marker only prevents a composition from accidentally mixing two live
     /// role scopes while the wider station API still carries that lifetime.
     pub fn into_role<'next>(self) -> Esp32s31StaAttemptSecurity<'next> {
-        Esp32s31StaAttemptSecurity::new(
-            self.pmk,
-            self.supplicant_nonce,
-            self.sequences,
-            self.message4_protection,
-        )
+        Esp32s31StaAttemptSecurity {
+            sequences: self.sequences,
+            material: self.material,
+            role: PhantomData,
+        }
+    }
+}
+
+/// Hardware key ownership created only by a completed WPA2 attempt.
+// Keep the installed slots and replay epoch inline: this no-alloc owner must
+// return every hardware capability by value when the connected role ends.
+#[allow(clippy::large_enum_variant)]
+pub enum Esp32s31StaInstalledSecurity {
+    Open,
+    Wpa2Personal {
+        pairwise: StaPairwiseCcmpSlot,
+        group: StaGroupCcmpSlot,
+        group_material: StaGroupCcmpKeyMaterial,
+        replay: StaCcmpRxReplayEpoch,
+    },
+}
+
+impl Esp32s31StaInstalledSecurity {
+    pub const fn mode(&self) -> WifiSecurityMode {
+        match self {
+            Self::Open => WifiSecurityMode::Open,
+            Self::Wpa2Personal { .. } => WifiSecurityMode::Wpa2Personal,
+        }
     }
 }
 
@@ -136,6 +239,10 @@ pub enum Esp32s31StaAttemptStateError {
 /// Value-only reports produced by the real driver phases.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31StaAttemptReport {
+    /// Exact security execution selected before association. Open makes the
+    /// legacy WPA2-named transaction stages explicit no-ops; it never means
+    /// that a handshake or key installation succeeded.
+    pub security: Option<Esp32s31StaAttemptSecurityExecution>,
     pub authentication: Option<StaAuthenticationSuccess>,
     pub association: Option<StaAssociationSuccess>,
     pub peer: Option<Esp32s31StaPeerProgrammingReport>,
@@ -144,6 +251,12 @@ pub struct Esp32s31StaAttemptReport {
     pub wpa2: Option<Wpa2KeyInstallMetadata>,
     /// A failed Message 4 status is still useful attempt evidence.
     pub message4: Option<TxCompletion>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31StaAttemptSecurityExecution {
+    OpenHandshakeAndKeyInstallSkipped,
+    Wpa2Personal,
 }
 
 /// Connected-entry proof returned only after all preceding phases.
@@ -734,6 +847,7 @@ mod tests {
             station_address: [0; 6],
             access_point,
             association_preference: StaAssociationPreference::Automatic,
+            security: WifiSecurityMode::Open,
         };
         assert_eq!(
             station.selected_channel(),

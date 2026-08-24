@@ -18,7 +18,11 @@ where
         &mut self,
         frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
     ) -> Option<ConnectedRxDispatch> {
-        let Some(key) = self.dispatcher.reorder_key(frame.segment()) else {
+        assert!(
+            self.runtime.dispatcher_configured(),
+            "stopped connected RX processor cannot dispatch another frame"
+        );
+        let Some(key) = self.runtime.dispatcher.reorder_key(frame.segment()) else {
             return Some(self.dispatch_owned_frame(frame).await);
         };
         let bank = self.runtime.reorder_banks.find(

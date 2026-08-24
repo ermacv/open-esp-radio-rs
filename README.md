@@ -2,13 +2,18 @@
 
 Source-only, `no_std` Embassy radio driver and verification workspace for
 Espressif chips. The current implementation target is ESP32-S31 Wi-Fi STA,
-single-client WPA2 AP and standalone normalized monitor. The ESP32-S31
-IEEE 802.15.4 path currently reaches source-reviewed digital clocks, private
-MAC reset, an interrupt-masked static policy, and isolated DMA/IRQ semantic
-leaves plus a pure fail-closed MAC control model; PHY/RF, active IRQ, command
-issue and operational MAC readiness remain incomplete. AP+STA, ESP32-C5 and
-Bluetooth/BLE are future work, not placeholder public APIs. The normal
-workspace and HIL
+bounded AP, same-channel STA+AP and standalone normalized monitor, with exact
+Open or WPA2-Personal security selection on the implemented STA/AP source
+paths. The source tree also contains typed ESP-NOW, legacy Wi-Fi power-save,
+TWT, monitor hopping/injection admission, HE20 and advanced-rate boundaries;
+their exact implemented and deliberate fail-closed limits are documented in
+[`driver/README.md`](driver/README.md). These source capabilities are not
+qualification or HIL claims. The ESP32-S31 IEEE 802.15.4 path currently
+reaches source-reviewed digital clocks, private MAC reset, an interrupt-masked
+static policy, and isolated DMA/IRQ semantic leaves plus a pure fail-closed MAC
+control model; PHY/RF, active IRQ, command issue and operational MAC readiness
+remain incomplete. ESP32-C5 and operational Bluetooth/BLE support remain
+future work. The normal workspace and HIL
 do not link `esp-wifi-sys`, vendor Wi-Fi
 archives, or a radio/Wi-Fi ROM ABI. The isolated vendor-oracle workspace is the
 only opt-in exception.
@@ -27,7 +32,7 @@ only opt-in exception.
 | `driver/adapters/embassy/esp32s31-platform` | ESP32-S31 Embassy executor/time platform binding |
 | `driver/adapters/embassy/esp32s31-wifi` | Internal ESP32-S31 Wi-Fi Embassy implementation |
 | `driver/adapters/esp-hal/esp32s31-wifi` | ESP32-S31 `esp-hal` peripheral binding |
-| `driver/integration/esp32s31/embassy-wifi` | Production station/AP/monitor composition |
+| `driver/integration/esp32s31/embassy-wifi` | Production station/AP/monitor composition and explicit ESP-NOW hooks |
 | `driver/chips/esp32s31/pac-raw` | Internal generated svd2rust backend |
 | `driver/chips/esp32s31/pac` | Closed typed radio peripheral-access API |
 | `driver/chips/esp32s31/hal` | Finite hardware operations and async boundaries |

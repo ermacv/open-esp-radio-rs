@@ -10,7 +10,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
-use open_esp_radio_ieee80211::{beacon::WPA2_BEACON_CAPACITY, scan::ScanTable};
+use open_esp_radio_esp32s31_wifi_mac::rx::PUBLIC_HEADER_SIZE;
+use open_esp_radio_ieee80211::{
+    beacon::WPA2_BEACON_CAPACITY, esp_now::ESP_NOW_V2_MAX_MPDU_LEN, scan::ScanTable,
+};
 use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::datapath::rx::dma::Esp32s31RxDmaStorage;
@@ -24,6 +27,19 @@ pub const ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY: usize = 1_700;
 pub const ESP32S31_DEFAULT_SCAN_RECORD_CAPACITY: usize = 32;
 
 pub const ESP32S31_DEFAULT_RX_STAGE_CAPACITY: usize = 1_700;
+
+const ESP_NOW_V2_TX_MINIMUM_CAPACITY: usize =
+    (open_esp_radio_esp32s31_wifi::ordinary_tx::TX_METADATA_SIZE
+        + ESP_NOW_V2_MAX_MPDU_LEN
+        + open_esp_radio_esp32s31_wifi::ordinary_tx::TX_FCS_SIZE
+        + 3)
+        & !3;
+const _: () = assert!(ESP32S31_DEFAULT_TX_BUFFER_SIZE >= ESP_NOW_V2_TX_MINIMUM_CAPACITY);
+// This proves the stock non-CSI public RX prefix. Enabling optional CSI or
+// another dynamic descriptor tail remains a separate larger-arena policy.
+const _: () =
+    assert!(ESP32S31_DEFAULT_RX_BUFFER_SIZE >= PUBLIC_HEADER_SIZE + ESP_NOW_V2_MAX_MPDU_LEN);
+const _: () = assert!(ESP32S31_DEFAULT_RX_STAGE_CAPACITY >= ESP_NOW_V2_MAX_MPDU_LEN);
 // These slots form the latency-critical copy-before-DMA-reload working set and
 // stay in SRAM. Two complete negotiated reorder windows let RX copy one burst
 // while the protocol consumer owns another; descriptor reclaim itself follows

@@ -16,16 +16,44 @@
 //! means only that a caller must not assume the operation is an offload.
 
 pub mod configuration;
+pub mod esp_now;
+pub mod esp_now_security;
 pub mod interface;
 pub mod monitor;
 
+pub use open_esp_radio_ieee80211::channel::WifiChannel;
+
 pub use configuration::{
     WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
-    WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
+    WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
+    WifiStationConfig,
+};
+pub use esp_now::{
+    ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY, EspNowConfig,
+    EspNowConfigError, EspNowHt20Rate, EspNowHtGuardInterval, EspNowHtMcs, EspNowOfdmRate,
+    EspNowOwnedReceivedV1, EspNowOwnedReceivedV2, EspNowPeerCapability, EspNowPeerChannelPolicy,
+    EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity, EspNowPeerTable, EspNowPeerTableError,
+    EspNowPeers, EspNowPhyMode, EspNowPreparedV1Tx, EspNowPreparedV2Tx, EspNowProtocol,
+    EspNowReceiveError, EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch, EspNowRxOutcome,
+    EspNowSendError, EspNowV2ReceiveError, EspNowV2RxOutcome, EspNowV2SendError,
+};
+pub use esp_now_security::{
+    ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY, ESP_NOW_KEY_LEN, ESP_NOW_RX_REPLAY_WINDOW_BITS,
+    EspNowEncryptedPeerConfig, EspNowEncryptedPeerDiagnostics, EspNowEncryptedPeerError,
+    EspNowEncryptedPeerId, EspNowEncryptedPeerMutationFailure, EspNowEncryptedPeerReplacement,
+    EspNowEncryptedPeerRestoreFailure, EspNowEncryptedPeerTable, EspNowEncryptedPeerView,
+    EspNowEncryptedProtocol, EspNowEncryptedReceiveError, EspNowEncryptedRxCandidate,
+    EspNowEncryptedSendError, EspNowLmk, EspNowPmk, EspNowPmkError, EspNowPmkId,
+    EspNowPmkMutationFailure, EspNowPmkOwner, EspNowPreparedEncryptedV1Tx,
+    EspNowRemovedEncryptedPeer, EspNowRxReplayCandidate, encrypted_peer_destination,
+    esp_now_encrypted_v1_codec_status,
 };
 pub use monitor::{
-    MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType, MonitorFrameTypeMask,
-    MonitorPublishOutcome, MonitorSink,
+    MONITOR_CHANNEL_SEQUENCE_CAPACITY, MonitorChannelPolicy, MonitorChannelSequence,
+    MonitorChannelSequenceError, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
+    MonitorFrameTypeMask, MonitorInjectionBindingError, MonitorInjectionChannelBinding,
+    MonitorInjectionFrameError, MonitorInjectionFrameType, MonitorInjectionMpdu,
+    MonitorInjectionRate, MonitorInjectionRequest, MonitorPublishOutcome, MonitorSink,
 };
 
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;

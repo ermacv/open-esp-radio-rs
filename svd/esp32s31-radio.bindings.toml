@@ -8598,24 +8598,6 @@ bit-width = 3
 access = "read-only"
 
 [[registers]]
-address = 537931912
-width = 32
-access = "read-only"
-identity = "SHARED_BASEBAND_RESET_IDLE_STATUS.STATUS"
-peripheral = "SHARED_BASEBAND_RESET_IDLE_STATUS"
-peripheral-type = "SharedBasebandResetIdleStatus"
-peripheral-module = "shared_baseband_reset_idle_status"
-scope = []
-register-method = "status"
-
-[[registers.fields]]
-svd-name = "LOW_4_UNKNOWN"
-method = "low_4_unknown"
-bit-offset = 0
-bit-width = 4
-access = "read-only"
-
-[[registers]]
 address = 537931776
 width = 32
 access = "write-only"
@@ -9337,6 +9319,24 @@ access = "read-only"
 svd-name = "SECURITY_ERROR"
 method = "security_error"
 bit-offset = 16
+bit-width = 4
+access = "read-only"
+
+[[registers]]
+address = 537931912
+width = 32
+access = "read-only"
+identity = "SHARED_BASEBAND_RESET_IDLE_STATUS.STATUS"
+peripheral = "SHARED_BASEBAND_RESET_IDLE_STATUS"
+peripheral-type = "SharedBasebandResetIdleStatus"
+peripheral-module = "shared_baseband_reset_idle_status"
+scope = []
+register-method = "status"
+
+[[registers.fields]]
+svd-name = "LOW_4_UNKNOWN"
+method = "low_4_unknown"
+bit-offset = 0
 bit-width = 4
 access = "read-only"
 

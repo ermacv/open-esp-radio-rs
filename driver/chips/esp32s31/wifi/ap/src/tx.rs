@@ -16,9 +16,14 @@ use open_esp_radio_esp32s31_wifi::{
     tx::{WifiTxProgress, WifiTxWake},
 };
 use open_esp_radio_esp32s31_wifi_mac::tx::{
-    HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, LegacyTxQueue,
-    TxHardware, TxPhyRate,
+    HtAmpduTxConfig, HtChannelWidth, HtDuplicateCertificationRequest, HtDuplicateRate,
+    HtDuplicateTxLinkCapabilities, HtDuplicateTxSelection, HtGuardInterval, HtMcs, HtRate,
+    LegacyRate, LegacyTxQueue, TxHardware, TxPhyRate, select_esp32s31_ht_duplicate_tx,
 };
+use open_esp_radio_esp32s31_wifi_mac::tx_protection::{
+    TxProtectionAdmissionError, TxProtectionReceiver, WifiTxProtectionPolicy,
+};
+use open_esp_radio_esp32s31_wifi_mac::tx_runtime::OrdinaryRetryRatePolicy;
 use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelWidth},
     ht::HtPeerCapabilities,
@@ -43,12 +48,15 @@ pub enum Esp32s31ApTxClass {
     Eapol,
     /// Pairwise protected Ethernet data after the controlled port opens.
     Data,
+    /// GTK-protected multicast/broadcast data. Hardware may report terminal
+    /// publication success, but there is no receiver ACK and no retry series.
+    GroupData,
 }
 
 impl Esp32s31ApTxClass {
     fn publication_limit(self, rate: LegacyRate) -> u8 {
         match self {
-            Self::Beacon => 1,
+            Self::Beacon | Self::GroupData => 1,
             Self::Management | Self::Eapol | Self::Data => rate
                 .vendor_retry_publication_limit()
                 .expect("every AP legacy rate has a recovered Dot11G schedule"),
@@ -61,7 +69,7 @@ impl Esp32s31ApTxClass {
         // controlled port opens.
         match self {
             Self::Beacon | Self::Management | Self::Eapol => LegacyTxQueue::Voice,
-            Self::Data => LegacyTxQueue::BestEffort,
+            Self::Data | Self::GroupData => LegacyTxQueue::BestEffort,
         }
     }
 
@@ -72,6 +80,7 @@ impl Esp32s31ApTxClass {
             // discovery and controlled-port setup on the maximally compatible
             // 1 Mbit/s path, but do not serialize ordinary data at that rate.
             Self::Data => LegacyRate::Ofdm24M,
+            Self::GroupData => LegacyRate::Dsss1MLong,
             Self::Beacon | Self::Management | Self::Eapol => LegacyRate::Dsss1MLong,
         }
     }
@@ -94,6 +103,7 @@ impl From<OrdinaryTxError> for Esp32s31ApTxError {
 pub struct Esp32s31ApTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
     ordinary: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
     config: Esp32s31ApTxConfig,
+    ht_duplicate_certification: Option<HtDuplicateCertificationRequest>,
 }
 
 /// AP-local ordinary-TX policy retained while the physical descriptor owner
@@ -101,6 +111,7 @@ pub struct Esp32s31ApTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApTxParked {
     config: Esp32s31ApTxConfig,
+    ht_duplicate_certification: Option<HtDuplicateCertificationRequest>,
 }
 
 impl<'slot, P, E, T, const BUFFER_SIZE: usize> Esp32s31ApTx<'slot, P, E, T, BUFFER_SIZE>
@@ -116,7 +127,26 @@ where
         Self {
             ordinary: OrdinaryTxOwner::new(resources),
             config,
+            ht_duplicate_certification: None,
         }
+    }
+
+    /// Install the independent, fixed MCS32 certification request.
+    ///
+    /// Normal AP rate selection never consults this request as a ranked
+    /// candidate. The peer planner reports its typed rejection and retains
+    /// the ordinary HT fallback until the S31 formatter contract is reviewed.
+    pub fn set_ht_duplicate_certification_request(
+        &mut self,
+        request: Option<HtDuplicateCertificationRequest>,
+    ) {
+        self.ht_duplicate_certification = request;
+    }
+
+    pub const fn ht_duplicate_certification_request(
+        &self,
+    ) -> Option<HtDuplicateCertificationRequest> {
+        self.ht_duplicate_certification
     }
 
     pub fn queue_state(&self) -> MacTxQueueState {
@@ -125,6 +155,46 @@ where
 
     pub const fn maximum_ht_aggregate_bytes(&self) -> u16 {
         self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes()
+    }
+
+    pub fn install_tx_protection_policy(&mut self, policy: WifiTxProtectionPolicy) {
+        self.ordinary.policy_mut().install_protection(policy);
+    }
+
+    /// Preflight one AP HT aggregate before its retained arena reaches DMA.
+    pub fn require_unprotected_ht_aggregate(
+        &self,
+        rate: HtRate,
+    ) -> Result<(), TxProtectionAdmissionError> {
+        self.ordinary.policy().protection().require_unprotected(
+            TxPhyRate::Ht(rate),
+            TxProtectionReceiver::Individual,
+            None,
+        )
+    }
+
+    /// Preflight every initial/retry rate of one AP ordinary data MPDU.
+    ///
+    /// AP protocol encoders call this after their complete output-capacity
+    /// admission but before advancing sequence or CCMP PN ownership. The
+    /// common ordinary start edge repeats the same check before DMA.
+    pub fn require_unprotected_data_retry_series(
+        &self,
+        rate: LegacyRate,
+        group_receiver: bool,
+    ) -> Result<(), Esp32s31ApTxError> {
+        let class = if group_receiver {
+            Esp32s31ApTxClass::GroupData
+        } else {
+            Esp32s31ApTxClass::Data
+        };
+        self.ordinary.require_unprotected_retry_series(
+            TxPhyRate::Legacy(rate),
+            OrdinaryRetryRatePolicy::Normal,
+            class.publication_limit(rate),
+            group_receiver,
+        )?;
+        Ok(())
     }
 
     pub fn now_micros(&self) -> u64 {
@@ -235,6 +305,49 @@ where
         )
     }
 
+    /// Publish one plaintext Open-network data MPDU. Zero MIC length is the
+    /// authoritative security selector; the key field is ignored by the
+    /// already-reviewed ordinary unprotected path used for EAPOL/management.
+    pub fn start_unprotected_data_encoded<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        frame: &[u8],
+        group: bool,
+        rate: LegacyRate,
+    ) -> Result<WifiTxProgress, Esp32s31ApTxError> {
+        self.start_encoded_with_key(
+            hardware,
+            if group {
+                Esp32s31ApTxClass::GroupData
+            } else {
+                Esp32s31ApTxClass::Data
+            },
+            frame,
+            0,
+            0,
+            Some(rate),
+        )
+    }
+
+    /// Publish one GTK-protected group MPDU through the ordinary basic-rate
+    /// owner. The transaction has exactly one hardware publication and does
+    /// not interpret completion as an acknowledgement.
+    pub fn start_group_protected_encoded<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        frame: &[u8],
+        hardware_key_selector: u8,
+    ) -> Result<WifiTxProgress, Esp32s31ApTxError> {
+        self.start_encoded_with_key(
+            hardware,
+            Esp32s31ApTxClass::GroupData,
+            frame,
+            TX_CCMP_MIC_SIZE,
+            hardware_key_selector,
+            Some(LegacyRate::Dsss1MLong),
+        )
+    }
+
     fn start_encoded_with_key<H: TxHardware>(
         &mut self,
         hardware: &mut H,
@@ -303,10 +416,24 @@ where
         ),
         Self,
     > {
-        let Self { ordinary, config } = self;
+        let Self {
+            ordinary,
+            config,
+            ht_duplicate_certification,
+        } = self;
         match ordinary.try_into_resources() {
-            Ok(resources) => Ok((resources, Esp32s31ApTxParked { config })),
-            Err(ordinary) => Err(Self { ordinary, config }),
+            Ok(resources) => Ok((
+                resources,
+                Esp32s31ApTxParked {
+                    config,
+                    ht_duplicate_certification,
+                },
+            )),
+            Err(ordinary) => Err(Self {
+                ordinary,
+                config,
+                ht_duplicate_certification,
+            }),
         }
     }
 
@@ -314,7 +441,11 @@ where
         resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
         parked: Esp32s31ApTxParked,
     ) -> Self {
-        Self::new(resources, parked.config)
+        Self {
+            ordinary: OrdinaryTxOwner::new(resources),
+            config: parked.config,
+            ht_duplicate_certification: parked.ht_duplicate_certification,
+        }
     }
 
     /// Recover the common TX capability only when no descriptor is owned by
@@ -368,6 +499,64 @@ pub fn peer_ht_rate(channel: WifiChannel, peer: HtPeerCapabilities) -> Option<Ht
         HtGuardInterval::Long800Ns
     };
     Some(HtRate::new(mcs, guard_interval, channel_width))
+}
+
+/// Retain a peer-admitted HT Duplicate candidate without publishing it.
+///
+/// The returned value is protocol-valid, including peer capability and HT40
+/// geometry. It cannot enter [`TxPhyRate`] until the ESP32-S31 queue/rate/power
+/// encoding has a reviewed oracle; the explicit selector below reports that
+/// hardware rejection without changing the ordinary peer rate.
+pub fn peer_ht_duplicate_rate(
+    channel: WifiChannel,
+    peer: HtPeerCapabilities,
+) -> Option<HtDuplicateRate> {
+    peer.ht_duplicate_mcs32()?;
+    let width = match channel.width() {
+        width @ (WifiChannelWidth::Mhz40Above | WifiChannelWidth::Mhz40Below) => width,
+        WifiChannelWidth::Mhz20 => return None,
+    };
+    let guard_interval = if peer.supports_short_guard_interval(width) {
+        HtGuardInterval::Short400Ns
+    } else {
+        HtGuardInterval::Long800Ns
+    };
+    Some(HtDuplicateRate::new(guard_interval))
+}
+
+/// Evaluate the AP's explicit MCS32 request for one associated peer.
+///
+/// This is an observation/planning path only. A rejected request leaves
+/// [`peer_ht_rate`] in sole ownership of the publishable HT fallback.
+pub fn peer_ht_duplicate_tx_selection(
+    channel: WifiChannel,
+    peer: Option<HtPeerCapabilities>,
+    request: Option<HtDuplicateCertificationRequest>,
+) -> HtDuplicateTxSelection {
+    let Some(peer) = peer else {
+        return select_esp32s31_ht_duplicate_tx(
+            request,
+            HtDuplicateTxLinkCapabilities::new(None, false, false),
+        );
+    };
+    let (channel_width, peer_supports_short_guard_interval) = match channel.width() {
+        WifiChannelWidth::Mhz20 => (
+            HtChannelWidth::Mhz20,
+            peer.supports_short_guard_interval(WifiChannelWidth::Mhz20),
+        ),
+        width @ (WifiChannelWidth::Mhz40Above | WifiChannelWidth::Mhz40Below) => (
+            HtChannelWidth::Mhz40,
+            peer.supports_short_guard_interval(width),
+        ),
+    };
+    select_esp32s31_ht_duplicate_tx(
+        request,
+        HtDuplicateTxLinkCapabilities::new(
+            Some(channel_width),
+            peer.supports_ht_duplicate_mcs32(),
+            peer_supports_short_guard_interval,
+        ),
+    )
 }
 
 #[cfg(test)]
@@ -542,9 +731,53 @@ mod tests {
     }
 
     #[test]
+    fn ap_mcs32_request_reaches_the_shared_frontier_without_replacing_fallback() {
+        use open_esp_radio_esp32s31_wifi_mac::tx::{
+            HtDuplicateTxEvidenceGaps, HtDuplicateTxRejection, HtDuplicateTxUnavailable,
+        };
+        use open_esp_radio_ieee80211::ht::{
+            HtDuplicateMcs32, ht_capability_ie, ht_peer_capabilities,
+        };
+
+        let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
+        let mut capability = ht_capability_ie(channel);
+        HtDuplicateMcs32::new().advertise_receive_only(&mut capability);
+        let peer = ht_peer_capabilities(&capability).unwrap();
+        let fallback = peer_ht_rate(channel, peer).unwrap();
+        assert_eq!(fallback.mcs, HtMcs::Mcs7);
+        assert_eq!(fallback.channel_width, HtChannelWidth::Mhz40);
+        assert_eq!(
+            peer_ht_duplicate_rate(channel, peer),
+            Some(HtDuplicateRate::new(HtGuardInterval::Short400Ns))
+        );
+
+        let request = HtDuplicateCertificationRequest::new(
+            HtChannelWidth::Mhz40,
+            HtGuardInterval::Short400Ns,
+            5_484,
+        );
+        let selection = peer_ht_duplicate_tx_selection(channel, Some(peer), Some(request));
+        assert_eq!(selection.plan(), None);
+        assert_eq!(
+            selection.rejection(),
+            Some(HtDuplicateTxRejection::Hardware(
+                HtDuplicateTxUnavailable::Esp32s31EvidenceIncomplete(
+                    HtDuplicateTxEvidenceGaps::ESP32S31,
+                )
+            ))
+        );
+        assert_eq!(peer_ht_rate(channel, peer), Some(fallback));
+    }
+
+    #[test]
     fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
         let mut slot = pin!(TxSlot::<256>::new_model());
-        let tx = Esp32s31ApTx::new(
+        let request = HtDuplicateCertificationRequest::new(
+            HtChannelWidth::Mhz40,
+            HtGuardInterval::Long800Ns,
+            5_484,
+        );
+        let mut tx = Esp32s31ApTx::new(
             WifiTxResources {
                 slot: slot.as_mut(),
                 policy: WifiTxRuntimePolicy::vendor_defaults(),
@@ -556,6 +789,7 @@ mod tests {
                 publication_timeout_micros: 7_500,
             },
         );
+        tx.set_ht_duplicate_certification_request(Some(request));
 
         let (resources, parked) = tx
             .try_park()
@@ -564,8 +798,68 @@ mod tests {
 
         let tx = Esp32s31ApTx::resume(resources, parked);
         assert_eq!(tx.publication_timeout_micros(), 7_500);
+        assert_eq!(tx.ht_duplicate_certification_request(), Some(request));
         assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
         assert!(tx.try_into_resources().is_ok());
+    }
+
+    #[test]
+    fn required_protection_blocks_ap_aggregate_and_ordinary_retry_series() {
+        use open_esp_radio_esp32s31_wifi_mac::tx_protection::{
+            ErpProtectionMode, HtProtectionMode, TxProtectionAdmissionError, TxProtectionMechanism,
+            TxProtectionReason, TxProtectionRequest, WifiTxProtectionPolicy,
+        };
+
+        let mut slot = pin!(TxSlot::<256>::new_model());
+        let mut tx = Esp32s31ApTx::new(
+            WifiTxResources {
+                slot: slot.as_mut(),
+                policy: WifiTxRuntimePolicy::vendor_defaults(),
+                power: Power,
+                entropy: || 0,
+                timer: Timer,
+            },
+            Esp32s31ApTxConfig {
+                publication_timeout_micros: 1_000,
+            },
+        );
+        tx.install_tx_protection_policy(WifiTxProtectionPolicy::new(
+            ErpProtectionMode::None,
+            HtProtectionMode::NonHtMixed,
+            None,
+        ));
+        let rate = HtRate::new(
+            HtMcs::Mcs7,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz20,
+        );
+
+        assert_eq!(
+            tx.require_unprotected_ht_aggregate(rate),
+            Err(TxProtectionAdmissionError::PhysicalPublicationUnverified {
+                request: TxProtectionRequest {
+                    mechanism: TxProtectionMechanism::RtsCts,
+                    reason: TxProtectionReason::Ht(HtProtectionMode::NonHtMixed),
+                },
+            })
+        );
+        tx.install_tx_protection_policy(WifiTxProtectionPolicy::new(
+            ErpProtectionMode::CtsToSelf,
+            HtProtectionMode::None,
+            None,
+        ));
+        assert_eq!(
+            tx.require_unprotected_data_retry_series(LegacyRate::Ofdm24M, false),
+            Err(Esp32s31ApTxError::Ordinary(OrdinaryTxError::Protection(
+                TxProtectionAdmissionError::PhysicalPublicationUnverified {
+                    request: TxProtectionRequest {
+                        mechanism: TxProtectionMechanism::CtsToSelf,
+                        reason: TxProtectionReason::ErpUseProtection,
+                    },
+                },
+            ),))
+        );
+        assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
     }
 
     #[test]

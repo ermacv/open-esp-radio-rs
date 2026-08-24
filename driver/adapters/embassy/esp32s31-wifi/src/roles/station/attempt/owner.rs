@@ -43,12 +43,13 @@ pub struct Esp32s31StaAttemptTargetOwner<
     pub(super) transmit: &'transmit mut T,
     pub(super) frame: &'scratch mut [u8],
     pub(super) station: Esp32s31StaAttemptStation,
+    pub(super) listen_interval: open_esp_radio_wifi_sta::request::StationListenInterval,
     pub(super) security: Esp32s31StaAttemptSecurity<'security>,
     pub(super) prepared_peer: Option<Esp32s31PreparedStaPeer>,
     pub(super) association: Option<AssociationResponse>,
     pub(super) connected_peer: Option<Esp32s31ConnectedStaPeer>,
     pub(super) pending_keys: Option<Wpa2PendingKeyInstall>,
-    pub(super) installed_keys: Option<(StaPairwiseCcmpSlot, StaGroupCcmpSlot)>,
+    pub(super) installed_security: Option<Esp32s31StaInstalledSecurity>,
     pub(super) report: Esp32s31StaAttemptReport,
     pub(super) _join_observer: PhantomData<fn() -> J>,
 }
@@ -99,6 +100,7 @@ impl<
         >,
         storage: Esp32s31StaAttemptStorage<'scratch>,
         station: Esp32s31StaAttemptStation,
+        listen_interval: open_esp_radio_wifi_sta::request::StationListenInterval,
         security: Esp32s31StaAttemptSecurity<'security>,
     ) -> Self {
         Self {
@@ -109,13 +111,15 @@ impl<
             transmit: radio.transmit,
             frame: storage.frame,
             station,
+            listen_interval,
             security,
             prepared_peer: None,
             association: None,
             connected_peer: None,
             pending_keys: None,
-            installed_keys: None,
+            installed_security: None,
             report: Esp32s31StaAttemptReport {
+                security: None,
                 authentication: None,
                 association: None,
                 peer: None,
@@ -135,8 +139,8 @@ impl<
         self.connected_peer.take()
     }
 
-    pub fn take_installed_keys(&mut self) -> Option<(StaPairwiseCcmpSlot, StaGroupCcmpSlot)> {
-        self.installed_keys.take()
+    pub fn take_installed_security(&mut self) -> Option<Esp32s31StaInstalledSecurity> {
+        self.installed_security.take()
     }
 
     pub fn into_parts(

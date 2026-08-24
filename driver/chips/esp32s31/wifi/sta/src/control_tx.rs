@@ -13,29 +13,43 @@ use open_esp_radio_esp32s31_wifi_mac::{
         HtPeerAmpduParameters, LegacyRate, LegacyTxQueue, TxCompletion, TxError, TxHardware,
         TxPhyRate,
     },
-    tx_runtime::{OrdinaryRetryError, WifiTxRuntimePolicy},
+    tx_protection::{TxProtectionAdmissionError, WifiTxProtectionPolicy},
+    tx_runtime::{OrdinaryRetryError, OrdinaryRetryRatePolicy, WifiTxRuntimePolicy},
 };
 use open_esp_radio_ieee80211::{
+    channel::WifiChannel,
+    esp_now::EspNowRandomValue,
     management::{ProbeRequest, ProbeRequestError},
     station::{
         AssociationRequest, AssociationRequestError, OpenAuthenticationRequest, StaDataFrame,
-        StaProtectedDataFrame, StationFrameError,
+        StaProtectedDataFrame, StaSequenceCounter, StationFrameError,
     },
     wmm::WmmParameterSet,
 };
-use open_esp_radio_wifi_softmac::MacTxPlan;
+use open_esp_radio_wifi_softmac::{
+    EspNowPeerId, EspNowProtocol, EspNowSendError, EspNowV2SendError, MacTxPlan,
+    interface::BoundVirtualInterface,
+};
 
 use crate::{
-    join::Esp32s31StaJoinTransmit, peer::Esp32s31StaPeerTransmit,
-    single_mpdu_tx::Esp32s31SingleMpduTx, wpa2::Esp32s31Wpa2Transmit,
+    join::Esp32s31StaJoinTransmit,
+    peer::Esp32s31StaPeerTransmit,
+    single_mpdu_tx::{
+        Esp32s31SingleMpduTx, SingleMpduEspNowTxError, SingleMpduTxError, SingleMpduTxOutcome,
+    },
+    wpa2::Esp32s31Wpa2Transmit,
 };
 
 use open_esp_radio_esp32s31_wifi::{
+    esp_now::{
+        Esp32s31EspNowTxConfig, Esp32s31EspNowTxError, start_esp_now_v1_plaintext,
+        start_esp_now_v2_plaintext,
+    },
     ordinary_tx::{
         OrdinaryTxError, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
         TX_METADATA_SIZE, TxResetReason, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
     },
-    tx::WifiTxProgress,
+    tx::{WifiTxProgress, WifiTxWake},
 };
 
 pub use crate::single_mpdu_tx::ConnectedTxHandoff;
@@ -68,11 +82,11 @@ pub enum ControlTxError {
     StationEncode(StationFrameError),
     AssociationEncode(AssociationRequestError),
     Busy,
-    UnsupportedHeOrdinaryMpdu,
     BufferSizeOverflow,
     DeadlineOverflow,
     Tx(TxError),
     Retry(OrdinaryRetryError),
+    Protection(TxProtectionAdmissionError),
     HardwareTimeout,
     CollisionLimit,
     RadioResetRequired(TxResetReason),
@@ -92,10 +106,10 @@ impl ControlTxError {
             Self::ProbeEncode(_)
                 | Self::StationEncode(_)
                 | Self::AssociationEncode(_)
-                | Self::UnsupportedHeOrdinaryMpdu
                 | Self::BufferSizeOverflow
                 | Self::DeadlineOverflow
                 | Self::Retry(_)
+                | Self::Protection(_)
                 | Self::HardwareTimeout
                 | Self::CollisionLimit
         )
@@ -106,11 +120,11 @@ impl From<OrdinaryTxError> for ControlTxError {
     fn from(error: OrdinaryTxError) -> Self {
         match error {
             OrdinaryTxError::Busy => Self::Busy,
-            OrdinaryTxError::UnsupportedHeOrdinaryMpdu => Self::UnsupportedHeOrdinaryMpdu,
             OrdinaryTxError::BufferSizeOverflow => Self::BufferSizeOverflow,
             OrdinaryTxError::DeadlineOverflow => Self::DeadlineOverflow,
             OrdinaryTxError::Tx(error) => Self::Tx(error),
             OrdinaryTxError::Retry(error) => Self::Retry(error),
+            OrdinaryTxError::Protection(error) => Self::Protection(error),
             OrdinaryTxError::RadioResetRequired(reason) => Self::RadioResetRequired(reason),
         }
     }
@@ -150,6 +164,136 @@ where
         self.ordinary.power()
     }
 
+    /// Whether the pre-connected ordinary descriptor is hardware-owned.
+    pub const fn active(&self) -> bool {
+        self.ordinary.active()
+    }
+
+    pub fn now_micros(&self) -> u64 {
+        self.ordinary.now_micros()
+    }
+
+    pub fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
+        self.ordinary.take_last_outcome()
+    }
+
+    /// Resolve, encode and publish one standalone plaintext ESP-NOW v1
+    /// Action MPDU through the pre-connected station ordinary descriptor.
+    ///
+    /// The standalone role owns the sole management/non-QoS sequence space;
+    /// no association or WPA2 handoff is needed and no key slot is borrowed.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_esp_now_v1_plaintext<H: TxHardware, const PEERS: usize>(
+        &mut self,
+        hardware: &mut H,
+        protocol: &EspNowProtocol<PEERS>,
+        sequence: &mut StaSequenceCounter,
+        peer: EspNowPeerId,
+        random_value: EspNowRandomValue,
+        payload: &[u8],
+        active_channel: WifiChannel,
+        active_station: BoundVirtualInterface,
+        config: Esp32s31EspNowTxConfig,
+    ) -> Result<WifiTxProgress, SingleMpduEspNowTxError> {
+        if self.ordinary.active() {
+            return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
+        }
+        let peer_channel = protocol
+            .peers()
+            .get(peer)
+            .map_err(EspNowSendError::Peer)?
+            .channel();
+        if peer_channel != active_channel {
+            return Err(Esp32s31EspNowTxError::ChannelMismatch {
+                prepared: peer_channel,
+                active: active_channel,
+            }
+            .into());
+        }
+        // Keep sequence publication transactional with ordinary-TX
+        // ownership. The ordinary owner returns `Ok` only after its DMA
+        // publication commit and infallible queue doorbell; a fail-closed PHY
+        // or any pre-publication queue rejection returns the caller's exact
+        // sequence frontier unchanged.
+        let mut next_sequence = *sequence;
+        let prepared = protocol.prepare_v1_tx(peer, &mut next_sequence, random_value, payload)?;
+        let result = start_esp_now_v1_plaintext(
+            &mut self.ordinary,
+            hardware,
+            prepared,
+            active_channel,
+            active_station,
+            config,
+        )
+        .map_err(Into::into);
+        if result.is_ok() {
+            *sequence = next_sequence;
+        }
+        result
+    }
+
+    /// Resolve and publish one standalone plaintext ESP-NOW v2 Action MPDU.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_esp_now_v2_plaintext<H: TxHardware, const PEERS: usize>(
+        &mut self,
+        hardware: &mut H,
+        protocol: &EspNowProtocol<PEERS>,
+        sequence: &mut StaSequenceCounter,
+        peer: EspNowPeerId,
+        random_value: EspNowRandomValue,
+        payload: &[u8],
+        active_channel: WifiChannel,
+        active_station: BoundVirtualInterface,
+        config: Esp32s31EspNowTxConfig,
+    ) -> Result<WifiTxProgress, SingleMpduEspNowTxError> {
+        if self.ordinary.active() {
+            return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
+        }
+        let peer_channel = protocol
+            .peers()
+            .get(peer)
+            .map_err(EspNowV2SendError::Peer)?
+            .channel();
+        if peer_channel != active_channel {
+            return Err(Esp32s31EspNowTxError::ChannelMismatch {
+                prepared: peer_channel,
+                active: active_channel,
+            }
+            .into());
+        }
+        let mut next_sequence = *sequence;
+        let prepared = protocol.prepare_v2_tx(peer, &mut next_sequence, random_value, payload)?;
+        let result = start_esp_now_v2_plaintext(
+            &mut self.ordinary,
+            hardware,
+            prepared,
+            active_channel,
+            active_station,
+            config,
+        )
+        .map_err(Into::into);
+        if result.is_ok() {
+            *sequence = next_sequence;
+        }
+        result
+    }
+
+    pub fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        self.ordinary.wait_deadline()
+    }
+
+    /// Consume one IRQ/deadline edge for a standalone ordinary transaction.
+    pub async fn service<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        wake: WifiTxWake,
+    ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        self.ordinary
+            .service(hardware, wake)
+            .await
+            .map_err(Into::into)
+    }
+
     /// Return the role-neutral ordinary descriptor while it is idle.
     ///
     /// This is the supervisor transition used when stopped Wi-Fi changes
@@ -177,6 +321,10 @@ where
         parameters: WmmParameterSet,
     ) -> Result<(), EdcaParametersError> {
         self.ordinary.policy_mut().install_wmm(parameters)
+    }
+
+    pub fn install_tx_protection_policy(&mut self, policy: WifiTxProtectionPolicy) {
+        self.ordinary.policy_mut().install_protection(policy);
     }
 
     /// Send one active-scan Probe Request. The optional current-channel IE is
@@ -277,6 +425,12 @@ where
         rate: TxPhyRate,
         hardware_key_selector: u8,
     ) -> Result<TxCompletion, ControlTxError> {
+        self.ordinary.require_unprotected_retry_series(
+            rate,
+            OrdinaryRetryRatePolicy::Normal,
+            self.config.unicast_attempt_limit,
+            frame.destination[0] & 1 != 0,
+        )?;
         let frame_length = frame
             .encode(&mut self.ordinary.buffer_mut()?[TX_METADATA_SIZE..])
             .map_err(ControlTxError::StationEncode)?;
@@ -312,13 +466,13 @@ where
             return Err((self, handoff));
         }
         let ConnectedTxHandoff {
-            key,
+            security,
             sequences,
             config,
         } = handoff;
         Ok(Esp32s31SingleMpduTx::from_ordinary(
             self.ordinary,
-            key,
+            security,
             sequences,
             config,
         ))
@@ -446,6 +600,10 @@ where
     fn install_wmm_edca(&mut self, parameters: WmmParameterSet) -> Result<(), EdcaParametersError> {
         Esp32s31ControlTx::install_wmm_edca(self, parameters)
     }
+
+    fn install_tx_protection_policy(&mut self, policy: WifiTxProtectionPolicy) {
+        Esp32s31ControlTx::install_tx_protection_policy(self, policy);
+    }
 }
 
 impl<'slot, P, E, T, H, const BUFFER_SIZE: usize> Esp32s31Wpa2Transmit<H>
@@ -493,11 +651,15 @@ mod tests {
         MacInterface,
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
         tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot, TxSlotState},
+        tx_protection::{
+            ErpProtectionMode, HtProtectionMode, TxProtectionAdmissionError, TxProtectionMechanism,
+            TxProtectionReason, TxProtectionRequest, WifiTxProtectionPolicy,
+        },
     };
     use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
     use super::*;
-    use crate::single_mpdu_tx::SingleMpduTxConfig;
+    use crate::single_mpdu_tx::{ConnectedTxSecurity, SingleMpduTxConfig};
     use open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
 
     #[derive(Default)]
@@ -566,7 +728,11 @@ mod tests {
     }
 
     impl CcmpKeyHardware for Hardware {
-        fn install_sta_ccmp_entry(&mut self, _index: u8, _words: [u32; 6]) -> MacKeyInstallOutcome {
+        fn install_sta_ccmp_entry(
+            &mut self,
+            _index: u8,
+            _words: &[u32; 6],
+        ) -> MacKeyInstallOutcome {
             MacKeyInstallOutcome::Installed
         }
 
@@ -672,6 +838,60 @@ mod tests {
         assert_eq!(
             &bytes[TX_METADATA_SIZE + 22..TX_METADATA_SIZE + 24],
             &[0x70, 0]
+        );
+    }
+
+    #[test]
+    fn protected_control_preflight_rejects_before_encode_or_dma() {
+        let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let mut tx = make_tx(slot.as_mut());
+        tx.install_tx_protection_policy(WifiTxProtectionPolicy::new(
+            ErpProtectionMode::CtsToSelf,
+            HtProtectionMode::None,
+            None,
+        ));
+        let result = crate::test_support::block_on(tx.transmit_protected_data(
+            &mut hardware,
+            StaProtectedDataFrame {
+                source: [2, 3, 4, 5, 6, 7],
+                bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+                destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+                sequence_number: 7,
+                user_priority: 0,
+                peer_qos: true,
+                ccmp_header: [1, 0, 0, 0x20, 0, 0, 0, 0],
+                ether_type: 0x888e,
+                payload: &[1, 2, 3, 4],
+            },
+            LegacyTxQueue::Voice,
+            TxPhyRate::Legacy(LegacyRate::Ofdm24M),
+            1,
+        ));
+        assert_eq!(
+            result,
+            Err(ControlTxError::Protection(
+                TxProtectionAdmissionError::PhysicalPublicationUnverified {
+                    request: TxProtectionRequest {
+                        mechanism: TxProtectionMechanism::CtsToSelf,
+                        reason: TxProtectionReason::ErpUseProtection,
+                    },
+                },
+            ))
+        );
+        assert_eq!(hardware.publications, 0);
+        assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
+        assert!(
+            tx.ordinary
+                .slot
+                .as_mut()
+                .buffer_mut()
+                .unwrap()
+                .iter()
+                .all(|byte| *byte == 0)
         );
     }
 
@@ -790,7 +1010,7 @@ mod tests {
 
         let connected = tx
             .try_into_connected(ConnectedTxHandoff {
-                key,
+                security: ConnectedTxSecurity::Wpa2Personal(key),
                 sequences: StaTxSequenceCounters::new(9),
                 config: SingleMpduTxConfig {
                     station_address: [2, 3, 4, 5, 6, 7],
@@ -854,7 +1074,7 @@ mod tests {
         .unwrap();
         let key_index = key.hardware_index();
         let handoff = ConnectedTxHandoff {
-            key,
+            security: ConnectedTxSecurity::Wpa2Personal(key),
             sequences: StaTxSequenceCounters::new(9),
             config: SingleMpduTxConfig {
                 station_address: [2, 3, 4, 5, 6, 7],
@@ -874,7 +1094,10 @@ mod tests {
             Ok(_) => panic!("hardware-owned descriptor must reject handoff"),
         };
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::HardwareOwned);
-        assert_eq!(handoff.key.hardware_index(), key_index);
+        assert!(matches!(
+            &handoff.security,
+            ConnectedTxSecurity::Wpa2Personal(key) if key.hardware_index() == key_index
+        ));
 
         hardware.completions[0] = Some(completion(0));
         assert_eq!(

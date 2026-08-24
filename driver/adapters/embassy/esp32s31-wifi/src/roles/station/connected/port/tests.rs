@@ -9,7 +9,12 @@ use open_esp_radio_esp32s31_wifi_mac::rate_control::{
     HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
     StaRateControlAssociationInput, StaRateControlPhy,
 };
-use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
+use open_esp_radio_esp32s31_wifi_mac::tx::{
+    HtDuplicateTxEvidenceGaps, HtDuplicateTxRejection, HtDuplicateTxUnavailable,
+};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+    ConnectedRxEvent, ConnectedRxSink, StaCcmpRxReplayEpoch, StaCcmpRxReplayResource,
+};
 use open_esp_radio_wifi_softmac::{
     WifiConfig, WifiMacAddress, WifiMonitorConfig, WifiStationConfig,
     interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},
@@ -39,6 +44,7 @@ fn peer() -> Esp32s31ConnectedStaPeer {
             peer_qos: true,
             association_phy: StaAssociationPhy::He20,
             peer_supports_ht_short_guard_interval: false,
+            peer_supports_ht_duplicate_mcs32: false,
             peer_supports_one_ltf_800ns_gi: true,
             peer_supports_ldpc: true,
             peer_dcm_receive: HeDcmConstellation::Qam16,
@@ -54,8 +60,29 @@ fn peer() -> Esp32s31ConnectedStaPeer {
     }
 }
 
+fn ht40_mcs32_peer() -> Esp32s31ConnectedStaPeer {
+    let link_metric = StaLinkMetric::from_rssi_and_noise_floor(-45, -95);
+    let mut peer = peer();
+    peer.link.association_phy = StaAssociationPhy::Ht40;
+    peer.link.peer_supports_ht_short_guard_interval = true;
+    peer.link.peer_supports_ht_duplicate_mcs32 = true;
+    peer.link.peer_supports_one_ltf_800ns_gi = false;
+    peer.link.peer_supports_ldpc = false;
+    peer.link.peer_dcm_receive = HeDcmConstellation::NotSupported;
+    peer.rate_control = StaRateControlAssociation::new(StaRateControlAssociationInput {
+        phy: StaRateControlPhy::Ht,
+        link_metric,
+        p2p: false,
+        peer_highest_rate: None,
+        long_range_rates_present: false,
+        he_low_metric_report: HeLowMetricReportFeatures::default(),
+    });
+    peer
+}
+
 fn config() -> Esp32s31ConnectedStaConfig {
     Esp32s31ConnectedStaConfig {
+        power: StationPowerMode::AlwaysAwake,
         tx: Esp32s31ConnectedStaTxPolicy {
             rate: Esp32s31ConnectedStaRateConfig {
                 high_throughput_enabled: true,
@@ -72,6 +99,7 @@ fn config() -> Esp32s31ConnectedStaConfig {
             completion_timeout_us: 250_000,
             aggregate_frame_limit: 32,
             aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+            he_trigger_based: None,
         },
         block_ack: Esp32s31ConnectedStaBlockAckPolicy {
             tx_block_ack_window: 32,
@@ -126,12 +154,96 @@ fn plan_owns_rate_rx_tx_block_ack_and_beacon_policy() {
         23
     );
     assert!(matches!(plan.aggregate_tx_rate(), TxPhyRate::He(_)));
+    assert_eq!(
+        plan.ht_duplicate_tx_selection(),
+        HtDuplicateTxSelection::NotRequested
+    );
     assert_eq!(plan.beacon_loss().window_micros(), 1_024_000);
 }
 
 #[test]
+fn sta_mcs32_request_reaches_hardware_frontier_without_replacing_ordinary_rates() {
+    let peer = ht40_mcs32_peer();
+    let interface = station_interface(&peer);
+    let request = HtDuplicateCertificationRequest::new(
+        HtChannelWidth::Mhz40,
+        HtGuardInterval::Short400Ns,
+        5_484,
+    );
+    let plan = Esp32s31ConnectedStaPort::prepare_for_interface_with_storage_and_ht_duplicate_certification::<
+        32,
+        32,
+    >(peer, config(), interface, Some(request))
+    .unwrap();
+
+    assert!(matches!(plan.data_tx_rate(), TxPhyRate::Ht(_)));
+    assert!(matches!(plan.aggregate_tx_rate(), TxPhyRate::Ht(_)));
+    let selection = plan.ht_duplicate_tx_selection();
+    assert_eq!(selection.request(), Some(request));
+    assert_eq!(selection.plan(), None);
+    assert_eq!(
+        selection.rejection(),
+        Some(HtDuplicateTxRejection::Hardware(
+            HtDuplicateTxUnavailable::Esp32s31EvidenceIncomplete(
+                HtDuplicateTxEvidenceGaps::ESP32S31,
+            )
+        ))
+    );
+}
+
+#[test]
+fn ccmp_replay_plan_rejections_return_the_exact_rx_endpoint() {
+    let open_peer = peer();
+    let open_interface = station_interface(&open_peer);
+    let mut open_plan =
+        Esp32s31ConnectedStaPort::prepare_for_interface_with_storage_and_security::<32, 32>(
+            open_peer,
+            config(),
+            open_interface,
+            open_esp_radio_ieee80211::security::WifiSecurityMode::Open,
+        )
+        .unwrap();
+    let open_resource = Box::leak(Box::new(StaCcmpRxReplayResource::new()));
+    let (open_rx, mut open_control) = open_resource
+        .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+        .unwrap();
+    let (error, mut returned_open_rx) = open_plan
+        .enable_ccmp_rx_replay(open_rx)
+        .unwrap_err()
+        .into_parts();
+    assert_eq!(error, Esp32s31ConnectedStaCcmpReplayError::RequiresWpa2);
+    returned_open_rx.stop().unwrap();
+    open_control.stop().unwrap();
+
+    let mut wpa2_plan = prepare::<32, 32>(peer(), config()).unwrap();
+    let installed_resource = Box::leak(Box::new(StaCcmpRxReplayResource::new()));
+    let (installed_rx, mut installed_control) = installed_resource
+        .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+        .unwrap();
+    wpa2_plan.enable_ccmp_rx_replay(installed_rx).unwrap();
+
+    let returned_resource = Box::leak(Box::new(StaCcmpRxReplayResource::new()));
+    let (second_rx, mut second_control) = returned_resource
+        .start(StaCcmpRxReplayEpoch::new([0; 8], 2, [0; 8]).unwrap())
+        .unwrap();
+    let (error, mut returned_second_rx) = wpa2_plan
+        .enable_ccmp_rx_replay(second_rx)
+        .unwrap_err()
+        .into_parts();
+    assert_eq!(error, Esp32s31ConnectedStaCcmpReplayError::AlreadyInstalled);
+    returned_second_rx.stop().unwrap();
+    second_control.stop().unwrap();
+
+    let mut recovered_installed_rx = wpa2_plan
+        .take_ccmp_rx_replay()
+        .expect("first endpoint remains installed after rejecting the second");
+    recovered_installed_rx.stop().unwrap();
+    installed_control.stop().unwrap();
+}
+
+#[test]
 fn port_binds_rx_and_control_to_one_validated_peer_plan() {
-    let plan = prepare::<32, 32>(peer(), config()).unwrap();
+    let mut plan = prepare::<32, 32>(peer(), config()).unwrap();
     let reorder_storage = RxReorderFrameStorage::<128>::new();
     let queue: Esp32s31StagedRxQueue<'_, NoopRawMutex, 2, 128, 2> = Esp32s31StagedRxQueue::new();
     let (_, frames) = queue.split();
@@ -142,7 +254,7 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
     let mut ethernet = [0_u8; 128];
     let protocol_runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
     let protocol = Esp32s31ConnectedStaPort::build_rx_protocol(
-        &plan,
+        &mut plan,
         Esp32s31ConnectedStaRxProtocolResources {
             frames,
             irq: &irq,
@@ -171,6 +283,12 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
         },
     );
     assert_eq!(control.rx_block_ack().maximum_window(), 32);
+    let beacon_binding = control
+        .hardware_beacon_monitor_binding()
+        .expect("connected composition binds one hardware-monitor admission epoch");
+    assert_eq!(beacon_binding.bssid(), plan.link().bssid);
+    assert_eq!(beacon_binding.association_id().get(), 7);
+    assert_eq!(control.hardware_beacon_monitor_frontier(), None);
     assert_eq!(
         control
             .beacon_monitor()
@@ -193,6 +311,19 @@ fn invalid_config_returns_the_exact_peer_before_owner_handoff() {
             limit: 33,
             capacity: 32,
         }
+    );
+    assert_eq!(failure.peer.link, link);
+}
+
+#[test]
+fn invalid_association_id_never_creates_a_beacon_monitor_epoch() {
+    let mut invalid_peer = peer();
+    invalid_peer.link.association_id = 0;
+    let link = invalid_peer.link;
+    let failure = prepare::<32, 32>(invalid_peer, config()).unwrap_err();
+    assert_eq!(
+        failure.error,
+        Esp32s31ConnectedStaConfigError::InvalidAssociationId(0)
     );
     assert_eq!(failure.peer.link, link);
 }

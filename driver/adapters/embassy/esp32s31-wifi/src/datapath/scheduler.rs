@@ -92,6 +92,28 @@ where
                 }
                 self.services.cancel_prepared_tx()?;
                 self.prepared_tx_interface = None;
+                if self.services.control_required_before_stop() {
+                    match self
+                        .services
+                        .service_control(DatapathControlContext::STOPPING)
+                        .await?
+                    {
+                        DatapathControlProgress::More => continue,
+                        DatapathControlProgress::TxPending => {
+                            self.begin_active_tx(
+                                self.reported_active_tx_interface(),
+                                DatapathTxOrigin::Control,
+                            );
+                            self.drive_active_tx(false).await?;
+                            continue;
+                        }
+                        DatapathControlProgress::Exit(exit) => {
+                            self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                            return Ok(DatapathRunnerExit::Role(exit));
+                        }
+                        DatapathControlProgress::Idle => {}
+                    }
+                }
                 match self.services.service_stop()? {
                     DatapathStopProgress::More => continue,
                     DatapathStopProgress::TxPending => {
@@ -112,8 +134,10 @@ where
             // wakes before a control or network publication can create a new
             // generation.
             self.discard_stale_tx_wakes();
+            let network_tx_pending = self.network_tx_queue_len() != 0;
             let control_ready = self.control_ready_latched
-                || self.services.control_ready(Instant::now().as_micros());
+                || self.services.control_ready(Instant::now().as_micros())
+                || (network_tx_pending && self.services.control_required_before_network_tx());
             #[cfg(any(feature = "diagnostics", test))]
             self.services.mark_prepared_tx_scheduler_phase(
                 PreparedTxSchedulerPhase::ControlReadinessChecked {
@@ -124,7 +148,8 @@ where
             if control_ready {
                 self.control_ready_latched = false;
                 let control_context = DatapathControlContext {
-                    network_tx_pending: self.network_tx_queue_len() != 0,
+                    network_tx_pending,
+                    stop_pending: false,
                 };
                 match self.services.service_control(control_context).await? {
                     DatapathControlProgress::More => {

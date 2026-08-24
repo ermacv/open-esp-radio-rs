@@ -16,7 +16,11 @@ pub enum Esp32s31AccessPointHardwareAction {
 /// never PAC references, descriptor owners, or borrowed frame bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31AccessPointControlAction {
-    ObservePeerActivity { peer: [u8; 6], at_micros: u64 },
+    ObservePeerActivity {
+        peer: [u8; 6],
+        at_micros: u64,
+        power_state: Option<open_esp_radio_esp32s31_wifi_ap::protocol::ApPeerPowerState>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -154,6 +158,7 @@ mod tests {
             Esp32s31AccessPointControlAction::ObservePeerActivity {
                 peer: [1, 2, 3, 4, 5, 6],
                 at_micros: 77,
+                power_state: None,
             },
         );
 

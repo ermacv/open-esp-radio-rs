@@ -25,10 +25,12 @@ pub use open_esp_radio_esp32s31_wifi_dma::{
     },
 };
 
+use open_esp_radio_ieee80211::ccmp::CcmpHeader;
 use open_esp_radio_ieee80211::he::{
     He20MuSigBMimoStreamError, He20MuSigBMimoUsers, He20MuSigBNonMimoStreamError,
     He20MuSigBNonMimoUsers, HeMuSigBUser,
 };
+use open_esp_radio_ieee80211::ht::HtDuplicateMcs32;
 use open_esp_radio_wifi_softmac::{MacRxEvidence, MacRxMetadata};
 
 pub const INGRESS_STRICT_RXEND: u32 = 0x01;
@@ -139,6 +141,42 @@ pub struct HtSignal {
     pub channel_width_mhz: u8,
     pub aggregation: bool,
     pub short_guard_interval: bool,
+}
+
+/// Geometry-aware classification of an HT-SIG MCS32 observation.
+///
+/// This is metadata normalization, not a claim that the local PHY has been
+/// qualified to receive MCS32 on air. The invalid-width case remains visible
+/// because collapsing it into `None` would make a malformed HT20/MCS32 vector
+/// indistinguishable from every ordinary MCS.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HtDuplicateRxClassification {
+    NotMcs32,
+    Mismatch { channel_width_mhz: u8 },
+    Ht40(HtDuplicateMcs32),
+}
+
+impl HtSignal {
+    pub const fn ht_duplicate_mcs32_classification(self) -> HtDuplicateRxClassification {
+        if self.mcs != HtDuplicateMcs32::INDEX {
+            HtDuplicateRxClassification::NotMcs32
+        } else if self.channel_width_mhz == 40 {
+            HtDuplicateRxClassification::Ht40(HtDuplicateMcs32::new())
+        } else {
+            HtDuplicateRxClassification::Mismatch {
+                channel_width_mhz: self.channel_width_mhz,
+            }
+        }
+    }
+
+    /// Decode the special MCS32 selector only with its required HT40 geometry.
+    pub const fn ht_duplicate_mcs32(self) -> Option<HtDuplicateMcs32> {
+        match self.ht_duplicate_mcs32_classification() {
+            HtDuplicateRxClassification::Ht40(mcs) => Some(mcs),
+            HtDuplicateRxClassification::NotMcs32
+            | HtDuplicateRxClassification::Mismatch { .. } => None,
+        }
+    }
 }
 
 /// PHY format published in the S31 RX-control prefix.
@@ -820,6 +858,7 @@ pub struct RxDataFrame {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RxCcmpDataFrame {
     pub mpdu: RxMpduFrame,
+    pub ccmp_header: CcmpHeader,
     pub ccmp_header_offset: usize,
     pub payload_offset: usize,
     pub payload_length: usize,
@@ -1186,7 +1225,12 @@ pub fn extract_ccmp_data(
 ) -> Result<RxCcmpDataFrame, RxError> {
     let (frame, consumed_trailer_length) =
         extract_mpdu_allowing_consumed_trailer(segments, config, output, CCMP_MIC_SIZE)?;
-    validate_ccmp_data(&output[..frame.length], frame, consumed_trailer_length)
+    validate_ccmp_data(
+        &output[..frame.length],
+        frame,
+        consumed_trailer_length,
+        CcmpFragmentAdmission::Unfragmented,
+    )
 }}
 
 open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
@@ -1201,6 +1245,34 @@ open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
 pub fn view_ccmp_data<'frame>(
     segment: &RxSegment<'frame>,
     config: RxIngressConfig,
+) -> Result<RxCcmpDataView<'frame>, RxError> {
+    view_ccmp_data_with_fragment_admission(segment, config, CcmpFragmentAdmission::Unfragmented)
+}}
+
+open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
+/// Validate and borrow one fragmented CCMP MPDU after hardware MIC success.
+///
+/// This is deliberately distinct from [`view_ccmp_data`]: callers cannot
+/// accidentally route a fragment into ordinary LLC decapsulation, while the
+/// shared validator preserves the exact S31 crypto/trailer contract.
+#[inline(never)]
+pub fn view_ccmp_data_fragment<'frame>(
+    segment: &RxSegment<'frame>,
+    config: RxIngressConfig,
+) -> Result<RxCcmpDataView<'frame>, RxError> {
+    view_ccmp_data_with_fragment_admission(segment, config, CcmpFragmentAdmission::Fragmented)
+}}
+
+#[derive(Clone, Copy)]
+enum CcmpFragmentAdmission {
+    Unfragmented,
+    Fragmented,
+}
+
+fn view_ccmp_data_with_fragment_admission<'frame>(
+    segment: &RxSegment<'frame>,
+    config: RxIngressConfig,
+    fragment_admission: CcmpFragmentAdmission,
 ) -> Result<RxCcmpDataView<'frame>, RxError> {
     if config.ring_entry_limit == 0
         || config.flags & !INGRESS_VALID_FLAGS != 0
@@ -1237,14 +1309,15 @@ pub fn view_ccmp_data<'frame>(
         internal_state: layout.internal_state,
         dump_length_matches: layout.dump_length_matches,
     };
-    let frame = validate_ccmp_data(mpdu, metadata, consumed_trailer_length)?;
+    let frame = validate_ccmp_data(mpdu, metadata, consumed_trailer_length, fragment_admission)?;
     Ok(RxCcmpDataView { mpdu, frame })
-}}
+}
 
 fn validate_ccmp_data(
     mpdu: &[u8],
     frame: RxMpduFrame,
     consumed_trailer_length: usize,
+    fragment_admission: CcmpFragmentAdmission,
 ) -> Result<RxCcmpDataFrame, RxError> {
     if frame.length < MLME_HEADER_SIZE {
         return Err(RxError::Bounds);
@@ -1253,7 +1326,12 @@ fn validate_ccmp_data(
     if frame_control & 0x0003 != 0 || frame_control & 0x000c != 0x0008 {
         return Err(RxError::Ignored);
     }
-    if frame_control & (1 << 10) != 0 || frame_control & (1 << 14) == 0 || mpdu[22] & 0x0f != 0 {
+    let fragmented = frame_control & (1 << 10) != 0 || mpdu[22] & 0x0f != 0;
+    let fragmentation_matches = matches!(
+        (fragment_admission, fragmented),
+        (CcmpFragmentAdmission::Unfragmented, false) | (CcmpFragmentAdmission::Fragmented, true)
+    );
+    if frame_control & (1 << 14) == 0 || !fragmentation_matches {
         return Err(RxError::Unsupported);
     }
 
@@ -1292,16 +1370,22 @@ fn validate_ccmp_data(
     {
         return Err(RxError::Bounds);
     }
-    // `ccmp_decap` rejects a protected frame whose CCMP ExtIV bit is clear.
-    if mpdu
-        .get(ccmp_header_offset + 3)
-        .is_none_or(|value| value & 0x20 == 0)
-    {
-        return Err(RxError::Unsupported);
-    }
+    let ccmp_header_end = ccmp_header_offset
+        .checked_add(CCMP_HEADER_SIZE)
+        .ok_or(RxError::Bounds)?;
+    let ccmp_header_bytes: [u8; CCMP_HEADER_SIZE] = mpdu
+        .get(ccmp_header_offset..ccmp_header_end)
+        .ok_or(RxError::Bounds)?
+        .try_into()
+        .map_err(|_| RxError::Bounds)?;
+    // Do not rely on the decrypt engine to define public-header admission.
+    // ExtIV, the reserved octet and reserved Key ID bits are authenticated AAD
+    // inputs but remain software protocol invariants.
+    let ccmp_header = CcmpHeader::parse(ccmp_header_bytes).map_err(|_| RxError::Unsupported)?;
 
     Ok(RxCcmpDataFrame {
         mpdu: frame,
+        ccmp_header,
         ccmp_header_offset,
         payload_offset,
         payload_length: mic_offset - payload_offset,

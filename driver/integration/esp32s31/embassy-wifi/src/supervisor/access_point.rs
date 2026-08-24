@@ -195,9 +195,13 @@ pub(super) fn publish_access_point_observation(
         rx_rssi_min_dbm: control.rx_rssi_min_dbm,
         rx_rssi_max_dbm: control.rx_rssi_max_dbm,
         rx_ht40_mcs_frames: control.rx_ht40_mcs_frames,
+        rx_ht40_mcs32_frames: control.rx_ht40_mcs32_frames,
+        rx_ht_mcs32_width_mismatches: control.rx_ht_mcs32_width_mismatches,
         tx_ht_aggregates: control.tx_ht_aggregates,
         tx_ht40_mcs7_aggregates: control.tx_ht40_mcs7_aggregates,
         data_frames_transmitted: mac.data_frames_transmitted,
+        ht_duplicate_tx_requests: mac.ht_duplicate_tx_requests,
+        ht_duplicate_tx_selection: mac.ht_duplicate_tx_selection,
         data_tx_attempts: mac.data_tx.attempts,
         data_tx_retried_frames: mac.data_tx.retried_frames,
         data_tx_maximum_attempts: mac.data_tx.maximum_attempts,
@@ -222,6 +226,7 @@ pub(super) fn publish_access_point_observation(
         rx_reorder_gap_timeouts: control.rx_reorder_gap_timeouts,
         protected_data_radio_rejected: control.protected_data_radio_rejected,
         protected_data_protocol_rejected: control.protected_data_protocol_rejected,
+        security_mode_mismatches: control.security_mode_mismatches,
     });
 }
 
@@ -459,36 +464,12 @@ pub(super) struct ProductionAccessPointEngineFault {
     _tx_frame: &'static mut [u8],
 }
 
-pub(super) struct ProductionAccessPointSecurityMaterialFault {
-    _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
-    _registers: RadioRuntimeOwner,
-    _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
-    _ring: ProductionHaltedRx,
-    _transmit: ProductionWifiTxResources,
-    _parked: ProductionAccessPointParked,
-    _beacon: &'static mut [u8; open_esp_radio_ieee80211::beacon::WPA2_BEACON_CAPACITY],
-    _peer_storage: &'static mut open_esp_radio_wifi_ap::AccessPointPeerStorage,
-    _pairwise_storage:
-        &'static mut open_esp_radio_esp32s31_wifi_ap::security::Esp32s31ApPairwiseKeyStorage,
-    _rx_dispatcher: &'static mut open_esp_radio_esp32s31_wifi_ap::rx::Esp32s31ApRxDispatcher,
-    _rx_block_ack: &'static ProductionAccessPointRxBlockAck,
-    _rx_reorder: &'static mut ProductionAccessPointRxReorder,
-    _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
-    #[cfg(feature = "diagnostics")]
-    _observation_storage: &'static mut open_esp_radio_esp32s31_wifi_embassy::diagnostics::access_point::AccessPointObservationStorage,
-    _rx_frame: &'static mut [u8],
-    _tx_frame: &'static mut [u8],
-}
-
 pub(super) enum ProductionAccessPointPreparationFault {
     Preflight {
         _fault: ProductionAccessPointPreflightFault,
     },
     RxOwner {
         _fault: ProductionAccessPointRxOwnerFault,
-    },
-    SecurityMaterial {
-        _fault: ProductionAccessPointSecurityMaterialFault,
     },
     Engine {
         _fault: ProductionAccessPointEngineFault,
@@ -1096,7 +1077,15 @@ impl ProductionWifiEpochRunner {
             }
         };
 
-        let (ssid, security, channel, client_limit, inactive_timeout) = request.into_parts();
+        let (
+            ssid,
+            security,
+            channel,
+            client_limit,
+            inactive_timeout,
+            beacon_interval,
+            dtim_period,
+        ) = request.into_parts();
         let ProductionAccessPointResources {
             address,
             beacon,
@@ -1111,57 +1100,30 @@ impl ProductionWifiEpochRunner {
             #[cfg(feature = "diagnostics")]
             observation_storage,
         } = access_point;
-        let mut gtk_key = [0_u8; 16];
-        for word in gtk_key.chunks_exact_mut(4) {
-            word.copy_from_slice(&self.trng.random().to_le_bytes());
-        }
-        let gtk = match Wpa2Gtk::new(1, true, gtk_key) {
-            Ok(gtk) => gtk,
-            Err(_) => {
-                return Err(ProductionAccessPointPreparationFault::SecurityMaterial {
-                    _fault: ProductionAccessPointSecurityMaterialFault {
-                        _owner: materialized.owner,
-                        _registers: materialized.registers,
-                        _interrupt_setup: materialized.interrupt_setup,
-                        _ring: halted,
-                        _transmit: transmit,
-                        _parked: ProductionAccessPointParked {
-                            dma,
-                            tx_epoch,
-                            station: ProductionStationRoleResources {
-                                scan_table,
-                                scan_frame,
-                                ethernet,
-                                resume,
-                                board,
-                                station_address,
-                            },
-                            monitor,
-                            aggregate_tx: Some(aggregate_tx),
-                        },
-                        _beacon: beacon,
-                        _peer_storage: peer_storage,
-                        _pairwise_storage: pairwise_storage,
-                        _rx_dispatcher: rx_dispatcher,
-                        _rx_block_ack: rx_block_ack,
-                        _rx_reorder: rx_reorder,
-                        _rx_reorder_storage: rx_reorder_storage,
-                        #[cfg(feature = "diagnostics")]
-                        _observation_storage: observation_storage,
-                        _rx_frame: rx_frame,
-                        _tx_frame: tx_frame,
-                    },
-                });
+        let service = match security {
+            AccessPointSecurity::Open => AccessPointService::new_open(
+                address,
+                client_limit,
+                inactive_timeout,
+                peer_storage,
+            ),
+            AccessPointSecurity::Wpa2Personal(pmk) => {
+                let mut gtk_key = [0_u8; 16];
+                for word in gtk_key.chunks_exact_mut(4) {
+                    word.copy_from_slice(&self.trng.random().to_le_bytes());
+                }
+                let gtk = Wpa2Gtk::new(1, true, gtk_key)
+                    .unwrap_or_else(|_| unreachable!("production GTK key id is valid"));
+                AccessPointService::new(
+                    address,
+                    pmk,
+                    gtk,
+                    client_limit,
+                    inactive_timeout,
+                    peer_storage,
+                )
             }
         };
-        let service = AccessPointService::new(
-            address,
-            security.into_pmk(),
-            gtk,
-            client_limit,
-            inactive_timeout,
-            peer_storage,
-        );
         let engine = match Esp32s31ApEngine::start(
             &mut materialized.registers,
             service,
@@ -1169,8 +1131,8 @@ impl ProductionWifiEpochRunner {
             pairwise_storage,
             &ssid,
             channel,
-            AccessPointRequest::BEACON_INTERVAL_TU,
-            AccessPointRequest::DTIM_PERIOD,
+            beacon_interval.tu(),
+            dtim_period.get(),
         ) {
             Ok(engine) => engine,
             Err(engine) => {

@@ -18,19 +18,49 @@ use core::future::Future;
 use embassy_futures::select::{Either, select};
 use embassy_time::{Instant, Timer};
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_wifi_mac::crypto::{CryptoKeyError, StaGroupCcmpSlot};
+use open_esp_radio_esp32s31_wifi_mac::crypto::{
+    CryptoKeyError, StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot,
+};
 pub use open_esp_radio_esp32s31_wifi_mac::rx_ampdu::{RxReorderCommand, RxReorderCommandError};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+    ConnectedRxControlEvent, StaCcmpRxReplayControlEndpoint, StaCcmpRxReplayError,
+};
 pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::{
         ConnectedControlError, ConnectedControlPorts, ConnectedControlReorder, ConnectedControlTx,
         ConnectedControlTxFailure, ConnectedControlTxKind, ConnectedDisconnectReason,
-        Esp32s31ConnectedControlCore,
+        ConnectedFtmRequestFrontier, ConnectedHeControlRuntimeEvidence,
+        ConnectedHeControlRuntimeOutcome, ConnectedHeControlRuntimeRejection,
+        ConnectedIndividualTwtRuntimeEvidence, ConnectedIndividualTwtRuntimeOutcome,
+        Esp32s31ConnectedControlCore, HeNdpaRuntimeRequest, HeTriggerRuntimeRequest,
     },
-    connected_control_hardware::ConnectedControlHardware,
+    connected_control_hardware::{
+        ConnectedControlHardware, StationDozeHardwareError, StationIndividualTwtHardwareError,
+        StationIndividualTwtHardwareStage, StationIndividualTwtUnsupportedStage,
+        StationLowPowerFrontierStatus, StationLowPowerHardwareFrontier,
+        station_low_power_hardware_frontier,
+    },
+    ftm::{
+        StationFtmFrontierStatus, StationFtmHardwareError, StationFtmHardwareFrontier,
+        StationFtmHardwareStage, StationFtmUnsupportedStage, station_ftm_hardware_frontier,
+    },
+    hardware_beacon_monitor::{
+        StationBeaconMonitorBinding, StationHardwareBeaconMonitorEpoch,
+        StationHardwareBeaconMonitorFrontier, StationHardwareBeaconMonitorStopped,
+    },
 };
+use open_esp_radio_ieee80211::twt::IndividualTwtFlowId;
 use open_esp_radio_wifi_sta::{
+    ftm::FtmRequesterConfig,
     link_monitor::{StaBeaconLossConfig, StaBeaconMonitor},
-    power_save::{StaDozePermit, StaPowerSavePlanner, StaPowerSavePolicy},
+    power_save::{
+        StaDozePermit, StaDozePrepareError, StaDozeRestore, StaDozeRestoreFailure, StaDozeRestored,
+        StaPowerSavePlanner, StaPowerSavePolicy, StaPowerSaveState, StaPreparedDoze,
+    },
+    twt::{
+        IndividualTwtProposal, IndividualTwtRequester, IndividualTwtRequesterConfig,
+        IndividualTwtWakePlan,
+    },
 };
 use open_esp_radio_wpa2::{
     aes::{SoftwareAesKeyUnwrapError, Wpa2SoftwareAes},
@@ -46,7 +76,7 @@ use crate::{
     datapath::services::DatapathControlService,
     datapath::{DatapathControlContext, DatapathControlProgress},
     roles::concurrent::Esp32s31StaApRxBlockAck,
-    roles::station::control_mailbox::ConnectedControlReceiver,
+    roles::station::control_mailbox::{ConnectedControlReceiver, ConnectedSecurityFrame},
 };
 
 /// Executor deadline capability kept outside the finite control core.
@@ -82,6 +112,9 @@ pub struct ConnectedControlShutdown {
     pub tx_block_ack_sessions: u8,
     pub discarded_events: u8,
     pub in_flight: Option<ConnectedControlTxKind>,
+    /// Consumed association admission owner. Its current form proves that the
+    /// automatic monitor stopped before any hardware mutation.
+    pub hardware_beacon_monitor: Option<StationHardwareBeaconMonitorStopped>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -89,6 +122,11 @@ pub enum ConnectedWpa2SecurityFailure {
     Protocol(Wpa2ConnectedSupplicantError),
     KeyUnwrap(SoftwareAesKeyUnwrapError),
     InvalidGroupKeyKind,
+    InvalidGroupKeyMaterial(CryptoKeyError),
+    ReplayRotation(StaCcmpRxReplayError),
+    SameKeyIdGenerationUnavailable,
+    RetiredKeyIdGenerationUnavailable { key_id: u8 },
+    KeyReplace(StaGroupCcmpReplaceError),
     KeyInstall(CryptoKeyError),
     TxStart(open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTxError),
     TxOutcome(open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTxOutcome),
@@ -99,6 +137,9 @@ pub enum ConnectedWpa2SecurityFailure {
 pub struct ConnectedWpa2SecurityEvidence {
     pub replay_counter: u64,
     pub group_message1: u32,
+    pub duplicate_message3: u32,
+    pub ignored_duplicate_message3: u32,
+    pub last_ignored_duplicate_message3: Option<Wpa2ConnectedSupplicantError>,
     pub installed: u32,
     pub retransmitted: u32,
     pub tx_in_flight: bool,
@@ -113,22 +154,40 @@ pub struct ConnectedWpa2SecurityEvidence {
 pub struct ConnectedWpa2Security {
     supplicant: Wpa2ConnectedSupplicant,
     group: StaGroupCcmpSlot,
+    group_material: StaGroupCcmpKeyMaterial,
+    used_group_key_ids: u8,
+    replay: StaCcmpRxReplayControlEndpoint,
     unwrap: Wpa2SoftwareAes,
     tx_in_flight: bool,
     group_message1: u32,
+    duplicate_message3: u32,
+    ignored_duplicate_message3: u32,
+    last_ignored_duplicate_message3: Option<Wpa2ConnectedSupplicantError>,
     installed: u32,
     retransmitted: u32,
     last_failure: Option<ConnectedWpa2SecurityFailure>,
 }
 
 impl ConnectedWpa2Security {
-    pub const fn new(supplicant: Wpa2ConnectedSupplicant, group: StaGroupCcmpSlot) -> Self {
+    pub const fn new(
+        supplicant: Wpa2ConnectedSupplicant,
+        group: StaGroupCcmpSlot,
+        group_material: StaGroupCcmpKeyMaterial,
+        replay: StaCcmpRxReplayControlEndpoint,
+    ) -> Self {
+        let used_group_key_ids = 1_u8 << group_material.key_id();
         Self {
             supplicant,
             group,
+            group_material,
+            used_group_key_ids,
+            replay,
             unwrap: Wpa2SoftwareAes::new(),
             tx_in_flight: false,
             group_message1: 0,
+            duplicate_message3: 0,
+            ignored_duplicate_message3: 0,
+            last_ignored_duplicate_message3: None,
             installed: 0,
             retransmitted: 0,
             last_failure: None,
@@ -143,6 +202,9 @@ impl ConnectedWpa2Security {
         ConnectedWpa2SecurityEvidence {
             replay_counter: self.supplicant.replay_counter(),
             group_message1: self.group_message1,
+            duplicate_message3: self.duplicate_message3,
+            ignored_duplicate_message3: self.ignored_duplicate_message3,
+            last_ignored_duplicate_message3: self.last_ignored_duplicate_message3,
             installed: self.installed,
             retransmitted: self.retransmitted,
             tx_in_flight: self.tx_in_flight,
@@ -150,7 +212,11 @@ impl ConnectedWpa2Security {
         }
     }
 
-    pub fn into_parts(self) -> (Wpa2ConnectedSupplicant, StaGroupCcmpSlot) {
+    pub fn into_parts(mut self) -> (Wpa2ConnectedSupplicant, StaGroupCcmpSlot) {
+        // Connected lifecycle calls this only after the RX task has returned.
+        // A stale stop still leaves the resource quarantined by its endpoint
+        // Drop implementation and cannot reopen group publication.
+        let _ = self.replay.stop();
         (self.supplicant, self.group)
     }
 
@@ -181,6 +247,51 @@ impl ConnectedWpa2Security {
         &mut self,
         hardware: &mut H,
         tx: &mut X,
+        frame: ConnectedSecurityFrame,
+    ) -> DatapathControlProgress<ConnectedDisconnectReason> {
+        match frame {
+            ConnectedSecurityFrame::Protected(frame) => {
+                self.process_group_message1(hardware, tx, frame).await
+            }
+            ConnectedSecurityFrame::Unprotected(frame) => {
+                self.process_duplicate_message3(hardware, tx, frame)
+            }
+        }
+    }
+
+    fn process_duplicate_message3<H: ConnectedControlHardware, X: ConnectedControlTx>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        frame: open_esp_radio_wpa2::OwnedEapolFrame,
+    ) -> DatapathControlProgress<ConnectedDisconnectReason> {
+        self.duplicate_message3 = self.duplicate_message3.saturating_add(1);
+        let response = match self.supplicant.on_duplicate_message3(frame) {
+            Ok(response) => response,
+            Err(error) => {
+                // A connected peer or nearby attacker may inject malformed or
+                // stale plaintext EAPOL. It has no authority to tear down the
+                // installed association; only an exact authenticated duplicate
+                // M3 is actionable.
+                self.ignored_duplicate_message3 = self.ignored_duplicate_message3.saturating_add(1);
+                self.last_ignored_duplicate_message3 = Some(error);
+                return DatapathControlProgress::More;
+            }
+        };
+        self.retransmitted = self.retransmitted.saturating_add(1);
+        match tx.start_protected_eapol(hardware, response.as_bytes()) {
+            Ok(progress) => {
+                self.tx_in_flight = true;
+                progress
+            }
+            Err(error) => self.fail(ConnectedWpa2SecurityFailure::TxStart(error)),
+        }
+    }
+
+    async fn process_group_message1<H: ConnectedControlHardware, X: ConnectedControlTx>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
         frame: open_esp_radio_wpa2::OwnedEapolFrame,
     ) -> DatapathControlProgress<ConnectedDisconnectReason> {
         self.group_message1 = self.group_message1.saturating_add(1);
@@ -204,20 +315,114 @@ impl ConnectedWpa2Security {
             }
             Wpa2ConnectedAction::InstallGroupKey(request) => {
                 let Wpa2KeyKind::Group { key_id, .. } = request.group().kind() else {
+                    let _ = self.supplicant.complete_group_key_install(request, false);
                     return self.fail(ConnectedWpa2SecurityFailure::InvalidGroupKeyKind);
                 };
-                if let Err(error) = hardware.replace_sta_group_ccmp(
-                    &mut self.group,
-                    key_id,
-                    request.group().key().as_bytes(),
-                ) {
+                let replacement =
+                    match StaGroupCcmpKeyMaterial::new(key_id, *request.group().key().as_bytes()) {
+                        Ok(replacement) => replacement,
+                        Err(error) => {
+                            let _ = self.supplicant.complete_group_key_install(request, false);
+                            return self.fail(
+                                ConnectedWpa2SecurityFailure::InvalidGroupKeyMaterial(error),
+                            );
+                        }
+                    };
+                let same_key_id = self.group_material.key_id() == replacement.key_id();
+                let same_temporal_key = self.group_material.same_temporal_key(&replacement);
+                if same_key_id && !same_temporal_key {
+                    // S31 exposes one STA group slot and no RX descriptor key
+                    // generation. A frame authenticated with the old GTK can
+                    // already be staged when control receives Group M1. With
+                    // the same logical KeyID it cannot be distinguished after
+                    // a key replacement, so do not manufacture unsafe support.
                     let _ = self.supplicant.complete_group_key_install(request, false);
-                    return self.fail(ConnectedWpa2SecurityFailure::KeyInstall(error));
+                    return self.fail(ConnectedWpa2SecurityFailure::SameKeyIdGenerationUnavailable);
                 }
-                self.installed = self.installed.saturating_add(1);
+                let key_id_mask = 1_u8 << replacement.key_id();
+                if !same_key_id && self.used_group_key_ids & key_id_mask != 0 {
+                    // The retired key ID may still label an authenticated
+                    // frame in the RX staging pipeline. Reusing it for a new
+                    // generation would make that frame indistinguishable
+                    // from replacement traffic after hardware installation.
+                    let _ = self.supplicant.complete_group_key_install(request, false);
+                    return self.fail(
+                        ConnectedWpa2SecurityFailure::RetiredKeyIdGenerationUnavailable {
+                            key_id: replacement.key_id(),
+                        },
+                    );
+                }
+                let prepared = match self
+                    .replay
+                    .prepare_group_rotation(key_id, *request.group().receive_sequence())
+                {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        let _ = self.supplicant.complete_group_key_install(request, false);
+                        return self.fail(ConnectedWpa2SecurityFailure::ReplayRotation(error));
+                    }
+                };
+                let installing = match self.replay.begin_group_rotation(prepared) {
+                    Ok(installing) => installing,
+                    Err(error) => {
+                        let _ = self.supplicant.complete_group_key_install(request, false);
+                        return self.fail(ConnectedWpa2SecurityFailure::ReplayRotation(error));
+                    }
+                };
+
+                if same_key_id {
+                    // An authenticated repeat of the exact GTK changes no
+                    // hardware generation. Rotating only the RSC is safe even
+                    // when old frames are staged because they authenticate
+                    // under the still-current key.
+                    if let Err(error) = self.replay.commit_group_rotation(installing) {
+                        let _ = self.supplicant.complete_group_key_install(request, false);
+                        return self.fail(ConnectedWpa2SecurityFailure::ReplayRotation(error));
+                    }
+                } else {
+                    match hardware.replace_sta_group_ccmp(
+                        &mut self.group,
+                        &self.group_material,
+                        &replacement,
+                    ) {
+                        Ok(()) => {
+                            if let Err(error) = self.replay.commit_group_rotation(installing) {
+                                // Hardware now contains the replacement. The
+                                // replay resource quarantines group RX on a
+                                // failed commit; outer disconnect clears the
+                                // slot without publishing a mixed epoch.
+                                let _ = self.supplicant.complete_group_key_install(request, false);
+                                return self
+                                    .fail(ConnectedWpa2SecurityFailure::ReplayRotation(error));
+                            }
+                            self.group_material = replacement;
+                            self.used_group_key_ids |= key_id_mask;
+                        }
+                        Err(error @ StaGroupCcmpReplaceError::ReplacementRolledBack(_)) => {
+                            let abort = self.replay.abort_group_rotation(installing);
+                            let _ = self.supplicant.complete_group_key_install(request, false);
+                            if let Err(replay_error) = abort {
+                                return self.fail(ConnectedWpa2SecurityFailure::ReplayRotation(
+                                    replay_error,
+                                ));
+                            }
+                            return self.fail(ConnectedWpa2SecurityFailure::KeyReplace(error));
+                        }
+                        Err(error) => {
+                            self.replay.quarantine_group_rotation(installing);
+                            let _ = self.supplicant.complete_group_key_install(request, false);
+                            return self.fail(ConnectedWpa2SecurityFailure::KeyReplace(error));
+                        }
+                    }
+                }
                 match self.supplicant.complete_group_key_install(request, true) {
-                    Ok(response) => response,
-                    Err(error) => return self.fail(ConnectedWpa2SecurityFailure::Protocol(error)),
+                    Ok(response) => {
+                        self.installed = self.installed.saturating_add(1);
+                        response
+                    }
+                    Err(error) => {
+                        return self.fail(ConnectedWpa2SecurityFailure::Protocol(error));
+                    }
                 }
             }
         };
@@ -251,6 +456,37 @@ pub struct Esp32s31ConnectedControl<'resources, M: RawMutex, const CAPACITY: usi
     rx_block_ack: Esp32s31ConnectedRxBlockAck<'resources>,
     rx_reorder_commands: Option<RxReorderCommandSender<'resources, M>>,
     security: Option<ConnectedWpa2Security>,
+    deferred_control_event: Option<ConnectedRxControlEvent>,
+    hardware_doze_boundary_enabled: bool,
+    doze_restore: Option<StaDozeRestore>,
+    last_doze_boundary_failure: Option<StationDozeBoundaryFailure>,
+    hardware_beacon_monitor: Option<StationHardwareBeaconMonitorEpoch>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationDozeBoundaryFailure {
+    Prepare(StaDozePrepareError),
+    Hardware(StationDozeHardwareError),
+}
+
+const fn control_event_requires_active(event: ConnectedRxControlEvent) -> bool {
+    matches!(
+        event,
+        ConnectedRxControlEvent::BlockAck(_) | ConnectedRxControlEvent::IndividualTwt(_)
+    )
+}
+
+const fn he_control_event_requires_active(event: ConnectedRxControlEvent) -> bool {
+    matches!(
+        event,
+        ConnectedRxControlEvent::Trigger {
+            schedule: Ok(_),
+            ..
+        } | ConnectedRxControlEvent::Ndpa {
+            addressed_to_station: true,
+            ..
+        }
+    )
 }
 
 enum Esp32s31ConnectedRxBlockAck<'resources> {
@@ -282,6 +518,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             rx_block_ack: Esp32s31ConnectedRxBlockAck::Local(Esp32s31StaApRxBlockAck::new()),
             rx_reorder_commands: None,
             security: None,
+            deferred_control_event: None,
+            hardware_doze_boundary_enabled: false,
+            doze_restore: None,
+            last_doze_boundary_failure: None,
+            hardware_beacon_monitor: None,
         }
     }
 
@@ -298,6 +539,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             rx_block_ack: Esp32s31ConnectedRxBlockAck::Shared(rx_block_ack),
             rx_reorder_commands: None,
             security: None,
+            deferred_control_event: None,
+            hardware_doze_boundary_enabled: false,
+            doze_restore: None,
+            last_doze_boundary_failure: None,
+            hardware_beacon_monitor: None,
         }
     }
 
@@ -349,8 +595,109 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.enable_beacon_loss(config);
     }
 
+    /// Bind one non-clone automatic-monitor admission owner to this connected
+    /// association. The portable software deadline remains authoritative.
+    pub fn enable_hardware_beacon_monitor_frontier(
+        &mut self,
+        binding: StationBeaconMonitorBinding,
+        policy: StaBeaconLossConfig,
+    ) -> Result<(), StationHardwareBeaconMonitorEpoch> {
+        let epoch = StationHardwareBeaconMonitorEpoch::new(binding, policy);
+        if self.hardware_beacon_monitor.is_some() {
+            return Err(epoch);
+        }
+        self.hardware_beacon_monitor = Some(epoch);
+        Ok(())
+    }
+
+    /// Last one-shot hardware admission result for this association.
+    pub const fn hardware_beacon_monitor_frontier(
+        &self,
+    ) -> Option<StationHardwareBeaconMonitorFrontier> {
+        match self.hardware_beacon_monitor.as_ref() {
+            Some(epoch) => epoch.frontier(),
+            None => None,
+        }
+    }
+
+    pub const fn hardware_beacon_monitor_binding(&self) -> Option<StationBeaconMonitorBinding> {
+        match self.hardware_beacon_monitor.as_ref() {
+            Some(epoch) => Some(epoch.binding()),
+            None => None,
+        }
+    }
+
     pub fn enable_power_save(&mut self, policy: StaPowerSavePolicy) {
         self.core.enable_power_save(policy);
+        self.receiver.set_power_save_delivery_armed(false);
+    }
+
+    pub fn enable_ps_poll(
+        &mut self,
+        association_id: open_esp_radio_ieee80211::station_power_save::StaAssociationId,
+    ) {
+        self.core.enable_ps_poll(association_id);
+    }
+
+    pub fn enable_individual_twt_requester(&mut self, config: IndividualTwtRequesterConfig) {
+        self.core.enable_individual_twt_requester(config);
+    }
+
+    /// Evaluate the production FTM frontier without publishing a frame.
+    pub fn evaluate_ftm_request_frontier(
+        &self,
+        config: FtmRequesterConfig,
+        now_micros: u64,
+    ) -> Result<ConnectedFtmRequestFrontier, ConnectedControlError> {
+        self.core.evaluate_ftm_request_frontier(config, now_micros)
+    }
+
+    /// Report the reviewed FTM source frontier without touching MMIO.
+    pub const fn ftm_hardware_frontier(&self) -> StationFtmHardwareFrontier {
+        station_ftm_hardware_frontier()
+    }
+
+    pub fn queue_individual_twt_setup(
+        &mut self,
+        proposal: IndividualTwtProposal,
+        now_micros: u64,
+    ) -> Result<(), ConnectedControlError> {
+        self.core.queue_individual_twt_setup(proposal, now_micros)
+    }
+
+    pub fn queue_individual_twt_teardown<H: ConnectedControlHardware>(
+        &mut self,
+        hardware: &mut H,
+        flow_id: IndividualTwtFlowId,
+        now_micros: u64,
+    ) -> Result<(), ConnectedControlError> {
+        self.core
+            .queue_individual_twt_teardown(hardware, flow_id, now_micros)
+    }
+
+    pub fn with_he_trigger_based(
+        mut self,
+        config: Option<open_esp_radio_esp32s31_wifi_mac::tx::HeTriggerBasedTxConfig>,
+    ) -> Self {
+        self.core = self.core.with_he_trigger_based(config);
+        self
+    }
+
+    /// Drive the affine hardware-doze boundary after each logical permit.
+    /// ESP32-S31 production currently reaches this boundary and records
+    /// `Unsupported`; it does not claim that RF or PHY entered sleep.
+    pub fn enable_hardware_doze_boundary(&mut self) {
+        self.hardware_doze_boundary_enabled = true;
+    }
+
+    pub const fn last_doze_boundary_failure(&self) -> Option<StationDozeBoundaryFailure> {
+        self.last_doze_boundary_failure
+    }
+
+    /// Report the reviewed source frontier without entering modem, RF, PHY,
+    /// baseband or clock sleep and without reading or writing hardware.
+    pub const fn low_power_hardware_frontier(&self) -> StationLowPowerHardwareFrontier {
+        station_low_power_hardware_frontier()
     }
 
     pub fn queue_initial_tx_block_ack(&mut self, attempt_limit: u8) {
@@ -393,6 +740,31 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.last_stale_tx_block_ack_token()
     }
 
+    pub const fn he_control_runtime_evidence(&self) -> ConnectedHeControlRuntimeEvidence {
+        self.core.he_control_runtime_evidence()
+    }
+
+    pub const fn individual_twt_runtime_evidence(&self) -> ConnectedIndividualTwtRuntimeEvidence {
+        self.core.individual_twt_runtime_evidence()
+    }
+
+    pub const fn individual_twt_requester(&self) -> Option<&IndividualTwtRequester> {
+        self.core.individual_twt_requester()
+    }
+
+    pub fn individual_twt_wake_plan(
+        &self,
+        station_tsf: u64,
+        wake_guard_micros: u32,
+    ) -> Result<Option<IndividualTwtWakePlan>, ConnectedControlError> {
+        self.core
+            .individual_twt_wake_plan(station_tsf, wake_guard_micros)
+    }
+
+    pub fn dropped_he_observations(&self) -> u32 {
+        self.receiver.dropped_he_observations()
+    }
+
     pub const fn beacon_monitor(&self) -> Option<&StaBeaconMonitor> {
         self.core.beacon_monitor()
     }
@@ -405,8 +777,98 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.power_save()
     }
 
+    pub const fn power_save_wake_deadline_micros(&self) -> Option<u64> {
+        self.core.power_save_wake_deadline_micros()
+    }
+
     pub fn take_doze_permit(&mut self) -> Option<StaDozePermit> {
         self.core.take_doze_permit()
+    }
+
+    /// Bind the next logical permit to the live hardware TSF. The returned
+    /// affine token still cannot enter RF/PHY sleep by itself; callers must
+    /// present it to `ConnectedControlHardware::enter_station_doze`, whose
+    /// production implementation deliberately fails closed until that leaf
+    /// is audited.
+    pub fn prepare_doze_transaction<H>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<Option<StaPreparedDoze>, StaDozePrepareError>
+    where
+        H: ConnectedControlHardware,
+    {
+        self.take_doze_permit()
+            .map(|permit| StaPreparedDoze::prepare(permit, hardware.station_tsf()))
+            .transpose()
+    }
+
+    pub fn enter_prepared_doze<H>(
+        prepared: StaPreparedDoze,
+        hardware: &mut H,
+    ) -> Result<
+        open_esp_radio_wifi_sta::power_save::StaDozeRestore,
+        open_esp_radio_wifi_sta::power_save::StaDozeEntryFailure<StationDozeHardwareError>,
+    >
+    where
+        H: ConnectedControlHardware,
+    {
+        prepared.enter_with(hardware, ConnectedControlHardware::enter_station_doze)
+    }
+
+    pub fn restore_from_doze<H>(
+        restore: StaDozeRestore,
+        hardware: &mut H,
+    ) -> Result<StaDozeRestored, StaDozeRestoreFailure<StationDozeHardwareError>>
+    where
+        H: ConnectedControlHardware,
+    {
+        restore.restore_with(hardware, ConnectedControlHardware::restore_station_awake)
+    }
+
+    fn service_hardware_doze_boundary<H>(
+        &mut self,
+        hardware: &mut H,
+        allow_entry: bool,
+    ) -> Result<Option<DatapathControlProgress<ConnectedDisconnectReason>>, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+    {
+        if let Some(restore) = self.doze_restore.take() {
+            match Self::restore_from_doze(restore, hardware) {
+                Ok(_) => {}
+                Err(failure) => {
+                    self.doze_restore = Some(failure.restore);
+                    return Err(failure.error.into());
+                }
+            }
+        }
+        if !self.hardware_doze_boundary_enabled || !allow_entry {
+            return Ok(None);
+        }
+        let Some(permit) = self.core.take_doze_permit() else {
+            return Ok(None);
+        };
+        let prepared = match StaPreparedDoze::prepare(permit, hardware.station_tsf()) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.last_doze_boundary_failure = Some(StationDozeBoundaryFailure::Prepare(error));
+                return Ok(None);
+            }
+        };
+        match Self::enter_prepared_doze(prepared, hardware) {
+            Ok(restore) => {
+                self.doze_restore = Some(restore);
+                self.last_doze_boundary_failure = None;
+                // Do not immediately restore in this same scheduler turn.
+                // The next timer, mailbox, network-TX or stop edge owns wake.
+                Ok(Some(DatapathControlProgress::Idle))
+            }
+            Err(failure) => {
+                self.last_doze_boundary_failure =
+                    Some(StationDozeBoundaryFailure::Hardware(failure.error));
+                Ok(None)
+            }
+        }
     }
 
     pub fn shutdown<H, X>(
@@ -418,10 +880,21 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
+        self.receiver.set_power_save_delivery_armed(false);
+        if let Some(restore) = self.doze_restore.take()
+            && let Err(failure) = Self::restore_from_doze(restore, hardware)
+        {
+            self.doze_restore = Some(failure.restore);
+            return Err(failure.error.into());
+        }
         let shutdown = self
             .rx_block_ack
             .sessions()
             .with_sessions(|rx_block_ack| self.core.shutdown(hardware, tx, rx_block_ack))?;
+        let hardware_beacon_monitor = self
+            .hardware_beacon_monitor
+            .take()
+            .map(StationHardwareBeaconMonitorEpoch::stop);
         let mut discarded_events = 0_u8;
         while self.receiver.try_receive().is_some() {
             discarded_events = discarded_events.saturating_add(1);
@@ -429,16 +902,21 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         while self.receiver.try_receive_security().is_some() {
             discarded_events = discarded_events.saturating_add(1);
         }
+        if self.deferred_control_event.take().is_some() {
+            discarded_events = discarded_events.saturating_add(1);
+        }
         Ok(ConnectedControlShutdown {
             rx_block_ack_agreements: shutdown.rx_block_ack_agreements,
             tx_block_ack_sessions: shutdown.tx_block_ack_sessions,
             discarded_events,
             in_flight: shutdown.in_flight,
+            hardware_beacon_monitor,
         })
     }
 
     pub fn has_immediate_work(&self) -> bool {
-        self.receiver.overflowed()
+        self.deferred_control_event.is_some()
+            || self.receiver.overflowed()
             || self
                 .security
                 .as_ref()
@@ -491,6 +969,40 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         }
     }
 
+    fn service_core_step<H, X>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        event: Option<ConnectedRxControlEvent>,
+        control_event_pending: bool,
+        context: DatapathControlContext,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+    {
+        let mut reorder = EmbassyReorderSink {
+            sender: self.rx_reorder_commands.as_ref(),
+        };
+        let result = self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
+            self.core.service_step(
+                ConnectedControlPorts {
+                    hardware,
+                    tx,
+                    reorder: &mut reorder,
+                    rx_block_ack,
+                },
+                event,
+                control_event_pending,
+                context,
+            )
+        });
+        let exiting = matches!(&result, Ok(DatapathControlProgress::Exit(_)));
+        self.receiver
+            .set_power_save_delivery_armed(!exiting && self.core.ps_poll_delivery_armed());
+        result
+    }
+
     pub fn service<'a, H, X>(
         &'a mut self,
         hardware: &'a mut H,
@@ -515,6 +1027,19 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         H: ConnectedControlHardware + 'a,
         X: ConnectedControlTx + 'a,
     {
+        if let Some(epoch) = self.hardware_beacon_monitor.as_mut()
+            && epoch.frontier().is_none()
+        {
+            let snapshot = hardware.station_beacon_monitor_readback();
+            let _ = epoch.evaluate_once(snapshot);
+        }
+        let allow_doze_entry = !context.network_tx_pending
+            && !context.stop_pending
+            && self.deferred_control_event.is_none()
+            && self.receiver.is_empty();
+        if let Some(progress) = self.service_hardware_doze_boundary(hardware, allow_doze_entry)? {
+            return Ok(progress);
+        }
         // The shared ordinary-TX completion always precedes newly queued
         // RX work. Security and the generic control core can never both
         // own that transaction.
@@ -524,23 +1049,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             return Ok(security.complete_tx(tx));
         }
 
-        let mut reorder = EmbassyReorderSink {
-            sender: self.rx_reorder_commands.as_ref(),
-        };
         if self.core.tx_in_flight() {
-            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
-                self.core.service_step(
-                    ConnectedControlPorts {
-                        hardware,
-                        tx,
-                        reorder: &mut reorder,
-                        rx_block_ack,
-                    },
-                    None,
-                    !self.receiver.is_empty(),
-                    context,
-                )
-            });
+            let queued_control_pending = self.deferred_control_event.is_some()
+                || if self.core.ps_poll_tx_in_flight() {
+                    self.receiver.non_power_save_delivery_pending()
+                } else {
+                    !self.receiver.is_empty()
+                };
+            return self.service_core_step(hardware, tx, None, queued_control_pending, context);
         }
 
         if self.receiver.overflowed() {
@@ -549,22 +1065,29 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             ));
         }
 
+        // Security processing can publish EAPOL immediately, so retain that
+        // frame until an acknowledged PM=0 transition completes. Beacons are
+        // deliberately handled below while PM=1: a mandatory listen/DTIM
+        // receive edge is not itself an exit from legacy power-save.
+        if self.receiver.security_pending()
+            && self
+                .core
+                .power_save()
+                .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
+        {
+            return self.service_core_step(hardware, tx, None, true, context);
+        }
+
         // A peer disconnect keeps terminal priority once TX ownership is
         // free. GTK rekey then precedes non-terminal BlockAck work.
         if let Some(event) = self.receiver.try_receive_terminal() {
-            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
-                self.core.service_step(
-                    ConnectedControlPorts {
-                        hardware,
-                        tx,
-                        reorder: &mut reorder,
-                        rx_block_ack,
-                    },
-                    Some(event),
-                    !self.receiver.is_empty(),
-                    context,
-                )
-            });
+            return self.service_core_step(
+                hardware,
+                tx,
+                Some(event),
+                !self.receiver.is_empty(),
+                context,
+            );
         }
         if let Some(frame) = self.receiver.try_receive_security() {
             let Some(security) = self.security.as_mut() else {
@@ -574,20 +1097,31 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             };
             return Ok(security.process(hardware, tx, frame).await);
         }
-        let event = self.receiver.try_receive_control();
-        self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
-            self.core.service_step(
-                ConnectedControlPorts {
-                    hardware,
-                    tx,
-                    reorder: &mut reorder,
-                    rx_block_ack,
-                },
-                event,
-                !self.receiver.is_empty(),
-                context,
-            )
-        })
+        let event = self
+            .deferred_control_event
+            .take()
+            .or_else(|| self.receiver.try_receive_power_save_delivery())
+            .or_else(|| self.receiver.try_receive_control())
+            .or_else(|| self.receiver.try_receive_he_observation());
+        if event.is_some_and(|event| {
+            control_event_requires_active(event)
+                || (self.core.he_trigger_runtime_enabled()
+                    && he_control_event_requires_active(event))
+        }) && self
+            .core
+            .power_save()
+            .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
+        {
+            self.deferred_control_event = event;
+            return self.service_core_step(hardware, tx, None, true, context);
+        }
+        self.service_core_step(
+            hardware,
+            tx,
+            event,
+            self.deferred_control_event.is_some() || !self.receiver.is_empty(),
+            context,
+        )
     }
 }
 
@@ -615,6 +1149,22 @@ where
             || self
                 .next_alarm_deadline()
                 .is_some_and(|deadline| deadline <= now_micros)
+    }
+
+    fn required_before_network_tx(&self) -> bool {
+        self.doze_restore.is_some()
+            || self
+                .core
+                .power_save()
+                .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
+    }
+
+    fn required_before_stop(&self) -> bool {
+        self.doze_restore.is_some()
+            || self
+                .core
+                .power_save()
+                .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
     }
 
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a {

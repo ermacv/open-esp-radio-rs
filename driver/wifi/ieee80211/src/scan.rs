@@ -6,6 +6,9 @@
 //! implementation is chip-independent and forms the maintained upper-stack
 //! extraction.
 
+use crate::ht::{HtPeerCapabilities, ht_peer_capabilities};
+use crate::security::WifiSecurityMode;
+
 pub const SCAN_RECORD_CAPACITY: usize = 32;
 pub const RSN_IE_CAPACITY: usize = 64;
 pub const RSNXE_CAPACITY: usize = 16;
@@ -69,6 +72,8 @@ pub struct ScanRecord {
     pub rssi: i8,
     pub privacy: bool,
     pub rsn: bool,
+    /// Number of complete RSN elements observed in this bounded record.
+    pub rsn_ie_count: u8,
     pub legacy_wpa: bool,
     pub information_elements_truncated: bool,
     pub capability_info: u16,
@@ -77,6 +82,9 @@ pub struct ScanRecord {
     pub supported_rates_len: u8,
     pub extended_supported_rates: [u8; EXTENDED_RATES_CAPACITY],
     pub extended_supported_rates_len: u8,
+    /// One-byte ERP Information payload.  In particular, bit one is the
+    /// infrastructure BSS Use Protection policy.
+    pub erp_information: Option<u8>,
     pub ht_capability_ie: [u8; HT_CAPABILITY_IE_LEN],
     pub ht_capability_ie_present: bool,
     pub ht_operation_ie: [u8; HT_OPERATION_IE_LEN],
@@ -102,6 +110,7 @@ impl ScanRecord {
         rssi: i8::MIN,
         privacy: false,
         rsn: false,
+        rsn_ie_count: 0,
         legacy_wpa: false,
         information_elements_truncated: false,
         capability_info: 0,
@@ -110,6 +119,7 @@ impl ScanRecord {
         supported_rates_len: 0,
         extended_supported_rates: [0; EXTENDED_RATES_CAPACITY],
         extended_supported_rates_len: 0,
+        erp_information: None,
         ht_capability_ie: [0; HT_CAPABILITY_IE_LEN],
         ht_capability_ie_present: false,
         ht_operation_ie: [0; HT_OPERATION_IE_LEN],
@@ -130,6 +140,33 @@ impl ScanRecord {
         &self.ssid[..usize::from(self.ssid_len)]
     }
 
+    /// Whether this observation matches one exact requested security mode.
+    ///
+    /// Mixed WPA/WPA2 advertisements are intentionally rejected. Open means
+    /// that the Privacy capability is clear and neither RSN nor legacy WPA
+    /// was observed; WPA2 means a Privacy-marked, RSN-only BSS. Full WPA2
+    /// suite validation remains at association encoding.
+    pub const fn matches_security(&self, mode: WifiSecurityMode) -> bool {
+        match mode {
+            WifiSecurityMode::Open => {
+                !self.information_elements_truncated
+                    && !self.privacy
+                    && !self.rsn
+                    && self.rsn_ie_count == 0
+                    && !self.legacy_wpa
+                    && self.rsn_ie_len == 0
+            }
+            WifiSecurityMode::Wpa2Personal => {
+                !self.information_elements_truncated
+                    && self.privacy
+                    && self.rsn
+                    && self.rsn_ie_count == 1
+                    && !self.legacy_wpa
+                    && self.rsn_ie_len != 0
+            }
+        }
+    }
+
     pub fn supported_rates_bytes(&self) -> &[u8] {
         &self.supported_rates[..usize::from(self.supported_rates_len)]
     }
@@ -138,9 +175,24 @@ impl ScanRecord {
         &self.extended_supported_rates[..usize::from(self.extended_supported_rates_len)]
     }
 
+    pub const fn erp_information(&self) -> Option<u8> {
+        self.erp_information
+    }
+
     pub fn ht_capability_ie_bytes(&self) -> Option<&[u8; HT_CAPABILITY_IE_LEN]> {
         self.ht_capability_ie_present
             .then_some(&self.ht_capability_ie)
+    }
+
+    /// Parse the retained HT IE into peer receive capabilities.
+    pub fn ht_peer_capabilities(&self) -> Option<HtPeerCapabilities> {
+        ht_peer_capabilities(self.ht_capability_ie_bytes()?)
+    }
+
+    /// Whether this peer advertises the special 40-MHz HT Duplicate MCS32.
+    pub fn supports_ht_duplicate_mcs32(&self) -> bool {
+        self.ht_peer_capabilities()
+            .is_some_and(HtPeerCapabilities::supports_ht_duplicate_mcs32)
     }
 
     pub fn ht_operation_ie_bytes(&self) -> Option<&[u8; HT_OPERATION_IE_LEN]> {
@@ -318,6 +370,22 @@ pub fn best_matching_ssid<'a>(records: &'a [ScanRecord], ssid: &[u8]) -> Option<
         .max_by_key(|record| record.rssi)
 }
 
+/// Select the strongest exact SSID and security match.
+pub fn best_matching_ssid_and_security<'a>(
+    records: &'a [ScanRecord],
+    ssid: &[u8],
+    security: WifiSecurityMode,
+) -> Option<&'a ScanRecord> {
+    records
+        .iter()
+        .filter(|record| {
+            record.ssid_bytes() == ssid
+                && (1..=13).contains(&record.channel)
+                && record.matches_security(security)
+        })
+        .max_by_key(|record| record.rssi)
+}
+
 /// Decode one beacon or probe response into an owned bounded record.
 pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<ScanRecord> {
     if frame.len() < 36 {
@@ -361,6 +429,12 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
                 record.supported_rates_len = length as u8;
             }
             3 if length == 1 => record.channel = value[0],
+            42 if length == 1 => {
+                // Multiple ERP elements are malformed, but protection must
+                // fail closed while the broader scan record remains usable:
+                // retain every observed Use Protection assertion.
+                record.erp_information = Some(record.erp_information.unwrap_or(0) | value[0]);
+            }
             45 if length + 2 == HT_CAPABILITY_IE_LEN => {
                 record
                     .ht_capability_ie
@@ -369,6 +443,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
             }
             48 => {
                 record.rsn = true;
+                record.rsn_ie_count = record.rsn_ie_count.saturating_add(1);
                 let total = length + 2;
                 if total <= record.rsn_ie.len() {
                     record.rsn_ie[..total].copy_from_slice(&frame[offset - 2..end]);
@@ -432,6 +507,9 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
         }
         offset = end;
     }
+    // One trailing byte cannot form an IE header. Treat it as malformed,
+    // rather than silently accepting it as absence of a later RSN/WPA IE.
+    record.information_elements_truncated |= offset != frame.len();
     Some(record)
 }
 
@@ -488,6 +566,17 @@ mod tests {
         assert_eq!(record.rssi, -42);
         assert!(record.privacy);
         assert!(record.rsn);
+    }
+
+    #[test]
+    fn retains_erp_use_protection_without_confusing_the_element_header() {
+        let mut frame = [0_u8; 43];
+        frame[0] = 0x80;
+        frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        frame[36..40].copy_from_slice(&[0, 2, b'a', b'p']);
+        frame[40..43].copy_from_slice(&[42, 1, 0x03]);
+        let record = parse_management(&frame, 6, -42).unwrap();
+        assert_eq!(record.erp_information(), Some(0x03));
     }
 
     #[test]

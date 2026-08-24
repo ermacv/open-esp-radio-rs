@@ -5,8 +5,9 @@
 //! failed policy check returns the complete original handoff so callers cannot
 //! accidentally turn configuration failure into a partially consumed epoch.
 
-use open_esp_radio_esp32s31_wifi_mac::crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot};
-use open_esp_radio_esp32s31_wifi_sta::attempt::Esp32s31StaAttemptSecurity;
+use open_esp_radio_esp32s31_wifi_sta::attempt::{
+    Esp32s31StaAttemptSecurity, Esp32s31StaInstalledSecurity,
+};
 use open_esp_radio_wifi_embassy::station_network::{
     StationNetworkLink, StationNetworkResources, start_station_network,
 };
@@ -23,8 +24,7 @@ pub struct Esp32s31PreparedConnectedService<'security, R, E, N> {
     epoch: E,
     network: N,
     plan: Esp32s31ConnectedStaPlan,
-    pairwise: StaPairwiseCcmpSlot,
-    group: StaGroupCcmpSlot,
+    installed_security: Esp32s31StaInstalledSecurity,
     security: Esp32s31StaAttemptSecurity<'security>,
 }
 
@@ -43,8 +43,7 @@ impl<'security, R, E, N> Esp32s31PreparedConnectedService<'security, R, E, N> {
             epoch: self.epoch,
             network: self.network,
             plan: self.plan,
-            pairwise: self.pairwise,
-            group: self.group,
+            installed_security: self.installed_security,
             security: self.security,
         }
     }
@@ -59,8 +58,7 @@ pub struct Esp32s31ConnectedNetworkStarted<'security, R, E, S, N, T> {
     network: N,
     initial_network_task: Option<T>,
     plan: Esp32s31ConnectedStaPlan,
-    pairwise: StaPairwiseCcmpSlot,
-    group: StaGroupCcmpSlot,
+    installed_security: Esp32s31StaInstalledSecurity,
     security: Esp32s31StaAttemptSecurity<'security>,
 }
 
@@ -72,6 +70,18 @@ impl<'security, R, E, S, N, T> Esp32s31ConnectedNetworkStarted<'security, R, E, 
         &mut self.runtime
     }
 
+    /// Exact agreement proof retained before a paired composition splits the
+    /// connected owner graph. A mismatch must quarantine this whole value;
+    /// it must not be repaired by treating a key-bearing attempt as Open.
+    pub const fn security_modes(
+        &self,
+    ) -> (
+        open_esp_radio_ieee80211::security::WifiSecurityMode,
+        open_esp_radio_ieee80211::security::WifiSecurityMode,
+    ) {
+        (self.installed_security.mode(), self.security.mode())
+    }
+
     pub fn into_parts(self) -> Esp32s31ConnectedNetworkStartedParts<'security, R, E, S, N, T> {
         Esp32s31ConnectedNetworkStartedParts {
             runtime: self.runtime,
@@ -80,8 +90,7 @@ impl<'security, R, E, S, N, T> Esp32s31ConnectedNetworkStarted<'security, R, E, 
             network: self.network,
             initial_network_task: self.initial_network_task,
             plan: self.plan,
-            pairwise: self.pairwise,
-            group: self.group,
+            installed_security: self.installed_security,
             security: self.security,
         }
     }
@@ -101,8 +110,7 @@ pub struct Esp32s31ConnectedNetworkStartedParts<'security, R, E, S, N, T> {
     pub network: N,
     pub initial_network_task: Option<T>,
     pub plan: Esp32s31ConnectedStaPlan,
-    pub pairwise: StaPairwiseCcmpSlot,
-    pub group: StaGroupCcmpSlot,
+    pub installed_security: Esp32s31StaInstalledSecurity,
     pub security: Esp32s31StaAttemptSecurity<'security>,
 }
 
@@ -131,8 +139,7 @@ where
             network,
             initial_network_task,
             plan: self.plan,
-            pairwise: self.pairwise,
-            group: self.group,
+            installed_security: self.installed_security,
             security: self.security,
         }
     }
@@ -144,8 +151,7 @@ pub struct Esp32s31PreparedConnectedServiceParts<'security, R, E, N> {
     pub epoch: E,
     pub network: N,
     pub plan: Esp32s31ConnectedStaPlan,
-    pub pairwise: StaPairwiseCcmpSlot,
-    pub group: StaGroupCcmpSlot,
+    pub installed_security: Esp32s31StaInstalledSecurity,
     pub security: Esp32s31StaAttemptSecurity<'security>,
 }
 
@@ -183,22 +189,40 @@ pub fn prepare_esp32s31_connected_service<
         interface,
         config,
         peer,
-        pairwise,
-        group,
+        installed_security,
         security,
     } = resources.into_parts();
-    match Esp32s31ConnectedStaPort::prepare_for_interface_with_storage::<
+    let installed_mode = installed_security.mode();
+    let material_mode = security.mode();
+    if installed_mode != material_mode {
+        return Err(Esp32s31ConnectedServicePrepareFailure {
+            error: Esp32s31ConnectedStaConfigError::SecurityModeMismatch {
+                installed: installed_mode,
+                material: material_mode,
+            },
+            resources: Esp32s31ConnectedServiceResources::new(
+                runtime,
+                epoch,
+                network,
+                interface,
+                config,
+                peer,
+                installed_security,
+                security,
+            ),
+        });
+    }
+    match Esp32s31ConnectedStaPort::prepare_for_interface_with_storage_and_security::<
         AGGREGATE_SLOTS,
         RX_REORDER_SLOTS,
-    >(peer, config, interface)
+    >(peer, config, interface, installed_mode)
     {
         Ok(plan) => Ok(Esp32s31PreparedConnectedService {
             runtime,
             epoch,
             network,
             plan,
-            pairwise,
-            group,
+            installed_security,
             security,
         }),
         Err(failure) => Err(Esp32s31ConnectedServicePrepareFailure {
@@ -210,8 +234,7 @@ pub fn prepare_esp32s31_connected_service<
                 interface,
                 config,
                 failure.peer,
-                pairwise,
-                group,
+                installed_security,
                 security,
             ),
         }),

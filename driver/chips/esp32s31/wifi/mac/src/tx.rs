@@ -2,7 +2,10 @@
 
 #![forbid(unsafe_code)]
 
-use core::pin::Pin;
+use core::{
+    num::{NonZeroU32, NonZeroU64},
+    pin::Pin,
+};
 
 #[cfg(not(target_pointer_width = "32"))]
 extern crate alloc;
@@ -21,15 +24,16 @@ pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
 #[cfg(not(target_pointer_width = "32"))]
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::{PinnedTxDmaStorage, TxDmaStorageError};
-use open_esp_radio_ieee80211::he::HeDcmConstellation;
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
     TriggerCommonInfo, TriggerFrame, TriggerGiLtf, TriggerParseError, TriggerRuAllocation,
     TriggerType, TriggerUserSpatialStreamInfo, parse_trigger_user_spatial_stream,
 };
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
+use open_esp_radio_ieee80211::{he::HeDcmConstellation, ht::HtDuplicateMcs32};
 
 use crate::{
+    low_rate::{MacLowRateGateProbe, MacLowRateTransitionError, probe_phy_low_rate_gate},
     rate_control::dot11g_schedule_for_legacy_rate,
     rate_schedule::{
         RateScheduleKind, RateScheduleRef, schedule_publication_limit, schedule_rate_after_failures,
@@ -37,7 +41,7 @@ use crate::{
     tx_plcp::{
         apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
         basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, he_ampdu_plcp0_word,
-        he_plcp1_word, ht_htsig_word,
+        he_plcp1_word, ht_htsig_word, ht_plcp1_word,
     },
 };
 
@@ -118,6 +122,14 @@ pub enum LegacyTxQueue {
 
 impl LegacyTxQueue {
     pub(crate) const fn index(self) -> u8 {
+        self.hardware_index()
+    }
+
+    /// Return the queue number used by the ESP32-S31 MAC transaction.
+    ///
+    /// This is intentionally chip-specific: callers must not infer it from
+    /// portable WMM access-category numbering.
+    pub const fn hardware_index(self) -> u8 {
         self as u8
     }
 
@@ -170,6 +182,18 @@ impl LegacyTxQueue {
 
 /// Finite ordinary-queue hardware authority used by one owned TX slot.
 pub trait TxHardware {
+    /// Exercise the complete reviewed PHY low-rate gate and restore its entry
+    /// state before returning.
+    ///
+    /// Pure queue backends do not implicitly gain a PHY owner. Production
+    /// implementations override this method only when they can serialize the
+    /// three ROM-proved register edges with ordinary TX.
+    fn probe_phy_low_rate_gate(
+        &mut self,
+    ) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
+        Ok(MacLowRateGateProbe::OwnerUnavailable)
+    }
+
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
@@ -228,6 +252,12 @@ fn assert_tx_dma_head(authority_head: u32, plcp0: u32) {
 }
 
 impl TxHardware for WifiMacHal<'_> {
+    fn probe_phy_low_rate_gate(
+        &mut self,
+    ) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
+        probe_phy_low_rate_gate(self)
+    }
+
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
@@ -291,6 +321,12 @@ impl TxHardware for WifiMacHal<'_> {
 }
 
 impl TxHardware for RadioRuntimeOwner {
+    fn probe_phy_low_rate_gate(
+        &mut self,
+    ) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
+        TxHardware::probe_phy_low_rate_gate(&mut self.wifi_mac_hal())
+    }
+
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
@@ -702,6 +738,8 @@ impl LegacyRate {
 /// The ESP32-S31 is 1T1R, so the open HT path intentionally exposes only the
 /// standard single-stream MCS0..MCS7 set. MCS8..MCS31 describe additional
 /// spatial streams and cannot be made valid by passing an unchecked integer.
+/// The special duplicate-mode MCS32 is represented separately by
+/// [`HtDuplicateRate`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum HtMcs {
@@ -1029,6 +1067,397 @@ impl HtRate {
         let code = schedule_rate_after_failures(schedule, failed_attempts)?;
         TxPhyRate::from_code(code, self.channel_width)
     }
+}
+
+/// Protocol-valid HT Duplicate MCS32 rate, kept outside [`HtMcs`].
+///
+/// MCS32 repeats one coded stream across both halves of a 40-MHz channel. It
+/// is neither a fifth spatial stream nor a throughput successor to MCS7. This
+/// type therefore fixes the channel width at 40 MHz and carries only the
+/// independently selected guard interval.
+///
+/// The ESP32-S31 queue-rate, length, protection and calibrated-power encoding
+/// for this mode has no reviewed oracle. Consequently this type deliberately
+/// exposes none of the `code`, `power_lookup_code`, or retry-table methods of
+/// [`HtRate`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HtDuplicateRate {
+    mcs: HtDuplicateMcs32,
+    guard_interval: HtGuardInterval,
+}
+
+impl HtDuplicateRate {
+    pub const fn new(guard_interval: HtGuardInterval) -> Self {
+        Self {
+            mcs: HtDuplicateMcs32::new(),
+            guard_interval,
+        }
+    }
+
+    pub const fn mcs(self) -> HtDuplicateMcs32 {
+        self.mcs
+    }
+
+    pub const fn mcs_index(self) -> u8 {
+        HtDuplicateMcs32::INDEX
+    }
+
+    pub const fn guard_interval(self) -> HtGuardInterval {
+        self.guard_interval
+    }
+
+    pub const fn channel_width(self) -> HtChannelWidth {
+        HtChannelWidth::Mhz40
+    }
+
+    pub const fn nominal_kbps(self) -> u32 {
+        match self.guard_interval {
+            HtGuardInterval::Long800Ns => 6_000,
+            HtGuardInterval::Short400Ns => 6_700,
+        }
+    }
+}
+
+/// One independently reviewable field required by the S31 MCS32 formatter.
+///
+/// The ordinary HT formatter cannot supply any of these fields by analogy:
+/// its reviewed rate domain is exactly 16..=35 and its MCS reconstruction
+/// yields only the ordinary MCS0..MCS9 numeric range. Keeping the gaps finite
+/// lets diagnostics state the minimum missing oracle without publishing a
+/// guessed raw rate code.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum HtDuplicateTxOracleField {
+    /// Descriptor byte/flag which selects duplicate-mode MCS32.
+    DescriptorSelector = 1 << 0,
+    /// Complete PLCP0, PLCP1 and HT-SIG image for a known PSDU.
+    PlcpAndHtSig = 1 << 1,
+    /// DATA_LENGTH/LENGTH_CONTROL mapping and PPDU-duration enforcement.
+    Length = 1 << 2,
+    /// RTS/basic-rate selection and queue protection image.
+    Protection = 1 << 3,
+    /// Calibrated power-table lookup index and resulting queue power pair.
+    Power = 1 << 4,
+    /// Retry transition which preserves duplicate mode on every attempt.
+    Retry = 1 << 5,
+}
+
+/// Set of reviewed formatter facts which are still absent for S31 MCS32.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateTxOracleGaps(u8);
+
+impl HtDuplicateTxOracleGaps {
+    /// Exact frontier at the current reviewed-source boundary.
+    pub const ESP32S31: Self = Self(
+        HtDuplicateTxOracleField::DescriptorSelector as u8
+            | HtDuplicateTxOracleField::PlcpAndHtSig as u8
+            | HtDuplicateTxOracleField::Length as u8
+            | HtDuplicateTxOracleField::Protection as u8
+            | HtDuplicateTxOracleField::Power as u8
+            | HtDuplicateTxOracleField::Retry as u8,
+    );
+
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
+    pub const fn contains(self, field: HtDuplicateTxOracleField) -> bool {
+        self.0 & field as u8 != 0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+/// Runtime/HIL evidence gate kept separate from source formatter fields.
+///
+/// A complete source reconstruction can build a candidate queue plan, while
+/// this independent gate decides whether production may publish that plan.
+/// Keeping both facts separate avoids describing an on-air observation as a
+/// register field required to construct the image.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum HtDuplicateTxQualificationField {
+    /// A controlled peer decodes MCS32 and returns the expected terminal ACK
+    /// or BlockAck for the exact source-reconstructed queue image.
+    OnAirAck = 1 << 0,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateTxQualificationGaps(u8);
+
+impl HtDuplicateTxQualificationGaps {
+    pub const ESP32S31: Self = Self(HtDuplicateTxQualificationField::OnAirAck as u8);
+
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
+    pub const fn contains(self, field: HtDuplicateTxQualificationField) -> bool {
+        self.0 & field as u8 != 0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+/// Complete evidence frontier reported by the fail-closed S31 boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateTxEvidenceGaps {
+    formatter: HtDuplicateTxOracleGaps,
+    qualification: HtDuplicateTxQualificationGaps,
+}
+
+impl HtDuplicateTxEvidenceGaps {
+    pub const ESP32S31: Self = Self {
+        formatter: HtDuplicateTxOracleGaps::ESP32S31,
+        qualification: HtDuplicateTxQualificationGaps::ESP32S31,
+    };
+
+    pub const fn formatter(self) -> HtDuplicateTxOracleGaps {
+        self.formatter
+    }
+
+    pub const fn qualification(self) -> HtDuplicateTxQualificationGaps {
+        self.qualification
+    }
+}
+
+/// Explicit fail-closed boundary between protocol MCS32 and S31 TX hardware.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HtDuplicateTxUnavailable {
+    /// Reviewed formatter fields and/or the independent qualification gate
+    /// remain incomplete.
+    Esp32s31EvidenceIncomplete(HtDuplicateTxEvidenceGaps),
+}
+
+impl HtDuplicateTxUnavailable {
+    pub const fn evidence_gaps(self) -> HtDuplicateTxEvidenceGaps {
+        match self {
+            Self::Esp32s31EvidenceIncomplete(gaps) => gaps,
+        }
+    }
+}
+
+/// Explicit, finite request for the HT Duplicate certification path.
+///
+/// This request is deliberately separate from [`HtMcs`] and the recovered
+/// rate-control schedules. Ordinary link adaptation can therefore never rank
+/// MCS32 beside MCS0..MCS7. The duration is a caller-owned upper bound for one
+/// PPDU; zero is retained as an invalid input so a planner can report the exact
+/// rejection instead of silently substituting a policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateCertificationRequest {
+    channel_width: HtChannelWidth,
+    guard_interval: HtGuardInterval,
+    maximum_ppdu_duration_micros: u32,
+}
+
+/// Hardware-admitted MCS32 plan kept outside the ordinary PHY-rate domain.
+///
+/// This value can only be created by the private reviewed-hardware boundary.
+/// In particular, it is not convertible to [`TxPhyRate`]: that enum selects
+/// the ordinary legacy/HT/HE formatters and cannot represent duplicate mode.
+/// The private fields also prevent an upper layer from manufacturing a plan
+/// after performing only protocol capability checks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateTxPlan {
+    rate: HtDuplicateRate,
+    maximum_ppdu_duration_micros: NonZeroU32,
+}
+
+impl HtDuplicateTxPlan {
+    pub const fn rate(self) -> HtDuplicateRate {
+        self.rate
+    }
+
+    pub const fn maximum_ppdu_duration_micros(self) -> NonZeroU32 {
+        self.maximum_ppdu_duration_micros
+    }
+}
+
+impl HtDuplicateCertificationRequest {
+    pub const fn new(
+        channel_width: HtChannelWidth,
+        guard_interval: HtGuardInterval,
+        maximum_ppdu_duration_micros: u32,
+    ) -> Self {
+        Self {
+            channel_width,
+            guard_interval,
+            maximum_ppdu_duration_micros,
+        }
+    }
+
+    pub const fn channel_width(self) -> HtChannelWidth {
+        self.channel_width
+    }
+
+    pub const fn guard_interval(self) -> HtGuardInterval {
+        self.guard_interval
+    }
+
+    pub const fn maximum_ppdu_duration_micros(self) -> u32 {
+        self.maximum_ppdu_duration_micros
+    }
+}
+
+/// Negotiated facts consumed by the MCS32-only selector.
+///
+/// `channel_width == None` represents a legacy association. Keeping this
+/// small value independent of STA/AP peer records gives both role planners
+/// one shared validation and hardware-admission boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct HtDuplicateTxLinkCapabilities {
+    channel_width: Option<HtChannelWidth>,
+    peer_supports_mcs32: bool,
+    peer_supports_short_guard_interval: bool,
+}
+
+impl HtDuplicateTxLinkCapabilities {
+    pub const fn new(
+        channel_width: Option<HtChannelWidth>,
+        peer_supports_mcs32: bool,
+        peer_supports_short_guard_interval: bool,
+    ) -> Self {
+        Self {
+            channel_width,
+            peer_supports_mcs32,
+            peer_supports_short_guard_interval,
+        }
+    }
+
+    pub const fn channel_width(self) -> Option<HtChannelWidth> {
+        self.channel_width
+    }
+
+    pub const fn peer_supports_mcs32(self) -> bool {
+        self.peer_supports_mcs32
+    }
+
+    pub const fn peer_supports_short_guard_interval(self) -> bool {
+        self.peer_supports_short_guard_interval
+    }
+}
+
+/// Exact reason an explicit MCS32 request was not selected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HtDuplicateTxRejection {
+    ZeroMaximumPpduDuration,
+    RequestedWidthMustBe40Mhz,
+    LinkIsNot40Mhz,
+    PeerDoesNotSupportMcs32,
+    PeerDoesNotSupportShortGuardInterval,
+    Hardware(HtDuplicateTxUnavailable),
+}
+
+/// Value-only planner/telemetry result for the independent MCS32 request.
+///
+/// A rejected request never changes the ordinary STA/AP fallback rate. A
+/// future `Selected` value must come only from the hardware boundary below;
+/// it is not a candidate in the recovered rate-control schedule.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum HtDuplicateTxSelection {
+    #[default]
+    NotRequested,
+    Rejected {
+        request: HtDuplicateCertificationRequest,
+        reason: HtDuplicateTxRejection,
+    },
+    Selected {
+        request: HtDuplicateCertificationRequest,
+        plan: HtDuplicateTxPlan,
+    },
+}
+
+impl HtDuplicateTxSelection {
+    pub const fn request(self) -> Option<HtDuplicateCertificationRequest> {
+        match self {
+            Self::NotRequested => None,
+            Self::Rejected { request, .. } | Self::Selected { request, .. } => Some(request),
+        }
+    }
+
+    pub const fn rejection(self) -> Option<HtDuplicateTxRejection> {
+        match self {
+            Self::Rejected { reason, .. } => Some(reason),
+            Self::NotRequested | Self::Selected { .. } => None,
+        }
+    }
+
+    pub const fn plan(self) -> Option<HtDuplicateTxPlan> {
+        match self {
+            Self::Selected { plan, .. } => Some(plan),
+            Self::NotRequested | Self::Rejected { .. } => None,
+        }
+    }
+}
+
+/// Evaluate one fixed MCS32 request against negotiated link facts and the
+/// reviewed ESP32-S31 hardware contract.
+///
+/// Width, GI and the caller's finite PPDU-duration bound are rejected before
+/// touching the hardware boundary. Today every protocol-valid candidate then
+/// fails closed because no tracked oracle proves the special queue selector,
+/// HT-SIG/DATA_LENGTH image, protection rate or calibrated power lookup.
+pub fn select_esp32s31_ht_duplicate_tx(
+    request: Option<HtDuplicateCertificationRequest>,
+    link: HtDuplicateTxLinkCapabilities,
+) -> HtDuplicateTxSelection {
+    let Some(request) = request else {
+        return HtDuplicateTxSelection::NotRequested;
+    };
+    let rejection = if request.maximum_ppdu_duration_micros() == 0 {
+        Some(HtDuplicateTxRejection::ZeroMaximumPpduDuration)
+    } else if request.channel_width() != HtChannelWidth::Mhz40 {
+        Some(HtDuplicateTxRejection::RequestedWidthMustBe40Mhz)
+    } else if link.channel_width() != Some(HtChannelWidth::Mhz40) {
+        Some(HtDuplicateTxRejection::LinkIsNot40Mhz)
+    } else if !link.peer_supports_mcs32 {
+        Some(HtDuplicateTxRejection::PeerDoesNotSupportMcs32)
+    } else if request.guard_interval() == HtGuardInterval::Short400Ns
+        && !link.peer_supports_short_guard_interval
+    {
+        Some(HtDuplicateTxRejection::PeerDoesNotSupportShortGuardInterval)
+    } else {
+        None
+    };
+    if let Some(reason) = rejection {
+        return HtDuplicateTxSelection::Rejected { request, reason };
+    }
+
+    let Some(maximum_ppdu_duration_micros) =
+        NonZeroU32::new(request.maximum_ppdu_duration_micros())
+    else {
+        return HtDuplicateTxSelection::Rejected {
+            request,
+            reason: HtDuplicateTxRejection::ZeroMaximumPpduDuration,
+        };
+    };
+    match esp32s31_ht_duplicate_hardware_boundary(
+        HtDuplicateRate::new(request.guard_interval()),
+        maximum_ppdu_duration_micros,
+    ) {
+        Ok(plan) => HtDuplicateTxSelection::Selected { request, plan },
+        Err(error) => HtDuplicateTxSelection::Rejected {
+            request,
+            reason: HtDuplicateTxRejection::Hardware(error),
+        },
+    }
+}
+
+/// Sole source boundary at which reviewed S31 MCS32 formatter evidence can be
+/// attached. Until that evidence identifies every queue-vector and power
+/// input, a protocol-valid certification request remains unpublishable.
+fn esp32s31_ht_duplicate_hardware_boundary(
+    _rate: HtDuplicateRate,
+    _maximum_ppdu_duration_micros: NonZeroU32,
+) -> Result<HtDuplicateTxPlan, HtDuplicateTxUnavailable> {
+    Err(HtDuplicateTxUnavailable::Esp32s31EvidenceIncomplete(
+        HtDuplicateTxEvidenceGaps::ESP32S31,
+    ))
 }
 
 /// One-spatial-stream 802.11ax modulation and coding scheme.
@@ -1500,7 +1929,7 @@ impl HeRate {
         if self.dcm { limit / 2 } else { limit }
     }
 
-    /// Maximum APEP bytes for this rate and one EDCA TXOP limit.
+    /// Checked maximum APEP bytes for this rate and one EDCA TXOP limit.
     ///
     /// SOURCE: complete `libpp.a[trc.o]::
     /// rx11AXRate2AMPDULimit_update` (size `0x136`), complete
@@ -1522,13 +1951,49 @@ impl HeRate {
     /// - RU242 NDBPS: 117, 234, 351, 468, 702, 936, 1053, 1170, 1404, 1560.
     ///
     /// A zero limit retains the ROM table exposed by
-    /// [`Self::maximum_default_apep_bytes`]. Complete
-    /// `ppCheckTxHEAMPDUlength` applies the DCM divide-by-two after either
-    /// table lookup, which this method also reproduces.
+    /// [`Self::maximum_default_apep_bytes`]. A nonzero limit whose complete
+    /// duration calculation leaves no positive payload budget returns
+    /// `None`. The blob converts that negative signed result to an unsigned
+    /// table entry, but an untrusted peer can advertise such a short TXOP;
+    /// treating the wrap as a large APEP would fail open.
+    pub const fn checked_maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> Option<u32> {
+        if txop.is_default() {
+            return Some(self.maximum_default_apep_bytes() as u32);
+        }
+
+        let signed_bytes = self.nonzero_txop_apep_bytes(txop);
+        if signed_bytes <= 0 {
+            return None;
+        }
+        let limit = self.vendor_unchecked_maximum_apep_bytes(txop);
+        if limit == 0 { None } else { Some(limit) }
+    }
+
+    /// Fail-closed maximum used by compatibility callers which do not need
+    /// to distinguish a non-positive duration budget from a zero-byte limit.
     pub const fn maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> u32 {
+        match self.checked_maximum_apep_bytes(txop) {
+            Some(limit) => limit,
+            None => 0,
+        }
+    }
+
+    /// Preserve the complete blob conversion as a private comparison oracle.
+    /// Production admission calls [`Self::checked_maximum_apep_bytes`] first,
+    /// so a negative signed result can never become aggregate capacity.
+    /// The exact rational producer below is exhaustively compared with the
+    /// blob's f32 instruction sequence across every peer-admitted TXOP byte,
+    /// all three GI/LTF rows and all ten MCS values.
+    const fn vendor_unchecked_maximum_apep_bytes(self, txop: HeEdcaTxopLimit) -> u32 {
         if txop.is_default() {
             return self.maximum_default_apep_bytes() as u32;
         }
+        let limit = self.nonzero_txop_apep_bytes(txop) as u32;
+        if self.dcm { limit / 2 } else { limit }
+    }
+
+    const fn nonzero_txop_apep_bytes(self, txop: HeEdcaTxopLimit) -> i64 {
+        debug_assert!(!txop.is_default());
 
         const DATA_BITS_PER_SYMBOL_RU242: [i32; 10] =
             [117, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
@@ -1546,7 +2011,7 @@ impl HeRate {
         };
         let exchange_budget_us = txop.units_32_us() as i64 * 32 - 36;
         let data_bits_per_symbol = DATA_BITS_PER_SYMBOL_RU242[mcs] as i64;
-        let bytes = match self.guard_interval_and_ltf {
+        match self.guard_interval_and_ltf {
             crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns
             | crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => {
                 // ((budget - BA - 31.2) / 13.6 * NDBPS - 22) / 8
@@ -1566,12 +2031,7 @@ impl HeRate {
                     - 22 * 16)
                     / (16 * 8)
             }
-        };
-        // The exact rational form was exhaustively compared with the blob's
-        // f32 instruction sequence for all 256 values admitted by its WMM
-        // parser, all three rows, and all ten MCS values.
-        let limit = bytes as u32;
-        if self.dcm { limit / 2 } else { limit }
+        }
     }
 
     /// Minimum HE A-MPDU subframe length for a negotiated density.
@@ -2248,6 +2708,7 @@ impl HtAmpduTxConfig {
 pub struct HeTriggerBasedTxConfig {
     tid_limit: MacHeTbTidLimit,
     tid: MacHeTid,
+    runtime_handoff_window_micros: Option<NonZeroU64>,
 }
 
 impl HeTriggerBasedTxConfig {
@@ -2259,10 +2720,26 @@ impl HeTriggerBasedTxConfig {
     /// TID, as the complete `mac_tx_set_tb` body does.
     pub const fn new(tid_limit: MacHeTbTidLimit, tid: MacHeTid) -> Option<Self> {
         if tid_limit.contains(tid) {
-            Some(Self { tid_limit, tid })
+            Some(Self {
+                tid_limit,
+                tid,
+                runtime_handoff_window_micros: None,
+            })
         } else {
             None
         }
+    }
+
+    /// Enable the bounded software handoff from an RX Trigger/NDPA event to
+    /// the unique connected TX owner.
+    ///
+    /// This caller-supplied duration is measured from the first executor-side
+    /// completed-RX handoff. It is intentionally not a fabricated IEEE SIFS or
+    /// HE-TB air-timing constant. The final TX boundary still fails closed
+    /// until a reviewed HE-TB PHY publication contract exists.
+    pub const fn with_runtime_handoff_window_micros(mut self, window: NonZeroU64) -> Self {
+        self.runtime_handoff_window_micros = Some(window);
+        self
     }
 
     pub const fn tid_limit(self) -> MacHeTbTidLimit {
@@ -2271,6 +2748,10 @@ impl HeTriggerBasedTxConfig {
 
     pub const fn tid(self) -> MacHeTid {
         self.tid
+    }
+
+    pub const fn runtime_handoff_window_micros(self) -> Option<NonZeroU64> {
+        self.runtime_handoff_window_micros
     }
 }
 
@@ -2348,9 +2829,12 @@ impl HeAmpduTxConfig {
         ampdu_density: HtAmpduDensity,
         txop_limit: HeEdcaTxopLimit,
     ) -> Option<Self> {
+        let Some(maximum_apep_bytes) = rate.checked_maximum_apep_bytes(txop_limit) else {
+            return None;
+        };
         if bss_color > 0x3f
             || aggregate_length == 0
-            || (aggregate_length as u32) > rate.maximum_apep_bytes(txop_limit)
+            || (aggregate_length as u32) > maximum_apep_bytes
             || subframes == 0
             || subframes > 32
         {
@@ -2415,11 +2899,15 @@ impl HeAmpduTxConfig {
     }
 
     const fn valid(self) -> bool {
+        let apep_valid = match self.rate.checked_maximum_apep_bytes(self.txop_limit) {
+            Some(limit) => (self.aggregate_length as u32) <= limit,
+            None => false,
+        };
         self.bss_color <= 0x3f
             && self.spatial_reuse <= 0x0f
             && self.protection_spacing <= 0x03ff
             && self.aggregate_length != 0
-            && (self.aggregate_length as u32) <= self.rate.maximum_apep_bytes(self.txop_limit)
+            && apep_valid
             && self.subframes != 0
             && self.subframes <= 32
             && self.aifsn <= 0x0f
@@ -2651,32 +3139,24 @@ pub const fn ht_q0_image(descriptor_address: u32, config: HtTxConfig) -> Option<
     if !descriptor_address_valid(descriptor_address) || !config.valid() {
         return None;
     }
-    let rate = config.rate.code();
     let rts_rate = config.rate.vendor_rts_rate();
-    let channel_width_40 = match config.rate.channel_width {
-        HtChannelWidth::Mhz20 => false,
-        HtChannelWidth::Mhz40 => true,
-    };
-    // Complete mac_tx_set_htsig and mac_tx_set_plcp1 both consume descriptor
-    // word1 bit 15 as the HT40 selector. The direct Rust-owned descriptor does
-    // not carry the vendor metadata word, so construct its exact finite image
-    // from the typed channel width.
-    let descriptor_word1 = if channel_width_40 { 0x0000_8000 } else { 0 };
     Some(HtQ0Image {
         // SOURCE: HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29. The exact
         // synchronous formatter result retains bit 22 in PLCP0. The separate
         // mac_tx_set_txop_q policy edge is not reached between lmacSetTxFrame
         // and queue publication for this vendor single-MPDU path.
         plcp0: basic_plcp0_word(descriptor_address as usize, HT_SINGLE_DESCRIPTOR_FLAGS),
-        plcp1: basic_non_he_plcp1_word(
-            rate,
+        plcp1: ht_plcp1_word(
+            config.rate,
             HT_SINGLE_DESCRIPTOR_FLAGS,
             plcp1_descriptor_control(config.hardware_key_selector, config.interface),
-            descriptor_word1,
-            0,
         ),
-        ht_signal: basic_htsig_word(rate, channel_width_40, config.length as u32),
-        data_length: basic_data_length_word(rate, config.length as u32, HT_SINGLE_ENTRY_FLAGS),
+        ht_signal: basic_htsig_word(config.rate, config.length as u32),
+        data_length: basic_data_length_word(
+            config.rate,
+            config.length as u32,
+            HT_SINGLE_ENTRY_FLAGS,
+        ),
         power: config.data_power_primary as u32
             | ((config.data_power_alternate as u32) << 8)
             | ((config.rts_power_primary as u32) << 16)
@@ -2707,13 +3187,7 @@ pub const fn ht_ampdu_q0_image(
     if !descriptor_address_valid(dma_head_address) || !config.valid() {
         return None;
     }
-    let rate = config.rate.code();
     let rts_rate = config.rate.vendor_rts_rate();
-    let channel_width_40 = match config.rate.channel_width {
-        HtChannelWidth::Mhz20 => false,
-        HtChannelWidth::Mhz40 => true,
-    };
-    let descriptor_word1 = if channel_width_40 { 0x0000_8000 } else { 0 };
     Some(HtQ0Image {
         // SOURCE: complete `libpp.a[hal_mac_tx.o]::
         // mac_tx_set_plcp0` as reached from the A-MPDU submit branch. Its
@@ -2721,16 +3195,14 @@ pub const fn ht_ampdu_q0_image(
         // descriptor. The PP descriptor at `frame+0x34` supplies flags and
         // rate metadata but is not the hardware walker head.
         plcp0: basic_plcp0_word(dma_head_address as usize, HT_AMPDU_DESCRIPTOR_FLAGS),
-        plcp1: basic_non_he_plcp1_word(
-            rate,
+        plcp1: ht_plcp1_word(
+            config.rate,
             HT_AMPDU_DESCRIPTOR_FLAGS,
             plcp1_descriptor_control(config.hardware_key_selector, config.interface),
-            descriptor_word1,
-            0,
         ),
-        ht_signal: ht_htsig_word(rate, channel_width_40, config.aggregate_length as u32, true),
+        ht_signal: ht_htsig_word(config.rate, config.aggregate_length as u32, true),
         data_length: basic_data_length_word(
-            rate,
+            config.rate,
             config.aggregate_length as u32,
             HT_AMPDU_ENTRY_FLAGS,
         ),
@@ -3048,6 +3520,58 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         Ok(())
     }
 
+    /// Programs and starts one HE20 SU S-MPDU on an ordinary EDCA queue.
+    ///
+    /// The source descriptor retains the encoded MPDU (and any
+    /// hardware-generated CCMP MIC/FCS space). The HE queue vector supplies
+    /// the S-MPDU delimiter/APEP geometry recovered by
+    /// [`he_smpdu_q0_image`]; this path deliberately does not borrow the
+    /// multi-descriptor A-MPDU owner or its BlockAck completion contract.
+    pub fn submit_he_smpdu<H: TxHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+        queue: LegacyTxQueue,
+        config: HeSmpduTxConfig,
+    ) -> Result<(), TxError> {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {
+            return Err(TxError::Stale);
+        }
+        let image = he_smpdu_q0_image(slot.dma.binding().descriptor_address(), config)
+            .ok_or(TxError::Invalid)?;
+        let index = queue.index();
+        let program = MacHeTxProgram {
+            plcp0: image.plcp0,
+            plcp1: image.plcp1,
+            he_signal_a1: image.he_signal_a1,
+            he_signal_a2_length: image.he_signal_a2_length,
+            software_he_control: None,
+            power: image.power,
+            length_control: image.length_control,
+            descriptor_count_a: image.descriptor_count_a,
+            descriptor_count_b: image.descriptor_count_b,
+            protection_spacing: image.protection_spacing,
+            timeout: config.timeout,
+            scheduler_priority: config.scheduler_priority,
+            packet_priority: config.pti,
+            priority_count: config.pti_count,
+            aifsn: config.aifsn,
+            contention_window: config.contention_window,
+            interface: config.interface,
+        };
+        let publication = slot.dma.publication().map_err(map_dma_storage_error)?;
+        if !hardware.prepare_bound_he_tx(&publication, index, program) {
+            return Err(TxError::QueueActive);
+        }
+
+        slot.queue = queue;
+        publication.commit(|start| {
+            hardware.start_bound_he_tx(start, index, image.plcp0);
+        });
+        Ok(())
+    }
+
     /// Publishes the software owner immediately before the future management
     /// TX layer performs its final q0 ENABLE|VALID write under MAC-IRQ
     /// exclusion. Full q0 PPDU/rate configuration must precede this call; this
@@ -3236,6 +3760,7 @@ fn map_dma_storage_error(error: TxDmaStorageError) -> TxError {
 #[cfg(test)]
 mod completion_disposition_tests {
     use super::*;
+    use crate::rx::HeGuardIntervalAndLtf;
 
     fn completion(status: u8, detail: u8) -> TxCompletion {
         TxCompletion {
@@ -3302,5 +3827,46 @@ mod completion_disposition_tests {
         completion.used_alternate = true;
         assert_eq!(completion.detail(), 3);
         assert_eq!(completion.disposition(), TxCompletionDisposition::Collision);
+    }
+
+    #[test]
+    fn private_he_apep_oracle_preserves_the_complete_vendor_wrap_domain() {
+        let profiles = [
+            (HeGuardIntervalAndLtf::TwoLtf800Ns, 31.2_f32, 13.6_f32),
+            (HeGuardIntervalAndLtf::TwoLtf1600Ns, 32.0_f32, 14.4_f32),
+            (HeGuardIntervalAndLtf::FourLtf3200Ns, 40.0_f32, 16.0_f32),
+        ];
+        let data_bits_per_symbol = [117_i32, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
+        let estimated_block_ack_us = [68_i32, 44, 44, 32, 32, 32, 32, 32, 32, 32];
+
+        let mut wrapped = 0_u16;
+        for units_32_us in 1_u16..=u16::from(u8::MAX) {
+            let txop = HeEdcaTxopLimit::from_units_32_us(units_32_us).unwrap();
+            for (guard_interval_and_ltf, preamble_us, symbol_us) in profiles {
+                for mcs_index in 0..10 {
+                    let data_symbols = (((i32::from(units_32_us) * 32 - 36)
+                        - estimated_block_ack_us[mcs_index])
+                        as f32
+                        - preamble_us)
+                        / symbol_us;
+                    let expected = ((data_bits_per_symbol[mcs_index] as f32)
+                        .mul_add(data_symbols, -22.0_f32)
+                        as i32
+                        / 8) as u32;
+                    let rate = HeRate::new(
+                        HeMcs::from_index(mcs_index as u8).unwrap(),
+                        guard_interval_and_ltf,
+                    );
+                    assert_eq!(rate.vendor_unchecked_maximum_apep_bytes(txop), expected);
+                    if expected > i32::MAX as u32 {
+                        wrapped = wrapped.saturating_add(1);
+                    }
+                }
+            }
+        }
+        assert_ne!(
+            wrapped, 0,
+            "the private oracle retains wrapped blob outputs"
+        );
     }
 }

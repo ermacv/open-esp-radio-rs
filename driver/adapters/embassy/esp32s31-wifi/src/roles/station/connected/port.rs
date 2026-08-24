@@ -10,16 +10,21 @@ use open_esp_radio_embassy_net::{PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::{
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
+    init::{StaEspNowRxPolicyHardware, configure_sta_esp_now_receive_policy},
     rate_control::{StaRateControlAssociation, StaTxRatePolicy},
     rx::RxIngressConfig,
     rx_ampdu::{RxBlockAckSessions, RxBlockAckSessionsError},
     tx::{
-        HeDcmRate, HeEdcaTxopLimit, HeMcs, HtGuardInterval, HtMcs, LegacyRate, TxPhyRate,
-        TxSlotState,
+        HeDcmRate, HeEdcaTxopLimit, HeMcs, HeTriggerBasedTxConfig, HtChannelWidth,
+        HtDuplicateCertificationRequest, HtDuplicateTxLinkCapabilities, HtDuplicateTxSelection,
+        HtGuardInterval, HtMcs, LegacyRate, TxPhyRate, TxSlotState,
+        select_esp32s31_ht_duplicate_tx,
     },
     tx_ampdu::{StaTxBlockAckSessions, TxBlockAckError},
 };
-use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+    ConnectedRxConfig, StaCcmpRxReplayRxEndpoint,
+};
 use open_esp_radio_esp32s31_wifi_sta::peer::{Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink};
 use open_esp_radio_esp32s31_wifi_sta::{
     control_tx::Esp32s31ControlTx,
@@ -28,13 +33,18 @@ use open_esp_radio_esp32s31_wifi_sta::{
 use open_esp_radio_ieee80211::{
     he::HeDcmConstellation,
     station::{StaAssociationPhy, StaTxSequenceCounters},
+    station_power_save::StaAssociationId,
     wmm::WmmAccessCategory,
 };
 use open_esp_radio_wifi_softmac::{
-    MacServiceCapabilities, MacTxPlan, WifiPlan,
+    EspNowRxEpoch, MacServiceCapabilities, MacTxPlan, WifiPlan,
     interface::{BoundVirtualInterface, VifRole},
 };
-use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};
+use open_esp_radio_wifi_sta::{
+    link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError},
+    power_save::{StaPowerSavePolicy, StaPowerSavePolicyError},
+    request::StationPowerMode,
+};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::{
@@ -67,9 +77,11 @@ mod plan;
 mod resources;
 
 pub use plan::{
-    Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaConfig,
-    Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure,
-    Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaTxPolicy,
+    Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaCcmpReplayError,
+    Esp32s31ConnectedStaCcmpReplayFailure, Esp32s31ConnectedStaConfig,
+    Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaEspNowRxError, Esp32s31ConnectedStaPlan,
+    Esp32s31ConnectedStaPrepareFailure, Esp32s31ConnectedStaRateConfig,
+    Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaTxPolicy,
 };
 pub use resources::{
     Esp32s31ConnectedStaCompositionFailure, Esp32s31ConnectedStaControlResources,

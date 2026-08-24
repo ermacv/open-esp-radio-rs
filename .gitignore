@@ -1,6 +1,7 @@
 /target/
 **/target/
 driver/integration/**/Cargo.lock
+!driver/integration/esp32s31/embassy-wifi/Cargo.lock
 **/*.swp
 **/*.swo
 /_oracles/

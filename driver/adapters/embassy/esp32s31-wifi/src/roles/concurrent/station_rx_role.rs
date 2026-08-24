@@ -116,6 +116,20 @@ impl<O: ConnectedRxSink> ConnectedRxSink for Esp32s31StaApStationRxSink<'_, O> {
         }
         self.observer.publish(event);
     }
+
+    fn supports_esp_now_v2(&self) -> bool {
+        self.observer.supports_esp_now_v2()
+    }
+
+    fn publish_esp_now_v2(
+        &mut self,
+        received: open_esp_radio_wifi_softmac::EspNowReceivedV2<'_>,
+        metadata: open_esp_radio_wifi_softmac::MacRxMetadata<
+            open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo,
+        >,
+    ) {
+        self.observer.publish_esp_now_v2(received, metadata);
+    }
 }
 
 impl<O: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>

@@ -8,6 +8,8 @@
 use open_esp_radio_esp32s31_hal::types::MacKeyInstallOutcome;
 use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 use open_esp_radio_ieee80211::ccmp::ccmp_header;
+use subtle::ConstantTimeEq;
+use zeroize::Zeroize;
 
 const STA_PAIRWISE_HARDWARE_INDEX: u8 = 4;
 const STA_GROUP_HARDWARE_INDEX: u8 = 1;
@@ -23,10 +25,72 @@ const CCMP_ALGORITHM: u32 = 3;
 const CCMP_KEY_BYTES: usize = 16;
 const CCMP_ENTRY_WORDS: usize = 6;
 
-const fn advance_esp32s31_tx_pn(low: u32, high: u32) -> (u32, u32) {
+const fn advance_esp32s31_tx_pn(low: u32, high: u16) -> Option<(u32, u16)> {
     let next_low = low.wrapping_add(3);
-    let carry = (next_low < low) as u32;
-    (next_low, high.wrapping_add(carry))
+    if next_low < low {
+        if high == u16::MAX {
+            None
+        } else {
+            Some((next_low, high + 1))
+        }
+    } else {
+        Some((next_low, high))
+    }
+}
+
+/// Exhaustion of one key's finite 48-bit CCMP transmit packet-number space.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CcmpTxPacketNumberError {
+    Exhausted,
+}
+
+/// Unique software owner of one installed key's transmit packet number.
+struct CcmpTxPacketNumber {
+    low: u32,
+    high: u16,
+}
+
+impl CcmpTxPacketNumber {
+    const fn new() -> Self {
+        Self { low: 0, high: 0 }
+    }
+
+    fn next_header(&mut self, key_id_bits: u8) -> Result<[u8; 8], CcmpTxPacketNumberError> {
+        let Some((low, high)) = advance_esp32s31_tx_pn(self.low, self.high) else {
+            return Err(CcmpTxPacketNumberError::Exhausted);
+        };
+        self.low = low;
+        self.high = high;
+        Ok(ccmp_header(low, u32::from(high), key_id_bits))
+    }
+}
+
+/// One non-copyable key-table image, scrubbed immediately after MMIO use and
+/// again on every drop path.
+struct CcmpKeyTableImage([u32; CCMP_ENTRY_WORDS]);
+
+impl CcmpKeyTableImage {
+    const fn zeroed() -> Self {
+        Self([0; CCMP_ENTRY_WORDS])
+    }
+
+    const fn words(&self) -> &[u32; CCMP_ENTRY_WORDS] {
+        &self.0
+    }
+
+    fn words_mut(&mut self) -> &mut [u32; CCMP_ENTRY_WORDS] {
+        &mut self.0
+    }
+
+    fn scrub(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl Drop for CcmpKeyTableImage {
+    fn drop(&mut self) {
+        self.scrub();
+    }
 }
 
 /// Finite hardware authority for the two open STA CCMP slots.
@@ -34,12 +98,12 @@ pub trait CcmpKeyHardware {
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome;
     fn install_ap_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_sta_ccmp_entry(index, words)
     }
@@ -55,7 +119,7 @@ impl CcmpKeyHardware for WifiMacHal<'_> {
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_station_ccmp_entry(index, words)
     }
@@ -63,7 +127,7 @@ impl CcmpKeyHardware for WifiMacHal<'_> {
     fn install_ap_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_access_point_ccmp_entry(index, words)
     }
@@ -81,7 +145,7 @@ impl CcmpKeyHardware for RadioRuntimeOwner {
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         CcmpKeyHardware::install_sta_ccmp_entry(&mut self.wifi_mac_hal(), index, words)
     }
@@ -89,7 +153,7 @@ impl CcmpKeyHardware for RadioRuntimeOwner {
     fn install_ap_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         CcmpKeyHardware::install_ap_ccmp_entry(&mut self.wifi_mac_hal(), index, words)
     }
@@ -109,6 +173,23 @@ pub enum CryptoKeyError {
     InvalidAccessPointAssociationId,
     Occupied,
     HardwareRejected,
+}
+
+/// Fail-closed result of replacing the one occupied STA group slot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaGroupCcmpReplaceError {
+    /// Validation failed before the old entry was touched.
+    InvalidReplacement(CryptoKeyError),
+    /// The new publication failed and the exact old key was restored.
+    ReplacementRolledBack(CryptoKeyError),
+    /// Neither complete epoch is installed. The slot token is invalidated and
+    /// group RX must remain quarantined until disconnect teardown.
+    RollbackFailed {
+        replacement: CryptoKeyError,
+        rollback: CryptoKeyError,
+    },
+    /// The supplied old material does not authorize the occupied slot.
+    CurrentMaterialMismatch,
 }
 
 /// Closed encoding of the vendor key-table connection owner.
@@ -136,8 +217,7 @@ impl KeyConnectionContext {
 #[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
 pub struct StaPairwiseCcmpSlot {
     peer: [u8; 6],
-    tx_pn_low: u32,
-    tx_pn_high: u32,
+    tx_packet_number: CcmpTxPacketNumber,
 }
 
 /// Authority for the one active STA group CCMP slot recovered from the
@@ -148,14 +228,52 @@ pub struct StaGroupCcmpSlot {
     installed: bool,
 }
 
+/// Zeroizing software rollback authority for the one installed STA GTK.
+///
+/// The hardware slot token intentionally contains no secret. Connected group
+/// rekey must therefore retain this separate owner; without it a failed
+/// replacement cannot truthfully restore the old hardware epoch.
+#[must_use = "GTK material must remain owned until replacement or teardown"]
+pub struct StaGroupCcmpKeyMaterial {
+    key_id: u8,
+    temporal_key: [u8; CCMP_KEY_BYTES],
+}
+
+impl StaGroupCcmpKeyMaterial {
+    pub fn new(key_id: u8, temporal_key: [u8; CCMP_KEY_BYTES]) -> Result<Self, CryptoKeyError> {
+        if key_id > MAX_WPA2_GTK_ID {
+            return Err(CryptoKeyError::InvalidGroupKeyId);
+        }
+        Ok(Self {
+            key_id,
+            temporal_key,
+        })
+    }
+
+    pub const fn key_id(&self) -> u8 {
+        self.key_id
+    }
+
+    /// Compare key bytes without making a same-KeyID admission decision leak
+    /// the first differing secret octet.
+    pub fn same_temporal_key(&self, other: &Self) -> bool {
+        bool::from(self.temporal_key.ct_eq(&other.temporal_key))
+    }
+}
+
+impl Drop for StaGroupCcmpKeyMaterial {
+    fn drop(&mut self) {
+        self.temporal_key.zeroize();
+    }
+}
+
 /// Authority for one AP peer pairwise CCMP entry.
 #[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
 pub struct ApPairwiseCcmpSlot {
     peer: [u8; 6],
     association_id: u16,
     hardware_index: u8,
-    tx_pn_low: u32,
-    tx_pn_high: u32,
+    tx_packet_number: CcmpTxPacketNumber,
 }
 
 /// Authority for the one group key exposed by an AP service epoch.
@@ -163,8 +281,7 @@ pub struct ApPairwiseCcmpSlot {
 pub struct ApGroupCcmpSlot {
     key_id: u8,
     hardware_index: u8,
-    tx_pn_low: u32,
-    tx_pn_high: u32,
+    tx_packet_number: CcmpTxPacketNumber,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -210,10 +327,10 @@ impl StaPairwiseCcmpSlot {
     ///
     /// The pinned S31 net80211 implementation advances by three. A newly
     /// installed key therefore emits PN 3 first. Pairwise traffic uses key ID
-    /// zero, so only the ExtIV bit is present in byte three.
-    pub fn next_tx_ccmp_header(&mut self) -> [u8; 8] {
-        (self.tx_pn_low, self.tx_pn_high) = advance_esp32s31_tx_pn(self.tx_pn_low, self.tx_pn_high);
-        ccmp_header(self.tx_pn_low, self.tx_pn_high, 0)
+    /// zero, so only the ExtIV bit is present in byte three. Once PN 2^48 - 1
+    /// has been emitted, later calls fail without wrapping or mutating state.
+    pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
+        self.tx_packet_number.next_header(0)
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -234,9 +351,8 @@ impl ApPairwiseCcmpSlot {
         self.association_id
     }
 
-    pub fn next_tx_ccmp_header(&mut self) -> [u8; 8] {
-        (self.tx_pn_low, self.tx_pn_high) = advance_esp32s31_tx_pn(self.tx_pn_low, self.tx_pn_high);
-        ccmp_header(self.tx_pn_low, self.tx_pn_high, 0)
+    pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
+        self.tx_packet_number.next_header(0)
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -253,9 +369,8 @@ impl ApGroupCcmpSlot {
         self.key_id
     }
 
-    pub fn next_tx_ccmp_header(&mut self) -> [u8; 8] {
-        (self.tx_pn_low, self.tx_pn_high) = advance_esp32s31_tx_pn(self.tx_pn_low, self.tx_pn_high);
-        ccmp_header(self.tx_pn_low, self.tx_pn_high, self.key_id << 6)
+    pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
+        self.tx_packet_number.next_header(self.key_id << 6)
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -296,6 +411,26 @@ pub fn clear_sta_ccmp_slots<H: CcmpKeyHardware>(
     report
 }
 
+fn install_sta_key_table_image<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    index: u8,
+    image: &mut CcmpKeyTableImage,
+) -> MacKeyInstallOutcome {
+    let outcome = hardware.install_sta_ccmp_entry(index, image.words());
+    image.scrub();
+    outcome
+}
+
+fn install_ap_key_table_image<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    index: u8,
+    image: &mut CcmpKeyTableImage,
+) -> MacKeyInstallOutcome {
+    let outcome = hardware.install_ap_ccmp_entry(index, image.words());
+    image.scrub();
+    outcome
+}
+
 /// Installs the WPA2 temporal key into the recovered STA pairwise slot.
 ///
 /// The slot must be invalid on entry. This fail-closed rule prevents an open
@@ -319,22 +454,22 @@ pub fn install_sta_pairwise_ccmp<H: CcmpKeyHardware>(
         | (PAIRWISE_LOGICAL_KEY_INDEX << 14)
         | ((cipher >> 16) & 0x341f);
 
-    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    let mut image = CcmpKeyTableImage::zeroed();
+    let words = image.words_mut();
     words[0] = peer_low;
     words[1] = u32::from(peer_high) | (control << 16);
     for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
         words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte TK word"));
     }
 
-    match hardware.install_sta_ccmp_entry(STA_PAIRWISE_HARDWARE_INDEX, words) {
+    match install_sta_key_table_image(hardware, STA_PAIRWISE_HARDWARE_INDEX, &mut image) {
         MacKeyInstallOutcome::Installed => {}
         MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
         MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
     }
     Ok(StaPairwiseCcmpSlot {
         peer,
-        tx_pn_low: 0,
-        tx_pn_high: 0,
+        tx_packet_number: CcmpTxPacketNumber::new(),
     })
 }
 
@@ -360,14 +495,15 @@ pub fn install_sta_group_ccmp<H: CcmpKeyHardware>(
         | (logical_key_index << 14)
         | ((cipher >> 16) & 0x341f);
 
-    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    let mut image = CcmpKeyTableImage::zeroed();
+    let words = image.words_mut();
     words[0] = u32::MAX;
     words[1] = u32::from(u16::MAX) | (control << 16);
     for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
         words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte GTK word"));
     }
 
-    match hardware.install_sta_ccmp_entry(STA_GROUP_HARDWARE_INDEX, words) {
+    match install_sta_key_table_image(hardware, STA_GROUP_HARDWARE_INDEX, &mut image) {
         MacKeyInstallOutcome::Installed => {}
         MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
         MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
@@ -409,14 +545,15 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
         | (PAIRWISE_LOGICAL_KEY_INDEX << 14)
         | ((cipher >> 16) & 0x341f);
 
-    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    let mut image = CcmpKeyTableImage::zeroed();
+    let words = image.words_mut();
     words[0] = peer_low;
     words[1] = u32::from(peer_high) | (control << 16);
     for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
         words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte TK word"));
     }
 
-    match hardware.install_ap_ccmp_entry(hardware_index, words) {
+    match install_ap_key_table_image(hardware, hardware_index, &mut image) {
         MacKeyInstallOutcome::Installed => {}
         MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
         MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
@@ -425,8 +562,7 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
         peer,
         association_id,
         hardware_index,
-        tx_pn_low: 0,
-        tx_pn_high: 0,
+        tx_packet_number: CcmpTxPacketNumber::new(),
     })
 }
 
@@ -450,14 +586,15 @@ pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
         | (logical_key_index << 14)
         | ((cipher >> 16) & 0x341f);
 
-    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    let mut image = CcmpKeyTableImage::zeroed();
+    let words = image.words_mut();
     words[0] = u32::MAX;
     words[1] = u32::from(u16::MAX) | (control << 16);
     for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
         words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte GTK word"));
     }
 
-    match hardware.install_ap_ccmp_entry(hardware_index, words) {
+    match install_ap_key_table_image(hardware, hardware_index, &mut image) {
         MacKeyInstallOutcome::Installed => {}
         MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
         MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
@@ -465,8 +602,7 @@ pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
     Ok(ApGroupCcmpSlot {
         key_id,
         hardware_index,
-        tx_pn_low: 0,
-        tx_pn_high: 0,
+        tx_packet_number: CcmpTxPacketNumber::new(),
     })
 }
 
@@ -499,6 +635,51 @@ pub fn replace_sta_group_ccmp<H: CcmpKeyHardware>(
     }
 }
 
+/// Replace the occupied STA GTK and restore the exact old entry on failure.
+///
+/// The caller must keep group replay publication gated for the whole call.
+/// A successful return changes only hardware; software replay/key-id rotation
+/// is a separate affine commit. `ReplacementRolledBack` proves that the old
+/// key is installed again and the old replay epoch may be un-gated.
+pub fn replace_sta_group_ccmp_with_rollback<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    slot: &mut StaGroupCcmpSlot,
+    current: &StaGroupCcmpKeyMaterial,
+    replacement: &StaGroupCcmpKeyMaterial,
+) -> Result<(), StaGroupCcmpReplaceError> {
+    if replacement.key_id > MAX_WPA2_GTK_ID {
+        return Err(StaGroupCcmpReplaceError::InvalidReplacement(
+            CryptoKeyError::InvalidGroupKeyId,
+        ));
+    }
+    if !slot.installed || slot.key_id != current.key_id {
+        return Err(StaGroupCcmpReplaceError::CurrentMaterialMismatch);
+    }
+
+    hardware.clear_ccmp_entry(STA_GROUP_HARDWARE_INDEX);
+    slot.installed = false;
+    match install_sta_group_ccmp(hardware, replacement.key_id, &replacement.temporal_key) {
+        Ok(installed) => {
+            *slot = installed;
+            Ok(())
+        }
+        Err(replacement_error) => {
+            match install_sta_group_ccmp(hardware, current.key_id, &current.temporal_key) {
+                Ok(restored) => {
+                    *slot = restored;
+                    Err(StaGroupCcmpReplaceError::ReplacementRolledBack(
+                        replacement_error,
+                    ))
+                }
+                Err(rollback) => Err(StaGroupCcmpReplaceError::RollbackFailed {
+                    replacement: replacement_error,
+                    rollback,
+                }),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,20 +687,21 @@ mod tests {
     #[derive(Default)]
     struct Hardware {
         occupied: bool,
-        reject_next: bool,
+        reject_installs: u8,
         installs: u8,
         clears: u8,
         last_index: Option<u8>,
+        last_words: [u32; CCMP_ENTRY_WORDS],
     }
 
     impl CcmpKeyHardware for Hardware {
         fn install_sta_ccmp_entry(
             &mut self,
             index: u8,
-            _words: [u32; CCMP_ENTRY_WORDS],
+            words: &[u32; CCMP_ENTRY_WORDS],
         ) -> MacKeyInstallOutcome {
-            if self.reject_next {
-                self.reject_next = false;
+            if self.reject_installs != 0 {
+                self.reject_installs -= 1;
                 return MacKeyInstallOutcome::Rejected;
             }
             if self.occupied {
@@ -528,6 +710,7 @@ mod tests {
             self.occupied = true;
             self.installs += 1;
             self.last_index = Some(index);
+            self.last_words = *words;
             MacKeyInstallOutcome::Installed
         }
 
@@ -535,6 +718,110 @@ mod tests {
             self.occupied = false;
             self.clears += 1;
         }
+    }
+
+    #[test]
+    fn key_table_scratch_is_scrubbed_after_every_install_outcome() {
+        let sensitive = [0xa5a5_5a5a; CCMP_ENTRY_WORDS];
+
+        let mut installed_hardware = Hardware::default();
+        let mut installed = CcmpKeyTableImage(sensitive);
+        assert_eq!(
+            install_sta_key_table_image(&mut installed_hardware, 4, &mut installed),
+            MacKeyInstallOutcome::Installed
+        );
+        assert_eq!(installed.words(), &[0; CCMP_ENTRY_WORDS]);
+
+        let mut occupied_hardware = Hardware {
+            occupied: true,
+            ..Hardware::default()
+        };
+        let mut occupied = CcmpKeyTableImage(sensitive);
+        assert_eq!(
+            install_ap_key_table_image(&mut occupied_hardware, 8, &mut occupied),
+            MacKeyInstallOutcome::Occupied
+        );
+        assert_eq!(occupied.words(), &[0; CCMP_ENTRY_WORDS]);
+
+        let mut rejected_hardware = Hardware {
+            reject_installs: 1,
+            ..Hardware::default()
+        };
+        let mut rejected = CcmpKeyTableImage(sensitive);
+        assert_eq!(
+            install_sta_key_table_image(&mut rejected_hardware, 1, &mut rejected),
+            MacKeyInstallOutcome::Rejected
+        );
+        assert_eq!(rejected.words(), &[0; CCMP_ENTRY_WORDS]);
+    }
+
+    #[test]
+    fn tx_packet_number_emits_the_48_bit_maximum_once_then_fails_closed() {
+        let mut packet_number = CcmpTxPacketNumber {
+            low: u32::MAX - 3,
+            high: u16::MAX,
+        };
+        assert_eq!(
+            packet_number.next_header(0x40),
+            Ok([0xff, 0xff, 0, 0x60, 0xff, 0xff, 0xff, 0xff])
+        );
+        assert_eq!(
+            packet_number.next_header(0x40),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
+        assert_eq!(
+            packet_number.next_header(0x40),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
+    }
+
+    #[test]
+    fn exhausted_pairwise_slot_retains_hardware_clear_authority() {
+        let mut hardware = Hardware {
+            occupied: true,
+            ..Hardware::default()
+        };
+        let mut slot = StaPairwiseCcmpSlot {
+            peer: [1, 2, 3, 4, 5, 6],
+            tx_packet_number: CcmpTxPacketNumber {
+                low: u32::MAX,
+                high: u16::MAX,
+            },
+        };
+        assert_eq!(
+            slot.next_tx_ccmp_header(),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
+        slot.clear(&mut hardware);
+        assert_eq!(hardware.clears, 1);
+        assert!(!hardware.occupied);
+    }
+
+    #[test]
+    fn ap_pairwise_and_group_slots_share_the_fail_closed_pn_boundary() {
+        let exhausted = || CcmpTxPacketNumber {
+            low: u32::MAX,
+            high: u16::MAX,
+        };
+        let mut pairwise = ApPairwiseCcmpSlot {
+            peer: [1, 2, 3, 4, 5, 6],
+            association_id: 1,
+            hardware_index: AP_PAIRWISE_HARDWARE_INDEX_BASE,
+            tx_packet_number: exhausted(),
+        };
+        let mut group = ApGroupCcmpSlot {
+            key_id: 1,
+            hardware_index: AP_GROUP_HARDWARE_INDEX_BASE + 1,
+            tx_packet_number: exhausted(),
+        };
+        assert_eq!(
+            pairwise.next_tx_ccmp_header(),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
+        assert_eq!(
+            group.next_tx_ccmp_header(),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
     }
 
     #[test]
@@ -572,7 +859,7 @@ mod tests {
     fn rejected_rekey_invalidates_the_token_and_teardown_does_not_double_clear() {
         let mut hardware = Hardware::default();
         let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();
-        hardware.reject_next = true;
+        hardware.reject_installs = 1;
 
         assert_eq!(
             replace_sta_group_ccmp(&mut hardware, &mut slot, 2, &[2; 16]),
@@ -581,5 +868,56 @@ mod tests {
         assert_eq!(hardware.clears, 1);
         slot.clear(&mut hardware);
         assert_eq!(hardware.clears, 1);
+    }
+
+    #[test]
+    fn group_rekey_failure_restores_exact_old_key_and_slot_authority() {
+        let mut hardware = Hardware::default();
+        let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();
+        let current = StaGroupCcmpKeyMaterial::new(1, [1; 16]).unwrap();
+        let replacement = StaGroupCcmpKeyMaterial::new(2, [2; 16]).unwrap();
+        let old_image = hardware.last_words;
+        hardware.reject_installs = 1;
+
+        assert_eq!(
+            replace_sta_group_ccmp_with_rollback(&mut hardware, &mut slot, &current, &replacement,),
+            Err(StaGroupCcmpReplaceError::ReplacementRolledBack(
+                CryptoKeyError::HardwareRejected,
+            ))
+        );
+        assert_eq!(slot.key_id(), 1);
+        assert!(hardware.occupied);
+        assert_eq!(hardware.last_words, old_image);
+        slot.clear(&mut hardware);
+        assert_eq!(hardware.clears, 2);
+    }
+
+    #[test]
+    fn group_rekey_rollback_failure_invalidates_slot_and_requires_quarantine() {
+        let mut hardware = Hardware::default();
+        let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();
+        let current = StaGroupCcmpKeyMaterial::new(1, [1; 16]).unwrap();
+        let replacement = StaGroupCcmpKeyMaterial::new(2, [2; 16]).unwrap();
+        hardware.reject_installs = 2;
+
+        assert_eq!(
+            replace_sta_group_ccmp_with_rollback(&mut hardware, &mut slot, &current, &replacement,),
+            Err(StaGroupCcmpReplaceError::RollbackFailed {
+                replacement: CryptoKeyError::HardwareRejected,
+                rollback: CryptoKeyError::HardwareRejected,
+            })
+        );
+        assert!(!hardware.occupied);
+        slot.clear(&mut hardware);
+        assert_eq!(hardware.clears, 1);
+    }
+
+    #[test]
+    fn group_material_comparison_covers_same_and_different_key_id_cases() {
+        let current = StaGroupCcmpKeyMaterial::new(1, [0x11; 16]).unwrap();
+        let same_key_other_id = StaGroupCcmpKeyMaterial::new(2, [0x11; 16]).unwrap();
+        let changed_same_id = StaGroupCcmpKeyMaterial::new(1, [0x22; 16]).unwrap();
+        assert!(current.same_temporal_key(&same_key_other_id));
+        assert!(!current.same_temporal_key(&changed_same_id));
     }
 }

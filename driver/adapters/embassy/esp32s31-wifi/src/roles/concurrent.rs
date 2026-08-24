@@ -71,8 +71,9 @@ pub type Esp32s31StaApDatapathServices<H, PhysicalTx, Rx, Station, AccessPoint> 
 /// Compose the only supported station-plus-SoftAP role ordering.
 ///
 /// Callers supply unique owners but cannot swap endpoint identities or attach
-/// an unrelated control scheduler. Capability publication remains the
-/// responsibility of the production runtime after hardware validation.
+/// an unrelated control scheduler. Construction does not start either role;
+/// the production supervisor validates hardware and enters the paired
+/// lifecycle with this owner graph.
 pub fn compose_sta_ap_datapath_services<H, PhysicalTx, Rx, Station, AccessPoint>(
     hardware: H,
     physical_tx: PhysicalTx,
@@ -129,8 +130,8 @@ pub type Esp32s31StaApDatapathRunner<
 /// owner and the one MAC interrupt runtime.
 ///
 /// This is the production composition boundary. Building a service set alone
-/// does not publish either logical interface and therefore cannot be mistaken
-/// for an active STA+AP capability.
+/// does not start RX/TX or expose network endpoints; those become live only
+/// while the production supervisor runs the returned paired owner.
 pub fn compose_sta_ap_datapath_runner<
     'resources,
     'irq,

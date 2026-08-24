@@ -9,6 +9,7 @@ use critical_section::Mutex;
 use esp_hal::interrupt::InterruptHandler;
 use open_esp_radio_esp32s31_hal::{
     MacInterruptMask, MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters,
+    MacPowerWakeCause,
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::{
     IrqSink, MacInterruptRoute, PowerIrqSink, handle_mac_irq, handle_power_irq,
@@ -24,6 +25,13 @@ pub enum EspHalMacInterruptRouteError {
     AlreadyActive,
     AlreadyQuiesced,
     StorageInvariant,
+}
+
+/// Task-side result when the active ISR slot cannot lend its unique WDEVPWR
+/// capability for one critical-section-bounded transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspHalActivePowerInterruptError {
+    Inactive,
 }
 
 /// Summary of one bounded hard-MAC handler run.
@@ -87,6 +95,21 @@ pub fn unmask_active_mac_rx_delivery_interrupts() {
             interrupt.unmask_rx_delivery_interrupts();
         }
     });
+}
+
+/// Mask WDEVPWR and acknowledge one reviewed TSF-timer cause while the same
+/// critical section excludes the hard ISR.
+pub fn mask_and_acknowledge_active_mac_power_wake_cause(
+    cause: MacPowerWakeCause,
+) -> Result<(), EspHalActivePowerInterruptError> {
+    critical_section::with(|critical_section| {
+        let mut power = POWER_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+        let Some(power) = power.as_mut() else {
+            return Err(EspHalActivePowerInterruptError::Inactive);
+        };
+        power.mask_and_acknowledge_wake_cause(cause);
+        Ok(())
+    })
 }
 
 impl MacInterruptRoute for EspHalMacInterruptRoute {

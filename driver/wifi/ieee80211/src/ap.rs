@@ -8,11 +8,13 @@ use crate::{
     block_ack::{BlockAckAction, parse_block_ack_action},
     ccmp::CCMP_HEADER_LEN,
     channel::WifiChannel,
-    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
+    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, LLC_SNAP_HEADER_LEN, plan_data_encapsulation},
     ht::{
         HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
         ht_operation_ie, ht_peer_capabilities,
     },
+    security::WifiSecurityMode,
+    station_power_save::STA_NULL_DATA_FRAME_LEN,
 };
 
 const AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN: usize = 51;
@@ -52,8 +54,15 @@ pub enum ApDataFrameError {
     InvalidSequenceNumber,
     InvalidUserPriority,
     EthernetFrameTooShort,
+    NoAmsduFrames,
+    AmsduTooLong { length: usize, maximum: usize },
     OutputTooSmall { required: usize },
 }
+
+const AMSDU_SUBFRAME_HEADER_LEN: usize = 14;
+/// Baseline HT Max A-MSDU Length selected while HT Capabilities bit 11 is
+/// clear. Every AP frame codec below is fenced to the advertised class.
+pub const AP_AMSDU_BASELINE_MAX_LEN: usize = 3_839;
 
 /// One unprotected 802.11 data MPDU sent by an AP to its client.
 ///
@@ -111,6 +120,69 @@ impl ApDataFrame<'_> {
     }
 }
 
+/// One plaintext Ethernet-II MPDU for an explicitly Open AP epoch.
+///
+/// Unlike [`ApDataFrame`], which models an AP-originated EAPOL payload, this
+/// codec preserves the complete caller-owned Ethernet header and validates
+/// the destination against the selected unicast/group peer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApUnprotectedDataFrame<'frame> {
+    pub access_point: [u8; 6],
+    pub peer: [u8; 6],
+    pub sequence_number: u16,
+    pub more_data: bool,
+    pub ethernet: &'frame [u8],
+}
+
+impl ApUnprotectedDataFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, ApDataFrameError> {
+        if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
+            return Err(ApDataFrameError::InvalidAccessPoint);
+        }
+        if self.sequence_number > 0x0fff {
+            return Err(ApDataFrameError::InvalidSequenceNumber);
+        }
+        if self.ethernet.len() < ETHERNET_HEADER_LEN {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
+        }
+        let mut ethernet_header = [0; ETHERNET_HEADER_LEN];
+        ethernet_header.copy_from_slice(&self.ethernet[..ETHERNET_HEADER_LEN]);
+        let mut plan = plan_data_encapsulation(
+            DataInterfaceRole::AccessPoint,
+            self.access_point,
+            self.access_point,
+            ethernet_header,
+            0,
+            false,
+            false,
+        )
+        .expect("priority zero is valid for plaintext non-QoS data");
+        if plan.header[4..10] != self.peer {
+            return Err(ApDataFrameError::InvalidPeer);
+        }
+        if self.more_data {
+            plan.header[1] |= 0x20;
+        }
+        let header_len = usize::from(plan.header_len);
+        let required = header_len
+            .checked_add(plan.llc_snap.len())
+            .and_then(|length| length.checked_add(self.ethernet.len() - ETHERNET_HEADER_LEN))
+            .ok_or(ApDataFrameError::OutputTooSmall {
+                required: usize::MAX,
+            })?;
+        if output.len() < required {
+            return Err(ApDataFrameError::OutputTooSmall { required });
+        }
+        let frame = &mut output[..required];
+        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
+        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let llc_end = header_len + plan.llc_snap.len();
+        frame[header_len..llc_end].copy_from_slice(&plan.llc_snap);
+        frame[llc_end..required].copy_from_slice(&self.ethernet[ETHERNET_HEADER_LEN..]);
+        Ok(required)
+    }
+}
+
 /// One protected Ethernet-II frame sent from an AP to its authorized peer.
 ///
 /// The caller owns the pairwise packet number. This codec merely places the
@@ -123,6 +195,9 @@ pub struct ApProtectedDataFrame<'frame> {
     pub sequence_number: u16,
     pub user_priority: u8,
     pub peer_qos: bool,
+    /// Set the IEEE 802.11 More Data bit for a frame released from an AP
+    /// power-save queue while further traffic remains buffered.
+    pub more_data: bool,
     pub ccmp_header: [u8; CCMP_HEADER_LEN],
     pub ethernet: &'frame [u8],
 }
@@ -169,6 +244,9 @@ impl ApProtectedDataFrame<'_> {
             return Err(ApDataFrameError::InvalidPeer);
         }
         plan.header[1] |= 0x40;
+        if self.more_data {
+            plan.header[1] |= 0x20;
+        }
         let header_len = usize::from(plan.header_len);
         let required = header_len
             .checked_add(CCMP_HEADER_LEN)
@@ -188,6 +266,182 @@ impl ApProtectedDataFrame<'_> {
         let llc_end = ccmp_end + plan.llc_snap.len();
         frame[ccmp_end..llc_end].copy_from_slice(&plan.llc_snap);
         frame[llc_end..required].copy_from_slice(&self.ethernet[ETHERNET_HEADER_LEN..]);
+        Ok(required)
+    }
+}
+
+/// One AP-originated QoS A-MSDU backed by a finite slice of Ethernet frames.
+///
+/// `ccmp_header = None` selects an Open MPDU. `Some` selects the plaintext
+/// CCMP DMA image; hardware encrypts the A-MSDU body and appends its MIC. All
+/// subframes must target the exact unicast receiver carried by the outer
+/// From-DS header. This stricter production contract prevents a scheduler
+/// from coalescing traffic from different AP peer queues.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApAmsduFrame<'a> {
+    pub access_point: [u8; 6],
+    pub peer: [u8; 6],
+    pub sequence_number: u16,
+    pub user_priority: u8,
+    pub more_data: bool,
+    pub ccmp_header: Option<[u8; CCMP_HEADER_LEN]>,
+    pub ethernet_frames: &'a [&'a [u8]],
+}
+
+/// Return the complete DMA-resident MPDU length for a bounded AP A-MSDU.
+///
+/// The result excludes the hardware-owned CCMP MIC and FCS. `protected`
+/// controls only the retained eight-byte CCMP header; the A-MSDU body has the
+/// same IEEE 802.11 representation for Open and CCMP epochs.
+pub fn ap_amsdu_frame_length(
+    ethernet_frames: &[&[u8]],
+    protected: bool,
+) -> Result<usize, ApDataFrameError> {
+    if ethernet_frames.is_empty() {
+        return Err(ApDataFrameError::NoAmsduFrames);
+    }
+    let mut amsdu_length = 0_usize;
+    for (index, ethernet) in ethernet_frames.iter().copied().enumerate() {
+        if ethernet.len() < ETHERNET_HEADER_LEN {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
+        }
+        let msdu_length = LLC_SNAP_HEADER_LEN
+            .checked_add(ethernet.len() - ETHERNET_HEADER_LEN)
+            .ok_or(ApDataFrameError::AmsduTooLong {
+                length: usize::MAX,
+                maximum: AP_AMSDU_BASELINE_MAX_LEN,
+            })?;
+        if msdu_length > usize::from(u16::MAX) {
+            return Err(ApDataFrameError::AmsduTooLong {
+                length: msdu_length,
+                maximum: AP_AMSDU_BASELINE_MAX_LEN,
+            });
+        }
+        let subframe_length = AMSDU_SUBFRAME_HEADER_LEN.checked_add(msdu_length).ok_or(
+            ApDataFrameError::AmsduTooLong {
+                length: usize::MAX,
+                maximum: AP_AMSDU_BASELINE_MAX_LEN,
+            },
+        )?;
+        amsdu_length =
+            amsdu_length
+                .checked_add(subframe_length)
+                .ok_or(ApDataFrameError::AmsduTooLong {
+                    length: usize::MAX,
+                    maximum: AP_AMSDU_BASELINE_MAX_LEN,
+                })?;
+        if index + 1 != ethernet_frames.len() {
+            amsdu_length = amsdu_length
+                .checked_add((4 - (subframe_length & 3)) & 3)
+                .ok_or(ApDataFrameError::AmsduTooLong {
+                    length: usize::MAX,
+                    maximum: AP_AMSDU_BASELINE_MAX_LEN,
+                })?;
+        }
+    }
+    if amsdu_length > AP_AMSDU_BASELINE_MAX_LEN {
+        return Err(ApDataFrameError::AmsduTooLong {
+            length: amsdu_length,
+            maximum: AP_AMSDU_BASELINE_MAX_LEN,
+        });
+    }
+    crate::data::IEEE80211_QOS_DATA_HEADER_LEN
+        .checked_add(if protected { CCMP_HEADER_LEN } else { 0 })
+        .and_then(|length| length.checked_add(amsdu_length))
+        .ok_or(ApDataFrameError::AmsduTooLong {
+            length: usize::MAX,
+            maximum: AP_AMSDU_BASELINE_MAX_LEN,
+        })
+}
+
+impl ApAmsduFrame<'_> {
+    /// Encode every Ethernet input into one From-DS QoS A-MSDU.
+    ///
+    /// Validation and capacity checks complete before the output is mutated.
+    /// This lets a packet-number owner first encode with a placeholder CCMP
+    /// header, then consume and patch the real PN only after full admission.
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, ApDataFrameError> {
+        if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
+            return Err(ApDataFrameError::InvalidAccessPoint);
+        }
+        if self.peer[0] & 1 != 0 || self.peer == [0; 6] {
+            return Err(ApDataFrameError::InvalidPeer);
+        }
+        if self.sequence_number > 0x0fff {
+            return Err(ApDataFrameError::InvalidSequenceNumber);
+        }
+        if self.user_priority > 7 {
+            return Err(ApDataFrameError::InvalidUserPriority);
+        }
+        let Some(first) = self.ethernet_frames.first().copied() else {
+            return Err(ApDataFrameError::NoAmsduFrames);
+        };
+        for ethernet in self.ethernet_frames.iter().copied() {
+            if ethernet.len() < ETHERNET_HEADER_LEN {
+                return Err(ApDataFrameError::EthernetFrameTooShort);
+            }
+            if ethernet[..6] != self.peer {
+                return Err(ApDataFrameError::InvalidPeer);
+            }
+        }
+        let required = ap_amsdu_frame_length(self.ethernet_frames, self.ccmp_header.is_some())?;
+        if output.len() < required {
+            return Err(ApDataFrameError::OutputTooSmall { required });
+        }
+
+        let first_header: [u8; ETHERNET_HEADER_LEN] = first[..ETHERNET_HEADER_LEN]
+            .try_into()
+            .expect("A-MSDU Ethernet length validated above");
+        let mut plan = plan_data_encapsulation(
+            DataInterfaceRole::AccessPoint,
+            self.access_point,
+            self.access_point,
+            first_header,
+            self.user_priority,
+            true,
+            false,
+        )
+        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        if plan.header[4..10] != self.peer {
+            return Err(ApDataFrameError::InvalidPeer);
+        }
+        if self.ccmp_header.is_some() {
+            plan.header[1] |= 0x40;
+        }
+        if self.more_data {
+            plan.header[1] |= 0x20;
+        }
+        plan.header[24] |= 0x80;
+
+        let frame = &mut output[..required];
+        frame[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]
+            .copy_from_slice(&plan.header[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]);
+        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let mut offset = crate::data::IEEE80211_QOS_DATA_HEADER_LEN;
+        if let Some(ccmp_header) = self.ccmp_header {
+            frame[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&ccmp_header);
+            offset += CCMP_HEADER_LEN;
+        }
+        for (index, ethernet) in self.ethernet_frames.iter().copied().enumerate() {
+            let payload = &ethernet[ETHERNET_HEADER_LEN..];
+            let msdu_length = LLC_SNAP_HEADER_LEN + payload.len();
+            frame[offset..offset + 12].copy_from_slice(&ethernet[..12]);
+            frame[offset + 12..offset + 14].copy_from_slice(&(msdu_length as u16).to_be_bytes());
+            offset += AMSDU_SUBFRAME_HEADER_LEN;
+            frame[offset..offset + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
+            frame[offset + 6..offset + 8].copy_from_slice(&ethernet[12..14]);
+            offset += LLC_SNAP_HEADER_LEN;
+            frame[offset..offset + payload.len()].copy_from_slice(payload);
+            offset += payload.len();
+            if index + 1 != self.ethernet_frames.len() {
+                let subframe_length =
+                    AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + payload.len();
+                let padding = (4 - (subframe_length & 3)) & 3;
+                frame[offset..offset + padding].fill(0);
+                offset += padding;
+            }
+        }
+        debug_assert_eq!(offset, required);
         Ok(required)
     }
 }
@@ -250,6 +504,9 @@ impl ApProtectedDataFrame<'_> {
         )
         .ok_or(ApDataFrameError::InvalidUserPriority)?;
         plan.header[1] |= 0x40;
+        if self.more_data {
+            plan.header[1] |= 0x20;
+        }
         let header_len = usize::from(plan.header_len);
         let prefix_len = header_len + CCMP_HEADER_LEN + plan.llc_snap.len();
         let headroom = prefix_len - ETHERNET_HEADER_LEN;
@@ -277,7 +534,7 @@ pub enum ApManagementRequest<'a> {
     },
     Association {
         peer: [u8; 6],
-        rsn_ie: Option<&'a [u8]>,
+        security: ApAssociationSecurityObservation<'a>,
         /// Highest legacy rate shared with the B/G ERP rate set advertised
         /// by this AP, in 500-kbit/s units. Zero means no common rate.
         maximum_legacy_rate_500kbps: u8,
@@ -299,6 +556,22 @@ pub enum ApManagementRequest<'a> {
         peer: [u8; 6],
         action: BlockAckAction,
     },
+}
+
+/// Exact on-air security facts from one Association Request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApAssociationSecurityObservation<'a> {
+    pub privacy: bool,
+    pub rsn_ie: Option<&'a [u8]>,
+    pub rsn_ie_count: u8,
+    pub rsnxe: Option<&'a [u8]>,
+    pub rsnxe_count: u8,
+    /// A legacy WPA vendor IE (00:50:f2:01) was present. It is never an
+    /// acceptable substitute for RSN and makes a mixed request invalid.
+    pub legacy_wpa_present: bool,
+    /// At least one IE header or payload was truncated. Absence inferred from
+    /// a malformed tail is never an Open-security proof.
+    pub malformed_elements: bool,
 }
 
 /// Parse only management requests addressed to this AP.
@@ -332,11 +605,16 @@ pub fn parse_ap_management_request<'a>(
                 .then_some(ApManagementRequest::OpenAuthentication { peer })
         }
         0 => {
+            let fixed = frame.get(24..28)?;
+            let capabilities = u16::from_le_bytes([fixed[0], fixed[1]]);
             let information_elements = frame.get(28..)?;
             let ht_capabilities = ht_peer_capabilities(information_elements);
             Some(ApManagementRequest::Association {
                 peer,
-                rsn_ie: find_information_element(information_elements, 48),
+                security: association_security_observation(
+                    information_elements,
+                    capabilities & 0x0010 != 0,
+                ),
                 maximum_legacy_rate_500kbps: maximum_ap_legacy_rate(information_elements),
                 ht_capabilities,
                 qos_supported: ht_capabilities.is_some() || supports_wmm(information_elements),
@@ -410,6 +688,46 @@ fn supports_wmm(bytes: &[u8]) -> bool {
     false
 }
 
+fn association_security_observation(
+    bytes: &[u8],
+    privacy: bool,
+) -> ApAssociationSecurityObservation<'_> {
+    let mut remaining = bytes;
+    let mut observation = ApAssociationSecurityObservation {
+        privacy,
+        rsn_ie: None,
+        rsn_ie_count: 0,
+        rsnxe: None,
+        rsnxe_count: 0,
+        legacy_wpa_present: false,
+        malformed_elements: false,
+    };
+    while !remaining.is_empty() {
+        if remaining.len() < 2 {
+            observation.malformed_elements = true;
+            break;
+        }
+        let length = usize::from(remaining[1]);
+        let Some(record) = remaining.get(..length.saturating_add(2)) else {
+            observation.malformed_elements = true;
+            break;
+        };
+        if remaining[0] == 48 {
+            observation.rsn_ie_count = observation.rsn_ie_count.saturating_add(1);
+            observation.rsn_ie.get_or_insert(record);
+        }
+        if remaining[0] == 244 {
+            observation.rsnxe_count = observation.rsnxe_count.saturating_add(1);
+            observation.rsnxe.get_or_insert(record);
+        }
+        if remaining[0] == 221 && length >= 4 && record[2..6] == [0x00, 0x50, 0xf2, 0x01] {
+            observation.legacy_wpa_present = true;
+        }
+        remaining = &remaining[record.len()..];
+    }
+    observation
+}
+
 const AP_BG_LEGACY_RATES_500KBPS: [u8; 12] = [2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108];
 
 fn maximum_ap_legacy_rate(bytes: &[u8]) -> u8 {
@@ -434,20 +752,6 @@ fn maximum_ap_legacy_rate(bytes: &[u8]) -> u8 {
         remaining = &payload[length..];
     }
     maximum
-}
-
-fn find_information_element(bytes: &[u8], wanted: u8) -> Option<&[u8]> {
-    let mut remaining = bytes;
-    while let Some((&id, tail)) = remaining.split_first() {
-        let (&length, payload) = tail.split_first()?;
-        let record_len = usize::from(length).checked_add(2)?;
-        let record = remaining.get(..record_len)?;
-        if id == wanted {
-            return Some(record);
-        }
-        remaining = payload.get(usize::from(length)..)?;
-    }
-    None
 }
 
 /// Encode the response to one successful or rejected Open System request.
@@ -489,6 +793,36 @@ pub fn write_ht_association_response_frame(
     channel: WifiChannel,
     peer_ht: Option<HtPeerCapabilities>,
 ) -> Result<usize, ApAssociationResponseError> {
+    write_ht_association_response_frame_for_security(
+        output,
+        access_point,
+        peer,
+        status,
+        association_id,
+        management_sequence,
+        channel,
+        peer_ht,
+        WifiSecurityMode::Wpa2Personal,
+    )
+}
+
+/// Encode an association response with capability privacy matching the exact
+/// AP mode. The WPA2 wrapper above retains its original bytes.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the frame writer keeps each independently reviewed 802.11 field explicit at its boundary"
+)]
+pub fn write_ht_association_response_frame_for_security(
+    output: &mut [u8],
+    access_point: [u8; 6],
+    peer: [u8; 6],
+    status: u16,
+    association_id: u16,
+    management_sequence: u16,
+    channel: WifiChannel,
+    peer_ht: Option<HtPeerCapabilities>,
+    security: WifiSecurityMode,
+) -> Result<usize, ApAssociationResponseError> {
     if management_sequence > 0x0fff {
         return Err(ApAssociationResponseError::InvalidSequenceNumber);
     }
@@ -504,6 +838,9 @@ pub fn write_ht_association_response_frame(
         .try_into()
         .expect("checked association response body length");
     write_ht_association_response(body, status, association_id, channel, peer_ht)?;
+    if security == WifiSecurityMode::Open {
+        body[..2].copy_from_slice(&0x0421_u16.to_le_bytes());
+    }
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }
 
@@ -584,12 +921,6 @@ pub fn write_ht_association_response(
     Ok(())
 }
 
-/// Update the TIM partial-virtual-bitmap byte containing an association ID.
-pub const fn updated_tim_bitmap_byte(current: u8, association_id: u16, set: bool) -> u8 {
-    let mask = 1_u8 << (association_id & 7);
-    if set { current | mask } else { current & !mask }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApPowerSaveObservation {
     Sleeping { peer: [u8; 6] },
@@ -631,6 +962,63 @@ pub fn observe_ap_power_save(frame: &[u8]) -> Option<ApPowerSaveObservation> {
     }
     let peer = frame[10..16].try_into().ok()?;
     if frame_control & 0x1000 != 0 {
+        Some(ApPowerSaveObservation::Sleeping { peer })
+    } else {
+        Some(ApPowerSaveObservation::Active { peer })
+    }
+}
+
+/// Parse an AP power-save edge while binding PS-Poll Receiver Address to the
+/// active BSSID. Protected data admission validates its address mapping in the
+/// data owner; the unprotected control frame needs this explicit check before
+/// its TA/AID tuple can reserve buffered traffic.
+pub fn observe_ap_power_save_for_access_point(
+    frame: &[u8],
+    access_point: [u8; 6],
+) -> Option<ApPowerSaveObservation> {
+    let observation = observe_ap_power_save(frame)?;
+    if matches!(observation, ApPowerSaveObservation::PsPoll { .. })
+        && frame.get(4..10) != Some(access_point.as_slice())
+    {
+        return None;
+    }
+    Some(observation)
+}
+
+/// Parse the exact legacy Null Data frame used by an associated station to
+/// publish a power-management transition.
+///
+/// Unlike ordinary payload data, Null Data has no Ethernet body whose
+/// successful decapsulation can establish the peer identity. Admission is
+/// therefore deliberately complete at this boundary: the MPDU must be the
+/// exact 24-byte To-DS Null Data geometry emitted by `StaNullDataFrame`, both
+/// BSSID address fields must name the active AP, the transmitter must be a
+/// valid unicast address, and fragmentation is rejected. Only the Retry and
+/// Power Management flag bits may vary.
+pub fn observe_ap_null_data_power_save_for_access_point(
+    frame: &[u8],
+    access_point: [u8; 6],
+) -> Option<ApPowerSaveObservation> {
+    const NULL_DATA_TO_DS_FRAME_CONTROL: u16 = 0x0148;
+    const RETRY: u16 = 0x0800;
+    const POWER_MANAGEMENT: u16 = 0x1000;
+
+    if frame.len() != STA_NULL_DATA_FRAME_LEN {
+        return None;
+    }
+    let frame_control = u16::from_le_bytes([frame[0], frame[1]]);
+    if frame_control & !(RETRY | POWER_MANAGEMENT) != NULL_DATA_TO_DS_FRAME_CONTROL
+        || frame[4..10] != access_point
+        || frame[16..22] != access_point
+        || frame[22] & 0x0f != 0
+    {
+        return None;
+    }
+    let peer: [u8; 6] = frame[10..16].try_into().ok()?;
+    if peer == [0; 6] || peer == [0xff; 6] || peer[0] & 1 != 0 {
+        return None;
+    }
+    if frame_control & POWER_MANAGEMENT != 0 {
         Some(ApPowerSaveObservation::Sleeping { peer })
     } else {
         Some(ApPowerSaveObservation::Active { peer })
@@ -684,6 +1072,7 @@ mod tests {
             sequence_number: 7,
             user_priority: 0,
             peer_qos: true,
+            more_data: false,
             ccmp_header: ccmp,
             ethernet: &ethernet,
         }
@@ -702,6 +1091,119 @@ mod tests {
     }
 
     #[test]
+    fn ap_amsdu_encodes_multiple_open_and_ccmp_subframes_in_order() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut first = [0_u8; 17];
+        first[..6].copy_from_slice(&peer);
+        first[6..12].copy_from_slice(&[2, 0, 0, 0, 0, 3]);
+        first[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+        first[14..].copy_from_slice(&[1, 2, 3]);
+        let mut second = [0_u8; 18];
+        second[..6].copy_from_slice(&peer);
+        second[6..12].copy_from_slice(&[2, 0, 0, 0, 0, 4]);
+        second[12..14].copy_from_slice(&0x0806_u16.to_be_bytes());
+        second[14..].copy_from_slice(&[4, 5, 6, 7]);
+        let mut third = [0_u8; 16];
+        third[..6].copy_from_slice(&peer);
+        third[6..12].copy_from_slice(&[2, 0, 0, 0, 0, 5]);
+        third[12..14].copy_from_slice(&0x86dd_u16.to_be_bytes());
+        third[14..].copy_from_slice(&[8, 9]);
+        let frames: [&[u8]; 3] = [&first, &second, &third];
+        let ccmp = [9, 0, 0, 0x20, 0, 0, 0, 0];
+        let mut protected = [0xa5; 192];
+        let protected_len = ApAmsduFrame {
+            access_point,
+            peer,
+            sequence_number: 11,
+            user_priority: 5,
+            more_data: true,
+            ccmp_header: Some(ccmp),
+            ethernet_frames: &frames,
+        }
+        .encode(&mut protected)
+        .unwrap();
+        assert_eq!(protected_len, ap_amsdu_frame_length(&frames, true).unwrap());
+        assert_eq!(&protected[..2], &0x6288_u16.to_le_bytes());
+        assert_eq!(&protected[4..10], &peer);
+        assert_eq!(&protected[22..24], &0x00b0_u16.to_le_bytes());
+        assert_eq!(protected[24], 0x85);
+        assert_eq!(&protected[26..34], &ccmp);
+        let mut decoded = crate::data::amsdu_subframes(
+            DataInterfaceRole::Station,
+            &protected[..protected_len],
+            crate::data::IEEE80211_QOS_DATA_HEADER_LEN + CCMP_HEADER_LEN,
+            protected_len - crate::data::IEEE80211_QOS_DATA_HEADER_LEN - CCMP_HEADER_LEN,
+        )
+        .unwrap();
+        assert_eq!(decoded.next().unwrap().unwrap().payload, &[1, 2, 3]);
+        assert_eq!(decoded.next().unwrap().unwrap().payload, &[4, 5, 6, 7]);
+        assert_eq!(decoded.next().unwrap().unwrap().payload, &[8, 9]);
+        assert!(decoded.next().is_none());
+
+        let mut open = [0; 192];
+        let open_len = ApAmsduFrame {
+            access_point,
+            peer,
+            sequence_number: 12,
+            user_priority: 0,
+            more_data: false,
+            ccmp_header: None,
+            ethernet_frames: &frames,
+        }
+        .encode(&mut open)
+        .unwrap();
+        assert_eq!(open_len, protected_len - CCMP_HEADER_LEN);
+        assert_eq!(&open[..2], &0x0288_u16.to_le_bytes());
+        assert_eq!(open[24], 0x80);
+    }
+
+    #[test]
+    fn ap_amsdu_fails_before_mutating_output_on_peer_or_capacity_miss() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut first = [0_u8; 14];
+        first[..6].copy_from_slice(&peer);
+        let mut wrong_peer = [0_u8; 14];
+        wrong_peer[..6].copy_from_slice(&[2, 0, 0, 0, 0, 9]);
+        let frames: [&[u8]; 2] = [&first, &wrong_peer];
+        let mut output = [0xa5; 80];
+        assert_eq!(
+            ApAmsduFrame {
+                access_point,
+                peer,
+                sequence_number: 0,
+                user_priority: 0,
+                more_data: false,
+                ccmp_header: Some([0; 8]),
+                ethernet_frames: &frames,
+            }
+            .encode(&mut output),
+            Err(ApDataFrameError::InvalidPeer)
+        );
+        assert_eq!(output, [0xa5; 80]);
+
+        let frames: [&[u8]; 2] = [&first, &first];
+        let required = ap_amsdu_frame_length(&frames, true).unwrap();
+        let mut short = [0x5a; 64];
+        assert!(short.len() < required);
+        assert_eq!(
+            ApAmsduFrame {
+                access_point,
+                peer,
+                sequence_number: 0,
+                user_priority: 0,
+                more_data: false,
+                ccmp_header: Some([0; 8]),
+                ethernet_frames: &frames,
+            }
+            .encode(&mut short),
+            Err(ApDataFrameError::OutputTooSmall { required })
+        );
+        assert_eq!(short, [0x5a; 64]);
+    }
+
+    #[test]
     fn protected_ap_frame_rejects_a_destination_outside_pairwise_owner() {
         let access_point = [2, 0, 0, 0, 0, 1];
         let peer = [2, 0, 0, 0, 0, 2];
@@ -715,6 +1217,7 @@ mod tests {
                 sequence_number: 0,
                 user_priority: 0,
                 peer_qos: false,
+                more_data: false,
                 ccmp_header: [0; 8],
                 ethernet: &ethernet,
             }
@@ -741,6 +1244,7 @@ mod tests {
             sequence_number: 7,
             user_priority: 0,
             peer_qos: true,
+            more_data: false,
             ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
             ethernet: &[],
         }
@@ -824,6 +1328,18 @@ mod tests {
         write_ht_association_response(&mut body, 0, 1, ht40, None).unwrap();
         assert!(body.windows(4).any(|window| window == [45, 26, 0x6e, 0x10]));
         assert!(body.windows(4).any(|window| window == [61, 22, 6, 0x07]));
+        let ht_capability = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN;
+        assert_eq!(
+            body[ht_capability + crate::ht::HtDuplicateMcs32::CAPABILITY_IE_BYTE]
+                & crate::ht::HtDuplicateMcs32::CAPABILITY_IE_MASK,
+            0,
+            "the AP response must not advertise unqualified local MCS32 reception"
+        );
+        assert_eq!(
+            body[ht_capability + 17],
+            0x01,
+            "the AP response must keep the implemented TX/RX MCS0..MCS7 sets equal"
+        );
     }
 
     #[test]
@@ -863,10 +1379,16 @@ mod tests {
 
     #[test]
     fn tim_bitmap_update_matches_aid_bit_selection() {
-        assert_eq!(updated_tim_bitmap_byte(0, 0, true), 0x01);
-        assert_eq!(updated_tim_bitmap_byte(0, 7, true), 0x80);
-        assert_eq!(updated_tim_bitmap_byte(0xa5, 8, false), 0xa4);
-        assert_eq!(updated_tim_bitmap_byte(0xa5, 15, false), 0x25);
+        use crate::beacon::{TimAssociationId, TimVirtualBitmap};
+
+        let mut bitmap = TimVirtualBitmap::<2>::try_new().unwrap();
+        bitmap.set(TimAssociationId::new(7).unwrap(), true).unwrap();
+        bitmap.set(TimAssociationId::new(8).unwrap(), true).unwrap();
+        bitmap
+            .set(TimAssociationId::new(15).unwrap(), true)
+            .unwrap();
+        assert_eq!(bitmap.partial().bitmap_offset(), 0);
+        assert_eq!(bitmap.partial().octets(), &[0x80, 0x81]);
     }
 
     #[test]
@@ -940,12 +1462,45 @@ mod tests {
             parse_ap_management_request(&association, access_point),
             Some(ApManagementRequest::Association {
                 peer,
-                rsn_ie: Some(&association[39..42]),
+                security: ApAssociationSecurityObservation {
+                    privacy: false,
+                    rsn_ie: Some(&association[39..42]),
+                    rsn_ie_count: 1,
+                    rsnxe: None,
+                    rsnxe_count: 0,
+                    legacy_wpa_present: false,
+                    malformed_elements: false,
+                },
                 maximum_legacy_rate_500kbps: 108,
                 ht_capabilities: None,
                 qos_supported: false,
             })
         );
+    }
+
+    #[test]
+    fn association_retains_exact_rsnxe_and_duplicate_count() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut association = [0_u8; 38];
+        association[4..10].copy_from_slice(&access_point);
+        association[10..16].copy_from_slice(&peer);
+        association[16..22].copy_from_slice(&access_point);
+        association[24..26].copy_from_slice(&0x0010_u16.to_le_bytes());
+        association[28..31].copy_from_slice(&[48, 1, 0]);
+        association[31..34].copy_from_slice(&[244, 1, 0x20]);
+        association[34..38].copy_from_slice(&[244, 2, 0x40, 0x00]);
+
+        let Some(ApManagementRequest::Association { security, .. }) =
+            parse_ap_management_request(&association, access_point)
+        else {
+            panic!("association request must parse");
+        };
+        assert_eq!(security.rsn_ie, Some(&association[28..31]));
+        assert_eq!(security.rsn_ie_count, 1);
+        assert_eq!(security.rsnxe, Some(&association[31..34]));
+        assert_eq!(security.rsnxe_count, 2);
+        assert!(!security.malformed_elements);
     }
 
     #[test]

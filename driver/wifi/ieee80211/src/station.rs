@@ -13,6 +13,7 @@ use crate::{
     he::{parse_he20_capabilities, parse_he20_operation},
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
+    security::WifiSecurityMode,
     wmm::{WmmParameterSet, parse_wmm_parameter_element},
 };
 
@@ -33,6 +34,7 @@ const RSN_OUI: [u8; 3] = [0x00, 0x0f, 0xac];
 const RSN_CIPHER_CCMP: u8 = 4;
 const RSN_AKM_PSK: u8 = 2;
 const RSN_CAPABILITY_MFPR: u16 = 1 << 6;
+const RSN_CAPABILITY_MFPC: u16 = 1 << 7;
 const RSN_CAPABILITY_SPP_AMSDU_CAPABLE: u16 = 1 << 10;
 // One-stream HT20 with short guard interval. Channel-width, STBC, LDPC,
 // large A-MSDU and 40-MHz claims remain disabled until their matching
@@ -56,6 +58,9 @@ const HT20_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x0020, 0x00);
 // gated by the complete AP HT Capabilities/Operation IEs through
 // `ScanRecord::ht40_secondary_channel`; hardware CBW support is the complete
 // rev0 ROM `phy_bb_bss_cbw40` implementation promoted into the S31 PAC/HAL.
+// The independent MCS32 receive bit remains clear until RX behavior has
+// runtime and HIL proof. The parser and diagnostics can still observe MCS32
+// from a peer without advertising it as a local receive capability.
 const HT40_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x006e, 0x00);
 // Exact HT20 capability carried beside the HE capability in the complete
 // vendor association request. It differs from the deliberately narrow
@@ -67,11 +72,13 @@ const HT40_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x006e, 0x00);
 // ieee80211_add_htcap_body` produces the same capability fields.
 const HE20_HT_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x112c, 0x17);
 
-/// Build the complete vendor-shaped one-stream HT capability image.
+/// Build the complete vendor-shaped one-stream HT capability base.
 ///
 /// The Supported MCS Set begins at complete-IE byte five. Its byte 12 is the
 /// TX MCS parameters field, therefore it is complete-IE byte 17. Keeping this
-/// layout in one builder prevents AP/STA capability images from drifting.
+/// layout in one builder prevents the STA capability images from drifting.
+/// The supported MCS set deliberately contains only the runtime-qualified
+/// one-stream MCS0 through MCS7 range.
 const fn station_ht_capability_ie(capability_info: u16, ampdu_parameters: u8) -> [u8; 28] {
     let mut element = [0_u8; 28];
     element[0] = 45;
@@ -108,11 +115,23 @@ const HE20_VENDOR_MCS9_CAPABILITY_IE: [u8; 24] = [
 
 const fn owned_he20_mcs9_capability_ie() -> [u8; 24] {
     let mut capability = HE20_VENDOR_MCS9_CAPABILITY_IE;
-    // The hardware beamforming-report sequence and its rate profile are
-    // Rust-owned, so keep the two beamforming-feedback bits. There is still
-    // no open triggered or non-triggered CQI report producer: advertising
-    // either capability could make an AP schedule a response the STA cannot
-    // generate. Clear only those two independently recovered claims.
+    // HE MAC Capabilities bit 1 is TWT Requester Support. The open driver has
+    // no TWT negotiation or wake transaction owner, so it must not inherit
+    // that vendor claim.
+    capability[3] &= !(1 << 1);
+    // Hardware setup and report-rate programming exist, but the reachable
+    // software publication boundary rejects every NDPA feedback request and
+    // autonomous completion by the hardware has no runtime proof. Clear the
+    // SU beamformee bit and its under-80-MHz Max STS field, the two NG16
+    // feedback claims, and the SU/MU codebook plus triggered-feedback claims.
+    // Keeping dependent beamformee fields after clearing SU beamformee would
+    // itself publish a contradictory capability image.
+    capability[13] &= !(0x01 | 0x1c);
+    capability[14] &= !(0x40 | 0x80);
+    capability[15] &= !(0x01 | 0x02 | 0x04 | 0x08);
+    // There is also no open triggered or non-triggered CQI report producer:
+    // advertising either capability could make an AP schedule a response the
+    // STA cannot generate. Clear those two independent claims.
     //
     // SOURCE[HIL_OPEN_HE20_CQI_CAPABILITY_MASK_2026_07_30]: ESP32-S31 rev0
     // associated with FRITZ!Box 7530 FN on channel 1 after these exact two
@@ -129,15 +148,17 @@ const HE20_OWNED_MCS9_CAPABILITY_IE: [u8; 24] = owned_he20_mcs9_capability_ie();
 const HE_UL_MU_POWER_CAPABILITY_IE_LEN: usize = 14;
 const HE_UL_MU_POWER_CAPABILITY_EXTENSION_ID: u8 = 60;
 const POWER_CAPABILITY_IE_LEN: usize = 4;
-// Exact vendor Extended Capabilities IE adjacent to the HE/UL-MU capability
-// pair. It advertises Event, Multiple BSSID and TWT requester support. The HE
-// capability above already carries the same TWT requester contract.
+// Vendor-shaped Extended Capabilities IE adjacent to the HE/UL-MU capability
+// pair. Retain Event, but clear Multiple BSSID because the scan/profile and
+// hardware BSSID-index owners implement only BSSID zero. Extended
+// Capabilities bit 77 (TWT requester) also remains clear until negotiation and
+// wake ownership exist.
 //
 // SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: exact frame 7624 bytes.
 // SOURCE: complete `libnet80211.a[ieee80211_output.o]::
 // ieee80211_add_extcap` emits this 12-byte body for the captured STA state.
 const HE20_EXTENDED_CAPABILITY_IE: [u8; 14] =
-    [127, 12, 0x80, 0x00, 0x40, 0, 0, 0, 0, 0, 0, 0x20, 0, 0];
+    [127, 12, 0x80, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 // WMM Information, version one, U-APSD disabled.
 //
 // SOURCE: the same promoted `sta_link.rs::WMM_INFORMATION_IE`, cross-checked
@@ -389,6 +410,7 @@ pub enum StationFrameError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaSecurityError {
+    SecurityModeMismatch,
     MissingRsn,
     MalformedRsn,
     UnsupportedVersion,
@@ -906,7 +928,13 @@ pub struct StaAssociationAttempt {
 pub enum StaAssociationFailure {
     Timeout,
     PeerDisconnect(StaDisconnect),
-    Rejected { status_code: u16 },
+    Rejected {
+        status_code: u16,
+    },
+    /// A successful response contradicted the exact security mode selected
+    /// from the scan record. Treating this as association success would make
+    /// the following key/plaintext transition an implicit downgrade.
+    SecurityModeMismatch,
 }
 
 /// Result of observing a management frame or completing one millisecond tick.
@@ -948,6 +976,7 @@ pub enum StaAssociationRuntimeError {
 pub struct StaAssociationRuntime {
     local: [u8; 6],
     bssid: [u8; 6],
+    security: WifiSecurityMode,
     elapsed_ms: u32,
     tick_active: bool,
     terminal: bool,
@@ -955,10 +984,11 @@ pub struct StaAssociationRuntime {
 }
 
 impl StaAssociationRuntime {
-    pub const fn new(local: [u8; 6], bssid: [u8; 6]) -> Self {
+    pub const fn new(local: [u8; 6], bssid: [u8; 6], security: WifiSecurityMode) -> Self {
         Self {
             local,
             bssid,
+            security,
             elapsed_ms: 0,
             tick_active: false,
             terminal: false,
@@ -1014,6 +1044,9 @@ impl StaAssociationRuntime {
             return Ok(self.fail(StaAssociationFailure::Rejected {
                 status_code: response.status_code,
             }));
+        }
+        if !response.matches_security(self.security) {
+            return Ok(self.fail(StaAssociationFailure::SecurityModeMismatch));
         }
         self.tick_active = false;
         self.terminal = true;
@@ -1071,6 +1104,8 @@ pub struct AssociationRequest<'a> {
     pub sequence_number: u16,
     pub listen_interval: u16,
     pub phy: StaAssociationPhy,
+    /// Exact BSS security selected by the station request.
+    pub security: WifiSecurityMode,
     /// HE Power Capability derived from the same calibrated rate-16 power
     /// source used by the MAC. Non-HE modes must leave it absent.
     pub power_capability: Option<StaPowerCapability>,
@@ -1104,8 +1139,8 @@ impl AssociationRequest<'_> {
         }
         let first_rates_len = rates_len.min(SUPPORTED_RATES_ELEMENT_CAPACITY);
         let extended_rates_len = rates_len - first_rates_len;
-        let selected_rsn =
-            select_wpa2_psk_rsn(self.access_point).map_err(AssociationRequestError::Security)?;
+        let selected_rsn = select_association_rsn(self.access_point, self.security)
+            .map_err(AssociationRequestError::Security)?;
         let (ht_capability, he_capability, power_capability, he_ul_mu_power) = match self.phy {
             StaAssociationPhy::Legacy => (None, None, None, None),
             StaAssociationPhy::Ht20 if self.access_point.ht_capability_ie_present => {
@@ -1186,7 +1221,16 @@ impl AssociationRequest<'_> {
             self.access_point.bssid,
             self.sequence_number,
         );
-        let capability = (self.access_point.capability_info & ASSOCIATION_CAPABILITY_MASK) | 1;
+        // Derive Privacy from the exact requested mode, rather than merely
+        // reflecting an untrusted scan record. Candidate admission already
+        // requires the same value; this keeps the transmitted request
+        // fail-closed if a record is ever assembled outside that path.
+        let capability = ((self.access_point.capability_info & ASSOCIATION_CAPABILITY_MASK) | 1)
+            & !0x0010
+            | match self.security {
+                WifiSecurityMode::Open => 0,
+                WifiSecurityMode::Wpa2Personal => 0x0010,
+            };
         frame[24..26].copy_from_slice(&capability.to_le_bytes());
         frame[26..28].copy_from_slice(&self.listen_interval.to_le_bytes());
 
@@ -1275,6 +1319,18 @@ pub struct AssociationResponse {
     pub he_operation: bool,
     pub wmm: bool,
     pub wmm_parameters: Option<WmmParameterSet>,
+}
+
+impl AssociationResponse {
+    /// Match the AP's successful response to the exact security mode selected
+    /// from scan admission. There is no fallback between Open and WPA2.
+    pub const fn matches_security(self, security: WifiSecurityMode) -> bool {
+        let privacy = self.capability_info & 0x0010 != 0;
+        match security {
+            WifiSecurityMode::Open => !privacy,
+            WifiSecurityMode::Wpa2Personal => privacy,
+        }
+    }
 }
 
 /// One unprotected 802.11 data MPDU sent by a station through its AP.
@@ -2013,8 +2069,8 @@ pub fn parse_association_response(
 }
 
 pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, StaSecurityError> {
-    if !access_point.privacy && access_point.rsn_ie_len == 0 {
-        return Ok(SelectedRsn::EMPTY);
+    if !access_point.matches_security(WifiSecurityMode::Wpa2Personal) {
+        return Err(StaSecurityError::SecurityModeMismatch);
     }
     let rsn = access_point.rsn_ie_bytes();
     if rsn.len() < 2 || rsn[0] != 48 || usize::from(rsn[1]) + 2 != rsn.len() {
@@ -2051,11 +2107,32 @@ pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, Sta
     if !has_psk {
         return Err(StaSecurityError::UnsupportedAkm);
     }
+    let capabilities = if offset < body.len() {
+        read_rsn_u16(body, &mut offset)?
+    } else {
+        0
+    };
     if offset < body.len() {
-        let capabilities = read_rsn_u16(body, &mut offset)?;
-        if capabilities & RSN_CAPABILITY_MFPR != 0 {
-            return Err(StaSecurityError::ManagementFrameProtectionRequired);
+        let pmkid_count = usize::from(read_rsn_u16(body, &mut offset)?);
+        let pmkid_bytes = pmkid_count
+            .checked_mul(16)
+            .ok_or(StaSecurityError::MalformedRsn)?;
+        skip_rsn_bytes(body, &mut offset, pmkid_bytes)?;
+    }
+    if offset < body.len() {
+        // The optional Group Management Cipher Suite is retained only as a
+        // syntactic boundary. This WPA2 profile does not negotiate PMF, and
+        // MFPR is rejected below.
+        if capabilities & RSN_CAPABILITY_MFPC == 0 {
+            return Err(StaSecurityError::MalformedRsn);
         }
+        let _group_management_cipher = read_rsn_suite(body, &mut offset)?;
+    }
+    if offset != body.len() {
+        return Err(StaSecurityError::MalformedRsn);
+    }
+    if capabilities & RSN_CAPABILITY_MFPR != 0 {
+        return Err(StaSecurityError::ManagementFrameProtectionRequired);
     }
 
     let mut selected = SelectedRsn::EMPTY;
@@ -2089,6 +2166,22 @@ pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, Sta
         (RSN_CAPABILITY_SPP_AMSDU_CAPABLE >> 8) as u8,
     ]);
     Ok(selected)
+}
+
+/// Select the association security IE for one exact requested mode.
+///
+/// Open never accepts a Privacy/RSN/WPA advertisement. WPA2 never accepts an
+/// open or mixed WPA/WPA2 advertisement, and then validates the complete
+/// retained RSN suites before returning a source-owned RSN element.
+pub fn select_association_rsn(
+    access_point: &ScanRecord,
+    security: WifiSecurityMode,
+) -> Result<SelectedRsn, StaSecurityError> {
+    match security {
+        WifiSecurityMode::Open if access_point.matches_security(security) => Ok(SelectedRsn::EMPTY),
+        WifiSecurityMode::Open => Err(StaSecurityError::SecurityModeMismatch),
+        WifiSecurityMode::Wpa2Personal => select_wpa2_psk_rsn(access_point),
+    }
 }
 
 pub(crate) fn validate_peer(bssid: [u8; 6], sequence_number: u16) -> Result<(), StationFrameError> {
@@ -2156,6 +2249,17 @@ fn read_rsn_suite(bytes: &[u8], offset: &mut usize) -> Result<[u8; 4], StaSecuri
     Ok([value[0], value[1], value[2], value[3]])
 }
 
+fn skip_rsn_bytes(bytes: &[u8], offset: &mut usize, length: usize) -> Result<(), StaSecurityError> {
+    let end = offset
+        .checked_add(length)
+        .ok_or(StaSecurityError::MalformedRsn)?;
+    bytes
+        .get(*offset..end)
+        .ok_or(StaSecurityError::MalformedRsn)?;
+    *offset = end;
+    Ok(())
+}
+
 fn is_rsn_suite(suite: [u8; 4], selector: u8) -> bool {
     suite[..3] == RSN_OUI && suite[3] == selector
 }
@@ -2169,15 +2273,15 @@ mod tests {
 
     #[test]
     fn station_ht_profiles_put_tx_parameters_in_supported_mcs_byte_twelve() {
-        for capability in [
-            HT20_CAPABILITY_IE,
-            HT40_CAPABILITY_IE,
-            HE20_HT_CAPABILITY_IE,
-        ] {
+        for capability in [HT20_CAPABILITY_IE, HE20_HT_CAPABILITY_IE] {
             assert_eq!(capability[5], 0xff);
             assert_eq!(capability[17], 0x01);
             assert_eq!(capability[18], 0);
         }
+        assert_eq!(HT40_CAPABILITY_IE[5], 0xff);
+        assert_eq!(HT40_CAPABILITY_IE[9], 0);
+        assert_eq!(HT40_CAPABILITY_IE[17], 0x01);
+        assert_eq!(HT40_CAPABILITY_IE[18], 0);
     }
 
     fn authentication_response(status_code: u16) -> [u8; 30] {
@@ -2220,6 +2324,8 @@ mod tests {
         record.bssid = BSSID;
         record.channel = 6;
         record.privacy = true;
+        record.rsn = true;
+        record.rsn_ie_count = 1;
         record.supported_rates[..4].copy_from_slice(&[0x82, 0x84, 0x8b, 0x96]);
         record.supported_rates_len = 4;
         let mut offset = 2;
@@ -2243,6 +2349,14 @@ mod tests {
         record.rsn_ie[1] = (offset - 2) as u8;
         record.rsn_ie_len = offset as u8;
         record
+    }
+
+    fn append_rsn_tail(record: &mut ScanRecord, tail: &[u8]) {
+        let offset = usize::from(record.rsn_ie_len);
+        let end = offset + tail.len();
+        record.rsn_ie[offset..end].copy_from_slice(tail);
+        record.rsn_ie[1] = (end - 2) as u8;
+        record.rsn_ie_len = end as u8;
     }
 
     #[test]
@@ -2454,6 +2568,43 @@ mod tests {
     }
 
     #[test]
+    fn complete_optional_rsn_tails_are_consumed_exactly() {
+        let mut with_pmkid = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
+        let mut pmkid_tail = [0x5a; 18];
+        pmkid_tail[..2].copy_from_slice(&1_u16.to_le_bytes());
+        append_rsn_tail(&mut with_pmkid, &pmkid_tail);
+        assert!(select_wpa2_psk_rsn(&with_pmkid).is_ok());
+
+        let mut with_group_management = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 1 << 7);
+        append_rsn_tail(&mut with_group_management, &[0, 0, 0x00, 0x0f, 0xac, 6]);
+        assert!(select_wpa2_psk_rsn(&with_group_management).is_ok());
+    }
+
+    #[test]
+    fn truncated_or_trailing_rsn_optional_fields_are_rejected() {
+        let mut truncated_pmkid = [0; 17];
+        truncated_pmkid[..2].copy_from_slice(&1_u16.to_le_bytes());
+        let truncated_group_management = [0, 0, 0x00, 0x0f, 0xac];
+        let group_management_without_mfpc = [0, 0, 0x00, 0x0f, 0xac, 6];
+        let trailing_after_group_management = [0, 0, 0x00, 0x0f, 0xac, 6, 0xa5];
+
+        for tail in [
+            &[0xa5][..],
+            &truncated_pmkid,
+            &truncated_group_management,
+            &group_management_without_mfpc,
+            &trailing_after_group_management,
+        ] {
+            let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
+            append_rsn_tail(&mut record, tail);
+            assert_eq!(
+                select_wpa2_psk_rsn(&record),
+                Err(StaSecurityError::MalformedRsn)
+            );
+        }
+    }
+
+    #[test]
     fn association_request_contains_selected_rsn() {
         let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
         let mut output = [0; 96];
@@ -2463,6 +2614,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 1,
             phy: StaAssociationPhy::Legacy,
+            security: WifiSecurityMode::Wpa2Personal,
             power_capability: None,
             he_ul_mu_power: None,
         }
@@ -2491,6 +2643,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 1,
             phy: StaAssociationPhy::Ht20,
+            security: WifiSecurityMode::Wpa2Personal,
             power_capability: None,
             he_ul_mu_power: None,
         }
@@ -2517,6 +2670,7 @@ mod tests {
                 sequence_number: 2,
                 listen_interval: 1,
                 phy: StaAssociationPhy::Ht20,
+                security: WifiSecurityMode::Wpa2Personal,
                 power_capability: None,
                 he_ul_mu_power: None,
             }
@@ -2526,7 +2680,7 @@ mod tests {
     }
 
     #[test]
-    fn ht40_request_claims_width_short_gi_and_disabled_smps() {
+    fn ht40_request_claims_width_short_gi_without_unqualified_mcs32() {
         let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
         record.channel = 6;
         record.ht_capability_ie_present = true;
@@ -2540,6 +2694,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 1,
             phy: StaAssociationPhy::Ht40,
+            security: WifiSecurityMode::Wpa2Personal,
             power_capability: None,
             he_ul_mu_power: None,
         }
@@ -2547,6 +2702,16 @@ mod tests {
         .unwrap();
         let phy_start = length - HT40_CAPABILITY_IE.len() - WMM_INFORMATION_IE.len();
         assert_eq!(&output[phy_start..phy_start + 4], &[45, 26, 0x6e, 0]);
+        assert_eq!(
+            output[phy_start + 9],
+            0,
+            "the local RX MCS32 bit must remain clear"
+        );
+        assert_eq!(
+            output[phy_start + 17],
+            0x01,
+            "the ordinary one-stream TX and RX MCS sets remain equal"
+        );
     }
 
     #[test]
@@ -2600,7 +2765,7 @@ mod tests {
 
     #[test]
     fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
-        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
         let mut sequence = StaSequenceCounter::new(0x0ffc);
         let mut attempts = [StaAssociationAttempt {
             ordinal: 0,
@@ -2645,7 +2810,7 @@ mod tests {
 
     #[test]
     fn association_runtime_accepts_only_selected_peer_response() {
-        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
         let mut sequence = StaSequenceCounter::new(7);
         assert_eq!(
             runtime.begin_tick(&mut sequence).unwrap().unwrap().ordinal,
@@ -2690,7 +2855,8 @@ mod tests {
     #[test]
     fn association_runtime_reports_peer_disconnect_and_rejection() {
         let mut sequence = StaSequenceCounter::new(0);
-        let mut disconnected = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut disconnected =
+            StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
         disconnected.begin_tick(&mut sequence).unwrap();
         disconnected.observe_received_frame().unwrap();
         assert_eq!(
@@ -2704,7 +2870,7 @@ mod tests {
             })
         );
 
-        let mut rejected = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut rejected = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
         rejected.begin_tick(&mut sequence).unwrap();
         assert_eq!(
             rejected.observe_management_frame(&association_response(17)),
@@ -2716,7 +2882,7 @@ mod tests {
     }
 
     #[test]
-    fn he20_request_preserves_vendor_body_except_unowned_cqi_claims() {
+    fn he20_request_masks_unowned_power_save_and_feedback_claims() {
         let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
         let ssid = b"FRITZ!Box 7530 FN";
         record.ssid[..ssid.len()].copy_from_slice(ssid);
@@ -2748,6 +2914,7 @@ mod tests {
             sequence_number: 2,
             listen_interval: 3,
             phy: StaAssociationPhy::He20,
+            security: WifiSecurityMode::Wpa2Personal,
             power_capability: Some(StaPowerCapability::new(-11, 20).unwrap()),
             he_ul_mu_power: Some(power),
         }
@@ -2779,15 +2946,21 @@ mod tests {
             &HE20_OWNED_MCS9_CAPABILITY_IE
         );
         assert_eq!(
-            HE20_OWNED_MCS9_CAPABILITY_IE[15],
-            HE20_VENDOR_MCS9_CAPABILITY_IE[15] & !(1 << 4)
+            HE20_OWNED_MCS9_CAPABILITY_IE[3],
+            HE20_VENDOR_MCS9_CAPABILITY_IE[3] & !(1 << 1)
         );
+        assert_eq!(
+            HE20_OWNED_MCS9_CAPABILITY_IE[15],
+            HE20_VENDOR_MCS9_CAPABILITY_IE[15] & !0x1f
+        );
+        assert_eq!(HE20_OWNED_MCS9_CAPABILITY_IE[13], 0);
+        assert_eq!(HE20_OWNED_MCS9_CAPABILITY_IE[14], 0);
         assert_eq!(
             HE20_OWNED_MCS9_CAPABILITY_IE[18],
             HE20_VENDOR_MCS9_CAPABILITY_IE[18] & !(1 << 1)
         );
         for index in 0..HE20_VENDOR_MCS9_CAPABILITY_IE.len() {
-            if index != 15 && index != 18 {
+            if index != 3 && index != 13 && index != 14 && index != 15 && index != 18 {
                 assert_eq!(
                     HE20_OWNED_MCS9_CAPABILITY_IE[index],
                     HE20_VENDOR_MCS9_CAPABILITY_IE[index],
@@ -2806,6 +2979,16 @@ mod tests {
         );
         offset += WMM_INFORMATION_IE.len();
         assert_eq!(&tail[offset..], &HE20_EXTENDED_CAPABILITY_IE);
+        assert_eq!(
+            tail[offset + 2] & 0x80,
+            0x80,
+            "the independently retained Event capability must stay set"
+        );
+        assert_eq!(
+            tail[offset + 4] & 0x40,
+            0,
+            "Multiple BSSID must not be advertised without profile ownership"
+        );
     }
 
     #[test]
@@ -3243,7 +3426,16 @@ mod tests {
             supported_rates_len: 1,
             ..ScanRecord::EMPTY
         };
-        assert!(select_wpa2_psk_rsn(&record).unwrap().as_bytes().is_empty());
+        assert!(
+            select_association_rsn(&record, WifiSecurityMode::Open)
+                .unwrap()
+                .as_bytes()
+                .is_empty()
+        );
+        assert_eq!(
+            select_wpa2_psk_rsn(&record),
+            Err(StaSecurityError::SecurityModeMismatch)
+        );
     }
 
     #[test]

@@ -11,6 +11,7 @@
 //! leases and metadata, not frame-sized arrays.
 
 pub mod connected_tasks;
+pub mod monitor_injection;
 pub mod stack_boundary;
 pub mod station_network;
 
@@ -25,7 +26,8 @@ use embassy_sync::{
 };
 use open_esp_radio_dma::{RxHandoffPool, RxNetworkLease};
 use open_esp_radio_wifi_softmac::{
-    MacRxMetadata, MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink,
+    MacRxMetadata, MonitorDropReason, MonitorFrame, MonitorInjectionChannelBinding,
+    MonitorPublishOutcome, MonitorSink, WifiChannel,
     interface::{ChannelContextId, MonitorTapPoint},
 };
 
@@ -34,6 +36,19 @@ use open_esp_radio_wifi_softmac::{
 pub struct MonitorCaptureMetadata<Rate> {
     /// Supervisor generation which produced this frame.
     pub generation: u32,
+    /// Exact tuned channel at the start of this completed RX/IRQ epoch.
+    ///
+    /// `None` is reserved for legacy sinks which publish without first
+    /// accepting a channel-epoch edge. Production monitor tasks always stamp
+    /// `Some` before starting RX.
+    pub channel: Option<WifiChannel>,
+    /// Monotonic channel-binding epoch within `generation`. A value may be
+    /// skipped when a stopped retune supersedes a prepared channel before RX
+    /// starts; retained frames never change their stamped value.
+    pub channel_epoch: u32,
+    /// False after the finite channel-epoch identity space is exhausted.
+    /// Capture remains usable, but this metadata can no longer authorize TX.
+    injection_binding_valid: bool,
     pub tap: MonitorTapPoint,
     pub channel_context: ChannelContextId,
     pub rx: MacRxMetadata<Rate>,
@@ -67,6 +82,24 @@ impl<Rate, const CAPACITY: usize> MonitorCaptureFrame<'_, Rate, CAPACITY> {
 
     pub fn is_complete(&self) -> bool {
         self.metadata.logical_length == self.captured_length()
+    }
+
+    /// Exact monitor dwell which produced this retained capture.
+    ///
+    /// A legacy sink which never accepted a channel-epoch edge returns
+    /// `None` and therefore cannot authorize an injection.
+    pub fn injection_channel_binding(&self) -> Option<MonitorInjectionChannelBinding> {
+        if !self.metadata.injection_binding_valid {
+            return None;
+        }
+        self.metadata.channel.and_then(|channel| {
+            MonitorInjectionChannelBinding::new(
+                self.metadata.generation,
+                self.metadata.channel_epoch,
+                channel,
+            )
+            .ok()
+        })
     }
 }
 
@@ -109,6 +142,9 @@ impl<const CAPACITY: usize, const SLOTS: usize> MonitorCapturePool<CAPACITY, SLO
         &'pool self,
         frame: MonitorFrame<'_, Rate>,
         generation: u32,
+        channel: Option<WifiChannel>,
+        channel_epoch: u32,
+        injection_binding_valid: bool,
         snapshot_length: Option<usize>,
     ) -> Result<MonitorCaptureFrame<'pool, Rate, CAPACITY>, MonitorDropReason> {
         let captured_length = snapshot_length
@@ -128,6 +164,9 @@ impl<const CAPACITY: usize, const SLOTS: usize> MonitorCapturePool<CAPACITY, SLO
             lease: radio.into_network(captured_length),
             metadata: MonitorCaptureMetadata {
                 generation,
+                channel,
+                channel_epoch,
+                injection_binding_valid,
                 tap: frame.tap,
                 channel_context: frame.channel_context,
                 rx: frame.metadata,
@@ -188,6 +227,9 @@ impl<'pool, M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const 
                 pool: self.pool,
                 sender: self.frames.sender(),
                 generation: 0,
+                channel: None,
+                channel_epoch: 0,
+                injection_binding_valid: true,
                 snapshot_length: None,
             },
             MonitorCaptureReceiver {
@@ -220,6 +262,9 @@ pub struct MonitorCaptureSink<
     pool: &'pool MonitorCapturePool<CAPACITY, SLOTS>,
     sender: Sender<'queue, M, MonitorCaptureFrame<'pool, Rate, CAPACITY>, DEPTH>,
     generation: u32,
+    channel: Option<WifiChannel>,
+    channel_epoch: u32,
+    injection_binding_valid: bool,
     snapshot_length: Option<usize>,
 }
 
@@ -229,6 +274,9 @@ impl<M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const SLOTS: 
     /// Bind a reusable sink to one supervisor generation and capture policy.
     pub fn configure(&mut self, generation: u32, snapshot_length: Option<usize>) {
         self.generation = generation;
+        self.channel = None;
+        self.channel_epoch = 0;
+        self.injection_binding_valid = true;
         self.snapshot_length = snapshot_length;
     }
 }
@@ -236,6 +284,29 @@ impl<M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const SLOTS: 
 impl<M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
     MonitorSink<Rate> for MonitorCaptureSink<'_, '_, M, Rate, DEPTH, CAPACITY, SLOTS>
 {
+    fn begin_channel_epoch(&mut self, channel: WifiChannel) {
+        self.channel = Some(channel);
+        if self.injection_binding_valid {
+            match self.channel_epoch.checked_add(1) {
+                Some(epoch) => self.channel_epoch = epoch,
+                None => self.injection_binding_valid = false,
+            }
+        }
+    }
+
+    fn end_channel_epoch(&mut self) {
+        self.channel = None;
+    }
+
+    fn injection_channel_binding(&self) -> Option<MonitorInjectionChannelBinding> {
+        if !self.injection_binding_valid {
+            return None;
+        }
+        self.channel.and_then(|channel| {
+            MonitorInjectionChannelBinding::new(self.generation, self.channel_epoch, channel).ok()
+        })
+    }
+
     fn try_publish(&mut self, frame: MonitorFrame<'_, Rate>) -> MonitorPublishOutcome {
         // Avoid an otherwise pointless frame-sized copy after a slow consumer
         // has already filled the queue. A concurrent receive may make this a
@@ -243,10 +314,14 @@ impl<M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const SLOTS: 
         if self.sender.is_full() {
             return MonitorPublishOutcome::Dropped(MonitorDropReason::Full);
         }
-        let captured = match self
-            .pool
-            .try_capture(frame, self.generation, self.snapshot_length)
-        {
+        let captured = match self.pool.try_capture(
+            frame,
+            self.generation,
+            self.channel,
+            self.channel_epoch,
+            self.injection_binding_valid,
+            self.snapshot_length,
+        ) {
             Ok(captured) => captured,
             Err(reason) => return MonitorPublishOutcome::Dropped(reason),
         };

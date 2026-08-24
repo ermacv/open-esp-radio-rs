@@ -102,6 +102,7 @@ impl ProductionWifiEpochRunner {
             station.station_address(),
             &[],
             &ESP32S31_STATION_PROBE_RATES,
+            open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal,
         )
         .with_descriptor_capacity(ESP32S31_STATION_PROBE_DESCRIPTOR_CAPACITY)
         .without_candidate_selection();
@@ -358,7 +359,8 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                             .await;
                         return EmbassyWifiRoleEpochOutcome::NotStarted(stopped);
                     };
-                    let channel = request.channel();
+                    let channel_policy = request.channel_policy();
+                    let channel = channel_policy.initial_channel();
                     let snapshot_length = request.capture_policy().snapshot_length();
                     let (
                         wifi,
@@ -417,6 +419,9 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         endpoint,
                         &mut controller,
                         task,
+                        channel_policy,
+                        EmbassyEsp32s31PhyDelay,
+                        &mut observer,
                         Esp32s31RadioError::RoleActive,
                     ));
                     let frontier = await_stack_boundary!(finish_embassy_wifi_active_role(

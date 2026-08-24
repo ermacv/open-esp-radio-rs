@@ -68,6 +68,13 @@ pub use ieee802154_role::{
     Ieee802154MacPolicyRecovery, Ieee802154MacPolicyTransitionFailure, Ieee802154Reset,
     Ieee802154ResetTransitionFailure,
 };
+pub use open_esp_radio_esp32s31_pac::{
+    MacPowerWakeCause, MacTsfTimerIndex, StaBeaconMissLimit, StaBeaconMissTimeoutRaw,
+    StaModemSleepLimit, StaModemWakeConfig, StaModemWakePrepareError, StaModemWakeRestore,
+    StaModemWakeRestoreError, StaModemWakeRestoreFailure, StaTbttAutoPeriod,
+    StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError,
+    StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw,
+};
 pub use power::{PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError};
 pub use types::{
     CfrValue, ForcedRxGain, MacInterruptEvents, MacInterruptMask, MacInterruptSnapshot,
@@ -358,12 +365,10 @@ impl sealed::SharedPhyAccess for RadioPhyRegisters {
 
 impl SharedPhyAccess for RadioPhyRegisters {}
 
-#[cfg(target_arch = "riscv32")]
 pub(crate) fn phy_pac(access: &(impl SharedPhyAccess + ?Sized)) -> &RadioPhyRegisters {
     sealed::SharedPhyAccess::pac(access)
 }
 
-#[cfg(target_arch = "riscv32")]
 pub(crate) fn phy_pac_mut(access: &mut (impl SharedPhyAccess + ?Sized)) -> &mut RadioPhyRegisters {
     sealed::SharedPhyAccess::pac_mut(access)
 }
@@ -586,6 +591,14 @@ pub struct MacPowerInterruptRegisters {
 }
 
 impl MacPowerInterruptRegisters {
+    pub fn mask_and_acknowledge_wake_cause(&mut self, cause: MacPowerWakeCause) {
+        self.inner.mask_and_acknowledge_wake_cause(cause);
+    }
+
+    pub fn acknowledge_wake_cause(&mut self, cause: MacPowerWakeCause) {
+        self.inner.acknowledge_wake_cause(cause);
+    }
+
     pub fn power_interrupt_status(&self) -> MacPowerInterruptSnapshot {
         self.inner.power_interrupt_status()
     }

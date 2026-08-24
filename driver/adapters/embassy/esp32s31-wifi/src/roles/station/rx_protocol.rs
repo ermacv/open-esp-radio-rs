@@ -19,7 +19,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx_pool::{VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
 };
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
-    ConnectedRxDispatch, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink,
+    ConnectedRxConfig, ConnectedRxDispatch, ConnectedRxDispatcher, ConnectedRxEvent,
+    ConnectedRxSink, StaCcmpRxReplayError,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use open_esp_radio_wifi_embassy::connected_tasks::ConnectedTaskEndpoint;
@@ -66,6 +67,11 @@ pub struct ConnectedRxProtocolShutdown {
     pub retained_frames: usize,
     pub reorder_commands: usize,
     pub active_reorders: usize,
+    /// ESP-NOW peer fingerprints explicitly cleared before owner return.
+    pub esp_now_duplicate_entries: usize,
+    /// Incomplete Open MSDUs revoked before the dispatcher leaves its
+    /// connected association epoch.
+    pub incomplete_fragment_contexts: usize,
 }
 
 /// Scratch and runtime-arena ownership returned only after a staged RX
@@ -170,6 +176,20 @@ impl<S: ConnectedRxSink> ConnectedRxSink for AlwaysReadyConnectedRxSink<S> {
     ) {
         self.0.publish(event);
     }
+
+    fn supports_esp_now_v2(&self) -> bool {
+        self.0.supports_esp_now_v2()
+    }
+
+    fn publish_esp_now_v2(
+        &mut self,
+        received: open_esp_radio_wifi_softmac::EspNowReceivedV2<'_>,
+        metadata: open_esp_radio_wifi_softmac::MacRxMetadata<
+            open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo,
+        >,
+    ) {
+        self.0.publish_esp_now_v2(received, metadata);
+    }
 }
 
 impl<S: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
@@ -189,6 +209,7 @@ impl<S: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
 struct DeferredEthernetFrames<'storage> {
     frames: PackedEthernetWriter<'storage>,
     metadata: Option<MacRxMetadata<RxPhyInfo>>,
+    power_save_delivery: Option<open_esp_radio_wifi_sta::power_save::StaPsPollDelivery>,
 }
 
 impl<'storage> DeferredEthernetFrames<'storage> {
@@ -196,6 +217,7 @@ impl<'storage> DeferredEthernetFrames<'storage> {
         Self {
             frames: PackedEthernetWriter::new(storage),
             metadata: None,
+            power_save_delivery: None,
         }
     }
 
@@ -206,6 +228,10 @@ impl<'storage> DeferredEthernetFrames<'storage> {
 
 impl ConnectedRxSink for DeferredEthernetFrames<'_> {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
+        if let ConnectedRxEvent::PowerSaveDelivery(delivery) = event {
+            self.power_save_delivery = Some(delivery);
+            return;
+        }
         let ConnectedRxEvent::Ethernet {
             frame, metadata, ..
         } = event
@@ -231,16 +257,19 @@ enum RetainedRxFrame<'pool, const CAPACITY: usize, const SLOTS: usize, const REO
 /// Caller-owned state arena for one connected RX protocol instance.
 ///
 /// This state is deliberately separate from [`Esp32s31ConnectedRxProtocol`]:
-/// the retained lease table and eight BlockAck reorder machines are large,
-/// long-lived data, while the protocol value is moved through composition and
-/// async task boundaries. Embedded composition roots should place this arena
-/// in static storage and pass a unique mutable borrow to each connected epoch.
+/// the dispatcher, retained lease table and eight BlockAck reorder machines
+/// are large, long-lived data, while the protocol value is moved through
+/// composition and async task boundaries. Embedded composition roots should
+/// place this arena in static storage and pass a unique mutable borrow to each
+/// connected epoch.
 pub struct Esp32s31ConnectedRxProtocolStorage<
     'pool,
     const CAPACITY: usize,
     const SLOTS: usize,
     const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
+    dispatcher: ConnectedRxDispatcher,
+    dispatcher_configured: bool,
     reorder_banks: RxBlockAckReorderBanks<RX_REORDER_SLOT_DOMAIN>,
     reorder_first_starts: [Option<u16>; RX_BLOCK_ACK_BANK_COUNT],
     gap_deadlines: [Option<Instant>; RX_BLOCK_ACK_BANK_COUNT],
@@ -252,11 +281,69 @@ impl<'pool, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS: usiz
 {
     pub const fn new() -> Self {
         Self {
+            dispatcher: ConnectedRxDispatcher::unconfigured(),
+            dispatcher_configured: false,
             reorder_banks: RxBlockAckReorderBanks::new(),
             reorder_first_starts: [None; RX_BLOCK_ACK_BANK_COUNT],
             gap_deadlines: [None; RX_BLOCK_ACK_BANK_COUNT],
             retained: [const { None }; REORDER_SLOTS],
         }
+    }
+
+    /// Revoke the parked association before installing a new connected epoch.
+    ///
+    /// The dispatcher stays inside this arena, so successful reconfiguration
+    /// changes protocol identity without moving its multi-kilobyte state
+    /// through a task frame. A live replay publication rejects the edge and
+    /// leaves the previous identity fail-closed.
+    pub fn try_reconfigure_dispatcher(
+        &mut self,
+        config: ConnectedRxConfig,
+    ) -> Result<(), StaCcmpRxReplayError> {
+        assert!(
+            (0..RX_BLOCK_ACK_BANK_COUNT).all(|bank| self.reorder_banks.identity(bank).is_none()),
+            "connected RX dispatcher reconfiguration requires stopped reorder banks"
+        );
+        assert!(
+            self.reorder_first_starts.iter().all(Option::is_none),
+            "connected RX dispatcher reconfiguration requires no pending reorder start"
+        );
+        assert!(
+            self.gap_deadlines.iter().all(Option::is_none),
+            "connected RX dispatcher reconfiguration requires no reorder deadline"
+        );
+        assert!(
+            self.retained.iter().all(Option::is_none),
+            "connected RX dispatcher reconfiguration requires no retained frame"
+        );
+        self.dispatcher_configured = false;
+        self.dispatcher.try_reconfigure(config)?;
+        self.dispatcher_configured = true;
+        Ok(())
+    }
+
+    pub const fn dispatcher(&self) -> &ConnectedRxDispatcher {
+        assert!(
+            self.dispatcher_configured,
+            "connected RX dispatcher must be configured for this epoch"
+        );
+        &self.dispatcher
+    }
+
+    pub(crate) fn dispatcher_mut(&mut self) -> &mut ConnectedRxDispatcher {
+        assert!(
+            self.dispatcher_configured,
+            "connected RX dispatcher must be configured for this epoch"
+        );
+        &mut self.dispatcher
+    }
+
+    pub const fn dispatcher_configured(&self) -> bool {
+        self.dispatcher_configured
+    }
+
+    fn mark_dispatcher_stopped(&mut self) {
+        self.dispatcher_configured = false;
     }
 }
 
@@ -318,7 +405,6 @@ pub struct Esp32s31ConnectedRxProcessor<
     const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
     irq: &'irq EmbassyMacIrqRuntime<M>,
-    dispatcher: ConnectedRxDispatcher,
     sink: S,
     mpdu: &'scratch mut [u8],
     ethernet: &'scratch mut [u8],

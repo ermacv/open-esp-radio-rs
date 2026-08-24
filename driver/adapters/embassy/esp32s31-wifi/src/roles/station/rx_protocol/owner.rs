@@ -1,8 +1,3 @@
-#![expect(
-    clippy::result_large_err,
-    reason = "RX protocol shutdown retains the exact reusable or faulted owner"
-)]
-
 use super::*;
 
 impl<
@@ -21,7 +16,6 @@ where
 {
     pub fn new_with_reorder_slots(
         irq: &'irq EmbassyMacIrqRuntime<M>,
-        dispatcher: ConnectedRxDispatcher,
         sink: S,
         mpdu: &'scratch mut [u8],
         ethernet: &'scratch mut [u8],
@@ -32,6 +26,10 @@ where
             REORDER_SLOTS,
         >,
     ) -> Self {
+        assert!(
+            runtime.dispatcher_configured(),
+            "connected RX protocol requires a configured dispatcher epoch"
+        );
         assert!(
             CAPACITY <= usize::from(u16::MAX),
             "staged RX capacity must fit the deferred record length"
@@ -55,7 +53,6 @@ where
         );
         Self {
             irq,
-            dispatcher,
             sink,
             mpdu,
             ethernet,
@@ -113,7 +110,7 @@ where
     }
 
     pub const fn dispatcher(&self) -> &ConnectedRxDispatcher {
-        &self.dispatcher
+        self.runtime.dispatcher()
     }
 
     pub const fn sink(&self) -> &S {
@@ -126,7 +123,21 @@ where
 
     /// Discard reorder/mailbox ownership retained by the protocol processor.
     pub fn shutdown_discard(&mut self) -> ConnectedRxProtocolShutdown {
-        let mut shutdown = ConnectedRxProtocolShutdown::default();
+        // The task is synchronously quiescent at this boundary, so no replay
+        // publication permit should still exist. If that invariant is broken,
+        // explicitly drop the static-arena endpoint: its Drop path revokes RX
+        // authority and quarantines group replay instead of letting a later
+        // epoch reuse this dispatcher.
+        if self.runtime.dispatcher.stop_ccmp_rx_replay().is_err() {
+            self.runtime.dispatcher.quarantine_ccmp_rx_replay();
+        }
+        let mut shutdown = ConnectedRxProtocolShutdown {
+            esp_now_duplicate_entries: self.runtime.dispatcher.stop_esp_now_rx_epoch(),
+            incomplete_fragment_contexts: self.runtime.dispatcher.clear_fragmentation(),
+            ..ConnectedRxProtocolShutdown::default()
+        };
+        self.runtime.dispatcher.clear_duplicate_history();
+        self.runtime.mark_dispatcher_stopped();
         if let Some(commands) = &self.reorder_commands {
             while try_receive_rx_reorder_command(commands).is_some() {
                 shutdown.reorder_commands = shutdown.reorder_commands.saturating_add(1);
@@ -228,7 +239,6 @@ where
 {
     pub fn new(
         irq: &'irq EmbassyMacIrqRuntime<M>,
-        dispatcher: ConnectedRxDispatcher,
         sink: S,
         mpdu: &'scratch mut [u8],
         ethernet: &'scratch mut [u8],
@@ -239,7 +249,7 @@ where
             RX_REORDER_BACKING_SLOT_COUNT,
         >,
     ) -> Self {
-        Self::new_with_reorder_slots(irq, dispatcher, sink, mpdu, ethernet, runtime)
+        Self::new_with_reorder_slots(irq, sink, mpdu, ethernet, runtime)
     }
 }
 
@@ -273,7 +283,6 @@ where
     pub fn new_with_reorder_slots(
         frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
         irq: &'irq EmbassyMacIrqRuntime<M>,
-        dispatcher: ConnectedRxDispatcher,
         sink: S,
         mpdu: &'scratch mut [u8],
         ethernet: &'scratch mut [u8],
@@ -287,7 +296,7 @@ where
         Self {
             frames,
             processor: Esp32s31ConnectedRxProcessor::new_with_reorder_slots(
-                irq, dispatcher, sink, mpdu, ethernet, runtime,
+                irq, sink, mpdu, ethernet, runtime,
             ),
         }
     }
@@ -413,6 +422,8 @@ where
         shutdown.retained_frames = retained.retained_frames;
         shutdown.reorder_commands = retained.reorder_commands;
         shutdown.active_reorders = retained.active_reorders;
+        shutdown.esp_now_duplicate_entries = retained.esp_now_duplicate_entries;
+        shutdown.incomplete_fragment_contexts = retained.incomplete_fragment_contexts;
         if shutdown.queued_frames != 0 {
             self.processor.irq.notify_rx_capacity();
         }
@@ -459,7 +470,6 @@ where
     pub fn new(
         frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
         irq: &'irq EmbassyMacIrqRuntime<M>,
-        dispatcher: ConnectedRxDispatcher,
         sink: S,
         mpdu: &'scratch mut [u8],
         ethernet: &'scratch mut [u8],
@@ -470,6 +480,6 @@ where
             RX_REORDER_BACKING_SLOT_COUNT,
         >,
     ) -> Self {
-        Self::new_with_reorder_slots(frames, irq, dispatcher, sink, mpdu, ethernet, runtime)
+        Self::new_with_reorder_slots(frames, irq, sink, mpdu, ethernet, runtime)
     }
 }

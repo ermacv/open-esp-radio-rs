@@ -27,15 +27,16 @@ pub(in crate::roles::station) use epoch::{
     coalesce_disconnected_station_command, complete_connected_station_command,
 };
 pub use port::{
-    Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaCompositionFailure,
+    Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaCcmpReplayError,
+    Esp32s31ConnectedStaCcmpReplayFailure, Esp32s31ConnectedStaCompositionFailure,
     Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaConfigError,
     Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,
-    Esp32s31ConnectedStaDrivers, Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPlan,
-    Esp32s31ConnectedStaPort, Esp32s31ConnectedStaPrepareFailure, Esp32s31ConnectedStaRateConfig,
-    Esp32s31ConnectedStaReport, Esp32s31ConnectedStaRxPolicy,
-    Esp32s31ConnectedStaRxProcessorResources, Esp32s31ConnectedStaRxProtocolResources,
-    Esp32s31ConnectedStaTxHandoffFailure, Esp32s31ConnectedStaTxPolicy,
-    Esp32s31ConnectedStaTxResources,
+    Esp32s31ConnectedStaDrivers, Esp32s31ConnectedStaEspNowRxError,
+    Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPort,
+    Esp32s31ConnectedStaPrepareFailure, Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaReport,
+    Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaRxProcessorResources,
+    Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxHandoffFailure,
+    Esp32s31ConnectedStaTxPolicy, Esp32s31ConnectedStaTxResources,
 };
 pub use preparation::{
     Esp32s31ConnectedNetworkStarted, Esp32s31ConnectedNetworkStartedParts,
@@ -64,13 +65,30 @@ pub use super::command::{Esp32s31StationCommand, Esp32s31StationCommandReceiver}
 pub use super::control::{ConnectedControlShutdown, ConnectedWpa2Security};
 pub use super::control_mailbox::{ConnectedControlPublisher, ConnectedControlResources};
 pub use super::epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch};
+pub use super::esp_now_mailbox::{
+    EspNowMailboxConnectedRxSink, EspNowOwnedRxEvent, EspNowRxMailboxEpochError,
+    EspNowRxMailboxResources, EspNowRxMailboxShutdown, EspNowRxPublishOutcome, EspNowRxPublisher,
+    EspNowRxReceiver, EspNowV2RxEvent, EspNowV2RxMailboxError,
+};
+pub use super::esp_now_tx::{
+    Esp32s31EspNowConnectedControl, Esp32s31EspNowConnectedControlConfigError,
+    Esp32s31EspNowConnectedControlError, Esp32s31EspNowConnectedControlShutdown,
+    Esp32s31EspNowConnectedControlStartFailure, Esp32s31EspNowTxBinding, EspNowConnectedTx,
+    EspNowOffChannelFailureStage, EspNowOwnedV1Tx, EspNowTxBackpressure, EspNowTxCancelReason,
+    EspNowTxCompletion, EspNowTxHandle, EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError,
+    EspNowTxMailboxOwner, EspNowTxMailboxResources, EspNowTxMailboxShutdown,
+    EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket, EspNowTxTrySendError,
+    EspNowV2TxRequest, EspNowV2TxTrySendError, attach_esp_now_tx,
+};
 pub use super::network::EmbassyNetConnectedRxSink;
 pub use super::rx_protocol::{
     ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStopped,
     Esp32s31ConnectedRxProtocolStorage,
 };
 pub use super::teardown::{
-    Esp32s31AlreadyStoppedRx, Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
+    Esp32s31AlreadyStoppedRx, Esp32s31ConnectedStaGroupSecurity,
+    Esp32s31ConnectedStaSecurityStopReport, Esp32s31ConnectedStaTeardownFailure,
+    Esp32s31ConnectedStaTeardownPort,
 };
 pub use super::tx::Esp32s31ConnectedTx;
 pub use super::tx_epoch::Esp32s31StaTxEpochExt;

@@ -38,6 +38,7 @@ macro_rules! diagnostics_debug {
 mod composition;
 #[cfg(feature = "diagnostics")]
 mod diagnostics;
+mod esp_now;
 mod facade;
 mod monitor;
 mod radio_resources;
@@ -53,7 +54,8 @@ pub use supervisor::station::{
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::{
     Esp32s31ConnectedRxObservation, Esp32s31ConnectedRxObserver,
-    Esp32s31DecodedRxPhyObservation, Esp32s31HeSuRxObservation, Esp32s31RxEvidence,
+    Esp32s31DecodedRxPhyObservation, Esp32s31HeSuRxObservation, Esp32s31HtRxObservation,
+    Esp32s31RxEvidence,
 };
 #[cfg(feature = "mac-irq-diagnostics")]
 pub use supervisor::station::Esp32s31MacIrqObservation;
@@ -61,10 +63,68 @@ pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
 };
+pub use esp_now::{
+    ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH,
+    ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH,
+    ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY, ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_KEY_LEN,
+    ESP_NOW_RX_REPLAY_WINDOW_BITS, ESP_NOW_V1_MAX_PAYLOAD_LEN,
+    ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN, ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN,
+    ESP_NOW_V2_ACTION_PREFIX_LEN, ESP_NOW_V2_MAX_ACTION_LEN, ESP_NOW_V2_MAX_ELEMENT_COUNT,
+    ESP_NOW_V2_MAX_ELEMENT_PAYLOAD_LEN, ESP_NOW_V2_MAX_MPDU_LEN, ESP_NOW_V2_MAX_PAYLOAD_LEN,
+    ESP_NOW_V2_MAX_VENDOR_CONTENT_LEN, ESP_NOW_V2_VERSION,
+    Esp32s31EspNowConnectedControl,
+    Esp32s31EspNowConnectedControlConfigError, Esp32s31EspNowConnectedControlError,
+    Esp32s31EspNowConnectedControlShutdown, Esp32s31EspNowCryptoDiagnostics,
+    Esp32s31EspNowCryptoError, Esp32s31EspNowKeyOwner, Esp32s31EspNowKeySlot,
+    Esp32s31EspNowLongRangeMissing, Esp32s31EspNowLongRangeRate,
+    Esp32s31EspNowLongRangeReached, Esp32s31EspNowLongRangeUnsupported,
+    Esp32s31EspNowPhySupport, Esp32s31EspNowRxMetadata, Esp32s31EspNowRxRateNormalization,
+    Esp32s31EspNowRxPublisher, Esp32s31EspNowRxReceiver, Esp32s31EspNowRxResources,
+    Esp32s31EspNowTxBinding, Esp32s31EspNowTxConfig, Esp32s31EspNowTxConfigError,
+    Esp32s31EspNowTxError, Esp32s31EspNowTxHandle, Esp32s31EspNowTxMailboxOwner,
+    Esp32s31EspNowTxResources, Esp32s31StandaloneEspNowBinding,
+    Esp32s31StandaloneEspNowBindingError, Esp32s31StandaloneEspNowPrepareFailure,
+    Esp32s31StandaloneEspNowChannelControl, Esp32s31StandaloneEspNowOffChannelRunError,
+    Esp32s31StandaloneEspNowOffChannelRunFailure, Esp32s31StandaloneEspNowReceive,
+    Esp32s31StandaloneEspNowRunError, Esp32s31StandaloneEspNowRunFailure,
+    Esp32s31StandaloneEspNowRunReport, Esp32s31StandaloneEspNowRx,
+    Esp32s31StandaloneEspNowRxProgress, Esp32s31StandaloneEspNowService,
+    Esp32s31StandaloneEspNowStopError, Esp32s31StandaloneEspNowStopped,
+    EspNowCcmpPacketNumber, EspNowCcmpPacketNumberError,
+    EspNowConfig, EspNowConfigError, EspNowDestination, EspNowEncryptedPeerConfig,
+    EspNowEncryptedPeerDiagnostics, EspNowEncryptedPeerError, EspNowEncryptedPeerId,
+    EspNowEncryptedPeerMutationFailure, EspNowEncryptedPeerReplacement,
+    EspNowEncryptedPeerRestoreFailure, EspNowEncryptedPeerTable, EspNowEncryptedPeerView,
+    EspNowEncryptedProtocol, EspNowEncryptedReceiveError, EspNowEncryptedRxCandidate,
+    EspNowEncryptedSendError, EspNowEncryptedV1Unavailable, EspNowLmk, EspNowOwnedV1Tx,
+    EspNowOffChannelFailureStage, EspNowPeerCapability, EspNowPeerChannelPolicy,
+    EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity,
+    EspNowPeerTableError, EspNowPhyMode,
+    EspNowPmk, EspNowPmkError, EspNowPmkId, EspNowPmkMutationFailure, EspNowPmkOwner,
+    EspNowPreparedEncryptedV1Tx, EspNowPreparedV2Tx, EspNowProtectedV1Envelope,
+    EspNowProtectedV1WireError, EspNowProtocol, EspNowRandomValue, EspNowReceivedV2,
+    EspNowRemovedEncryptedPeer, EspNowRxMailboxEpochError, EspNowRxMailboxResources,
+    EspNowRxMailboxShutdown, EspNowRxPublishOutcome, EspNowRxPublisher, EspNowRxReceiver,
+    EspNowRxReplayCandidate, EspNowTxBackpressure, EspNowTxCancelReason, EspNowTxCompletion,
+    EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError, EspNowTxMailboxShutdown,
+    EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket, EspNowTxTrySendError,
+    EspNowUnicastAddress, EspNowV1WireError, EspNowV2Action, EspNowV2Element,
+    EspNowV2Elements, EspNowV2Frame, EspNowV2Payload, EspNowV2Reassembly,
+    EspNowV2ReceiveError, EspNowV2RxEvent, EspNowV2RxMailboxError, EspNowV2RxOutcome,
+    EspNowV2SendError, EspNowV2TxTrySendError, EspNowV2WireError, EspNowVersionError,
+    EspNowWireVersion, StandaloneEspNowPeerError,
+    StandaloneEspNowRequest, WifiStandaloneEspNowPlan, attach_esp_now_tx,
+    encrypted_peer_destination, esp_now_encrypted_v1_codec_status, esp_now_wire_version,
+    esp32s31_esp_now_phy_support, normalize_esp_now_rx_metadata,
+    prepare_esp32s31_standalone_esp_now,
+};
+#[cfg(target_arch = "riscv32")]
+pub use esp_now::Esp32s31StandaloneEspNowPhyChannelControl;
 pub use monitor::{
-    ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorBasebandFormat,
-    Esp32s31MonitorCaptureStatistics, Esp32s31MonitorFrame, Esp32s31MonitorFrames,
-    Esp32s31MonitorPhyInfo,
+    ESP32S31_MONITOR_CAPTURE_CAPACITY, MONITOR_CHANNEL_SEQUENCE_CAPACITY,
+    Esp32s31MonitorBasebandFormat, Esp32s31MonitorCaptureStatistics, Esp32s31MonitorFrame,
+    Esp32s31MonitorFrames, Esp32s31MonitorPhyInfo, MonitorCapturePolicy, MonitorChannelPolicy,
+    MonitorChannelSequence, MonitorChannelSequenceError, MonitorRequest,
 };
 #[cfg(feature = "diagnostics")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
@@ -247,9 +307,14 @@ pub struct Esp32s31AccessPointObservation {
     pub rx_rssi_min_dbm: i8,
     pub rx_rssi_max_dbm: i8,
     pub rx_ht40_mcs_frames: [u32; 8],
+    pub rx_ht40_mcs32_frames: u32,
+    pub rx_ht_mcs32_width_mismatches: u32,
     pub tx_ht_aggregates: u32,
     pub tx_ht40_mcs7_aggregates: u32,
     pub data_frames_transmitted: u32,
+    pub ht_duplicate_tx_requests: u32,
+    pub ht_duplicate_tx_selection:
+        open_esp_radio_esp32s31_wifi_mac::tx::HtDuplicateTxSelection,
     pub data_tx_attempts: u32,
     pub data_tx_retried_frames: u32,
     pub data_tx_maximum_attempts: u8,
@@ -274,6 +339,8 @@ pub struct Esp32s31AccessPointObservation {
     pub rx_reorder_gap_timeouts: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
+    /// Data MPDUs whose Protected bit contradicted the requested AP mode.
+    pub security_mode_mismatches: u32,
 }
 
 /// Value-only failed-attempt detail emitted to diagnostics firmware.

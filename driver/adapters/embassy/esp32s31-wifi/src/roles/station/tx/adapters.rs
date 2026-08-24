@@ -75,6 +75,19 @@ impl<
         Ok(DatapathControlProgress::TxPending)
     }
 
+    fn start_ps_poll<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        association_id: StaAssociationId,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
+        if self.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        self.ordinary.start_ps_poll(hardware, association_id)?;
+        self.active = ConnectedTxActive::Ordinary;
+        Ok(DatapathControlProgress::TxPending)
+    }
+
     fn start_beacon_probe<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
@@ -102,6 +115,183 @@ impl<
 
     fn set_tx_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>) {
         self.set_block_ack_agreement(tid, agreement);
+    }
+
+    fn publish_he_trigger_response<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
+        &mut self,
+        _hardware: &mut H,
+        request: HeTriggerRuntimeRequest,
+    ) -> Result<(), ConnectedHeControlRuntimeRejection> {
+        // Recheck at the final owner: control validation and this handoff are
+        // separate calls, and neither may extend an expired response window.
+        if self.ordinary.now_micros() >= request.response_deadline_micros {
+            return Err(ConnectedHeControlRuntimeRejection::MissedResponseWindow);
+        }
+        if self.he_trigger_based != Some(request.queue_policy) {
+            return Err(ConnectedHeControlRuntimeRejection::QueuePolicyMismatch);
+        }
+        if request.queue_policy.tid().value() != HE_TRIGGER_DATA_TID {
+            return Err(ConnectedHeControlRuntimeRejection::QueueTidMismatch);
+        }
+        if self.active() {
+            return Err(ConnectedHeControlRuntimeRejection::TxOwnerBusy);
+        }
+        if self.standby_error.is_some() {
+            return Err(ConnectedHeControlRuntimeRejection::PreparedQueueFaulted);
+        }
+        let Some(prepared) = self.standby_prepared.as_ref() else {
+            return Err(ConnectedHeControlRuntimeRejection::PreparedQueueUnavailable);
+        };
+        if prepared.traffic.tid() != HE_TRIGGER_DATA_TID
+            || prepared.traffic.queue() != LegacyTxQueue::BestEffort
+        {
+            return Err(ConnectedHeControlRuntimeRejection::QueueTidMismatch);
+        }
+        if !matches!(self.config.rate, TxPhyRate::He(_)) {
+            return Err(ConnectedHeControlRuntimeRejection::UnsupportedQueueFormat);
+        }
+        if open_esp_radio_esp32s31_hal::types::MacHeTbLinkReservation::for_queue(
+            request.queue_policy.tid_limit(),
+            LegacyTxQueue::BestEffort.hardware_index(),
+            prepared.original_subframes,
+        )
+        .is_none()
+        {
+            return Err(ConnectedHeControlRuntimeRejection::UnsupportedQueueGeometry);
+        }
+
+        // This is the single future-oracle attachment point. The retained
+        // standby arena still owns every network lease and DMA byte, while the
+        // reviewed lower layer can validate MPLEN/BSR. What is not reviewed is
+        // the HE-TB PHY-vector/doorbell transition which would bind the parsed
+        // RU, GI/LTF, MCS and DATA_LENGTH. Do not publish the HE-SU formatter's
+        // vector as a substitute.
+        Err(ConnectedHeControlRuntimeRejection::TbPhyPublicationUnverified)
+    }
+
+    fn publish_he_ndpa_feedback<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
+        &mut self,
+        _hardware: &mut H,
+        request: HeNdpaRuntimeRequest,
+    ) -> Result<(), ConnectedHeControlRuntimeRejection> {
+        if self.ordinary.now_micros() >= request.response_deadline_micros {
+            return Err(ConnectedHeControlRuntimeRejection::MissedResponseWindow);
+        }
+        if self.active() {
+            return Err(ConnectedHeControlRuntimeRejection::TxOwnerBusy);
+        }
+        Err(ConnectedHeControlRuntimeRejection::NdpaFeedbackPublicationUnverified)
+    }
+}
+
+impl<
+    M: RawMutex,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+    const SLOTS: usize,
+    const AMPDU_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
+> crate::roles::station::esp_now_tx::EspNowConnectedTx
+    for Esp32s31ConnectedTx<
+        '_,
+        '_,
+        '_,
+        M,
+        P,
+        E,
+        T,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+        SLOTS,
+        AMPDU_BUFFER_SIZE,
+        ORDINARY_BUFFER_SIZE,
+    >
+{
+    fn start_esp_now_v1_plaintext<
+        H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware,
+        const PEERS: usize,
+    >(
+        &mut self,
+        hardware: &mut H,
+        protocol: &open_esp_radio_wifi_softmac::EspNowProtocol<PEERS>,
+        request: &crate::roles::station::esp_now_tx::EspNowOwnedV1Tx,
+        active_channel: open_esp_radio_ieee80211::channel::WifiChannel,
+        active_station: open_esp_radio_wifi_softmac::interface::BoundVirtualInterface,
+        config: open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxConfig,
+    ) -> Result<
+        WifiTxProgress,
+        open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError,
+    > {
+        if self.active() {
+            return Err(
+                open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError::Backend(
+                    open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxError::Tx(
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxError::Busy,
+                    ),
+                ),
+            );
+        }
+        let progress = self.ordinary.start_esp_now_v1_plaintext(
+            hardware,
+            protocol,
+            request.peer(),
+            request.random_value(),
+            request.payload(),
+            active_channel,
+            active_station,
+            config,
+        )?;
+        if progress == WifiTxProgress::Pending {
+            self.active = ConnectedTxActive::Ordinary;
+        }
+        Ok(progress)
+    }
+
+    fn start_esp_now_v2_plaintext<
+        H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware,
+        const PEERS: usize,
+    >(
+        &mut self,
+        hardware: &mut H,
+        protocol: &open_esp_radio_wifi_softmac::EspNowProtocol<PEERS>,
+        request: crate::roles::station::esp_now_tx::EspNowV2TxRequest<'_>,
+        active_channel: open_esp_radio_ieee80211::channel::WifiChannel,
+        active_station: open_esp_radio_wifi_softmac::interface::BoundVirtualInterface,
+        config: open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxConfig,
+    ) -> Result<
+        WifiTxProgress,
+        open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError,
+    > {
+        if self.active() {
+            return Err(
+                open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError::Backend(
+                    open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxError::Tx(
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxError::Busy,
+                    ),
+                ),
+            );
+        }
+        let progress = self.ordinary.start_esp_now_v2_plaintext(
+            hardware,
+            protocol,
+            request.peer(),
+            request.random_value(),
+            request.payload(),
+            active_channel,
+            active_station,
+            config,
+        )?;
+        if progress == WifiTxProgress::Pending {
+            self.active = ConnectedTxActive::Ordinary;
+        }
+        Ok(progress)
     }
 }
 

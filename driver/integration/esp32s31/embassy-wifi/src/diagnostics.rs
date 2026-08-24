@@ -7,7 +7,9 @@
 #![cfg(feature = "diagnostics")]
 
 use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::RxObservedEthernetFrame;
-use open_esp_radio_esp32s31_wifi_mac::rx::{RxPhyInfo, HeSuSignal};
+use open_esp_radio_esp32s31_wifi_mac::rx::{
+    HeSuSignal, HtDuplicateRxClassification, HtSignal, RxPhyInfo,
+};
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxEvent;
 use open_esp_radio_wifi_softmac::{MacRxEvidence, MacRxMetadata};
 
@@ -51,11 +53,80 @@ impl From<HeSuSignal> for Esp32s31HeSuRxObservation {
     }
 }
 
+/// Decoded HT-SIG fields required by diagnostic rate evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31HtRxObservation {
+    pub mcs: u8,
+    pub bandwidth_mhz: u16,
+    pub short_guard_interval: bool,
+    pub aggregation: bool,
+    /// True only for the standard MCS32 selector with HT40 geometry.
+    pub duplicate_mcs32: bool,
+    /// MCS32 was observed with non-HT40 geometry and was not normalized as
+    /// duplicate mode.
+    pub duplicate_mcs32_width_mismatch: bool,
+}
+
+impl From<HtSignal> for Esp32s31HtRxObservation {
+    fn from(signal: HtSignal) -> Self {
+        let duplicate = signal.ht_duplicate_mcs32_classification();
+        Self {
+            mcs: signal.mcs,
+            bandwidth_mhz: u16::from(signal.channel_width_mhz),
+            short_guard_interval: signal.short_guard_interval,
+            aggregation: signal.aggregation,
+            duplicate_mcs32: matches!(duplicate, HtDuplicateRxClassification::Ht40(_)),
+            duplicate_mcs32_width_mismatch: matches!(
+                duplicate,
+                HtDuplicateRxClassification::Mismatch { .. }
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stable_ht_observation_keeps_valid_mcs32_separate_from_width_mismatch() {
+        let valid = Esp32s31HtRxObservation::from(HtSignal {
+            mcs: 32,
+            channel_width_mhz: 40,
+            aggregation: true,
+            short_guard_interval: false,
+        });
+        assert!(valid.duplicate_mcs32);
+        assert!(!valid.duplicate_mcs32_width_mismatch);
+
+        let mismatch = Esp32s31HtRxObservation::from(HtSignal {
+            mcs: 32,
+            channel_width_mhz: 20,
+            aggregation: false,
+            short_guard_interval: false,
+        });
+        assert!(!mismatch.duplicate_mcs32);
+        assert!(mismatch.duplicate_mcs32_width_mismatch);
+
+        let ordinary = Esp32s31HtRxObservation::from(HtSignal {
+            mcs: 7,
+            channel_width_mhz: 40,
+            aggregation: false,
+            short_guard_interval: true,
+        });
+        assert!(!ordinary.duplicate_mcs32);
+        assert!(!ordinary.duplicate_mcs32_width_mismatch);
+    }
+}
+
 /// Decoded public RX-control facts; no raw header storage escapes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31DecodedRxPhyObservation {
     pub baseband_format: u8,
+    /// Five-bit public RX-control summary. For HT, use [`Self::ht`]'s
+    /// seven-bit format-specific MCS field; this byte cannot represent MCS32.
     pub rate: u8,
+    pub ht: Option<Esp32s31HtRxObservation>,
     pub he_su: Option<Esp32s31HeSuRxObservation>,
 }
 
@@ -64,6 +135,7 @@ impl From<RxPhyInfo> for Esp32s31DecodedRxPhyObservation {
         Self {
             baseband_format: phy.baseband_format().raw(),
             rate: phy.rate,
+            ht: phy.ht_signal().map(Into::into),
             he_su: phy.he_su_signal().map(Into::into),
         }
     }

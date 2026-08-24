@@ -499,6 +499,7 @@ impl<'pool, const SLOTS: usize, const CAPACITY: usize> RadioRxFrame<'pool, SLOTS
             lease,
             _slots: PhantomData,
             metadata: self.metadata,
+            runtime_received_at_micros: None,
         }
     }
 }
@@ -508,6 +509,11 @@ pub struct NetworkRxFrame<'pool, const SLOTS: usize, const CAPACITY: usize> {
     lease: RxNetworkLease<'pool, CAPACITY>,
     _slots: PhantomData<[(); SLOTS]>,
     metadata: StagedMetadata,
+    /// Executor-clock sample taken by the first runtime boundary which owns
+    /// the completed, DMA-independent frame. This is deliberately absent in
+    /// the executor-neutral staging pool and must never be reconstructed from
+    /// descriptor contents.
+    runtime_received_at_micros: Option<u64>,
 }
 
 impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACITY> {
@@ -526,6 +532,21 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
             buffer: self.lease.frame(),
             next_descriptor_address: self.metadata.next_descriptor_address,
         }
+    }
+
+    /// Attach the first runtime completion-handoff timestamp.
+    ///
+    /// A failed bounded-channel publication may retry the same affine frame;
+    /// retaining the first sample prevents queue backpressure from extending a
+    /// later response window.
+    pub fn mark_runtime_received_at_micros(&mut self, received_at_micros: u64) {
+        if self.runtime_received_at_micros.is_none() {
+            self.runtime_received_at_micros = Some(received_at_micros);
+        }
+    }
+
+    pub const fn runtime_received_at_micros(&self) -> Option<u64> {
+        self.runtime_received_at_micros
     }
 
     /// Hardware-observed portable metadata copied with this staged lease.
@@ -570,6 +591,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
             mut lease,
             _slots: _,
             metadata: _,
+            runtime_received_at_micros: _,
         } = self;
         lease.with_frame(|raw| {
             raw[frame_offset..frame_offset + 6].copy_from_slice(&destination);

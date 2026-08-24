@@ -49,6 +49,10 @@ pub struct Esp32s31AccessPointControlObservation {
     pub rx_rssi_max_dbm: i8,
     /// Protected HT40 data MPDUs grouped by hardware-observed MCS0..MCS7.
     pub rx_ht40_mcs_frames: [u32; 8],
+    /// Protected HT40 data MPDUs carrying the independent MCS32 selector.
+    pub rx_ht40_mcs32_frames: u32,
+    /// Protected HT data MPDUs carrying MCS32 without its required HT40 CBW.
+    pub rx_ht_mcs32_width_mismatches: u32,
     /// Network A-MPDU transactions started with a typed HT rate.
     pub tx_ht_aggregates: u32,
     /// Network A-MPDU transactions started specifically at HT40 MCS7.
@@ -63,6 +67,8 @@ pub struct Esp32s31AccessPointControlObservation {
     pub rx_reorder_gap_timeouts: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
+    /// Data MPDUs whose Protected bit contradicted the requested AP mode.
+    pub security_mode_mismatches: u32,
 }
 
 #[cfg(any(feature = "diagnostics", test))]
@@ -97,6 +103,12 @@ pub enum Esp32s31AccessPointControlError {
     ProtocolActionCapacity,
     /// A non-data frame reached the protocol-only active-TX consumer.
     ProtocolFrameRequiresHardware,
+    /// A second successful DTIM beacon edge arrived before the caller-owned
+    /// group queue consumed the first exact advertised prefix.
+    DtimGroupReleaseAlreadyPending,
+    /// Portable TIM accounting and caller-owned pinned leases diverged. The
+    /// adapter drops/rolls back both sides and refuses to guess a release.
+    GroupBufferOwnershipMismatch,
     InvalidBeaconSchedule,
     RxBlockAckSession(RxBlockAckSessionsError),
     RxBlockAckHardware(S31RxBlockAckAgreementError),

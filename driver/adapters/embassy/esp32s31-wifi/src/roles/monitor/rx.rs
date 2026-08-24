@@ -218,6 +218,14 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         self.receive.stop(hardware)
     }
 
+    /// Rebuild a halted ring before publishing another capture epoch.
+    pub fn prepare_next<H: RxDma>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<(), Esp32s31RxFrontierError> {
+        self.receive.prepare_next(hardware, self.storage)
+    }
+
     pub(crate) fn require_reset(&mut self) {
         self.receive.require_reset();
     }

@@ -1,6 +1,7 @@
 use open_esp_radio_embassy_net::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxConfig;
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_wifi_embassy::connected_tasks::{
     ConnectedTaskControlResources, ConnectedTaskGroup,
 };
@@ -20,6 +21,52 @@ impl<const CAPACITY: usize, const SLOTS: usize> ConnectedRxProtocolSink<CAPACITY
     }
 }
 
+fn open_config() -> ConnectedRxConfig {
+    ConnectedRxConfig {
+        station_address: [2, 3, 4, 5, 6, 7],
+        bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+        association_id: 1,
+        ingress: RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: 0,
+        },
+        security: WifiSecurityMode::Open,
+        peer_qos: false,
+    }
+}
+
+#[test]
+#[should_panic(expected = "connected RX protocol requires a configured dispatcher epoch")]
+fn protocol_rejects_an_unconfigured_static_dispatcher_arena() {
+    let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
+    let (_sender, receiver) = queue.split();
+    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let mut mpdu = [0_u8; 64];
+    let mut ethernet = [0_u8; 64];
+    let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+
+    let _ =
+        Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+}
+
+#[test]
+#[should_panic(expected = "stopped connected RX protocol cannot dispatch another frame")]
+fn stopped_protocol_cannot_dispatch_with_a_parked_dispatcher() {
+    let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
+    let (_sender, receiver) = queue.split();
+    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let mut mpdu = [0_u8; 64];
+    let mut ethernet = [0_u8; 64];
+    let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+    runtime.try_reconfigure_dispatcher(open_config()).unwrap();
+    let mut protocol =
+        Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+
+    protocol.shutdown_discard();
+    embassy_futures::block_on(protocol.dispatch_next());
+}
+
 #[test]
 fn empty_standalone_queue_can_be_replaced_without_rebuilding_station_protocol() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
@@ -28,24 +75,9 @@ fn empty_standalone_queue_can_be_replaced_without_rebuilding_station_protocol() 
     let mut mpdu = [0_u8; 64];
     let mut ethernet = [0_u8; 64];
     let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
-    let protocol = Esp32s31ConnectedRxProtocol::new(
-        receiver,
-        &irq,
-        ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        }),
-        Sink,
-        &mut mpdu,
-        &mut ethernet,
-        runtime,
-    );
+    runtime.try_reconfigure_dispatcher(open_config()).unwrap();
+    let protocol =
+        Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
 
     let processor = protocol
         .try_into_processor()
@@ -66,25 +98,10 @@ fn paired_processor_returns_the_same_stopped_protocol_owner() {
     let mut mpdu = [0_u8; 64];
     let mut ethernet = [0_u8; 64];
     let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+    runtime.try_reconfigure_dispatcher(open_config()).unwrap();
     let runtime_ptr = runtime as *mut _;
-    let protocol = Esp32s31ConnectedRxProtocol::new(
-        receiver,
-        &irq,
-        ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        }),
-        Sink,
-        &mut mpdu,
-        &mut ethernet,
-        runtime,
-    );
+    let protocol =
+        Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
 
     let processor = protocol
         .try_into_processor()
@@ -101,37 +118,25 @@ fn stop_edge_returns_an_empty_reusable_protocol_epoch() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
     let (_sender, receiver) = queue.split();
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
-    let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-        station_address: [2, 3, 4, 5, 6, 7],
-        bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-        association_id: 1,
-        ingress: RxIngressConfig {
-            ring_entry_limit: 1,
-            csi_config: 0,
-            flags: 0,
-        },
-    });
     let mut mpdu = [0_u8; 64];
     let mut ethernet = [0_u8; 64];
     // Host tests leak the arena to model the static lifetime required by an
     // embedded composition root without consuming thread-stack space.
     let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+    runtime.try_reconfigure_dispatcher(open_config()).unwrap();
     let runtime_ptr = runtime as *mut _;
     let runtime_size = core::mem::size_of_val(&*runtime);
     let mpdu_ptr = mpdu.as_mut_ptr();
     let ethernet_ptr = ethernet.as_mut_ptr();
-    let protocol = Esp32s31ConnectedRxProtocol::new(
-        receiver,
-        &irq,
-        dispatcher,
-        Sink,
-        &mut mpdu,
-        &mut ethernet,
-        runtime,
-    );
+    let protocol =
+        Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
     assert!(
         core::mem::size_of_val(&protocol) < runtime_size,
         "the movable protocol handle must not absorb its static reorder arena"
+    );
+    assert!(
+        core::mem::size_of_val(&protocol) <= 256,
+        "the movable protocol handle must remain pointer-sized state, not absorb the dispatcher"
     );
 
     let stopped = embassy_futures::block_on(protocol.run_until_stopped(ready(())));
@@ -149,33 +154,17 @@ fn controlled_task_observes_shutdown_before_returning_exact_scratch() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
     let (_sender, receiver) = queue.split();
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
-    let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-        station_address: [2, 3, 4, 5, 6, 7],
-        bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-        association_id: 1,
-        ingress: RxIngressConfig {
-            ring_entry_limit: 1,
-            csi_config: 0,
-            flags: 0,
-        },
-    });
     let mut mpdu = [0_u8; 64];
     let mut ethernet = [0_u8; 64];
     // Host tests leak the arena to model the static lifetime required by an
     // embedded composition root without consuming thread-stack space.
     let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+    runtime.try_reconfigure_dispatcher(open_config()).unwrap();
     let runtime_ptr = runtime as *mut _;
     let mpdu_ptr = mpdu.as_mut_ptr();
     let ethernet_ptr = ethernet.as_mut_ptr();
-    let protocol = Esp32s31ConnectedRxProtocol::new(
-        receiver,
-        &irq,
-        dispatcher,
-        Sink,
-        &mut mpdu,
-        &mut ethernet,
-        runtime,
-    );
+    let protocol =
+        Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
     let control = ConnectedTaskControlResources::<NoopRawMutex, _>::new();
     let (mut controller, endpoint) = control.split().expect("fresh task epoch starts");
     controller.request_stop();
@@ -201,53 +190,25 @@ fn stopped_protocol_arena_starts_a_second_epoch_without_reinitialization() {
     let mut mpdu = [0_u8; 64];
     let mut ethernet = [0_u8; 64];
     let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+    runtime.try_reconfigure_dispatcher(open_config()).unwrap();
     let runtime_ptr = runtime as *mut _;
     let scratch_ptrs = (mpdu.as_mut_ptr(), ethernet.as_mut_ptr());
 
-    let first = Esp32s31ConnectedRxProtocol::new(
-        receiver,
-        &irq,
-        ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        }),
-        Sink,
-        &mut mpdu,
-        &mut ethernet,
-        runtime,
-    );
+    let first =
+        Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
     let stopped = embassy_futures::block_on(first.run_until_stopped(ready(())));
     let (mpdu, ethernet, runtime) = stopped.into_parts();
+    assert!(!runtime.dispatcher_configured());
+    runtime.try_reconfigure_dispatcher(open_config()).unwrap();
+    assert!(runtime.dispatcher_configured());
 
     let (_sender, receiver) = queue.split();
-    let second = Esp32s31ConnectedRxProtocol::new(
-        receiver,
-        &irq,
-        ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        }),
-        Sink,
-        mpdu,
-        ethernet,
-        runtime,
-    );
+    let second = Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, mpdu, ethernet, runtime);
     let stopped = embassy_futures::block_on(second.run_until_stopped(ready(())));
     let (mpdu, ethernet, runtime) = stopped.into_parts();
 
     assert_eq!(mpdu.as_mut_ptr(), scratch_ptrs.0);
     assert_eq!(ethernet.as_mut_ptr(), scratch_ptrs.1);
     assert_eq!(runtime as *mut _, runtime_ptr);
+    assert!(!runtime.dispatcher_configured());
 }

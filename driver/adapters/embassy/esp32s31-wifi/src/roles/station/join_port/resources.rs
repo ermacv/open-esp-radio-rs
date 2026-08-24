@@ -1,5 +1,7 @@
-use open_esp_radio_esp32s31_wifi_sta::association::ESP32S31_STA_LISTEN_INTERVAL;
-use open_esp_radio_ieee80211::{scan::ScanRecord, station::StaAssociationPreference};
+use open_esp_radio_ieee80211::{
+    scan::ScanRecord, security::WifiSecurityMode, station::StaAssociationPreference,
+};
+use open_esp_radio_wifi_sta::request::StationListenInterval;
 
 /// Driver resources borrowed for one join runner lifetime.
 pub struct Esp32s31StaJoinRadio<'hardware, 'transmit, H, R, T> {
@@ -37,6 +39,7 @@ pub struct Esp32s31StaJoinStation {
     pub(super) access_point: ScanRecord,
     pub(super) association_preference: StaAssociationPreference,
     pub(super) listen_interval: u16,
+    pub(super) security: WifiSecurityMode,
 }
 
 impl Esp32s31StaJoinStation {
@@ -49,7 +52,20 @@ impl Esp32s31StaJoinStation {
             station_address,
             access_point,
             association_preference,
-            listen_interval: ESP32S31_STA_LISTEN_INTERVAL,
+            listen_interval: StationListenInterval::DEFAULT.get(),
+            security: WifiSecurityMode::Wpa2Personal,
         }
+    }
+
+    #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
+    pub const fn with_listen_interval(mut self, listen_interval: StationListenInterval) -> Self {
+        self.listen_interval = listen_interval.get();
+        self
+    }
+
+    #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
+    pub const fn with_security(mut self, security: WifiSecurityMode) -> Self {
+        self.security = security;
+        self
     }
 }

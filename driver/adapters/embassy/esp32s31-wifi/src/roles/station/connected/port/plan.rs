@@ -21,6 +21,7 @@ pub struct Esp32s31ConnectedStaConfig {
     pub tx: Esp32s31ConnectedStaTxPolicy,
     pub block_ack: Esp32s31ConnectedStaBlockAckPolicy,
     pub receive: Esp32s31ConnectedStaRxPolicy,
+    pub power: StationPowerMode,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,6 +31,11 @@ pub struct Esp32s31ConnectedStaTxPolicy {
     pub completion_timeout_us: u64,
     pub aggregate_frame_limit: u8,
     pub aggregate_he_txop_limit: HeEdcaTxopLimit,
+    /// Optional recovered queue/MPLEN/BSR preparation for AP Trigger frames.
+    /// A runtime handoff additionally requires the config's explicit software
+    /// window; the final HE-TB PHY publication remains fail-closed.
+    /// `None` leaves HE-SU behavior unchanged.
+    pub he_trigger_based: Option<HeTriggerBasedTxConfig>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,12 +57,17 @@ pub struct Esp32s31ConnectedStaRxPolicy {
 /// Configuration failure detected before any connected owner moves.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ConnectedStaConfigError {
+    SecurityModeMismatch {
+        installed: open_esp_radio_ieee80211::security::WifiSecurityMode,
+        material: open_esp_radio_ieee80211::security::WifiSecurityMode,
+    },
     MissingStationInterface,
     InterfaceRole(VifRole),
     InterfaceAddress {
         interface: [u8; 6],
         station: [u8; 6],
     },
+    InvalidAssociationId(u16),
     AggregateFrameLimit {
         limit: u8,
         capacity: usize,
@@ -67,10 +78,15 @@ pub enum Esp32s31ConnectedStaConfigError {
     },
     ZeroUnicastAttemptLimit,
     ZeroTxBlockAckNegotiationAttemptLimit,
+    HeTriggerTidMismatch {
+        configured: u8,
+        data_tid: u8,
+    },
     PeerDoesNotSupportQos,
     TxBlockAck(TxBlockAckError),
     RxBlockAck(RxBlockAckSessionsError),
     BeaconLoss(StaBeaconLossConfigError),
+    PowerSave(StaPowerSavePolicyError),
 }
 
 /// Complete owner return when connected policy validation fails.
@@ -88,12 +104,57 @@ pub struct Esp32s31ConnectedStaPlan {
     pub(super) config: Esp32s31ConnectedStaConfig,
     pub(super) data_tx_rate: TxPhyRate,
     pub(super) aggregate_tx_rate: TxPhyRate,
+    pub(super) ht_duplicate_tx_selection: HtDuplicateTxSelection,
     pub(super) aggregate_rate_policy: StaTxRatePolicy,
     pub(super) rate_control: Option<StaRateControlAssociation>,
     pub(super) beacon_loss: StaBeaconLossConfig,
+    pub(super) power_save: Option<StaPowerSavePolicy>,
+    pub(super) esp_now_rx: Option<EspNowRxEpoch>,
+    pub(super) ccmp_rx_replay: Option<StaCcmpRxReplayRxEndpoint>,
+    pub(super) security: open_esp_radio_ieee80211::security::WifiSecurityMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31ConnectedStaCcmpReplayError {
+    RequiresWpa2,
+    AlreadyInstalled,
+}
+
+/// Plan rejection which returns the exact shared RX endpoint unchanged.
+#[derive(Debug, Eq, PartialEq)]
+pub struct Esp32s31ConnectedStaCcmpReplayFailure {
+    pub error: Esp32s31ConnectedStaCcmpReplayError,
+    replay: StaCcmpRxReplayRxEndpoint,
+}
+
+impl Esp32s31ConnectedStaCcmpReplayFailure {
+    pub fn into_parts(
+        self,
+    ) -> (
+        Esp32s31ConnectedStaCcmpReplayError,
+        StaCcmpRxReplayRxEndpoint,
+    ) {
+        (self.error, self.replay)
+    }
+}
+
+/// Why a portable ESP-NOW RX epoch cannot join this connected STA plan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31ConnectedStaEspNowRxError {
+    StationBinding {
+        connected: BoundVirtualInterface,
+        esp_now: BoundVirtualInterface,
+    },
+    /// Passive ESP-NOW receive has no independent wake owner. Admitting it
+    /// while legacy power save may enter doze would silently lose datagrams.
+    RequiresAlwaysAwake,
 }
 
 impl Esp32s31ConnectedStaPlan {
+    pub const fn security_mode(&self) -> open_esp_radio_ieee80211::security::WifiSecurityMode {
+        self.security
+    }
+
     pub const fn interface(&self) -> BoundVirtualInterface {
         self.interface
     }
@@ -110,8 +171,80 @@ impl Esp32s31ConnectedStaPlan {
         self.aggregate_tx_rate
     }
 
+    /// Independent fixed-request outcome; never part of ordinary rate ranking.
+    pub const fn ht_duplicate_tx_selection(&self) -> HtDuplicateTxSelection {
+        self.ht_duplicate_tx_selection
+    }
+
     pub const fn beacon_loss(&self) -> StaBeaconLossConfig {
         self.beacon_loss
+    }
+
+    pub const fn power_save(&self) -> Option<StaPowerSavePolicy> {
+        self.power_save
+    }
+
+    /// Install peer/duplicate ownership created while this exact STA VIF and
+    /// home channel were active.
+    pub fn enable_esp_now_rx(
+        &mut self,
+        epoch: EspNowRxEpoch,
+    ) -> Result<(), Esp32s31ConnectedStaEspNowRxError> {
+        if self.power_save.is_some() {
+            return Err(Esp32s31ConnectedStaEspNowRxError::RequiresAlwaysAwake);
+        }
+        if epoch.config().station() != self.interface {
+            return Err(Esp32s31ConnectedStaEspNowRxError::StationBinding {
+                connected: self.interface,
+                esp_now: epoch.config().station(),
+            });
+        }
+        self.esp_now_rx = Some(epoch);
+        Ok(())
+    }
+
+    pub const fn esp_now_rx_enabled(&self) -> bool {
+        self.esp_now_rx.is_some()
+    }
+
+    pub const fn esp_now_rx_epoch(&self) -> Option<&EspNowRxEpoch> {
+        self.esp_now_rx.as_ref()
+    }
+
+    /// Remove a not-yet-composed epoch without changing connected Wi-Fi
+    /// policy. A running dispatcher revokes its copy during RX shutdown.
+    pub fn disable_esp_now_rx(&mut self) -> Option<EspNowRxEpoch> {
+        self.esp_now_rx.take()
+    }
+
+    /// Move the association's unique PTK/GTK replay epoch into the connected
+    /// RX plan before the dispatcher is composed.
+    pub fn enable_ccmp_rx_replay(
+        &mut self,
+        replay: StaCcmpRxReplayRxEndpoint,
+    ) -> Result<(), Esp32s31ConnectedStaCcmpReplayFailure> {
+        if self.security != open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal {
+            return Err(Esp32s31ConnectedStaCcmpReplayFailure {
+                error: Esp32s31ConnectedStaCcmpReplayError::RequiresWpa2,
+                replay,
+            });
+        }
+        if self.ccmp_rx_replay.is_some() {
+            return Err(Esp32s31ConnectedStaCcmpReplayFailure {
+                error: Esp32s31ConnectedStaCcmpReplayError::AlreadyInstalled,
+                replay,
+            });
+        }
+        self.ccmp_rx_replay = Some(replay);
+        Ok(())
+    }
+
+    pub const fn ccmp_rx_replay_enabled(&self) -> bool {
+        self.ccmp_rx_replay.is_some()
+    }
+
+    pub(super) fn take_ccmp_rx_replay(&mut self) -> Option<StaCcmpRxReplayRxEndpoint> {
+        self.ccmp_rx_replay.take()
     }
 
     pub const fn rx_config(&self) -> ConnectedRxConfig {
@@ -120,6 +253,8 @@ impl Esp32s31ConnectedStaPlan {
             bssid: self.link.bssid,
             association_id: self.link.association_id,
             ingress: self.config.receive.ingress,
+            security: self.security,
+            peer_qos: self.link.peer_qos,
         }
     }
 
@@ -170,15 +305,36 @@ impl Esp32s31ConnectedStaPort {
         config: Esp32s31ConnectedStaConfig,
         wifi: WifiPlan,
     ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        Self::prepare_for_wifi_plan_with_storage_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(peer, config, wifi, None)
+    }
+
+    /// Prepare a STA plan with an explicit MCS32 certification request.
+    ///
+    /// The result retains the request's typed rejection for telemetry while
+    /// the ordinary MCS0..MCS7/HE schedule remains the publishable plan.
+    #[allow(clippy::result_large_err)]
+    pub fn prepare_for_wifi_plan_with_storage_and_ht_duplicate_certification<
+        const AGGREGATE_SLOTS: usize,
+        const RX_REORDER_SLOTS: usize,
+    >(
+        peer: Esp32s31ConnectedStaPeer,
+        config: Esp32s31ConnectedStaConfig,
+        wifi: WifiPlan,
+        request: Option<HtDuplicateCertificationRequest>,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
         let Some(interface) = wifi.station() else {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::MissingStationInterface,
                 peer,
             });
         };
-        Self::prepare_for_interface_with_storage::<AGGREGATE_SLOTS, RX_REORDER_SLOTS>(
-            peer, config, interface,
-        )
+        Self::prepare_for_interface_with_storage_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(peer, config, interface, request)
     }
 
     /// Prepare one explicitly identified STA VIF on a hardware channel
@@ -192,6 +348,73 @@ impl Esp32s31ConnectedStaPort {
         config: Esp32s31ConnectedStaConfig,
         interface: BoundVirtualInterface,
     ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        Self::prepare_for_interface_with_storage_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(peer, config, interface, None)
+    }
+
+    /// Prepare one STA VIF under the exact installed security contract.
+    ///
+    /// Legacy non-WMM peers remain valid for Open because its connected TX is
+    /// deliberately non-QoS and owns no BlockAck/A-MPDU session. Existing
+    /// planner entrypoints retain their WPA2 aggregate contract.
+    #[allow(clippy::result_large_err)]
+    pub fn prepare_for_interface_with_storage_and_security<
+        const AGGREGATE_SLOTS: usize,
+        const RX_REORDER_SLOTS: usize,
+    >(
+        peer: Esp32s31ConnectedStaPeer,
+        config: Esp32s31ConnectedStaConfig,
+        interface: BoundVirtualInterface,
+        security: open_esp_radio_ieee80211::security::WifiSecurityMode,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        Self::prepare_for_interface_with_storage_security_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(peer, config, interface, security, None)
+    }
+
+    /// Prepare one STA VIF and evaluate an independent MCS32 fixed request.
+    #[allow(clippy::result_large_err)]
+    pub fn prepare_for_interface_with_storage_and_ht_duplicate_certification<
+        const AGGREGATE_SLOTS: usize,
+        const RX_REORDER_SLOTS: usize,
+    >(
+        peer: Esp32s31ConnectedStaPeer,
+        config: Esp32s31ConnectedStaConfig,
+        interface: BoundVirtualInterface,
+        request: Option<HtDuplicateCertificationRequest>,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        Self::prepare_for_interface_with_storage_security_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(
+            peer,
+            config,
+            interface,
+            open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal,
+            request,
+        )
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn prepare_for_interface_with_storage_security_and_ht_duplicate_certification<
+        const AGGREGATE_SLOTS: usize,
+        const RX_REORDER_SLOTS: usize,
+    >(
+        peer: Esp32s31ConnectedStaPeer,
+        mut config: Esp32s31ConnectedStaConfig,
+        interface: BoundVirtualInterface,
+        security: open_esp_radio_ieee80211::security::WifiSecurityMode,
+        request: Option<HtDuplicateCertificationRequest>,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        // Trigger-based publication assumes the QoS/BA-connected contract.
+        // Open owns neither, so erase even a syntactically valid opt-in before
+        // it can reach control or TX runtime state.
+        if security == open_esp_radio_ieee80211::security::WifiSecurityMode::Open {
+            config.tx.he_trigger_based = None;
+        }
         if interface.interface.role != VifRole::Station {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::InterfaceRole(interface.interface.role),
@@ -239,9 +462,30 @@ impl Esp32s31ConnectedStaPort {
                 peer,
             });
         }
-        if !peer.link.peer_qos {
+        if let Some(trigger) = config.tx.he_trigger_based
+            && trigger.tid().value() != 0
+        {
+            return Err(Esp32s31ConnectedStaPrepareFailure {
+                error: Esp32s31ConnectedStaConfigError::HeTriggerTidMismatch {
+                    configured: trigger.tid().value(),
+                    data_tid: 0,
+                },
+                peer,
+            });
+        }
+        if security == open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal
+            && !peer.link.peer_qos
+        {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::PeerDoesNotSupportQos,
+                peer,
+            });
+        }
+        if StaAssociationId::new(peer.link.association_id).is_none() {
+            return Err(Esp32s31ConnectedStaPrepareFailure {
+                error: Esp32s31ConnectedStaConfigError::InvalidAssociationId(
+                    peer.link.association_id,
+                ),
                 peer,
             });
         }
@@ -275,8 +519,39 @@ impl Esp32s31ConnectedStaPort {
                 });
             }
         };
+        let power_save = match config.power.power_save_policy() {
+            None => None,
+            Some(policy) => match StaPowerSavePolicy::for_association(
+                peer.link.beacon_interval_tu,
+                policy.listen_interval(),
+                policy.wake_guard_micros(),
+                config.receive.beacon_miss_limit,
+            ) {
+                Ok(policy) => Some(policy),
+                Err(error) => {
+                    return Err(Esp32s31ConnectedStaPrepareFailure {
+                        error: Esp32s31ConnectedStaConfigError::PowerSave(error),
+                        peer,
+                    });
+                }
+            },
+        };
 
         let Esp32s31ConnectedStaPeer { link, rate_control } = peer;
+        let ht_duplicate_tx_selection = select_esp32s31_ht_duplicate_tx(
+            request,
+            HtDuplicateTxLinkCapabilities::new(
+                match link.association_phy {
+                    StaAssociationPhy::Legacy => None,
+                    StaAssociationPhy::Ht20 | StaAssociationPhy::He20 => {
+                        Some(HtChannelWidth::Mhz20)
+                    }
+                    StaAssociationPhy::Ht40 => Some(HtChannelWidth::Mhz40),
+                },
+                link.peer_supports_ht_duplicate_mcs32,
+                link.peer_supports_ht_short_guard_interval,
+            ),
+        );
         let data_policy = sta_tx_rate_policy(link, config.tx.rate, false);
         let aggregate_policy = sta_tx_rate_policy(link, config.tx.rate, true);
         let aggregate_tx_rate = rate_control.ampdu_tx_rate(aggregate_policy);
@@ -286,9 +561,14 @@ impl Esp32s31ConnectedStaPort {
             config,
             data_tx_rate: data_policy.fallback_rate(),
             aggregate_tx_rate,
+            ht_duplicate_tx_selection,
             aggregate_rate_policy: aggregate_policy,
             rate_control: Some(rate_control),
             beacon_loss,
+            power_save,
+            esp_now_rx: None,
+            ccmp_rx_replay: None,
+            security,
         })
     }
 }

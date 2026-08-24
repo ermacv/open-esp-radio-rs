@@ -43,7 +43,7 @@ where
         hardware: &mut H,
         mpdu: &[u8],
         now_micros: u64,
-    ) -> Result<(), Esp32s31AccessPointControlError>
+    ) -> Result<bool, Esp32s31AccessPointControlError>
     where
         H: TxHardware + Esp32s31ApRuntimeHardware,
     {
@@ -56,7 +56,7 @@ where
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
             });
-            return Ok(());
+            return Ok(false);
         };
         let Ok(plan) = plan_data_decapsulation(
             DataInterfaceRole::AccessPoint,
@@ -67,7 +67,7 @@ where
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
             });
-            return Ok(());
+            return Ok(false);
         };
         if plan.ether_type != EAPOL_ETHERTYPE
             || plan.destination != self.mac.engine().service_address()
@@ -76,7 +76,7 @@ where
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
             });
-            return Ok(());
+            return Ok(false);
         }
         let payload = &mpdu[plan.payload_offset..plan.payload_offset + plan.payload_length];
         let Ok(frame) = OwnedEapolFrame::<EAPOL_CAPACITY>::try_copy(
@@ -87,7 +87,7 @@ where
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
             });
-            return Ok(());
+            return Ok(false);
         };
         match self
             .mac
@@ -128,7 +128,7 @@ where
             }
             Esp32s31ApWpa2Outcome::None => {}
         }
-        Ok(())
+        Ok(true)
     }
 
     pub async fn service_tx<H>(
@@ -143,6 +143,11 @@ where
             .mac
             .service_tx(hardware, wake, Instant::now().as_micros())
             .await?;
+        if progress == WifiTxProgress::Complete {
+            self.last_terminal_tx_succeeded = Some(
+                action != Esp32s31ApTxCompletionAction::PublicationFailed,
+            );
+        }
         if progress == WifiTxProgress::Complete
             && let Some(activation) = self.rx_addba_in_flight.take()
         {
@@ -156,6 +161,14 @@ where
             }
         }
         match action {
+            Esp32s31ApTxCompletionAction::DtimGroupRelease { advertised_frames } => {
+                if self.pending_dtim_group_frames.is_some() {
+                    return Err(
+                        Esp32s31AccessPointControlError::DtimGroupReleaseAlreadyPending,
+                    );
+                }
+                self.pending_dtim_group_frames = Some(advertised_frames);
+            }
             Esp32s31ApTxCompletionAction::BeginWpa2 { peer } => {
                 let message1 = self.mac.engine().begin_wpa2::<EAPOL_CAPACITY>(peer)?;
                 let processor = &mut *self;
@@ -303,10 +316,64 @@ where
         Ok(())
     }
 
+    fn publish_power_save_ethernet<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        peer: [u8; 6],
+        ethernet: &[u8],
+        more_data: bool,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        let processor = &mut *self;
+        processor.mac.publish_ethernet_with_more_data(
+            hardware,
+            peer,
+            ethernet,
+            processor.tx_frame,
+            more_data,
+        )?;
+        Ok(())
+    }
+
     fn start_network_tx<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         ethernet: &[u8],
+    ) -> Result<WifiTxProgress, Esp32s31AccessPointControlError> {
+        self.start_network_tx_with_more_data(hardware, ethernet, false)
+    }
+
+    /// Try to publish two ordered network frames as one AP QoS A-MSDU.
+    ///
+    /// `Ok(None)` is an exact non-consuming miss; the network owner keeps the
+    /// second lease ahead of every frame still in the channel and transmits
+    /// the first through the ordinary path.
+    fn start_network_amsdu_pair<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        first: &[u8],
+        second: &[u8],
+    ) -> Result<Option<WifiTxProgress>, Esp32s31AccessPointControlError> {
+        let processor = &mut *self;
+        if !processor.mac.publish_amsdu_pair(
+            hardware,
+            first,
+            second,
+            processor.tx_frame,
+        )? {
+            return Ok(None);
+        }
+        observe_access_point!(self, observation, {
+            observation.network_tx_frames_observed =
+                observation.network_tx_frames_observed.saturating_add(2);
+        });
+        Ok(Some(WifiTxProgress::Pending))
+    }
+
+    fn start_network_tx_with_more_data<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        ethernet: &[u8],
+        more_data: bool,
     ) -> Result<WifiTxProgress, Esp32s31AccessPointControlError> {
         observe_access_point!(self, observation, {
             observation.network_tx_frames_observed =
@@ -355,8 +422,20 @@ where
             });
             return Ok(WifiTxProgress::Complete);
         }
-        self.publish_ethernet(hardware, destination, ethernet)?;
+        if more_data {
+            self.publish_power_save_ethernet(hardware, destination, ethernet, true)?;
+        } else {
+            self.publish_ethernet(hardware, destination, ethernet)?;
+        }
         Ok(WifiTxProgress::Pending)
+    }
+
+    fn take_last_terminal_tx_succeeded(&mut self) -> Option<bool> {
+        self.last_terminal_tx_succeeded.take()
+    }
+
+    fn take_pending_dtim_group_frames(&mut self) -> Option<u16> {
+        self.pending_dtim_group_frames.take()
     }
 
     fn role_status_revision(&self) -> u32 {
@@ -487,6 +566,8 @@ where
         if self.rx_batch_pending()
             || self.rx_addba_in_flight.is_some()
             || !self.protocol_actions.is_empty()
+            || !self.pending_buffered_releases.is_empty()
+            || self.pending_dtim_group_frames.is_some()
             || self.rx_reorder.has_pending_release()
             || self
                 .rx_block_ack
@@ -506,10 +587,13 @@ where
             rx_reorder_storage,
             rx_addba_in_flight: _,
             protocol_actions,
+            pending_buffered_releases,
+            pending_dtim_group_frames,
             rx_batch_used: _,
             rx_batch_offset: _,
             serviced_rx_frames,
             serviced_rx_descriptors,
+            last_terminal_tx_succeeded,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -534,10 +618,13 @@ where
                     rx_reorder_storage,
                     rx_addba_in_flight: None,
                     protocol_actions,
+                    pending_buffered_releases,
+                    pending_dtim_group_frames,
                     rx_batch_used: 0,
                     rx_batch_offset: 0,
                     serviced_rx_frames,
                     serviced_rx_descriptors,
+                    last_terminal_tx_succeeded,
                     #[cfg(any(feature = "diagnostics", test))]
                     observer,
                     #[cfg(any(feature = "diagnostics", test))]

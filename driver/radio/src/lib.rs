@@ -17,17 +17,20 @@ pub mod supervisor;
 #[cfg(feature = "wifi")]
 pub use config::{
     WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
-    WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
+    WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
+    WifiStationConfig,
 };
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelError, WifiChannelWidth},
+    security::WifiSecurityMode,
     ssid::{WifiSsid, WifiSsidError},
     station::StaAssociationPreference,
 };
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_wifi_softmac::{
-    MacRxEvidence, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
+    MONITOR_CHANNEL_SEQUENCE_CAPACITY, MacRxEvidence, MonitorChannelPolicy, MonitorChannelSequence,
+    MonitorChannelSequenceError, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
     MonitorFrameTypeMask, MonitorPublishOutcome, MonitorSink,
 };
 #[cfg(feature = "wifi")]
@@ -36,12 +39,15 @@ pub use open_esp_radio_wifi_sta::station::{StaLifecycleStage, StaReconnectPolicy
 pub use open_esp_radio_wpa2::Pmk;
 #[cfg(feature = "wifi")]
 pub use requests::{
-    AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
-    AccessPointInactiveTimeoutError, AccessPointRequest, AccessPointRequestError,
-    AccessPointSecurity, MonitorCapturePolicy, MonitorRequest, StationAccessPointRequest,
-    StationDiscovery, StationRequest, StationScanChannelIter, StationScanChannelOrderIter,
-    StationScanChannels, StationScanChannelsError, StationScanPolicy, StationSecurity,
-    WifiScanRequest, WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
+    AccessPointBeaconInterval, AccessPointBeaconIntervalError, AccessPointClientLimit,
+    AccessPointClientLimitError, AccessPointDtimPeriod, AccessPointDtimPeriodError,
+    AccessPointInactiveTimeout, AccessPointInactiveTimeoutError, AccessPointRequest,
+    AccessPointRequestError, AccessPointSecurity, MonitorCapturePolicy, MonitorRequest,
+    StandaloneEspNowPeerError, StandaloneEspNowRequest, StationAccessPointRequest,
+    StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
+    StationRequest, StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
+    StationScanChannelsError, StationScanPolicy, StationSecurity, WifiScanRequest,
+    WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
     WifiServiceRequestError, WifiServiceRequestFailure, WifiSupervisorConfiguration,
 };
 #[cfg(feature = "wifi")]

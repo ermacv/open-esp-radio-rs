@@ -2,19 +2,23 @@
 
 use core::fmt;
 
-use open_esp_radio_ieee80211::beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE;
+use open_esp_radio_ieee80211::ap::{ApAssociationSecurityObservation, ApPowerSaveObservation};
+use open_esp_radio_ieee80211::beacon::{
+    TimAssociationId, TimBitmapError, TimVirtualBitmap, WPA2_PERSONAL_CCMP_PSK_RSN_IE,
+};
 use open_esp_radio_ieee80211::block_ack::{
     AddbaRequest, BlockAckAction, OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckConfig,
     TxBlockAckError, TxBlockAckResponse, TxBlockAckSession,
 };
 use open_esp_radio_ieee80211::ht::HtPeerCapabilities;
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_wpa2::{
-    OwnedEapolFrame, Pmk, Ptk, PtkContext,
+    AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
     ap::validate_wpa2_ap_rsn,
     frames::{
-        OwnedRsnIe, WPA2_PLAIN_KEY_DATA_CAPACITY, Wpa2FrameError, Wpa2Gtk, Wpa2PlainKeyData,
-        Wpa2TxFrame, build_ap_action_frame,
+        OwnedAssociationSecurityIes, OwnedRsnIe, WPA2_PLAIN_KEY_DATA_CAPACITY, Wpa2FrameError,
+        Wpa2Gtk, Wpa2PlainKeyData, Wpa2TxFrame, build_ap_action_frame,
     },
     retry::{Wpa2Retry, Wpa2RetryAction, Wpa2RetryAlarm, Wpa2RetryConfig, Wpa2RetryError},
     state::{
@@ -27,6 +31,7 @@ use open_esp_radio_wpa2::{
 /// ESP32-S31 maps these clients to AIDs 1..=15 and hardware pairwise key
 /// entries 8..=22. Higher values are rejected before radio ownership moves.
 pub const AP_MAX_CLIENTS: usize = 15;
+pub const AP_TIM_VIRTUAL_BITMAP_OCTETS: usize = AP_MAX_CLIENTS / 8 + 1;
 pub const AP_STATUS_SUCCESS: u16 = 0;
 pub const AP_STATUS_TOO_MANY_STATIONS: u16 = 17;
 pub const AP_STATUS_UNSUPPORTED_RATES: u16 = 18;
@@ -156,6 +161,85 @@ pub enum ApPeerPhase {
     Closing,
 }
 
+/// AP-visible power-management state for one associated peer.
+///
+/// This state follows the peer's most recently admitted PM bit. It does not
+/// imply that a frame has already been moved into or out of the caller-owned
+/// downlink queue.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ApPeerPowerState {
+    #[default]
+    Active,
+    Sleeping,
+}
+
+/// Whether a newly arrived unicast frame may be transmitted immediately or
+/// must remain in the caller-owned AP power-save queue.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApDownlinkDisposition {
+    TransmitNow,
+    Buffer,
+}
+
+/// Semantic result of one admitted PM-bit or PS-Poll observation.
+///
+/// `ReleaseOne` reserves exactly one buffered-frame count until
+/// [`AccessPointService::complete_buffered_unicast_release`] commits or rolls
+/// the reservation back. The token is deliberately non-`Copy`.
+#[derive(Debug, Eq, PartialEq)]
+pub enum ApPowerSaveAction {
+    None,
+    StateChanged {
+        peer: [u8; 6],
+        state: ApPeerPowerState,
+        buffered_frames: u16,
+    },
+    ReleaseOne(ApBufferedUnicastRelease),
+}
+
+/// Affine reservation for one caller-owned buffered unicast frame.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ApBufferedUnicastRelease {
+    peer: [u8; 6],
+    association_id: u16,
+    generation: u32,
+    more_data: bool,
+}
+
+impl ApBufferedUnicastRelease {
+    pub const fn peer(&self) -> [u8; 6] {
+        self.peer
+    }
+
+    pub const fn association_id(&self) -> u16 {
+        self.association_id
+    }
+
+    /// Value for the 802.11 More Data bit on the released MPDU.
+    pub const fn more_data(&self) -> bool {
+        self.more_data
+    }
+}
+
+/// Affine reservation for one caller-owned buffered group frame.
+///
+/// The AP service owns only the advertised count. The caller must retain the
+/// exact multicast/broadcast payload before committing it, then bind the
+/// oldest retained payload to this token after a successfully published DTIM
+/// beacon. Dropping the token deliberately leaves the release blocked.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ApBufferedGroupRelease {
+    generation: u32,
+    more_data: bool,
+}
+
+impl ApBufferedGroupRelease {
+    /// Value for the 802.11 More Data bit on this group-addressed MPDU.
+    pub const fn more_data(&self) -> bool {
+        self.more_data
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApPeerCloseKind {
     AuthenticationTimeout,
@@ -204,6 +288,12 @@ pub enum ApMlmeAction {
 pub enum ApServiceError {
     UnknownPeer,
     WrongPeerPhase,
+    SecurityModeMismatch,
+    AssociationIdMismatch,
+    BufferedTrafficOverflow,
+    NoBufferedTraffic,
+    BufferedReleaseInFlight,
+    StaleBufferedRelease,
     Wpa2(Wpa2StateError),
     BlockAck(TxBlockAckError),
 }
@@ -279,8 +369,10 @@ impl From<Wpa2StateError> for ApServiceError {
 struct ApPeer {
     address: [u8; 6],
     association_id: u16,
+    association_epoch: u32,
     phase: ApPeerPhase,
     wpa2: Option<Wpa2ApState>,
+    association_security_binding: Option<AssociationSecurityBinding>,
     pending_ptk: Option<Ptk>,
     wpa2_retry: Wpa2Retry,
     wpa2_retry_alarm: Option<Wpa2RetryAlarm>,
@@ -288,6 +380,10 @@ struct ApPeer {
     ht: Option<HtPeerCapabilities>,
     qos_supported: bool,
     tx_block_ack: TxBlockAckSession,
+    power_state: ApPeerPowerState,
+    buffered_unicast_frames: u16,
+    buffered_release_in_flight: bool,
+    buffered_release_generation: u32,
     last_activity_micros: u64,
     deadline_micros: u64,
 }
@@ -319,12 +415,19 @@ impl Default for AccessPointPeerStorage {
 }
 
 impl ApPeer {
-    const fn authenticated(address: [u8; 6], association_id: u16, now_micros: u64) -> Self {
+    const fn authenticated(
+        address: [u8; 6],
+        association_id: u16,
+        association_epoch: u32,
+        now_micros: u64,
+    ) -> Self {
         Self {
             address,
             association_id,
+            association_epoch,
             phase: ApPeerPhase::Authenticated,
             wpa2: None,
+            association_security_binding: None,
             pending_ptk: None,
             wpa2_retry: new_ap_wpa2_retry(),
             wpa2_retry_alarm: None,
@@ -334,6 +437,10 @@ impl ApPeer {
             ht: None,
             qos_supported: false,
             tx_block_ack: new_ap_tx_block_ack(),
+            power_state: ApPeerPowerState::Active,
+            buffered_unicast_frames: 0,
+            buffered_release_in_flight: false,
+            buffered_release_generation: 0,
             last_activity_micros: now_micros,
             deadline_micros: now_micros.saturating_add(AP_ASSOCIATION_DEADLINE_MICROS),
         }
@@ -364,7 +471,10 @@ const fn new_ap_tx_block_ack() -> TxBlockAckSession {
         window: AP_TX_BLOCK_ACK_WINDOW,
         timeout_tu: 0,
         negotiation_timeout_us: AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT_MICROS,
-        amsdu: false,
+        // Baseline 3,839-byte A-MSDU construction and AP RX decapsulation are
+        // both source-owned. The operational agreement still keeps this bit
+        // false unless the peer echoes support in its ADDBA response.
+        amsdu: true,
     }) {
         Ok(session) => session,
         Err(_) => panic!("valid AP TX BlockAck policy"),
@@ -386,20 +496,29 @@ const fn new_ap_wpa2_retry() -> Wpa2Retry {
 pub struct ApPeerStatus {
     pub address: [u8; 6],
     pub association_id: u16,
+    /// Non-reusable identity of this AID assignment. Reauthentication keeps
+    /// the bounded AID slot but advances this epoch so receive-side duplicate
+    /// history cannot cross association ownership.
+    pub association_epoch: u32,
     pub phase: ApPeerPhase,
     pub maximum_legacy_rate_500kbps: u8,
     pub ht: Option<HtPeerCapabilities>,
     pub qos_supported: bool,
     pub tx_block_ack: Option<OperationalTxBlockAck>,
+    pub power_state: ApPeerPowerState,
+    pub buffered_unicast_frames: u16,
+    pub buffered_release_in_flight: bool,
     pub last_activity_micros: u64,
     pub deadline_micros: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AccessPointServiceStatus {
+    pub security: WifiSecurityMode,
     pub client_limit: AccessPointClientLimit,
     pub associated: u8,
     pub authorized: u8,
+    pub buffered_group_frames: u16,
     pub peers: [Option<ApPeerStatus>; AP_MAX_CLIENTS],
 }
 
@@ -410,8 +529,7 @@ pub struct AccessPointServiceStatus {
 /// before it may classify the corresponding physical owner as stopped.
 pub struct AccessPointService<'peers> {
     address: [u8; 6],
-    pmk: Pmk,
-    gtk: Wpa2Gtk,
+    security: AccessPointSecurityMaterial,
     peer_storage: Option<&'peers mut AccessPointPeerStorage>,
     client_limit: AccessPointClientLimit,
     inactive_timeout: AccessPointInactiveTimeout,
@@ -421,7 +539,17 @@ pub struct AccessPointService<'peers> {
     status_revision: u32,
     associated_count: u8,
     authorized_count: u8,
+    buffered_group_frames: u16,
+    buffered_group_release_generation: u32,
+    buffered_group_release_in_flight: bool,
     smallest_operational_tx_block_ack_window: Option<u16>,
+}
+
+/// Credential ownership for one AP epoch. Open deliberately has no PMK, GTK
+/// or placeholder key bytes that could be installed by a later generic path.
+pub enum AccessPointSecurityMaterial {
+    Open,
+    Wpa2Personal { pmk: Pmk, gtk: Wpa2Gtk },
 }
 
 impl<'peers> AccessPointService<'peers> {
@@ -440,8 +568,7 @@ impl<'peers> AccessPointService<'peers> {
             .expect("AP peer generation space is not reusable");
         Self {
             address,
-            pmk,
-            gtk,
+            security: AccessPointSecurityMaterial::Wpa2Personal { pmk, gtk },
             peer_storage: Some(peer_storage),
             client_limit,
             inactive_timeout,
@@ -451,8 +578,86 @@ impl<'peers> AccessPointService<'peers> {
             status_revision: 0,
             associated_count: 0,
             authorized_count: 0,
+            buffered_group_frames: 0,
+            buffered_group_release_generation: 0,
+            buffered_group_release_in_flight: false,
             smallest_operational_tx_block_ack_window: None,
         }
+    }
+
+    pub fn new_open(
+        address: [u8; 6],
+        client_limit: AccessPointClientLimit,
+        inactive_timeout: AccessPointInactiveTimeout,
+        peer_storage: &'peers mut AccessPointPeerStorage,
+    ) -> Self {
+        peer_storage.peers.fill_with(|| None);
+        peer_storage.generation = peer_storage
+            .generation
+            .checked_add(1)
+            .expect("AP peer generation space is not reusable");
+        Self {
+            address,
+            security: AccessPointSecurityMaterial::Open,
+            peer_storage: Some(peer_storage),
+            client_limit,
+            inactive_timeout,
+            next_management_sequence: 0,
+            next_data_sequence: 0,
+            next_qos_sequences: [0; 8],
+            status_revision: 0,
+            associated_count: 0,
+            authorized_count: 0,
+            buffered_group_frames: 0,
+            buffered_group_release_generation: 0,
+            buffered_group_release_in_flight: false,
+            smallest_operational_tx_block_ack_window: None,
+        }
+    }
+
+    pub const fn security_mode(&self) -> WifiSecurityMode {
+        match &self.security {
+            AccessPointSecurityMaterial::Open => WifiSecurityMode::Open,
+            AccessPointSecurityMaterial::Wpa2Personal { .. } => WifiSecurityMode::Wpa2Personal,
+        }
+    }
+
+    /// Exact, non-mutating admission predicate used for both first and retry
+    /// Association Requests.
+    pub fn matches_association_security(
+        &self,
+        security: ApAssociationSecurityObservation<'_>,
+    ) -> bool {
+        if security.malformed_elements || security.legacy_wpa_present {
+            return false;
+        }
+        match self.security_mode() {
+            WifiSecurityMode::Open => {
+                !security.privacy
+                    && security.rsn_ie_count == 0
+                    && security.rsn_ie.is_none()
+                    && security.rsnxe_count == 0
+                    && security.rsnxe.is_none()
+            }
+            WifiSecurityMode::Wpa2Personal => {
+                Self::validated_wpa2_association_security_ies(security).is_some()
+            }
+        }
+    }
+
+    fn validated_wpa2_association_security_ies(
+        security: ApAssociationSecurityObservation<'_>,
+    ) -> Option<OwnedAssociationSecurityIes> {
+        if !security.privacy
+            || security.rsn_ie_count != 1
+            || security.rsnxe_count > 1
+            || security.rsnxe_count == 0 && security.rsnxe.is_some()
+            || security.rsnxe_count == 1 && security.rsnxe.is_none()
+        {
+            return None;
+        }
+        let rsn = validate_wpa2_ap_rsn(security.rsn_ie?).ok()?;
+        OwnedAssociationSecurityIes::try_copy(rsn.owned(), security.rsnxe.unwrap_or(&[])).ok()
     }
 
     pub const fn address(&self) -> [u8; 6] {
@@ -472,11 +677,15 @@ impl<'peers> AccessPointService<'peers> {
             .map(|peer| ApPeerStatus {
                 address: peer.address,
                 association_id: peer.association_id,
+                association_epoch: peer.association_epoch,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
                 ht: peer.ht,
                 qos_supported: peer.qos_supported,
                 tx_block_ack: peer.tx_block_ack.operational(),
+                power_state: peer.power_state,
+                buffered_unicast_frames: peer.buffered_unicast_frames,
+                buffered_release_in_flight: peer.buffered_release_in_flight,
                 last_activity_micros: peer.last_activity_micros,
                 deadline_micros: peer.deadline_micros,
             })
@@ -499,11 +708,15 @@ impl<'peers> AccessPointService<'peers> {
         Some(ApPeerStatus {
             address: peer.address,
             association_id: peer.association_id,
+            association_epoch: peer.association_epoch,
             phase: peer.phase,
             maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
             ht: peer.ht,
             qos_supported: peer.qos_supported,
             tx_block_ack: peer.tx_block_ack.operational(),
+            power_state: peer.power_state,
+            buffered_unicast_frames: peer.buffered_unicast_frames,
+            buffered_release_in_flight: peer.buffered_release_in_flight,
             last_activity_micros: peer.last_activity_micros,
             deadline_micros: peer.deadline_micros,
         })
@@ -517,11 +730,15 @@ impl<'peers> AccessPointService<'peers> {
             .map(|peer| ApPeerStatus {
                 address: peer.address,
                 association_id: peer.association_id,
+                association_epoch: peer.association_epoch,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
                 ht: peer.ht,
                 qos_supported: peer.qos_supported,
                 tx_block_ack: peer.tx_block_ack.operational(),
+                power_state: peer.power_state,
+                buffered_unicast_frames: peer.buffered_unicast_frames,
+                buffered_release_in_flight: peer.buffered_release_in_flight,
                 last_activity_micros: peer.last_activity_micros,
                 deadline_micros: peer.deadline_micros,
             })
@@ -557,25 +774,347 @@ impl<'peers> AccessPointService<'peers> {
             .any(|peer| peer.address == address && peer.phase == ApPeerPhase::Authorized)
     }
 
+    /// Decide ownership of a newly arrived downlink unicast frame.
+    ///
+    /// The service never stores the frame itself. A `Buffer` result requires
+    /// the caller to retain the frame first and only then call
+    /// [`Self::commit_buffered_unicast`].
+    pub fn downlink_disposition(
+        &self,
+        peer: [u8; 6],
+    ) -> Result<ApDownlinkDisposition, ApServiceError> {
+        let peer = self.checked_peer(peer)?;
+        if peer.phase != ApPeerPhase::Authorized {
+            return Err(ApServiceError::WrongPeerPhase);
+        }
+        Ok(match peer.power_state {
+            ApPeerPowerState::Active => ApDownlinkDisposition::TransmitNow,
+            ApPeerPowerState::Sleeping => ApDownlinkDisposition::Buffer,
+        })
+    }
+
+    /// Commit one frame already retained by the caller's per-peer queue.
+    pub fn commit_buffered_unicast(&mut self, peer: [u8; 6]) -> Result<u16, ApServiceError> {
+        let buffered = {
+            let peer = self.checked_peer_mut(peer)?;
+            if peer.phase != ApPeerPhase::Authorized
+                || peer.power_state != ApPeerPowerState::Sleeping
+            {
+                return Err(ApServiceError::WrongPeerPhase);
+            }
+            peer.buffered_unicast_frames = peer
+                .buffered_unicast_frames
+                .checked_add(1)
+                .ok_or(ApServiceError::BufferedTrafficOverflow)?;
+            peer.buffered_unicast_frames
+        };
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(buffered)
+    }
+
+    /// Reserve one buffered unicast frame for an awake peer or a PS-Poll.
+    ///
+    /// Forgetting the returned token intentionally leaves the peer blocked:
+    /// a second dequeue cannot overtake an unaccounted first frame.
+    pub fn begin_buffered_unicast_release(
+        &mut self,
+        peer: [u8; 6],
+    ) -> Result<Option<ApBufferedUnicastRelease>, ApServiceError> {
+        let token = {
+            let peer = self.checked_peer_mut(peer)?;
+            if peer.phase != ApPeerPhase::Authorized {
+                return Err(ApServiceError::WrongPeerPhase);
+            }
+            if peer.buffered_release_in_flight {
+                return Err(ApServiceError::BufferedReleaseInFlight);
+            }
+            if peer.buffered_unicast_frames == 0 {
+                return Ok(None);
+            }
+            peer.buffered_release_generation = peer
+                .buffered_release_generation
+                .checked_add(1)
+                .ok_or(ApServiceError::BufferedTrafficOverflow)?;
+            peer.buffered_release_in_flight = true;
+            ApBufferedUnicastRelease {
+                peer: peer.address,
+                association_id: peer.association_id,
+                generation: peer.buffered_release_generation,
+                more_data: peer.buffered_unicast_frames > 1,
+            }
+        };
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(Some(token))
+    }
+
+    /// Resolve one reserved queue release after the caller either transmitted
+    /// the exact retained frame or returned it to the same queue.
+    pub fn complete_buffered_unicast_release(
+        &mut self,
+        release: ApBufferedUnicastRelease,
+        delivered: bool,
+    ) -> Result<u16, ApServiceError> {
+        let remaining = {
+            let peer = self.checked_peer_mut(release.peer)?;
+            if peer.association_id != release.association_id {
+                return Err(ApServiceError::AssociationIdMismatch);
+            }
+            if !peer.buffered_release_in_flight
+                || peer.buffered_release_generation != release.generation
+            {
+                return Err(ApServiceError::StaleBufferedRelease);
+            }
+            if delivered {
+                peer.buffered_unicast_frames = peer
+                    .buffered_unicast_frames
+                    .checked_sub(1)
+                    .ok_or(ApServiceError::NoBufferedTraffic)?;
+            }
+            peer.buffered_release_in_flight = false;
+            peer.buffered_unicast_frames
+        };
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(remaining)
+    }
+
+    /// Apply one parsed peer PM edge after the caller has validated that the
+    /// frame belongs to this AP. PS-Poll reserves, but does not consume, one
+    /// caller-owned buffered frame.
+    pub fn observe_power_save(
+        &mut self,
+        observation: ApPowerSaveObservation,
+        now_micros: u64,
+    ) -> Result<ApPowerSaveAction, ApServiceError> {
+        let inactive_timeout_micros = self.inactive_timeout.micros();
+        match observation {
+            ApPowerSaveObservation::Sleeping { peer } | ApPowerSaveObservation::Active { peer } => {
+                let requested = if matches!(observation, ApPowerSaveObservation::Sleeping { .. }) {
+                    ApPeerPowerState::Sleeping
+                } else {
+                    ApPeerPowerState::Active
+                };
+                let (changed, buffered_frames) = {
+                    let existing = self.checked_peer_mut(peer)?;
+                    if existing.phase != ApPeerPhase::Authorized {
+                        return Err(ApServiceError::WrongPeerPhase);
+                    }
+                    let changed = existing.power_state != requested;
+                    existing.power_state = requested;
+                    existing.last_activity_micros = now_micros;
+                    existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+                    (changed, existing.buffered_unicast_frames)
+                };
+                if !changed {
+                    return Ok(ApPowerSaveAction::None);
+                }
+                self.status_revision = self.status_revision.wrapping_add(1);
+                Ok(ApPowerSaveAction::StateChanged {
+                    peer,
+                    state: requested,
+                    buffered_frames,
+                })
+            }
+            ApPowerSaveObservation::PsPoll {
+                peer,
+                association_id,
+            } => {
+                let release_already_pending = {
+                    let existing = self.checked_peer_mut(peer)?;
+                    if existing.phase != ApPeerPhase::Authorized
+                        || existing.power_state != ApPeerPowerState::Sleeping
+                    {
+                        return Err(ApServiceError::WrongPeerPhase);
+                    }
+                    if existing.association_id != association_id {
+                        return Err(ApServiceError::AssociationIdMismatch);
+                    }
+                    existing.last_activity_micros = now_micros;
+                    existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+                    existing.buffered_release_in_flight
+                };
+                // A retried PS-Poll may arrive while the exact oldest frame is
+                // already reserved or crossing TX. It is idempotent: never
+                // reserve a second frame and never turn a valid control retry
+                // into a terminal protocol error.
+                if release_already_pending {
+                    return Ok(ApPowerSaveAction::None);
+                }
+                Ok(match self.begin_buffered_unicast_release(peer)? {
+                    Some(release) => ApPowerSaveAction::ReleaseOne(release),
+                    None => ApPowerSaveAction::None,
+                })
+            }
+        }
+    }
+
+    /// Complete typed TIM bitmap for the public AP AID range 1..=15.
+    /// Canonical Partial Virtual Bitmap compression is derived by the beacon
+    /// owner only after every peer AID has passed capacity validation.
+    pub fn unicast_tim_bitmap(
+        &self,
+    ) -> Result<TimVirtualBitmap<AP_TIM_VIRTUAL_BITMAP_OCTETS>, TimBitmapError> {
+        let mut bitmap = TimVirtualBitmap::try_new()?;
+        for peer in self.storage().peers.iter().flatten().filter(|peer| {
+            peer.power_state == ApPeerPowerState::Sleeping && peer.buffered_unicast_frames != 0
+        }) {
+            let association_id = TimAssociationId::new(peer.association_id)?;
+            bitmap.set(association_id, true)?;
+        }
+        Ok(bitmap)
+    }
+
+    pub const fn buffered_group_frames(&self) -> u16 {
+        self.buffered_group_frames
+    }
+
+    pub const fn group_traffic_pending(&self) -> bool {
+        self.buffered_group_frames != 0
+    }
+
+    /// Decide ownership of a newly arrived multicast/broadcast frame.
+    ///
+    /// Group traffic is retained whenever at least one authorized station has
+    /// announced PM=1. The caller must retain the payload first and call
+    /// [`Self::commit_buffered_group`] only after that ownership transfer
+    /// succeeds.
+    pub fn group_downlink_disposition(&self) -> ApDownlinkDisposition {
+        // Once a DTIM queue exists, retain later group frames behind it even
+        // if the last sleeping peer wakes before the advertised release. This
+        // preserves caller-owned FIFO order and prevents a fresh multicast
+        // frame from overtaking the DTIM-bound prefix.
+        if self.buffered_group_frames != 0
+            || self.storage().peers.iter().flatten().any(|peer| {
+                peer.phase == ApPeerPhase::Authorized
+                    && peer.power_state == ApPeerPowerState::Sleeping
+            })
+        {
+            ApDownlinkDisposition::Buffer
+        } else {
+            ApDownlinkDisposition::TransmitNow
+        }
+    }
+
+    /// Commit one multicast/broadcast frame already retained by the caller.
+    pub fn commit_buffered_group(&mut self) -> Result<u16, ApServiceError> {
+        self.buffered_group_frames = self
+            .buffered_group_frames
+            .checked_add(1)
+            .ok_or(ApServiceError::BufferedTrafficOverflow)?;
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(self.buffered_group_frames)
+    }
+
+    /// Reserve the oldest caller-owned group frame after a successful DTIM
+    /// beacon publication advertised group traffic.
+    ///
+    /// The DTIM publication edge is intentionally owned by the caller. This
+    /// service cannot infer it from a timer or from the current TIM phase.
+    pub fn begin_buffered_group_release(
+        &mut self,
+    ) -> Result<Option<ApBufferedGroupRelease>, ApServiceError> {
+        if self.buffered_group_release_in_flight {
+            return Err(ApServiceError::BufferedReleaseInFlight);
+        }
+        if self.buffered_group_frames == 0 {
+            return Ok(None);
+        }
+        self.buffered_group_release_generation = self
+            .buffered_group_release_generation
+            .checked_add(1)
+            .ok_or(ApServiceError::BufferedTrafficOverflow)?;
+        self.buffered_group_release_in_flight = true;
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(Some(ApBufferedGroupRelease {
+            generation: self.buffered_group_release_generation,
+            more_data: self.buffered_group_frames > 1,
+        }))
+    }
+
+    /// Resolve one affine group release after its exact retained payload
+    /// reached terminal hardware publication or was restored to the queue.
+    ///
+    /// `delivered` means terminal publication success. Group-addressed MPDUs
+    /// have no acknowledgement, so this API never manufactures ACK evidence.
+    pub fn complete_buffered_group_release(
+        &mut self,
+        release: ApBufferedGroupRelease,
+        delivered: bool,
+    ) -> Result<u16, ApServiceError> {
+        if !self.buffered_group_release_in_flight
+            || release.generation != self.buffered_group_release_generation
+        {
+            return Err(ApServiceError::StaleBufferedRelease);
+        }
+        if delivered {
+            self.buffered_group_frames = self
+                .buffered_group_frames
+                .checked_sub(1)
+                .ok_or(ApServiceError::NoBufferedTraffic)?;
+        }
+        self.buffered_group_release_in_flight = false;
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(self.buffered_group_frames)
+    }
+
+    /// Account one group frame only after its DTIM-scoped publication has
+    /// reached a terminal success. Failed frames remain advertised.
+    pub fn complete_buffered_group(&mut self, delivered: bool) -> Result<u16, ApServiceError> {
+        if self.buffered_group_release_in_flight {
+            return Err(ApServiceError::BufferedReleaseInFlight);
+        }
+        if delivered {
+            self.buffered_group_frames = self
+                .buffered_group_frames
+                .checked_sub(1)
+                .ok_or(ApServiceError::NoBufferedTraffic)?;
+            self.status_revision = self.status_revision.wrapping_add(1);
+        }
+        Ok(self.buffered_group_frames)
+    }
+
+    /// Clear the portable advertisement count at a caller-owned queue-drop
+    /// boundary such as AP stop.
+    ///
+    /// The returned count tells the caller exactly how many retained payload
+    /// owners it must drop. An in-flight affine release must be rolled back
+    /// before this operation is legal.
+    pub fn discard_buffered_groups(&mut self) -> Result<u16, ApServiceError> {
+        if self.buffered_group_release_in_flight {
+            return Err(ApServiceError::BufferedReleaseInFlight);
+        }
+        let discarded = self.buffered_group_frames;
+        if discarded != 0 {
+            self.buffered_group_frames = 0;
+            self.status_revision = self.status_revision.wrapping_add(1);
+        }
+        Ok(discarded)
+    }
+
     pub fn status(&self) -> AccessPointServiceStatus {
         let mut peers = [None; AP_MAX_CLIENTS];
         for (destination, source) in peers.iter_mut().zip(self.storage().peers.iter()) {
             *destination = source.as_ref().map(|peer| ApPeerStatus {
                 address: peer.address,
                 association_id: peer.association_id,
+                association_epoch: peer.association_epoch,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
                 ht: peer.ht,
                 qos_supported: peer.qos_supported,
                 tx_block_ack: peer.tx_block_ack.operational(),
+                power_state: peer.power_state,
+                buffered_unicast_frames: peer.buffered_unicast_frames,
+                buffered_release_in_flight: peer.buffered_release_in_flight,
                 last_activity_micros: peer.last_activity_micros,
                 deadline_micros: peer.deadline_micros,
             });
         }
         AccessPointServiceStatus {
+            security: self.security_mode(),
             client_limit: self.client_limit,
             associated: self.associated_count,
             authorized: self.authorized_count,
+            buffered_group_frames: self.buffered_group_frames,
             peers,
         }
     }
@@ -628,6 +1167,8 @@ impl<'peers> AccessPointService<'peers> {
         self.next_data_sequence
     }
 
+    /// Consume one per-TID sequence for protected data or the bounded Open
+    /// QoS A-MSDU path. Security mode does not partition IEEE sequence space.
     pub fn next_qos_sequence(&mut self, tid: u8) -> Option<u16> {
         let sequence = self.next_qos_sequences.get_mut(usize::from(tid))?;
         let current = *sequence;
@@ -635,6 +1176,7 @@ impl<'peers> AccessPointService<'peers> {
         Some(current)
     }
 
+    /// Inspect a per-TID sequence without consuming it during frame preflight.
     pub fn current_qos_sequence(&self, tid: u8) -> Option<u16> {
         self.next_qos_sequences.get(usize::from(tid)).copied()
     }
@@ -646,16 +1188,26 @@ impl<'peers> AccessPointService<'peers> {
                 .expect("peer index resolves an occupied entry")
                 .association_id;
             self.advance_peer_generation();
-            self.storage_mut().peers[index] =
-                Some(ApPeer::authenticated(peer, association_id, now_micros));
+            let association_epoch = self.storage().generation;
+            self.storage_mut().peers[index] = Some(ApPeer::authenticated(
+                peer,
+                association_id,
+                association_epoch,
+                now_micros,
+            ));
             (AP_STATUS_SUCCESS, true)
         } else if self.occupied_count() >= self.client_limit.get() {
             (AP_STATUS_TOO_MANY_STATIONS, false)
         } else if let Some(index) = self.storage().peers.iter().position(Option::is_none) {
             let association_id = u16::try_from(index + 1).expect("fifteen AIDs fit u16");
             self.advance_peer_generation();
-            self.storage_mut().peers[index] =
-                Some(ApPeer::authenticated(peer, association_id, now_micros));
+            let association_epoch = self.storage().generation;
+            self.storage_mut().peers[index] = Some(ApPeer::authenticated(
+                peer,
+                association_id,
+                association_epoch,
+                now_micros,
+            ));
             (AP_STATUS_SUCCESS, true)
         } else {
             (AP_STATUS_TOO_MANY_STATIONS, false)
@@ -669,19 +1221,37 @@ impl<'peers> AccessPointService<'peers> {
     pub fn associate_wpa2(
         &mut self,
         peer: [u8; 6],
-        rsn_ie: &[u8],
+        security: ApAssociationSecurityObservation<'_>,
         capabilities: ApAssociationCapabilities,
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
         now_micros: u64,
     ) -> Result<ApMlmeAction, ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
+        let association_security_ies = if security.malformed_elements || security.legacy_wpa_present
+        {
+            None
+        } else {
+            Self::validated_wpa2_association_security_ies(security)
+        };
+        let security_matches = association_security_ies.is_some();
+        let association_security_binding = match association_security_ies.as_ref() {
+            Some(ies) => Some(
+                self.wpa2_material()?
+                    .0
+                    .bind_association_security_ies(ies.as_bytes()),
+            ),
+            None => None,
+        };
         let access_point = self.address;
         let inactive_timeout_micros = self.inactive_timeout.micros();
         let existing = self.checked_peer_mut(peer)?;
         if existing.phase != ApPeerPhase::Authenticated {
             return Err(ApServiceError::WrongPeerPhase);
         }
-        if validate_wpa2_ap_rsn(rsn_ie).is_err() {
+        if !security_matches {
             return Ok(ApMlmeAction::AssociationResponse {
                 peer,
                 status: AP_STATUS_INVALID_RSN,
@@ -703,9 +1273,67 @@ impl<'peers> AccessPointService<'peers> {
         )?;
         existing.phase = ApPeerPhase::Securing;
         existing.wpa2 = Some(wpa2);
+        existing.association_security_binding = association_security_binding;
         existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
         existing.ht = capabilities.ht;
         existing.qos_supported = capabilities.qos_supported;
+        existing.last_activity_micros = now_micros;
+        existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+        let association_id = existing.association_id;
+        self.revise_status();
+        Ok(ApMlmeAction::AssociationResponse {
+            peer,
+            status: AP_STATUS_SUCCESS,
+            association_id: Some(association_id),
+        })
+    }
+
+    /// Admit an association into an explicitly Open AP epoch.
+    ///
+    /// An empty RSN body is the exact contract: a mixed or WPA-capable
+    /// request is not silently downgraded. Authorization is immediate and no
+    /// authenticator, PTK, GTK or hardware key owner is created.
+    pub fn associate_open(
+        &mut self,
+        peer: [u8; 6],
+        security: ApAssociationSecurityObservation<'_>,
+        capabilities: ApAssociationCapabilities,
+        now_micros: u64,
+    ) -> Result<ApMlmeAction, ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Open {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
+        let security_matches = self.matches_association_security(security);
+        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let existing = self.checked_peer_mut(peer)?;
+        if existing.phase != ApPeerPhase::Authenticated {
+            return Err(ApServiceError::WrongPeerPhase);
+        }
+        if !security_matches {
+            return Ok(ApMlmeAction::AssociationResponse {
+                peer,
+                status: AP_STATUS_INVALID_RSN,
+                association_id: None,
+            });
+        }
+        if capabilities.maximum_legacy_rate_500kbps == 0 {
+            return Ok(ApMlmeAction::AssociationResponse {
+                peer,
+                status: AP_STATUS_UNSUPPORTED_RATES,
+                association_id: None,
+            });
+        }
+        existing.phase = ApPeerPhase::Authorized;
+        existing.wpa2 = None;
+        existing.association_security_binding = None;
+        existing.pending_ptk = None;
+        existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
+        existing.ht = capabilities.ht;
+        // Ordinary Open MSDUs retain the non-QoS sequence space. The bounded
+        // A-MSDU owner uses this peer's independent QoS/TID-0 counter only
+        // after validating HT and QoS support for both coalesced leases.
+        existing.qos_supported = capabilities.qos_supported;
+        existing.tx_block_ack.stop();
         existing.last_activity_micros = now_micros;
         existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
         let association_id = existing.association_id;
@@ -724,6 +1352,9 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         now_micros: u64,
     ) -> Result<Option<AddbaRequest>, ApServiceError> {
+        if self.security_mode() == WifiSecurityMode::Open {
+            return Ok(None);
+        }
         let starting_sequence = self
             .current_qos_sequence(AP_TX_BLOCK_ACK_TID)
             .expect("AP data TID is representable");
@@ -744,6 +1375,9 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         action: BlockAckAction,
     ) -> Result<Option<TxBlockAckResponse>, ApServiceError> {
+        if self.security_mode() == WifiSecurityMode::Open {
+            return Ok(None);
+        }
         let peer = self.checked_peer_mut(peer)?;
         match action {
             BlockAckAction::AddbaResponse { .. } => {
@@ -774,12 +1408,18 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         alarm: TxBlockAckAlarm,
     ) -> Result<bool, ApServiceError> {
+        if self.security_mode() == WifiSecurityMode::Open {
+            return Ok(false);
+        }
         let peer = self.checked_peer_mut(peer)?;
         Ok(peer.tx_block_ack.on_alarm(alarm))
     }
 
     /// Signal that the successful Association Response reached TX complete.
     pub fn begin_wpa2(&self, peer: [u8; 6]) -> Result<ApMlmeAction, ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
         let existing = self.checked_peer(peer)?;
         if existing.phase != ApPeerPhase::Securing {
             return Err(ApServiceError::WrongPeerPhase);
@@ -788,6 +1428,9 @@ impl<'peers> AccessPointService<'peers> {
     }
 
     pub fn wpa2_mut(&mut self, peer: [u8; 6]) -> Result<&mut Wpa2ApState, ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
         let existing = self.checked_peer_mut(peer)?;
         existing.wpa2.as_mut().ok_or(ApServiceError::WrongPeerPhase)
     }
@@ -797,8 +1440,9 @@ impl<'peers> AccessPointService<'peers> {
         Ok(existing.wpa2.as_ref().map(Wpa2ApState::phase) == Some(Wpa2ApPhase::Authorized))
     }
 
-    pub fn derive_ptk(&self, context: PtkContext) -> Ptk {
-        self.pmk.derive_ptk(context)
+    pub fn derive_ptk(&self, context: PtkContext) -> Result<Ptk, ApServiceError> {
+        let (pmk, _) = self.wpa2_material()?;
+        Ok(pmk.derive_ptk(context))
     }
 
     /// Build Message 1 only after the successful Association Response reached
@@ -807,6 +1451,9 @@ impl<'peers> AccessPointService<'peers> {
         &self,
         peer: [u8; 6],
     ) -> Result<Wpa2TxFrame<N>, ApWpa2Error> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch.into());
+        }
         let existing = self.checked_peer(peer)?;
         let state = existing
             .wpa2
@@ -944,12 +1591,24 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         frame: OwnedEapolFrame<N>,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
-        let action = self
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch.into());
+        }
+        let action = match self
             .checked_peer_mut(peer)?
             .wpa2
             .as_mut()
             .ok_or(ApServiceError::WrongPeerPhase)?
-            .on_frame(frame)?;
+            .on_frame(frame)
+        {
+            Ok(action) => action,
+            Err(error) if error.is_peer_input_rejection() => {
+                // Unsupported, stale and otherwise unauthenticated EAPOL is
+                // a peer-local receive reject, not a role-control failure.
+                return Ok(ApWpa2Progress::None);
+            }
+            Err(error) => return Err(error.into()),
+        };
         match action {
             Wpa2ApAction::None => Ok(ApWpa2Progress::None),
             Wpa2ApAction::DerivePtk {
@@ -979,6 +1638,7 @@ impl<'peers> AccessPointService<'peers> {
                         existing.wpa2_retry_alarm = None;
                         Ok(ApWpa2Progress::AuthorizePeer)
                     }
+                    Wpa2ApAction::None => Ok(ApWpa2Progress::None),
                     Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
                     _ => Err(ApWpa2Error::UnexpectedAction),
                 }
@@ -996,12 +1656,12 @@ impl<'peers> AccessPointService<'peers> {
         context: Wpa2StatePtkContext,
         message2: OwnedEapolFrame<N>,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
-        let ptk = self.pmk.derive_ptk(PtkContext {
+        let ptk = self.derive_ptk(PtkContext {
             authenticator_address: context.authenticator_address,
             supplicant_address: context.supplicant_address,
             authenticator_nonce: context.authenticator_nonce,
             supplicant_nonce: context.supplicant_nonce,
-        });
+        })?;
         let action = self
             .checked_peer_mut(peer)?
             .wpa2
@@ -1012,6 +1672,18 @@ impl<'peers> AccessPointService<'peers> {
             return Err(ApWpa2Error::UnexpectedAction);
         };
         let valid = message2.key_frame().verify_mic(&ptk);
+        // The association commitment is an authenticated semantic binding.
+        // Do not let attacker-controlled Key Data decide peer teardown until
+        // this exact M2 has passed its PTK-derived MIC.
+        let association_security_ies_match = valid
+            && self
+                .checked_peer(peer)?
+                .association_security_binding
+                .as_ref()
+                .is_some_and(|binding| {
+                    self.wpa2_material()
+                        .is_ok_and(|(pmk, _)| binding.matches(pmk, message2.key_frame().key_data()))
+                });
         let action = self
             .checked_peer_mut(peer)?
             .wpa2
@@ -1020,15 +1692,30 @@ impl<'peers> AccessPointService<'peers> {
             .complete_message2_mic(ticket, message2, valid)?;
         let ticket = match action {
             Wpa2ApAction::PrepareMessage3 { ticket } => ticket,
+            Wpa2ApAction::None => return Ok(ApWpa2Progress::None),
             Wpa2ApAction::DeauthenticatePeer => {
                 return Ok(ApWpa2Progress::DeauthenticatePeer);
             }
             _ => return Err(ApWpa2Error::UnexpectedAction),
         };
 
+        if !association_security_ies_match {
+            let action = self
+                .checked_peer_mut(peer)?
+                .wpa2
+                .as_mut()
+                .ok_or(ApServiceError::WrongPeerPhase)?
+                .complete_message3_preparation::<N>(ticket, false)?;
+            return match action {
+                Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
+                _ => Err(ApWpa2Error::UnexpectedAction),
+            };
+        }
+
+        let (_, gtk) = self.wpa2_material()?;
         let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
         let plain =
-            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, &self.gtk)?;
+            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let action = self
             .checked_peer_mut(peer)?
@@ -1069,9 +1756,10 @@ impl<'peers> AccessPointService<'peers> {
             .pending_ptk
             .as_ref()
             .ok_or(ApWpa2Error::MissingPairwiseKey)?;
+        let (_, gtk) = self.wpa2_material()?;
         let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
         let plain =
-            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, &self.gtk)?;
+            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let response =
             build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(ptk);
@@ -1085,17 +1773,21 @@ impl<'peers> AccessPointService<'peers> {
             .ok_or(ApServiceError::WrongPeerPhase)
     }
 
-    pub const fn gtk(&self) -> &Wpa2Gtk {
-        &self.gtk
+    pub fn gtk(&self) -> Result<&Wpa2Gtk, ApServiceError> {
+        self.wpa2_material().map(|(_, gtk)| gtk)
     }
 
     pub fn authorize(&mut self, peer: [u8; 6], now_micros: u64) -> Result<(), ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
         let inactive_timeout_micros = self.inactive_timeout.micros();
         let existing = self.checked_peer_mut(peer)?;
         if existing.wpa2.as_ref().map(Wpa2ApState::phase) != Some(Wpa2ApPhase::Authorized) {
             return Err(ApServiceError::WrongPeerPhase);
         }
         existing.phase = ApPeerPhase::Authorized;
+        existing.association_security_binding = None;
         existing.pending_ptk = None;
         existing.wpa2_retry.cancel();
         existing.wpa2_retry_alarm = None;
@@ -1103,6 +1795,13 @@ impl<'peers> AccessPointService<'peers> {
         existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
         self.revise_status();
         Ok(())
+    }
+
+    fn wpa2_material(&self) -> Result<(&Pmk, &Wpa2Gtk), ApServiceError> {
+        match &self.security {
+            AccessPointSecurityMaterial::Open => Err(ApServiceError::SecurityModeMismatch),
+            AccessPointSecurityMaterial::Wpa2Personal { pmk, gtk } => Ok((pmk, gtk)),
+        }
     }
 
     pub fn observe_activity(
@@ -1293,7 +1992,9 @@ mod tests {
     use open_esp_radio_wpa2::{
         EapolKeyMessage, OwnedEapolFrame, PtkContext, Wpa2Interface,
         aes::software_aes128_key_unwrap,
-        frames::{OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame, parse_gtk_key_data},
+        frames::{
+            OwnedAssociationSecurityIes, OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame, parse_gtk_key_data,
+        },
         state::{Wpa2ApAction, Wpa2Ticket},
     };
 
@@ -1306,6 +2007,57 @@ mod tests {
     const SUPPLICANT_RSN: [u8; 22] = [
         0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0x0c, 0,
     ];
+
+    fn association_security<'a>(rsn_ie: &'a [u8]) -> ApAssociationSecurityObservation<'a> {
+        association_security_with_rsnxe(rsn_ie, None)
+    }
+
+    fn association_security_with_rsnxe<'a>(
+        rsn_ie: &'a [u8],
+        rsnxe: Option<&'a [u8]>,
+    ) -> ApAssociationSecurityObservation<'a> {
+        ApAssociationSecurityObservation {
+            privacy: true,
+            rsn_ie: Some(rsn_ie),
+            rsn_ie_count: 1,
+            rsnxe,
+            rsnxe_count: u8::from(rsnxe.is_some()),
+            legacy_wpa_present: false,
+            malformed_elements: false,
+        }
+    }
+
+    fn signed_message2(
+        rsn_ie: &[u8],
+        rsnxe: &[u8],
+        authenticator_nonce: [u8; 32],
+        supplicant_nonce: [u8; 32],
+    ) -> OwnedEapolFrame<512> {
+        let ptk = Pmk::derive(b"password", b"test-ap")
+            .unwrap()
+            .derive_ptk(PtkContext {
+                authenticator_address: AP,
+                supplicant_address: PEER,
+                authenticator_nonce,
+                supplicant_nonce,
+            });
+        let rsn_ie = OwnedRsnIe::<64>::try_copy(rsn_ie).unwrap();
+        let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, rsnxe).unwrap();
+        let message2 =
+            Wpa2TxFrame::<512>::message2_with_security_ies(AP, 9, supplicant_nonce, &security_ies)
+                .unwrap()
+                .authenticate(&ptk);
+        OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, message2.as_bytes()).unwrap()
+    }
+
+    fn corrupt_mic(frame: OwnedEapolFrame<512>) -> OwnedEapolFrame<512> {
+        let mut bytes = [0_u8; 512];
+        let length = frame.as_bytes().len();
+        bytes[..length].copy_from_slice(frame.as_bytes());
+        bytes[81] ^= 1;
+        OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, &bytes[..length]).unwrap()
+    }
+
     fn ht_capabilities() -> ApAssociationCapabilities {
         ApAssociationCapabilities {
             maximum_legacy_rate_500kbps: 108,
@@ -1439,7 +2191,14 @@ mod tests {
         );
         service.authenticate_open(PEER, 0);
         service
-            .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 2_000)
+            .associate_wpa2(
+                PEER,
+                association_security(&WPA2_RSN),
+                ht_capabilities(),
+                [7; 32],
+                9,
+                2_000,
+            )
             .unwrap();
         assert_eq!(service.next_peer_deadline(), Some(10_002_000));
         service.observe_activity(PEER, 5_000_000).unwrap();
@@ -1464,7 +2223,14 @@ mod tests {
         service.authenticate_open(PEER, 0);
         assert_eq!(
             service
-                .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 1)
+                .associate_wpa2(
+                    PEER,
+                    association_security(&WPA2_RSN),
+                    ht_capabilities(),
+                    [7; 32],
+                    9,
+                    1,
+                )
                 .unwrap(),
             ApMlmeAction::AssociationResponse {
                 peer: PEER,
@@ -1504,7 +2270,7 @@ mod tests {
             service
                 .associate_wpa2(
                     PEER,
-                    &WPA2_RSN,
+                    association_security(&WPA2_RSN),
                     ApAssociationCapabilities {
                         maximum_legacy_rate_500kbps: 0,
                         ht: None,
@@ -1538,7 +2304,14 @@ mod tests {
         // Supplicants may add their own RSN capabilities. Message 3 must not
         // reflect those bytes back: it authenticates the AP's beacon RSN IE.
         service
-            .associate_wpa2(PEER, &SUPPLICANT_RSN, ht_capabilities(), ANONCE, 9, 1)
+            .associate_wpa2(
+                PEER,
+                association_security(&SUPPLICANT_RSN),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
             .unwrap();
         let message1 = service.begin_wpa2_frame::<512>(PEER).unwrap();
         assert_eq!(
@@ -1633,12 +2406,207 @@ mod tests {
     }
 
     #[test]
+    fn message2_must_echo_the_exact_association_rsn() {
+        const ANONCE: [u8; 32] = [7; 32];
+        const SNONCE: [u8; 32] = [8; 32];
+
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
+        service.authenticate_open(PEER, 0);
+        service
+            .associate_wpa2(
+                PEER,
+                association_security(&SUPPLICANT_RSN),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
+            .unwrap();
+
+        assert!(matches!(
+            service
+                .on_eapol(PEER, signed_message2(&WPA2_RSN, &[], ANONCE, SNONCE))
+                .unwrap(),
+            ApWpa2Progress::DeauthenticatePeer
+        ));
+        assert_eq!(service.wpa2_mut(PEER).unwrap().phase(), Wpa2ApPhase::Failed);
+        assert!(service.pending_ptk(PEER).is_err());
+    }
+
+    #[test]
+    fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
+        const ANONCE: [u8; 32] = [7; 32];
+        const SNONCE: [u8; 32] = [8; 32];
+
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
+        service.authenticate_open(PEER, 0);
+        service
+            .associate_wpa2(
+                PEER,
+                association_security(&SUPPLICANT_RSN),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
+            .unwrap();
+        let original_deadline = service.peer_status(PEER).unwrap().deadline_micros;
+
+        let replay_mismatch = Wpa2TxFrame::<512>::message4(AP, 77).unwrap();
+        let replay_mismatch = OwnedEapolFrame::<512>::try_copy(
+            Wpa2Interface::AccessPoint,
+            PEER,
+            replay_mismatch.as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            service.on_eapol(PEER, replay_mismatch).unwrap(),
+            ApWpa2Progress::None
+        ));
+
+        let unsupported = Wpa2TxFrame::<512>::message1(AP, 9, ANONCE).unwrap();
+        let unsupported = OwnedEapolFrame::<512>::try_copy(
+            Wpa2Interface::AccessPoint,
+            PEER,
+            unsupported.as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            service.on_eapol(PEER, unsupported).unwrap(),
+            ApWpa2Progress::None
+        ));
+
+        // The attacker also supplies mismatched association Key Data. The
+        // mismatch is not actionable because this candidate's MIC is bad.
+        let forged_m2 = corrupt_mic(signed_message2(&WPA2_RSN, &[], ANONCE, SNONCE));
+        assert!(matches!(
+            service.on_eapol(PEER, forged_m2).unwrap(),
+            ApWpa2Progress::None
+        ));
+        assert_eq!(
+            service.wpa2_mut(PEER).unwrap().phase(),
+            Wpa2ApPhase::AwaitingMessage2
+        );
+        assert!(service.pending_ptk(PEER).is_err());
+        assert_eq!(
+            service.peer_status(PEER).unwrap().deadline_micros,
+            original_deadline,
+            "ignored EAPOL must not extend peer liveness"
+        );
+
+        let valid_m2 = signed_message2(&SUPPLICANT_RSN, &[], ANONCE, SNONCE);
+        assert!(matches!(
+            service.on_eapol(PEER, valid_m2).unwrap(),
+            ApWpa2Progress::Transmit(_)
+        ));
+        assert_eq!(
+            service.wpa2_mut(PEER).unwrap().phase(),
+            Wpa2ApPhase::AwaitingMessage4
+        );
+
+        // Neither forged nor even MIC-valid duplicate M2 directly elicits a
+        // fresh M3. The finite authenticator retry timer owns retransmission.
+        let duplicate_m2 = signed_message2(&SUPPLICANT_RSN, &[], ANONCE, SNONCE);
+        assert!(matches!(
+            service.on_eapol(PEER, duplicate_m2).unwrap(),
+            ApWpa2Progress::None
+        ));
+
+        let ptk = Pmk::derive(b"password", b"test-ap")
+            .unwrap()
+            .derive_ptk(PtkContext {
+                authenticator_address: AP,
+                supplicant_address: PEER,
+                authenticator_nonce: ANONCE,
+                supplicant_nonce: SNONCE,
+            });
+        let valid_m4 = Wpa2TxFrame::<512>::message4(AP, 10)
+            .unwrap()
+            .authenticate(&ptk);
+        let valid_m4 =
+            OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, valid_m4.as_bytes())
+                .unwrap();
+        let forged_m4 = corrupt_mic(valid_m4.clone());
+        assert!(matches!(
+            service.on_eapol(PEER, forged_m4).unwrap(),
+            ApWpa2Progress::None
+        ));
+        assert_eq!(
+            service.wpa2_mut(PEER).unwrap().phase(),
+            Wpa2ApPhase::AwaitingMessage4
+        );
+        assert!(matches!(
+            service.on_eapol(PEER, valid_m4).unwrap(),
+            ApWpa2Progress::AuthorizePeer
+        ));
+    }
+
+    #[test]
+    fn message2_must_echo_the_exact_association_rsnxe() {
+        const ANONCE: [u8; 32] = [7; 32];
+        const SNONCE: [u8; 32] = [8; 32];
+        const RSNXE: [u8; 3] = [0xf4, 1, 0x20];
+
+        let mut rejected_storage = AccessPointPeerStorage::new();
+        let mut rejected = service(&mut rejected_storage);
+        rejected.authenticate_open(PEER, 0);
+        rejected
+            .associate_wpa2(
+                PEER,
+                association_security_with_rsnxe(&SUPPLICANT_RSN, Some(&RSNXE)),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
+            .unwrap();
+        assert!(matches!(
+            rejected
+                .on_eapol(PEER, signed_message2(&SUPPLICANT_RSN, &[], ANONCE, SNONCE),)
+                .unwrap(),
+            ApWpa2Progress::DeauthenticatePeer
+        ));
+
+        let mut accepted_storage = AccessPointPeerStorage::new();
+        let mut accepted = service(&mut accepted_storage);
+        accepted.authenticate_open(PEER, 0);
+        accepted
+            .associate_wpa2(
+                PEER,
+                association_security_with_rsnxe(&SUPPLICANT_RSN, Some(&RSNXE)),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
+            .unwrap();
+        assert!(matches!(
+            accepted
+                .on_eapol(
+                    PEER,
+                    signed_message2(&SUPPLICANT_RSN, &RSNXE, ANONCE, SNONCE),
+                )
+                .unwrap(),
+            ApWpa2Progress::Transmit(_)
+        ));
+    }
+
+    #[test]
     fn exhausted_pairwise_update_count_closes_the_peer() {
         let mut storage = AccessPointPeerStorage::new();
         let mut service = service(&mut storage);
         service.authenticate_open(PEER, 0);
         service
-            .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 1)
+            .associate_wpa2(
+                PEER,
+                association_security(&WPA2_RSN),
+                ht_capabilities(),
+                [7; 32],
+                9,
+                1,
+            )
             .unwrap();
         service.begin_wpa2_frame::<512>(PEER).unwrap();
         service.observe_wpa2_transmit(PEER, false, true, 0).unwrap();
@@ -1670,7 +2638,14 @@ mod tests {
         let mut service = service(&mut storage);
         service.authenticate_open(PEER, 0);
         assert_eq!(
-            service.associate_wpa2(PEER, &[0x30, 0], LEGACY_CAPABILITIES, [7; 32], 9, 1,),
+            service.associate_wpa2(
+                PEER,
+                association_security(&[0x30, 0]),
+                LEGACY_CAPABILITIES,
+                [7; 32],
+                9,
+                1,
+            ),
             Ok(ApMlmeAction::AssociationResponse {
                 peer: PEER,
                 status: AP_STATUS_INVALID_RSN,
@@ -1721,7 +2696,7 @@ mod tests {
                 service
                     .associate_wpa2(
                         peer,
-                        &WPA2_RSN,
+                        association_security(&WPA2_RSN),
                         ht_capabilities(),
                         [suffix; 32],
                         u64::from(suffix),
@@ -1761,11 +2736,13 @@ mod tests {
         // The service itself travels through the typed lifecycle, while all
         // fifteen WPA2 state machines remain in caller-owned static storage.
         assert!(core::mem::size_of::<AccessPointService<'_>>() <= 256);
-        // Fifteen independently negotiated TX BlockAck sessions add 104
-        // bytes beyond the former WPA2-only 4-KiB ceiling. Keep that cost
-        // explicit instead of moving agreement state to a global singleton.
+        // Fifteen independently negotiated TX BlockAck sessions and the
+        // per-peer HMAC-SHA1-128 Association-security commitments and exact
+        // non-reusable RX association epochs remain explicit. The epoch tips
+        // the aligned host `ApPeer` layout by eight bytes per peer, but avoids
+        // duplicate history crossing AID reuse without any dynamic table.
         assert!(
-            core::mem::size_of::<AccessPointPeerStorage>() <= 4_224,
+            core::mem::size_of::<AccessPointPeerStorage>() <= 4_688,
             "peer storage size {}",
             core::mem::size_of::<AccessPointPeerStorage>()
         );
@@ -1777,17 +2754,36 @@ mod tests {
         let mut service = service(&mut storage);
         service.authenticate_open(PEER, 1);
         service
-            .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 1)
+            .associate_wpa2(
+                PEER,
+                association_security(&WPA2_RSN),
+                ht_capabilities(),
+                [7; 32],
+                9,
+                1,
+            )
             .unwrap();
         service.checked_peer_mut(PEER).unwrap().phase = ApPeerPhase::Authorized;
 
         service.authenticate_open(OTHER, 1);
         service
-            .associate_wpa2(OTHER, &WPA2_RSN, LEGACY_CAPABILITIES, [8; 32], 10, 1)
+            .associate_wpa2(
+                OTHER,
+                association_security(&WPA2_RSN),
+                LEGACY_CAPABILITIES,
+                [8; 32],
+                10,
+                1,
+            )
             .unwrap();
         service.checked_peer_mut(OTHER).unwrap().phase = ApPeerPhase::Authorized;
 
         let request = service.begin_tx_block_ack(PEER, 100).unwrap().unwrap();
+        assert_eq!(
+            u16::from_le_bytes([request.body[3], request.body[4]]) & 1,
+            1,
+            "AP requests only the source-owned baseline A-MSDU class"
+        );
         assert_eq!(service.smallest_operational_tx_block_ack_window(), None);
         assert!(service.begin_tx_block_ack(PEER, 101).unwrap().is_none());
         assert!(service.begin_tx_block_ack(OTHER, 101).unwrap().is_none());
@@ -1811,6 +2807,14 @@ mod tests {
             )))
         ));
         assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_some());
+        assert!(
+            !service
+                .peer_status(PEER)
+                .unwrap()
+                .tx_block_ack
+                .unwrap()
+                .amsdu
+        );
         assert!(service.peer_status(OTHER).unwrap().tx_block_ack.is_none());
         assert_eq!(
             service.smallest_operational_tx_block_ack_window(),
@@ -1848,5 +2852,25 @@ mod tests {
             .unwrap();
         assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_none());
         assert_eq!(service.smallest_operational_tx_block_ack_window(), None);
+
+        let request = service.begin_tx_block_ack(PEER, 200).unwrap().unwrap();
+        let response = BlockAckAction::AddbaResponse {
+            dialog_token: request.dialog_token,
+            status: 0,
+            tid: AP_TX_BLOCK_ACK_TID,
+            immediate: true,
+            amsdu: true,
+            window: AP_TX_BLOCK_ACK_WINDOW,
+            timeout_tu: 0,
+        };
+        service.on_tx_block_ack_action(PEER, response).unwrap();
+        assert!(
+            service
+                .peer_status(PEER)
+                .unwrap()
+                .tx_block_ack
+                .unwrap()
+                .amsdu
+        );
     }
 }

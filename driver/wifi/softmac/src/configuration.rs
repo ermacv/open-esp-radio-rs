@@ -291,6 +291,26 @@ pub struct WifiStandaloneMonitorPlan {
     channel_context: ChannelContextId,
 }
 
+/// Capability-checked station-address VIF reserved exclusively for ESP-NOW.
+///
+/// This value proves that no AP or monitor role shares the radio owner. It
+/// deliberately carries no association state: the station VIF supplies only
+/// its individual MAC address and the sole physical channel-context identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiStandaloneEspNowPlan {
+    station: BoundVirtualInterface,
+}
+
+impl WifiStandaloneEspNowPlan {
+    pub const fn station(self) -> BoundVirtualInterface {
+        self.station
+    }
+
+    pub const fn channel_context(self) -> ChannelContextId {
+        self.station.channel_context
+    }
+}
+
 impl WifiStandaloneMonitorPlan {
     pub const fn monitor(self) -> WifiMonitorConfig {
         self.monitor
@@ -329,6 +349,21 @@ impl WifiPlan {
                 channel_context,
             }),
             _ => None,
+        }
+    }
+
+    /// Narrow this checked topology to an exclusive station-address VIF for
+    /// standalone ESP-NOW operation.
+    ///
+    /// Unlike a connected-station plan, this carries no scan, authentication,
+    /// association, WPA2 or network-stack authority.
+    pub const fn standalone_esp_now(self) -> Option<WifiStandaloneEspNowPlan> {
+        if self.access_point.is_some() || self.monitor.is_some() {
+            return None;
+        }
+        match self.station {
+            Some(station) => Some(WifiStandaloneEspNowPlan { station }),
+            None => None,
         }
     }
 }

@@ -19,7 +19,8 @@ use open_esp_radio_esp32s31_wifi_sta::{
     scan_tx::{Esp32s31RunningScanTx, Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest},
 };
 use open_esp_radio_ieee80211::{
-    scan::{ScanRecord, ScanTable, best_matching_ssid},
+    scan::{ScanRecord, ScanTable, best_matching_ssid_and_security},
+    security::WifiSecurityMode,
     station::StaSequenceCounter,
 };
 use open_esp_radio_wifi_sta::scan::StaScanChannelContext;
@@ -148,6 +149,7 @@ pub struct Esp32s31ScanStation<'ssid, 'rates> {
     supported_rates: &'rates [u8],
     descriptor_capacity: Option<u32>,
     select_candidate: bool,
+    security: WifiSecurityMode,
 }
 
 impl<'ssid, 'rates> Esp32s31ScanStation<'ssid, 'rates> {
@@ -155,6 +157,7 @@ impl<'ssid, 'rates> Esp32s31ScanStation<'ssid, 'rates> {
         station_address: [u8; 6],
         target_ssid: &'ssid [u8],
         supported_rates: &'rates [u8],
+        security: WifiSecurityMode,
     ) -> Self {
         Self {
             station_address,
@@ -162,6 +165,7 @@ impl<'ssid, 'rates> Esp32s31ScanStation<'ssid, 'rates> {
             supported_rates,
             descriptor_capacity: None,
             select_candidate: true,
+            security,
         }
     }
 

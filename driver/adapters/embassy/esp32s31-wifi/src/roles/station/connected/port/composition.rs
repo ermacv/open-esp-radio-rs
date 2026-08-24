@@ -16,7 +16,7 @@ impl Esp32s31ConnectedStaPort {
         const SLOTS: usize,
         const REORDER_SLOTS: usize,
     >(
-        plan: &Esp32s31ConnectedStaPlan,
+        plan: &mut Esp32s31ConnectedStaPlan,
         resources: Esp32s31ConnectedStaRxProtocolResources<
             'queue,
             'pool,
@@ -96,7 +96,7 @@ impl Esp32s31ConnectedStaPort {
         const SLOTS: usize,
         const REORDER_SLOTS: usize,
     >(
-        plan: &Esp32s31ConnectedStaPlan,
+        plan: &mut Esp32s31ConnectedStaPlan,
         resources: Esp32s31ConnectedStaRxProcessorResources<
             'queue,
             'pool,
@@ -123,10 +123,25 @@ impl Esp32s31ConnectedStaPort {
         M: RawMutex,
         S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
     {
+        resources
+            .runtime
+            .try_reconfigure_dispatcher(plan.rx_config())
+            .expect("returned connected RX protocol storage must be quiescent");
+        if let Some(replay) = plan.take_ccmp_rx_replay() {
+            resources
+                .runtime
+                .dispatcher_mut()
+                .install_shared_ccmp_rx_replay(replay);
+        }
+        if let Some(epoch) = plan.disable_esp_now_rx() {
+            resources
+                .runtime
+                .dispatcher_mut()
+                .install_esp_now_rx_epoch(epoch);
+        }
         #[cfg(any(feature = "diagnostics", test))]
         let mut processor = Esp32s31ConnectedRxProcessor::new_with_reorder_slots(
             resources.irq,
-            ConnectedRxDispatcher::new(plan.rx_config()),
             resources.sink,
             resources.mpdu,
             resources.ethernet,
@@ -137,7 +152,6 @@ impl Esp32s31ConnectedStaPort {
         #[cfg(not(any(feature = "diagnostics", test)))]
         let processor = Esp32s31ConnectedRxProcessor::new_with_reorder_slots(
             resources.irq,
-            ConnectedRxDispatcher::new(plan.rx_config()),
             resources.sink,
             resources.mpdu,
             resources.ethernet,
@@ -240,10 +254,11 @@ impl Esp32s31ConnectedStaPort {
                 "a connected epoch requires returned idle standby aggregate storage"
             );
         }
+        let security_mode = resources.security.mode();
         let handoff = ConnectedTxHandoff {
-            key: resources.pairwise_key,
+            security: resources.security,
             sequences: resources.sequences,
-            config: plan.single_mpdu_tx_config(),
+            config: plan.single_mpdu_tx_config().for_security(security_mode),
         };
         let ordinary = match resources.control.try_into_connected(handoff) {
             Ok(ordinary) => ordinary,
@@ -258,6 +273,7 @@ impl Esp32s31ConnectedStaPort {
                 });
             }
         };
+        let he_trigger_based = plan.config.tx.he_trigger_based;
         let rate_control = plan
             .rate_control
             .take()
@@ -269,7 +285,8 @@ impl Esp32s31ConnectedStaPort {
             rate_control,
             plan.aggregate_rate_policy,
         )
-        .expect("connected STA config and idle aggregate storage were validated before handoff");
+        .expect("connected STA config and idle aggregate storage were validated before handoff")
+        .with_he_trigger_based(he_trigger_based);
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = resources.aggregate_tx_observer {
             tx = tx.with_observer(observer);
@@ -299,11 +316,31 @@ impl Esp32s31ConnectedStaPort {
             tx_block_ack,
             resources.rx_block_ack,
         )
+        .with_he_trigger_based(plan.config.tx.he_trigger_based)
         .with_rx_block_ack_maximum_window(plan.config.block_ack.rx_block_ack_maximum_window)
         .expect("connected STA plan validated RX BlockAck policy")
         .with_rx_reorder_commands(resources.reorder_commands);
         control.enable_beacon_loss(plan.beacon_loss);
-        if plan.config.block_ack.request_initial_tx_block_ack
+        control
+            .enable_hardware_beacon_monitor_frontier(
+                open_esp_radio_esp32s31_wifi_sta::hardware_beacon_monitor::StationBeaconMonitorBinding::new(
+                    plan.link.bssid,
+                    StaAssociationId::new(plan.link.association_id)
+                        .expect("connected plan validated the infrastructure association ID"),
+                ),
+                plan.beacon_loss,
+            )
+            .expect("a fresh connected control owner has no beacon-monitor epoch");
+        if let Some(policy) = plan.power_save {
+            control.enable_power_save(policy);
+            if let Some(association_id) = StaAssociationId::new(plan.link.association_id) {
+                control.enable_ps_poll(association_id);
+            }
+            control.enable_hardware_doze_boundary();
+        }
+        if plan.security_mode()
+            == open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal
+            && plan.config.block_ack.request_initial_tx_block_ack
             && matches!(plan.aggregate_tx_rate, TxPhyRate::Ht(_) | TxPhyRate::He(_))
         {
             control.queue_initial_tx_block_ack(
@@ -354,7 +391,7 @@ impl Esp32s31ConnectedStaPort {
         const CONTROL_CAPACITY: usize,
     >(
         mut plan: Esp32s31ConnectedStaPlan,
-        hardware: H,
+        mut hardware: H,
         rx: R,
         protocol: Esp32s31ConnectedStaRxProtocolResources<
             'queue,
@@ -453,6 +490,7 @@ impl Esp32s31ConnectedStaPort {
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
         T: WifiTxTimer,
+        H: StaEspNowRxPolicyHardware,
     {
         let tx = match Self::build_tx(&mut plan, tx) {
             Ok(tx) => tx,
@@ -467,7 +505,10 @@ impl Esp32s31ConnectedStaPort {
                 });
             }
         };
-        let protocol = Self::build_rx_protocol(&plan, protocol);
+        if plan.esp_now_rx_enabled() {
+            configure_sta_esp_now_receive_policy(&mut hardware, plan.link.bssid);
+        }
+        let protocol = Self::build_rx_protocol(&mut plan, protocol);
         let control = Self::build_control(&plan, control);
         Ok(Self::assemble(
             plan,
@@ -499,6 +540,7 @@ impl Esp32s31ConnectedStaPort {
                 link: plan.link,
                 data_tx_rate: plan.data_tx_rate,
                 aggregate_tx_rate: plan.aggregate_tx_rate,
+                ht_duplicate_tx_selection: plan.ht_duplicate_tx_selection,
             },
         }
     }

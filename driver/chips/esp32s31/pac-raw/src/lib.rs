@@ -51394,6 +51394,17 @@ pub mod zero_register_write {
 /// Safe, SVD-declared masked read-modify-write transactions.
 pub mod masked_register_modify {
 
+    /// Preserve mask 0xfc000000, accept input mask 0x03ffffff, and set 0x00000000 in WIFI_MAC_STA_TBTT_TARGET.TARGET.
+    #[inline]
+    pub fn publish_station_tbtt_target(registers: &crate::WifiMacStaTbttTarget, input: u32) {
+        registers.target().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfc000000) | (input & 0x03ffffff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
     /// Preserve mask 0xfffe0001, accept input mask 0x0001fffc, and set 0x00000002 in PHY_PBUS.COMMAND.
     #[inline]
     pub fn publish_pbus_force_test(registers: &crate::PhyPbus, input: u32) {

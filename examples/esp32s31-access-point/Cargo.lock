@@ -1315,14 +1315,6 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi",
- "open-esp-radio-esp32s31-wifi-ap",
- "open-esp-radio-esp32s31-wifi-dma",
- "open-esp-radio-esp32s31-wifi-embassy",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-ap",
  "open-esp-radio-wifi-embassy",
@@ -1393,9 +1385,21 @@ dependencies = [
  "esp-hal",
  "open-esp-radio",
  "open-esp-radio-embassy-net",
+ "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-wifi",
+ "open-esp-radio-esp32s31-wifi-ap",
+ "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-embassy",
  "open-esp-radio-esp32s31-wifi-esp-hal",
+ "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-esp32s31-wifi-sta",
+ "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-ap",
  "open-esp-radio-wifi-embassy",
+ "open-esp-radio-wifi-softmac",
+ "open-esp-radio-wifi-sta",
+ "open-esp-radio-wpa2",
  "static_cell",
 ]
 
@@ -1514,12 +1518,15 @@ dependencies = [
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
  "pin-project",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]
 name = "open-esp-radio-esp32s31-wifi-sta"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
@@ -1559,6 +1566,7 @@ name = "open-esp-radio-wifi-softmac"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-ieee80211",
+ "zeroize",
 ]
 
 [[package]]

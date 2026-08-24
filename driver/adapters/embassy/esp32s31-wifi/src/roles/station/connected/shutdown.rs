@@ -8,7 +8,7 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net::RawMutex as NetworkRawMutex;
-use open_esp_radio_esp32s31_wifi_mac::crypto::{CcmpKeyHardware, StaGroupCcmpSlot};
+use open_esp_radio_esp32s31_wifi_mac::crypto::CcmpKeyHardware;
 use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
 use open_esp_radio_wifi_embassy::connected_tasks::{ConnectedTaskGroup, stop_connected_task_group};
 
@@ -20,9 +20,10 @@ use crate::{
     datapath::services::SingleRoleServices,
     datapath::{DatapathRunner, DatapathServices},
     roles::station::teardown::{
-        Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaRxTeardown,
-        Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
-        Esp32s31ConnectedStaTeardownSuccess, Esp32s31ConnectedStaTxTeardown,
+        Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaGroupSecurity,
+        Esp32s31ConnectedStaRxTeardown, Esp32s31ConnectedStaTeardownFailure,
+        Esp32s31ConnectedStaTeardownPort, Esp32s31ConnectedStaTeardownSuccess,
+        Esp32s31ConnectedStaTxTeardown,
     },
 };
 
@@ -141,7 +142,7 @@ where
     #[allow(clippy::type_complexity, clippy::result_large_err)]
     pub fn try_teardown(
         self,
-        group_key: StaGroupCcmpSlot,
+        group_security: Esp32s31ConnectedStaGroupSecurity,
     ) -> Result<
         Esp32s31ConnectedEpochTeardown<
             I,
@@ -169,7 +170,7 @@ where
             services,
             tasks,
         } = self;
-        match Esp32s31ConnectedStaTeardownPort::try_teardown(services, group_key) {
+        match Esp32s31ConnectedStaTeardownPort::try_teardown(services, group_security) {
             Ok(driver) => Ok(Esp32s31ConnectedEpochTeardown {
                 interrupt,
                 interrupt_drain,
@@ -356,7 +357,11 @@ mod tests {
     }
 
     impl CcmpKeyHardware for TeardownHardware {
-        fn install_sta_ccmp_entry(&mut self, _index: u8, _words: [u32; 6]) -> MacKeyInstallOutcome {
+        fn install_sta_ccmp_entry(
+            &mut self,
+            _index: u8,
+            _words: &[u32; 6],
+        ) -> MacKeyInstallOutcome {
             MacKeyInstallOutcome::Installed
         }
 
@@ -416,7 +421,9 @@ mod tests {
             }
             Ok(Esp32s31ConnectedTxTeardownParts {
                 resources: 5,
-                pairwise_key: self.pairwise.take().expect("test TX owns its pairwise key"),
+                security: open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(
+                    self.pairwise.take().expect("test TX owns its pairwise key"),
+                ),
                 sequences: open_esp_radio_ieee80211::station::StaTxSequenceCounters::new(6),
                 aggregate: 7,
             })
@@ -432,7 +439,7 @@ mod tests {
         tx_active: bool,
     ) -> (
         Esp32s31ConnectedEpochQuiesced<u8, u32, TeardownServices, u16>,
-        StaGroupCcmpSlot,
+        Esp32s31ConnectedStaGroupSecurity,
     ) {
         let mut hardware = TeardownHardware::default();
         let pairwise = install_sta_pairwise_ccmp(&mut hardware, [1, 2, 3, 4, 5, 6], &[0x11; 16])
@@ -458,7 +465,7 @@ mod tests {
                 services,
                 tasks: 18,
             },
-            group,
+            Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group),
         )
     }
 

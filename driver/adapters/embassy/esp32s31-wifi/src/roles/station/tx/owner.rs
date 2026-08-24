@@ -99,10 +99,14 @@ where
             standby_cookie: None,
             standby_prepared: None,
             standby_error: None,
+            deferred_network: None,
             block_ack_windows: [0; 8],
+            block_ack_generations: [0; 8],
+            block_ack_generation_exhausted: 0,
             config,
             rate_control: TeardownResource::new(rate_control),
             aggregate_rate_policy,
+            he_trigger_based: None,
             active: ConnectedTxActive::Idle,
             last_aggregate_status: None,
             pending_ordinary_retry: None,
@@ -213,6 +217,21 @@ where
         self
     }
 
+    /// Prepare every fresh HE A-MPDU queue for AP-triggered uplink service.
+    ///
+    /// The setting remains dormant while rate control selects HT or legacy.
+    /// It only installs the already recovered queue/MPLEN/BSR transaction; it
+    /// does not fabricate a trigger or turn the immediately submitted HE-SU
+    /// aggregate into a TB PPDU.
+    pub fn with_he_trigger_based(mut self, trigger_based: Option<HeTriggerBasedTxConfig>) -> Self {
+        self.he_trigger_based = trigger_based;
+        self
+    }
+
+    pub const fn he_trigger_based(&self) -> Option<HeTriggerBasedTxConfig> {
+        self.he_trigger_based
+    }
+
     pub fn ordinary(&self) -> &Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE> {
         &self.ordinary
     }
@@ -228,6 +247,13 @@ where
     }
 
     pub fn set_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>) {
+        let agreement = if self.ordinary.security_mode()
+            == open_esp_radio_ieee80211::security::WifiSecurityMode::Open
+        {
+            None
+        } else {
+            agreement
+        };
         // The S31 capability bounds negotiated TX windows to 32. Keep the
         // hot owner at the former boolean table size by storing the A-MSDU
         // capability in bit 7; an impossible wider value disables
@@ -239,13 +265,24 @@ where
             .unwrap_or(0);
         let amsdu = agreement.is_some_and(|(_, amsdu)| amsdu);
         if let Some(entry) = self.block_ack_windows.get_mut(usize::from(tid)) {
+            let generation_bit = 1_u8 << tid;
             let encoded = window | if amsdu && window != 0 { 0x80 } else { 0 };
             if *entry == encoded {
                 return;
             }
-            let was_operational = *entry & 0x7f != 0;
+            let was_exhausted = self.block_ack_generation_exhausted & generation_bit != 0;
+            let was_operational = !was_exhausted && *entry & 0x7f != 0;
             *entry = encoded;
-            let operational = window != 0;
+            if !was_exhausted {
+                match self.block_ack_generations[usize::from(tid)].checked_add(1) {
+                    Some(generation) => {
+                        self.block_ack_generations[usize::from(tid)] = generation;
+                    }
+                    None => self.block_ack_generation_exhausted |= generation_bit,
+                }
+            }
+            let operational =
+                self.block_ack_generation_exhausted & generation_bit == 0 && window != 0;
             if was_operational != operational
                 && let Some(sink) = self.block_ack_status_sink
             {
@@ -261,9 +298,11 @@ where
     }
 
     pub fn block_ack_amsdu(&self, tid: u8) -> bool {
-        self.block_ack_windows
-            .get(usize::from(tid))
-            .is_some_and(|agreement| agreement & 0x80 != 0)
+        self.block_ack_generation(tid).is_some()
+            && self
+                .block_ack_windows
+                .get(usize::from(tid))
+                .is_some_and(|agreement| agreement & 0x80 != 0)
     }
 
     pub fn block_ack_operational(&self, tid: u8) -> bool {
@@ -271,6 +310,7 @@ where
     }
 
     pub fn block_ack_window(&self, tid: u8) -> Option<u16> {
+        self.block_ack_generation(tid)?;
         let window = self
             .block_ack_windows
             .get(usize::from(tid))
@@ -280,7 +320,18 @@ where
         (window != 0).then_some(u16::from(window))
     }
 
+    pub(super) fn block_ack_generation(&self, tid: u8) -> Option<u32> {
+        let generation = self.block_ack_generations.get(usize::from(tid)).copied()?;
+        let bit = 1_u8.checked_shl(u32::from(tid))?;
+        (self.block_ack_generation_exhausted & bit == 0).then_some(generation)
+    }
+
     pub(super) fn aggregate_frame_limit(&self, tid: u8) -> usize {
+        if self.ordinary.security_mode()
+            == open_esp_radio_ieee80211::security::WifiSecurityMode::Open
+        {
+            return 0;
+        }
         if matches!(self.config.rate, TxPhyRate::Ht(_)) {
             return self
                 .ht_role_policy(tid)
@@ -297,6 +348,11 @@ where
         &self,
         tid: u8,
     ) -> Result<Option<HtAmpduTxRolePolicy>, AggregateTxError> {
+        if self.ordinary.security_mode()
+            == open_esp_radio_ieee80211::security::WifiSecurityMode::Open
+        {
+            return Ok(None);
+        }
         let TxPhyRate::Ht(rate) = self.config.rate else {
             return Ok(None);
         };
@@ -345,17 +401,27 @@ where
     }
 
     pub fn has_prepared_network_tx(&self) -> bool {
-        self.standby_prepared.is_some() || self.standby_error.is_some()
+        self.deferred_network.is_some()
+            || self.standby_prepared.is_some()
+            || self.standby_error.is_some()
     }
 
     pub fn preferred_network_batch_size(&self) -> usize {
-        self.aggregate_frame_limit(DATA_TID).max(1)
+        (0_u8..8)
+            .map(|tid| self.aggregate_frame_limit(tid))
+            .max()
+            .unwrap_or(0)
+            .max(1)
     }
 
     pub fn prepared_network_frame_count(&self) -> usize {
-        self.standby_prepared
-            .as_ref()
-            .map_or(0, |prepared| usize::from(prepared.original_subframes))
+        if let Some(prepared) = self.standby_prepared.as_ref() {
+            // A prepared standby contains FIFO predecessors of a frame that
+            // may have been deferred while extending it. Publish this arena
+            // first so the retained successor cannot overtake those leases.
+            return usize::from(prepared.original_subframes);
+        }
+        usize::from(self.deferred_network.is_some())
     }
 
     /// Portable queue state across the aggregate and ordinary descriptor
@@ -457,8 +523,11 @@ where
 
         let rate_control = self.rate_control.take();
         let block_ack_windows = self.block_ack_windows;
+        let block_ack_generations = self.block_ack_generations;
+        let block_ack_generation_exhausted = self.block_ack_generation_exhausted;
         let config = self.config;
         let aggregate_rate_policy = self.aggregate_rate_policy;
+        let he_trigger_based = self.he_trigger_based;
         let last_aggregate_status = self.last_aggregate_status;
         let pending_ordinary_retry = self.pending_ordinary_retry;
         #[cfg(any(feature = "diagnostics", test))]
@@ -475,9 +544,12 @@ where
             Esp32s31ConnectedTxParked {
                 ordinary,
                 block_ack_windows,
+                block_ack_generations,
+                block_ack_generation_exhausted,
                 config,
                 rate_control,
                 aggregate_rate_policy,
+                he_trigger_based,
                 last_aggregate_status,
                 pending_ordinary_retry,
                 #[cfg(any(feature = "diagnostics", test))]
@@ -505,9 +577,12 @@ where
         let Esp32s31ConnectedTxParked {
             ordinary,
             block_ack_windows,
+            block_ack_generations,
+            block_ack_generation_exhausted,
             config,
             rate_control,
             aggregate_rate_policy,
+            he_trigger_based,
             last_aggregate_status,
             pending_ordinary_retry,
             #[cfg(any(feature = "diagnostics", test))]
@@ -530,8 +605,11 @@ where
             ),
         };
         owner.block_ack_windows = block_ack_windows;
+        owner.block_ack_generations = block_ack_generations;
+        owner.block_ack_generation_exhausted = block_ack_generation_exhausted;
         owner.last_aggregate_status = last_aggregate_status;
         owner.pending_ordinary_retry = pending_ordinary_retry;
+        owner.he_trigger_based = he_trigger_based;
         #[cfg(any(feature = "diagnostics", test))]
         {
             owner.observer = observer;
@@ -566,6 +644,7 @@ where
             || self.ordinary.queue_state() != MacTxQueueState::Ready
             || !self.ampdu.active().is_fully_free()
             || self.cookie.is_some()
+            || self.deferred_network.is_some()
             || self.standby_prepared.is_some()
             || self.standby_cookie.is_some()
             || self.standby_error.is_some()
@@ -652,13 +731,13 @@ where
     > {
         let (resources, handoff, aggregate) = self.try_into_teardown_parts()?;
         let ConnectedTxHandoff {
-            key,
+            security,
             sequences,
             config: _,
         } = handoff;
         Ok(Esp32s31ConnectedTxTeardownParts {
             resources,
-            pairwise_key: key,
+            security,
             sequences,
             aggregate,
         })

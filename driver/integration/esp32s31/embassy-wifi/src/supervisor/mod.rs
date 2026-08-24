@@ -32,7 +32,8 @@ use crate::composition::supervisor::{
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::{
-    AccessPointRequest, StationDiscovery, StationRequest, StationSecurity,
+    AccessPointRequest, AccessPointSecurity, StationDiscovery, StationPowerMode, StationRequest,
+    StationSecurity,
     WIFI_SCAN_RESULT_CAPACITY, WifiAccessPointConfig, WifiConfig, WifiScanFailure, WifiScanReport,
     WifiScanRequest, WifiScanResult, WifiServicePlanningError, WifiServiceRequest,
     WifiStartFailure, WifiStartReport, WifiStationConfig, WifiStopReport,
@@ -310,8 +311,8 @@ struct ProductionConnectedPhase {
     network: WifiNetworkResources,
     station: Esp32s31StaAttemptStation,
     peer: open_esp_radio_esp32s31_wifi_sta::peer::Esp32s31ConnectedStaPeer,
-    pairwise: open_esp_radio_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot,
-    group: open_esp_radio_esp32s31_wifi_mac::crypto::StaGroupCcmpSlot,
+    installed_security:
+        open_esp_radio_esp32s31_wifi_sta::attempt::Esp32s31StaInstalledSecurity,
 }
 
 type ProductionStationOwner<'state, 'security> = Esp32s31StationServiceOwner<
@@ -477,6 +478,13 @@ enum ProductionWifiFault {
         _station: Esp32s31StaAttemptStation,
         _access_point: ProductionAccessPointResources,
         _monitor: ProductionMonitorResources,
+    },
+    PairedSecurityMismatch {
+        _started: crate::supervisor::station::ConnectedNetworkStarted<'static, 'static>,
+        _station: Esp32s31StaAttemptStation,
+        _access_point: ProductionAccessPointResources,
+        _monitor: ProductionMonitorResources,
+        _access_point_request: AccessPointRequest,
     },
     PairedReclaim {
         _station: ProductionStationReclaimFault<'static>,
@@ -832,6 +840,7 @@ pub async fn new(
                             csi_config: 0,
                             flags: 0,
                         },
+                        security: open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal,
                     },
                 )
             }),

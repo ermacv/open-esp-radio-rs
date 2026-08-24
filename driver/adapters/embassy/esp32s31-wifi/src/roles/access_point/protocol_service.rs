@@ -1,4 +1,77 @@
 
+#[cfg(any(feature = "diagnostics", test))]
+fn observe_ht_rx_data_frame(
+    observation: &mut Esp32s31AccessPointControlObservation,
+    signal: HtSignal,
+) {
+    observation.rx_ht_data_frames = observation.rx_ht_data_frames.saturating_add(1);
+    if signal.aggregation {
+        observation.rx_ht_mpdus_with_aggregation_bit = observation
+            .rx_ht_mpdus_with_aggregation_bit
+            .saturating_add(1);
+    }
+    match signal.ht_duplicate_mcs32_classification() {
+        HtDuplicateRxClassification::Ht40(_) => {
+            observation.rx_ht40_mcs32_frames =
+                observation.rx_ht40_mcs32_frames.saturating_add(1);
+        }
+        HtDuplicateRxClassification::Mismatch { .. } => {
+            observation.rx_ht_mcs32_width_mismatches = observation
+                .rx_ht_mcs32_width_mismatches
+                .saturating_add(1);
+        }
+        HtDuplicateRxClassification::NotMcs32 => {}
+    }
+    if signal.channel_width_mhz == 40
+        && let Some(count) = observation.rx_ht40_mcs_frames.get_mut(signal.mcs as usize)
+    {
+        *count = count.saturating_add(1);
+    }
+}
+
+#[cfg(test)]
+mod ht_rx_observation_tests {
+    use super::*;
+
+    #[test]
+    fn ap_observation_separates_valid_ht40_mcs32_from_width_mismatch() {
+        let mut observation = Esp32s31AccessPointControlObservation::default();
+        observe_ht_rx_data_frame(
+            &mut observation,
+            HtSignal {
+                mcs: 32,
+                channel_width_mhz: 40,
+                aggregation: false,
+                short_guard_interval: false,
+            },
+        );
+        observe_ht_rx_data_frame(
+            &mut observation,
+            HtSignal {
+                mcs: 32,
+                channel_width_mhz: 20,
+                aggregation: true,
+                short_guard_interval: false,
+            },
+        );
+        observe_ht_rx_data_frame(
+            &mut observation,
+            HtSignal {
+                mcs: 7,
+                channel_width_mhz: 40,
+                aggregation: true,
+                short_guard_interval: true,
+            },
+        );
+
+        assert_eq!(observation.rx_ht_data_frames, 3);
+        assert_eq!(observation.rx_ht_mpdus_with_aggregation_bit, 2);
+        assert_eq!(observation.rx_ht40_mcs32_frames, 1);
+        assert_eq!(observation.rx_ht_mcs32_width_mismatches, 1);
+        assert_eq!(observation.rx_ht40_mcs_frames[7], 1);
+    }
+}
+
 impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
     Esp32s31AccessPointProtocolProcessor<
         'storage,
@@ -33,6 +106,7 @@ where
         observation_storage: &'static mut AccessPointObservationStorage,
     ) -> Self {
         let access_point = mac.engine().service_address();
+        let security = mac.engine().security_mode();
         data_rx.reset(Esp32s31ApRxConfig {
             access_point,
             ingress: RxIngressConfig {
@@ -40,6 +114,7 @@ where
                 csi_config: 0,
                 flags: 0,
             },
+            security,
         });
         rx_block_ack
             .prepare_interface(MacInterface::AccessPoint)
@@ -58,10 +133,13 @@ where
             rx_reorder_storage,
             rx_addba_in_flight: None,
             protocol_actions: Esp32s31AccessPointProtocolMailbox::new(),
+            pending_buffered_releases: PendingApBufferedReleases::new(),
+            pending_dtim_group_frames: None,
             rx_batch_used: 0,
             rx_batch_offset: 0,
             serviced_rx_frames: 0,
             serviced_rx_descriptors: 0,
+            last_terminal_tx_succeeded: None,
             #[cfg(feature = "diagnostics")]
             observer: observation_storage,
             #[cfg(all(test, not(feature = "diagnostics")))]
@@ -104,10 +182,13 @@ where
             rx_reorder_storage,
             rx_addba_in_flight,
             protocol_actions,
+            pending_buffered_releases,
+            pending_dtim_group_frames,
             rx_batch_used,
             rx_batch_offset,
             serviced_rx_frames,
             serviced_rx_descriptors,
+            last_terminal_tx_succeeded,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -126,10 +207,13 @@ where
                     rx_reorder_storage,
                     rx_addba_in_flight,
                     protocol_actions,
+                    pending_buffered_releases,
+                    pending_dtim_group_frames,
                     rx_batch_used,
                     rx_batch_offset,
                     serviced_rx_frames,
                     serviced_rx_descriptors,
+                    last_terminal_tx_succeeded,
                     #[cfg(any(feature = "diagnostics", test))]
                     observer,
                     #[cfg(any(feature = "diagnostics", test))]
@@ -146,10 +230,13 @@ where
                 rx_reorder_storage,
                 rx_addba_in_flight,
                 protocol_actions,
+                pending_buffered_releases,
+                pending_dtim_group_frames,
                 rx_batch_used,
                 rx_batch_offset,
                 serviced_rx_frames,
                 serviced_rx_descriptors,
+                last_terminal_tx_succeeded,
                 #[cfg(any(feature = "diagnostics", test))]
                 observer,
                 #[cfg(any(feature = "diagnostics", test))]
@@ -174,10 +261,13 @@ where
             rx_reorder_storage,
             rx_addba_in_flight,
             protocol_actions,
+            pending_buffered_releases,
+            pending_dtim_group_frames,
             rx_batch_used,
             rx_batch_offset,
             serviced_rx_frames,
             serviced_rx_descriptors,
+            last_terminal_tx_succeeded,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -193,10 +283,13 @@ where
             rx_reorder_storage,
             rx_addba_in_flight,
             protocol_actions,
+            pending_buffered_releases,
+            pending_dtim_group_frames,
             rx_batch_used,
             rx_batch_offset,
             serviced_rx_frames,
             serviced_rx_descriptors,
+            last_terminal_tx_succeeded,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -344,6 +437,65 @@ where
         self.apply_protocol_actions(hardware)
     }
 
+    fn retain_power_save_action(
+        &mut self,
+        action: ApPowerSaveAction,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        let release = match action {
+            ApPowerSaveAction::ReleaseOne(release) => Some(release),
+            ApPowerSaveAction::StateChanged {
+                peer,
+                state: ApPeerPowerState::Active,
+                buffered_frames,
+            } if buffered_frames != 0 => {
+                if self
+                    .mac
+                    .engine()
+                    .peer_status(peer)
+                    .is_some_and(|status| status.buffered_release_in_flight)
+                {
+                    // A PS-Poll already owns the oldest frame. Its terminal
+                    // completion will observe the peer as Active and drain
+                    // the remaining queue without manufacturing a second
+                    // reservation for this transition.
+                    None
+                } else {
+                    self.mac
+                        .engine_mut()
+                        .begin_buffered_unicast_release(peer)?
+                }
+            }
+            ApPowerSaveAction::None | ApPowerSaveAction::StateChanged { .. } => None,
+        };
+        let Some(release) = release else {
+            return Ok(());
+        };
+        if let Err(release) = self.pending_buffered_releases.push(release) {
+            self.mac
+                .engine_mut()
+                .complete_buffered_unicast_release(release, false)?;
+            return Err(Esp32s31AccessPointControlError::ProtocolActionCapacity);
+        }
+        Ok(())
+    }
+
+    pub(super) fn take_pending_buffered_release(
+        &mut self,
+    ) -> Option<ApBufferedUnicastRelease> {
+        self.pending_buffered_releases.pop()
+    }
+
+    pub(super) fn rollback_pending_buffered_releases(
+        &mut self,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        while let Some(release) = self.pending_buffered_releases.pop() {
+            self.mac
+                .engine_mut()
+                .complete_buffered_unicast_release(release, false)?;
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "diagnostics")]
     fn observe_rx_protocol_service(
         &mut self,
@@ -463,6 +615,15 @@ where
             }
         };
         let frame_control = u16::from_le_bytes([frame.mpdu[0], frame.mpdu[1]]);
+        let power_save_observation = observe_ap_power_save_for_access_point(
+            frame.mpdu,
+            self.mac.engine().service_address(),
+        );
+        let null_data_power_save_observation =
+            observe_ap_null_data_power_save_for_access_point(
+                frame.mpdu,
+                self.mac.engine().service_address(),
+            );
         let ampdu_contained = matches!(
             frame.metadata.ampdu,
             MacRxEvidence::HardwareObserved(true) | MacRxEvidence::ProtocolValidated(true)
@@ -475,7 +636,12 @@ where
         } else {
             None
         };
-        let protocol_class = if frame_control & 0x000c == 0x0008 && frame_control & 0x4000 != 0 {
+        let security_mode = self.mac.engine().security_mode();
+        let data_frame = frame_control & 0x000c == 0x0008;
+        let protected = frame_control & 0x4000 != 0;
+        let protocol_class = if data_frame
+            && (security_mode == WifiSecurityMode::Open || protected)
+        {
             observe_access_point!(self, observation, {
                 observation.protected_data_frames =
                     observation.protected_data_frames.saturating_add(1);
@@ -495,18 +661,7 @@ where
                 if let MacRxEvidence::HardwareObserved(phy) = frame.metadata.rate
                     && let Some(signal) = phy.ht_signal()
                 {
-                    observation.rx_ht_data_frames = observation.rx_ht_data_frames.saturating_add(1);
-                    if signal.aggregation {
-                        observation.rx_ht_mpdus_with_aggregation_bit = observation
-                            .rx_ht_mpdus_with_aggregation_bit
-                            .saturating_add(1);
-                    }
-                    if signal.channel_width_mhz == 40
-                        && let Some(count) =
-                            observation.rx_ht40_mcs_frames.get_mut(signal.mcs as usize)
-                    {
-                        *count = count.saturating_add(1);
-                    }
+                    observe_ht_rx_data_frame(observation, signal);
                 }
             });
             let (
@@ -517,7 +672,7 @@ where
                 produced_data,
             ) = {
                 let processor = &mut *self;
-                let mac = &processor.mac;
+                let mac = &mut processor.mac;
                 let data_rx = &mut processor.data_rx;
                 #[cfg(any(feature = "diagnostics", test))]
                 let report = &mut processor.observer.observation;
@@ -543,10 +698,11 @@ where
                             AccessPointProtectedFrameDispatch::dispatch(
                                 data_rx,
                                 ordered,
-                                |peer| mac.engine().is_authorized_peer(peer),
+                                |request| mac.engine_mut().admit_rx_data(request),
                                 publication,
                                 current_buffer as usize,
                                 current_is_amsdu,
+                                now_micros,
                                 &mut deferred,
                                 &mut in_place,
                                 #[cfg(any(feature = "diagnostics", test))]
@@ -691,12 +847,19 @@ where
                 });
             }
             AccessPointRxProtocolClass::Management
-        } else if frame_control & 0x000c == 0x0008 {
+        } else if data_frame {
             let hardware = hardware
                 .as_deref_mut()
                 .ok_or(Esp32s31AccessPointControlError::ProtocolFrameRequiresHardware)?;
-            self.service_eapol(hardware, frame.mpdu, now_micros)?;
-            AccessPointRxProtocolClass::Eapol
+            if self.service_eapol(hardware, frame.mpdu, now_micros)? {
+                AccessPointRxProtocolClass::Eapol
+            } else {
+                observe_access_point!(self, observation, {
+                    observation.security_mode_mismatches =
+                        observation.security_mode_mismatches.saturating_add(1);
+                });
+                AccessPointRxProtocolClass::Rejected
+            }
         } else {
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
@@ -711,19 +874,52 @@ where
             });
             return Err(Esp32s31AccessPointControlError::ReceiveBatchCapacity);
         }
-        if let Some(peer) = activity_peer {
+        let payload_activity = activity_peer.map(|peer| {
+            let power_state = match power_save_observation {
+                Some(ApPowerSaveObservation::Sleeping { peer: observed }) if observed == peer => {
+                    Some(ApPeerPowerState::Sleeping)
+                }
+                Some(ApPowerSaveObservation::Active { peer: observed }) if observed == peer => {
+                    Some(ApPeerPowerState::Active)
+                }
+                _ => None,
+            };
+            (peer, power_state)
+        });
+        let null_data_activity = match null_data_power_save_observation {
+            Some(ApPowerSaveObservation::Sleeping { peer })
+                if self.mac.engine().is_authorized_peer(peer) =>
+            {
+                Some((peer, Some(ApPeerPowerState::Sleeping)))
+            }
+            Some(ApPowerSaveObservation::Active { peer })
+                if self.mac.engine().is_authorized_peer(peer) =>
+            {
+                Some((peer, Some(ApPeerPowerState::Active)))
+            }
+            _ => None,
+        };
+        if let Some((peer, power_state)) = payload_activity.or(null_data_activity) {
             self.protocol_actions
                 .publisher()
                 .try_publish(Esp32s31AccessPointProtocolAction::Control(
                     Esp32s31AccessPointControlAction::ObservePeerActivity {
                         peer,
                         at_micros: now_micros,
+                        power_state,
                     },
                 ))
                 .map_err(|_| Esp32s31AccessPointControlError::ProtocolActionCapacity)?;
             if let Some(hardware) = hardware {
                 self.apply_protocol_actions(hardware)?;
             }
+        }
+        if let Some(observation @ ApPowerSaveObservation::PsPoll { .. }) = power_save_observation {
+            let action = self
+                .mac
+                .engine_mut()
+                .observe_power_save(observation, now_micros)?;
+            self.retain_power_save_action(action)?;
         }
         Ok(protocol_class)
     }
@@ -751,11 +947,31 @@ where
                     window,
                 )?,
                 Esp32s31AccessPointProtocolAction::Control(
-                    Esp32s31AccessPointControlAction::ObservePeerActivity { peer, at_micros },
-                ) => self
-                    .mac
-                    .engine_mut()
-                    .observe_peer_activity(peer, at_micros)?,
+                    Esp32s31AccessPointControlAction::ObservePeerActivity {
+                        peer,
+                        at_micros,
+                        power_state,
+                    },
+                ) => match power_state {
+                    Some(ApPeerPowerState::Active) => {
+                        let action = self.mac.engine_mut().observe_power_save(
+                            ApPowerSaveObservation::Active { peer },
+                            at_micros,
+                        )?;
+                        self.retain_power_save_action(action)?;
+                    }
+                    Some(ApPeerPowerState::Sleeping) => {
+                        let action = self.mac.engine_mut().observe_power_save(
+                            ApPowerSaveObservation::Sleeping { peer },
+                            at_micros,
+                        )?;
+                        self.retain_power_save_action(action)?;
+                    }
+                    None => self
+                        .mac
+                        .engine_mut()
+                        .observe_peer_activity(peer, at_micros)?,
+                },
             }
         }
         Ok(())
@@ -784,6 +1000,16 @@ where
                     starting_sequence,
                     ..
                 } if self.mac.engine().is_authorized_peer(peer) => {
+                    if self.mac.engine().security_mode() == WifiSecurityMode::Open {
+                        self.publish_declined_rx_addba(
+                            hardware,
+                            peer,
+                            dialog_token,
+                            tid,
+                            window,
+                        )?;
+                        return Ok(true);
+                    }
                     let offered = self.rx_block_ack.offer(RxBlockAckRequest {
                         interface: MacInterface::AccessPoint,
                         peer,
@@ -934,7 +1160,7 @@ where
         now_micros: u64,
     ) -> Result<(), Esp32s31AccessPointControlError> {
         let processor = &mut *self;
-        let mac = &processor.mac;
+        let mac = &mut processor.mac;
         let data_rx = &mut processor.data_rx;
         #[cfg(any(feature = "diagnostics", test))]
         let report = &mut processor.observer.observation;
@@ -942,9 +1168,10 @@ where
         let mut sink = DeferredAccessPointRxSink::new(processor.rx_frame);
         let _ = processor.rx_reorder.stop(identity, |segment| {
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
-            let outcome = data_rx.dispatch_protected(
+            let outcome = data_rx.dispatch_at(
                 segment,
-                |peer| mac.engine().is_authorized_peer(peer),
+                now_micros,
+                |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
             let _ = observe_protected_dispatch(
@@ -986,6 +1213,7 @@ where
             let _ = self.rx_reorder.stop_discard(agreement.identity());
             hardware.clear_rx_block_ack(agreement.hardware_index)?;
         }
+        self.data_rx.forget_peer(peer);
         Ok(())
     }
 
@@ -994,7 +1222,7 @@ where
         now_micros: u64,
     ) -> Result<bool, Esp32s31AccessPointControlError> {
         let processor = &mut *self;
-        let mac = &processor.mac;
+        let mac = &mut processor.mac;
         let data_rx = &mut processor.data_rx;
         #[cfg(any(feature = "diagnostics", test))]
         let report = &mut processor.observer.observation;
@@ -1002,9 +1230,10 @@ where
         let mut sink = DeferredAccessPointRxSink::new(processor.rx_frame);
         let pending_dispatched = processor.rx_reorder.dispatch_pending(|segment| {
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
-            let outcome = data_rx.dispatch_protected(
+            let outcome = data_rx.dispatch_at(
                 segment,
-                |peer| mac.engine().is_authorized_peer(peer),
+                now_micros,
+                |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
             let _ = observe_protected_dispatch(
@@ -1020,9 +1249,10 @@ where
         } else {
             let dispatched = processor.rx_reorder.expire_due(now_micros, |segment| {
                 let peer = data_rx.reorder_key(segment).map(|key| key.peer);
-                let outcome = data_rx.dispatch_protected(
+                let outcome = data_rx.dispatch_at(
                     segment,
-                    |peer| mac.engine().is_authorized_peer(peer),
+                    now_micros,
+                    |request| mac.engine_mut().admit_rx_data(request),
                     &mut sink,
                 );
                 let _ = observe_protected_dispatch(
@@ -1077,4 +1307,3 @@ where
         });
     }
 }
-

@@ -60,19 +60,22 @@ where
         self.config.rate = self.rate_control.ampdu_tx_rate(self.aggregate_rate_policy);
         self.last_aggregate_status = None;
         self.pending_ordinary_retry = None;
+        let selected = self.ordinary.select_network_traffic(first.ethernet())?;
         let aggregate_rate = !matches!(self.config.rate, TxPhyRate::Legacy(_));
         let ht_requires_pair = matches!(self.config.rate, TxPhyRate::Ht(_));
         if !aggregate_rate {
             return self.start_network_ordinary(
                 hardware,
                 first,
+                selected,
                 NetworkSingleMpduReason::LegacyRate,
             );
         }
-        if !self.block_ack_operational(DATA_TID) {
+        if !self.block_ack_operational(selected.tid()) {
             return self.start_network_ordinary(
                 hardware,
                 first,
+                selected,
                 NetworkSingleMpduReason::BlockAckUnavailable,
             );
         }
@@ -80,7 +83,38 @@ where
             return self.start_network_ordinary(
                 hardware,
                 first,
+                selected,
                 NetworkSingleMpduReason::HtNeedsPair,
+            );
+        }
+
+        let traffic = match self.aggregate_traffic(selected) {
+            Ok(traffic) => traffic,
+            Err(_) => {
+                return self.start_network_ordinary(
+                    hardware,
+                    first,
+                    selected,
+                    NetworkSingleMpduReason::FreshAggregateCapacity,
+                );
+            }
+        };
+        self.ordinary.policy().protection().require_unprotected(
+            self.config.rate,
+            TxProtectionReceiver::Individual,
+            matches!(self.config.rate, TxPhyRate::He(_)).then_some(traffic.he_txop_limit),
+        )?;
+
+        // Ordinary TX validates Ethernet length before consuming sequence or
+        // CCMP state. Establish the extra in-place A-MPDU prefix geometry at
+        // the same pre-mutation boundary; otherwise a malformed netstack
+        // lease could consume aggregate metadata and only then fail encode.
+        if !self.frame_has_aggregate_geometry(&first) {
+            return self.start_network_ordinary(
+                hardware,
+                first,
+                selected,
+                NetworkSingleMpduReason::FreshAggregateCapacity,
             );
         }
 
@@ -89,17 +123,18 @@ where
         // control-plane traffic can arrive immediately after ADDBA. Such a
         // frame remains a valid ordinary QoS MPDU and must not terminate the
         // complete radio runner with `AggregateFull`.
-        if !self.first_frame_fits_fresh_aggregate(first.ethernet_length())? {
+        if !self.first_frame_fits_fresh_aggregate(first.ethernet_length(), traffic)? {
             return self.start_network_ordinary(
                 hardware,
                 first,
+                selected,
                 NetworkSingleMpduReason::FreshAggregateCapacity,
             );
         }
 
         #[cfg(any(feature = "diagnostics", test))]
         let preparation_started = self.observer.map(|_| self.ordinary.now_micros());
-        let prepared = self.prepare_aggregate(first, network)?;
+        let prepared = self.prepare_aggregate(first, network, traffic)?;
         #[cfg(any(feature = "diagnostics", test))]
         self.observe_prepared(&prepared);
         #[cfg(any(feature = "diagnostics", test))]
@@ -118,11 +153,14 @@ where
         &mut self,
         hardware: &mut H,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        traffic: WifiTxTraffic,
         _reason: NetworkSingleMpduReason,
     ) -> Result<WifiTxProgress, AggregateTxError> {
         #[cfg(any(feature = "diagnostics", test))]
         let ethernet_length = first.ethernet_length();
-        let progress = self.ordinary.start(hardware, first.ethernet())?;
+        let progress = self
+            .ordinary
+            .start_with_traffic(hardware, first.ethernet(), traffic)?;
         drop(first);
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
@@ -138,6 +176,7 @@ where
     fn first_frame_fits_fresh_aggregate(
         &self,
         ethernet_length: usize,
+        traffic: AggregateTraffic,
     ) -> Result<bool, AggregateTxError> {
         let frame_length = ethernet_length
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
@@ -159,13 +198,66 @@ where
                 HeAmpduPolicy::new(
                     rate,
                     self.ordinary.policy().ht_ampdu().density(),
-                    self.config.he_txop_limit,
+                    traffic.he_txop_limit,
                 ),
                 maximum_aggregate_bytes,
                 dma_capacity,
             )?),
             TxPhyRate::Legacy(_) => Err(AggregateTxError::UnsupportedRate),
         }
+    }
+
+    fn aggregate_traffic(
+        &self,
+        selected: WifiTxTraffic,
+    ) -> Result<AggregateTraffic, WmmTxopUnsupported> {
+        let he_txop_limit = match self.config.rate {
+            TxPhyRate::Ht(_) => {
+                selected.require_ht_txop_support()?;
+                self.config.he_txop_limit
+            }
+            TxPhyRate::He(_) => selected.he_txop_limit(self.config.he_txop_limit)?,
+            TxPhyRate::Legacy(_) => self.config.he_txop_limit,
+        };
+        Ok(AggregateTraffic {
+            selected,
+            he_txop_limit,
+        })
+    }
+
+    fn frame_matches_traffic(
+        &self,
+        frame: &PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        traffic: AggregateTraffic,
+    ) -> bool {
+        self.frame_has_aggregate_geometry(frame)
+            && self
+                .ordinary
+                .select_network_traffic(frame.ethernet())
+                .is_ok_and(|selected| {
+                    selected.tid() == traffic.tid()
+                        && selected.access_category == traffic.selected.access_category
+                })
+    }
+
+    fn frame_has_aggregate_geometry(
+        &self,
+        frame: &PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) -> bool {
+        frame.ethernet_length() >= 14
+            && frame.ethernet_offset()
+                >= STA_PROTECTED_QOS_ETHERNET_HEADROOM
+                    + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::TX_AMPDU_METADATA_SIZE
+    }
+
+    fn defer_network_frame(
+        &mut self,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) {
+        assert!(
+            self.deferred_network.replace(frame).is_none(),
+            "one immutable FIFO boundary may retain only its immediate successor"
+        );
     }
 
     fn prepare_aggregate(
@@ -179,11 +271,12 @@ where
             TRAILER,
             QUEUE_DEPTH,
         >,
+        traffic: AggregateTraffic,
     ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
         let first_sequence = self
             .ordinary
-            .peek_qos_sequence(DATA_TID)
-            .ok_or(AggregateTxError::MissingQosSequence(DATA_TID))?;
+            .peek_qos_sequence(traffic.tid())
+            .ok_or(AggregateTxError::MissingQosSequence(traffic.tid()))?;
         // Association policy is owned outside the DMA-visible descriptor
         // arena. Reinstall its byte ceiling at every Free -> Reserved edge so
         // a new batch cannot depend on cold scalar contents retained beside
@@ -194,7 +287,7 @@ where
         let cookie = self.ampdu.active_mut().begin()?;
         self.cookie = Some(cookie);
 
-        let result = self.prepare_reserved(first, network, first_sequence, cookie);
+        let result = self.prepare_reserved(first, network, first_sequence, cookie, traffic);
         if result.is_err() {
             self.cancel_current_reservation();
         }
@@ -214,26 +307,34 @@ where
         >,
         first_sequence: u16,
         cookie: TxCookie,
+        traffic: AggregateTraffic,
     ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
-        self.push_candidate(first, network, AggregateFrameAdmission::FreshExact)?;
-        let frame_limit = self.aggregate_frame_limit(DATA_TID);
+        self.push_candidate(first, network, AggregateFrameAdmission::FreshExact, traffic)?;
+        let frame_limit = self.aggregate_frame_limit(traffic.tid());
 
         let build_stop = loop {
+            if self.deferred_network.is_some() {
+                break AggregateBuildStop::QueueEmpty;
+            }
             if self.ampdu.active().held_backing_count() >= frame_limit {
                 break AggregateBuildStop::FrameLimit;
             }
-            if !self.can_push(FRAME_CAPACITY)? {
+            if !self.can_push(FRAME_CAPACITY, traffic)? {
                 break AggregateBuildStop::CapacityLimit;
             }
             let Some(frame) = network.try_receive() else {
                 break AggregateBuildStop::QueueEmpty;
             };
+            if !self.frame_matches_traffic(&frame, traffic) {
+                self.defer_network_frame(frame);
+                break AggregateBuildStop::QueueEmpty;
+            }
             let admission = match self.config.rate {
                 TxPhyRate::Ht(_) => AggregateFrameAdmission::HtQueueCapacity,
                 TxPhyRate::He(_) => AggregateFrameAdmission::NeedsExactCheck,
                 TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
             };
-            self.push_candidate(frame, network, admission)?;
+            self.push_candidate(frame, network, admission, traffic)?;
         };
 
         let aggregate = self.ampdu.active().prepared_aggregate(cookie)?;
@@ -247,10 +348,14 @@ where
                 // owner so retry preserves its pinned backing, sequence and
                 // PN instead of attempting an impossible ordinary detach.
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
-                    || self.block_ack_amsdu(DATA_TID),
+                    || self.block_ack_amsdu(traffic.tid()),
             },
         )?;
         let prepared = AggregatePrepared {
+            traffic,
+            block_ack_generation: self
+                .block_ack_generation(traffic.tid())
+                .ok_or(AggregateTxError::MissingQosSequence(traffic.tid()))?,
             aggregate_length: aggregate.bytes,
             retry,
             original_subframes: aggregate.subframes,
@@ -275,24 +380,37 @@ where
         >,
         mut prepared: AggregatePrepared<SLOTS>,
     ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
+        let traffic = prepared.traffic;
+        if !self.frame_matches_traffic(&first, traffic) {
+            self.defer_network_frame(first);
+            prepared.build_stop = AggregateBuildStop::QueueEmpty;
+            return Ok(prepared);
+        }
         let admission = match self.config.rate {
             TxPhyRate::Ht(_) => AggregateFrameAdmission::HtQueueCapacity,
             TxPhyRate::He(_) => AggregateFrameAdmission::NeedsExactCheck,
             TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
         };
-        self.push_candidate(first, network, admission)?;
-        let frame_limit = self.aggregate_frame_limit(DATA_TID);
+        self.push_candidate(first, network, admission, traffic)?;
+        let frame_limit = self.aggregate_frame_limit(traffic.tid());
         let build_stop = loop {
+            if self.deferred_network.is_some() {
+                break AggregateBuildStop::QueueEmpty;
+            }
             if self.ampdu.active().held_backing_count() >= frame_limit {
                 break AggregateBuildStop::FrameLimit;
             }
-            if !self.can_push(FRAME_CAPACITY)? {
+            if !self.can_push(FRAME_CAPACITY, traffic)? {
                 break AggregateBuildStop::CapacityLimit;
             }
             let Some(frame) = network.try_receive() else {
                 break AggregateBuildStop::QueueEmpty;
             };
-            self.push_candidate(frame, network, admission)?;
+            if !self.frame_matches_traffic(&frame, traffic) {
+                self.defer_network_frame(frame);
+                break AggregateBuildStop::QueueEmpty;
+            }
+            self.push_candidate(frame, network, admission, traffic)?;
         };
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         let aggregate = self.ampdu.active().prepared_aggregate(cookie)?;
@@ -305,7 +423,7 @@ where
             AmpduRetryPolicy {
                 attempt_limit: self.config.attempt_limit,
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
-                    || self.block_ack_amsdu(DATA_TID),
+                    || self.block_ack_amsdu(traffic.tid()),
             },
         )?;
         Ok(prepared)
@@ -336,9 +454,13 @@ where
         &mut self,
         prepared: AggregatePrepared<SLOTS>,
     ) -> Result<(), AggregateTxError> {
-        let config =
-            self.publication_config(prepared.aggregate_length, prepared.original_subframes)?;
+        let config = self.publication_config(
+            prepared.aggregate_length,
+            prepared.original_subframes,
+            prepared.traffic,
+        )?;
         self.active = ConnectedTxActive::Aggregate(AggregateActive {
+            traffic: prepared.traffic,
             config,
             retry: prepared.retry,
             original_subframes: prepared.original_subframes,
@@ -371,12 +493,7 @@ where
         } else {
             1
         };
-        if network.queue_len() < minimum_frames
-            || !matches!(
-                self.first_frame_fits_fresh_aggregate(FRAME_CAPACITY),
-                Ok(true)
-            )
-        {
+        if network.queue_len() < minimum_frames {
             return;
         }
         let Some(first) = network.try_receive() else {
@@ -395,31 +512,34 @@ where
         let base = matches!(self.active, ConnectedTxActive::Aggregate(_))
             && self.ampdu.has_standby()
             && self.standby_error.is_none()
-            && self.block_ack_operational(DATA_TID)
+            && self.deferred_network.is_none()
             && !matches!(self.config.rate, TxPhyRate::Legacy(_));
         if !base {
             return false;
         }
         match self.standby_prepared.as_ref() {
-            // The scheduler consumes a typed network frame only after this
-            // predicate succeeds. Prove the largest frame admitted by that
-            // queue fits a fresh aggregate before ownership crosses that
-            // boundary; `prepare_network_standby` can then use `FreshExact`
-            // without a lossy error path.
-            None => matches!(
-                self.first_frame_fits_fresh_aggregate(FRAME_CAPACITY),
-                Ok(true)
-            ),
-            Some(_) => {
-                let frame_limit = self.aggregate_frame_limit(DATA_TID);
-                self.ampdu.standby().is_some_and(|owner| {
-                    owner.held_backing_count() < frame_limit && owner.held_backing_count() < SLOTS
-                }) && matches!(self.can_push_standby(FRAME_CAPACITY), Ok(true))
+            // Classification needs the immutable Ethernet lease. The
+            // handoff retains it as `deferred_network` if this rate/TID
+            // cannot extend the aggregate, so no FIFO entry is lost here.
+            None => true,
+            Some(prepared) => {
+                let traffic = prepared.traffic;
+                let frame_limit = self.aggregate_frame_limit(traffic.tid());
+                self.block_ack_generation(traffic.tid()) == Some(prepared.block_ack_generation)
+                    && self.ampdu.standby().is_some_and(|owner| {
+                        owner.held_backing_count() < frame_limit
+                            && owner.held_backing_count() < SLOTS
+                    })
+                    && matches!(self.can_push_standby(FRAME_CAPACITY, traffic), Ok(true))
             }
         }
     }
 
-    fn can_push_standby(&self, ethernet_length: usize) -> Result<bool, AggregateTxError> {
+    fn can_push_standby(
+        &self,
+        ethernet_length: usize,
+        traffic: AggregateTraffic,
+    ) -> Result<bool, AggregateTxError> {
         let ampdu = self
             .ampdu
             .standby()
@@ -445,7 +565,7 @@ where
                 HeAmpduPolicy::new(
                     rate,
                     self.ordinary.policy().ht_ampdu().density(),
-                    self.config.he_txop_limit,
+                    traffic.he_txop_limit,
                 ),
                 dma_capacity,
             )?),
@@ -470,6 +590,51 @@ where
             return;
         }
 
+        // Retain an invalid immediate successor at the immutable FIFO
+        // boundary. The ordinary path will report its exact validation error
+        // after the hardware-owned predecessor completes, without spending a
+        // QoS sequence number or packet number in the standby arena.
+        if !self.frame_has_aggregate_geometry(&first) {
+            self.defer_network_frame(first);
+            return;
+        }
+
+        let selected = match self.ordinary.select_network_traffic(first.ethernet()) {
+            Ok(selected) => selected,
+            Err(error) => {
+                drop(first);
+                self.standby_error = Some(error.into());
+                return;
+            }
+        };
+        let traffic = match self.aggregate_traffic(selected) {
+            Ok(traffic) => traffic,
+            Err(_) => {
+                self.defer_network_frame(first);
+                return;
+            }
+        };
+        if !self.block_ack_operational(traffic.tid())
+            || (self.standby_prepared.is_none()
+                && matches!(self.config.rate, TxPhyRate::Ht(_))
+                && network.queue_len() == 0)
+            || !matches!(
+                self.first_frame_fits_fresh_aggregate(first.ethernet_length(), traffic),
+                Ok(true)
+            )
+        {
+            self.defer_network_frame(first);
+            return;
+        }
+        if self.standby_prepared.as_ref().is_some_and(|prepared| {
+            prepared.traffic.tid() != traffic.tid()
+                || prepared.traffic.queue() != traffic.queue()
+                || prepared.traffic.he_txop_limit != traffic.he_txop_limit
+        }) {
+            self.defer_network_frame(first);
+            return;
+        }
+
         #[cfg(any(feature = "diagnostics", test))]
         let started = self.observer.map(|_| self.ordinary.now_micros());
         assert!(
@@ -482,7 +647,7 @@ where
         let extending = previous.is_some();
         let result = match previous {
             Some(prepared) => self.extend_reserved(first, network, prepared),
-            None => self.prepare_aggregate(first, network),
+            None => self.prepare_aggregate(first, network, traffic),
         };
         #[cfg(any(feature = "diagnostics", test))]
         let elapsed = started.map(|started| self.ordinary.now_micros().wrapping_sub(started));
@@ -533,10 +698,21 @@ where
         if let Some(error) = self.standby_error.take() {
             return Err(error);
         }
-        let prepared = self
-            .standby_prepared
-            .take()
-            .ok_or(AggregateTxError::InvalidPublicationState)?;
+        if let Some(prepared) = self.standby_prepared.as_ref()
+            && self.block_ack_generation(prepared.traffic.tid())
+                != Some(prepared.block_ack_generation)
+        {
+            let tid = prepared.traffic.tid();
+            self.cancel_prepared_network()?;
+            return Err(AggregateTxError::BlockAckAgreementChanged { tid });
+        }
+        let Some(prepared) = self.standby_prepared.take() else {
+            let first = self
+                .deferred_network
+                .take()
+                .ok_or(AggregateTxError::InvalidPublicationState)?;
+            return self.start_network(hardware, first, network);
+        };
         #[cfg(any(feature = "diagnostics", test))]
         self.observe_prepared(&prepared);
         #[cfg(any(feature = "diagnostics", test))]
@@ -560,7 +736,11 @@ where
         Ok(progress)
     }
 
-    fn can_push(&self, ethernet_length: usize) -> Result<bool, AggregateTxError> {
+    fn can_push(
+        &self,
+        ethernet_length: usize,
+        traffic: AggregateTraffic,
+    ) -> Result<bool, AggregateTxError> {
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         let frame_length = ethernet_length
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
@@ -583,7 +763,7 @@ where
                 HeAmpduPolicy::new(
                     rate,
                     self.ordinary.policy().ht_ampdu().density(),
-                    self.config.he_txop_limit,
+                    traffic.he_txop_limit,
                 ),
                 dma_capacity,
             )?),
@@ -595,6 +775,7 @@ where
         &self,
         first_ethernet_length: usize,
         second_ethernet_length: usize,
+        traffic: AggregateTraffic,
     ) -> Result<bool, AggregateTxError> {
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         let frame_length =
@@ -618,7 +799,7 @@ where
                 HeAmpduPolicy::new(
                     rate,
                     self.ordinary.policy().ht_ampdu().density(),
-                    self.config.he_txop_limit,
+                    traffic.he_txop_limit,
                 ),
                 dma_capacity,
             )?),
@@ -638,28 +819,34 @@ where
             QUEUE_DEPTH,
         >,
         admission: AggregateFrameAdmission,
+        traffic: AggregateTraffic,
     ) -> Result<(), AggregateTxError> {
-        if self.block_ack_amsdu(DATA_TID)
-            && self.can_push_amsdu_pair(first.ethernet_length(), FRAME_CAPACITY)?
+        if self.block_ack_amsdu(traffic.tid())
+            && self.can_push_amsdu_pair(first.ethernet_length(), FRAME_CAPACITY, traffic)?
             && let Some(second) = network.try_receive()
         {
-            return self.push_amsdu_pair(first, second);
+            if self.frame_matches_traffic(&second, traffic) {
+                return self.push_amsdu_pair(first, second, traffic);
+            }
+            self.defer_network_frame(second);
         }
-        self.push_frame(first, admission)
+        self.push_frame(first, admission, traffic)
     }
 
     fn push_amsdu_pair(
         &mut self,
         mut first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         second: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        traffic: AggregateTraffic,
     ) -> Result<(), AggregateTxError> {
         if self.ampdu.active().held_backing_count() >= SLOTS {
             return Err(HtAmpduTxError::AggregateFull.into());
         }
         let metadata = self
             .ordinary
-            .take_protected_metadata(DATA_TID)
-            .ok_or(AggregateTxError::MissingQosSequence(DATA_TID))?;
+            .take_protected_metadata(traffic.tid())
+            .map_err(SingleMpduTxError::from)?
+            .ok_or(AggregateTxError::MissingQosSequence(traffic.tid()))?;
         let ethernet_offset = first.ethernet_offset();
         let ethernet_length = first.ethernet_length();
         let encoded = metadata
@@ -701,7 +888,7 @@ where
                     HeAmpduPolicy::new(
                         rate,
                         self.ordinary.policy().ht_ampdu().density(),
-                        self.config.he_txop_limit,
+                        traffic.he_txop_limit,
                     ),
                 ),
             )?,
@@ -715,17 +902,19 @@ where
         &mut self,
         mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         admission: AggregateFrameAdmission,
+        traffic: AggregateTraffic,
     ) -> Result<(), AggregateTxError> {
         if self.ampdu.active().held_backing_count() >= SLOTS
             || (admission == AggregateFrameAdmission::NeedsExactCheck
-                && !self.can_push(frame.ethernet_length())?)
+                && !self.can_push(frame.ethernet_length(), traffic)?)
         {
             return Err(HtAmpduTxError::AggregateFull.into());
         }
         let metadata = self
             .ordinary
-            .take_protected_metadata(DATA_TID)
-            .ok_or(AggregateTxError::MissingQosSequence(DATA_TID))?;
+            .take_protected_metadata(traffic.tid())
+            .map_err(SingleMpduTxError::from)?
+            .ok_or(AggregateTxError::MissingQosSequence(traffic.tid()))?;
         let ethernet_offset = frame.ethernet_offset();
         let ethernet_length = frame.ethernet_length();
         let encoded = metadata
@@ -766,7 +955,7 @@ where
                     HeAmpduPolicy::new(
                         rate,
                         self.ordinary.policy().ht_ampdu().density(),
-                        self.config.he_txop_limit,
+                        traffic.he_txop_limit,
                     ),
                 ),
             )?,
@@ -779,14 +968,15 @@ where
         &mut self,
         aggregate_length: u16,
         subframes: u8,
+        traffic: AggregateTraffic,
     ) -> Result<AmpduTxConfig, AggregateTxError> {
-        let queue = LegacyTxQueue::BestEffort;
+        let queue = traffic.queue();
         let key = self.ordinary.hardware_key_selector();
         let (contention, contention_window) = self.ordinary.contention_publication(queue);
         match self.config.rate {
             TxPhyRate::Ht(rate) => {
                 let role_policy = self
-                    .ht_role_policy(DATA_TID)?
+                    .ht_role_policy(traffic.tid())?
                     .ok_or(AggregateTxError::InvalidPublicationState)?;
                 let data_power = self
                     .ordinary
@@ -823,7 +1013,7 @@ where
                     aggregate_length,
                     subframes,
                     self.ordinary.policy().ht_ampdu().density(),
-                    self.config.he_txop_limit,
+                    traffic.he_txop_limit,
                 )
                 .ok_or(AggregateTxError::BufferSizeOverflow)?;
                 let data_power = self
@@ -844,6 +1034,15 @@ where
                 config.pti = queue.vendor_data_packet_priority();
                 config.pti_count = 1;
                 config.hardware_key_selector = key;
+                // Trigger response policy was negotiated for the existing
+                // BE/TID-0 owner. Other WMM queues remain ordinary HE-SU
+                // aggregates until a per-TID HE-TB contract is reviewed.
+                if traffic.tid() == HE_TRIGGER_DATA_TID
+                    && queue == LegacyTxQueue::BestEffort
+                    && let Some(trigger_based) = self.he_trigger_based
+                {
+                    config = config.with_trigger_based(trigger_based);
+                }
                 Ok(AmpduTxConfig::He(config))
             }
             TxPhyRate::Legacy(_) => Err(AggregateTxError::UnsupportedRate),
@@ -881,13 +1080,13 @@ where
             AmpduTxConfig::Ht(config) => self.ampdu.active_mut().submit(
                 hardware,
                 self.cookie.ok_or(AggregateTxError::MissingCookie)?,
-                LegacyTxQueue::BestEffort,
+                active.traffic.queue(),
                 config,
             )?,
             AmpduTxConfig::He(config) => self.ampdu.active_mut().submit_he(
                 hardware,
                 self.cookie.ok_or(AggregateTxError::MissingCookie)?,
-                LegacyTxQueue::BestEffort,
+                active.traffic.queue(),
                 config,
             )?,
         }

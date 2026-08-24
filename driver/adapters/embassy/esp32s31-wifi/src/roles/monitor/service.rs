@@ -20,7 +20,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     irq::MacInterruptRoute,
     rx::{RxDma, RxPhyInfo},
 };
-use open_esp_radio_wifi_softmac::MonitorSink;
+use open_esp_radio_wifi_softmac::{MonitorInjectionRequest, WifiStandaloneMonitorPlan};
+use open_esp_radio_wifi_softmac::{MonitorSink, WifiChannel};
 
 use crate::{
     datapath::irq::{
@@ -41,6 +42,10 @@ pub const ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK: MacInterruptMask = MAC_COL
 /// Aggregate progress for one finite monitor run.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31MonitorRunReport {
+    /// Fully started, independently stopped physical-channel capture epochs.
+    pub channel_epochs: u32,
+    /// Successful stopped-only retunes between channel epochs.
+    pub channel_switches: u32,
     /// Bottom-half service epochs, including the initial handoff probe.
     pub rx_service_wakes: u32,
     /// Actual hard-IRQ RX work posts observed during this run.
@@ -85,6 +90,23 @@ impl Esp32s31MonitorRunReport {
         self.receive.service_probe_pending = progress.service_probe_pending;
     }
 
+    pub(crate) fn merge(&mut self, epoch: Self) {
+        self.channel_epochs = self.channel_epochs.saturating_add(epoch.channel_epochs);
+        self.channel_switches = self.channel_switches.saturating_add(epoch.channel_switches);
+        self.rx_service_wakes = self.rx_service_wakes.saturating_add(epoch.rx_service_wakes);
+        #[cfg(any(feature = "diagnostics", test))]
+        {
+            self.rx_interrupt_posts = self
+                .rx_interrupt_posts
+                .saturating_add(epoch.rx_interrupt_posts);
+        }
+        self.record(epoch.receive);
+        self.interrupt_drain.mac.rx |= epoch.interrupt_drain.mac.rx;
+        self.interrupt_drain.mac.rx_capacity |= epoch.interrupt_drain.mac.rx_capacity;
+        self.interrupt_drain.mac.tx_events |= epoch.interrupt_drain.mac.tx_events;
+        self.interrupt_drain.power_events |= epoch.interrupt_drain.power_events;
+    }
+
     #[cfg(any(feature = "diagnostics", test))]
     fn record_interrupt_posts(&mut self, start: u32, current: u32) {
         self.rx_interrupt_posts = current.wrapping_sub(start);
@@ -119,6 +141,8 @@ pub enum Esp32s31MonitorRunError<E> {
         stop: Option<Esp32s31MonitorStopError<E>>,
     },
     Stop(Esp32s31MonitorStopError<E>),
+    #[cfg(target_arch = "riscv32")]
+    Channel(crate::roles::monitor::builder::Esp32s31MonitorChannelSwitchError),
 }
 
 /// Why role-level hardware cannot currently be borrowed for a stopped-only
@@ -161,6 +185,7 @@ pub struct Esp32s31MonitorService<
     sink: Option<S>,
     interrupts: Option<Esp32s31MacInterruptEpoch<'runtime, R, M>>,
     platform: Option<R::Platform>,
+    quarantined: bool,
 }
 
 impl<
@@ -193,6 +218,7 @@ where
             sink: Some(sink),
             interrupts: Some(interrupts),
             platform: Some(platform),
+            quarantined: false,
         }
     }
 
@@ -216,6 +242,34 @@ where
         !self.interrupt_active() && self.receive_phase() != Esp32s31RxFrontierPhase::Live
     }
 
+    pub(crate) const fn is_quarantined(&self) -> bool {
+        self.quarantined
+    }
+
+    /// Make cancellation of a stopped-only PHY transition retain every owner
+    /// until the transition commits successfully.
+    pub(crate) fn begin_stopped_transition(
+        &mut self,
+    ) -> Result<(), Esp32s31MonitorStoppedAccessError> {
+        if self.interrupt_active() {
+            return Err(Esp32s31MonitorStoppedAccessError::InterruptActive);
+        }
+        if self.receive_phase() == Esp32s31RxFrontierPhase::Live {
+            return Err(Esp32s31MonitorStoppedAccessError::ReceiveLive);
+        }
+        self.quarantined = true;
+        Ok(())
+    }
+
+    pub(crate) fn complete_stopped_transition(&mut self) {
+        debug_assert!(self.is_quiescent());
+        self.quarantined = false;
+    }
+
+    pub(crate) fn force_quarantine(&mut self) {
+        self.quarantined = true;
+    }
+
     /// Borrow the radio registers and platform only after both asynchronous
     /// actors have released them.
     pub fn stopped_radio_mut(
@@ -237,6 +291,63 @@ where
         ))
     }
 
+    /// Rebuild the halted DMA ring for the next physical-channel epoch.
+    ///
+    /// The stopped-ring preparation discards the preceding live frontier and
+    /// rearms every descriptor before a new channel stamp can become visible.
+    /// Consequently a completion retained at the dwell boundary cannot be
+    /// published later with metadata from the newly tuned channel.
+    pub(crate) fn prepare_next_receive_epoch(&mut self) -> Result<(), Esp32s31RxFrontierError> {
+        debug_assert!(self.is_quiescent());
+        let receive = self.receive.as_mut().expect("monitor RX owner exists");
+        let hardware = self
+            .hardware
+            .as_mut()
+            .expect("monitor hardware owner exists");
+        receive.prepare_next(hardware)
+    }
+
+    /// Bind retained capture metadata to a fresh, fully stopped channel
+    /// epoch before RX or the interrupt route is restarted.
+    pub(crate) fn begin_channel_epoch(
+        &mut self,
+        channel: WifiChannel,
+    ) -> Result<(), Esp32s31MonitorStoppedAccessError> {
+        if self.interrupt_active() {
+            return Err(Esp32s31MonitorStoppedAccessError::InterruptActive);
+        }
+        if self.receive_phase() == Esp32s31RxFrontierPhase::Live {
+            return Err(Esp32s31MonitorStoppedAccessError::ReceiveLive);
+        }
+        self.sink
+            .as_mut()
+            .expect("monitor sink owner exists")
+            .begin_channel_epoch(channel);
+        Ok(())
+    }
+
+    /// Reach the exact S31 injection frontier through this task's real dwell
+    /// owner. The current backend always returns `UnassignedMacInterface`
+    /// after binding and finite-buffer validation, before any TX mutation.
+    pub(crate) fn admit_injection<const TX_BUFFER_SIZE: usize>(
+        &self,
+        plan: WifiStandaloneMonitorPlan,
+        request: MonitorInjectionRequest<'_>,
+    ) -> Result<
+        open_esp_radio_esp32s31_wifi::monitor_injection::Esp32s31MonitorInjectionAdmission,
+        open_esp_radio_esp32s31_wifi::monitor_injection::Esp32s31MonitorInjectionAdmissionError,
+    > {
+        open_esp_radio_esp32s31_wifi::monitor_injection::admit_esp32s31_monitor_injection::<
+            RxPhyInfo,
+            S,
+            TX_BUFFER_SIZE,
+        >(
+            plan,
+            self.sink.as_ref().expect("monitor sink owner exists"),
+            request,
+        )
+    }
+
     /// Decompose the service only after every hardware actor acknowledged its
     /// stopped edge. Role composition uses this to return the common Wi-Fi
     /// owner; active and faulted services remain intact.
@@ -253,7 +364,7 @@ where
         ),
         Self,
     > {
-        if !self.is_quiescent() {
+        if !self.is_quiescent() || self.quarantined {
             return Err(self);
         }
         Ok((
@@ -290,16 +401,29 @@ where
     S: MonitorSink<RxPhyInfo>,
 {
     /// Run until `stop` resolves, leaving this owner in halted state.
-    ///
-    /// The future only borrows `self`. Cancelling it cannot drop the hardware
-    /// owner, and dropping the service itself performs the same fail-closed
-    /// shutdown before any owner field can be destroyed.
     pub async fn run_until_stopped<F>(
         &mut self,
         stop: F,
     ) -> Result<Esp32s31MonitorRunReport, Esp32s31MonitorRunFailure<R::Error>>
     where
         F: Future<Output = ()>,
+    {
+        self.run_until_boundary(stop)
+            .await
+            .map(|(report, ())| report)
+    }
+
+    /// Run one fresh RX/IRQ epoch until an arbitrary control boundary resolves.
+    ///
+    /// The future only borrows `self`. Cancelling it cannot drop the hardware
+    /// owner, and dropping the service itself performs the same fail-closed
+    /// shutdown before any owner field can be destroyed.
+    pub(crate) async fn run_until_boundary<F, T>(
+        &mut self,
+        boundary: F,
+    ) -> Result<(Esp32s31MonitorRunReport, T), Esp32s31MonitorRunFailure<R::Error>>
+    where
+        F: Future<Output = T>,
     {
         let mut report = Esp32s31MonitorRunReport::default();
         #[cfg(any(feature = "diagnostics", test))]
@@ -349,14 +473,15 @@ where
             );
             return Err(Esp32s31MonitorRunFailure { error, report });
         }
+        report.channel_epochs = 1;
 
         // A descriptor may have completed before route activation. The ring,
         // not this synthetic wake, remains the source of multiplicity.
         self.interrupts().mac_runtime().notify_rx_handoff();
-        let mut stop = pin!(stop);
-        loop {
-            match select(stop.as_mut(), self.interrupts().mac_runtime().wait_rx()).await {
-                Either::First(()) => break,
+        let mut boundary = pin!(boundary);
+        let boundary = loop {
+            match select(boundary.as_mut(), self.interrupts().mac_runtime().wait_rx()).await {
+                Either::First(boundary) => break boundary,
                 Either::Second(()) => {
                     report.rx_service_wakes = report.rx_service_wakes.saturating_add(1);
                     let service = {
@@ -397,7 +522,7 @@ where
                     }
                 }
             }
-        }
+        };
 
         match self.stop().await {
             Ok(drain) => {
@@ -407,7 +532,7 @@ where
                     interrupt_posts_at_start,
                     self.interrupts().mac_runtime().rx_post_count(),
                 );
-                Ok(report)
+                Ok((report, boundary))
             }
             Err(error) => {
                 #[cfg(any(feature = "diagnostics", test))]
@@ -434,6 +559,13 @@ where
     pub async fn stop(
         &mut self,
     ) -> Result<Esp32s31MacInterruptEpochDrain, Esp32s31MonitorStopError<R::Error>> {
+        // Stop wins over injection admission. Revocation happens before IRQ
+        // quiesce/RX-walker waits, and a failed stop never republishes this
+        // dwell as usable.
+        self.sink
+            .as_mut()
+            .expect("monitor sink owner exists")
+            .end_channel_epoch();
         let interrupt_drain = if self.interrupt_active() {
             let platform = self
                 .platform
@@ -504,6 +636,10 @@ where
     /// structural failure retains every hardware-visible owner for board reset
     /// instead of unwinding or releasing aliased resources.
     fn stop_on_drop(&mut self) {
+        self.sink
+            .as_mut()
+            .expect("monitor sink owner exists")
+            .end_channel_epoch();
         if self.interrupt_active() {
             let quiesced = {
                 let platform = self
@@ -557,6 +693,10 @@ where
 {
     fn drop(&mut self) {
         if self.hardware.is_none() {
+            return;
+        }
+        if self.quarantined {
+            self.retain_active_owners_for_reset();
             return;
         }
         if self.interrupt_active() || self.receive_phase() == Esp32s31RxFrontierPhase::Live {

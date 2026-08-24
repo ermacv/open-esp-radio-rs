@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+use embassy_futures::select::{Either, select};
+use embassy_time::Timer;
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_hal::{MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
@@ -17,15 +19,18 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx::{RxPhyInfo, RxRingHalted},
 };
 use open_esp_radio_ieee80211::channel::WifiChannel;
-use open_esp_radio_wifi_softmac::{MonitorSink, WifiStandaloneMonitorPlan};
+use open_esp_radio_wifi_softmac::{
+    MonitorChannelPolicy, MonitorChannelSequence, MonitorSink, WifiStandaloneMonitorPlan,
+};
 
 use crate::{
     datapath::irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch},
     datapath::rx::dma::Esp32s31RxDmaStorage,
+    datapath::rx::frontier::Esp32s31RxFrontierError,
     roles::monitor::rx::{Esp32s31MonitorPrepareError, Esp32s31MonitorRx},
     roles::monitor::service::{
-        Esp32s31MonitorRunFailure, Esp32s31MonitorRunReport, Esp32s31MonitorService,
-        Esp32s31MonitorStoppedAccessError,
+        Esp32s31MonitorRunError, Esp32s31MonitorRunFailure, Esp32s31MonitorRunReport,
+        Esp32s31MonitorService, Esp32s31MonitorStoppedAccessError,
     },
     roles::monitor::{
         Esp32s31MonitorCommandReceiver, Esp32s31MonitorCompletion, Esp32s31MonitorControlError,
@@ -228,6 +233,12 @@ pub struct Esp32s31MonitorBuildReport {
 pub enum Esp32s31MonitorChannelSwitchError {
     Active(Esp32s31MonitorStoppedAccessError),
     Phy(PhyTargetPortError),
+    Receive(Esp32s31RxFrontierError),
+    Quarantined,
+    PolicyMismatch {
+        expected: WifiChannel,
+        active: WifiChannel,
+    },
 }
 
 /// Complete stopped standalone-monitor owner.
@@ -264,6 +275,8 @@ struct Esp32s31MonitorOwner<
     report: Esp32s31MonitorBuildReport,
     plan: WifiStandaloneMonitorPlan,
     memory: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    capture_channel: WifiChannel,
+    quarantined: bool,
 }
 
 impl<
@@ -289,6 +302,10 @@ where
         self.context.current_channel()
     }
 
+    pub const fn capture_channel(&self) -> WifiChannel {
+        self.capture_channel
+    }
+
     /// Return the common Wi-Fi owner and every reusable monitor resource only
     /// after IRQ routing and RX DMA are both proven inactive.
     fn try_into_stopped(
@@ -298,12 +315,17 @@ where
         Esp32s31MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         Self,
     > {
+        if self.quarantined || self.service.is_quarantined() {
+            return Err(self);
+        }
         let Self {
             service,
             context,
             report,
             plan,
             memory,
+            capture_channel,
+            quarantined,
         } = self;
         let (registers, receive, sink, interrupts, platform) = match service.try_into_parts() {
             Ok(parts) => parts,
@@ -314,6 +336,8 @@ where
                     report,
                     plan,
                     memory,
+                    capture_channel,
+                    quarantined,
                 });
             }
         };
@@ -371,20 +395,42 @@ where
             + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         O: PhyTargetObserver,
     {
+        if self.quarantined {
+            return Err(Esp32s31MonitorChannelSwitchError::Quarantined);
+        }
+        self.service
+            .begin_stopped_transition()
+            .map_err(Esp32s31MonitorChannelSwitchError::Active)?;
+        self.quarantined = true;
         let (registers, platform) = self
             .service
             .stopped_radio_mut()
             .map_err(Esp32s31MonitorChannelSwitchError::Active)?;
-        switch_esp32s31_wifi_channel::<D, _, _>(
+        let switched = switch_esp32s31_wifi_channel::<D, _, _>(
             self.context.phy_mut(),
             channel,
             platform,
             registers,
             observer,
         )
-        .await
-        .map_err(Esp32s31MonitorChannelSwitchError::Phy)?;
+        .await;
+        if let Err(error) = switched {
+            self.quarantined = true;
+            return Err(Esp32s31MonitorChannelSwitchError::Phy(error));
+        }
+        activate_promiscuous_receive(registers);
         self.context.set_current_channel(channel);
+        if let Err(error) = self.service.prepare_next_receive_epoch() {
+            self.quarantined = true;
+            return Err(Esp32s31MonitorChannelSwitchError::Receive(error));
+        }
+        if let Err(error) = self.service.begin_channel_epoch(channel) {
+            self.quarantined = true;
+            return Err(Esp32s31MonitorChannelSwitchError::Active(error));
+        }
+        self.capture_channel = channel;
+        self.service.complete_stopped_transition();
+        self.quarantined = false;
         Ok(())
     }
 }
@@ -422,6 +468,7 @@ where
     S: MonitorSink<RxPhyInfo>,
 {
     let cold_interrupt_mask = wifi.transition_report().cold_interrupt_mask;
+    let initial_channel = wifi.current_channel();
     let receive = {
         let (mut registers, _) = wifi.radio_mut();
         activate_promiscuous_receive(&mut registers);
@@ -466,13 +513,16 @@ where
         resources.mac_runtime,
         resources.power_runtime,
     );
-    let service = Esp32s31MonitorService::new(
+    let mut service = Esp32s31MonitorService::new(
         runtime.registers,
         receive,
         resources.sink,
         interrupts,
         runtime.platform,
     );
+    service
+        .begin_channel_epoch(initial_channel)
+        .expect("a newly prepared monitor service is quiescent");
     Ok(Esp32s31MonitorOwner {
         service,
         context: runtime.context,
@@ -483,6 +533,8 @@ where
         },
         plan,
         memory: resources.dma,
+        capture_channel: initial_channel,
+        quarantined: false,
     })
 }
 
@@ -749,12 +801,146 @@ where
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
+    fn policy_mismatch(&mut self, expected: WifiChannel) -> Esp32s31MonitorRunFailure<R::Error> {
+        let active = self.owner.capture_channel();
+        self.control.complete(Esp32s31MonitorCompletion::Stopped);
+        Esp32s31MonitorRunFailure {
+            error: Esp32s31MonitorRunError::Channel(
+                Esp32s31MonitorChannelSwitchError::PolicyMismatch { expected, active },
+            ),
+            report: Esp32s31MonitorRunReport::default(),
+        }
+    }
+
+    async fn run_hopping<D, O>(
+        &mut self,
+        sequence: MonitorChannelSequence,
+        observer: &mut O,
+    ) -> Result<Esp32s31MonitorRunReport, Esp32s31MonitorRunFailure<R::Error>>
+    where
+        D: PhyAsyncDelay,
+        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
+            + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
+            + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        O: PhyTargetObserver,
+    {
+        if self.owner.current_channel() != sequence.first()
+            || self.owner.capture_channel() != sequence.first()
+        {
+            return Err(self.policy_mismatch(sequence.first()));
+        }
+
+        let mut report = Esp32s31MonitorRunReport::default();
+        let channels = sequence.channels();
+        let mut channel_index = 0_usize;
+        loop {
+            if self.control.stop_requested() {
+                self.control.complete(Esp32s31MonitorCompletion::Stopped);
+                return Ok(report);
+            }
+
+            let epoch = {
+                let owner = &mut self.owner;
+                let control = &mut self.control;
+                owner
+                    .service
+                    .run_until_boundary(select(
+                        control.wait_stop(),
+                        Timer::after_millis(u64::from(sequence.dwell_millis())),
+                    ))
+                    .await
+            };
+            let (epoch, boundary) = match epoch {
+                Ok(completed) => completed,
+                Err(failure) => {
+                    report.merge(failure.report);
+                    self.control.complete(
+                        if self.owner.service.is_quiescent()
+                            && !self.owner.quarantined
+                            && !self.owner.service.is_quarantined()
+                        {
+                            Esp32s31MonitorCompletion::Stopped
+                        } else {
+                            Esp32s31MonitorCompletion::Faulted
+                        },
+                    );
+                    return Err(Esp32s31MonitorRunFailure {
+                        error: failure.error,
+                        report,
+                    });
+                }
+            };
+            report.merge(epoch);
+            match boundary {
+                Either::First(()) => {
+                    self.control.complete(Esp32s31MonitorCompletion::Stopped);
+                    return Ok(report);
+                }
+                Either::Second(_) => {}
+            }
+
+            // A stop published while the dwell boundary was being closed wins
+            // before another stopped-only retune or RX epoch begins.
+            if self.control.stop_requested() {
+                self.control.complete(Esp32s31MonitorCompletion::Stopped);
+                return Ok(report);
+            }
+            channel_index = (channel_index + 1) % channels.len();
+            let next_channel = channels[channel_index];
+            if let Err(error) = self
+                .owner
+                .switch_channel::<D, O>(next_channel, observer)
+                .await
+            {
+                self.owner.quarantined = true;
+                self.owner.service.force_quarantine();
+                self.control.complete(Esp32s31MonitorCompletion::Faulted);
+                return Err(Esp32s31MonitorRunFailure {
+                    error: Esp32s31MonitorRunError::Channel(error),
+                    report,
+                });
+            }
+            report.channel_switches = report.channel_switches.saturating_add(1);
+        }
+    }
+}
+
+impl<
+    'runtime,
+    P,
+    R,
+    M: RawMutex,
+    S,
+    const COUNT: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+> Esp32s31MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+where
+    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    P: Sized,
+    S: MonitorSink<RxPhyInfo>,
+{
     pub const fn report(&self) -> Esp32s31MonitorBuildReport {
         self.owner.report()
     }
 
     pub const fn current_channel(&self) -> WifiChannel {
         self.owner.current_channel()
+    }
+
+    /// Reach the current S31 injection frontier through this task's actual
+    /// capture dwell. The present backend fails at its unassigned monitor TX
+    /// interface before borrowing sequence, DMA or IRQ state.
+    pub fn admit_injection_frontier<const TX_BUFFER_SIZE: usize>(
+        &self,
+        request: open_esp_radio_wifi_softmac::MonitorInjectionRequest<'_>,
+    ) -> Result<
+        open_esp_radio_esp32s31_wifi::monitor_injection::Esp32s31MonitorInjectionAdmission,
+        open_esp_radio_esp32s31_wifi::monitor_injection::Esp32s31MonitorInjectionAdmissionError,
+    > {
+        self.owner
+            .service
+            .admit_injection::<TX_BUFFER_SIZE>(self.owner.plan, request)
     }
 
     /// Run the finite role epoch. The task-side command receiver is private,
@@ -780,6 +966,43 @@ where
         R::Error,
     > {
         let result = self.run().await;
+        match self.try_into_stopped() {
+            Ok(stopped) => Esp32s31MonitorTaskExit::Stopped { stopped, result },
+            Err(task) => Esp32s31MonitorTaskExit::Faulted { task, result },
+        }
+    }
+
+    /// Run either the compatible fixed-channel epoch or one bounded hopping
+    /// cycle until the paired controller requests stop.
+    #[allow(clippy::type_complexity)]
+    pub async fn run_channel_policy_to_exit<D, O>(
+        mut self,
+        policy: MonitorChannelPolicy,
+        observer: &mut O,
+    ) -> Esp32s31MonitorTaskExit<
+        Esp32s31MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        Self,
+        R::Error,
+    >
+    where
+        D: PhyAsyncDelay,
+        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
+            + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
+            + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        O: PhyTargetObserver,
+    {
+        let result = match policy {
+            MonitorChannelPolicy::Fixed(channel)
+                if self.owner.current_channel() != channel
+                    || self.owner.capture_channel() != channel =>
+            {
+                Err(self.policy_mismatch(channel))
+            }
+            MonitorChannelPolicy::Fixed(_) => self.run().await,
+            MonitorChannelPolicy::Hopping(sequence) => {
+                self.run_hopping::<D, O>(sequence, observer).await
+            }
+        };
         match self.try_into_stopped() {
             Ok(stopped) => Esp32s31MonitorTaskExit::Stopped { stopped, result },
             Err(task) => Esp32s31MonitorTaskExit::Faulted { task, result },

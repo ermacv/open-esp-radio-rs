@@ -31,12 +31,21 @@ pub enum DatapathRxProgress {
 /// Coherent scheduler facts supplied to one role-control step.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DatapathControlContext {
+    /// A network lease is waiting behind this control boundary.
     pub network_tx_pending: bool,
+    /// The finite runner must restore active control state before teardown.
+    pub stop_pending: bool,
 }
 
 impl DatapathControlContext {
     pub const IDLE: Self = Self {
         network_tx_pending: false,
+        stop_pending: false,
+    };
+
+    pub const STOPPING: Self = Self {
+        network_tx_pending: false,
+        stop_pending: true,
     };
 }
 

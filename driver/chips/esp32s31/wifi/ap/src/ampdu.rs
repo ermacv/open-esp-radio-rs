@@ -16,6 +16,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
         HtAmpduTxResources, RetainedAmpduDmaStorage, RetainedAmpduRetryCompletionError,
         RetainedDmaAmpduTx, TX_AMPDU_METADATA_SIZE,
     },
+    tx_protection::TxProtectionAdmissionError,
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
 
@@ -31,6 +32,7 @@ pub struct Esp32s31ApAggregateAdmission {
     binding: Esp32s31ApAggregateBinding,
     rate: HtRate,
     block_ack_window: u16,
+    amsdu: bool,
 }
 
 impl Esp32s31ApAggregateAdmission {
@@ -38,11 +40,13 @@ impl Esp32s31ApAggregateAdmission {
         binding: Esp32s31ApAggregateBinding,
         rate: HtRate,
         block_ack_window: u16,
+        amsdu: bool,
     ) -> Self {
         Self {
             binding,
             rate,
             block_ack_window,
+            amsdu,
         }
     }
 
@@ -52,6 +56,15 @@ impl Esp32s31ApAggregateAdmission {
 
     pub const fn binding(self) -> Esp32s31ApAggregateBinding {
         self.binding
+    }
+
+    pub const fn rate(self) -> HtRate {
+        self.rate
+    }
+
+    /// Whether the exact operational TID-0 agreement echoed A-MSDU support.
+    pub const fn amsdu(self) -> bool {
+        self.amsdu
     }
 
     pub fn accepts_ethernet(self, ethernet: &[u8]) -> bool {
@@ -94,6 +107,7 @@ pub enum Esp32s31ApAmpduError {
     Hardware(HtAmpduTxError),
     Retry(AmpduRetryError),
     RolePolicy(HtAmpduTxRolePolicyError),
+    Protection(TxProtectionAdmissionError),
 }
 
 impl From<HtAmpduTxError> for Esp32s31ApAmpduError {
@@ -314,6 +328,9 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         T: open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxTimer,
     {
         let prepared = self.prepared()?;
+        ordinary
+            .require_unprotected_ht_aggregate(prepared.rate)
+            .map_err(Esp32s31ApAmpduError::Protection)?;
         let config = ordinary
             .ht_ampdu_config(
                 prepared.rate,

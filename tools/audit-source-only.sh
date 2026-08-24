@@ -50,9 +50,11 @@ llvm-nm --defined-only --format=posix "$artifact" 2>/dev/null |
 comm -23 "$audit_dir/undefined" "$audit_dir/defined" >"$audit_dir/external"
 
 # The final artifact may refer to its source-only HAL/register dependencies and to
-# compiler/core support only. Radio ROM or vendor archive symbols fail closed.
+# compiler/core support only. Public pure-model `Debug` implementations retain
+# `core::fmt` leaves in an rlib even when the final image does not call them.
+# Radio ROM or vendor archive symbols still fail closed.
 if rg -v \
-    '^(_R.*open_esp_radio_esp32s31_(hal|registers|pac).*|_ZN.*open_esp_radio_esp32s31_(hal|registers|pac).*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|_ZN.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
+    '^(_R.*open_esp_radio_esp32s31_(hal|registers|pac).*|_ZN.*open_esp_radio_esp32s31_(hal|registers|pac).*|_R.*4core3fmt.*|_ZN.*4core3fmt.*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|_ZN.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
     "$audit_dir/external"
 then
     echo "unexpected external symbol in source-only radio rlib" >&2
@@ -73,7 +75,7 @@ dependency_tree="$(
         --prefix none
 )"
 if printf '%s\n' "$dependency_tree" |
-    rg -v '^(open-esp-radio-dma|open-esp-radio-esp32s31-(coex|phy|hal|registers|pac|pac-raw)|critical-section|vcell) v'
+    rg -v '^(open-esp-radio-dma|open-esp-radio-esp32s31-(coex|phy|hal|registers|pac|pac-raw|ieee802154-irq)|critical-section|vcell) v'
 then
     echo "non-workspace dependency survived source-only build" >&2
     exit 1

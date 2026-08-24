@@ -7,6 +7,7 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_hal::MacInterruptSetup;
+use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver};
 use open_esp_radio_esp32s31_wifi::runtime::Esp32s31WifiStopped;
 use open_esp_radio_esp32s31_wifi_embassy::{
     roles::monitor::{
@@ -20,7 +21,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
 };
 use open_esp_radio_esp32s31_wifi_mac::{irq::MacInterruptRoute, rx::RxPhyInfo};
 use open_esp_radio_wifi_embassy::await_stack_boundary;
-use open_esp_radio_wifi_softmac::MonitorSink;
+use open_esp_radio_wifi_softmac::{MonitorChannelPolicy, MonitorSink};
 
 use open_esp_radio::{
     RadioController, RadioSubsystemGeneration, StationRequest, WifiStartFailure, WifiStartReport,
@@ -301,6 +302,8 @@ pub async fn drive_esp32s31_monitor_role<
     S,
     E,
     Reject,
+    D,
+    O,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
@@ -308,6 +311,9 @@ pub async fn drive_esp32s31_monitor_role<
     endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
     controller: &mut Esp32s31MonitorController<'runtime, M>,
     task: Esp32s31MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    channel_policy: MonitorChannelPolicy,
+    _delay: D,
+    observer: &mut O,
     reject_while_active: Reject,
 ) -> EmbassyWifiActiveRoleExit<
     Esp32s31MonitorTaskExit<
@@ -317,13 +323,18 @@ pub async fn drive_esp32s31_monitor_role<
     >,
 >
 where
-    P: Sized,
+    P: Sized
+        + open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
+        + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
+        + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
     R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
     M: RawMutex,
     S: MonitorSink<RxPhyInfo>,
     Reject: FnMut(EmbassyWifiStartKind) -> E,
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
 {
-    let role = task.run_to_exit();
+    let role = task.run_channel_policy_to_exit::<D, O>(channel_policy, observer);
     let mut role = core::pin::pin!(role);
     let mut control = MonitorActiveRoleControl { inner: controller };
     await_stack_boundary!(drive_embassy_wifi_active_role_pinned(

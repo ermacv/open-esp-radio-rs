@@ -8,6 +8,15 @@ use crate::{DEFAULT_EAPOL_FRAME_CAPACITY, EapolKeyMessage, OwnedEapolFrame, Wpa2
 
 pub const WPA2_NONCE_LEN: usize = 32;
 
+const WPA2_CCMP_TEMPORAL_KEY_LEN: u16 = 16;
+const WPA2_PAIRWISE_MESSAGE3_KEY_INFO: u16 = 2
+    | (1 << 3) // Pairwise.
+    | (1 << 6) // Install.
+    | (1 << 7) // ACK.
+    | (1 << 8) // MIC.
+    | (1 << 9) // Secure.
+    | (1 << 12); // Encrypted Key Data.
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Wpa2Ticket(u32);
 
@@ -51,10 +60,43 @@ pub enum Wpa2StateError {
     ReplayCounterMismatch,
     ReplayCounterExhausted,
     ZeroNonce,
+    AuthenticatorNonceMismatch,
+    InvalidKeyLength,
+    InvalidMessage3KeyInfo,
+    NonzeroKeyIv,
+    NonzeroKeyIdentifier,
     MissingEncryptedKeyData,
     WrongPhase,
     StaleCompletion,
     RetainedFrameMismatch,
+}
+
+impl Wpa2StateError {
+    /// Whether this error can be produced solely by rejecting the current
+    /// untrusted peer frame before any authenticated protocol transition.
+    ///
+    /// Completion-ticket, retained-frame and phase failures are deliberately
+    /// excluded: those indicate a local ownership/invariant defect and must
+    /// remain visible to the executor.
+    pub const fn is_peer_input_rejection(self) -> bool {
+        matches!(
+            self,
+            Self::WrongInterface
+                | Self::WrongPeer
+                | Self::UnsupportedDescriptorVersion
+                | Self::UnsupportedMessage
+                | Self::UnexpectedMessage
+                | Self::StaleReplayCounter
+                | Self::ReplayCounterMismatch
+                | Self::ZeroNonce
+                | Self::AuthenticatorNonceMismatch
+                | Self::InvalidKeyLength
+                | Self::InvalidMessage3KeyInfo
+                | Self::NonzeroKeyIv
+                | Self::NonzeroKeyIdentifier
+                | Self::MissingEncryptedKeyData
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -248,6 +290,7 @@ impl Wpa2StaState {
         &mut self,
         frame: OwnedEapolFrame<N>,
     ) -> Result<Wpa2StaAction<N>, Wpa2StateError> {
+        self.validate_message3_fields(&frame)?;
         let replay = frame.key_frame().replay_counter();
         match self.phase {
             Wpa2StaPhase::AwaitingMessage3 => {
@@ -318,8 +361,13 @@ impl Wpa2StaState {
         self.check_completion(ticket, Wpa2StaPhase::VerifyingMessage3)?;
         self.validate_retained_message3(&frame)?;
         if !valid {
-            self.phase = Wpa2StaPhase::Failed;
-            return Ok(Wpa2StaAction::Deauthenticate);
+            // The candidate replay counter is not authenticated until the
+            // MIC succeeds. Roll back the speculative M3 edge so a forged
+            // parse-valid frame cannot kill the join or reserve its replay
+            // value ahead of the real authenticator frame.
+            self.message3_replay = 0;
+            self.phase = Wpa2StaPhase::AwaitingMessage3;
+            return Ok(Wpa2StaAction::None);
         }
 
         let key = frame.key_frame();
@@ -399,11 +447,38 @@ impl Wpa2StaState {
         frame: &OwnedEapolFrame<N>,
     ) -> Result<(), Wpa2StateError> {
         self.validate_frame(frame)?;
+        self.validate_message3_fields(frame)?;
         let key = frame.key_frame();
         if key.message() != EapolKeyMessage::PairwiseMessage3
             || key.replay_counter() != self.message3_replay
         {
             return Err(Wpa2StateError::RetainedFrameMismatch);
+        }
+        Ok(())
+    }
+
+    fn validate_message3_fields<const N: usize>(
+        &self,
+        frame: &OwnedEapolFrame<N>,
+    ) -> Result<(), Wpa2StateError> {
+        let key = frame.key_frame();
+        if key.key_info().raw() != WPA2_PAIRWISE_MESSAGE3_KEY_INFO {
+            return Err(Wpa2StateError::InvalidMessage3KeyInfo);
+        }
+        if key.key_length() != WPA2_CCMP_TEMPORAL_KEY_LEN {
+            return Err(Wpa2StateError::InvalidKeyLength);
+        }
+        if key.nonce() != &self.authenticator_nonce {
+            return Err(Wpa2StateError::AuthenticatorNonceMismatch);
+        }
+        if key.key_iv().iter().any(|byte| *byte != 0) {
+            return Err(Wpa2StateError::NonzeroKeyIv);
+        }
+        if key.key_identifier().iter().any(|byte| *byte != 0) {
+            return Err(Wpa2StateError::NonzeroKeyIdentifier);
+        }
+        if key.key_data().is_empty() {
+            return Err(Wpa2StateError::MissingEncryptedKeyData);
         }
         Ok(())
     }
@@ -605,11 +680,11 @@ impl Wpa2ApState {
             | Wpa2ApPhase::PreparingMessage3 => Ok(Wpa2ApAction::None),
             Wpa2ApPhase::AwaitingMessage4 | Wpa2ApPhase::VerifyingMessage4 => {
                 if nonce == self.supplicant_nonce {
-                    Ok(Wpa2ApAction::Transmit(Wpa2Transmit {
-                        message: Wpa2TxMessage::PairwiseMessage3,
-                        replay_counter: self.message3_replay,
-                        retransmission: true,
-                    }))
+                    // Public replay/SNonce fields do not authenticate a
+                    // duplicate M2. The bounded AP M3 retry owner will
+                    // retransmit on its timer; never emit a MIC-bearing M3 in
+                    // direct response to an unverified peer frame.
+                    Ok(Wpa2ApAction::None)
                 } else {
                     Err(Wpa2StateError::UnexpectedMessage)
                 }
@@ -667,8 +742,11 @@ impl Wpa2ApState {
         self.check_completion(ticket, Wpa2ApPhase::VerifyingMessage2)?;
         self.validate_retained_message2(&message2)?;
         if !valid {
-            self.phase = Wpa2ApPhase::Failed;
-            return Ok(Wpa2ApAction::DeauthenticatePeer);
+            // SNonce and M2 replay are peer input until the MIC authenticates
+            // them. A spoofed M2 must not poison this peer's M1 transaction.
+            self.supplicant_nonce = [0; WPA2_NONCE_LEN];
+            self.phase = Wpa2ApPhase::AwaitingMessage2;
+            return Ok(Wpa2ApAction::None);
         }
         self.phase = Wpa2ApPhase::PreparingMessage3;
         let ticket = self.issue_ticket();
@@ -706,8 +784,11 @@ impl Wpa2ApState {
         self.check_completion(ticket, Wpa2ApPhase::VerifyingMessage4)?;
         self.validate_retained_message4(&message4)?;
         if !valid {
-            self.phase = Wpa2ApPhase::Failed;
-            return Ok(Wpa2ApAction::DeauthenticatePeer);
+            // Retain the installed-candidate PTK and M3 response window. A
+            // forged M4 can then be ignored while a valid retry still
+            // authorizes exactly this handshake.
+            self.phase = Wpa2ApPhase::AwaitingMessage4;
+            return Ok(Wpa2ApAction::None);
         }
         self.phase = Wpa2ApPhase::Authorized;
         Ok(Wpa2ApAction::AuthorizePeer)
@@ -873,6 +954,7 @@ mod tests {
     use super::*;
     use crate::{
         EAPOL_KEY_FIXED_LEN, EAPOL_KEY_PACKET_LEN, EAPOL_PACKET_TYPE_KEY, RSN_KEY_DESCRIPTOR_TYPE,
+        frames::Wpa2TxFrame,
     };
 
     const PAIRWISE: u16 = 1 << 3;
@@ -881,6 +963,8 @@ mod tests {
     const MIC: u16 = 1 << 8;
     const SECURE: u16 = 1 << 9;
     const ENCRYPTED: u16 = 1 << 12;
+    const MESSAGE3_CAPACITY: usize = 128;
+    const MESSAGE3_KEY_DATA: [u8; 24] = [0xa5; 24];
 
     fn frame(
         interface: Wpa2Interface,
@@ -898,6 +982,46 @@ mod tests {
         bytes[9..17].copy_from_slice(&replay.to_be_bytes());
         bytes[17..49].copy_from_slice(&nonce);
         OwnedEapolFrame::try_copy(interface, peer, &bytes).unwrap()
+    }
+
+    fn message3(peer: [u8; 6], replay: u64, nonce: [u8; 32]) -> OwnedEapolFrame<MESSAGE3_CAPACITY> {
+        let frame = Wpa2TxFrame::<MESSAGE3_CAPACITY>::message3(
+            peer,
+            replay,
+            nonce,
+            [0; 8],
+            &MESSAGE3_KEY_DATA,
+        )
+        .unwrap();
+        OwnedEapolFrame::try_copy(Wpa2Interface::Station, peer, frame.as_bytes()).unwrap()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn raw_message3(
+        peer: [u8; 6],
+        replay: u64,
+        nonce: [u8; 32],
+        info: u16,
+        key_length: u16,
+        key_iv: [u8; 16],
+        key_identifier: [u8; 8],
+        key_data: &[u8],
+    ) -> OwnedEapolFrame<MESSAGE3_CAPACITY> {
+        let mut bytes = [0; MESSAGE3_CAPACITY];
+        let packet_len = EAPOL_KEY_PACKET_LEN + key_data.len();
+        bytes[0] = 2;
+        bytes[1] = EAPOL_PACKET_TYPE_KEY;
+        bytes[2..4].copy_from_slice(&((EAPOL_KEY_FIXED_LEN + key_data.len()) as u16).to_be_bytes());
+        bytes[4] = RSN_KEY_DESCRIPTOR_TYPE;
+        bytes[5..7].copy_from_slice(&(info | 2).to_be_bytes());
+        bytes[7..9].copy_from_slice(&key_length.to_be_bytes());
+        bytes[9..17].copy_from_slice(&replay.to_be_bytes());
+        bytes[17..49].copy_from_slice(&nonce);
+        bytes[49..65].copy_from_slice(&key_iv);
+        bytes[73..81].copy_from_slice(&key_identifier);
+        bytes[97..99].copy_from_slice(&(key_data.len() as u16).to_be_bytes());
+        bytes[EAPOL_KEY_PACKET_LEN..packet_len].copy_from_slice(key_data);
+        OwnedEapolFrame::try_copy(Wpa2Interface::Station, peer, &bytes[..packet_len]).unwrap()
     }
 
     #[test]
@@ -935,26 +1059,24 @@ mod tests {
             })
         );
 
-        let message3 = frame(
-            Wpa2Interface::Station,
-            ap,
-            PAIRWISE | ACK | MIC | INSTALL | SECURE,
-            11,
-            anonce,
-        );
+        let message3 = message3(ap, 11, anonce);
         let (ticket, retained) = match state.on_frame(message3.clone()).unwrap() {
             Wpa2StaAction::VerifyMessage3Mic { ticket, frame } => (ticket, frame),
             action => panic!("unexpected action: {action:?}"),
         };
         let (ticket, retained) = match state.complete_message3_mic(ticket, retained, true).unwrap()
         {
+            Wpa2StaAction::DecryptMessage3KeyData { ticket, frame } => (ticket, frame),
+            action => panic!("unexpected action: {action:?}"),
+        };
+        let (ticket, retained) = match state.complete_key_data(ticket, retained, true).unwrap() {
             Wpa2StaAction::InstallKeys { ticket, frame } => (ticket, frame),
             action => panic!("unexpected action: {action:?}"),
         };
         assert_eq!(retained.key_frame().replay_counter(), 11);
         assert_eq!(
             state
-                .complete_key_install::<EAPOL_KEY_PACKET_LEN>(ticket, true)
+                .complete_key_install::<MESSAGE3_CAPACITY>(ticket, true)
                 .unwrap(),
             Wpa2StaAction::Transmit(Wpa2Transmit {
                 message: Wpa2TxMessage::PairwiseMessage4,
@@ -998,13 +1120,7 @@ mod tests {
             .complete_ptk::<EAPOL_KEY_PACKET_LEN>(ticket, true)
             .unwrap();
         assert_eq!(
-            state.on_frame(frame(
-                Wpa2Interface::Station,
-                [2; 6],
-                PAIRWISE | ACK | MIC | INSTALL | SECURE,
-                7,
-                [4; 32],
-            )),
+            state.on_frame(message3([2; 6], 7, [4; 32])),
             Err(Wpa2StateError::StaleReplayCounter)
         );
     }
@@ -1126,22 +1242,130 @@ mod tests {
         state
             .complete_ptk::<EAPOL_KEY_PACKET_LEN>(ticket, true)
             .unwrap();
-        let (ticket, message3) = match state
-            .on_frame(frame(
-                Wpa2Interface::Station,
+        assert_eq!(
+            state.on_frame(raw_message3(
                 [2; 6],
-                PAIRWISE | ACK | MIC | INSTALL | SECURE | ENCRYPTED,
                 2,
                 [4; 32],
-            ))
-            .unwrap()
-        {
-            Wpa2StaAction::VerifyMessage3Mic { ticket, frame } => (ticket, frame),
-            _ => unreachable!(),
-        };
-        assert_eq!(
-            state.complete_message3_mic(ticket, message3, true),
+                PAIRWISE | ACK | MIC | INSTALL | SECURE | ENCRYPTED,
+                WPA2_CCMP_TEMPORAL_KEY_LEN,
+                [0; 16],
+                [0; 8],
+                &[],
+            )),
             Err(Wpa2StateError::MissingEncryptedKeyData)
         );
+        assert_eq!(state.phase(), Wpa2StaPhase::AwaitingMessage3);
+    }
+
+    #[test]
+    fn sta_binds_message3_fields_to_the_accepted_message1() {
+        fn awaiting_message3() -> Wpa2StaState {
+            let mut state = Wpa2StaState::new([1; 6], [2; 6], [3; 32]).unwrap();
+            let ticket = match state
+                .on_frame(frame(
+                    Wpa2Interface::Station,
+                    [2; 6],
+                    PAIRWISE | ACK,
+                    1,
+                    [4; 32],
+                ))
+                .unwrap()
+            {
+                Wpa2StaAction::DerivePtk { ticket, .. } => ticket,
+                action => panic!("unexpected action: {action:?}"),
+            };
+            state
+                .complete_ptk::<MESSAGE3_CAPACITY>(ticket, true)
+                .unwrap();
+            state
+        }
+
+        let mut state = awaiting_message3();
+        assert_eq!(
+            state.on_frame(message3([2; 6], 2, [5; 32])),
+            Err(Wpa2StateError::AuthenticatorNonceMismatch)
+        );
+        assert_eq!(state.phase(), Wpa2StaPhase::AwaitingMessage3);
+
+        let mut state = awaiting_message3();
+        assert_eq!(
+            state.on_frame(raw_message3(
+                [2; 6],
+                2,
+                [4; 32],
+                PAIRWISE | ACK | MIC | INSTALL | SECURE,
+                WPA2_CCMP_TEMPORAL_KEY_LEN,
+                [0; 16],
+                [0; 8],
+                &MESSAGE3_KEY_DATA,
+            )),
+            Err(Wpa2StateError::InvalidMessage3KeyInfo)
+        );
+        assert_eq!(state.phase(), Wpa2StaPhase::AwaitingMessage3);
+
+        let mut state = awaiting_message3();
+        assert_eq!(
+            state.on_frame(raw_message3(
+                [2; 6],
+                2,
+                [4; 32],
+                PAIRWISE | ACK | MIC | INSTALL | SECURE | ENCRYPTED,
+                0,
+                [0; 16],
+                [0; 8],
+                &MESSAGE3_KEY_DATA,
+            )),
+            Err(Wpa2StateError::InvalidKeyLength)
+        );
+        assert_eq!(state.phase(), Wpa2StaPhase::AwaitingMessage3);
+
+        let mut state = awaiting_message3();
+        assert_eq!(
+            state.on_frame(raw_message3(
+                [2; 6],
+                2,
+                [4; 32],
+                PAIRWISE | ACK | MIC | INSTALL | ENCRYPTED,
+                WPA2_CCMP_TEMPORAL_KEY_LEN,
+                [0; 16],
+                [0; 8],
+                &MESSAGE3_KEY_DATA,
+            )),
+            Err(Wpa2StateError::InvalidMessage3KeyInfo)
+        );
+        assert_eq!(state.phase(), Wpa2StaPhase::AwaitingMessage3);
+
+        let mut state = awaiting_message3();
+        assert_eq!(
+            state.on_frame(raw_message3(
+                [2; 6],
+                2,
+                [4; 32],
+                PAIRWISE | ACK | MIC | INSTALL | SECURE | ENCRYPTED,
+                WPA2_CCMP_TEMPORAL_KEY_LEN,
+                [1; 16],
+                [0; 8],
+                &MESSAGE3_KEY_DATA,
+            )),
+            Err(Wpa2StateError::NonzeroKeyIv)
+        );
+        assert_eq!(state.phase(), Wpa2StaPhase::AwaitingMessage3);
+
+        let mut state = awaiting_message3();
+        assert_eq!(
+            state.on_frame(raw_message3(
+                [2; 6],
+                2,
+                [4; 32],
+                PAIRWISE | ACK | MIC | INSTALL | SECURE | ENCRYPTED,
+                WPA2_CCMP_TEMPORAL_KEY_LEN,
+                [0; 16],
+                [1; 8],
+                &MESSAGE3_KEY_DATA,
+            )),
+            Err(Wpa2StateError::NonzeroKeyIdentifier)
+        );
+        assert_eq!(state.phase(), Wpa2StaPhase::AwaitingMessage3);
     }
 }

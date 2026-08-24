@@ -12,6 +12,7 @@
 use core::future::Future;
 
 use embassy_sync::channel::{Sender, TrySendError};
+use embassy_time::Instant;
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
 use open_esp_radio_esp32s31_wifi_mac::{
@@ -329,8 +330,12 @@ impl<
 
     fn try_send(
         &self,
-        frame: Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+        mut frame: Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
     ) -> Result<(), Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>> {
+        // Timestamp the first executor-visible handoff, before either the
+        // standalone or same-channel routing queue can delay protocol parsing.
+        // Retried publication preserves this first sample in the affine frame.
+        frame.mark_runtime_received_at_micros(Instant::now().as_micros());
         match self {
             Self::Standalone(frames) => frames.try_send(frame).map_err(|error| match error {
                 TrySendError::Full(frame) => frame,

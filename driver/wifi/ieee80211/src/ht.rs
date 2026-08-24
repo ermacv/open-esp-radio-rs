@@ -10,6 +10,41 @@ use crate::channel::{WifiChannel, WifiChannelWidth};
 pub const HT_CAPABILITY_IE_LEN: usize = 28;
 pub const HT_OPERATION_IE_LEN: usize = 24;
 
+/// The standard HT Duplicate modulation-and-coding selector, MCS32.
+///
+/// MCS32 is a special single-stream 40-MHz duplicate mode. It is not the next
+/// member of the ordinary one-spatial-stream MCS0..MCS7 range, so keeping it
+/// as a zero-sized marker prevents rate-selection code from ordering it as a
+/// faster spatial-stream rate.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct HtDuplicateMcs32;
+
+impl HtDuplicateMcs32 {
+    pub const INDEX: u8 = 32;
+    pub const CAPABILITY_IE_BYTE: usize = 9;
+    pub const CAPABILITY_IE_MASK: u8 = 1;
+
+    pub const fn new() -> Self {
+        Self
+    }
+
+    pub const fn supports_width(width: WifiChannelWidth) -> bool {
+        matches!(
+            width,
+            WifiChannelWidth::Mhz40Above | WifiChannelWidth::Mhz40Below
+        )
+    }
+
+    /// Advertise receive-only MCS32 in a complete HT Capabilities IE.
+    ///
+    /// TX MCS Parameters bit one marks the TX and RX sets as unequal. Without
+    /// it, setting the RX MCS32 bit would also claim unimplemented TX support.
+    pub const fn advertise_receive_only(self, element: &mut [u8; HT_CAPABILITY_IE_LEN]) {
+        element[Self::CAPABILITY_IE_BYTE] |= Self::CAPABILITY_IE_MASK;
+        element[17] |= 0x03;
+    }
+}
+
 /// Build the complete one-stream HT Capabilities element for one BSS.
 pub const fn ht_capability_ie(channel: WifiChannel) -> [u8; HT_CAPABILITY_IE_LEN] {
     ht_capability_ie_for_peer(channel, None)
@@ -75,7 +110,9 @@ pub const fn ht_capability_ie_for_peer(
     };
     // One receive spatial stream, MCS0 through MCS7.
     element[5] = 0xff;
-    // Supported MCS Set byte 12: TX MCS set is defined and equal to RX.
+    // Supported MCS Set byte 12: the ordinary TX MCS set is defined and equal
+    // to RX. Local RX MCS32 remains unadvertised until its runtime behavior has
+    // dedicated HIL proof; peer parsing and RX diagnostics remain independent.
     // `ieee80211_add_htcap_body` writes this at body offset 15; the complete
     // information element has a two-byte header, so the byte is index 17.
     element[17] = 0x01;
@@ -106,6 +143,7 @@ pub struct HtPeerCapabilities {
     capability_info: u16,
     ampdu_parameters: u8,
     rx_mcs_0_to_7: u8,
+    rx_ht_duplicate_mcs32: bool,
 }
 
 impl HtPeerCapabilities {
@@ -126,6 +164,23 @@ impl HtPeerCapabilities {
         self.ampdu_parameters
     }
 
+    /// Whether the peer can receive the special 40-MHz HT Duplicate mode.
+    ///
+    /// A malformed peer which sets MCS32 without also admitting 40 MHz is
+    /// rejected here even though its raw Supported MCS Set bit is retained by
+    /// the parser.
+    pub const fn supports_ht_duplicate_mcs32(self) -> bool {
+        self.rx_ht_duplicate_mcs32 && self.supports_40_mhz()
+    }
+
+    pub const fn ht_duplicate_mcs32(self) -> Option<HtDuplicateMcs32> {
+        if self.supports_ht_duplicate_mcs32() {
+            Some(HtDuplicateMcs32::new())
+        } else {
+            None
+        }
+    }
+
     /// Highest common one-spatial-stream MCS advertised by the peer.
     pub const fn highest_rx_mcs(self) -> u8 {
         7 - self.rx_mcs_0_to_7.leading_zeros() as u8
@@ -144,6 +199,9 @@ pub fn ht_peer_capabilities(bytes: &[u8]) -> Option<HtPeerCapabilities> {
                 capability_info: u16::from_le_bytes([record[2], record[3]]),
                 ampdu_parameters: record[4],
                 rx_mcs_0_to_7: record[5],
+                rx_ht_duplicate_mcs32: record[HtDuplicateMcs32::CAPABILITY_IE_BYTE]
+                    & HtDuplicateMcs32::CAPABILITY_IE_MASK
+                    != 0,
             });
         }
         remaining = &remaining[record.len()..];
@@ -171,6 +229,7 @@ mod tests {
                 capability_info: 0x102c,
                 ampdu_parameters: 0x03,
                 rx_mcs_0_to_7: 0xff,
+                rx_ht_duplicate_mcs32: false,
             })
         );
         let mut empty = [0_u8; 28];
@@ -190,6 +249,29 @@ mod tests {
         assert!(peer.supports_40_mhz());
         assert!(peer.supports_short_guard_interval(WifiChannelWidth::Mhz40Above));
         assert_eq!(peer.highest_rx_mcs(), 7);
+        assert!(!peer.supports_ht_duplicate_mcs32());
+        assert_eq!(capability[HtDuplicateMcs32::CAPABILITY_IE_BYTE], 0);
+        assert_eq!(capability[17], 0x01);
+    }
+
+    #[test]
+    fn peer_mcs32_is_still_parsed_without_local_advertisement() {
+        let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
+        let local = ht_capability_ie(channel);
+        let mut peer_record = local;
+        HtDuplicateMcs32::new().advertise_receive_only(&mut peer_record);
+
+        assert_eq!(local[HtDuplicateMcs32::CAPABILITY_IE_BYTE], 0);
+        assert_eq!(local[17], 0x01);
+        let peer = ht_peer_capabilities(&peer_record).unwrap();
+        assert!(peer.supports_ht_duplicate_mcs32());
+        assert_eq!(peer.ht_duplicate_mcs32(), Some(HtDuplicateMcs32::new()));
+
+        let mut malformed_ht20 = ht_capability_ie(WifiChannel::mhz20(6).unwrap());
+        HtDuplicateMcs32::new().advertise_receive_only(&mut malformed_ht20);
+        let malformed_peer = ht_peer_capabilities(&malformed_ht20).unwrap();
+        assert!(!malformed_peer.supports_ht_duplicate_mcs32());
+        assert_eq!(malformed_peer.ht_duplicate_mcs32(), None);
     }
 
     #[test]

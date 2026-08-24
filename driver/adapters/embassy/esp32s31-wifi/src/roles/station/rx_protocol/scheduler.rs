@@ -29,6 +29,10 @@ where
 {
     /// Wait for and dispatch one independently owned staged frame.
     pub async fn dispatch_next(&mut self) -> ConnectedRxDispatch {
+        assert!(
+            self.processor.runtime.dispatcher_configured(),
+            "stopped connected RX protocol cannot dispatch another frame"
+        );
         loop {
             if let Some(command) = self
                 .processor

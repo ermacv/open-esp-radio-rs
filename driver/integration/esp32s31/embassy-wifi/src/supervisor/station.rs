@@ -63,11 +63,13 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         Esp32s31ConnectedNetworkStartedParts, Esp32s31ConnectedRxProtocol,
         Esp32s31ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocolStorage,
         Esp32s31ConnectedServiceResources, Esp32s31ConnectedStaBlockAckPolicy,
-        Esp32s31ConnectedStaCompositionFailure, Esp32s31ConnectedStaConfig,
-        Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaControlResources,
+        Esp32s31ConnectedStaCcmpReplayFailure, Esp32s31ConnectedStaCompositionFailure,
+        Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaConfigError,
+        Esp32s31ConnectedStaControlResources,
         Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPort,
         Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy,
         Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTeardownFailure,
+        Esp32s31ConnectedStaGroupSecurity, Esp32s31ConnectedStaSecurityStopReport,
         Esp32s31ConnectedStaTxHandoffFailure, Esp32s31ConnectedStaTxPolicy,
         Esp32s31ConnectedStaTxResources, Esp32s31ConnectedStationExit, Esp32s31ConnectedTx,
         Esp32s31DisconnectedStaEpoch, Esp32s31InitialConnectedEpochResources,
@@ -87,13 +89,20 @@ use open_esp_radio_esp32s31_wifi_mac::irq::{
     IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::{StaCcmpClearReport, StaGroupCcmpSlot},
+    crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
     rx::{RxIngressConfig, RxRingError},
     rx_pool::RxStagePool,
     tx::{HeEdcaTxopLimit, HtGuardInterval, HtMcs, LegacyRate},
     tx_ampdu::HtAmpduTxError,
 };
-use open_esp_radio_esp32s31_wifi_sta::attempt::Esp32s31StaAttemptSecurity;
+use open_esp_radio_esp32s31_wifi_sta::{
+    attempt::{
+        Esp32s31StaAttemptSecurity, Esp32s31StaAttemptSecurityMaterial,
+        Esp32s31StaInstalledSecurity,
+    },
+    connected_rx::{StaCcmpRxReplayResource, StaCcmpRxReplayStartFailure},
+    single_mpdu_tx::ConnectedTxSecurity,
+};
 #[cfg(feature = "diagnostics")]
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
     ConnectedRxEvent, ConnectedRxSink as MacConnectedRxSink,
@@ -107,8 +116,7 @@ use open_esp_radio_wifi_embassy::{
     },
     station_network::RunningStationNetwork,
 };
-use open_esp_radio_wpa2::Pmk;
-use static_cell::ConstStaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::radio_resources::{
     NETWORK_TX_HEADROOM, NetworkRunner, RadioAmpduStorage, RadioTxBacking, RunningWifiNetwork,
@@ -118,7 +126,7 @@ use crate::radio_resources::{
 use crate::diagnostics::{Esp32s31ConnectedRxObservation, Esp32s31ConnectedRxObserver};
 use crate::supervisor::{
     ControlTx, ProductionStationBoardResources, ProductionStationRuntime, RX_BUFFER_SIZE,
-    RX_DESCRIPTOR_COUNT, RxStorage, TxStorage, production_station_runtime,
+    RX_DESCRIPTOR_COUNT, RxStorage, StationPowerMode, TxStorage, production_station_runtime,
 };
 pub(super) type ControlResources =
     ConnectedControlResources<CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
@@ -394,6 +402,16 @@ type ConnectedDriverStarted = Esp32s31ConnectedEpochStarted<
     RadioAmpduStorage,
     &'static ControlResources,
 >;
+type ReturnedConnectedTxResources =
+    open_esp_radio_esp32s31_wifi_sta::control_tx::WifiTxResources<
+    'static,
+    open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile,
+    fn() -> u32,
+    open_esp_radio_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
+    {
+        open_esp_radio_esp32s31_wifi_embassy::composition::resources::ESP32S31_DEFAULT_TX_BUFFER_SIZE
+    },
+>;
 type ConnectedDriverTeardownFailure = Esp32s31ConnectedDriverTeardownFailure<
     'static,
     CriticalSectionRawMutex,
@@ -404,6 +422,13 @@ type ConnectedDriverTeardownFailure = Esp32s31ConnectedDriverTeardownFailure<
     CONTROL_QUEUE_DEPTH,
     RxRingError,
 >;
+// A failed connected-driver teardown is a terminal quarantine frontier: the
+// supervisor retains it forever and can never begin another role epoch. Keep
+// that complete no-alloc owner graph at a stable address so wrapping the fault
+// for the terminal actor does not copy several kilobytes through each enum
+// layer on the task stack.
+static CONNECTED_DRIVER_TEARDOWN_FAULT: StaticCell<ConnectedDriverTeardownFailure> =
+    StaticCell::new();
 pub type ConnectedReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
     ConnectedHardware,
     Esp32s31RxFrontier<
@@ -490,6 +515,7 @@ static RX_PROTOCOL_RUNTIME: ConstStaticCell<ConnectedRxProtocolStorage> =
     ConstStaticCell::new(Esp32s31ConnectedRxProtocolStorage::new());
 static CONTROL_RESOURCES: ConstStaticCell<ControlResources> =
     ConstStaticCell::new(ControlResources::new());
+pub(super) static STA_CCMP_RX_REPLAY: StaCcmpRxReplayResource = StaCcmpRxReplayResource::new();
 #[cfg(feature = "mac-irq-diagnostics")]
 static MAC_IRQ_OBSERVER: OnceLock<fn(Esp32s31MacIrqObservation)> = OnceLock::new();
 #[cfg(feature = "diagnostics")]
@@ -880,13 +906,27 @@ pub(crate) struct ConnectedDriverAssemblyFault {
     _stack: (),
     _initial_network_task: Option<()>,
     _control_resources: &'static ControlResources,
-    _group: StaGroupCcmpSlot,
-    _pmk: Pmk,
-    _supplicant_nonce: [u8; 32],
-    _message4_protection: open_esp_radio_esp32s31_wifi_sta::wpa2::Esp32s31Wpa2Message4Protection,
+    _group_security: Esp32s31ConnectedStaGroupSecurity,
+    _material: Esp32s31StaAttemptSecurityMaterial,
     _interface: open_esp_radio_wifi_softmac::interface::BoundVirtualInterface,
     _failure: ConnectedAssemblyFailure,
     _task_reservation: ConnectedTaskReservationOwner,
+}
+
+/// Exact WPA2 owners retained when the shared replay arena or connected plan
+/// rejects publication before driver composition.
+pub(crate) enum ConnectedStationReplaySetupFailure {
+    Start {
+        _failure: StaCcmpRxReplayStartFailure,
+        _pairwise: StaPairwiseCcmpSlot,
+        _group: StaGroupCcmpSlot,
+        _group_material: StaGroupCcmpKeyMaterial,
+    },
+    Plan {
+        _failure: Esp32s31ConnectedStaCcmpReplayFailure,
+        _tx_security: ConnectedTxSecurity,
+        _group_security: Esp32s31ConnectedStaGroupSecurity,
+    },
 }
 
 /// Non-reusable connected owner retained at the exact failed transition.
@@ -910,11 +950,36 @@ pub enum ConnectedStationFault<'state, 'security> {
         _network: NetworkRunner,
         _initial_network_task: Option<()>,
         _plan: open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaPlan,
-        _pairwise: open_esp_radio_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot,
-        _group: StaGroupCcmpSlot,
+        _installed_security: Esp32s31StaInstalledSecurity,
         _security: Esp32s31StaAttemptSecurity<'security>,
         _task_reservation: ConnectedTaskReservationOwner,
         _error: open_esp_radio_esp32s31_wifi_sta::tx_epoch::Esp32s31StaTxEpochError,
+    },
+    SecurityOwnershipMismatch {
+        _runtime: ProductionStationRuntime<'state>,
+        _started: ConnectedDriverStarted,
+        _stack: (),
+        _network: NetworkRunner,
+        _initial_network_task: Option<()>,
+        _plan: open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaPlan,
+        _installed_security: Esp32s31StaInstalledSecurity,
+        _sequences: StaTxSequenceCounters,
+        _material: Esp32s31StaAttemptSecurityMaterial,
+        _control_tx: ControlTx,
+        _task_reservation: ConnectedTaskReservationOwner,
+    },
+    ReplaySetup {
+        _runtime: ProductionStationRuntime<'state>,
+        _started: ConnectedDriverStarted,
+        _stack: (),
+        _network: NetworkRunner,
+        _initial_network_task: Option<()>,
+        _plan: open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaPlan,
+        _failure: ConnectedStationReplaySetupFailure,
+        _sequences: StaTxSequenceCounters,
+        _material: Esp32s31StaAttemptSecurityMaterial,
+        _control_tx: ControlTx,
+        _task_reservation: Option<ConnectedTaskReservationOwner>,
     },
     InitialStaticResourcesUnavailable {
         _runtime: ProductionStationRuntime<'state>,
@@ -924,8 +989,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _network: NetworkRunner,
         _initial_network_task: Option<()>,
         _plan: open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaPlan,
-        _pairwise: open_esp_radio_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot,
-        _group: StaGroupCcmpSlot,
+        _installed_security: Esp32s31StaInstalledSecurity,
         _security: Esp32s31StaAttemptSecurity<'security>,
         _task_reservation: ConnectedTaskReservationOwner,
     },
@@ -939,8 +1003,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _network: NetworkRunner,
         _initial_network_task: Option<()>,
         _plan: open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaPlan,
-        _pairwise: open_esp_radio_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot,
-        _group: open_esp_radio_esp32s31_wifi_mac::crypto::StaGroupCcmpSlot,
+        _installed_security: Esp32s31StaInstalledSecurity,
         _security: Esp32s31StaAttemptSecurity<'security>,
     },
     DriverTeardown {
@@ -950,11 +1013,24 @@ pub enum ConnectedStationFault<'state, 'security> {
         _outcome: ConnectedStationOutcome,
         _interrupt_drain:
             open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochDrain,
-        _error: ConnectedDriverTeardownFailure,
-        _pmk: Pmk,
-        _supplicant_nonce: [u8; 32],
-        _message4_protection:
-            open_esp_radio_esp32s31_wifi_sta::wpa2::Esp32s31Wpa2Message4Protection,
+        _error: &'static mut ConnectedDriverTeardownFailure,
+        _material: Esp32s31StaAttemptSecurityMaterial,
+    },
+    SecurityTeardownMismatch {
+        _runtime: ProductionStationRuntime<'state>,
+        _network: RunningWifiNetwork,
+        _control_resources: &'static ControlResources,
+        _outcome: ConnectedStationOutcome,
+        _interrupt_drain:
+            open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochDrain,
+        _hardware: ConnectedHardware,
+        _stopped_rx: ConnectedStoppedRx,
+        _tx_resources: ReturnedConnectedTxResources,
+        _aggregate: RadioAmpduStorage,
+        _control_observation: Esp32s31ConnectedControlShutdown,
+        _security_stop: Esp32s31ConnectedStaSecurityStopReport,
+        _sequences: StaTxSequenceCounters,
+        _material: Esp32s31StaAttemptSecurityMaterial,
     },
     TxRestore {
         _runtime: ProductionStationRuntime<'state>,
@@ -967,14 +1043,11 @@ pub enum ConnectedStationFault<'state, 'security> {
         _stopped_rx: ConnectedStoppedRx,
         _aggregate: RadioAmpduStorage,
         _control_observation: Esp32s31ConnectedControlShutdown,
-        _keys: StaCcmpClearReport,
+        _security_stop: Esp32s31ConnectedStaSecurityStopReport,
         _sequences: StaTxSequenceCounters,
         _error: open_esp_radio_esp32s31_wifi_sta::tx_epoch::Esp32s31StaTxEpochError,
         _returned_control: ControlTx,
-        _pmk: Pmk,
-        _supplicant_nonce: [u8; 32],
-        _message4_protection:
-            open_esp_radio_esp32s31_wifi_sta::wpa2::Esp32s31Wpa2Message4Protection,
+        _material: Esp32s31StaAttemptSecurityMaterial,
     },
 }
 
@@ -1115,8 +1188,9 @@ async fn observe_protocol_task_polls<F: core::future::Future>(
     .await
 }
 
-pub(super) const fn connected_config() -> Esp32s31ConnectedStaConfig {
+pub(super) const fn connected_config(power: StationPowerMode) -> Esp32s31ConnectedStaConfig {
     Esp32s31ConnectedStaConfig {
+        power,
         tx: Esp32s31ConnectedStaTxPolicy {
             rate: Esp32s31ConnectedStaRateConfig {
                 high_throughput_enabled: true,
@@ -1137,6 +1211,7 @@ pub(super) const fn connected_config() -> Esp32s31ConnectedStaConfig {
             completion_timeout_us: 250_000,
             aggregate_frame_limit: TX_AMPDU_FRAME_COUNT as u8,
             aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+            he_trigger_based: None,
         },
         block_ack: Esp32s31ConnectedStaBlockAckPolicy {
             // Request exactly the number of MPDUs the retained TX arena can
@@ -1251,9 +1326,8 @@ pub(crate) async fn run_connected<'state, 'security>(
         stack,
         network: network_runner,
         initial_network_task: stack_runner,
-        plan,
-        pairwise,
-        group,
+        mut plan,
+        installed_security,
         security,
     } = started.into_parts();
     let runtime = runtime.into_parts();
@@ -1285,8 +1359,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                             _network: network_runner,
                             _initial_network_task: stack_runner,
                             _plan: plan,
-                            _pairwise: pairwise,
-                            _group: group,
+                            _installed_security: installed_security,
                             _security: security,
                             _task_reservation: task_reservation,
                         },
@@ -1337,8 +1410,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                 _network: network_runner,
                 _initial_network_task: stack_runner,
                 _plan: plan,
-                _pairwise: pairwise,
-                _group: group,
+                _installed_security: installed_security,
                 _security: security,
             });
         }
@@ -1363,8 +1435,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                     _network: network_runner,
                     _initial_network_task: stack_runner,
                     _plan: plan,
-                    _pairwise: pairwise,
-                    _group: group,
+                    _installed_security: installed_security,
                     _security: security,
                     _task_reservation: task_reservation,
                     _error: error,
@@ -1380,14 +1451,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         #[cfg(feature = "diagnostics")]
         diagnostics,
     } = board;
-    let Esp32s31StaAttemptSecurity {
-        pmk,
-        supplicant_nonce,
-        sequences,
-        message4_protection,
-        connected,
-        ..
-    } = security;
+    let (sequences, mut material) = security.into_parts();
     let (_phy, platform) = role.radio_mut();
     let Esp32s31ConnectedEpochStarted {
         hardware,
@@ -1395,6 +1459,162 @@ pub(crate) async fn run_connected<'state, 'security>(
         aggregate_tx: aggregate,
         control: control_resources,
     } = started;
+    let material_is_open = matches!(&material, Esp32s31StaAttemptSecurityMaterial::Open);
+    let material_has_connected_wpa2 = matches!(
+        &material,
+        Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
+            connected: Some(_),
+            ..
+        }
+    );
+    let (tx_security, group_security) = match installed_security {
+        Esp32s31StaInstalledSecurity::Open if material_is_open => (
+            ConnectedTxSecurity::Open,
+            Esp32s31ConnectedStaGroupSecurity::Open,
+        ),
+        Esp32s31StaInstalledSecurity::Wpa2Personal {
+                pairwise,
+                group,
+                group_material,
+                replay,
+            } if material_has_connected_wpa2 => {
+                let (replay_rx, replay_control) = match STA_CCMP_RX_REPLAY.start(replay) {
+                    Ok(endpoints) => endpoints,
+                    Err(failure) => {
+                        return ConnectedStationRunExit::Faulted(
+                            ConnectedStationFault::ReplaySetup {
+                                _runtime: production_station_runtime(
+                                    role,
+                                    interrupt_epoch,
+                                    dma,
+                                    tx_storage,
+                                    scan_table,
+                                    frame,
+                                    ethernet,
+                                    ProductionStationBoardResources {
+                                        interface,
+                                        rx_protocol_runtime,
+                                        sta_ap_rx_batch,
+                                        initial_connected,
+                                        #[cfg(feature = "diagnostics")]
+                                        diagnostics,
+                                    },
+                                ),
+                                _started: Esp32s31ConnectedEpochStarted {
+                                    hardware,
+                                    rx,
+                                    aggregate_tx: aggregate,
+                                    control: control_resources,
+                                },
+                                _stack: stack,
+                                _network: network_runner,
+                                _initial_network_task: stack_runner,
+                                _plan: plan,
+                                _failure: ConnectedStationReplaySetupFailure::Start {
+                                    _failure: failure,
+                                    _pairwise: pairwise,
+                                    _group: group,
+                                    _group_material: group_material,
+                                },
+                                _sequences: sequences,
+                                _material: material,
+                                _control_tx: control_tx,
+                                _task_reservation: Some(task_reservation),
+                            },
+                        );
+                    }
+                };
+                let tx_security = ConnectedTxSecurity::Wpa2Personal(pairwise);
+                let group_security =
+                    Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey {
+                        group,
+                        material: group_material,
+                        replay: replay_control,
+                    };
+                if let Err(failure) = plan.enable_ccmp_rx_replay(replay_rx) {
+                    return ConnectedStationRunExit::Faulted(
+                        ConnectedStationFault::ReplaySetup {
+                            _runtime: production_station_runtime(
+                                role,
+                                interrupt_epoch,
+                                dma,
+                                tx_storage,
+                                scan_table,
+                                frame,
+                                ethernet,
+                                ProductionStationBoardResources {
+                                    interface,
+                                    rx_protocol_runtime,
+                                    sta_ap_rx_batch,
+                                    initial_connected,
+                                    #[cfg(feature = "diagnostics")]
+                                    diagnostics,
+                                },
+                            ),
+                            _started: Esp32s31ConnectedEpochStarted {
+                                hardware,
+                                rx,
+                                aggregate_tx: aggregate,
+                                control: control_resources,
+                            },
+                            _stack: stack,
+                            _network: network_runner,
+                            _initial_network_task: stack_runner,
+                            _plan: plan,
+                            _failure: ConnectedStationReplaySetupFailure::Plan {
+                                _failure: failure,
+                                _tx_security: tx_security,
+                                _group_security: group_security,
+                            },
+                            _sequences: sequences,
+                            _material: material,
+                            _control_tx: control_tx,
+                            _task_reservation: Some(task_reservation),
+                        },
+                    );
+                }
+                (tx_security, group_security)
+            }
+        installed_security => {
+            return ConnectedStationRunExit::Faulted(
+                ConnectedStationFault::SecurityOwnershipMismatch {
+                    _runtime: production_station_runtime(
+                        role,
+                        interrupt_epoch,
+                        dma,
+                        tx_storage,
+                        scan_table,
+                        frame,
+                        ethernet,
+                        ProductionStationBoardResources {
+                            interface,
+                            rx_protocol_runtime,
+                            sta_ap_rx_batch,
+                            initial_connected,
+                            #[cfg(feature = "diagnostics")]
+                            diagnostics,
+                        },
+                    ),
+                    _started: Esp32s31ConnectedEpochStarted {
+                        hardware,
+                        rx,
+                        aggregate_tx: aggregate,
+                        control: control_resources,
+                    },
+                    _stack: stack,
+                    _network: network_runner,
+                    _initial_network_task: stack_runner,
+                    _plan: plan,
+                    _installed_security: installed_security,
+                    _sequences: sequences,
+                    _material: material,
+                    _control_tx: control_tx,
+                    _task_reservation: task_reservation,
+                },
+            );
+        }
+    };
+    let mut group_security = Some(group_security);
     #[cfg(feature = "diagnostics")]
     log_rx_ring_topology("started", &rx);
     #[cfg(feature = "diagnostics")]
@@ -1455,7 +1675,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         Esp32s31ConnectedStaTxResources {
             control: control_tx,
             aggregate,
-            pairwise_key: pairwise,
+            security: tx_security,
             sequences: tx_sequences,
             #[cfg(feature = "diagnostics")]
             aggregate_tx_observer: diagnostics.map(|hooks| hooks.aggregate_tx),
@@ -1489,10 +1709,10 @@ pub(crate) async fn run_connected<'state, 'security>(
                     _stack: stack,
                     _initial_network_task: stack_runner,
                     _control_resources: control_resources,
-                    _group: group,
-                    _pmk: pmk,
-                    _supplicant_nonce: supplicant_nonce,
-                    _message4_protection: message4_protection,
+                    _group_security: group_security
+                        .take()
+                        .expect("pre-control composition retains group security"),
+                    _material: material,
                     _interface: interface,
                     _failure: failure,
                     _task_reservation: task_reservation,
@@ -1508,16 +1728,32 @@ pub(crate) async fn run_connected<'state, 'security>(
         open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID,
         drivers.services,
     );
-    if radio_runner
-        .services_mut()
-        .control_mut()
-        .install_wpa2_security(ConnectedWpa2Security::new(
-            connected.expect("installed WPA2 keys retain connected supplicant state"),
+    if let Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } = &mut material {
+        let Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey {
             group,
-        ))
-        .is_err()
-    {
-        unreachable!("a fresh connected control owner has no WPA2 session");
+            material: group_material,
+            replay,
+        } = group_security
+            .take()
+            .expect("WPA2 composition retains group security")
+        else {
+            unreachable!("validated WPA2 composition retains group rekey owners");
+        };
+        if radio_runner
+            .services_mut()
+            .control_mut()
+            .install_wpa2_security(ConnectedWpa2Security::new(
+                connected
+                        .take()
+                        .expect("installed WPA2 keys retain connected supplicant state"),
+                group,
+                group_material,
+                replay,
+            ))
+            .is_err()
+        {
+            unreachable!("a fresh connected control owner has no WPA2 session");
+        }
     }
 
     let (tasks, protocol_endpoint) = task_reservation.into_endpoints();
@@ -1531,10 +1767,11 @@ pub(crate) async fn run_connected<'state, 'security>(
         })
         .await;
     diagnostics_event!(
-        "open-radio: connected datapath active phy={} tx={}kbps ampdu={}kbps",
+        "open-radio: connected datapath active phy={} tx={}kbps ampdu={}kbps mcs32={:?}",
         report.link.association_phy.name(),
         report.data_tx_rate.nominal_kbps(),
         report.aggregate_tx_rate.nominal_kbps(),
+        report.ht_duplicate_tx_selection,
     );
     #[cfg(feature = "diagnostics")]
     // This finite register snapshot is emitted at Info in diagnostics
@@ -1619,10 +1856,11 @@ pub(crate) async fn run_connected<'state, 'security>(
                 );
                 log_rx_ring_topology("exit", _runner.services().rx());
                 diagnostics_debug!(
-                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} last_event={:?} stale_addba_responses={} last_stale_addba_token={:?} security={:?}",
+                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} hardware_beacon_frontier={:?} last_event={:?} stale_addba_responses={} last_stale_addba_token={:?} security={:?}",
                     control.beacon_lost(),
                     beacon.map_or(0, |monitor| monitor.observed()),
                     beacon.and_then(|monitor| monitor.deadline_micros()),
+                    control.hardware_beacon_monitor_frontier(),
                     control.last_event(),
                     control.stale_tx_block_ack_responses(),
                     control.last_stale_tx_block_ack_token(),
@@ -1672,14 +1910,23 @@ pub(crate) async fn run_connected<'state, 'security>(
         shutdown.reorder_commands,
         shutdown.active_reorders,
     );
-    let security = stopped
-        .quiesced
-        .services
-        .control_mut()
-        .take_wpa2_security()
-        .expect("connected WPA2 control returns its association security owner");
-    let (_connected, group) = security.into_parts();
-    let teardown = match stopped.try_teardown(group) {
+    let group_security = match &mut material {
+        Esp32s31StaAttemptSecurityMaterial::Open => group_security
+            .take()
+            .expect("Open connected epoch retains its no-key group marker"),
+        Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } => {
+            let security = stopped
+                .quiesced
+                .services
+                .control_mut()
+                .take_wpa2_security()
+                .expect("connected WPA2 control returns its association security owner");
+            let (returned_connected, group) = security.into_parts();
+            *connected = Some(returned_connected);
+            Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group)
+        }
+    };
+    let teardown = match stopped.try_teardown(group_security) {
         Ok(teardown) => teardown,
         Err(failure) => {
             let message = match &failure.error {
@@ -1725,10 +1972,8 @@ pub(crate) async fn run_connected<'state, 'security>(
                 _control_resources: control_resources,
                 _outcome: exit,
                 _interrupt_drain: interrupt_drain,
-                _error: error,
-                _pmk: pmk,
-                _supplicant_nonce: supplicant_nonce,
-                _message4_protection: message4_protection,
+                _error: CONNECTED_DRIVER_TEARDOWN_FAULT.init(error),
+                _material: material,
             });
         }
     };
@@ -1739,6 +1984,47 @@ pub(crate) async fn run_connected<'state, 'security>(
     let interrupt_drain = teardown.interrupt_drain;
     let teardown = teardown.driver;
     let sequences = teardown.sequences;
+    if matches!(
+        teardown.security,
+        Esp32s31ConnectedStaSecurityStopReport::ModeMismatchCleared { .. }
+    ) {
+        diagnostics_event!(
+            "open-radio: connected security teardown observed unlike modes; quarantined"
+        );
+        return ConnectedStationRunExit::Faulted(
+            ConnectedStationFault::SecurityTeardownMismatch {
+                _runtime: production_station_runtime(
+                    role,
+                    interrupt_epoch,
+                    dma,
+                    tx_storage,
+                    scan_table,
+                    frame,
+                    ethernet,
+                    ProductionStationBoardResources {
+                        interface,
+                        rx_protocol_runtime,
+                        sta_ap_rx_batch,
+                        initial_connected,
+                        #[cfg(feature = "diagnostics")]
+                        diagnostics,
+                    },
+                ),
+                _network: RunningStationNetwork::new(stack, network_runner),
+                _control_resources: control_resources,
+                _outcome: outcome,
+                _interrupt_drain: interrupt_drain,
+                _hardware: teardown.hardware,
+                _stopped_rx: teardown.stopped_rx,
+                _tx_resources: teardown.tx_resources,
+                _aggregate: teardown.aggregate,
+                _control_observation: teardown.control,
+                _security_stop: teardown.security,
+                _sequences: sequences,
+                _material: material,
+            },
+        );
+    }
     if let Err(failure) = tx_storage.restore_resources(teardown.tx_resources) {
         diagnostics_event!("open-radio: connected TX return found a live owner; quarantined");
         let (error, returned_control) = failure;
@@ -1768,13 +2054,11 @@ pub(crate) async fn run_connected<'state, 'security>(
             _stopped_rx: teardown.stopped_rx,
             _aggregate: teardown.aggregate,
             _control_observation: teardown.control,
-            _keys: teardown.keys,
+            _security_stop: teardown.security,
             _sequences: sequences,
             _error: error,
             _returned_control: returned_control,
-            _pmk: pmk,
-            _supplicant_nonce: supplicant_nonce,
-            _message4_protection: message4_protection,
+            _material: material,
         });
     }
     let disconnected: ConnectedDisconnectedEpoch = Esp32s31DisconnectedStaEpoch::new(
@@ -1803,12 +2087,22 @@ pub(crate) async fn run_connected<'state, 'security>(
                 diagnostics,
             },
         ),
-        security: Esp32s31StaAttemptSecurity::new(
-            pmk,
-            supplicant_nonce,
-            sequences,
-            message4_protection,
-        ),
+        security: match material {
+            Esp32s31StaAttemptSecurityMaterial::Open => {
+                Esp32s31StaAttemptSecurity::open(sequences)
+            }
+            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
+                pmk,
+                supplicant_nonce,
+                message4_protection,
+                ..
+            } => Esp32s31StaAttemptSecurity::new(
+                pmk,
+                supplicant_nonce,
+                sequences,
+                message4_protection,
+            ),
+        },
         outcome,
     })
 }

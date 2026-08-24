@@ -224,6 +224,16 @@ impl RadioPhyRegisters {
             .modify(|_, w| w.enable().bit(enabled));
     }
 
+    /// Read back the single field owned by `phy_set_ftm_en`.
+    pub fn ftm_enabled(&self) -> bool {
+        self.peripherals
+            .phy_agc_oracle
+            .ftm_control()
+            .read()
+            .enable()
+            .bit_is_set()
+    }
+
     /// Apply complete pinned `phy_reg_update_new` and both finite children.
     pub fn update_agc_post_initialization(&mut self) {
         self.peripherals

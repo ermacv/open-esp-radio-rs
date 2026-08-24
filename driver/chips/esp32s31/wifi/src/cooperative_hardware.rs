@@ -23,9 +23,13 @@ use open_esp_radio_esp32s31_wifi_mac::sta_ap_registers::StaApRegisterHardware;
 use open_esp_radio_esp32s31_wifi_mac::{
     ap_policy::ApRxPolicyHardware,
     ap_tsf::ApTsfHardware,
-    crypto::{CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, replace_sta_group_ccmp},
+    crypto::{
+        CcmpKeyHardware, CryptoKeyError, StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError,
+        StaGroupCcmpSlot, replace_sta_group_ccmp, replace_sta_group_ccmp_with_rollback,
+    },
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
+    low_rate::{MacLowRateGateProbe, MacLowRateTransitionError},
     rate_control::BeamformingReportHardware,
     rx::{
         RxDma, RxDmaBinding, RxDmaCursorObservation, RxDmaReloadSettled, RxDmaWalkerEnabled,
@@ -128,14 +132,14 @@ impl<'arena> CooperativeRadioHardware<'arena> {
 }
 
 impl CcmpKeyHardware for CooperativeRadioHardware<'_> {
-    fn install_sta_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
+    fn install_sta_ccmp_entry(&mut self, index: u8, words: &[u32; 6]) -> MacKeyInstallOutcome {
         self.registers
             .access()
             .try_install_station_ccmp_entry(index, words)
             .expect("CCMP installation must not overlap another MMIO transaction")
     }
 
-    fn install_ap_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
+    fn install_ap_ccmp_entry(&mut self, index: u8, words: &[u32; 6]) -> MacKeyInstallOutcome {
         self.registers
             .access()
             .try_install_access_point_ccmp_entry(index, words)
@@ -241,6 +245,17 @@ impl StaLinkRxPolicyHardware for CooperativeRadioHardware<'_> {
     }
 }
 
+impl open_esp_radio_esp32s31_wifi_mac::init::StaEspNowRxPolicyHardware
+    for CooperativeRadioHardware<'_>
+{
+    fn apply_sta_esp_now_policy(&mut self, bssid: [u8; 6]) {
+        self.registers
+            .access()
+            .try_configure_station_esp_now_receive_policy(bssid)
+            .expect("ESP-NOW STA policy configuration must not overlap another MMIO transaction");
+    }
+}
+
 impl StaNoiseFloorHardware for CooperativeRadioHardware<'_> {
     fn read_noise_floor_dbm(&self) -> i8 {
         self.registers
@@ -251,6 +266,12 @@ impl StaNoiseFloorHardware for CooperativeRadioHardware<'_> {
 }
 
 impl TxHardware for CooperativeRadioHardware<'_> {
+    fn probe_phy_low_rate_gate(
+        &mut self,
+    ) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
+        TxHardware::probe_phy_low_rate_gate(&mut self.wifi_mac_hal())
+    }
+
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
@@ -434,6 +455,22 @@ impl CooperativeRadioHardware<'_> {
         self.wifi_mac_hal().station_tsf()
     }
 
+    /// Exercise the complete reviewed station-TBTT target/wake-gate prefix and
+    /// roll it back before returning. Success is reached-stage evidence only;
+    /// it does not imply that a WDEVPWR cause or RF/PHY sleep was armed.
+    pub fn probe_station_tbtt_wake_prefix(
+        &mut self,
+        wake_tsf: u64,
+    ) -> Result<u32, open_esp_radio_esp32s31_hal::StaTbttWakePrepareError> {
+        let mut hal = self.wifi_mac_hal();
+        let restore = hal.prepare_station_tbtt_wake(wake_tsf)?;
+        let programmed_target = restore.programmed_target_bits_35_10();
+        if hal.restore_station_tbtt_wake(restore).is_err() {
+            unreachable!("a freshly prepared station-TBTT prefix must retain its rollback state");
+        }
+        Ok(programmed_target)
+    }
+
     pub fn program_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,
@@ -508,6 +545,15 @@ impl CooperativeRadioHardware<'_> {
         temporal_key: &[u8; 16],
     ) -> Result<(), CryptoKeyError> {
         replace_sta_group_ccmp(&mut self.wifi_mac_hal(), slot, key_id, temporal_key)
+    }
+
+    pub fn replace_sta_group_ccmp_with_rollback(
+        &mut self,
+        slot: &mut StaGroupCcmpSlot,
+        current: &StaGroupCcmpKeyMaterial,
+        replacement: &StaGroupCcmpKeyMaterial,
+    ) -> Result<(), StaGroupCcmpReplaceError> {
+        replace_sta_group_ccmp_with_rollback(&mut self.wifi_mac_hal(), slot, current, replacement)
     }
 }
 

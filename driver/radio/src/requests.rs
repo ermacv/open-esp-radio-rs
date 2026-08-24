@@ -5,24 +5,119 @@
 //! describes how an already validated role should operate for one runtime
 //! epoch.
 
-use core::{fmt, num::NonZeroU16};
+use core::{
+    fmt,
+    num::{NonZeroU8, NonZeroU16},
+};
 
-use open_esp_radio_ieee80211::{channel::WifiChannel, ssid::WifiSsid};
+use open_esp_radio_ieee80211::{channel::WifiChannel, security::WifiSecurityMode, ssid::WifiSsid};
 pub use open_esp_radio_wifi_ap::{
     AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
     AccessPointInactiveTimeoutError,
 };
 use open_esp_radio_wifi_softmac::{
-    MacServiceCapabilities, WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiStationConfig,
+    ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowConfigError, EspNowPeerConfig, EspNowPeerId,
+    EspNowPeerTableError, EspNowPhyMode, EspNowProtocol, MacServiceCapabilities,
+    MonitorChannelPolicy, MonitorChannelSequence, WifiAccessPointConfig, WifiConfig,
+    WifiConfigError, WifiStandaloneEspNowPlan, WifiStationConfig,
 };
 pub use open_esp_radio_wifi_sta::request::{
-    StationDiscovery, StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
+    StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
+    StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
     StationScanChannelsError, StationScanPolicy,
 };
 use open_esp_radio_wifi_sta::station::StaReconnectPolicy;
 use open_esp_radio_wpa2::Pmk;
 
 use crate::{WifiMonitorConfig, WifiPlan};
+
+/// Complete plaintext request for one standalone ESP-NOW radio epoch.
+///
+/// The embedded protocol owner is already bound to the exclusive station VIF
+/// and fixed home channel. Peers may be registered before the request is
+/// moved into the chip runtime. A peer may explicitly select one fixed
+/// standalone off-channel through its typed peer policy; there is no scan or
+/// fallback. There is intentionally no credential, association, network,
+/// encryption or LR field.
+pub struct StandaloneEspNowRequest<const PEERS: usize = ESP_NOW_DEFAULT_PEER_CAPACITY> {
+    plan: WifiStandaloneEspNowPlan,
+    protocol: EspNowProtocol<PEERS>,
+}
+
+impl<const PEERS: usize> StandaloneEspNowRequest<PEERS> {
+    pub fn new(
+        plan: WifiStandaloneEspNowPlan,
+        home_channel: WifiChannel,
+    ) -> Result<Self, EspNowConfigError> {
+        let protocol = EspNowProtocol::new(EspNowConfig::new(plan.station(), home_channel)?);
+        Ok(Self { plan, protocol })
+    }
+
+    pub const fn plan(&self) -> WifiStandaloneEspNowPlan {
+        self.plan
+    }
+
+    pub const fn home_channel(&self) -> WifiChannel {
+        self.protocol.config().home_channel()
+    }
+
+    pub const fn protocol(&self) -> &EspNowProtocol<PEERS> {
+        &self.protocol
+    }
+
+    pub fn add_peer(
+        &mut self,
+        peer: EspNowPeerConfig,
+    ) -> Result<EspNowPeerId, StandaloneEspNowPeerError> {
+        if peer.phy_mode() == EspNowPhyMode::LongRange {
+            return Err(StandaloneEspNowPeerError::LongRangeUnsupported);
+        }
+        self.protocol
+            .add_peer(peer)
+            .map_err(StandaloneEspNowPeerError::PeerTable)
+    }
+
+    pub fn remove_peer(
+        &mut self,
+        peer: EspNowPeerId,
+    ) -> Result<EspNowPeerConfig, EspNowPeerTableError> {
+        self.protocol.remove_peer(peer)
+    }
+
+    pub fn into_parts(self) -> (WifiStandaloneEspNowPlan, EspNowProtocol<PEERS>) {
+        (self.plan, self.protocol)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StandaloneEspNowPeerError {
+    LongRangeUnsupported,
+    PeerTable(EspNowPeerTableError),
+}
+
+impl fmt::Display for StandaloneEspNowPeerError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LongRangeUnsupported => formatter
+                .write_str("standalone ESP-NOW does not support the unqualified long-range PHY"),
+            Self::PeerTable(error) => write!(formatter, "ESP-NOW peer table error: {error}"),
+        }
+    }
+}
+
+impl core::error::Error for StandaloneEspNowPeerError {}
+
+impl<const PEERS: usize> fmt::Debug for StandaloneEspNowRequest<PEERS> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("StandaloneEspNowRequest")
+            .field("plan", &self.plan)
+            .field("home_channel", &self.home_channel())
+            .field("peer_count", &self.protocol.peers().len())
+            .field("security", &"plaintext")
+            .finish()
+    }
+}
 
 /// Finite standalone scan policy.
 ///
@@ -54,27 +149,41 @@ impl WifiScanRequest {
 
 /// Security material owned by one station runtime request.
 ///
-/// The current production station path implements WPA2-Personal. The request
-/// owns the derived PMK rather than retaining a plaintext passphrase across
-/// reconnects. [`Pmk`] clears its key bytes on drop.
+/// Open owns no key material. WPA2-Personal owns the derived PMK rather than
+/// retaining a plaintext passphrase across reconnects; [`Pmk`] clears its key
+/// bytes on drop.
 pub enum StationSecurity {
+    Open,
     Wpa2Personal(Pmk),
 }
 
 impl StationSecurity {
+    pub const fn open() -> Self {
+        Self::Open
+    }
+
     pub const fn wpa2_personal(pmk: Pmk) -> Self {
         Self::Wpa2Personal(pmk)
     }
 
-    pub const fn pmk(&self) -> &Pmk {
+    pub const fn mode(&self) -> WifiSecurityMode {
         match self {
-            Self::Wpa2Personal(pmk) => pmk,
+            Self::Open => WifiSecurityMode::Open,
+            Self::Wpa2Personal(_) => WifiSecurityMode::Wpa2Personal,
         }
     }
 
-    pub fn into_pmk(self) -> Pmk {
+    pub const fn pmk(&self) -> Option<&Pmk> {
         match self {
-            Self::Wpa2Personal(pmk) => pmk,
+            Self::Open => None,
+            Self::Wpa2Personal(pmk) => Some(pmk),
+        }
+    }
+
+    pub fn into_pmk(self) -> Option<Pmk> {
+        match self {
+            Self::Open => None,
+            Self::Wpa2Personal(pmk) => Some(pmk),
         }
     }
 }
@@ -82,6 +191,7 @@ impl StationSecurity {
 impl fmt::Debug for StationSecurity {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Open => formatter.write_str("Open"),
             Self::Wpa2Personal(_) => formatter.write_str("Wpa2Personal(<redacted>)"),
         }
     }
@@ -93,23 +203,37 @@ impl fmt::Debug for StationSecurity {
 /// passphrase. Nonces, GTK material and replay counters are generated by the
 /// AP owner when the epoch starts.
 pub enum AccessPointSecurity {
+    Open,
     Wpa2Personal(Pmk),
 }
 
 impl AccessPointSecurity {
+    pub const fn open() -> Self {
+        Self::Open
+    }
+
     pub const fn wpa2_personal(pmk: Pmk) -> Self {
         Self::Wpa2Personal(pmk)
     }
 
-    pub const fn pmk(&self) -> &Pmk {
+    pub const fn mode(&self) -> WifiSecurityMode {
         match self {
-            Self::Wpa2Personal(pmk) => pmk,
+            Self::Open => WifiSecurityMode::Open,
+            Self::Wpa2Personal(_) => WifiSecurityMode::Wpa2Personal,
         }
     }
 
-    pub fn into_pmk(self) -> Pmk {
+    pub const fn pmk(&self) -> Option<&Pmk> {
         match self {
-            Self::Wpa2Personal(pmk) => pmk,
+            Self::Open => None,
+            Self::Wpa2Personal(pmk) => Some(pmk),
+        }
+    }
+
+    pub fn into_pmk(self) -> Option<Pmk> {
+        match self {
+            Self::Open => None,
+            Self::Wpa2Personal(pmk) => Some(pmk),
         }
     }
 }
@@ -117,28 +241,107 @@ impl AccessPointSecurity {
 impl fmt::Debug for AccessPointSecurity {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Open => formatter.write_str("Open"),
             Self::Wpa2Personal(_) => formatter.write_str("Wpa2Personal(<redacted>)"),
         }
     }
 }
 
+/// Nonzero IEEE beacon interval in timing units (TU).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AccessPointBeaconInterval(NonZeroU16);
+
+impl AccessPointBeaconInterval {
+    pub const DEFAULT_TU: u16 = 100;
+
+    pub const fn new(tu: u16) -> Result<Self, AccessPointBeaconIntervalError> {
+        match NonZeroU16::new(tu) {
+            Some(tu) => Ok(Self(tu)),
+            None => Err(AccessPointBeaconIntervalError::Zero),
+        }
+    }
+
+    pub const fn tu(self) -> u16 {
+        self.0.get()
+    }
+}
+
+impl Default for AccessPointBeaconInterval {
+    fn default() -> Self {
+        Self(NonZeroU16::new(Self::DEFAULT_TU).expect("default beacon interval is nonzero"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccessPointBeaconIntervalError {
+    Zero,
+}
+
+impl fmt::Display for AccessPointBeaconIntervalError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("access-point beacon interval must be nonzero")
+    }
+}
+
+impl core::error::Error for AccessPointBeaconIntervalError {}
+
+/// Nonzero number of beacon intervals in one DTIM period.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AccessPointDtimPeriod(NonZeroU8);
+
+impl AccessPointDtimPeriod {
+    pub const DEFAULT: u8 = 2;
+
+    pub const fn new(period: u8) -> Result<Self, AccessPointDtimPeriodError> {
+        match NonZeroU8::new(period) {
+            Some(period) => Ok(Self(period)),
+            None => Err(AccessPointDtimPeriodError::Zero),
+        }
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0.get()
+    }
+}
+
+impl Default for AccessPointDtimPeriod {
+    fn default() -> Self {
+        Self(NonZeroU8::new(Self::DEFAULT).expect("default DTIM period is nonzero"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccessPointDtimPeriodError {
+    Zero,
+}
+
+impl fmt::Display for AccessPointDtimPeriodError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("access-point DTIM period must be nonzero")
+    }
+}
+
+impl core::error::Error for AccessPointDtimPeriodError {}
+
 /// Complete owned policy for one AP service epoch.
 ///
-/// Beacon cadence, DTIM and peer capacity are implementation guarantees, not
-/// tuning switches: 100 TU, DTIM period 2 and a validated admission limit of
-/// 1..=15 clients. The typed channel owns valid HT20/HT40 geometry before any
-/// hardware owner moves.
+/// Beacon cadence, DTIM and peer capacity are validated before hardware
+/// ownership moves. Defaults remain 100 TU and DTIM period 2; both cadence
+/// values are explicit nonzero types so the TIM/DTIM publisher and buffering
+/// policy consume the same request geometry.
 pub struct AccessPointRequest {
     ssid: WifiSsid,
     security: AccessPointSecurity,
     channel: WifiChannel,
     client_limit: AccessPointClientLimit,
     inactive_timeout: AccessPointInactiveTimeout,
+    beacon_interval: AccessPointBeaconInterval,
+    dtim_period: AccessPointDtimPeriod,
 }
 
 impl AccessPointRequest {
-    pub const BEACON_INTERVAL_TU: u16 = 100;
-    pub const DTIM_PERIOD: u8 = 2;
+    pub const BEACON_INTERVAL_TU: u16 = AccessPointBeaconInterval::DEFAULT_TU;
+    pub const DTIM_PERIOD: u8 = AccessPointDtimPeriod::DEFAULT;
     pub const PEER_CAPACITY: usize = AccessPointClientLimit::MAX as usize;
 
     pub fn new(
@@ -156,6 +359,13 @@ impl AccessPointRequest {
             channel,
             client_limit,
             inactive_timeout: AccessPointInactiveTimeout::default(),
+            beacon_interval: AccessPointBeaconInterval(
+                NonZeroU16::new(Self::BEACON_INTERVAL_TU)
+                    .expect("default beacon interval is nonzero"),
+            ),
+            dtim_period: AccessPointDtimPeriod(
+                NonZeroU8::new(Self::DTIM_PERIOD).expect("default DTIM period is nonzero"),
+            ),
         })
     }
 
@@ -179,8 +389,26 @@ impl AccessPointRequest {
         self.inactive_timeout
     }
 
+    pub const fn beacon_interval(&self) -> AccessPointBeaconInterval {
+        self.beacon_interval
+    }
+
+    pub const fn dtim_period(&self) -> AccessPointDtimPeriod {
+        self.dtim_period
+    }
+
     pub const fn with_inactive_timeout(mut self, timeout: AccessPointInactiveTimeout) -> Self {
         self.inactive_timeout = timeout;
+        self
+    }
+
+    pub const fn with_beacon_cadence(
+        mut self,
+        beacon_interval: AccessPointBeaconInterval,
+        dtim_period: AccessPointDtimPeriod,
+    ) -> Self {
+        self.beacon_interval = beacon_interval;
+        self.dtim_period = dtim_period;
         self
     }
 
@@ -192,6 +420,8 @@ impl AccessPointRequest {
         WifiChannel,
         AccessPointClientLimit,
         AccessPointInactiveTimeout,
+        AccessPointBeaconInterval,
+        AccessPointDtimPeriod,
     ) {
         (
             self.ssid,
@@ -199,6 +429,8 @@ impl AccessPointRequest {
             self.channel,
             self.client_limit,
             self.inactive_timeout,
+            self.beacon_interval,
+            self.dtim_period,
         )
     }
 }
@@ -212,6 +444,8 @@ impl fmt::Debug for AccessPointRequest {
             .field("channel", &self.channel)
             .field("client_limit", &self.client_limit)
             .field("inactive_timeout", &self.inactive_timeout)
+            .field("beacon_interval", &self.beacon_interval)
+            .field("dtim_period", &self.dtim_period)
             .finish()
     }
 }
@@ -240,6 +474,7 @@ pub struct StationRequest {
     security: StationSecurity,
     reconnect: StaReconnectPolicy,
     scan: StationScanPolicy,
+    power_mode: StationPowerMode,
 }
 
 impl StationRequest {
@@ -254,6 +489,7 @@ impl StationRequest {
             security,
             reconnect,
             scan,
+            power_mode: StationPowerMode::AlwaysAwake,
         }
     }
 
@@ -273,11 +509,28 @@ impl StationRequest {
         self.scan
     }
 
-    pub fn into_parts(self) -> (StationDiscovery, StationSecurity, StaReconnectPolicy) {
+    pub const fn power_mode(&self) -> StationPowerMode {
+        self.power_mode
+    }
+
+    pub const fn with_power_mode(mut self, power_mode: StationPowerMode) -> Self {
+        self.power_mode = power_mode;
+        self
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        StationDiscovery,
+        StationSecurity,
+        StaReconnectPolicy,
+        StationPowerMode,
+    ) {
         (
             StationDiscovery::new(self.ssid, self.scan),
             self.security,
             self.reconnect,
+            self.power_mode,
         )
     }
 }
@@ -290,6 +543,7 @@ impl fmt::Debug for StationRequest {
             .field("security", &self.security)
             .field("reconnect", &self.reconnect)
             .field("scan", &self.scan)
+            .field("power_mode", &self.power_mode)
             .finish()
     }
 }
@@ -380,7 +634,7 @@ impl Default for MonitorCapturePolicy {
 
 /// Complete value-only request for one standalone monitor epoch.
 pub struct MonitorRequest {
-    channel: WifiChannel,
+    channels: MonitorChannelPolicy,
     monitor: WifiMonitorConfig,
     capture: MonitorCapturePolicy,
 }
@@ -388,7 +642,16 @@ pub struct MonitorRequest {
 impl MonitorRequest {
     pub const fn new(channel: WifiChannel, monitor: WifiMonitorConfig) -> Self {
         Self {
-            channel,
+            channels: MonitorChannelPolicy::fixed(channel),
+            monitor,
+            capture: MonitorCapturePolicy::complete_frames(),
+        }
+    }
+
+    /// Capture repeatedly across one checked, ordered channel cycle.
+    pub const fn hopping(sequence: MonitorChannelSequence, monitor: WifiMonitorConfig) -> Self {
+        Self {
+            channels: MonitorChannelPolicy::hopping(sequence),
             monitor,
             capture: MonitorCapturePolicy::complete_frames(),
         }
@@ -400,7 +663,11 @@ impl MonitorRequest {
     }
 
     pub const fn channel(&self) -> WifiChannel {
-        self.channel
+        self.channels.initial_channel()
+    }
+
+    pub const fn channel_policy(&self) -> MonitorChannelPolicy {
+        self.channels
     }
 
     pub const fn monitor_config(&self) -> WifiMonitorConfig {
@@ -416,7 +683,7 @@ impl fmt::Debug for MonitorRequest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("MonitorRequest")
-            .field("channel", &self.channel)
+            .field("channels", &self.channels)
             .field("monitor", &self.monitor)
             .field("capture", &self.capture)
             .finish()
@@ -1068,8 +1335,10 @@ mod tests {
             AccessPointInactiveTimeout::new(30).expect("valid inactivity timeout"),
         );
         assert_eq!(request.inactive_timeout().seconds(), 30);
-        let (_, _, _, _, timeout) = request.into_parts();
+        let (_, _, _, _, timeout, beacon_interval, dtim_period) = request.into_parts();
         assert_eq!(timeout.seconds(), 30);
+        assert_eq!(beacon_interval.tu(), AccessPointRequest::BEACON_INTERVAL_TU);
+        assert_eq!(dtim_period.get(), AccessPointRequest::DTIM_PERIOD);
     }
 
     #[test]

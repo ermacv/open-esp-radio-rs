@@ -139,15 +139,13 @@ where
                 });
             }
             if let AmpduRetryDecision::RetainAggregate { retry_mask } = decision {
+                let queue = active.traffic.queue();
                 let aggregate = self
                     .ampdu
                     .active_mut()
                     .retain_for_ampdu_retry(cookie, retry_mask)?;
-                self.ordinary
-                    .record_retry_failure(LegacyTxQueue::BestEffort);
-                let (_, contention_window) = self
-                    .ordinary
-                    .contention_publication(LegacyTxQueue::BestEffort);
+                self.ordinary.record_retry_failure(queue);
+                let (_, contention_window) = self.ordinary.contention_publication(queue);
                 active.config.update_retained_retry(
                     aggregate.bytes,
                     aggregate.subframes,
@@ -163,11 +161,11 @@ where
 
             let retry_mask = decision.retry_mask();
             let missing = decision.missing();
+            let queue = active.traffic.queue();
             if missing == 0 {
-                self.ordinary.record_success(LegacyTxQueue::BestEffort);
+                self.ordinary.record_success(queue);
             } else {
-                self.ordinary
-                    .reset_terminal_exchange(LegacyTxQueue::BestEffort);
+                self.ordinary.reset_terminal_exchange(queue);
             }
 
             let individual_retry = matches!(active.config, AmpduTxConfig::Ht(_))
@@ -180,11 +178,12 @@ where
                     (self.ordinary.copy_encoded_retry(encoded)?, usize::from(mic))
                 };
                 self.release_completed()?;
-                let progress = self.ordinary.start_prepared_encoded_retry(
+                let progress = self.ordinary.start_prepared_encoded_retry_for_category(
                     hardware,
                     frame_length,
                     hardware_mic_length,
                     active.config.rate(),
+                    active.traffic.selected.access_category,
                 )?;
                 self.pending_ordinary_retry = Some(MacAmpduTxStatus {
                     result: MacAmpduTxResult::Incomplete,
@@ -259,7 +258,7 @@ where
             self.release_frames();
             self.cookie = None;
             self.ordinary
-                .reset_terminal_exchange(LegacyTxQueue::BestEffort);
+                .reset_terminal_exchange(active.traffic.queue());
             self.last_aggregate_status = Some(MacAmpduTxStatus {
                 result: MacAmpduTxResult::HardwareTimeout,
                 original_subframes: u16::from(active.original_subframes),
@@ -283,7 +282,7 @@ where
             self.release_frames();
             self.cookie = None;
             self.ordinary
-                .reset_terminal_exchange(LegacyTxQueue::BestEffort);
+                .reset_terminal_exchange(active.traffic.queue());
             self.last_aggregate_status = Some(MacAmpduTxStatus {
                 result: MacAmpduTxResult::CollisionLimit,
                 original_subframes: u16::from(active.original_subframes),

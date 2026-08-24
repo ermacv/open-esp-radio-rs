@@ -5,16 +5,117 @@
 //! wait for interrupts, access MMIO, mutate DMA storage or produce entropy;
 //! those remain separate hardware/executor boundaries.
 
-use open_esp_radio_ieee80211::wmm::WmmParameterSet;
+use open_esp_radio_ieee80211::wmm::{
+    WmmAccessCategory, WmmParameterSet, WmmTrafficClass, WmmUserPriority, classify_ethernet_wmm,
+};
 
 use crate::{
-    edca::{EdcaContentionParameters, EdcaParametersError, EdcaQueues},
-    tx::{HtPeerAmpduParameters, LegacyTxQueue, TxCompletionDisposition, TxPhyRate},
+    edca::{EdcaAccessPolicy, EdcaContentionParameters, EdcaParametersError, EdcaQueues},
+    rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
+    tx::{
+        HeEdcaTxopLimit, HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue,
+        TxCompletionDisposition, TxPhyRate,
+    },
     tx_ampdu::HtAmpduTxCompletion,
+    tx_protection::WifiTxProtectionPolicy,
 };
 
 const IEEE80211_SEQUENCE_MASK: u16 = 0x0fff;
 const HARDWARE_BLOCK_ACK_WINDOW: usize = 32;
+
+/// Result of applying the peer's negotiated ACM policy to one classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WmmAdmissionDisposition {
+    /// The selected AC does not require an admission.
+    AdmissionNotRequired,
+    Downgraded {
+        requested: WmmAccessCategory,
+    },
+    /// A non-QoS association owns only the legacy best-effort sequence space.
+    NonQosBestEffort,
+}
+
+/// Complete station-side queue/TID policy selected for one network frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiTxTraffic {
+    pub requested: WmmTrafficClass,
+    pub user_priority: WmmUserPriority,
+    pub access_category: WmmAccessCategory,
+    pub admission: WmmAdmissionDisposition,
+    txop_limit_units_32_us: u16,
+}
+
+impl WifiTxTraffic {
+    pub const fn queue(self) -> LegacyTxQueue {
+        LegacyTxQueue::from_access_category(self.access_category)
+    }
+
+    pub const fn tid(self) -> u8 {
+        self.user_priority.value()
+    }
+
+    pub const fn txop_limit_units_32_us(self) -> u16 {
+        self.txop_limit_units_32_us
+    }
+
+    /// Resolve the peer's negotiated HE duration budget and an optional
+    /// integration ceiling without widening either value.
+    pub const fn he_txop_limit(
+        self,
+        configured_ceiling: HeEdcaTxopLimit,
+    ) -> Result<HeEdcaTxopLimit, WmmTxopUnsupported> {
+        let Some(negotiated) = HeEdcaTxopLimit::from_units_32_us(self.txop_limit_units_32_us)
+        else {
+            return Err(WmmTxopUnsupported::AdvertisedLimitTooWide {
+                units_32_us: self.txop_limit_units_32_us,
+            });
+        };
+        if negotiated.is_default() {
+            return Ok(configured_ceiling);
+        }
+        if configured_ceiling.is_default()
+            || negotiated.units_32_us() <= configured_ceiling.units_32_us()
+        {
+            Ok(negotiated)
+        } else {
+            Ok(configured_ceiling)
+        }
+    }
+
+    /// HT aggregation has no reviewed negotiated-TXOP duration calculator.
+    pub const fn require_ht_txop_support(self) -> Result<(), WmmTxopUnsupported> {
+        if self.txop_limit_units_32_us == 0 {
+            Ok(())
+        } else {
+            Err(WmmTxopUnsupported::HtAggregateDurationBudget {
+                units_32_us: self.txop_limit_units_32_us,
+            })
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiTxTrafficError {
+    /// Every possible AC at or below the requested priority requires an
+    /// admission, while no TSPEC/ADDTS owner exists in this driver.
+    AdmissionControlRequired { requested: WmmAccessCategory },
+}
+
+/// Unreviewed boundary which must not be inferred from WMM parsing alone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WmmTxopUnsupported {
+    AdvertisedLimitTooWide { units_32_us: u16 },
+    HtAggregateDurationBudget { units_32_us: u16 },
+    RtsCtsProtection,
+    MultiPpduMediumOwnership,
+}
+
+/// Requests which would require an unproven hardware medium-ownership path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WmmHardwareMediumRequest {
+    RtsCtsProtection,
+    MultiPpduTxop,
+}
 
 /// Association-derived state used by all ordinary and aggregate TX paths.
 ///
@@ -27,6 +128,7 @@ pub struct WifiTxRuntimePolicy {
     ht_ampdu: HtPeerAmpduParameters,
     he_bss_color: u8,
     edca: EdcaQueues,
+    protection: WifiTxProtectionPolicy,
 }
 
 impl WifiTxRuntimePolicy {
@@ -36,6 +138,11 @@ impl WifiTxRuntimePolicy {
             ht_ampdu: HtPeerAmpduParameters::from_capability_byte(0),
             he_bss_color: 0,
             edca: EdcaQueues::vendor_defaults(),
+            protection: WifiTxProtectionPolicy::new(
+                crate::tx_protection::ErpProtectionMode::None,
+                crate::tx_protection::HtProtectionMode::None,
+                None,
+            ),
         }
     }
 
@@ -56,6 +163,16 @@ impl WifiTxRuntimePolicy {
         self.he_bss_color
     }
 
+    /// Atomically replace the association/BSS protection facts.  Active TX
+    /// owners retain this value across ordinary and A-MPDU retries.
+    pub fn install_protection(&mut self, protection: WifiTxProtectionPolicy) {
+        self.protection = protection;
+    }
+
+    pub const fn protection(&self) -> WifiTxProtectionPolicy {
+        self.protection
+    }
+
     /// Atomically validate and install all four WMM access categories.
     pub fn install_wmm(&mut self, parameters: WmmParameterSet) -> Result<(), EdcaParametersError> {
         self.edca.configure_from_wmm(parameters)
@@ -63,6 +180,81 @@ impl WifiTxRuntimePolicy {
 
     pub fn contention_parameters(&self, queue: LegacyTxQueue) -> EdcaContentionParameters {
         self.edca.queue(queue).parameters()
+    }
+
+    pub const fn access_policy(&self, queue: LegacyTxQueue) -> EdcaAccessPolicy {
+        self.edca.access_policy(queue)
+    }
+
+    /// Classify and admit one network frame under the active peer WMM policy.
+    ///
+    /// With no QoS peer, all markings collapse to legacy BE. With QoS, an ACM
+    /// bit is never treated as an admission: the request walks to a lower AC
+    /// and rewrites its TID to that AC's canonical value. If even BK requires
+    /// admission, the request fails closed.
+    pub fn select_network_traffic(
+        &self,
+        ethernet: &[u8],
+        peer_qos: bool,
+    ) -> Result<WifiTxTraffic, WifiTxTrafficError> {
+        let requested = classify_ethernet_wmm(ethernet);
+        if !peer_qos {
+            let selected = self.edca.access_policy(LegacyTxQueue::BestEffort);
+            return Ok(WifiTxTraffic {
+                requested,
+                user_priority: WmmUserPriority::UP0,
+                access_category: WmmAccessCategory::BestEffort,
+                admission: WmmAdmissionDisposition::NonQosBestEffort,
+                txop_limit_units_32_us: selected.txop_limit_units_32_us(),
+            });
+        }
+
+        let mut category = requested.access_category;
+        loop {
+            let selected = self
+                .edca
+                .access_policy(LegacyTxQueue::from_access_category(category));
+            if !selected.admission_control_mandatory() {
+                let downgraded = category != requested.access_category;
+                return Ok(WifiTxTraffic {
+                    requested,
+                    user_priority: if downgraded {
+                        category.canonical_user_priority()
+                    } else {
+                        requested.user_priority
+                    },
+                    access_category: category,
+                    admission: if downgraded {
+                        WmmAdmissionDisposition::Downgraded {
+                            requested: requested.access_category,
+                        }
+                    } else {
+                        WmmAdmissionDisposition::AdmissionNotRequired
+                    },
+                    txop_limit_units_32_us: selected.txop_limit_units_32_us(),
+                });
+            }
+            let Some(lower) = category.downgrade() else {
+                return Err(WifiTxTrafficError::AdmissionControlRequired {
+                    requested: requested.access_category,
+                });
+            };
+            category = lower;
+        }
+    }
+
+    /// Explicit frontier for hardware operations not established by the
+    /// recovered ordinary/A-MPDU publication contract.
+    pub const fn request_hardware_medium(
+        &self,
+        request: WmmHardwareMediumRequest,
+    ) -> Result<(), WmmTxopUnsupported> {
+        match request {
+            WmmHardwareMediumRequest::RtsCtsProtection => Err(WmmTxopUnsupported::RtsCtsProtection),
+            WmmHardwareMediumRequest::MultiPpduTxop => {
+                Err(WmmTxopUnsupported::MultiPpduMediumOwnership)
+            }
+        }
     }
 
     pub fn contention_exponent(&self, queue: LegacyTxQueue) -> u8 {
@@ -102,7 +294,63 @@ pub const VENDOR_RTS_THRESHOLD_BYTES: u32 = 0x092a;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrdinaryRetryError {
     ZeroMpduRetryLimit,
-    RetryRateUnavailable { retry_index: u8 },
+    RetryRateUnavailable {
+        retry_index: u8,
+    },
+    P2pInitialRateMismatch {
+        initial: TxPhyRate,
+        scheduled: TxPhyRate,
+    },
+    P2pHtSgiFallbackMismatch {
+        initial: TxPhyRate,
+        scheduled: TxPhyRate,
+    },
+}
+
+/// One validated recovered standard-rate P2P retry record.
+///
+/// LR records are intentionally excluded: a retry policy cannot establish
+/// the missing LR PLCP, receive-status and scoped PHY ownership contracts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct P2pRetryRateSchedule(RateScheduleRef);
+
+impl P2pRetryRateSchedule {
+    pub const fn new(schedule: RateScheduleRef) -> Option<Self> {
+        if matches!(
+            schedule.kind,
+            RateScheduleKind::P2pDot11G | RateScheduleKind::P2pDot11N
+        ) && (schedule.index as usize) < schedule.kind.record_count()
+        {
+            Some(Self(schedule))
+        } else {
+            None
+        }
+    }
+
+    pub const fn schedule(self) -> RateScheduleRef {
+        self.0
+    }
+}
+
+/// Rate-ladder ownership for one retained ordinary MPDU.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OrdinaryRetryRatePolicy {
+    /// Use the ordinary associated-station Dot11G/Dot11N ladder selected from
+    /// the initial hardware rate.
+    #[default]
+    Normal,
+    /// Use one exact recovered P2P record for every retained publication.
+    P2p(P2pRetryRateSchedule),
+    /// Publish one explicitly selected HT20 SGI rate, then enter the exact
+    /// same-MCS HT20 LGI P2P record after the first failed attempt.
+    ///
+    /// The recovered P2P arena contains an SGI record only for MCS7. The
+    /// queue formatter nevertheless owns every HT20 SGI MCS0..7 code. This
+    /// source-owned bridge does not invent a missing record: attempt zero is
+    /// the caller's typed SGI rate, while every retry is selected from an
+    /// existing LGI record at the original failure count. Construction below
+    /// proves that the first scheduled retry is the same MCS at LGI.
+    P2pHtSgiFallback(P2pRetryRateSchedule),
 }
 
 /// Driver-owned action after one ordinary MPDU attempt.
@@ -140,6 +388,7 @@ pub struct OrdinaryRetryCounters {
 pub struct OrdinaryMpduRetryState {
     queue: LegacyTxQueue,
     initial_rate: TxPhyRate,
+    rate_policy: OrdinaryRetryRatePolicy,
     mpdu_retry_limit: u8,
     publications: u8,
     frame_class: OrdinaryFrameClass,
@@ -159,6 +408,7 @@ impl OrdinaryMpduRetryState {
         Ok(Self {
             queue,
             initial_rate,
+            rate_policy: OrdinaryRetryRatePolicy::Normal,
             mpdu_retry_limit,
             publications: 1,
             frame_class,
@@ -168,6 +418,54 @@ impl OrdinaryMpduRetryState {
                 long: 0,
             },
         })
+    }
+
+    /// Construct an ordinary retry owner with an explicit standard P2P
+    /// ladder. The first record rate must exactly match the published initial
+    /// rate, preventing a caller from changing PHY only after the first ACK
+    /// timeout.
+    pub fn new_with_rate_policy(
+        queue: LegacyTxQueue,
+        initial_rate: TxPhyRate,
+        rate_policy: OrdinaryRetryRatePolicy,
+        mpdu_retry_limit: u8,
+        frame_class: OrdinaryFrameClass,
+    ) -> Result<Self, OrdinaryRetryError> {
+        let mut state = Self::new(queue, initial_rate, mpdu_retry_limit, frame_class)?;
+        match rate_policy {
+            OrdinaryRetryRatePolicy::Normal => {}
+            OrdinaryRetryRatePolicy::P2p(schedule) => {
+                let scheduled = select_p2p_retry_rate(schedule, 0)?;
+                if scheduled != initial_rate {
+                    return Err(OrdinaryRetryError::P2pInitialRateMismatch {
+                        initial: initial_rate,
+                        scheduled,
+                    });
+                }
+            }
+            OrdinaryRetryRatePolicy::P2pHtSgiFallback(schedule) => {
+                let scheduled = select_p2p_retry_rate(schedule, 1)?;
+                let valid = matches!(
+                    (initial_rate, scheduled),
+                    (TxPhyRate::Ht(initial), TxPhyRate::Ht(fallback))
+                        if initial.channel_width == HtChannelWidth::Mhz20
+                            && initial.guard_interval
+                                == crate::tx::HtGuardInterval::Short400Ns
+                            && fallback.channel_width == HtChannelWidth::Mhz20
+                            && fallback.guard_interval
+                                == crate::tx::HtGuardInterval::Long800Ns
+                            && fallback.mcs == initial.mcs
+                );
+                if !valid {
+                    return Err(OrdinaryRetryError::P2pHtSgiFallbackMismatch {
+                        initial: initial_rate,
+                        scheduled,
+                    });
+                }
+            }
+        }
+        state.rate_policy = rate_policy;
+        Ok(state)
     }
 
     pub const fn publications(&self) -> u8 {
@@ -180,13 +478,44 @@ impl OrdinaryMpduRetryState {
 
     /// Select the rate for the current publication.
     ///
-    /// This is specifically the normal `rcGetRate` branch. The descriptor
-    /// bypass and context-fixed-rate branches remain separate production
-    /// modes and are not inferred here. The normal branch selects with
+    /// Both normal and P2P records use the `rcGetRate` retry counters. The
+    /// descriptor bypass and context-fixed-rate branches remain separate
+    /// production modes and are not inferred here. Selection uses
     /// `max(desc[5], desc[6])`; a long collision changes only `desc[7]` and
     /// therefore retains its current rate.
     pub fn current_rate(&self) -> Result<TxPhyRate, OrdinaryRetryError> {
-        select_ordinary_retry_rate(self.initial_rate, self.counters)
+        let retry_index = self.counters.mpdu.max(self.counters.short);
+        self.rate_after_failed_attempts(retry_index)
+    }
+
+    /// Inspect one possible retry-series rate without advancing ownership.
+    ///
+    /// Admission uses this before DMA publication so a later fallback cannot
+    /// cross into a protection-required PHY after sequence/PN consumption.
+    pub fn rate_after_failed_attempts(
+        &self,
+        failed_attempts: u8,
+    ) -> Result<TxPhyRate, OrdinaryRetryError> {
+        match self.rate_policy {
+            OrdinaryRetryRatePolicy::Normal => select_ordinary_retry_rate(
+                self.initial_rate,
+                OrdinaryRetryCounters {
+                    mpdu: failed_attempts,
+                    short: failed_attempts,
+                    long: 0,
+                },
+            ),
+            OrdinaryRetryRatePolicy::P2p(schedule) => {
+                select_p2p_retry_rate(schedule, failed_attempts)
+            }
+            OrdinaryRetryRatePolicy::P2pHtSgiFallback(schedule) => {
+                if failed_attempts == 0 {
+                    Ok(self.initial_rate)
+                } else {
+                    select_p2p_retry_rate(schedule, failed_attempts)
+                }
+            }
+        }
     }
 
     /// Apply one typed completion after the raw status/detail dispatcher.
@@ -296,6 +625,22 @@ pub fn select_ordinary_retry_rate(
             .unwrap_or(TxPhyRate::Ht(rate))),
         TxPhyRate::He(rate) => Ok(TxPhyRate::He(rate)),
     }
+}
+
+/// Select one attempt from an exact standard P2P record.
+///
+/// The dedicated P2P arenas never enter the proprietary LR or HE rate-code
+/// domains. HT values are decoded as 20-MHz one-stream rates; MCS32 therefore
+/// cannot be introduced through this path.
+#[inline(never)]
+pub fn select_p2p_retry_rate(
+    schedule: P2pRetryRateSchedule,
+    retry_index: u8,
+) -> Result<TxPhyRate, OrdinaryRetryError> {
+    let code = schedule_rate_after_failures(schedule.schedule(), retry_index)
+        .ok_or(OrdinaryRetryError::RetryRateUnavailable { retry_index })?;
+    TxPhyRate::from_code(code, HtChannelWidth::Mhz20)
+        .ok_or(OrdinaryRetryError::RetryRateUnavailable { retry_index })
 }
 
 /// Policy for retained A-MPDU retries.
@@ -516,9 +861,23 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
 mod tests {
     use super::*;
     use crate::{
-        tx::{LegacyRate, TxCompletion, TxCookie},
+        tx::{HtGuardInterval, HtMcs, HtRate, LegacyRate, TxCompletion, TxCookie},
         tx_ampdu::{HtAmpduTxCompletion, HtBlockAckRegisters, TxBlockAckBitmap},
     };
+    use open_esp_radio_ieee80211::wmm::parse_wmm_parameter_element;
+
+    const STANDARD_WMM: [u8; 26] = [
+        221, 24, 0x00, 0x50, 0xf2, 0x02, 1, 1, 0x85, 0, 0x03, 0xa4, 0, 0, 0x27, 0xa4, 0, 0, 0x42,
+        0x43, 94, 0, 0x72, 0x32, 47, 0,
+    ];
+
+    fn ipv4_with_dscp(dscp: u8) -> [u8; 16] {
+        let mut frame = [0_u8; 16];
+        frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+        frame[14] = 0x45;
+        frame[15] = dscp << 2;
+        frame
+    }
 
     #[test]
     fn sta_runtime_policy_owns_peer_and_vendor_edca_state() {
@@ -540,6 +899,98 @@ mod tests {
         assert_eq!(
             policy.select_backoff(LegacyTxQueue::BestEffort, u32::MAX),
             15
+        );
+    }
+
+    #[test]
+    fn negotiated_acm_downgrades_tid_and_queue_without_claiming_admission() {
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
+        policy
+            .install_wmm(parse_wmm_parameter_element(&STANDARD_WMM).unwrap())
+            .unwrap();
+
+        let voice = policy
+            .select_network_traffic(&ipv4_with_dscp(46), true)
+            .unwrap();
+        assert_eq!(voice.requested.access_category, WmmAccessCategory::Voice);
+        assert_eq!(voice.access_category, WmmAccessCategory::Video);
+        assert_eq!(voice.user_priority, WmmUserPriority::UP5);
+        assert_eq!(voice.queue(), LegacyTxQueue::Video);
+        assert_eq!(
+            voice.admission,
+            WmmAdmissionDisposition::Downgraded {
+                requested: WmmAccessCategory::Voice
+            }
+        );
+        assert_eq!(voice.txop_limit_units_32_us(), 94);
+
+        let non_qos = policy
+            .select_network_traffic(&ipv4_with_dscp(46), false)
+            .unwrap();
+        assert_eq!(non_qos.tid(), 0);
+        assert_eq!(non_qos.queue(), LegacyTxQueue::BestEffort);
+        assert_eq!(non_qos.admission, WmmAdmissionDisposition::NonQosBestEffort);
+    }
+
+    #[test]
+    fn all_mandatory_access_categories_fail_closed() {
+        let mut element = STANDARD_WMM;
+        for offset in [10, 14, 18, 22] {
+            element[offset] |= 0x10;
+        }
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
+        policy
+            .install_wmm(parse_wmm_parameter_element(&element).unwrap())
+            .unwrap();
+        assert_eq!(
+            policy.select_network_traffic(&ipv4_with_dscp(0), true),
+            Err(WifiTxTrafficError::AdmissionControlRequired {
+                requested: WmmAccessCategory::BestEffort
+            })
+        );
+    }
+
+    #[test]
+    fn negotiated_txop_is_bounded_and_medium_ownership_stays_unsupported() {
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
+        policy
+            .install_wmm(parse_wmm_parameter_element(&STANDARD_WMM).unwrap())
+            .unwrap();
+        let video = policy
+            .select_network_traffic(&ipv4_with_dscp(40), true)
+            .unwrap();
+        assert_eq!(
+            video.he_txop_limit(HeEdcaTxopLimit::DEFAULT),
+            Ok(HeEdcaTxopLimit::from_units_32_us(94).unwrap())
+        );
+        assert_eq!(
+            video.he_txop_limit(HeEdcaTxopLimit::from_units_32_us(47).unwrap()),
+            Ok(HeEdcaTxopLimit::from_units_32_us(47).unwrap())
+        );
+        assert_eq!(
+            video.require_ht_txop_support(),
+            Err(WmmTxopUnsupported::HtAggregateDurationBudget { units_32_us: 94 })
+        );
+        assert_eq!(
+            policy.request_hardware_medium(WmmHardwareMediumRequest::RtsCtsProtection),
+            Err(WmmTxopUnsupported::RtsCtsProtection)
+        );
+        assert_eq!(
+            policy.request_hardware_medium(WmmHardwareMediumRequest::MultiPpduTxop),
+            Err(WmmTxopUnsupported::MultiPpduMediumOwnership)
+        );
+
+        let mut wide = STANDARD_WMM;
+        wide[21] = 1;
+        policy
+            .install_wmm(parse_wmm_parameter_element(&wide).unwrap())
+            .unwrap();
+        let video = policy
+            .select_network_traffic(&ipv4_with_dscp(40), true)
+            .unwrap();
+        assert_eq!(
+            video.he_txop_limit(HeEdcaTxopLimit::DEFAULT),
+            Err(WmmTxopUnsupported::AdvertisedLimitTooWide { units_32_us: 350 })
         );
     }
 
@@ -654,6 +1105,80 @@ mod tests {
             )
             .err(),
             Some(OrdinaryRetryError::ZeroMpduRetryLimit)
+        );
+    }
+
+    #[test]
+    fn p2p_ht20_sgi_mcs0_through_mcs6_enter_same_mcs_lgi_retry_records() {
+        for mcs_index in 0..=6 {
+            let mcs = HtMcs::from_index(mcs_index).unwrap();
+            let initial = TxPhyRate::Ht(HtRate::new(
+                mcs,
+                HtGuardInterval::Short400Ns,
+                HtChannelWidth::Mhz20,
+            ));
+            let schedule = RateScheduleRef::new(
+                RateScheduleKind::P2pDot11N,
+                8_u8.checked_sub(mcs_index).unwrap(),
+            )
+            .unwrap();
+            let schedule = P2pRetryRateSchedule::new(schedule).unwrap();
+            let mut retry = OrdinaryMpduRetryState::new_with_rate_policy(
+                LegacyTxQueue::Voice,
+                initial,
+                OrdinaryRetryRatePolicy::P2pHtSgiFallback(schedule),
+                4,
+                OrdinaryFrameClass::Short,
+            )
+            .unwrap();
+            let mut policy = WifiTxRuntimePolicy::vendor_defaults();
+
+            assert_eq!(retry.current_rate(), Ok(initial));
+            assert_eq!(
+                retry.observe_completion(&mut policy, TxCompletionDisposition::AckTimeout),
+                OrdinaryRetryDecision::Retry {
+                    set_retry_bit: true
+                }
+            );
+            assert_eq!(
+                retry.current_rate(),
+                Ok(TxPhyRate::Ht(HtRate::new(
+                    mcs,
+                    HtGuardInterval::Long800Ns,
+                    HtChannelWidth::Mhz20,
+                )))
+            );
+        }
+    }
+
+    #[test]
+    fn p2p_ht_sgi_bridge_rejects_a_different_mcs_retry_record() {
+        let initial = TxPhyRate::Ht(HtRate::new(
+            HtMcs::Mcs4,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz20,
+        ));
+        let wrong = P2pRetryRateSchedule::new(
+            RateScheduleRef::new(RateScheduleKind::P2pDot11N, 3).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            OrdinaryMpduRetryState::new_with_rate_policy(
+                LegacyTxQueue::Voice,
+                initial,
+                OrdinaryRetryRatePolicy::P2pHtSgiFallback(wrong),
+                4,
+                OrdinaryFrameClass::Short,
+            )
+            .err(),
+            Some(OrdinaryRetryError::P2pHtSgiFallbackMismatch {
+                initial,
+                scheduled: TxPhyRate::Ht(HtRate::new(
+                    HtMcs::Mcs5,
+                    HtGuardInterval::Long800Ns,
+                    HtChannelWidth::Mhz20,
+                )),
+            })
         );
     }
 

@@ -32,24 +32,28 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rate_schedule::{RateScheduleKind, RateScheduleRef},
     rx::{
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,
-        HeTriggerBasedSignal, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
-        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxBasebandFormat, RxDma, RxDmaBinding,
-        RxDmaCursorObservation, RxDmaWalkerStopped, RxError, RxHe20MuSigBUsersError,
-        RxIngressConfig, RxPhyInfo, RxReloadObservation, RxRingError, RxRingLive, RxRingStopped,
-        RxSegment, build_cold_ring, decode_normalized_rx_metadata, decode_rx_he_mu_sig_b,
-        decode_rx_phy_info, disable_receive, enable_receive, extract_ccmp_data, extract_control,
-        extract_data, extract_management, first_segment_layout, prepare_recycled_buffer,
-        publish_cold_ring, rearm_descriptor, view_normalized_rx_frame,
+        HeTriggerBasedSignal, HtDuplicateRxClassification, INGRESS_STRICT_DUMP,
+        INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL, RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT,
+        RxBasebandFormat, RxDma, RxDmaBinding, RxDmaCursorObservation, RxDmaWalkerStopped, RxError,
+        RxHe20MuSigBUsersError, RxIngressConfig, RxPhyInfo, RxReloadObservation, RxRingError,
+        RxRingLive, RxRingStopped, RxSegment, build_cold_ring, decode_normalized_rx_metadata,
+        decode_rx_he_mu_sig_b, decode_rx_phy_info, disable_receive, enable_receive,
+        extract_ccmp_data, extract_control, extract_data, extract_management, first_segment_layout,
+        prepare_recycled_buffer, publish_cold_ring, rearm_descriptor, view_normalized_rx_frame,
     },
     rx_pool::{RxStagePool, RxStageTransactionError},
     tx::{
         AmpduTxConfig, HeAmpduTxConfig, HeBccDcmMcs, HeEdcaTxopLimit, HeFecCoding, HeLdpcDcmMcs,
         HeMcs, HeRate, HeResourceUnit, HeSmpduTxConfig, HeTriggerScheduledRate,
         HeTriggerScheduledRateError, HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth,
-        HtGuardInterval, HtMcs, HtPeerAmpduParameters, HtProtectionSpacing, HtRate, HtTxConfig,
-        LegacyRate, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxError, TxHardware,
-        TxLifetimeClass, TxPhyRate, TxSlot, TxSlotState, he_ampdu_q0_image, he_smpdu_q0_image,
-        ht_ampdu_q0_image, ht_q0_image, legacy_q0_image,
+        HtDuplicateCertificationRequest, HtDuplicateRate, HtDuplicateTxEvidenceGaps,
+        HtDuplicateTxLinkCapabilities, HtDuplicateTxOracleField, HtDuplicateTxOracleGaps,
+        HtDuplicateTxQualificationField, HtDuplicateTxQualificationGaps, HtDuplicateTxRejection,
+        HtDuplicateTxSelection, HtDuplicateTxUnavailable, HtGuardInterval, HtMcs,
+        HtPeerAmpduParameters, HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate, LegacyTxConfig,
+        LegacyTxQueue, TxCompletion, TxError, TxHardware, TxLifetimeClass, TxPhyRate, TxSlot,
+        TxSlotState, he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image,
+        legacy_q0_image, select_esp32s31_ht_duplicate_tx,
     },
 };
 use open_esp_radio_ieee80211::he::{HeMuSigBMimoUser, HeMuSigBNonMimoUser, HeMuSigBUser};
@@ -461,7 +465,7 @@ impl MacInterrupt for MockMmio {
 }
 
 impl CcmpKeyHardware for MockMmio {
-    fn install_sta_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
+    fn install_sta_ccmp_entry(&mut self, index: u8, words: &[u32; 6]) -> MacKeyInstallOutcome {
         let validity = self.read32(mac::CRYPTO_KEY_VALID_BITMAP);
         let valid_bit = 1_u32 << index;
         if validity & valid_bit != 0 {
@@ -470,7 +474,7 @@ impl CcmpKeyHardware for MockMmio {
         for word in 0..mac::CRYPTO_KEY_ENTRY_WORDS {
             self.write32(mac::crypto_key_entry_word(index, word).unwrap(), 0);
         }
-        for (word, value) in words.into_iter().enumerate() {
+        for (word, value) in words.iter().copied().enumerate() {
             self.write32(
                 mac::crypto_key_entry_word(index, word as u8).unwrap(),
                 value,
@@ -2830,8 +2834,8 @@ fn sta_pairwise_ccmp_install_owns_one_bounded_hardware_slot() {
         mmio.words.get(&mac::CRYPTO_POLICY_CONTROL),
         Some(&0xffc0_003f)
     );
-    assert_eq!(slot.next_tx_ccmp_header(), [3, 0, 0, 0x20, 0, 0, 0, 0]);
-    assert_eq!(slot.next_tx_ccmp_header(), [6, 0, 0, 0x20, 0, 0, 0, 0]);
+    assert_eq!(slot.next_tx_ccmp_header(), Ok([3, 0, 0, 0x20, 0, 0, 0, 0]));
+    assert_eq!(slot.next_tx_ccmp_header(), Ok([6, 0, 0, 0x20, 0, 0, 0, 0]));
 
     slot.clear(&mut mmio);
     assert_eq!(mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP), Some(&0));
@@ -3089,6 +3093,8 @@ fn ccmp_data_rx_reproduces_the_oracle_header_and_mic_adjustment() {
     .unwrap();
 
     assert_eq!(frame.mpdu.length, MPDU_LENGTH);
+    assert_eq!(frame.ccmp_header.packet_number().value(), 3);
+    assert_eq!(frame.ccmp_header.key_id().value(), 0);
     assert_eq!(frame.ccmp_header_offset, HEADER_LENGTH);
     assert_eq!(frame.payload_offset, HEADER_LENGTH + 8);
     assert_eq!(frame.payload_length, LLC_LENGTH + PAYLOAD_LENGTH);
@@ -3099,6 +3105,49 @@ fn ccmp_data_rx_reproduces_the_oracle_header_and_mic_adjustment() {
         &output[frame.payload_offset..frame.payload_offset + LLC_LENGTH],
         &[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]
     );
+}
+
+#[test]
+fn ccmp_data_rx_rejects_reserved_header_encodings() {
+    const HEADER_LENGTH: usize = 24;
+    const MPDU_LENGTH: usize = HEADER_LENGTH + 8 + 8 + 8;
+    const SIGNAL_LENGTH: usize = MPDU_LENGTH + 4;
+    const TAIL_OFFSET: usize = 0x38;
+    const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
+    const RECEIVED: usize = FRAME_OFFSET + SIGNAL_LENGTH;
+
+    for header in [
+        [1, 0, 1, 0x20, 0, 0, 0, 0],
+        [1, 0, 0, 0, 0, 0, 0, 0],
+        [1, 0, 0, 0x21, 0, 0, 0, 0],
+    ] {
+        let mut storage = [0_u8; 128];
+        storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+            &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+        );
+        storage[FRAME_OFFSET..FRAME_OFFSET + 2].copy_from_slice(&0x4008_u16.to_le_bytes());
+        storage[FRAME_OFFSET + HEADER_LENGTH..FRAME_OFFSET + HEADER_LENGTH + 8]
+            .copy_from_slice(&header);
+        let segment = RxSegment {
+            descriptor_address: 0x2f00_4000,
+            descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+            buffer: &storage,
+            next_descriptor_address: 0,
+        };
+        let mut output = [0_u8; 80];
+        assert_eq!(
+            extract_ccmp_data(
+                &[segment],
+                RxIngressConfig {
+                    ring_entry_limit: 1,
+                    csi_config: 0,
+                    flags: INGRESS_STRICT_RXEND | INGRESS_STRICT_DUMP,
+                },
+                &mut output,
+            ),
+            Err(RxError::Unsupported)
+        );
+    }
 }
 
 #[test]
@@ -3634,6 +3683,114 @@ fn ht_rate_codes_keep_gi_separate_from_power_lookup_and_width() {
         .vendor_rts_rate(),
         LegacyRate::Ofdm12M,
     );
+}
+
+#[test]
+fn ht_duplicate_rate_stays_outside_the_ordinary_phy_and_formatter_domains() {
+    let duplicate = HtDuplicateRate::new(HtGuardInterval::Short400Ns);
+    assert_eq!(duplicate.mcs_index(), 32);
+    assert_eq!(duplicate.channel_width(), HtChannelWidth::Mhz40);
+    assert_eq!(duplicate.nominal_kbps(), 6_700);
+
+    // The finite ordinary decoder has no raw byte which can manufacture the
+    // separate duplicate-mode type.
+    for code in u8::MIN..=u8::MAX {
+        if let Some(TxPhyRate::Ht(rate)) = TxPhyRate::from_code(code, HtChannelWidth::Mhz40) {
+            assert!(rate.mcs.index() <= HtMcs::Mcs7.index());
+        }
+    }
+}
+
+#[test]
+fn ht_duplicate_selector_validates_protocol_before_reporting_exact_oracle_gaps() {
+    let request = HtDuplicateCertificationRequest::new(
+        HtChannelWidth::Mhz40,
+        HtGuardInterval::Short400Ns,
+        5_484,
+    );
+    let capable = HtDuplicateTxLinkCapabilities::new(Some(HtChannelWidth::Mhz40), true, true);
+    assert_eq!(capable.channel_width(), Some(HtChannelWidth::Mhz40));
+    assert!(capable.peer_supports_mcs32());
+    assert!(capable.peer_supports_short_guard_interval());
+
+    let selection = select_esp32s31_ht_duplicate_tx(Some(request), capable);
+    assert_eq!(selection.request(), Some(request));
+    assert_eq!(selection.plan(), None);
+    let Some(HtDuplicateTxRejection::Hardware(
+        HtDuplicateTxUnavailable::Esp32s31EvidenceIncomplete(evidence),
+    )) = selection.rejection()
+    else {
+        panic!("a protocol-valid request must stop at the reviewed hardware frontier");
+    };
+    assert_eq!(evidence, HtDuplicateTxEvidenceGaps::ESP32S31);
+    let formatter = evidence.formatter();
+    assert_eq!(formatter, HtDuplicateTxOracleGaps::ESP32S31);
+    assert_eq!(formatter.bits(), 0x3f);
+    assert!(!formatter.is_empty());
+    for field in [
+        HtDuplicateTxOracleField::DescriptorSelector,
+        HtDuplicateTxOracleField::PlcpAndHtSig,
+        HtDuplicateTxOracleField::Length,
+        HtDuplicateTxOracleField::Protection,
+        HtDuplicateTxOracleField::Power,
+        HtDuplicateTxOracleField::Retry,
+    ] {
+        assert!(formatter.contains(field));
+    }
+    let qualification = evidence.qualification();
+    assert_eq!(qualification, HtDuplicateTxQualificationGaps::ESP32S31);
+    assert_eq!(qualification.bits(), 1);
+    assert!(!qualification.is_empty());
+    assert!(qualification.contains(HtDuplicateTxQualificationField::OnAirAck));
+}
+
+#[test]
+fn ht_duplicate_selector_reports_each_pre_hardware_rejection_without_a_plan() {
+    let request = |width, guard_interval, duration| {
+        Some(HtDuplicateCertificationRequest::new(
+            width,
+            guard_interval,
+            duration,
+        ))
+    };
+    let capable = HtDuplicateTxLinkCapabilities::new(Some(HtChannelWidth::Mhz40), true, true);
+    assert_eq!(
+        select_esp32s31_ht_duplicate_tx(None, capable),
+        HtDuplicateTxSelection::NotRequested
+    );
+
+    let cases = [
+        (
+            request(HtChannelWidth::Mhz40, HtGuardInterval::Long800Ns, 0),
+            capable,
+            HtDuplicateTxRejection::ZeroMaximumPpduDuration,
+        ),
+        (
+            request(HtChannelWidth::Mhz20, HtGuardInterval::Long800Ns, 1),
+            capable,
+            HtDuplicateTxRejection::RequestedWidthMustBe40Mhz,
+        ),
+        (
+            request(HtChannelWidth::Mhz40, HtGuardInterval::Long800Ns, 1),
+            HtDuplicateTxLinkCapabilities::new(Some(HtChannelWidth::Mhz20), true, true),
+            HtDuplicateTxRejection::LinkIsNot40Mhz,
+        ),
+        (
+            request(HtChannelWidth::Mhz40, HtGuardInterval::Long800Ns, 1),
+            HtDuplicateTxLinkCapabilities::new(Some(HtChannelWidth::Mhz40), false, true),
+            HtDuplicateTxRejection::PeerDoesNotSupportMcs32,
+        ),
+        (
+            request(HtChannelWidth::Mhz40, HtGuardInterval::Short400Ns, 1),
+            HtDuplicateTxLinkCapabilities::new(Some(HtChannelWidth::Mhz40), true, false),
+            HtDuplicateTxRejection::PeerDoesNotSupportShortGuardInterval,
+        ),
+    ];
+    for (request, link, expected) in cases {
+        let selection = select_esp32s31_ht_duplicate_tx(request, link);
+        assert_eq!(selection.rejection(), Some(expected));
+        assert_eq!(selection.plan(), None);
+    }
 }
 
 #[test]
@@ -4303,7 +4460,7 @@ fn he_nonzero_edca_txop_apep_limits_match_the_complete_blob_producer() {
 }
 
 #[test]
-fn he_integer_apep_producer_is_exhaustively_equivalent_to_blob_f32_domain() {
+fn he_checked_apep_producer_matches_positive_blob_domain_and_rejects_wrap() {
     let profiles = [
         (HeGuardIntervalAndLtf::TwoLtf800Ns, 31.2_f32, 13.6_f32),
         (HeGuardIntervalAndLtf::TwoLtf1600Ns, 32.0_f32, 14.4_f32),
@@ -4312,6 +4469,8 @@ fn he_integer_apep_producer_is_exhaustively_equivalent_to_blob_f32_domain() {
     let data_bits_per_symbol = [117_i32, 234, 351, 468, 702, 936, 1_053, 1_170, 1_404, 1_560];
     let estimated_block_ack_us = [68_i32, 44, 44, 32, 32, 32, 32, 32, 32, 32];
 
+    let mut rejected = 0_u16;
+    let mut rejected_short_limits = [0_u16; 4];
     for units_32_us in 1_u16..=u16::from(u8::MAX) {
         let txop = HeEdcaTxopLimit::from_units_32_us(units_32_us).unwrap();
         for (guard_interval_and_ltf, preamble_us, symbol_us) in profiles {
@@ -4323,17 +4482,46 @@ fn he_integer_apep_producer_is_exhaustively_equivalent_to_blob_f32_domain() {
                     / symbol_us;
                 // This is the complete blob's fsub/fdiv/fmadd/fcvt/div
                 // instruction sequence used as the independent test oracle.
-                let expected = ((data_bits_per_symbol[mcs_index] as f32)
+                let signed_expected = (data_bits_per_symbol[mcs_index] as f32)
                     .mul_add(data_symbols, -22.0_f32) as i32
-                    / 8) as u32;
+                    / 8;
                 let rate = HeRate::new(
                     HeMcs::from_index(mcs_index as u8).unwrap(),
                     guard_interval_and_ltf,
                 );
-                assert_eq!(rate.maximum_apep_bytes(txop), expected);
+                if signed_expected <= 0 {
+                    rejected = rejected.saturating_add(1);
+                    if let Some(count) =
+                        rejected_short_limits.get_mut(usize::from(units_32_us.saturating_sub(1)))
+                    {
+                        *count = count.saturating_add(1);
+                    }
+                    assert_eq!(rate.checked_maximum_apep_bytes(txop), None);
+                    assert_eq!(rate.maximum_apep_bytes(txop), 0);
+                    assert!(
+                        HeAmpduTxConfig::new_with_txop(
+                            rate,
+                            1,
+                            1,
+                            1,
+                            HtAmpduDensity::NoRestriction,
+                            txop,
+                        )
+                        .is_none()
+                    );
+                } else {
+                    let expected = signed_expected as u32;
+                    assert_eq!(rate.checked_maximum_apep_bytes(txop), Some(expected));
+                    assert_eq!(rate.maximum_apep_bytes(txop), expected);
+                }
             }
         }
     }
+    assert_ne!(rejected, 0, "the short-TXOP wrap domain remains covered");
+    assert!(
+        rejected_short_limits.into_iter().all(|count| count != 0),
+        "every AP-controlled 1..=4-unit limit covers a non-positive rate/GI budget"
+    );
 }
 
 #[test]
@@ -4638,6 +4826,44 @@ fn normalized_ht_rx_metadata_uses_the_direct_ht_sig_aggregation_bit() {
         decode_normalized_rx_metadata(&metadata).unwrap().ampdu,
         MacRxEvidence::HardwareObserved(false)
     );
+}
+
+#[test]
+fn normalized_ht_rx_metadata_separates_mcs32_from_the_five_bit_rate_summary() {
+    let mut metadata = [0_u8; 0x40];
+    // The public `rate` summary at byte one is only five bits and therefore
+    // wraps MCS32 to zero. The format-specific HT-SIG word remains the owner
+    // of the complete seven-bit MCS selector and CBW geometry.
+    metadata[1] = 0;
+    metadata[4..8].copy_from_slice(&(32_u32 | (1 << 7)).to_le_bytes());
+    metadata[0x25] = 2 << 4;
+
+    let decoded = decode_normalized_rx_metadata(&metadata).unwrap();
+    let MacRxEvidence::HardwareObserved(phy) = decoded.rate else {
+        panic!("HT PHY metadata must remain hardware-observed");
+    };
+    assert_eq!(phy.rate, 0);
+    let signal = phy.ht_signal().unwrap();
+    assert_eq!(
+        signal.ht_duplicate_mcs32_classification(),
+        HtDuplicateRxClassification::Ht40(open_esp_radio_ieee80211::ht::HtDuplicateMcs32::new())
+    );
+    assert!(signal.ht_duplicate_mcs32().is_some());
+
+    metadata[4..8].copy_from_slice(&32_u32.to_le_bytes());
+    let MacRxEvidence::HardwareObserved(phy) =
+        decode_normalized_rx_metadata(&metadata).unwrap().rate
+    else {
+        panic!("HT PHY metadata must remain hardware-observed");
+    };
+    let signal = phy.ht_signal().unwrap();
+    assert_eq!(
+        signal.ht_duplicate_mcs32_classification(),
+        HtDuplicateRxClassification::Mismatch {
+            channel_width_mhz: 20,
+        }
+    );
+    assert_eq!(signal.ht_duplicate_mcs32(), None);
 }
 
 #[test]

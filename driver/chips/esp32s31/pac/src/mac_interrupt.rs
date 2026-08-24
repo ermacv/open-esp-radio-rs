@@ -11,6 +11,50 @@ use super::{
 const STA_BEACON_FILTER_INTERRUPT: u32 = 1 << 15;
 const RX_DELIVERY_INTERRUPTS: u32 = (1 << 5) | (1 << 14) | (1 << 24);
 
+/// One of the four guarded generic TSF timers recovered from `hal_tsf.o`.
+///
+/// This type deliberately does not identify any timer as the station timer:
+/// the reviewed low three control bits still have no semantic decode.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacTsfTimerIndex {
+    Timer0,
+    Timer1,
+    Timer2,
+    Timer3,
+}
+
+impl MacTsfTimerIndex {
+    pub const fn get(self) -> u8 {
+        match self {
+            Self::Timer0 => 0,
+            Self::Timer1 => 1,
+            Self::Timer2 => 2,
+            Self::Timer3 => 3,
+        }
+    }
+}
+
+/// WDEVPWR causes whose bit identity is proven by complete TSF timer leaves.
+///
+/// Beacon-miss, modem-limit and RF causes remain intentionally absent: the
+/// reviewed bank exposes their opaque status bits but not their identities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacPowerWakeCause {
+    TsfTimer(MacTsfTimerIndex),
+}
+
+impl MacPowerWakeCause {
+    pub const REVIEWED_MASK: u32 = 0x0000_00f0;
+
+    /// `hal_enable_tsf_timer(index)` uses WDEVPWR bit `7 - index` for guarded
+    /// indices zero through three.
+    pub const fn event_mask(self) -> u32 {
+        match self {
+            Self::TsfTimer(timer) => 1 << (7 - timer.get()),
+        }
+    }
+}
+
 /// Proof that the connected-STA hardware policy was applied before IRQ activation.
 ///
 /// Construction is private to the exact two-register transaction below. The
@@ -130,6 +174,30 @@ pub struct MacPowerInterruptRegisters {
 }
 
 impl MacPowerInterruptRegisters {
+    /// Mask the complete WDEVPWR bank and acknowledge one reviewed cause.
+    ///
+    /// The current reviewed SVD permits the complete MASKED image and exact
+    /// CLEAR writes, but deliberately has no safe writer for a partial ENABLE
+    /// image. Consequently this is a rollback/handoff operation, not a claim
+    /// that the selected cause can yet wake production firmware.
+    pub fn mask_and_acknowledge_wake_cause(&mut self, cause: MacPowerWakeCause) {
+        svd::fixed_register_write::mask_mac_power_interrupts(&self.peripheral);
+        super::generated::mac_power_interrupt_clear(
+            &self.peripheral,
+            super::generated::MacPowerInterruptClearImage::new(cause.event_mask()),
+        );
+        device_fence();
+    }
+
+    /// Acknowledge one reviewed cause without changing the active mask.
+    pub fn acknowledge_wake_cause(&mut self, cause: MacPowerWakeCause) {
+        super::generated::mac_power_interrupt_clear(
+            &self.peripheral,
+            super::generated::MacPowerInterruptClearImage::new(cause.event_mask()),
+        );
+        device_fence();
+    }
+
     /// Sample the complete masked WDEVPWR event image.
     ///
     /// SOURCE: complete `libpp.a[hal_tsf.o]::

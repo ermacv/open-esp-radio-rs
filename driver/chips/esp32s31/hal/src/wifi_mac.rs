@@ -24,7 +24,11 @@ use crate::types::{
     MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
-use open_esp_radio_esp32s31_pac::{WifiColdRegisters, WifiRadioRegisters};
+use open_esp_radio_esp32s31_pac::{
+    StaModemWakeConfig, StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreFailure,
+    StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreFailure, WifiColdRegisters,
+    WifiRadioRegisters,
+};
 
 /// Complete identity of one hardware MAC interface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -255,6 +259,19 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac().radio_phy().read_noise_floor_dbm()
     }
 
+    /// Read the reviewed ROM low-rate enable status while the runtime MAC
+    /// register authority is exclusively borrowed.
+    pub fn phy_low_rate_enabled(&self) -> bool {
+        self.pac().radio_phy().phy_low_rate_enabled()
+    }
+
+    /// Apply the complete three-RMW ROM low-rate gate transaction.
+    pub fn configure_phy_low_rate(&mut self, enabled: bool) {
+        self.pac_mut()
+            .radio_phy_mut()
+            .configure_phy_low_rate(enabled);
+    }
+
     /// Begin the reviewed no-power-save MAC quiesce sequence before PHY
     /// retuning. Sequencing belongs to the HAL; the PAC method is only the
     /// register-local RMW transaction.
@@ -368,7 +385,7 @@ impl<'registers> WifiMacHal<'registers> {
     pub fn install_station_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; 6],
+        words: &[u32; 6],
     ) -> MacKeyInstallOutcome {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;
@@ -383,7 +400,7 @@ impl<'registers> WifiMacHal<'registers> {
     pub fn install_access_point_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; 6],
+        words: &[u32; 6],
     ) -> MacKeyInstallOutcome {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;
@@ -662,6 +679,48 @@ impl<'registers> WifiMacHal<'registers> {
 
     pub fn station_tsf(&mut self) -> u64 {
         self.pac_mut().station_tsf()
+    }
+
+    /// Apply only the reviewed raw modem-wakeup field transaction and retain
+    /// its exact rollback obligation. This does not derive counter units or
+    /// authorize RF/PHY sleep.
+    pub fn configure_station_modem_wakeup(
+        &mut self,
+        config: StaModemWakeConfig,
+    ) -> Result<StaModemWakeRestore, StaModemWakePrepareError> {
+        self.pac_mut().configure_station_modem_wakeup(config)
+    }
+
+    /// Consume the exact field rollback returned by
+    /// [`Self::configure_station_modem_wakeup`].
+    pub fn restore_station_modem_wakeup(
+        &mut self,
+        restore: StaModemWakeRestore,
+    ) -> Result<(), StaModemWakeRestoreFailure> {
+        self.pac_mut().restore_station_modem_wakeup(restore)
+    }
+
+    /// Value-only quarantine diagnostic for a missing rollback token.
+    pub fn station_modem_wakeup_restore_pending(&self) -> bool {
+        self.pac().station_modem_wakeup_restore_pending()
+    }
+
+    /// Program only the reviewed station-TBTT wake prefix. The returned token
+    /// owns rollback; this operation does not claim RF/PHY sleep entry.
+    pub fn prepare_station_tbtt_wake(
+        &mut self,
+        wake_tsf: u64,
+    ) -> Result<StaTbttWakeRestore, StaTbttWakePrepareError> {
+        self.pac_mut().prepare_station_tbtt_wake(wake_tsf)
+    }
+
+    /// Consume the exact rollback obligation created by
+    /// [`Self::prepare_station_tbtt_wake`].
+    pub fn restore_station_tbtt_wake(
+        &mut self,
+        restore: StaTbttWakeRestore,
+    ) -> Result<(), StaTbttWakeRestoreFailure> {
+        self.pac_mut().restore_station_tbtt_wake(restore)
     }
 
     pub fn program_rx_block_ack_entry(

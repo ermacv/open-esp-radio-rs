@@ -470,7 +470,12 @@ where
                             message2_transmissions = message2_transmissions.saturating_add(1);
                             break 'message1;
                         }
-                        Ok(Wpa2StaSupplicantAction::None) | Err(_) => {}
+                        Ok(Wpa2StaSupplicantAction::None) => {}
+                        Err(error) if error.is_peer_input_rejection() => {}
+                        Err(error) => {
+                            self.stop_receive().await?;
+                            return Err(Wpa2HandshakeError::Process(error));
+                        }
                         Ok(_) => {
                             self.stop_receive().await?;
                             return Err(Wpa2HandshakeError::UnexpectedAction);
@@ -517,6 +522,9 @@ where
                         .await
                     {
                         Ok(action) => action,
+                        Err(error) if error.is_peer_input_rejection() => {
+                            Wpa2StaSupplicantAction::None
+                        }
                         Err(error) => {
                             self.stop_receive().await?;
                             return Err(Wpa2HandshakeError::Process(error));
@@ -620,6 +628,7 @@ mod tests {
         stops: u16,
         transmissions: u16,
         last_sequence: Option<u16>,
+        inject_peer_attacks: bool,
     }
 
     impl Backend {
@@ -639,7 +648,13 @@ mod tests {
                 stops: 0,
                 transmissions: 0,
                 last_sequence: None,
+                inject_peer_attacks: false,
             }
+        }
+
+        const fn with_peer_attack_sequence(mut self) -> Self {
+            self.inject_peer_attacks = true;
+            self
         }
 
         fn message1() -> OwnedEapolFrame<512> {
@@ -647,7 +662,7 @@ mod tests {
             OwnedEapolFrame::try_copy(Wpa2Interface::Station, AP, frame.as_bytes()).unwrap()
         }
 
-        fn message3() -> OwnedEapolFrame<512> {
+        fn message3_with_replay(replay_counter: u64) -> OwnedEapolFrame<512> {
             let pmk = Pmk::derive(b"password", b"ssid").unwrap();
             let ptk = pmk.derive_ptk(PtkContext {
                 authenticator_address: AP,
@@ -660,7 +675,7 @@ mod tests {
             let plain = Wpa2PlainKeyData::<64>::build(&rsn, &gtk).unwrap();
             let frame = Wpa2TxFrame::<512>::message3(
                 LOCAL,
-                8,
+                replay_counter,
                 ANONCE,
                 [7, 6, 5, 4, 3, 2, 1, 0],
                 plain.as_bytes(),
@@ -668,6 +683,33 @@ mod tests {
             .unwrap()
             .authenticate(&ptk);
             OwnedEapolFrame::try_copy(Wpa2Interface::Station, AP, frame.as_bytes()).unwrap()
+        }
+
+        fn message3() -> OwnedEapolFrame<512> {
+            Self::message3_with_replay(8)
+        }
+
+        fn bad_mic_message3() -> OwnedEapolFrame<512> {
+            let valid = Self::message3();
+            let mut bytes = [0_u8; 512];
+            let len = valid.as_bytes().len();
+            bytes[..len].copy_from_slice(valid.as_bytes());
+            bytes[81] ^= 1;
+            OwnedEapolFrame::try_copy(Wpa2Interface::Station, AP, &bytes[..len]).unwrap()
+        }
+
+        fn unsupported_message() -> OwnedEapolFrame<512> {
+            let frame = Wpa2TxFrame::<512>::message4(LOCAL, 8).unwrap();
+            OwnedEapolFrame::try_copy(Wpa2Interface::Station, AP, frame.as_bytes()).unwrap()
+        }
+
+        fn peer_attack(poll: u32) -> Option<OwnedEapolFrame<512>> {
+            match poll {
+                1 => Some(Self::bad_mic_message3()),
+                2 => Some(Self::message3_with_replay(7)),
+                3 => Some(Self::unsupported_message()),
+                _ => None,
+            }
         }
     }
 
@@ -688,7 +730,11 @@ mod tests {
                 }
             } else {
                 self.message3_polls += 1;
-                if self.message3_poll == Some(self.message3_polls) {
+                if self.inject_peer_attacks
+                    && let Some(frame) = Self::peer_attack(self.message3_polls)
+                {
+                    Ok(Wpa2RxProgress::eapol(1, frame))
+                } else if self.message3_poll == Some(self.message3_polls) {
                     Ok(Wpa2RxProgress::eapol(1, Self::message3()))
                 } else if self.repeated_message1_poll == Some(self.message3_polls) {
                     Ok(Wpa2RxProgress::eapol(1, Self::message1()))
@@ -781,6 +827,22 @@ mod tests {
         let mut runner = Wpa2HandshakeRunner::new(backend, TestTimer::default(), IdentityUnwrap);
         let mut sequence = TestSequence::new(0x123);
         embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take())).unwrap()
+    }
+
+    #[test]
+    fn message3_wait_ignores_bad_mic_wrong_replay_and_unsupported_frames() {
+        let pmk = Pmk::derive(b"password", b"ssid").unwrap();
+        let backend = Backend::new(Some(1), None, Some(4)).with_peer_attack_sequence();
+        let mut runner = Wpa2HandshakeRunner::new(backend, TestTimer::default(), IdentityUnwrap);
+        let mut sequence = TestSequence::new(0x123);
+
+        let pending = embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take()))
+            .expect("untrusted peer rejects must not abort the live join");
+        assert_eq!(pending.completed_frames(), 5);
+        assert_eq!(pending.message2_transmissions(), 1);
+        assert_eq!(pending.request().replay_counter(), 8);
+        assert!(!runner.backend().receive_live);
+        assert_eq!(runner.backend().stops, 1);
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]

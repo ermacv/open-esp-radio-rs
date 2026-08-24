@@ -18,9 +18,10 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
     PUBLIC_HEADER_SIZE, RxDmaBinding, RxDmaWalkerStopped, RxIngressConfig, RxRingStopped,
 };
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
-    ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink,
+    ConnectedRxConfig, ConnectedRxEvent, ConnectedRxSink, StaCcmpRxReplayEpoch,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_ieee80211::vif::StaApRxAddresses;
 use std::boxed::Box;
 
@@ -140,9 +141,9 @@ fn one_physical_producer_routes_one_ordered_lease_into_station_processor() {
     let mut mpdu = [0; ESP32S31_RX_BUFFER_SIZE];
     let mut ethernet = [0; ESP32S31_RX_BUFFER_SIZE];
     let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+    configure_dispatcher(runtime);
     let mut processor = Esp32s31ConnectedRxProcessor::new(
         &irq,
-        dispatcher(),
         AlwaysReadyConnectedRxSink(Observer::default()),
         &mut mpdu,
         &mut ethernet,
@@ -723,8 +724,8 @@ impl ConnectedRxSink for OrderObserver {
     }
 }
 
-fn dispatcher() -> ConnectedRxDispatcher {
-    ConnectedRxDispatcher::new(ConnectedRxConfig {
+fn dispatcher_config() -> ConnectedRxConfig {
+    ConnectedRxConfig {
         station_address: [2, 3, 4, 5, 6, 7],
         bssid: [8, 9, 10, 11, 12, 13],
         association_id: 1,
@@ -733,7 +734,25 @@ fn dispatcher() -> ConnectedRxDispatcher {
             csi_config: 0,
             flags: 0,
         },
-    })
+        security: WifiSecurityMode::Wpa2Personal,
+        peer_qos: true,
+    }
+}
+
+fn configure_dispatcher<
+    'pool,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+    const REORDER_SLOTS: usize,
+>(
+    runtime: &mut Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
+) {
+    runtime
+        .try_reconfigure_dispatcher(dispatcher_config())
+        .unwrap();
+    runtime
+        .dispatcher_mut()
+        .install_ccmp_rx_replay(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap());
 }
 
 #[test]
@@ -768,11 +787,11 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
     let mut mpdu = [0; ESP32S31_RX_BUFFER_SIZE];
     let mut ethernet = [0; ESP32S31_RX_BUFFER_SIZE];
     let protocol_runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+    configure_dispatcher(protocol_runtime);
     let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
     let mut protocol = Esp32s31ConnectedRxProtocol::new(
         receiver,
         &irq,
-        dispatcher(),
         AlwaysReadyConnectedRxSink(Observer::default()),
         &mut mpdu,
         &mut ethernet,
@@ -1297,7 +1316,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
         frame[16..22].copy_from_slice(&[14, 15, 16, 17, 18, 19]);
         frame[22..24].copy_from_slice(&(sequence << 4).to_le_bytes());
         frame[24] = 0;
-        frame[26..34].copy_from_slice(&[3, 0, 0, 0x20, 0, 0, 0, 0]);
+        frame[26..34].copy_from_slice(&[sequence as u8, 0, 0, 0x20, 0, 0, 0, 0]);
         frame[34..42].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
         frame[42..46].copy_from_slice(&sequence.to_be_bytes().repeat(2));
         storage
@@ -1354,11 +1373,11 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     let mut ethernet = [0; STAGE_CAPACITY];
     let mut reorder_scratch = [0; STAGE_CAPACITY];
     let protocol_runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+    configure_dispatcher(protocol_runtime);
     let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
     let mut protocol = Esp32s31ConnectedRxProtocol::new(
         receiver,
         &irq,
-        dispatcher(),
         AlwaysReadyConnectedRxSink(OrderObserver::default()),
         &mut mpdu,
         &mut ethernet,

@@ -1323,6 +1323,8 @@ dependencies = [
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
  "pin-project",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -1363,6 +1365,7 @@ name = "open-esp-radio-wifi-softmac"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-ieee80211",
+ "zeroize",
 ]
 
 [[package]]
@@ -1773,6 +1776,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "subtle"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2044,6 +2053,26 @@ dependencies = [
 name = "xtensa-lx-rt-proc-macros"
 version = "0.5.0"
 source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "zeroize"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
 dependencies = [
  "proc-macro2",
  "quote",

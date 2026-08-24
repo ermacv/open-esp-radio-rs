@@ -11,7 +11,9 @@ use open_esp_radio_esp32s31_wifi::{
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
-use open_esp_radio_esp32s31_wifi_mac::tx::{HtRate, LegacyRate, TxHardware};
+use open_esp_radio_esp32s31_wifi_mac::tx::{
+    HtDuplicateCertificationRequest, HtDuplicateTxSelection, HtRate, LegacyRate, TxHardware,
+};
 use open_esp_radio_ieee80211::ap::ApPeerDisconnectKind;
 use open_esp_radio_ieee80211::block_ack::TxBlockAckAlarm;
 use open_esp_radio_wifi_ap::{ApPeerClose, ApPeerPowerState, ApServiceError};
@@ -25,7 +27,7 @@ use crate::{
     },
     tx::{
         Esp32s31ApTx, Esp32s31ApTxClass, Esp32s31ApTxConfig, Esp32s31ApTxError, Esp32s31ApTxParked,
-        peer_ht_rate, peer_legacy_rate,
+        peer_ht_duplicate_tx_selection, peer_ht_rate, peer_legacy_rate,
     },
 };
 
@@ -69,6 +71,10 @@ pub struct Esp32s31ApMacObservation {
     pub data_frames_transmitted: u32,
     pub rx_block_ack_responses_transmitted: u32,
     pub data_tx: Esp32s31ApDataTxObservation,
+    /// Fixed MCS32 planner requests evaluated for AP aggregate admissions.
+    pub ht_duplicate_tx_requests: u32,
+    /// Latest typed selection or rejection; never feeds ordinary rate ranking.
+    pub ht_duplicate_tx_selection: HtDuplicateTxSelection,
     /// Disconnect transactions accepted by the hardware TX owner.
     pub disassociations_published: u32,
     pub deauthentications_published: u32,
@@ -265,6 +271,17 @@ where
         }
     }
 
+    /// Install an explicit MCS32 certification request without adding it to
+    /// the AP's ordinary HT rate ranking.
+    pub fn with_ht_duplicate_certification_request(
+        mut self,
+        request: Option<HtDuplicateCertificationRequest>,
+    ) -> Self {
+        self.transmit
+            .set_ht_duplicate_certification_request(request);
+        self
+    }
+
     pub const fn engine(&self) -> &Esp32s31ApEngine<'beacon> {
         &self.engine
     }
@@ -446,9 +463,19 @@ where
         peer_ht_rate(self.engine.channel(), status.ht?)
     }
 
+    /// Return the independent fixed-request result for one AP peer.
+    pub fn peer_ht_duplicate_tx_selection(&self, peer: [u8; 6]) -> Option<HtDuplicateTxSelection> {
+        let status = self.engine.peer_status(peer)?;
+        Some(peer_ht_duplicate_tx_selection(
+            self.engine.channel(),
+            status.ht,
+            self.transmit.ht_duplicate_certification_request(),
+        ))
+    }
+
     /// Resolve one Ethernet lease to the AP peer/rate/BlockAck policy that
     /// must remain stable for the complete aggregate build.
-    pub fn aggregate_admission(&self, ethernet: &[u8]) -> Option<Esp32s31ApAggregateAdmission> {
+    pub fn aggregate_admission(&mut self, ethernet: &[u8]) -> Option<Esp32s31ApAggregateAdmission> {
         let peer = ethernet
             .get(..6)
             .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())?;
@@ -459,6 +486,22 @@ where
         if status.power_state != ApPeerPowerState::Active {
             return None;
         }
+        let ht_duplicate_tx_selection = peer_ht_duplicate_tx_selection(
+            self.engine.channel(),
+            status.ht,
+            self.transmit.ht_duplicate_certification_request(),
+        );
+        #[cfg(any(feature = "diagnostics", test))]
+        if ht_duplicate_tx_selection.request().is_some() {
+            self.observer.observation.ht_duplicate_tx_requests = self
+                .observer
+                .observation
+                .ht_duplicate_tx_requests
+                .saturating_add(1);
+            self.observer.observation.ht_duplicate_tx_selection = ht_duplicate_tx_selection;
+        }
+        #[cfg(not(any(feature = "diagnostics", test)))]
+        let _ = ht_duplicate_tx_selection;
         let agreement = status.tx_block_ack?;
         let rate = peer_ht_rate(self.engine.channel(), status.ht?)?;
         Some(Esp32s31ApAggregateAdmission::new(

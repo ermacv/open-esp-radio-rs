@@ -252,6 +252,9 @@ pub struct Esp32s31AccessPointObservation {
     pub tx_ht_aggregates: u32,
     pub tx_ht40_mcs7_aggregates: u32,
     pub data_frames_transmitted: u32,
+    pub ht_duplicate_tx_requests: u32,
+    pub ht_duplicate_tx_selection:
+        open_esp_radio_esp32s31_wifi_mac::tx::HtDuplicateTxSelection,
     pub data_tx_attempts: u32,
     pub data_tx_retried_frames: u32,
     pub data_tx_maximum_attempts: u8,

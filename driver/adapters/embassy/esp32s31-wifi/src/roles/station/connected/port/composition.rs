@@ -504,6 +504,7 @@ impl Esp32s31ConnectedStaPort {
                 link: plan.link,
                 data_tx_rate: plan.data_tx_rate,
                 aggregate_tx_rate: plan.aggregate_tx_rate,
+                ht_duplicate_tx_selection: plan.ht_duplicate_tx_selection,
             },
         }
     }

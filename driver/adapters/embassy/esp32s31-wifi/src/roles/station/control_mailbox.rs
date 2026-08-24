@@ -288,6 +288,10 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
         self.len() == 0
     }
 
+    pub fn security_pending(&self) -> bool {
+        self.security.len() != 0
+    }
+
     /// Whether this mailbox epoch has lost any semantic control event.
     ///
     /// This is functional protocol state, not a diagnostic counter. Once set,

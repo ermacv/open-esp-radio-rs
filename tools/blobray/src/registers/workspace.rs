@@ -8,6 +8,26 @@ use super::{
 };
 use crate::{Result, project::RegisterWorkspacePaths};
 
+/// Load reusable chip register geometry and apply only the sparse facts
+/// selected by the project. Project-aware consumers use this function so
+/// inspection, validation and publication all see the same effective model.
+pub(crate) fn load_effective_register_model(
+    paths: &RegisterWorkspacePaths,
+) -> Result<RegisterModel> {
+    let mut model = RegisterModel::load(&paths.model)?;
+    if !paths.reviewed_knowledge.is_empty() {
+        let knowledge =
+            open_radio_vendor_review::ReviewKnowledge::load_all(&paths.reviewed_knowledge)
+                .map_err(|error| {
+                    crate::Error::invalid(format!(
+                        "cannot compose reviewed knowledge over register model: {error}"
+                    ))
+                })?;
+        model.apply_review_knowledge(&knowledge)?;
+    }
+    Ok(model)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct RegisterWorkspaceSummary {
     pub(crate) ranges: usize,
@@ -43,7 +63,7 @@ impl ProjectRegisterWorkspace {
             .transpose()?;
         Ok(Self {
             facts,
-            model: Box::new(RegisterModel::load(&paths.model)?),
+            model: Box::new(load_effective_register_model(paths)?),
             owned_ranges: paths.owned_ranges.iter().cloned().collect(),
             non_operational_functions: paths.non_operational_functions.iter().cloned().collect(),
         })

@@ -121,6 +121,7 @@ pub(crate) struct RegisterWorkspacePaths {
     pub(crate) api_output: Option<PathBuf>,
     pub(crate) lint_pack: Option<PathBuf>,
     pub(crate) evidence_catalogs: Vec<PathBuf>,
+    pub(crate) reviewed_knowledge: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

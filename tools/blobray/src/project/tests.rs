@@ -43,6 +43,33 @@ fn project_manifest_rejects_misspelled_nested_configuration_tables() {
 }
 
 #[test]
+fn register_workspace_inherits_the_reusable_chip_model() {
+    let directory = std::env::temp_dir().join(format!(
+        "open-radio-blobray-chip-model-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"fixture-chip\"\nregister-model = \"registers/device.toml\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join(DEFAULT_PROJECT_MANIFEST),
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n\n[registers]\nfacts = \"generated/mmio.json\"\nowned-ranges = [\"radio\"]\n",
+    )
+    .unwrap();
+
+    let project = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap();
+    std::fs::remove_dir_all(&directory).unwrap();
+
+    assert_eq!(
+        project.registers.unwrap().model,
+        directory.join("registers/device.toml")
+    );
+}
+
+#[test]
 fn resolves_composed_specs_relative_to_the_project() {
     let directory =
         std::env::temp_dir().join(format!("open-radio-blobray-project-{}", std::process::id()));
@@ -259,6 +286,7 @@ locator = "review"
             api_output: None,
             lint_pack: Some(directory.join("registers/lints.toml")),
             evidence_catalogs: vec![directory.join("registers/evidence.toml")],
+            reviewed_knowledge: vec![directory.join("reviewed/radio.toml")],
         })
     );
     assert_eq!(

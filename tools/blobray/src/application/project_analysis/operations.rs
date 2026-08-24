@@ -15,9 +15,9 @@ use crate::{
     interfaces::InterfaceWorkspace,
     project::ProjectSpec,
     registers::{
-        ProjectRegisterWorkspace, RegisterFacts, RegisterModel, render_register_review,
-        validate_pac_api, validate_register_evidence, validate_register_lints,
-        validate_register_memory_map,
+        ProjectRegisterWorkspace, RegisterFacts, RegisterModel, load_effective_register_model,
+        render_register_review, validate_pac_api, validate_register_evidence,
+        validate_register_lints, validate_register_memory_map,
     },
     run_spec::{InputRole, RunSpec},
 };
@@ -171,11 +171,12 @@ struct ResolvedProjectAnalysisOperations<'a> {
 
 fn register_catalog_input_paths(
     svd_paths: &[std::path::PathBuf],
-    model: Option<&std::path::Path>,
+    registers: Option<&crate::project::RegisterWorkspacePaths>,
 ) -> Result<Vec<std::path::PathBuf>> {
     let mut paths = svd_paths.to_vec();
-    if let Some(model) = model {
-        paths.extend(RegisterModel::input_paths(model)?);
+    if let Some(registers) = registers {
+        paths.extend(RegisterModel::input_paths(&registers.model)?);
+        paths.extend(registers.reviewed_knowledge.iter().cloned());
     }
     Ok(paths)
 }
@@ -358,11 +359,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
     fn register_catalog_inputs(&self) -> Result<Vec<std::path::PathBuf>> {
         let mut paths = register_catalog_input_paths(
             &self.session.svd_paths,
-            self.session
-                .project
-                .registers
-                .as_ref()
-                .map(|registers| registers.model.as_path()),
+            self.session.project.registers.as_ref(),
         )?;
         if self.session.memory_map.is_some() {
             paths.extend(self.session.project.memory_map.iter().cloned());
@@ -523,6 +520,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
         if let Some(registers) = self.session.project.registers.as_ref() {
             paths.push(registers.facts.clone());
             paths.extend(RegisterModel::input_paths(&registers.model)?);
+            paths.extend(registers.reviewed_knowledge.iter().cloned());
             paths.extend(registers.api_pack.iter().cloned());
             paths.extend(registers.lint_pack.iter().cloned());
             paths.extend(registers.evidence_catalogs.iter().cloned());
@@ -1672,7 +1670,7 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
         ));
     }
     let facts = RegisterFacts::load(&paths.facts)?;
-    let model = RegisterModel::load(&paths.model)?;
+    let model = load_effective_register_model(paths)?;
     let (contents, _) = render_register_review(
         &facts,
         &model,
@@ -1893,11 +1891,28 @@ mod cache_domain_tests {
         )
         .unwrap();
         let svd = directory.join("public.svd");
+        let reviewed = directory.join("reviewed/radio.toml");
+        let registers = crate::project::RegisterWorkspacePaths {
+            facts: directory.join("mmio.json"),
+            model: model.clone(),
+            owned_ranges: vec!["radio".to_owned()],
+            non_operational_functions: Vec::new(),
+            review_output: None,
+            review_ir_reports: Vec::new(),
+            svd_output: None,
+            pac_raw: None,
+            bindings: None,
+            api_pack: None,
+            api_output: None,
+            lint_pack: None,
+            evidence_catalogs: Vec::new(),
+            reviewed_knowledge: vec![reviewed.clone()],
+        };
 
         let inputs =
-            register_catalog_input_paths(std::slice::from_ref(&svd), Some(&model)).unwrap();
+            register_catalog_input_paths(std::slice::from_ref(&svd), Some(&registers)).unwrap();
         std::fs::remove_dir_all(&directory).unwrap();
 
-        assert_eq!(inputs, vec![svd, model, fragment]);
+        assert_eq!(inputs, vec![svd, model, fragment, reviewed]);
     }
 }

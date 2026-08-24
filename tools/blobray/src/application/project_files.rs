@@ -478,7 +478,11 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
             ProjectFileOwnership::Reviewed,
             path,
             None,
-            &["reviewed assertions", "revision rebase"],
+            &[
+                "effective register model",
+                "SVD/PAC publication",
+                "revision rebase",
+            ],
             true,
             None,
         );

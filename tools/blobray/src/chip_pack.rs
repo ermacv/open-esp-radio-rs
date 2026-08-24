@@ -16,6 +16,7 @@ pub(crate) struct ChipPack {
     pub(crate) id: String,
     pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
+    pub(crate) register_model: Option<PathBuf>,
     pub(crate) knowledge_provider: Option<String>,
     pub(crate) knowledge_packs: Vec<PathBuf>,
     pub(crate) knowledge_operations: usize,
@@ -30,6 +31,8 @@ struct ChipDocument {
     memory_map: Option<String>,
     #[serde(default)]
     svd: Vec<String>,
+    #[serde(default)]
+    register_model: Option<String>,
     #[serde(default)]
     knowledge_provider: Option<String>,
     #[serde(default)]
@@ -73,6 +76,11 @@ impl ChipPack {
             .map(|value| resolve_relative(base, value, "memory-map"))
             .transpose()?;
         let svd_paths = resolve_unique_paths(base, &document.svd, "svd")?;
+        let register_model = document
+            .register_model
+            .as_deref()
+            .map(|value| resolve_relative(base, value, "register-model"))
+            .transpose()?;
         let knowledge_packs =
             resolve_unique_paths(base, &document.knowledge_packs, "knowledge-packs")?;
         let knowledge_operations = SemanticCatalogs::load(&knowledge_packs)?.len();
@@ -82,6 +90,7 @@ impl ChipPack {
             id: document.id,
             memory_map,
             svd_paths,
+            register_model,
             knowledge_provider: document.knowledge_provider,
             knowledge_packs,
             knowledge_operations,
@@ -156,15 +165,17 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("memory.toml"), "schema = 1\n").unwrap();
         fs::write(root.join("chip.svd"), "<device/>").unwrap();
+        fs::write(root.join("registers.toml"), "schema = 2\n").unwrap();
         fs::write(
             root.join("chip.toml"),
-            "schema = 3\nid = \"chip\"\nmemory-map = \"memory.toml\"\nsvd = [\"chip.svd\"]\nknowledge-provider = \"chip-knowledge-v1\"\n",
+            "schema = 3\nid = \"chip\"\nmemory-map = \"memory.toml\"\nsvd = [\"chip.svd\"]\nregister-model = \"registers.toml\"\nknowledge-provider = \"chip-knowledge-v1\"\n",
         )
         .unwrap();
 
         let pack = ChipPack::load(&root.join("chip.toml")).unwrap();
         assert_eq!(pack.memory_map, Some(root.join("memory.toml")));
         assert_eq!(pack.svd_paths, [root.join("chip.svd")]);
+        assert_eq!(pack.register_model, Some(root.join("registers.toml")));
         assert_eq!(
             pack.knowledge_provider.as_deref(),
             Some("chip-knowledge-v1")

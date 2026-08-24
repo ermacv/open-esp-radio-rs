@@ -329,6 +329,12 @@ fn validate_output_paths(paths: &RegisterWorkspacePaths) -> Result<()> {
             .iter()
             .map(|path| ("register evidence catalog", path.as_path())),
     );
+    inputs.extend(
+        paths
+            .reviewed_knowledge
+            .iter()
+            .map(|path| ("reviewed-knowledge pack", path.as_path())),
+    );
     for (output_name, output_path) in outputs {
         if let Some((input_name, _)) = inputs
             .iter()

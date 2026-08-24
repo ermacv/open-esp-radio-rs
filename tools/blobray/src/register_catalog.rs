@@ -10,7 +10,7 @@ pub(crate) fn load(paths: &[PathBuf], project: Option<&ProjectSpec>) -> Result<M
         && paths.model.is_file()
         && crate::registers::RegisterModel::is_model_file(&paths.model)?
     {
-        let model = crate::registers::RegisterModel::load(&paths.model)?;
+        let model = crate::registers::load_effective_register_model(paths)?;
         catalog.merge(model_catalog(&model)?)?;
     }
     Ok(catalog)

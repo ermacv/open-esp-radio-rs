@@ -63,7 +63,7 @@ fn neighbors(
     let identities = paths
         .model
         .is_file()
-        .then(|| crate::registers::RegisterModel::load(&paths.model))
+        .then(|| crate::registers::load_effective_register_model(paths))
         .transpose()?
         .map(|model| model.register_identities())
         .transpose()?

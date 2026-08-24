@@ -52,7 +52,7 @@ fn review(
         ));
     }
     let facts = RegisterFacts::load(&paths.facts)?;
-    let model = RegisterModel::load(&paths.model)?;
+    let model = load_effective_register_model(paths)?;
     let mut ir_reports = arguments.ir_report;
     if ir_reports.is_empty() && !arguments.no_ir_reports {
         ir_reports.clone_from(&paths.review_ir_reports);

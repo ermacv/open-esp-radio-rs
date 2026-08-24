@@ -153,6 +153,7 @@ bitWidth = 1
         api_output: pac.then(|| directory.join("generated/pac/src/generated.rs")),
         lint_pack: None,
         evidence_catalogs: Vec::new(),
+        reviewed_knowledge: Vec::new(),
     };
     let project_id = format!("publication-{name}");
     let review_output = directory.join("generated/review-scopes.json");

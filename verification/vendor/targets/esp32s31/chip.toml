@@ -3,5 +3,6 @@ schema = 3
 id = "esp32s31-rev0-radio-v1"
 memory-map = "memory.toml"
 svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
+register-model = "registers/device.toml"
 knowledge-provider = "esp32s31-radio-knowledge-v1"
 knowledge-packs = []

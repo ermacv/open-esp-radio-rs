@@ -202,7 +202,20 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 "project registers",
                 source,
             )?;
-            let model = table_string(table, "model", "project registers", source)?;
+            let model = optional_table_string(table, "model", "project registers", source)?
+                .map(|model| resolve_path(base, &model))
+                .or_else(|| {
+                    chip_pack
+                        .as_ref()
+                        .and_then(|pack| pack.register_model.clone())
+                })
+                .ok_or_else(|| {
+                    source.table_key(
+                        table,
+                        "model",
+                        "project registers requires model or chip-pack register-model",
+                    )
+                })?;
             let owned_ranges = required_table_string_array(
                 table,
                 "owned-ranges",
@@ -295,7 +308,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                     base,
                     &table_string(table, "facts", "project registers", source)?,
                 ),
-                model: resolve_path(base, &model),
+                model,
                 owned_ranges,
                 non_operational_functions,
                 review_output,
@@ -307,6 +320,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 api_output,
                 lint_pack,
                 evidence_catalogs,
+                reviewed_knowledge: reviewed_knowledge.clone(),
             })
         })
         .transpose()?;

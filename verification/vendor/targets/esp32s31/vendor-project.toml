@@ -200,7 +200,6 @@ output = "generated/findings/ieee802154-coex.ir"
 
 [registers]
 facts = "generated/findings/mmio.json"
-model = "registers/device.toml"
 owned-ranges = [
     "modem-radio-core-low",
     "modem-radio-core-mid",

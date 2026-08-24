@@ -10,8 +10,8 @@ unknown fields.
   and Rust target only;
 - `ecosystem.toml`: reusable ordered semantic catalogs for a vendor/RTOS
   ecosystem, with no chip addresses or executable provider;
-- `chip.toml`: reusable memory map, SVD inputs, chip semantic catalogs, and an
-  optional compiled knowledge-provider ID;
+- `chip.toml`: reusable memory map, base register model, SVD inputs, chip
+  semantic catalogs, and an optional compiled knowledge-provider ID;
 - `vendor-project.toml`: composition, reviewed workspaces, and generated
   output selection; it does not own reusable chip facts;
 - `[reviewed-knowledge].packs`: sparse accepted assertions and vendor-bug

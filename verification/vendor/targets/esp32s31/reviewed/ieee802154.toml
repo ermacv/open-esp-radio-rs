@@ -16,7 +16,7 @@ artifact-lineages = ["esp32s31-radio"]
 
 [[assertions]]
 id = "ieee802154.event-status.name"
-subject = "mmio:cpu:0x20103128/32"
+subject = "mmio:cpu:0x20103064/32"
 kind = "register-name"
 value = "EVENT_STATUS"
 
@@ -26,7 +26,7 @@ locator = "ieee802154_ll_get_events"
 
 [[assertions]]
 id = "ieee802154.event-status.write-semantics"
-subject = "mmio:cpu:0x20103128/32"
+subject = "mmio:cpu:0x20103064/32"
 kind = "hardware-write-semantics"
 value = "unknown"
 note = "The vendor accessor performs a masked self-write; W1C or another clear contract is not proven."

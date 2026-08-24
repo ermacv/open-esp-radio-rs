@@ -54,8 +54,8 @@ The schema-3 composition is deliberately layered:
 
 1. `target.toml` owns only architecture and ABI facts;
 2. `ecosystem.toml` owns reusable vendor/RTOS semantic catalogs;
-3. `chip.toml` owns reusable memory-map, SVD, ROM, and compiled knowledge
-   selection;
+3. `chip.toml` owns reusable memory-map, base register geometry, SVD, ROM, and
+   compiled knowledge selection;
 4. `vendor-project.toml` references these inputs and owns only composition;
 5. sparse reviewed-knowledge packs own investigation-specific assertions and
    vendor bugs with stable IDs, evidence and bounded applicability;

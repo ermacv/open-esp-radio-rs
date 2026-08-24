@@ -3,7 +3,10 @@
 use crate::{
     MemoryMap, Result,
     project::RegisterWorkspacePaths,
-    registers::{PacApiPack, RegisterEvidenceSet, RegisterLintPack, RegisterModel},
+    registers::{
+        PacApiPack, RegisterEvidenceSet, RegisterLintPack, RegisterModel,
+        load_effective_register_model,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -22,7 +25,7 @@ pub(crate) fn validate_register_memory_map(
     if !RegisterModel::is_model_file(&paths.model)? {
         return Ok(None);
     }
-    let model = RegisterModel::load(&paths.model)?;
+    let model = load_effective_register_model(paths)?;
     let summary = validate_register_model_memory_map(&model, memory)?;
     let mmio = memory.mmio_ranges()?;
     for name in &paths.owned_ranges {
@@ -75,7 +78,7 @@ pub(crate) fn validate_pac_api(paths: &RegisterWorkspacePaths) -> Result<Option<
         return Ok(None);
     };
     let pack = PacApiPack::load(path)?;
-    let model = RegisterModel::load(&paths.model)?;
+    let model = load_effective_register_model(paths)?;
     let (svd, _) = model.render_svd()?;
     pack.validate_against_svd(&svd)?;
     Ok(Some(pack))
@@ -88,7 +91,7 @@ pub(crate) fn validate_register_lints(
         return Ok(None);
     };
     let pack = RegisterLintPack::load(path)?;
-    let model = RegisterModel::load(&paths.model)?;
+    let model = load_effective_register_model(paths)?;
     model.validate_lints(&pack)?;
     Ok(Some(pack))
 }
@@ -101,7 +104,7 @@ pub(crate) fn validate_register_evidence(
         return Ok(None);
     }
     let evidence = RegisterEvidenceSet::load_all(&paths.evidence_catalogs)?;
-    let model = RegisterModel::load(&paths.model)?;
+    let model = load_effective_register_model(paths)?;
     evidence.validate_references(
         "register model review",
         model

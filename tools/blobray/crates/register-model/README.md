@@ -6,6 +6,8 @@
 - CMSIS-SVD data structures, arrays, clusters, fields and enumerations;
 - structured review records kept outside exported hardware descriptions;
 - deterministic clean SVD materialization and expanded register identities;
+- deterministic sparse reviewed-assertion overlays keyed by address and bit
+  range;
 - generic physical-layout and write-semantics invariants;
 - reviewed PAC transaction, binding-index and evidence-catalog schemas.
 

@@ -9,7 +9,10 @@ use crate::{
         RegisterNameSource, RegisterPredicateSummary, RegisterReviewState, RegisterSummary,
         RegisterWorkspaceReport, RegisterWritePatternSummary,
     },
-    registers::{RegisterFacts, RegisterModel, RegisterReviewIr, physical_register_identity},
+    registers::{
+        RegisterFacts, RegisterModel, RegisterReviewIr, load_effective_register_model,
+        physical_register_identity,
+    },
 };
 
 pub(super) fn collect(
@@ -77,7 +80,7 @@ pub(crate) fn detail(
     let model = paths
         .model
         .is_file()
-        .then(|| RegisterModel::load(&paths.model))
+        .then(|| load_effective_register_model(paths))
         .transpose()?;
     let identities = model
         .as_ref()

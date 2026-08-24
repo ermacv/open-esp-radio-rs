@@ -16,20 +16,20 @@ overlapping definitions, unreviewed access, missing evidence and unsafe API
 exposure.
 
 New human conclusions belong in sparse `[reviewed-knowledge]` packs. A stable
-physical subject such as `mmio:cpu:0x20103128/32` can independently acquire a
+physical subject such as `mmio:cpu:0x20103064/32` can independently acquire a
 `register-name` or `hardware-write-semantics` assertion. Observed software
 reads/writes remain generated evidence; W1C, self-clear and trigger behavior
 remain absent or explicitly unknown until reviewed hardware evidence proves
 them. Suspected incorrect vendor access is a separate vendor-bug record and
 must not redefine the hardware semantic.
 
-Sparse packs are already validated and inventoried as reviewed project inputs.
-The layered register-model cutover composes reusable chip geometry, generated
-review candidates and those sparse assertions before publication. Conflicting
-assertions with overlapping applicability already fail closed; until the
-cutover is complete, existing schema-2 register fragments remain the
-publication input. Complete SVD-shaped generated geometry is the target
-output, not the normal unit of a human change.
+Sparse packs are validated, inventoried and applied over the reusable base
+model before inspection, validation, SVD/PAC publication and cache-key
+construction. `[registers].model` may override the base for an experiment, but
+normally `chip.toml` owns `register-model` and the project only selects sparse
+review packs. Conflicting assertions with overlapping applicability fail
+closed. Complete SVD-shaped geometry is generated/reusable input, not the
+normal unit of a human change.
 
 ## Normal workflow
 

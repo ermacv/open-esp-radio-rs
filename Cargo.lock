@@ -2456,6 +2456,7 @@ name = "open-esp-radio-register-model"
 version = "0.1.0"
 dependencies = [
  "open-radio-vendor-contracts",
+ "open-radio-vendor-review",
  "serde",
  "svd-encoder",
  "svd-parser",

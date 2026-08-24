@@ -81,14 +81,17 @@ pub struct IndividualTwtProposal {
 }
 
 impl IndividualTwtProposal {
-    pub fn validate(self) -> Result<Self, TwtWireError> {
+    pub fn validate(self) -> Result<Self, IndividualTwtRequesterError> {
         if !self.parameters.requesting_sta {
-            return Err(TwtWireError::RequestCommandFromResponder);
+            return Err(TwtWireError::RequestCommandFromResponder.into());
         }
         if !self.parameters.setup_command.is_requester_command() {
-            return Err(TwtWireError::ResponseCommandFromRequester);
+            return Err(TwtWireError::ResponseCommandFromRequester.into());
         }
         self.parameters.validate(self.control)?;
+        if !self.parameters.implicit {
+            return Err(IndividualTwtRequesterError::ExplicitTwtInformationUnsupported);
+        }
         Ok(self)
     }
 }
@@ -222,6 +225,10 @@ pub enum IndividualTwtSetupDisposition {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IndividualTwtRequesterError {
     Wire(TwtWireError),
+    /// Explicit agreements require TWT Information updates before another
+    /// wake can be derived; this requester currently supports periodic
+    /// implicit agreements only.
+    ExplicitTwtInformationUnsupported,
     DeadlineOverflow,
     FlowBusy(IndividualTwtFlowId),
     NoAgreement(IndividualTwtFlowId),
@@ -600,6 +607,13 @@ impl IndividualTwtRequester {
         };
         if response.dialog_token != dialog_token || response.parameters.requesting_sta {
             return Ok(IndividualTwtSetupDisposition::Stale);
+        }
+
+        if response.parameters.setup_command == IndividualTwtSetupCommand::Accept
+            && !response.parameters.implicit
+        {
+            self.flows[index] = FlowPhase::Idle;
+            return Err(IndividualTwtRequesterError::ExplicitTwtInformationUnsupported);
         }
 
         match response.parameters.setup_command {

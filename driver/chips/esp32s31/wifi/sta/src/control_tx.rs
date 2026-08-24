@@ -26,7 +26,8 @@ use open_esp_radio_ieee80211::{
     wmm::WmmParameterSet,
 };
 use open_esp_radio_wifi_softmac::{
-    EspNowPeerId, EspNowProtocol, MacTxPlan, interface::BoundVirtualInterface,
+    EspNowPeerId, EspNowProtocol, EspNowSendError, EspNowV2SendError, MacTxPlan,
+    interface::BoundVirtualInterface,
 };
 
 use crate::{
@@ -193,6 +194,18 @@ where
         if self.ordinary.active() {
             return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
         }
+        let peer_channel = protocol
+            .peers()
+            .get(peer)
+            .map_err(EspNowSendError::Peer)?
+            .channel();
+        if peer_channel != active_channel {
+            return Err(Esp32s31EspNowTxError::ChannelMismatch {
+                prepared: peer_channel,
+                active: active_channel,
+            }
+            .into());
+        }
         let prepared = protocol.prepare_v1_tx(peer, sequence, random_value, payload)?;
         start_esp_now_v1_plaintext(
             &mut self.ordinary,
@@ -221,6 +234,18 @@ where
     ) -> Result<WifiTxProgress, SingleMpduEspNowTxError> {
         if self.ordinary.active() {
             return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
+        }
+        let peer_channel = protocol
+            .peers()
+            .get(peer)
+            .map_err(EspNowV2SendError::Peer)?
+            .channel();
+        if peer_channel != active_channel {
+            return Err(Esp32s31EspNowTxError::ChannelMismatch {
+                prepared: peer_channel,
+                active: active_channel,
+            }
+            .into());
         }
         let prepared = protocol.prepare_v2_tx(peer, sequence, random_value, payload)?;
         start_esp_now_v2_plaintext(

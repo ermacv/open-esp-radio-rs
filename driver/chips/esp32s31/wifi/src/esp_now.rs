@@ -2,8 +2,10 @@
 //!
 //! The portable protocol owner supplies an already validated vendor Action
 //! MPDU. This module binds it to the ordinary station queue only after the
-//! caller proves that the active channel context is still the configured home
-//! channel. Plaintext is live; encryption and LR are rejected before
+//! caller proves that the active channel context is the prepared peer channel.
+//! Connected compositions still bind that context to home; a standalone owner
+//! may explicitly retune for a `StandaloneFixed` peer. Plaintext is live;
+//! encryption and LR are rejected before
 //! descriptor publication at their first unproven contract.
 
 use core::fmt;
@@ -310,9 +312,9 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
-    if prepared.home_channel() != active_channel {
+    if prepared.transmit_channel() != active_channel {
         return Err(Esp32s31EspNowTxError::ChannelMismatch {
-            prepared: prepared.home_channel(),
+            prepared: prepared.transmit_channel(),
             active: active_channel,
         });
     }
@@ -366,9 +368,9 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
-    if prepared.home_channel() != active_channel {
+    if prepared.transmit_channel() != active_channel {
         return Err(Esp32s31EspNowTxError::ChannelMismatch {
-            prepared: prepared.home_channel(),
+            prepared: prepared.transmit_channel(),
             active: active_channel,
         });
     }
@@ -575,6 +577,9 @@ pub enum Esp32s31EspNowTxError {
         error: MacLowRateTransitionError,
     },
     LongRangeUnsupported(Esp32s31EspNowLongRangeUnsupported),
+    OffChannelLongRangeUnsupported {
+        channel: WifiChannel,
+    },
     BufferTooSmall {
         required: usize,
         available: usize,
@@ -610,6 +615,10 @@ impl fmt::Display for Esp32s31EspNowTxError {
                 formatter,
                 "ESP32-S31 ESP-NOW LR {:?} reached {:?}; missing {:?}",
                 frontier.selection, frontier.reached, frontier.missing
+            ),
+            Self::OffChannelLongRangeUnsupported { channel } => write!(
+                formatter,
+                "ESP32-S31 ESP-NOW LR is unavailable for standalone off-channel {channel:?}"
             ),
             Self::BufferTooSmall {
                 required,

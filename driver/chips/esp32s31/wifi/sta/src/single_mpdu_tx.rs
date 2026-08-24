@@ -645,6 +645,18 @@ where
         if self.ordinary.active() {
             return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
         }
+        let peer_channel = protocol
+            .peers()
+            .get(peer)
+            .map_err(EspNowSendError::Peer)?
+            .channel();
+        if peer_channel != active_channel {
+            return Err(Esp32s31EspNowTxError::ChannelMismatch {
+                prepared: peer_channel,
+                active: active_channel,
+            }
+            .into());
+        }
         let prepared =
             protocol.prepare_v1_tx(peer, self.sequences.non_qos_mut(), random_value, payload)?;
         start_esp_now_v1_plaintext(
@@ -674,6 +686,18 @@ where
     ) -> Result<WifiTxProgress, SingleMpduEspNowTxError> {
         if self.ordinary.active() {
             return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
+        }
+        let peer_channel = protocol
+            .peers()
+            .get(peer)
+            .map_err(EspNowV2SendError::Peer)?
+            .channel();
+        if peer_channel != active_channel {
+            return Err(Esp32s31EspNowTxError::ChannelMismatch {
+                prepared: peer_channel,
+                active: active_channel,
+            }
+            .into());
         }
         let prepared =
             protocol.prepare_v2_tx(peer, self.sequences.non_qos_mut(), random_value, payload)?;

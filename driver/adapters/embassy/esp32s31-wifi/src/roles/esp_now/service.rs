@@ -5,7 +5,11 @@
 
 //! Bounded standalone ESP-NOW runtime and stop/restart owner transition.
 
-use core::{future::Future, pin::pin};
+use core::{
+    future::Future,
+    future::ready,
+    pin::{Pin, pin},
+};
 
 use embassy_futures::{
     select::{Either, Either3, Either4, select, select3, select4},
@@ -13,7 +17,7 @@ use embassy_futures::{
 };
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi::{
-    esp_now::Esp32s31EspNowTxConfig,
+    esp_now::{Esp32s31EspNowTxConfig, Esp32s31EspNowTxError},
     tx::{WifiTxProgress, WifiTxWake},
 };
 use open_esp_radio_esp32s31_wifi_mac::{
@@ -26,11 +30,14 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_esp32s31_wifi_sta::{
     control_tx::Esp32s31ControlTx,
-    single_mpdu_tx::{SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    single_mpdu_tx::{
+        SingleMpduEspNowTxError, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
+    },
 };
 use open_esp_radio_ieee80211::{channel::WifiChannel, station::StaSequenceCounter};
 use open_esp_radio_wifi_softmac::{
-    EspNowProtocol, WifiStandaloneEspNowPlan, interface::BoundVirtualInterface,
+    EspNowPeerChannelPolicy, EspNowPhyMode, EspNowProtocol, WifiStandaloneEspNowPlan,
+    interface::BoundVirtualInterface,
 };
 
 use crate::{
@@ -42,11 +49,14 @@ use crate::{
         rx::frontier::Esp32s31RxFrontierPhase,
     },
     roles::{
-        esp_now::rx::{Esp32s31StandaloneEspNowReceive, Esp32s31StandaloneEspNowRxProgress},
+        esp_now::{
+            channel::Esp32s31StandaloneEspNowChannelControl,
+            rx::{Esp32s31StandaloneEspNowReceive, Esp32s31StandaloneEspNowRxProgress},
+        },
         station::esp_now_tx::{
-            EspNowQueuedRequest, EspNowQueuedTx, EspNowTxCancelReason,
-            EspNowTxMailboxInvariantError, EspNowTxMailboxOwner, EspNowTxMailboxShutdown,
-            EspNowTxRuntimeFailure, EspNowTxTerminal,
+            EspNowOffChannelFailureStage, EspNowQueuedRequest, EspNowQueuedTx,
+            EspNowTxCancelReason, EspNowTxMailboxInvariantError, EspNowTxMailboxOwner,
+            EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal,
         },
     },
 };
@@ -119,6 +129,9 @@ pub struct Esp32s31StandaloneEspNowRunReport {
     pub tx_started: u32,
     pub tx_completed: u32,
     pub tx_rejected: u32,
+    pub off_channel_started: u32,
+    pub home_channel_restored: u32,
+    pub quarantined: bool,
     pub duplicate_history_cleared: usize,
     pub mailbox: Option<EspNowTxMailboxShutdown>,
     pub interrupt_drain: Esp32s31MacInterruptEpochDrain,
@@ -127,6 +140,7 @@ pub struct Esp32s31StandaloneEspNowRunReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31StandaloneEspNowStopError<InterruptError, ReceiveError> {
     NotRunning,
+    Quarantined,
     Tx(SingleMpduTxError),
     MissingOrdinaryTxOutcome,
     Mailbox(EspNowTxMailboxInvariantError),
@@ -150,6 +164,7 @@ pub enum Esp32s31StandaloneEspNowRunError<InterruptError, ReceiveError> {
     ReceivePeerSnapshotMismatch,
     ReceiveNotPrepared(Esp32s31RxFrontierPhase),
     TransmitNotIdle,
+    ReceivePrepare(ReceiveError),
     ReceiveStart(ReceiveError),
     Activate(Esp32s31MacInterruptEpochActivateError<InterruptError>),
     ActivateReceiveStop {
@@ -169,17 +184,46 @@ pub struct Esp32s31StandaloneEspNowRunFailure<InterruptError, ReceiveError> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31StandaloneEspNowOffChannelRunError<InterruptError, ReceiveError, ChannelError> {
+    Runtime(Esp32s31StandaloneEspNowRunError<InterruptError, ReceiveError>),
+    ControllerChannelMismatch {
+        expected: WifiChannel,
+        actual: WifiChannel,
+    },
+    ChannelSwitch {
+        stage: EspNowOffChannelFailureStage,
+        from: WifiChannel,
+        target: WifiChannel,
+        error: ChannelError,
+    },
+    Quarantined,
+}
+
+pub struct Esp32s31StandaloneEspNowOffChannelRunFailure<InterruptError, ReceiveError, ChannelError>
+{
+    pub error:
+        Esp32s31StandaloneEspNowOffChannelRunError<InterruptError, ReceiveError, ChannelError>,
+    pub report: Esp32s31StandaloneEspNowRunReport,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ServicePhase {
     Prepared,
     Running,
     Stopped,
     Faulted,
+    Quarantined,
 }
 
 enum IdleWake {
     Stop,
     Receive,
     Transmit,
+}
+
+enum OffChannelRequestOutcome {
+    Continue,
+    Stop,
 }
 
 /// Complete standalone radio owner.
@@ -305,6 +349,10 @@ where
     pub const fn report(&self) -> Esp32s31StandaloneEspNowRunReport {
         self.report
     }
+
+    pub const fn is_quarantined(&self) -> bool {
+        matches!(self.phase, ServicePhase::Quarantined)
+    }
 }
 
 impl<
@@ -361,85 +409,9 @@ where
     where
         F: Future<Output = ()>,
     {
-        match self.phase {
-            ServicePhase::Prepared => {}
-            ServicePhase::Running => {
-                return Err(self.failure(Esp32s31StandaloneEspNowRunError::AlreadyRunning));
-            }
-            ServicePhase::Stopped => {
-                return Err(self.failure(Esp32s31StandaloneEspNowRunError::AlreadyStopped));
-            }
-            ServicePhase::Faulted => {
-                return Err(self.failure(Esp32s31StandaloneEspNowRunError::Faulted));
-            }
+        if let Err(error) = self.begin_running().await {
+            return Err(self.failure(error));
         }
-        let receive_phase = self.receive().phase();
-        let receive_station = self.receive().station();
-        if receive_station != self.binding.station {
-            return Err(
-                self.failure(Esp32s31StandaloneEspNowRunError::ReceiveStationBinding {
-                    expected: self.binding.station,
-                    actual: receive_station,
-                }),
-            );
-        }
-        let receive_channel = self.receive().home_channel();
-        if receive_channel != self.binding.channel {
-            return Err(
-                self.failure(Esp32s31StandaloneEspNowRunError::ReceiveChannelBinding {
-                    expected: self.binding.channel,
-                    actual: receive_channel,
-                }),
-            );
-        }
-        if !self.receive().peer_snapshot_matches(
-            self.protocol
-                .as_ref()
-                .expect("ESP-NOW protocol owner exists"),
-        ) {
-            return Err(self.failure(Esp32s31StandaloneEspNowRunError::ReceivePeerSnapshotMismatch));
-        }
-        if receive_phase != Esp32s31RxFrontierPhase::Prepared {
-            return Err(
-                self.failure(Esp32s31StandaloneEspNowRunError::ReceiveNotPrepared(
-                    receive_phase,
-                )),
-            );
-        }
-        if self.tx().active() {
-            return Err(self.failure(Esp32s31StandaloneEspNowRunError::TransmitNotIdle));
-        }
-
-        configure_standalone_esp_now_receive_policy(self.hardware_mut());
-        if let Err(error) = self.start_receive() {
-            return Err(self.failure(Esp32s31StandaloneEspNowRunError::ReceiveStart(error)));
-        }
-        let activation = {
-            let platform = self
-                .platform
-                .as_ref()
-                .expect("ESP-NOW platform owner exists");
-            self.interrupts
-                .as_mut()
-                .expect("ESP-NOW interrupt owner exists")
-                .activate(platform, MAC_COLD_RX_INTERRUPT_MASK)
-        };
-        if let Err(activation) = activation {
-            return match self.stop_receive().await {
-                Ok(()) => Err(self.failure(Esp32s31StandaloneEspNowRunError::Activate(activation))),
-                Err(receive) => {
-                    self.phase = ServicePhase::Faulted;
-                    Err(
-                        self.failure(Esp32s31StandaloneEspNowRunError::ActivateReceiveStop {
-                            activation,
-                            receive,
-                        }),
-                    )
-                }
-            };
-        }
-        self.phase = ServicePhase::Running;
-        self.interrupts().mac_runtime().notify_rx_handoff();
 
         let mut stop = pin!(stop);
         loop {
@@ -531,6 +503,645 @@ where
         }
     }
 
+    /// Run the standalone role with bounded, fixed-channel excursions for
+    /// peers configured with [`EspNowPeerChannelPolicy::StandaloneFixed`].
+    ///
+    /// The channel owner is an explicit opt-in and is never available to the
+    /// connected composition. Every excursion stops RX and IRQ first, runs at
+    /// most one already-bounded ordinary TX transaction, and restores the home
+    /// channel plus a fresh RX/IRQ epoch before another request is admitted.
+    /// A PHY or ownership failure makes quarantine sticky; no stopped owner can
+    /// be extracted from that state.
+    pub async fn run_until_stopped_off_channel<F, C>(
+        &mut self,
+        stop: F,
+        channel: &mut C,
+    ) -> Result<
+        Esp32s31StandaloneEspNowRunReport,
+        Esp32s31StandaloneEspNowOffChannelRunFailure<R::Error, RX::Error, C::Error>,
+    >
+    where
+        F: Future<Output = ()>,
+        C: Esp32s31StandaloneEspNowChannelControl<H, R::Platform>,
+    {
+        let home = self.binding.channel;
+        let actual = channel.current_channel();
+        if actual != home {
+            return Err(self.off_channel_failure(
+                Esp32s31StandaloneEspNowOffChannelRunError::ControllerChannelMismatch {
+                    expected: home,
+                    actual,
+                },
+            ));
+        }
+        if let Err(error) = self.begin_running().await {
+            return Err(self
+                .off_channel_failure(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(error)));
+        }
+
+        let mut stop = pin!(stop);
+        loop {
+            if self.tx().active() {
+                let mac = self.interrupts().mac_runtime();
+                let tx = self.tx.as_mut().expect("ESP-NOW TX owner exists");
+                match select4(
+                    stop.as_mut(),
+                    mac.wait_tx(),
+                    tx.wait_deadline(),
+                    mac.wait_rx(),
+                )
+                .await
+                {
+                    Either4::First(()) => break,
+                    Either4::Second(events) => {
+                        match self
+                            .service_transmit(WifiTxWake::Interrupt { events })
+                            .await
+                        {
+                            Ok(_) => {}
+                            Err(Esp32s31StandaloneEspNowRunError::Tx(error)) => {
+                                return match self.fail_transmit(error) {
+                                    Ok(report) => Ok(report),
+                                    Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                                };
+                            }
+                            Err(error) => {
+                                return match self.fail_and_stop(error).await {
+                                    Ok(report) => Ok(report),
+                                    Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                                };
+                            }
+                        }
+                    }
+                    Either4::Third(()) => match self.service_transmit(WifiTxWake::Deadline).await {
+                        Ok(_) => {}
+                        Err(Esp32s31StandaloneEspNowRunError::Tx(error)) => {
+                            return match self.fail_transmit(error) {
+                                Ok(report) => Ok(report),
+                                Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                            };
+                        }
+                        Err(error) => {
+                            return match self.fail_and_stop(error).await {
+                                Ok(report) => Ok(report),
+                                Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                            };
+                        }
+                    },
+                    Either4::Fourth(()) => {
+                        if let Err(error) = self.service_receive().await {
+                            return match self
+                                .fail_and_stop(Esp32s31StandaloneEspNowRunError::ReceiveService(
+                                    error,
+                                ))
+                                .await
+                            {
+                                Ok(report) => Ok(report),
+                                Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                            };
+                        }
+                    }
+                }
+                continue;
+            }
+
+            let mac = self.interrupts().mac_runtime();
+            let mailbox = self.mailbox();
+            let wake = if self.prefer_receive {
+                match select3(stop.as_mut(), mac.wait_rx(), mailbox.ready()).await {
+                    Either3::First(()) => IdleWake::Stop,
+                    Either3::Second(()) => IdleWake::Receive,
+                    Either3::Third(()) => IdleWake::Transmit,
+                }
+            } else {
+                match select3(stop.as_mut(), mailbox.ready(), mac.wait_rx()).await {
+                    Either3::First(()) => IdleWake::Stop,
+                    Either3::Second(()) => IdleWake::Transmit,
+                    Either3::Third(()) => IdleWake::Receive,
+                }
+            };
+            match wake {
+                IdleWake::Stop => break,
+                IdleWake::Receive => {
+                    self.prefer_receive = false;
+                    if let Err(error) = self.service_receive().await {
+                        return match self
+                            .fail_and_stop(Esp32s31StandaloneEspNowRunError::ReceiveService(error))
+                            .await
+                        {
+                            Ok(report) => Ok(report),
+                            Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                        };
+                    }
+                }
+                IdleWake::Transmit => {
+                    self.prefer_receive = true;
+                    let queued = match self.take_next_transmit() {
+                        Ok(Some(queued)) => queued,
+                        Ok(None) => continue,
+                        Err(error) => {
+                            return match self.fail_and_stop(error).await {
+                                Ok(report) => Ok(report),
+                                Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                            };
+                        }
+                    };
+                    let peer = self
+                        .protocol
+                        .as_ref()
+                        .expect("ESP-NOW protocol owner exists")
+                        .peers()
+                        .get(queued.peer)
+                        .ok();
+                    let Some(peer) = peer else {
+                        if let Err(error) = self.start_queued_transmit(queued, home) {
+                            return match self.fail_and_stop(error).await {
+                                Ok(report) => Ok(report),
+                                Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                            };
+                        }
+                        continue;
+                    };
+                    let EspNowPeerChannelPolicy::StandaloneFixed(peer_channel) =
+                        peer.channel_policy()
+                    else {
+                        if let Err(error) = self.start_queued_transmit(queued, home) {
+                            return match self.fail_and_stop(error).await {
+                                Ok(report) => Ok(report),
+                                Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                            };
+                        }
+                        continue;
+                    };
+
+                    if peer.phy_mode() == EspNowPhyMode::LongRange {
+                        self.report.tx_rejected = self.report.tx_rejected.saturating_add(1);
+                        let error = SingleMpduEspNowTxError::Backend(
+                            Esp32s31EspNowTxError::OffChannelLongRangeUnsupported {
+                                channel: peer_channel,
+                            },
+                        );
+                        if let Err(error) = self
+                            .mailbox()
+                            .publish(queued, EspNowTxTerminal::Rejected(error))
+                        {
+                            return match self
+                                .fail_and_stop(Esp32s31StandaloneEspNowRunError::Mailbox(error))
+                                .await
+                            {
+                                Ok(report) => Ok(report),
+                                Err(failure) => Err(map_off_channel_runtime_failure(failure)),
+                            };
+                        }
+                        continue;
+                    }
+
+                    if matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
+                        if let Err(error) = self.mailbox().publish(
+                            queued,
+                            EspNowTxTerminal::Cancelled(EspNowTxCancelReason::StationStopped),
+                        ) {
+                            return Err(self.off_channel_failure(
+                                Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                                    Esp32s31StandaloneEspNowRunError::Mailbox(error),
+                                ),
+                            ));
+                        }
+                        break;
+                    }
+
+                    match self
+                        .service_off_channel_request(queued, peer_channel, channel, stop.as_mut())
+                        .await
+                    {
+                        Ok(OffChannelRequestOutcome::Continue) => {}
+                        Ok(OffChannelRequestOutcome::Stop) => break,
+                        Err(error) => return Err(self.off_channel_failure(error)),
+                    }
+                }
+            }
+        }
+
+        match self
+            .stop_running(EspNowTxCancelReason::StationStopped)
+            .await
+        {
+            Ok(()) => Ok(self.report),
+            Err(error) => Err(self.off_channel_failure(
+                Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                    Esp32s31StandaloneEspNowRunError::Stop(error),
+                ),
+            )),
+        }
+    }
+
+    async fn service_off_channel_request<C, F>(
+        &mut self,
+        queued: EspNowQueuedTx,
+        peer_channel: WifiChannel,
+        channel: &mut C,
+        mut stop: Pin<&mut F>,
+    ) -> Result<
+        OffChannelRequestOutcome,
+        Esp32s31StandaloneEspNowOffChannelRunError<R::Error, RX::Error, C::Error>,
+    >
+    where
+        F: Future<Output = ()>,
+        C: Esp32s31StandaloneEspNowChannelControl<H, R::Platform>,
+    {
+        self.enter_quarantine();
+
+        if self.tx().active() {
+            self.publish_off_channel_failure(
+                queued,
+                EspNowOffChannelFailureStage::QuiesceHomeInterrupts,
+            )?;
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                Esp32s31StandaloneEspNowRunError::TransmitNotIdle,
+            ));
+        }
+        if self.interrupts().is_active()
+            && let Err(error) = self.quiesce_interrupts()
+        {
+            self.publish_off_channel_failure(
+                queued,
+                EspNowOffChannelFailureStage::QuiesceHomeInterrupts,
+            )?;
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                Esp32s31StandaloneEspNowRunError::Stop(
+                    Esp32s31StandaloneEspNowStopError::Interrupt(error),
+                ),
+            ));
+        }
+        if let Err(error) = self.stop_receive().await {
+            self.publish_off_channel_failure(
+                queued,
+                EspNowOffChannelFailureStage::StopHomeReceive,
+            )?;
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                Esp32s31StandaloneEspNowRunError::Stop(Esp32s31StandaloneEspNowStopError::Receive(
+                    error,
+                )),
+            ));
+        }
+
+        // Stop wins every safe state boundary. A PHY switch itself is an
+        // indivisible ownership transaction and is never cancelled halfway.
+        if matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
+            self.mailbox()
+                .publish(
+                    queued,
+                    EspNowTxTerminal::Cancelled(EspNowTxCancelReason::StationStopped),
+                )
+                .map_err(|error| {
+                    Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                        Esp32s31StandaloneEspNowRunError::Mailbox(error),
+                    )
+                })?;
+            self.leave_quarantine_at_home();
+            return Ok(OffChannelRequestOutcome::Stop);
+        }
+
+        let from = channel.current_channel();
+        if let Err(error) = self.switch_channel(channel, peer_channel).await {
+            self.publish_off_channel_failure(queued, EspNowOffChannelFailureStage::SwitchToPeer)?;
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::ChannelSwitch {
+                stage: EspNowOffChannelFailureStage::SwitchToPeer,
+                from,
+                target: peer_channel,
+                error,
+            });
+        }
+        let actual = channel.current_channel();
+        if actual != peer_channel {
+            self.publish_off_channel_failure(queued, EspNowOffChannelFailureStage::SwitchToPeer)?;
+            return Err(
+                Esp32s31StandaloneEspNowOffChannelRunError::ControllerChannelMismatch {
+                    expected: peer_channel,
+                    actual,
+                },
+            );
+        }
+        self.report.off_channel_started = self.report.off_channel_started.saturating_add(1);
+
+        if matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
+            self.mailbox()
+                .publish(
+                    queued,
+                    EspNowTxTerminal::Cancelled(EspNowTxCancelReason::StationStopped),
+                )
+                .map_err(|error| {
+                    Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                        Esp32s31StandaloneEspNowRunError::Mailbox(error),
+                    )
+                })?;
+            self.restore_home(channel, peer_channel).await?;
+            self.leave_quarantine_at_home();
+            return Ok(OffChannelRequestOutcome::Stop);
+        }
+
+        if let Err(activation) = self.activate_interrupts() {
+            self.publish_off_channel_failure(
+                queued,
+                EspNowOffChannelFailureStage::ActivateTransmitInterrupts,
+            )?;
+            // Recovery is mandatory even though the runtime remains
+            // quarantined after this failed excursion.
+            self.restore_home(channel, peer_channel).await?;
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                Esp32s31StandaloneEspNowRunError::Activate(activation),
+            ));
+        }
+
+        if let Err(error) = self.start_queued_transmit(queued, peer_channel) {
+            if self.interrupts().is_active()
+                && let Err(quiesce) = self.quiesce_interrupts()
+            {
+                return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                    Esp32s31StandaloneEspNowRunError::Stop(
+                        Esp32s31StandaloneEspNowStopError::Interrupt(quiesce),
+                    ),
+                ));
+            }
+            self.restore_home(channel, peer_channel).await?;
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(error));
+        }
+
+        let mut stop_pending = false;
+        while self.tx().active() {
+            let wake = if stop_pending {
+                let mac = self.interrupts().mac_runtime();
+                let tx = self.tx.as_mut().expect("ESP-NOW TX owner exists");
+                match select(mac.wait_tx(), tx.wait_deadline()).await {
+                    Either::First(events) => WifiTxWake::Interrupt { events },
+                    Either::Second(()) => WifiTxWake::Deadline,
+                }
+            } else {
+                let mac = self.interrupts().mac_runtime();
+                let tx = self.tx.as_mut().expect("ESP-NOW TX owner exists");
+                match select3(stop.as_mut(), mac.wait_tx(), tx.wait_deadline()).await {
+                    Either3::First(()) => {
+                        stop_pending = true;
+                        continue;
+                    }
+                    Either3::Second(events) => WifiTxWake::Interrupt { events },
+                    Either3::Third(()) => WifiTxWake::Deadline,
+                }
+            };
+            if let Err(error) = self.service_transmit(wake).await {
+                if let Some(active) = self.active.take() {
+                    let terminal = match error {
+                        Esp32s31StandaloneEspNowRunError::Tx(error) => {
+                            EspNowTxRuntimeFailure::TxLifecycle(error)
+                        }
+                        _ => EspNowTxRuntimeFailure::OffChannel(
+                            EspNowOffChannelFailureStage::QuiesceTransmitInterrupts,
+                        ),
+                    };
+                    let _ = self
+                        .mailbox()
+                        .publish(active, EspNowTxTerminal::RuntimeFailure(terminal));
+                }
+                self.enter_quarantine();
+                return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(error));
+            }
+        }
+
+        if let Err(error) = self.quiesce_interrupts() {
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                Esp32s31StandaloneEspNowRunError::Stop(
+                    Esp32s31StandaloneEspNowStopError::Interrupt(error),
+                ),
+            ));
+        }
+        self.restore_home(channel, peer_channel).await?;
+
+        if stop_pending {
+            self.leave_quarantine_at_home();
+            return Ok(OffChannelRequestOutcome::Stop);
+        }
+
+        {
+            let receive = self.receive.as_mut().expect("ESP-NOW RX owner exists");
+            let hardware = self
+                .hardware
+                .as_mut()
+                .expect("ESP-NOW hardware owner exists");
+            receive.prepare_next(hardware).map_err(|error| {
+                Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                    Esp32s31StandaloneEspNowRunError::ReceivePrepare(error),
+                )
+            })?;
+        }
+        self.start_receive().map_err(|error| {
+            Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                Esp32s31StandaloneEspNowRunError::ReceiveStart(error),
+            )
+        })?;
+        if let Err(activation) = self.activate_interrupts() {
+            let _ = self.stop_receive().await;
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                Esp32s31StandaloneEspNowRunError::Activate(activation),
+            ));
+        }
+        self.leave_quarantine_at_home();
+        self.interrupts().mac_runtime().notify_rx_handoff();
+        Ok(OffChannelRequestOutcome::Continue)
+    }
+
+    async fn switch_channel<C>(
+        &mut self,
+        channel: &mut C,
+        target: WifiChannel,
+    ) -> Result<(), C::Error>
+    where
+        C: Esp32s31StandaloneEspNowChannelControl<H, R::Platform>,
+    {
+        let hardware = self
+            .hardware
+            .as_mut()
+            .expect("ESP-NOW hardware owner exists");
+        let platform = self
+            .platform
+            .as_mut()
+            .expect("ESP-NOW platform owner exists");
+        channel.switch_channel(hardware, platform, target).await
+    }
+
+    async fn restore_home<C>(
+        &mut self,
+        channel: &mut C,
+        from: WifiChannel,
+    ) -> Result<(), Esp32s31StandaloneEspNowOffChannelRunError<R::Error, RX::Error, C::Error>>
+    where
+        C: Esp32s31StandaloneEspNowChannelControl<H, R::Platform>,
+    {
+        let home = self.binding.channel;
+        if let Err(error) = self.switch_channel(channel, home).await {
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::ChannelSwitch {
+                stage: EspNowOffChannelFailureStage::SwitchHome,
+                from,
+                target: home,
+                error,
+            });
+        }
+        let actual = channel.current_channel();
+        if actual != home {
+            return Err(
+                Esp32s31StandaloneEspNowOffChannelRunError::ControllerChannelMismatch {
+                    expected: home,
+                    actual,
+                },
+            );
+        }
+        configure_standalone_esp_now_receive_policy(self.hardware_mut());
+        self.report.home_channel_restored = self.report.home_channel_restored.saturating_add(1);
+        Ok(())
+    }
+
+    fn activate_interrupts(
+        &mut self,
+    ) -> Result<(), Esp32s31MacInterruptEpochActivateError<R::Error>> {
+        let platform = self
+            .platform
+            .as_ref()
+            .expect("ESP-NOW platform owner exists");
+        self.interrupts
+            .as_mut()
+            .expect("ESP-NOW interrupt owner exists")
+            .activate(platform, MAC_COLD_RX_INTERRUPT_MASK)
+    }
+
+    fn quiesce_interrupts(
+        &mut self,
+    ) -> Result<Esp32s31MacInterruptEpochDrain, Esp32s31MacInterruptEpochQuiesceError<R::Error>>
+    {
+        let platform = self
+            .platform
+            .as_ref()
+            .expect("ESP-NOW platform owner exists");
+        let drain = self
+            .interrupts
+            .as_mut()
+            .expect("ESP-NOW interrupt owner exists")
+            .quiesce(platform)?;
+        self.report.interrupt_drain = drain;
+        Ok(drain)
+    }
+
+    fn publish_off_channel_failure<C>(
+        &mut self,
+        queued: EspNowQueuedTx,
+        stage: EspNowOffChannelFailureStage,
+    ) -> Result<(), Esp32s31StandaloneEspNowOffChannelRunError<R::Error, RX::Error, C>> {
+        self.mailbox()
+            .publish(
+                queued,
+                EspNowTxTerminal::RuntimeFailure(EspNowTxRuntimeFailure::OffChannel(stage)),
+            )
+            .map_err(|error| {
+                Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                    Esp32s31StandaloneEspNowRunError::Mailbox(error),
+                )
+            })
+    }
+
+    fn enter_quarantine(&mut self) {
+        self.phase = ServicePhase::Quarantined;
+        self.report.quarantined = true;
+    }
+
+    fn leave_quarantine_at_home(&mut self) {
+        self.phase = ServicePhase::Running;
+        self.report.quarantined = false;
+    }
+
+    fn off_channel_failure<C>(
+        &self,
+        error: Esp32s31StandaloneEspNowOffChannelRunError<R::Error, RX::Error, C>,
+    ) -> Esp32s31StandaloneEspNowOffChannelRunFailure<R::Error, RX::Error, C> {
+        Esp32s31StandaloneEspNowOffChannelRunFailure {
+            error,
+            report: self.report,
+        }
+    }
+
+    async fn begin_running(
+        &mut self,
+    ) -> Result<(), Esp32s31StandaloneEspNowRunError<R::Error, RX::Error>> {
+        match self.phase {
+            ServicePhase::Prepared => {}
+            ServicePhase::Running => {
+                return Err(Esp32s31StandaloneEspNowRunError::AlreadyRunning);
+            }
+            ServicePhase::Stopped => {
+                return Err(Esp32s31StandaloneEspNowRunError::AlreadyStopped);
+            }
+            ServicePhase::Faulted | ServicePhase::Quarantined => {
+                return Err(Esp32s31StandaloneEspNowRunError::Faulted);
+            }
+        }
+        let receive_phase = self.receive().phase();
+        let receive_station = self.receive().station();
+        if receive_station != self.binding.station {
+            return Err(Esp32s31StandaloneEspNowRunError::ReceiveStationBinding {
+                expected: self.binding.station,
+                actual: receive_station,
+            });
+        }
+        let receive_channel = self.receive().home_channel();
+        if receive_channel != self.binding.channel {
+            return Err(Esp32s31StandaloneEspNowRunError::ReceiveChannelBinding {
+                expected: self.binding.channel,
+                actual: receive_channel,
+            });
+        }
+        if !self.receive().peer_snapshot_matches(
+            self.protocol
+                .as_ref()
+                .expect("ESP-NOW protocol owner exists"),
+        ) {
+            return Err(Esp32s31StandaloneEspNowRunError::ReceivePeerSnapshotMismatch);
+        }
+        if receive_phase != Esp32s31RxFrontierPhase::Prepared {
+            return Err(Esp32s31StandaloneEspNowRunError::ReceiveNotPrepared(
+                receive_phase,
+            ));
+        }
+        if self.tx().active() {
+            return Err(Esp32s31StandaloneEspNowRunError::TransmitNotIdle);
+        }
+
+        configure_standalone_esp_now_receive_policy(self.hardware_mut());
+        self.start_receive()
+            .map_err(Esp32s31StandaloneEspNowRunError::ReceiveStart)?;
+        let activation = {
+            let platform = self
+                .platform
+                .as_ref()
+                .expect("ESP-NOW platform owner exists");
+            self.interrupts
+                .as_mut()
+                .expect("ESP-NOW interrupt owner exists")
+                .activate(platform, MAC_COLD_RX_INTERRUPT_MASK)
+        };
+        if let Err(activation) = activation {
+            return match self.stop_receive().await {
+                Ok(()) => Err(Esp32s31StandaloneEspNowRunError::Activate(activation)),
+                Err(receive) => {
+                    self.phase = ServicePhase::Faulted;
+                    Err(Esp32s31StandaloneEspNowRunError::ActivateReceiveStop {
+                        activation,
+                        receive,
+                    })
+                }
+            };
+        }
+        self.phase = ServicePhase::Running;
+        self.interrupts().mac_runtime().notify_rx_handoff();
+        Ok(())
+    }
+
     /// Explicit cancellation recovery for a dropped run future.
     pub async fn stop(
         &mut self,
@@ -556,6 +1167,7 @@ where
             ServicePhase::Stopped | ServicePhase::Faulted => {
                 Err(Esp32s31StandaloneEspNowStopError::NotRunning)
             }
+            ServicePhase::Quarantined => Err(Esp32s31StandaloneEspNowStopError::Quarantined),
         }
     }
 
@@ -590,8 +1202,17 @@ where
     fn start_next_transmit(
         &mut self,
     ) -> Result<(), Esp32s31StandaloneEspNowRunError<R::Error, RX::Error>> {
-        let Some(queued) = self.mailbox().try_take() else {
+        let Some(queued) = self.take_next_transmit()? else {
             return Ok(());
+        };
+        self.start_queued_transmit(queued, self.binding.channel)
+    }
+
+    fn take_next_transmit(
+        &mut self,
+    ) -> Result<Option<EspNowQueuedTx>, Esp32s31StandaloneEspNowRunError<R::Error, RX::Error>> {
+        let Some(queued) = self.mailbox().try_take() else {
+            return Ok(None);
         };
         if queued.ticket.epoch() != self.mailbox().epoch() {
             self.mailbox()
@@ -600,9 +1221,16 @@ where
                     EspNowTxTerminal::Cancelled(EspNowTxCancelReason::StaleEpoch),
                 )
                 .map_err(Esp32s31StandaloneEspNowRunError::Mailbox)?;
-            return Ok(());
+            return Ok(None);
         }
+        Ok(Some(queued))
+    }
 
+    fn start_queued_transmit(
+        &mut self,
+        queued: EspNowQueuedTx,
+        active_channel: WifiChannel,
+    ) -> Result<(), Esp32s31StandaloneEspNowRunError<R::Error, RX::Error>> {
         // No ordinary transaction is live, so any coalesced TX signal belongs
         // to an earlier role/transaction and must not complete this request.
         let _ = self.interrupts().mac_runtime().try_take_tx();
@@ -624,7 +1252,7 @@ where
                     request.peer(),
                     request.random_value(),
                     request.payload(),
-                    self.binding.channel,
+                    active_channel,
                     self.binding.station,
                     self.binding.tx,
                 )
@@ -648,7 +1276,7 @@ where
                         request.peer(),
                         request.random_value(),
                         request.payload(),
-                        self.binding.channel,
+                        active_channel,
                         self.binding.station,
                         self.binding.tx,
                     )
@@ -1069,9 +1697,21 @@ where
     R::Platform: Sized,
 {
     fn drop(&mut self) {
-        if matches!(self.phase, ServicePhase::Running | ServicePhase::Faulted) {
+        if matches!(
+            self.phase,
+            ServicePhase::Running | ServicePhase::Faulted | ServicePhase::Quarantined
+        ) {
             self.retain_active_owners_for_reset();
         }
+    }
+}
+
+fn map_off_channel_runtime_failure<InterruptError, ReceiveError, ChannelError>(
+    failure: Esp32s31StandaloneEspNowRunFailure<InterruptError, ReceiveError>,
+) -> Esp32s31StandaloneEspNowOffChannelRunFailure<InterruptError, ReceiveError, ChannelError> {
+    Esp32s31StandaloneEspNowOffChannelRunFailure {
+        error: Esp32s31StandaloneEspNowOffChannelRunError::Runtime(failure.error),
+        report: failure.report,
     }
 }
 

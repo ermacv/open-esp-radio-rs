@@ -51,6 +51,9 @@ pub trait Esp32s31StandaloneEspNowReceive<H, S, const PEERS: usize> {
     /// Try to stop the walker. `Ok(false)` is the qualified transient Busy
     /// ownership edge and must be retried cooperatively.
     fn stop(&mut self, hardware: &mut H) -> Result<bool, Self::Error>;
+    /// Rebuild a stopped DMA frontier for the next home-channel receive epoch.
+    /// This must fail unless the exact halted ring remains owned by `self`.
+    fn prepare_next(&mut self, hardware: &mut H) -> Result<(), Self::Error>;
     fn reset_duplicate_history(&mut self) -> usize;
 }
 
@@ -196,6 +199,13 @@ impl<
         self.dispatcher.reset_duplicate_history()
     }
 
+    pub fn prepare_next<H: RxDma>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<(), Esp32s31RxFrontierError> {
+        self.receive.prepare_next(hardware, self.storage)
+    }
+
     #[allow(clippy::result_large_err)]
     pub fn into_halted(
         self,
@@ -274,6 +284,10 @@ impl<
             Err(Esp32s31RxFrontierError::Ring(RxRingError::Busy)) => Ok(false),
             Err(error) => Err(error),
         }
+    }
+
+    fn prepare_next(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
+        Self::prepare_next(self, hardware)
     }
 
     fn reset_duplicate_history(&mut self) -> usize {

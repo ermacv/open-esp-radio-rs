@@ -35,8 +35,10 @@ use crate::{WifiMonitorConfig, WifiPlan};
 ///
 /// The embedded protocol owner is already bound to the exclusive station VIF
 /// and fixed home channel. Peers may be registered before the request is
-/// moved into the chip runtime; there is intentionally no credential,
-/// association, network, encryption, LR or off-channel field.
+/// moved into the chip runtime. A peer may explicitly select one fixed
+/// standalone off-channel through its typed peer policy; there is no scan or
+/// fallback. There is intentionally no credential, association, network,
+/// encryption or LR field.
 pub struct StandaloneEspNowRequest<const PEERS: usize = ESP_NOW_DEFAULT_PEER_CAPACITY> {
     plan: WifiStandaloneEspNowPlan,
     protocol: EspNowProtocol<PEERS>,

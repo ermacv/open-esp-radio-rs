@@ -31,11 +31,11 @@ pub use configuration::{
 pub use esp_now::{
     ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY, EspNowConfig,
     EspNowConfigError, EspNowHt20Rate, EspNowHtGuardInterval, EspNowHtMcs, EspNowOfdmRate,
-    EspNowOwnedReceivedV1, EspNowOwnedReceivedV2, EspNowPeerCapability, EspNowPeerConfig,
-    EspNowPeerId, EspNowPeerSecurity, EspNowPeerTable, EspNowPeerTableError, EspNowPeers,
-    EspNowPhyMode, EspNowPreparedV1Tx, EspNowPreparedV2Tx, EspNowProtocol, EspNowReceiveError,
-    EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch, EspNowRxOutcome, EspNowSendError,
-    EspNowV2ReceiveError, EspNowV2RxOutcome, EspNowV2SendError,
+    EspNowOwnedReceivedV1, EspNowOwnedReceivedV2, EspNowPeerCapability, EspNowPeerChannelPolicy,
+    EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity, EspNowPeerTable, EspNowPeerTableError,
+    EspNowPeers, EspNowPhyMode, EspNowPreparedV1Tx, EspNowPreparedV2Tx, EspNowProtocol,
+    EspNowReceiveError, EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch, EspNowRxOutcome,
+    EspNowSendError, EspNowV2ReceiveError, EspNowV2RxOutcome, EspNowV2SendError,
 };
 pub use esp_now_security::{
     ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY, ESP_NOW_KEY_LEN, ESP_NOW_RX_REPLAY_WINDOW_BITS,

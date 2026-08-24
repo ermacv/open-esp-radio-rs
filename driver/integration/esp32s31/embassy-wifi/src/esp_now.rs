@@ -22,20 +22,25 @@ pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::{
     Esp32s31EspNowConnectedControl, Esp32s31EspNowConnectedControlConfigError,
     Esp32s31EspNowConnectedControlError, Esp32s31EspNowConnectedControlShutdown,
     Esp32s31EspNowTxBinding, EspNowOwnedV1Tx, EspNowTxBackpressure, EspNowTxCancelReason,
-    EspNowTxCompletion, EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError,
+    EspNowOffChannelFailureStage, EspNowTxCompletion, EspNowTxMailboxEpochError,
+    EspNowTxMailboxInvariantError,
     EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket,
     EspNowTxTrySendError, EspNowV2TxTrySendError, attach_esp_now_tx,
 };
 pub use open_esp_radio_esp32s31_wifi_embassy::roles::esp_now::{
     Esp32s31StandaloneEspNowBinding, Esp32s31StandaloneEspNowBindingError,
-    Esp32s31StandaloneEspNowReceive, Esp32s31StandaloneEspNowRunError,
-    Esp32s31StandaloneEspNowRunFailure, Esp32s31StandaloneEspNowRunReport,
-    Esp32s31StandaloneEspNowRx, Esp32s31StandaloneEspNowRxProgress,
-    Esp32s31StandaloneEspNowService, Esp32s31StandaloneEspNowStopError,
-    Esp32s31StandaloneEspNowStopped, EspNowRxMailboxEpochError, EspNowRxMailboxResources,
+    Esp32s31StandaloneEspNowChannelControl, Esp32s31StandaloneEspNowOffChannelRunError,
+    Esp32s31StandaloneEspNowOffChannelRunFailure, Esp32s31StandaloneEspNowReceive,
+    Esp32s31StandaloneEspNowRunError, Esp32s31StandaloneEspNowRunFailure,
+    Esp32s31StandaloneEspNowRunReport, Esp32s31StandaloneEspNowRx,
+    Esp32s31StandaloneEspNowRxProgress, Esp32s31StandaloneEspNowService,
+    Esp32s31StandaloneEspNowStopError, Esp32s31StandaloneEspNowStopped,
+    EspNowRxMailboxEpochError, EspNowRxMailboxResources,
     EspNowRxMailboxShutdown, EspNowRxPublishOutcome, EspNowRxPublisher, EspNowRxReceiver,
     EspNowV2RxEvent, EspNowV2RxMailboxError,
 };
+#[cfg(target_arch = "riscv32")]
+pub use open_esp_radio_esp32s31_wifi_embassy::roles::esp_now::Esp32s31StandaloneEspNowPhyChannelControl;
 pub use open_esp_radio_ieee80211::esp_now::{
     ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_V1_MAX_PAYLOAD_LEN,
     ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN, ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN,
@@ -55,7 +60,7 @@ pub use open_esp_radio_wifi_softmac::{
     EspNowEncryptedPeerMutationFailure, EspNowEncryptedPeerReplacement, EspNowEncryptedPeerTable,
     EspNowEncryptedPeerRestoreFailure, EspNowEncryptedPeerView, EspNowEncryptedProtocol,
     EspNowEncryptedReceiveError, EspNowEncryptedRxCandidate, EspNowEncryptedSendError, EspNowLmk,
-    EspNowPeerCapability, EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity,
+    EspNowPeerCapability, EspNowPeerChannelPolicy, EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity,
     EspNowPeerTableError, EspNowPhyMode, EspNowPmk, EspNowPmkError, EspNowPmkId,
     EspNowPmkMutationFailure, EspNowPmkOwner, EspNowPreparedEncryptedV1Tx, EspNowPreparedV2Tx,
     EspNowProtocol, EspNowReceivedV2, EspNowRemovedEncryptedPeer, EspNowRxReplayCandidate,

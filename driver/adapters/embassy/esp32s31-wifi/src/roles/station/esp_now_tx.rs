@@ -181,7 +181,23 @@ pub enum EspNowTxCancelReason {
 pub enum EspNowTxRuntimeFailure {
     MissingOrdinaryTxOutcome,
     MissingV2PayloadSlot,
+    OffChannel(EspNowOffChannelFailureStage),
     TxLifecycle(SingleMpduTxError),
+}
+
+/// Durable terminal stage for an off-channel request whose detailed hardware
+/// error remains with the quarantined standalone owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowOffChannelFailureStage {
+    QuiesceHomeInterrupts,
+    StopHomeReceive,
+    SwitchToPeer,
+    ActivateTransmitInterrupts,
+    QuiesceTransmitInterrupts,
+    SwitchHome,
+    PrepareHomeReceive,
+    StartHomeReceive,
+    ActivateHomeInterrupts,
 }
 
 /// Exactly one terminal result for an admitted ticket.

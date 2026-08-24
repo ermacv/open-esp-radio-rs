@@ -233,9 +233,35 @@ impl core::error::Error for EspNowConfigError {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EspNowPeerConfig {
     destination: EspNowDestination,
-    channel: WifiChannel,
+    channel: EspNowPeerChannelPolicy,
     phy_mode: EspNowPhyMode,
     capability: EspNowPeerCapability,
+}
+
+/// Explicit channel authority for one plaintext peer.
+///
+/// `HomeChannel` is accepted by every ESP-NOW composition and is checked
+/// against the protocol owner's home channel when the peer is installed.
+/// `StandaloneFixed` is the only portable opt-in to an off-channel send. It
+/// names one exact peer channel; it never scans or falls back to the home
+/// channel, and connected runtimes must reject it before consuming a sequence
+/// number.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowPeerChannelPolicy {
+    HomeChannel(WifiChannel),
+    StandaloneFixed(WifiChannel),
+}
+
+impl EspNowPeerChannelPolicy {
+    pub const fn channel(self) -> WifiChannel {
+        match self {
+            Self::HomeChannel(channel) | Self::StandaloneFixed(channel) => channel,
+        }
+    }
+
+    pub const fn is_home_channel(self) -> bool {
+        matches!(self, Self::HomeChannel(_))
+    }
 }
 
 impl EspNowPeerConfig {
@@ -244,7 +270,22 @@ impl EspNowPeerConfig {
     pub const fn plaintext(destination: EspNowDestination, channel: WifiChannel) -> Self {
         Self {
             destination,
-            channel,
+            channel: EspNowPeerChannelPolicy::HomeChannel(channel),
+            phy_mode: EspNowPhyMode::LegacyDsss1M,
+            capability: EspNowPeerCapability::V1Only,
+        }
+    }
+
+    /// Configure one exact peer channel for a standalone runtime. This is a
+    /// deliberate off-channel policy, not an automatic fallback. The peer
+    /// table rejects it when `channel` is the protocol home channel.
+    pub const fn plaintext_off_channel(
+        destination: EspNowDestination,
+        channel: WifiChannel,
+    ) -> Self {
+        Self {
+            destination,
+            channel: EspNowPeerChannelPolicy::StandaloneFixed(channel),
             phy_mode: EspNowPhyMode::LegacyDsss1M,
             capability: EspNowPeerCapability::V1Only,
         }
@@ -254,6 +295,16 @@ impl EspNowPeerConfig {
     /// for v1 sends because v2 receivers are backwards-compatible.
     pub const fn plaintext_v2(destination: EspNowDestination, channel: WifiChannel) -> Self {
         Self::plaintext(destination, channel).with_capability(EspNowPeerCapability::V2Capable)
+    }
+
+    /// Configure one explicitly v2-capable peer on one exact standalone-only
+    /// off-channel.
+    pub const fn plaintext_v2_off_channel(
+        destination: EspNowDestination,
+        channel: WifiChannel,
+    ) -> Self {
+        Self::plaintext_off_channel(destination, channel)
+            .with_capability(EspNowPeerCapability::V2Capable)
     }
 
     /// Request a typed PHY mode. Unsupported chip backends must fail before
@@ -274,6 +325,10 @@ impl EspNowPeerConfig {
     }
 
     pub const fn channel(self) -> WifiChannel {
+        self.channel.channel()
+    }
+
+    pub const fn channel_policy(self) -> EspNowPeerChannelPolicy {
         self.channel
     }
 
@@ -320,7 +375,7 @@ impl EspNowPeerSlot {
     };
 }
 
-/// Fixed-capacity, same-home-channel plaintext peer owner.
+/// Fixed-capacity plaintext peer owner with explicit per-peer channel policy.
 pub struct EspNowPeerTable<const N: usize = ESP_NOW_DEFAULT_PEER_CAPACITY> {
     home_channel: WifiChannel,
     slots: [EspNowPeerSlot; N],
@@ -353,11 +408,18 @@ impl<const N: usize> EspNowPeerTable<N> {
     }
 
     pub fn add(&mut self, config: EspNowPeerConfig) -> Result<EspNowPeerId, EspNowPeerTableError> {
-        if config.channel != self.home_channel {
-            return Err(EspNowPeerTableError::ChannelMismatch {
-                peer: config.channel,
-                home: self.home_channel,
-            });
+        match config.channel {
+            EspNowPeerChannelPolicy::HomeChannel(peer) if peer != self.home_channel => {
+                return Err(EspNowPeerTableError::ChannelMismatch {
+                    peer,
+                    home: self.home_channel,
+                });
+            }
+            EspNowPeerChannelPolicy::StandaloneFixed(peer) if peer == self.home_channel => {
+                return Err(EspNowPeerTableError::OffChannelMatchesHome(peer));
+            }
+            EspNowPeerChannelPolicy::HomeChannel(_)
+            | EspNowPeerChannelPolicy::StandaloneFixed(_) => {}
         }
 
         let mut reusable = None;
@@ -481,6 +543,7 @@ pub enum EspNowPeerTableError {
         peer: WifiChannel,
         home: WifiChannel,
     },
+    OffChannelMatchesHome(WifiChannel),
     GenerationExhausted,
     Stale(EspNowPeerId),
 }
@@ -498,6 +561,10 @@ impl fmt::Display for EspNowPeerTableError {
             Self::ChannelMismatch { peer, home } => write!(
                 formatter,
                 "ESP-NOW peer channel {peer:?} differs from home channel {home:?}"
+            ),
+            Self::OffChannelMatchesHome(channel) => write!(
+                formatter,
+                "ESP-NOW standalone off-channel policy names home channel {channel:?}"
             ),
             Self::GenerationExhausted => {
                 formatter.write_str("an ESP-NOW peer generation counter is exhausted")
@@ -563,6 +630,11 @@ impl<const N: usize> EspNowProtocol<N> {
         let mut slots = [EspNowRxPeerSlot::EMPTY; N];
         let mut peer_count = 0;
         for (peer, config) in self.peers.iter() {
+            if !config.channel_policy().is_home_channel() {
+                // Standalone fixed-channel peers grant TX authority only. The
+                // normal receive epoch is deliberately rebuilt on home.
+                continue;
+            }
             let EspNowDestination::Unicast(address) = config.destination else {
                 // A broadcast entry grants only broadcast TX authority.
                 continue;
@@ -596,6 +668,7 @@ impl<const N: usize> EspNowProtocol<N> {
             let expected = match peer_slot.config {
                 Some(EspNowPeerConfig {
                     destination: EspNowDestination::Unicast(address),
+                    channel: EspNowPeerChannelPolicy::HomeChannel(_),
                     capability,
                     ..
                 }) => {
@@ -641,6 +714,7 @@ impl<const N: usize> EspNowProtocol<N> {
         Ok(EspNowPreparedV1Tx {
             peer,
             home_channel: self.config.home_channel,
+            channel_policy: peer_config.channel,
             station: self.config.station,
             phy_mode: peer_config.phy_mode,
             frame,
@@ -678,6 +752,7 @@ impl<const N: usize> EspNowProtocol<N> {
         Ok(EspNowPreparedV2Tx {
             peer,
             home_channel: self.config.home_channel,
+            channel_policy: peer_config.channel,
             station: self.config.station,
             phy_mode: peer_config.phy_mode,
             frame,
@@ -706,6 +781,13 @@ impl<const N: usize> EspNowProtocol<N> {
         let Some(peer) = self.peers.find(EspNowDestination::Unicast(source)) else {
             return Err(EspNowReceiveError::UnknownPeer(source));
         };
+        if !self
+            .peers
+            .get(peer)
+            .is_ok_and(|config| config.channel_policy().is_home_channel())
+        {
+            return Err(EspNowReceiveError::UnknownPeer(source));
+        }
         Ok(EspNowReceivedV1 { peer, frame })
     }
 
@@ -743,6 +825,9 @@ impl<const N: usize> EspNowProtocol<N> {
             return Err(EspNowV2ReceiveError::UnknownPeer(source));
         };
         let peer_config = self.peers.get(peer).map_err(EspNowV2ReceiveError::Peer)?;
+        if !peer_config.channel_policy().is_home_channel() {
+            return Err(EspNowV2ReceiveError::UnknownPeer(source));
+        }
         if !peer_config.capability.supports_v2() {
             return Err(EspNowV2ReceiveError::PeerNotV2Capable {
                 peer,
@@ -915,6 +1000,7 @@ pub enum EspNowV2RxOutcome<'frame> {
 pub struct EspNowPreparedV1Tx<'payload> {
     peer: EspNowPeerId,
     home_channel: WifiChannel,
+    channel_policy: EspNowPeerChannelPolicy,
     station: BoundVirtualInterface,
     phy_mode: EspNowPhyMode,
     frame: EspNowV1Frame<'payload>,
@@ -931,6 +1017,15 @@ impl EspNowPreparedV1Tx<'_> {
 
     pub const fn home_channel(self) -> WifiChannel {
         self.home_channel
+    }
+
+    /// Exact channel on which the backend may publish this frame.
+    pub const fn transmit_channel(self) -> WifiChannel {
+        self.channel_policy.channel()
+    }
+
+    pub const fn channel_policy(self) -> EspNowPeerChannelPolicy {
+        self.channel_policy
     }
 
     pub const fn station(self) -> BoundVirtualInterface {
@@ -966,6 +1061,7 @@ impl EspNowPreparedV1Tx<'_> {
 pub struct EspNowPreparedV2Tx<'payload> {
     peer: EspNowPeerId,
     home_channel: WifiChannel,
+    channel_policy: EspNowPeerChannelPolicy,
     station: BoundVirtualInterface,
     phy_mode: EspNowPhyMode,
     frame: EspNowV2Frame<'payload>,
@@ -982,6 +1078,15 @@ impl EspNowPreparedV2Tx<'_> {
 
     pub const fn home_channel(self) -> WifiChannel {
         self.home_channel
+    }
+
+    /// Exact channel on which the backend may publish this frame.
+    pub const fn transmit_channel(self) -> WifiChannel {
+        self.channel_policy.channel()
+    }
+
+    pub const fn channel_policy(self) -> EspNowPeerChannelPolicy {
+        self.channel_policy
     }
 
     pub const fn station(self) -> BoundVirtualInterface {

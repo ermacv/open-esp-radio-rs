@@ -7,7 +7,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use embassy_futures::select::select5;
+use embassy_futures::select::select6;
 use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
@@ -145,7 +145,13 @@ pub struct ConnectedControlResources<M: RawMutex, const CAPACITY: usize> {
     channel: Channel<M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Channel<M, ConnectedRxControlEvent, 1>,
     he_observation: Channel<M, ConnectedRxControlEvent, 1>,
+    /// Authenticated connected EAPOL such as Group Message 1. Losing one is a
+    /// functional protocol overflow and remains fail-closed.
     security: Channel<M, ConnectedSecurityFrame, 1>,
+    /// Best-effort plaintext EAPOL admitted only as a duplicate-M3 candidate.
+    /// Keeping this separate prevents unauthenticated traffic from occupying
+    /// the protected security lane or poisoning ordered-control overflow.
+    unprotected_security: Channel<M, ConnectedSecurityFrame, 1>,
     power_save_delivery: Channel<M, PowerSaveDeliverySignal, 1>,
     power_save_delivery_generation: AtomicU32,
     power_save_delivery_gate: AtomicU32,
@@ -162,6 +168,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
             terminal: Channel::new(),
             he_observation: Channel::new(),
             security: Channel::new(),
+            unprotected_security: Channel::new(),
             power_save_delivery: Channel::new(),
             power_save_delivery_generation: AtomicU32::new(0),
             power_save_delivery_gate: AtomicU32::new(0),
@@ -207,6 +214,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
                 terminal: resources.terminal.sender(),
                 he_observation: resources.he_observation.sender(),
                 security: resources.security.sender(),
+                unprotected_security: resources.unprotected_security.sender(),
                 power_save_delivery: resources.power_save_delivery.sender(),
                 power_save_delivery_gate: &resources.power_save_delivery_gate,
                 power_save_delivery_claimed: &resources.power_save_delivery_claimed,
@@ -219,6 +227,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
                 terminal: resources.terminal.receiver(),
                 he_observation: resources.he_observation.receiver(),
                 security: resources.security.receiver(),
+                unprotected_security: resources.unprotected_security.receiver(),
                 power_save_delivery: resources.power_save_delivery.receiver(),
                 power_save_delivery_generation: &resources.power_save_delivery_generation,
                 power_save_delivery_gate: &resources.power_save_delivery_gate,
@@ -245,6 +254,7 @@ pub struct ConnectedControlPublisher<'resources, M: RawMutex, const CAPACITY: us
     terminal: Sender<'resources, M, ConnectedRxControlEvent, 1>,
     he_observation: Sender<'resources, M, ConnectedRxControlEvent, 1>,
     security: Sender<'resources, M, ConnectedSecurityFrame, 1>,
+    unprotected_security: Sender<'resources, M, ConnectedSecurityFrame, 1>,
     power_save_delivery: Sender<'resources, M, PowerSaveDeliverySignal, 1>,
     power_save_delivery_gate: &'resources AtomicU32,
     power_save_delivery_claimed: &'resources AtomicU32,
@@ -258,14 +268,14 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
 {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         if let ConnectedRxEvent::UnprotectedEapol { source, payload } = event {
-            let result = OwnedEapolFrame::try_copy(Wpa2Interface::Station, source, payload)
-                .ok()
-                .map(|frame| {
-                    self.security
-                        .try_send(ConnectedSecurityFrame::Unprotected(frame))
-                });
-            if !matches!(result, Some(Ok(()))) {
-                self.overflowed.store(true, Ordering::Release);
+            if let Ok(frame) = OwnedEapolFrame::try_copy(Wpa2Interface::Station, source, payload) {
+                // This is unauthenticated peer input until connected WPA2
+                // verifies its MIC and exact completed-M3 commitment. Full is
+                // therefore a peer-local coalescing drop, never authority to
+                // invalidate the ordered control stream or protected lane.
+                let _ = self
+                    .unprotected_security
+                    .try_send(ConnectedSecurityFrame::Unprotected(frame));
             }
             return;
         }
@@ -337,6 +347,7 @@ pub struct ConnectedControlReceiver<'resources, M: RawMutex, const CAPACITY: usi
     terminal: Receiver<'resources, M, ConnectedRxControlEvent, 1>,
     he_observation: Receiver<'resources, M, ConnectedRxControlEvent, 1>,
     security: Receiver<'resources, M, ConnectedSecurityFrame, 1>,
+    unprotected_security: Receiver<'resources, M, ConnectedSecurityFrame, 1>,
     power_save_delivery: Receiver<'resources, M, PowerSaveDeliverySignal, 1>,
     power_save_delivery_generation: &'resources AtomicU32,
     power_save_delivery_gate: &'resources AtomicU32,
@@ -420,13 +431,19 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     }
 
     pub(super) fn try_receive_security(&self) -> Option<ConnectedSecurityFrame> {
-        self.security.try_receive().ok()
+        // Authenticated connected traffic always precedes the best-effort
+        // duplicate-M3 candidate lane, regardless of arrival order.
+        self.security
+            .try_receive()
+            .ok()
+            .or_else(|| self.unprotected_security.try_receive().ok())
     }
 
     pub async fn ready(&self) {
-        select5(
+        select6(
             self.terminal.ready_to_receive(),
             self.security.ready_to_receive(),
+            self.unprotected_security.ready_to_receive(),
             self.power_save_delivery.ready_to_receive(),
             self.receiver.ready_to_receive(),
             self.he_observation.ready_to_receive(),
@@ -437,6 +454,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     pub fn len(&self) -> usize {
         self.terminal.len()
             + self.security.len()
+            + self.unprotected_security.len()
             + self.power_save_delivery.len()
             + self.receiver.len()
             + self.he_observation.len()
@@ -452,12 +470,13 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     pub fn non_power_save_delivery_pending(&self) -> bool {
         !self.terminal.is_empty()
             || !self.security.is_empty()
+            || !self.unprotected_security.is_empty()
             || !self.receiver.is_empty()
             || !self.he_observation.is_empty()
     }
 
     pub fn security_pending(&self) -> bool {
-        !self.security.is_empty()
+        !self.security.is_empty() || !self.unprotected_security.is_empty()
     }
 
     /// Whether this mailbox epoch has lost any semantic control event.
@@ -626,11 +645,48 @@ mod tests {
     }
 
     #[test]
-    fn plaintext_eapol_retains_its_narrow_security_provenance() {
+    fn protected_eapol_overflow_remains_fail_closed() {
         let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
         let (mut publisher, receiver) = resources.split();
         let ap = [2, 0, 0, 0, 0, 2];
-        let packet = open_esp_radio_wpa2::frames::Wpa2TxFrame::<512>::message3(
+        let packet = open_esp_radio_wpa2::frames::Wpa2TxFrame::<512>::group_message1(
+            [2, 0, 0, 0, 0, 1],
+            3,
+            [0; 8],
+            &[0x55; 24],
+        )
+        .unwrap();
+        let event = || ConnectedRxEvent::Ethernet {
+            frame: EthernetFrameParts {
+                destination: [2, 0, 0, 0, 0, 1],
+                source: ap,
+                ether_type: EAPOL_ETHERTYPE,
+                payload: packet.as_bytes(),
+            },
+            raw: &[],
+            amsdu: false,
+            metadata: open_esp_radio_wifi_softmac::MacRxMetadata::unavailable(),
+        };
+
+        publisher.publish(event());
+        publisher.publish(event());
+
+        assert!(receiver.overflowed());
+        let ConnectedSecurityFrame::Protected(received) = receiver
+            .try_receive_security()
+            .expect("first protected EAPOL must remain queued")
+        else {
+            panic!("protected lane must retain its provenance")
+        };
+        assert_eq!(received.as_bytes(), packet.as_bytes());
+    }
+
+    #[test]
+    fn plaintext_eapol_full_and_copy_rejection_are_peer_local_drops() {
+        let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+        let (mut publisher, receiver) = resources.split();
+        let ap = [2, 0, 0, 0, 0, 2];
+        let first = open_esp_radio_wpa2::frames::Wpa2TxFrame::<512>::message3(
             [2, 0, 0, 0, 0, 1],
             3,
             [4; 32],
@@ -638,21 +694,92 @@ mod tests {
             &[0x55; 8],
         )
         .unwrap();
+        let second = open_esp_radio_wpa2::frames::Wpa2TxFrame::<512>::message3(
+            [2, 0, 0, 0, 0, 1],
+            4,
+            [5; 32],
+            [0; 8],
+            &[0x66; 8],
+        )
+        .unwrap();
 
         publisher.publish(ConnectedRxEvent::UnprotectedEapol {
             source: ap,
-            payload: packet.as_bytes(),
+            payload: first.as_bytes(),
+        });
+        publisher.publish(ConnectedRxEvent::UnprotectedEapol {
+            source: ap,
+            payload: second.as_bytes(),
         });
 
+        assert!(!receiver.overflowed());
         let ConnectedSecurityFrame::Unprotected(received) = receiver
             .try_receive_security()
-            .expect("plaintext EAPOL must use the security lane")
+            .expect("first plaintext EAPOL must remain queued")
         else {
             panic!("plaintext EAPOL must retain unprotected provenance")
         };
         assert_eq!(received.peer(), &ap);
-        assert_eq!(received.as_bytes(), packet.as_bytes());
+        assert_eq!(received.as_bytes(), first.as_bytes());
+        assert!(receiver.try_receive_security().is_none());
+
+        publisher.publish(ConnectedRxEvent::UnprotectedEapol {
+            source: ap,
+            payload: &[0],
+        });
         assert!(!receiver.overflowed());
+        assert!(receiver.try_receive_security().is_none());
+    }
+
+    #[test]
+    fn protected_security_precedes_an_earlier_plaintext_candidate() {
+        let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+        let (mut publisher, receiver) = resources.split();
+        let station = [2, 0, 0, 0, 0, 1];
+        let ap = [2, 0, 0, 0, 0, 2];
+        let message3 = open_esp_radio_wpa2::frames::Wpa2TxFrame::<512>::message3(
+            station, 3, [4; 32], [0; 8], &[0x55; 8],
+        )
+        .unwrap();
+        let group_message1 = open_esp_radio_wpa2::frames::Wpa2TxFrame::<512>::group_message1(
+            station,
+            4,
+            [0; 8],
+            &[0x66; 24],
+        )
+        .unwrap();
+
+        publisher.publish(ConnectedRxEvent::UnprotectedEapol {
+            source: ap,
+            payload: message3.as_bytes(),
+        });
+        publisher.publish(ConnectedRxEvent::Ethernet {
+            frame: EthernetFrameParts {
+                destination: station,
+                source: ap,
+                ether_type: EAPOL_ETHERTYPE,
+                payload: group_message1.as_bytes(),
+            },
+            raw: &[],
+            amsdu: false,
+            metadata: open_esp_radio_wifi_softmac::MacRxMetadata::unavailable(),
+        });
+
+        assert!(!receiver.overflowed());
+        let ConnectedSecurityFrame::Protected(protected) = receiver
+            .try_receive_security()
+            .expect("protected lane must have dequeue priority")
+        else {
+            panic!("first dequeued security frame must be protected")
+        };
+        assert_eq!(protected.as_bytes(), group_message1.as_bytes());
+        let ConnectedSecurityFrame::Unprotected(unprotected) = receiver
+            .try_receive_security()
+            .expect("plaintext candidate must remain independently queued")
+        else {
+            panic!("second dequeued security frame must be unprotected")
+        };
+        assert_eq!(unprotected.as_bytes(), message3.as_bytes());
     }
 
     #[test]

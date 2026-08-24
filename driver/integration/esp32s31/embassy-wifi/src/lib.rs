@@ -53,7 +53,8 @@ pub use supervisor::station::{
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::{
     Esp32s31ConnectedRxObservation, Esp32s31ConnectedRxObserver,
-    Esp32s31DecodedRxPhyObservation, Esp32s31HeSuRxObservation, Esp32s31RxEvidence,
+    Esp32s31DecodedRxPhyObservation, Esp32s31HeSuRxObservation, Esp32s31HtRxObservation,
+    Esp32s31RxEvidence,
 };
 #[cfg(feature = "mac-irq-diagnostics")]
 pub use supervisor::station::Esp32s31MacIrqObservation;
@@ -247,6 +248,7 @@ pub struct Esp32s31AccessPointObservation {
     pub rx_rssi_min_dbm: i8,
     pub rx_rssi_max_dbm: i8,
     pub rx_ht40_mcs_frames: [u32; 8],
+    pub rx_ht40_mcs32_frames: u32,
     pub tx_ht_aggregates: u32,
     pub tx_ht40_mcs7_aggregates: u32,
     pub data_frames_transmitted: u32,

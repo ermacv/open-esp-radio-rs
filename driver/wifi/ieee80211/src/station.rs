@@ -11,6 +11,7 @@ use crate::{
         plan_data_encapsulation, plan_data_encapsulation_with_he_control,
     },
     he::{parse_he20_capabilities, parse_he20_operation},
+    ht::HtDuplicateMcs32,
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
     wmm::{WmmParameterSet, parse_wmm_parameter_element},
@@ -40,7 +41,7 @@ const RSN_CAPABILITY_SPP_AMSDU_CAPABLE: u16 = 1 << 10;
 //
 // SOURCE[PROMOTED_HE20_PEER]: reviewed promoted HT20 capability image,
 // originally qualified by the strict ESP32-S31 STA WPA2/ADDBA throughput HIL.
-const HT20_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x0020, 0x00);
+const HT20_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x0020, 0x00, None);
 // One-stream HT40 with short guard intervals for both 20 and 40 MHz and
 // spatial multiplexing power save disabled. Although the S31 has one receive
 // stream, advertising static SMPS (`0x0062`) made the controlled Linux HT40 AP
@@ -56,7 +57,11 @@ const HT20_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x0020, 0x00);
 // gated by the complete AP HT Capabilities/Operation IEs through
 // `ScanRecord::ht40_secondary_channel`; hardware CBW support is the complete
 // rev0 ROM `phy_bb_bss_cbw40` implementation promoted into the S31 PAC/HAL.
-const HT40_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x006e, 0x00);
+// The independent MCS32 receive bit is a source-owned standard extension to
+// that base image, not part of the cited vendor capture. TX/RX MCS sets are
+// marked unequal because the S31 duplicate-mode TX encoding remains unknown.
+const HT40_CAPABILITY_IE: [u8; 28] =
+    station_ht_capability_ie(0x006e, 0x00, Some(HtDuplicateMcs32::new()));
 // Exact HT20 capability carried beside the HE capability in the complete
 // vendor association request. It differs from the deliberately narrow
 // standalone HT20 profile above: SMPS is disabled, RX STBC is one stream,
@@ -65,14 +70,20 @@ const HT40_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x006e, 0x00);
 // SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: qualified frame 7624.
 // SOURCE: complete `libnet80211.a[ieee80211_ht.o]::
 // ieee80211_add_htcap_body` produces the same capability fields.
-const HE20_HT_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x112c, 0x17);
+const HE20_HT_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x112c, 0x17, None);
 
-/// Build the complete vendor-shaped one-stream HT capability image.
+/// Build the complete vendor-shaped one-stream HT capability base.
 ///
 /// The Supported MCS Set begins at complete-IE byte five. Its byte 12 is the
 /// TX MCS parameters field, therefore it is complete-IE byte 17. Keeping this
-/// layout in one builder prevents AP/STA capability images from drifting.
-const fn station_ht_capability_ie(capability_info: u16, ampdu_parameters: u8) -> [u8; 28] {
+/// layout in one builder prevents AP/STA capability images from drifting. An
+/// optional standard MCS32 marker extends only the RX set and explicitly marks
+/// the independently unqualified TX set as unequal.
+const fn station_ht_capability_ie(
+    capability_info: u16,
+    ampdu_parameters: u8,
+    duplicate_mcs32: Option<HtDuplicateMcs32>,
+) -> [u8; 28] {
     let mut element = [0_u8; 28];
     element[0] = 45;
     element[1] = 26;
@@ -81,6 +92,9 @@ const fn station_ht_capability_ie(capability_info: u16, ampdu_parameters: u8) ->
     element[4] = ampdu_parameters;
     element[5] = 0xff;
     element[17] = 0x01;
+    if let Some(duplicate_mcs32) = duplicate_mcs32 {
+        duplicate_mcs32.advertise_receive_only(&mut element);
+    }
     element
 }
 // Exact one-stream HE20 MCS0-9 capability captured from the vendor
@@ -2169,15 +2183,14 @@ mod tests {
 
     #[test]
     fn station_ht_profiles_put_tx_parameters_in_supported_mcs_byte_twelve() {
-        for capability in [
-            HT20_CAPABILITY_IE,
-            HT40_CAPABILITY_IE,
-            HE20_HT_CAPABILITY_IE,
-        ] {
+        for capability in [HT20_CAPABILITY_IE, HE20_HT_CAPABILITY_IE] {
             assert_eq!(capability[5], 0xff);
             assert_eq!(capability[17], 0x01);
             assert_eq!(capability[18], 0);
         }
+        assert_eq!(HT40_CAPABILITY_IE[5], 0xff);
+        assert_eq!(HT40_CAPABILITY_IE[17], 0x03);
+        assert_eq!(HT40_CAPABILITY_IE[18], 0);
     }
 
     fn authentication_response(status_code: u16) -> [u8; 30] {

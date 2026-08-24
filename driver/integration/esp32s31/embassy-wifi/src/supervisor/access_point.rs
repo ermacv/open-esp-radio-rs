@@ -195,6 +195,7 @@ pub(super) fn publish_access_point_observation(
         rx_rssi_min_dbm: control.rx_rssi_min_dbm,
         rx_rssi_max_dbm: control.rx_rssi_max_dbm,
         rx_ht40_mcs_frames: control.rx_ht40_mcs_frames,
+        rx_ht40_mcs32_frames: control.rx_ht40_mcs32_frames,
         tx_ht_aggregates: control.tx_ht_aggregates,
         tx_ht40_mcs7_aggregates: control.tx_ht40_mcs7_aggregates,
         data_frames_transmitted: mac.data_frames_transmitted,

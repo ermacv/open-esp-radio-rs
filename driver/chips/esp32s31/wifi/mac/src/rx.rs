@@ -29,6 +29,7 @@ use open_esp_radio_ieee80211::he::{
     He20MuSigBMimoStreamError, He20MuSigBMimoUsers, He20MuSigBNonMimoStreamError,
     He20MuSigBNonMimoUsers, HeMuSigBUser,
 };
+use open_esp_radio_ieee80211::ht::HtDuplicateMcs32;
 use open_esp_radio_wifi_softmac::{MacRxEvidence, MacRxMetadata};
 
 pub const INGRESS_STRICT_RXEND: u32 = 0x01;
@@ -139,6 +140,17 @@ pub struct HtSignal {
     pub channel_width_mhz: u8,
     pub aggregation: bool,
     pub short_guard_interval: bool,
+}
+
+impl HtSignal {
+    /// Decode the special MCS32 selector only with its required HT40 geometry.
+    pub const fn ht_duplicate_mcs32(self) -> Option<HtDuplicateMcs32> {
+        if self.mcs == HtDuplicateMcs32::INDEX && self.channel_width_mhz == 40 {
+            Some(HtDuplicateMcs32::new())
+        } else {
+            None
+        }
+    }
 }
 
 /// PHY format published in the S31 RX-control prefix.

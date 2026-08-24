@@ -463,6 +463,7 @@ where
             }
         };
         let frame_control = u16::from_le_bytes([frame.mpdu[0], frame.mpdu[1]]);
+        let power_save_observation = observe_ap_power_save(frame.mpdu);
         let ampdu_contained = matches!(
             frame.metadata.ampdu,
             MacRxEvidence::HardwareObserved(true) | MacRxEvidence::ProtocolValidated(true)
@@ -712,12 +713,22 @@ where
             return Err(Esp32s31AccessPointControlError::ReceiveBatchCapacity);
         }
         if let Some(peer) = activity_peer {
+            let power_state = match power_save_observation {
+                Some(ApPowerSaveObservation::Sleeping { peer: observed }) if observed == peer => {
+                    Some(ApPeerPowerState::Sleeping)
+                }
+                Some(ApPowerSaveObservation::Active { peer: observed }) if observed == peer => {
+                    Some(ApPeerPowerState::Active)
+                }
+                _ => None,
+            };
             self.protocol_actions
                 .publisher()
                 .try_publish(Esp32s31AccessPointProtocolAction::Control(
                     Esp32s31AccessPointControlAction::ObservePeerActivity {
                         peer,
                         at_micros: now_micros,
+                        power_state,
                     },
                 ))
                 .map_err(|_| Esp32s31AccessPointControlError::ProtocolActionCapacity)?;
@@ -751,11 +762,29 @@ where
                     window,
                 )?,
                 Esp32s31AccessPointProtocolAction::Control(
-                    Esp32s31AccessPointControlAction::ObservePeerActivity { peer, at_micros },
-                ) => self
-                    .mac
-                    .engine_mut()
-                    .observe_peer_activity(peer, at_micros)?,
+                    Esp32s31AccessPointControlAction::ObservePeerActivity {
+                        peer,
+                        at_micros,
+                        power_state,
+                    },
+                ) => match power_state {
+                    Some(ApPeerPowerState::Active) => {
+                        let _ = self.mac.engine_mut().observe_power_save(
+                            ApPowerSaveObservation::Active { peer },
+                            at_micros,
+                        )?;
+                    }
+                    Some(ApPeerPowerState::Sleeping) => {
+                        let _ = self.mac.engine_mut().observe_power_save(
+                            ApPowerSaveObservation::Sleeping { peer },
+                            at_micros,
+                        )?;
+                    }
+                    None => self
+                        .mac
+                        .engine_mut()
+                        .observe_peer_activity(peer, at_micros)?,
+                },
             }
         }
         Ok(())
@@ -1077,4 +1106,3 @@ where
         });
     }
 }
-

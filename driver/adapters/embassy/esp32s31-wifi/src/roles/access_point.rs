@@ -27,7 +27,7 @@ use open_esp_radio_esp32s31_wifi::{
 #[cfg(any(feature = "diagnostics", test))]
 use open_esp_radio_esp32s31_wifi_ap::mac::Esp32s31ApMacObservation;
 use open_esp_radio_esp32s31_wifi_ap::protocol::{
-    AccessPointServiceStatus, ApPeerClose, ApWpa2RetryProgress,
+    AccessPointServiceStatus, ApPeerClose, ApPeerPowerState, ApWpa2RetryProgress,
 };
 use open_esp_radio_esp32s31_wifi_ap::{
     ampdu::{Esp32s31ApAggregateAdmission, Esp32s31ApAmpduError, Esp32s31ApAmpduProgress},
@@ -66,7 +66,10 @@ use open_esp_radio_ieee80211::data::{
     plan_data_decapsulation,
 };
 use open_esp_radio_ieee80211::{
-    ap::{ApManagementRequest, parse_ap_management_request},
+    ap::{
+        ApManagementRequest, ApPowerSaveObservation, observe_ap_power_save,
+        parse_ap_management_request,
+    },
     block_ack::BlockAckAction,
 };
 use open_esp_radio_wifi_embassy::await_stack_boundary;

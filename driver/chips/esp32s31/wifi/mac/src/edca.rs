@@ -25,6 +25,56 @@ pub struct EdcaContentionParameters {
     maximum_exponent: u8,
 }
 
+/// Complete per-AC policy retained from a negotiated WMM parameter record.
+///
+/// Contention is independently representable by the ordinary hardware queue.
+/// ACM and TXOP remain protocol policy: callers must not infer that installing
+/// AIFSN/CW also granted admission or hardware medium ownership.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EdcaAccessPolicy {
+    contention: EdcaContentionParameters,
+    admission_control_mandatory: bool,
+    txop_limit_units_32_us: u16,
+}
+
+impl EdcaAccessPolicy {
+    pub const fn new(
+        contention: EdcaContentionParameters,
+        admission_control_mandatory: bool,
+        txop_limit_units_32_us: u16,
+    ) -> Self {
+        Self {
+            contention,
+            admission_control_mandatory,
+            txop_limit_units_32_us,
+        }
+    }
+
+    pub const fn from_wmm(parameters: WmmAcParameters) -> Result<Self, EdcaParametersError> {
+        let contention = match EdcaContentionParameters::from_wmm(parameters) {
+            Ok(contention) => contention,
+            Err(error) => return Err(error),
+        };
+        Ok(Self::new(
+            contention,
+            parameters.admission_control_mandatory,
+            parameters.txop_limit_units_32_us,
+        ))
+    }
+
+    pub const fn contention(self) -> EdcaContentionParameters {
+        self.contention
+    }
+
+    pub const fn admission_control_mandatory(self) -> bool {
+        self.admission_control_mandatory
+    }
+
+    pub const fn txop_limit_units_32_us(self) -> u16 {
+        self.txop_limit_units_32_us
+    }
+}
+
 impl EdcaContentionParameters {
     pub const fn new(
         aifsn: u8,
@@ -108,20 +158,24 @@ impl EdcaContentionParameters {
 /// Runtime contention state for one access category.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EdcaBackoffState {
-    parameters: EdcaContentionParameters,
+    policy: EdcaAccessPolicy,
     current_exponent: u8,
 }
 
 impl EdcaBackoffState {
     pub const fn new(parameters: EdcaContentionParameters) -> Self {
         Self {
-            parameters,
+            policy: EdcaAccessPolicy::new(parameters, false, 0),
             current_exponent: parameters.minimum_exponent,
         }
     }
 
     pub const fn parameters(self) -> EdcaContentionParameters {
-        self.parameters
+        self.policy.contention
+    }
+
+    pub const fn access_policy(self) -> EdcaAccessPolicy {
+        self.policy
     }
 
     pub const fn current_exponent(self) -> u8 {
@@ -133,10 +187,16 @@ impl EdcaBackoffState {
         // SOURCE: complete `libpp.a[lmac.o]::lmacSetAcParam`.
         // It replaces AIFSN/min/max, clamps current down to a lower new max,
         // clamps it up to a higher new min, and otherwise retains it.
-        self.parameters = parameters;
+        self.policy.contention = parameters;
         self.current_exponent = self
             .current_exponent
             .clamp(parameters.minimum_exponent, parameters.maximum_exponent);
+    }
+
+    /// Install contention, ACM and TXOP as one already validated AC policy.
+    pub fn reconfigure_access_policy(&mut self, policy: EdcaAccessPolicy) {
+        self.reconfigure(policy.contention);
+        self.policy = policy;
     }
 
     /// Select the hardware slot count from caller-supplied entropy.
@@ -154,7 +214,7 @@ impl EdcaBackoffState {
         // SOURCE: complete `libpp.a[lmac.o]::
         // {lmacProcessLongRetryFail,lmacProcessShortRetryFail}`. Both raise
         // AC+0x08 by one while it is below the active maximum.
-        if self.current_exponent < self.parameters.maximum_exponent {
+        if self.current_exponent < self.policy.contention.maximum_exponent {
             self.current_exponent += 1;
         }
     }
@@ -164,7 +224,7 @@ impl EdcaBackoffState {
         // SOURCE: complete `libpp.a[lmac.o]::
         // {lmacProcessLongFrameSuccess,lmacProcessShortFrameSuccess}`. Both
         // copy AC+0x09 (ECWmin) to AC+0x08 (current exponent).
-        self.current_exponent = self.parameters.minimum_exponent;
+        self.current_exponent = self.policy.contention.minimum_exponent;
     }
 
     /// Reset a terminal exchange before a new MSDU starts.
@@ -173,7 +233,7 @@ impl EdcaBackoffState {
         // `libpp.a[lmac.o]::
         // {lmacProcessLongRetryFail,lmacProcessShortRetryFail}` restore the
         // active minimum before discarding or completing the exchange.
-        self.current_exponent = self.parameters.minimum_exponent;
+        self.current_exponent = self.policy.contention.minimum_exponent;
     }
 }
 
@@ -207,6 +267,10 @@ impl EdcaQueues {
         &self.queues[queue as usize]
     }
 
+    pub const fn access_policy(&self, queue: LegacyTxQueue) -> EdcaAccessPolicy {
+        self.queue(queue).access_policy()
+    }
+
     pub fn select_slot(&self, queue: LegacyTxQueue, entropy: u32) -> u16 {
         self.queue(queue).select_slot(entropy)
     }
@@ -228,23 +292,19 @@ impl EdcaQueues {
         &mut self,
         parameters: WmmParameterSet,
     ) -> Result<(), EdcaParametersError> {
-        let voice = EdcaContentionParameters::from_wmm(
-            parameters.access_category(WmmAccessCategory::Voice),
-        )?;
-        let video = EdcaContentionParameters::from_wmm(
-            parameters.access_category(WmmAccessCategory::Video),
-        )?;
-        let best_effort = EdcaContentionParameters::from_wmm(
-            parameters.access_category(WmmAccessCategory::BestEffort),
-        )?;
-        let background = EdcaContentionParameters::from_wmm(
-            parameters.access_category(WmmAccessCategory::Background),
-        )?;
+        let voice =
+            EdcaAccessPolicy::from_wmm(parameters.access_category(WmmAccessCategory::Voice))?;
+        let video =
+            EdcaAccessPolicy::from_wmm(parameters.access_category(WmmAccessCategory::Video))?;
+        let best_effort =
+            EdcaAccessPolicy::from_wmm(parameters.access_category(WmmAccessCategory::BestEffort))?;
+        let background =
+            EdcaAccessPolicy::from_wmm(parameters.access_category(WmmAccessCategory::Background))?;
 
-        self.queues[LegacyTxQueue::Voice as usize].reconfigure(voice);
-        self.queues[LegacyTxQueue::Video as usize].reconfigure(video);
-        self.queues[LegacyTxQueue::BestEffort as usize].reconfigure(best_effort);
-        self.queues[LegacyTxQueue::Background as usize].reconfigure(background);
+        self.queues[LegacyTxQueue::Voice as usize].reconfigure_access_policy(voice);
+        self.queues[LegacyTxQueue::Video as usize].reconfigure_access_policy(video);
+        self.queues[LegacyTxQueue::BestEffort as usize].reconfigure_access_policy(best_effort);
+        self.queues[LegacyTxQueue::Background as usize].reconfigure_access_policy(background);
         Ok(())
     }
 }
@@ -337,6 +397,27 @@ mod tests {
             queues.queue(LegacyTxQueue::BestEffort).parameters(),
             EdcaContentionParameters::new(3, 4, 10).unwrap()
         );
+        let voice = queues.access_policy(LegacyTxQueue::Voice);
+        assert!(voice.admission_control_mandatory());
+        assert_eq!(voice.txop_limit_units_32_us(), 47);
+        let video = queues.access_policy(LegacyTxQueue::Video);
+        assert!(!video.admission_control_mandatory());
+        assert_eq!(video.txop_limit_units_32_us(), 94);
+    }
+
+    #[test]
+    fn vendor_defaults_grant_no_implicit_admission_or_txop_ownership() {
+        let queues = EdcaQueues::vendor_defaults();
+        for queue in [
+            LegacyTxQueue::Voice,
+            LegacyTxQueue::Video,
+            LegacyTxQueue::BestEffort,
+            LegacyTxQueue::Background,
+        ] {
+            let policy = queues.access_policy(queue);
+            assert!(!policy.admission_control_mandatory());
+            assert_eq!(policy.txop_limit_units_32_us(), 0);
+        }
     }
 
     #[test]

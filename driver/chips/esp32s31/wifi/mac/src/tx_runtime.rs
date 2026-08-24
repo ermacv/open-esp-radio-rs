@@ -5,19 +5,116 @@
 //! wait for interrupts, access MMIO, mutate DMA storage or produce entropy;
 //! those remain separate hardware/executor boundaries.
 
-use open_esp_radio_ieee80211::wmm::WmmParameterSet;
+use open_esp_radio_ieee80211::wmm::{
+    WmmAccessCategory, WmmParameterSet, WmmTrafficClass, WmmUserPriority, classify_ethernet_wmm,
+};
 
 use crate::{
-    edca::{EdcaContentionParameters, EdcaParametersError, EdcaQueues},
+    edca::{EdcaAccessPolicy, EdcaContentionParameters, EdcaParametersError, EdcaQueues},
     rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
     tx::{
-        HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue, TxCompletionDisposition, TxPhyRate,
+        HeEdcaTxopLimit, HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue,
+        TxCompletionDisposition, TxPhyRate,
     },
     tx_ampdu::HtAmpduTxCompletion,
 };
 
 const IEEE80211_SEQUENCE_MASK: u16 = 0x0fff;
 const HARDWARE_BLOCK_ACK_WINDOW: usize = 32;
+
+/// Result of applying the peer's negotiated ACM policy to one classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WmmAdmissionDisposition {
+    /// The selected AC does not require an admission.
+    AdmissionNotRequired,
+    Downgraded {
+        requested: WmmAccessCategory,
+    },
+    /// A non-QoS association owns only the legacy best-effort sequence space.
+    NonQosBestEffort,
+}
+
+/// Complete station-side queue/TID policy selected for one network frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiTxTraffic {
+    pub requested: WmmTrafficClass,
+    pub user_priority: WmmUserPriority,
+    pub access_category: WmmAccessCategory,
+    pub admission: WmmAdmissionDisposition,
+    txop_limit_units_32_us: u16,
+}
+
+impl WifiTxTraffic {
+    pub const fn queue(self) -> LegacyTxQueue {
+        LegacyTxQueue::from_access_category(self.access_category)
+    }
+
+    pub const fn tid(self) -> u8 {
+        self.user_priority.value()
+    }
+
+    pub const fn txop_limit_units_32_us(self) -> u16 {
+        self.txop_limit_units_32_us
+    }
+
+    /// Resolve the peer's negotiated HE duration budget and an optional
+    /// integration ceiling without widening either value.
+    pub const fn he_txop_limit(
+        self,
+        configured_ceiling: HeEdcaTxopLimit,
+    ) -> Result<HeEdcaTxopLimit, WmmTxopUnsupported> {
+        let Some(negotiated) = HeEdcaTxopLimit::from_units_32_us(self.txop_limit_units_32_us)
+        else {
+            return Err(WmmTxopUnsupported::AdvertisedLimitTooWide {
+                units_32_us: self.txop_limit_units_32_us,
+            });
+        };
+        if negotiated.is_default() {
+            return Ok(configured_ceiling);
+        }
+        if configured_ceiling.is_default()
+            || negotiated.units_32_us() <= configured_ceiling.units_32_us()
+        {
+            Ok(negotiated)
+        } else {
+            Ok(configured_ceiling)
+        }
+    }
+
+    /// HT aggregation has no reviewed negotiated-TXOP duration calculator.
+    pub const fn require_ht_txop_support(self) -> Result<(), WmmTxopUnsupported> {
+        if self.txop_limit_units_32_us == 0 {
+            Ok(())
+        } else {
+            Err(WmmTxopUnsupported::HtAggregateDurationBudget {
+                units_32_us: self.txop_limit_units_32_us,
+            })
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiTxTrafficError {
+    /// Every possible AC at or below the requested priority requires an
+    /// admission, while no TSPEC/ADDTS owner exists in this driver.
+    AdmissionControlRequired { requested: WmmAccessCategory },
+}
+
+/// Unreviewed boundary which must not be inferred from WMM parsing alone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WmmTxopUnsupported {
+    AdvertisedLimitTooWide { units_32_us: u16 },
+    HtAggregateDurationBudget { units_32_us: u16 },
+    RtsCtsProtection,
+    MultiPpduMediumOwnership,
+}
+
+/// Requests which would require an unproven hardware medium-ownership path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WmmHardwareMediumRequest {
+    RtsCtsProtection,
+    MultiPpduTxop,
+}
 
 /// Association-derived state used by all ordinary and aggregate TX paths.
 ///
@@ -66,6 +163,81 @@ impl WifiTxRuntimePolicy {
 
     pub fn contention_parameters(&self, queue: LegacyTxQueue) -> EdcaContentionParameters {
         self.edca.queue(queue).parameters()
+    }
+
+    pub const fn access_policy(&self, queue: LegacyTxQueue) -> EdcaAccessPolicy {
+        self.edca.access_policy(queue)
+    }
+
+    /// Classify and admit one network frame under the active peer WMM policy.
+    ///
+    /// With no QoS peer, all markings collapse to legacy BE. With QoS, an ACM
+    /// bit is never treated as an admission: the request walks to a lower AC
+    /// and rewrites its TID to that AC's canonical value. If even BK requires
+    /// admission, the request fails closed.
+    pub fn select_network_traffic(
+        &self,
+        ethernet: &[u8],
+        peer_qos: bool,
+    ) -> Result<WifiTxTraffic, WifiTxTrafficError> {
+        let requested = classify_ethernet_wmm(ethernet);
+        if !peer_qos {
+            let selected = self.edca.access_policy(LegacyTxQueue::BestEffort);
+            return Ok(WifiTxTraffic {
+                requested,
+                user_priority: WmmUserPriority::UP0,
+                access_category: WmmAccessCategory::BestEffort,
+                admission: WmmAdmissionDisposition::NonQosBestEffort,
+                txop_limit_units_32_us: selected.txop_limit_units_32_us(),
+            });
+        }
+
+        let mut category = requested.access_category;
+        loop {
+            let selected = self
+                .edca
+                .access_policy(LegacyTxQueue::from_access_category(category));
+            if !selected.admission_control_mandatory() {
+                let downgraded = category != requested.access_category;
+                return Ok(WifiTxTraffic {
+                    requested,
+                    user_priority: if downgraded {
+                        category.canonical_user_priority()
+                    } else {
+                        requested.user_priority
+                    },
+                    access_category: category,
+                    admission: if downgraded {
+                        WmmAdmissionDisposition::Downgraded {
+                            requested: requested.access_category,
+                        }
+                    } else {
+                        WmmAdmissionDisposition::AdmissionNotRequired
+                    },
+                    txop_limit_units_32_us: selected.txop_limit_units_32_us(),
+                });
+            }
+            let Some(lower) = category.downgrade() else {
+                return Err(WifiTxTrafficError::AdmissionControlRequired {
+                    requested: requested.access_category,
+                });
+            };
+            category = lower;
+        }
+    }
+
+    /// Explicit frontier for hardware operations not established by the
+    /// recovered ordinary/A-MPDU publication contract.
+    pub const fn request_hardware_medium(
+        &self,
+        request: WmmHardwareMediumRequest,
+    ) -> Result<(), WmmTxopUnsupported> {
+        match request {
+            WmmHardwareMediumRequest::RtsCtsProtection => Err(WmmTxopUnsupported::RtsCtsProtection),
+            WmmHardwareMediumRequest::MultiPpduTxop => {
+                Err(WmmTxopUnsupported::MultiPpduMediumOwnership)
+            }
+        }
     }
 
     pub fn contention_exponent(&self, queue: LegacyTxQueue) -> u8 {
@@ -613,6 +785,20 @@ mod tests {
         tx::{LegacyRate, TxCompletion, TxCookie},
         tx_ampdu::{HtAmpduTxCompletion, HtBlockAckRegisters, TxBlockAckBitmap},
     };
+    use open_esp_radio_ieee80211::wmm::parse_wmm_parameter_element;
+
+    const STANDARD_WMM: [u8; 26] = [
+        221, 24, 0x00, 0x50, 0xf2, 0x02, 1, 1, 0x85, 0, 0x03, 0xa4, 0, 0, 0x27, 0xa4, 0, 0, 0x42,
+        0x43, 94, 0, 0x72, 0x32, 47, 0,
+    ];
+
+    fn ipv4_with_dscp(dscp: u8) -> [u8; 16] {
+        let mut frame = [0_u8; 16];
+        frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+        frame[14] = 0x45;
+        frame[15] = dscp << 2;
+        frame
+    }
 
     #[test]
     fn sta_runtime_policy_owns_peer_and_vendor_edca_state() {
@@ -634,6 +820,98 @@ mod tests {
         assert_eq!(
             policy.select_backoff(LegacyTxQueue::BestEffort, u32::MAX),
             15
+        );
+    }
+
+    #[test]
+    fn negotiated_acm_downgrades_tid_and_queue_without_claiming_admission() {
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
+        policy
+            .install_wmm(parse_wmm_parameter_element(&STANDARD_WMM).unwrap())
+            .unwrap();
+
+        let voice = policy
+            .select_network_traffic(&ipv4_with_dscp(46), true)
+            .unwrap();
+        assert_eq!(voice.requested.access_category, WmmAccessCategory::Voice);
+        assert_eq!(voice.access_category, WmmAccessCategory::Video);
+        assert_eq!(voice.user_priority, WmmUserPriority::UP5);
+        assert_eq!(voice.queue(), LegacyTxQueue::Video);
+        assert_eq!(
+            voice.admission,
+            WmmAdmissionDisposition::Downgraded {
+                requested: WmmAccessCategory::Voice
+            }
+        );
+        assert_eq!(voice.txop_limit_units_32_us(), 94);
+
+        let non_qos = policy
+            .select_network_traffic(&ipv4_with_dscp(46), false)
+            .unwrap();
+        assert_eq!(non_qos.tid(), 0);
+        assert_eq!(non_qos.queue(), LegacyTxQueue::BestEffort);
+        assert_eq!(non_qos.admission, WmmAdmissionDisposition::NonQosBestEffort);
+    }
+
+    #[test]
+    fn all_mandatory_access_categories_fail_closed() {
+        let mut element = STANDARD_WMM;
+        for offset in [10, 14, 18, 22] {
+            element[offset] |= 0x10;
+        }
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
+        policy
+            .install_wmm(parse_wmm_parameter_element(&element).unwrap())
+            .unwrap();
+        assert_eq!(
+            policy.select_network_traffic(&ipv4_with_dscp(0), true),
+            Err(WifiTxTrafficError::AdmissionControlRequired {
+                requested: WmmAccessCategory::BestEffort
+            })
+        );
+    }
+
+    #[test]
+    fn negotiated_txop_is_bounded_and_medium_ownership_stays_unsupported() {
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
+        policy
+            .install_wmm(parse_wmm_parameter_element(&STANDARD_WMM).unwrap())
+            .unwrap();
+        let video = policy
+            .select_network_traffic(&ipv4_with_dscp(40), true)
+            .unwrap();
+        assert_eq!(
+            video.he_txop_limit(HeEdcaTxopLimit::DEFAULT),
+            Ok(HeEdcaTxopLimit::from_units_32_us(94).unwrap())
+        );
+        assert_eq!(
+            video.he_txop_limit(HeEdcaTxopLimit::from_units_32_us(47).unwrap()),
+            Ok(HeEdcaTxopLimit::from_units_32_us(47).unwrap())
+        );
+        assert_eq!(
+            video.require_ht_txop_support(),
+            Err(WmmTxopUnsupported::HtAggregateDurationBudget { units_32_us: 94 })
+        );
+        assert_eq!(
+            policy.request_hardware_medium(WmmHardwareMediumRequest::RtsCtsProtection),
+            Err(WmmTxopUnsupported::RtsCtsProtection)
+        );
+        assert_eq!(
+            policy.request_hardware_medium(WmmHardwareMediumRequest::MultiPpduTxop),
+            Err(WmmTxopUnsupported::MultiPpduMediumOwnership)
+        );
+
+        let mut wide = STANDARD_WMM;
+        wide[21] = 1;
+        policy
+            .install_wmm(parse_wmm_parameter_element(&wide).unwrap())
+            .unwrap();
+        let video = policy
+            .select_network_traffic(&ipv4_with_dscp(40), true)
+            .unwrap();
+        assert_eq!(
+            video.he_txop_limit(HeEdcaTxopLimit::DEFAULT),
+            Err(WmmTxopUnsupported::AdvertisedLimitTooWide { units_32_us: 350 })
         );
     }
 

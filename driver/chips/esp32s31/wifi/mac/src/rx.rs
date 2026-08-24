@@ -25,6 +25,7 @@ pub use open_esp_radio_esp32s31_wifi_dma::{
     },
 };
 
+use open_esp_radio_ieee80211::ccmp::CcmpHeader;
 use open_esp_radio_ieee80211::he::{
     He20MuSigBMimoStreamError, He20MuSigBMimoUsers, He20MuSigBNonMimoStreamError,
     He20MuSigBNonMimoUsers, HeMuSigBUser,
@@ -832,6 +833,7 @@ pub struct RxDataFrame {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RxCcmpDataFrame {
     pub mpdu: RxMpduFrame,
+    pub ccmp_header: CcmpHeader,
     pub ccmp_header_offset: usize,
     pub payload_offset: usize,
     pub payload_length: usize,
@@ -1304,16 +1306,22 @@ fn validate_ccmp_data(
     {
         return Err(RxError::Bounds);
     }
-    // `ccmp_decap` rejects a protected frame whose CCMP ExtIV bit is clear.
-    if mpdu
-        .get(ccmp_header_offset + 3)
-        .is_none_or(|value| value & 0x20 == 0)
-    {
-        return Err(RxError::Unsupported);
-    }
+    let ccmp_header_end = ccmp_header_offset
+        .checked_add(CCMP_HEADER_SIZE)
+        .ok_or(RxError::Bounds)?;
+    let ccmp_header_bytes: [u8; CCMP_HEADER_SIZE] = mpdu
+        .get(ccmp_header_offset..ccmp_header_end)
+        .ok_or(RxError::Bounds)?
+        .try_into()
+        .map_err(|_| RxError::Bounds)?;
+    // Do not rely on the decrypt engine to define public-header admission.
+    // ExtIV, the reserved octet and reserved Key ID bits are authenticated AAD
+    // inputs but remain software protocol invariants.
+    let ccmp_header = CcmpHeader::parse(ccmp_header_bytes).map_err(|_| RxError::Unsupported)?;
 
     Ok(RxCcmpDataFrame {
         mpdu: frame,
+        ccmp_header,
         ccmp_header_offset,
         payload_offset,
         payload_length: mic_offset - payload_offset,

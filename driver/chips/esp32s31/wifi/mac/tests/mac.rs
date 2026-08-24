@@ -3089,6 +3089,8 @@ fn ccmp_data_rx_reproduces_the_oracle_header_and_mic_adjustment() {
     .unwrap();
 
     assert_eq!(frame.mpdu.length, MPDU_LENGTH);
+    assert_eq!(frame.ccmp_header.packet_number().value(), 3);
+    assert_eq!(frame.ccmp_header.key_id().value(), 0);
     assert_eq!(frame.ccmp_header_offset, HEADER_LENGTH);
     assert_eq!(frame.payload_offset, HEADER_LENGTH + 8);
     assert_eq!(frame.payload_length, LLC_LENGTH + PAYLOAD_LENGTH);
@@ -3099,6 +3101,49 @@ fn ccmp_data_rx_reproduces_the_oracle_header_and_mic_adjustment() {
         &output[frame.payload_offset..frame.payload_offset + LLC_LENGTH],
         &[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x06]
     );
+}
+
+#[test]
+fn ccmp_data_rx_rejects_reserved_header_encodings() {
+    const HEADER_LENGTH: usize = 24;
+    const MPDU_LENGTH: usize = HEADER_LENGTH + 8 + 8 + 8;
+    const SIGNAL_LENGTH: usize = MPDU_LENGTH + 4;
+    const TAIL_OFFSET: usize = 0x38;
+    const FRAME_OFFSET: usize = TAIL_OFFSET + 8;
+    const RECEIVED: usize = FRAME_OFFSET + SIGNAL_LENGTH;
+
+    for header in [
+        [1, 0, 1, 0x20, 0, 0, 0, 0],
+        [1, 0, 0, 0, 0, 0, 0, 0],
+        [1, 0, 0, 0x21, 0, 0, 0, 0],
+    ] {
+        let mut storage = [0_u8; 128];
+        storage[TAIL_OFFSET..TAIL_OFFSET + 4].copy_from_slice(
+            &(((SIGNAL_LENGTH + 4) as u32) << 16 | SIGNAL_LENGTH as u32).to_le_bytes(),
+        );
+        storage[FRAME_OFFSET..FRAME_OFFSET + 2].copy_from_slice(&0x4008_u16.to_le_bytes());
+        storage[FRAME_OFFSET + HEADER_LENGTH..FRAME_OFFSET + HEADER_LENGTH + 8]
+            .copy_from_slice(&header);
+        let segment = RxSegment {
+            descriptor_address: 0x2f00_4000,
+            descriptor_word0: 128 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+            buffer: &storage,
+            next_descriptor_address: 0,
+        };
+        let mut output = [0_u8; 80];
+        assert_eq!(
+            extract_ccmp_data(
+                &[segment],
+                RxIngressConfig {
+                    ring_entry_limit: 1,
+                    csi_config: 0,
+                    flags: INGRESS_STRICT_RXEND | INGRESS_STRICT_DUMP,
+                },
+                &mut output,
+            ),
+            Err(RxError::Unsupported)
+        );
+    }
 }
 
 #[test]

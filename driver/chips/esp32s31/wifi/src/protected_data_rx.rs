@@ -8,6 +8,7 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
     RxError, RxIngressConfig, RxPhyInfo, RxSegment, decode_normalized_rx_metadata, view_ccmp_data,
     view_normalized_rx_frame,
 };
+use open_esp_radio_ieee80211::ccmp::CcmpHeader;
 use open_esp_radio_ieee80211::data::{
     DataDecapError, DataDecapsulation, DataInterfaceRole, decapsulate_data_frames,
 };
@@ -29,6 +30,7 @@ pub struct ProtectedDataRxView<'frame> {
     pub sequence_control: u16,
     pub tid: Option<u8>,
     pub retry: bool,
+    pub ccmp_header: CcmpHeader,
     payload_offset: usize,
     payload_length: usize,
     metadata: MacRxMetadata<RxPhyInfo>,
@@ -65,6 +67,7 @@ pub fn view_protected_data(
         sequence_control,
         tid,
         retry: frame_control & RETRY != 0,
+        ccmp_header: data.frame.ccmp_header,
         payload_offset: data.frame.payload_offset,
         payload_length: data.frame.payload_length,
         metadata,

@@ -2,12 +2,15 @@
 
 Source-only, `no_std` Embassy radio driver and verification workspace for
 Espressif chips. The current implementation target is ESP32-S31 Wi-Fi STA,
-bounded WPA2 AP, same-channel STA+AP and standalone normalized monitor. The
-source tree also contains typed ESP-NOW, legacy Wi-Fi power-save, HE20 and
-advanced-rate boundaries; their exact implemented and fail-closed limits are
-documented in [`driver/README.md`](driver/README.md) and are not qualification
-claims. ESP32-C5, Bluetooth/BLE, IEEE 802.15.4 and coexistence remain future
-work, not placeholder public APIs. The normal workspace and HIL
+bounded AP, same-channel STA+AP and standalone normalized monitor, with exact
+Open or WPA2-Personal security selection on the implemented STA/AP source
+paths. The source tree also contains typed ESP-NOW, legacy Wi-Fi power-save,
+TWT, monitor hopping/injection admission, HE20 and advanced-rate boundaries;
+their exact implemented and deliberate fail-closed limits are documented in
+[`driver/README.md`](driver/README.md). These source capabilities are not
+qualification or HIL claims. ESP32-C5, Bluetooth/BLE, IEEE 802.15.4 and
+coexistence remain future work, not placeholder public APIs. The normal
+workspace and HIL
 do not link `esp-wifi-sys`, vendor Wi-Fi
 archives, or a radio/Wi-Fi ROM ABI. The isolated vendor-oracle workspace is the
 only opt-in exception.

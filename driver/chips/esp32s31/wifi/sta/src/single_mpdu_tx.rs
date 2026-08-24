@@ -809,9 +809,15 @@ where
             }
             .into());
         }
-        let prepared =
-            protocol.prepare_v1_tx(peer, self.sequences.non_qos_mut(), random_value, payload)?;
-        start_esp_now_v1_plaintext(
+        // Build against a copied sequence frontier. The real shared
+        // management/non-QoS counter advances only after the backend creates
+        // a live ordinary transaction. Ordinary TX has no fallible step after
+        // TxDmaPublication::commit changes ownership and rings the infallible
+        // doorbell, so `Ok` is the exact publication edge; PHY, buffer, queue
+        // and LR-frontier rejection cannot burn a sequence number.
+        let mut next_sequence = *self.sequences.non_qos_mut();
+        let prepared = protocol.prepare_v1_tx(peer, &mut next_sequence, random_value, payload)?;
+        let result = start_esp_now_v1_plaintext(
             &mut self.ordinary,
             hardware,
             prepared,
@@ -819,7 +825,11 @@ where
             active_station,
             config,
         )
-        .map_err(Into::into)
+        .map_err(Into::into);
+        if result.is_ok() {
+            *self.sequences.non_qos_mut() = next_sequence;
+        }
+        result
     }
 
     /// Resolve and publish one plaintext v2 Action MPDU through the same
@@ -851,9 +861,9 @@ where
             }
             .into());
         }
-        let prepared =
-            protocol.prepare_v2_tx(peer, self.sequences.non_qos_mut(), random_value, payload)?;
-        start_esp_now_v2_plaintext(
+        let mut next_sequence = *self.sequences.non_qos_mut();
+        let prepared = protocol.prepare_v2_tx(peer, &mut next_sequence, random_value, payload)?;
+        let result = start_esp_now_v2_plaintext(
             &mut self.ordinary,
             hardware,
             prepared,
@@ -861,7 +871,11 @@ where
             active_station,
             config,
         )
-        .map_err(Into::into)
+        .map_err(Into::into);
+        if result.is_ok() {
+            *self.sequences.non_qos_mut() = next_sequence;
+        }
+        result
     }
 
     /// Encode and publish one directed AP reachability Probe Request.
@@ -1049,7 +1063,14 @@ mod tests {
         tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxSlot, TxSlotState},
         tx_runtime::VENDOR_SHORT_RETRY_LIMIT,
     };
-    use open_esp_radio_wifi_softmac::MacTxResult;
+    use open_esp_radio_ieee80211::{
+        channel::WifiChannel,
+        esp_now::{EspNowDestination, EspNowRandomValue, EspNowUnicastAddress},
+    };
+    use open_esp_radio_wifi_softmac::{
+        EspNowConfig, EspNowPeerConfig, EspNowPhyMode, EspNowProtocol, MacTxResult,
+        interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},
+    };
 
     use super::*;
 
@@ -1226,6 +1247,34 @@ mod tests {
         )
     }
 
+    fn esp_now_protocol(
+        phy_mode: EspNowPhyMode,
+    ) -> (
+        EspNowProtocol<1>,
+        open_esp_radio_wifi_softmac::EspNowPeerId,
+        BoundVirtualInterface,
+        WifiChannel,
+    ) {
+        let station = BoundVirtualInterface::new(
+            VirtualInterface::new(VifId::PRIMARY, VifRole::Station, [2, 3, 4, 5, 6, 7]),
+            ChannelContextId::PRIMARY,
+        );
+        let channel = WifiChannel::mhz20(1).unwrap();
+        let mut protocol = EspNowProtocol::new(EspNowConfig::new(station, channel).unwrap());
+        let peer = protocol
+            .add_peer(
+                EspNowPeerConfig::plaintext(
+                    EspNowDestination::Unicast(
+                        EspNowUnicastAddress::new([0x30, 0x31, 0x32, 0x33, 0x34, 0x35]).unwrap(),
+                    ),
+                    channel,
+                )
+                .with_phy_mode(phy_mode),
+            )
+            .unwrap();
+        (protocol, peer, station, channel)
+    }
+
     #[test]
     fn completion_releases_the_slot_and_network_lease_boundary() {
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
@@ -1261,6 +1310,62 @@ mod tests {
         ));
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
         assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
+    }
+
+    #[test]
+    fn rejected_lr_frontier_does_not_consume_the_shared_sequence() {
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut hardware = Hardware::default();
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+        let (protocol, peer, station, channel) = esp_now_protocol(EspNowPhyMode::LongRange);
+        let config = Esp32s31EspNowTxConfig::new(4, 250_000).unwrap();
+
+        let error = tx
+            .start_esp_now_v1_plaintext(
+                &mut hardware,
+                &protocol,
+                peer,
+                EspNowRandomValue::new([1, 2, 3, 4]),
+                &[9, 8, 7],
+                channel,
+                station,
+                config,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            SingleMpduEspNowTxError::Backend(Esp32s31EspNowTxError::LongRangeUnsupported(_))
+        ));
+        assert_eq!(tx.sequences.peek_non_qos(), 7);
+        assert_eq!(hardware.publications, 0);
+        assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
+    }
+
+    #[test]
+    fn successful_esp_now_publication_commits_one_sequence_exactly_once() {
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+        let (protocol, peer, station, channel) = esp_now_protocol(EspNowPhyMode::LegacyDsss1M);
+
+        assert_eq!(
+            tx.start_esp_now_v1_plaintext(
+                &mut hardware,
+                &protocol,
+                peer,
+                EspNowRandomValue::new([1, 2, 3, 4]),
+                &[9, 8, 7],
+                channel,
+                station,
+                Esp32s31EspNowTxConfig::new(4, 250_000).unwrap(),
+            ),
+            Ok(WifiTxProgress::Pending)
+        );
+        assert_eq!(tx.sequences.peek_non_qos(), 8);
+        assert_eq!(hardware.publications, 1);
     }
 
     #[test]

@@ -206,8 +206,14 @@ where
             }
             .into());
         }
-        let prepared = protocol.prepare_v1_tx(peer, sequence, random_value, payload)?;
-        start_esp_now_v1_plaintext(
+        // Keep sequence publication transactional with ordinary-TX
+        // ownership. The ordinary owner returns `Ok` only after its DMA
+        // publication commit and infallible queue doorbell; a fail-closed PHY
+        // or any pre-publication queue rejection returns the caller's exact
+        // sequence frontier unchanged.
+        let mut next_sequence = *sequence;
+        let prepared = protocol.prepare_v1_tx(peer, &mut next_sequence, random_value, payload)?;
+        let result = start_esp_now_v1_plaintext(
             &mut self.ordinary,
             hardware,
             prepared,
@@ -215,7 +221,11 @@ where
             active_station,
             config,
         )
-        .map_err(Into::into)
+        .map_err(Into::into);
+        if result.is_ok() {
+            *sequence = next_sequence;
+        }
+        result
     }
 
     /// Resolve and publish one standalone plaintext ESP-NOW v2 Action MPDU.
@@ -247,8 +257,9 @@ where
             }
             .into());
         }
-        let prepared = protocol.prepare_v2_tx(peer, sequence, random_value, payload)?;
-        start_esp_now_v2_plaintext(
+        let mut next_sequence = *sequence;
+        let prepared = protocol.prepare_v2_tx(peer, &mut next_sequence, random_value, payload)?;
+        let result = start_esp_now_v2_plaintext(
             &mut self.ordinary,
             hardware,
             prepared,
@@ -256,7 +267,11 @@ where
             active_station,
             config,
         )
-        .map_err(Into::into)
+        .map_err(Into::into);
+        if result.is_ok() {
+            *sequence = next_sequence;
+        }
+        result
     }
 
     pub fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {

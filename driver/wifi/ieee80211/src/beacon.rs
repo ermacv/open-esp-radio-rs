@@ -391,9 +391,7 @@ pub fn write_tim_partial_virtual_bitmap(
     }
 
     let desired_end = tim_offset + 2 + desired_body_len;
-    if desired_end > current_end {
-        storage.copy_within(current_end..frame_len, desired_end);
-    } else if desired_end < current_end {
+    if desired_end != current_end {
         storage.copy_within(current_end..frame_len, desired_end);
     }
 

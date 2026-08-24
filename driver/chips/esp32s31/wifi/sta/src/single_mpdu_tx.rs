@@ -722,6 +722,7 @@ where
     /// connected owner that supplied this transmitter. The portable protocol
     /// keeps peer and requested-PHY policy typed; the chip backend remains the
     /// only authority which may admit that PHY mode.
+    #[allow(clippy::too_many_arguments)]
     pub fn start_esp_now_v1_plaintext<H: TxHardware, const PEERS: usize>(
         &mut self,
         hardware: &mut H,

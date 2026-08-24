@@ -698,10 +698,7 @@ where
             }
             Err(error) => {
                 self.prepared_buffered_release = Some(prepared);
-                let rollback = self.rollback_prepared_buffered_release(control);
-                if let Err(rollback) = rollback {
-                    return Err(rollback);
-                }
+                self.rollback_prepared_buffered_release(control)?;
                 Err(Esp32s31AccessPointDatapathError::Control(error))
             }
         }
@@ -930,10 +927,7 @@ where
             }
             Err(error) => {
                 self.prepared_group_release = Some(prepared);
-                let rollback = self.rollback_prepared_group_release(control);
-                if let Err(rollback) = rollback {
-                    return Err(rollback);
-                }
+                self.rollback_prepared_group_release(control)?;
                 Err(Esp32s31AccessPointDatapathError::Control(error))
             }
         }

@@ -57,11 +57,13 @@ impl Esp32s31StaJoinStation {
         }
     }
 
+    #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
     pub const fn with_listen_interval(mut self, listen_interval: StationListenInterval) -> Self {
         self.listen_interval = listen_interval.get();
         self
     }
 
+    #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
     pub const fn with_security(mut self, security: WifiSecurityMode) -> Self {
         self.security = security;
         self

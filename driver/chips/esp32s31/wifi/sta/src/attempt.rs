@@ -199,6 +199,9 @@ impl Esp32s31StaAttemptSecurity<'_> {
 }
 
 /// Hardware key ownership created only by a completed WPA2 attempt.
+// Keep the installed slots and replay epoch inline: this no-alloc owner must
+// return every hardware capability by value when the connected role ends.
+#[allow(clippy::large_enum_variant)]
 pub enum Esp32s31StaInstalledSecurity {
     Open,
     Wpa2Personal {

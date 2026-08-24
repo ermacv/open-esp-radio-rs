@@ -165,8 +165,8 @@ impl IndividualTwtControl {
     };
 
     const fn encode(self) -> u8 {
-        (self.responder_power_save as u8) * CONTROL_RESPONDER_PM
-            | (self.information_frames_disabled as u8) * CONTROL_INFORMATION_DISABLED
+        ((self.responder_power_save as u8) * CONTROL_RESPONDER_PM)
+            | ((self.information_frames_disabled as u8) * CONTROL_INFORMATION_DISABLED)
             | match self.wake_duration_unit {
                 TwtWakeDurationUnit::Micros256 => 0,
                 TwtWakeDurationUnit::Tu1024 => CONTROL_WAKE_DURATION_UNIT,
@@ -249,14 +249,8 @@ impl IndividualTwtParameterSet {
             return Err(TwtWireError::UnsupportedTwtChannel(self.twt_channel));
         }
         if self.setup_command != IndividualTwtSetupCommand::Reject {
-            let interval = match self.wake_interval_micros() {
-                Ok(interval) => interval,
-                Err(error) => return Err(error),
-            };
-            let duration = match self.wake_duration_micros(control) {
-                Ok(duration) => duration,
-                Err(error) => return Err(error),
-            };
+            let interval = self.wake_interval_micros()?;
+            let duration = self.wake_duration_micros(control)?;
             if duration as u64 > interval {
                 return Err(TwtWireError::WakeDurationExceedsInterval);
             }
@@ -265,17 +259,17 @@ impl IndividualTwtParameterSet {
     }
 
     const fn encode_request_type(self) -> u16 {
-        (self.requesting_sta as u16) * REQUEST_REQUESTING_STA
-            | (self.setup_command as u16) << 1
-            | (self.trigger as u16) * REQUEST_TRIGGER
-            | (self.implicit as u16) * REQUEST_IMPLICIT
+        ((self.requesting_sta as u16) * REQUEST_REQUESTING_STA)
+            | ((self.setup_command as u16) << 1)
+            | ((self.trigger as u16) * REQUEST_TRIGGER)
+            | ((self.implicit as u16) * REQUEST_IMPLICIT)
             | match self.flow_type {
                 IndividualTwtFlowType::Announced => 0,
                 IndividualTwtFlowType::Unannounced => REQUEST_FLOW_TYPE,
             }
-            | (self.flow_id.get() as u16) << 7
-            | (self.wake_interval_exponent as u16) << 10
-            | (self.protection as u16) * REQUEST_PROTECTION
+            | ((self.flow_id.get() as u16) << 7)
+            | ((self.wake_interval_exponent as u16) << 10)
+            | ((self.protection as u16) * REQUEST_PROTECTION)
     }
 
     fn parse(request_type: u16, bytes: &[u8]) -> Result<Self, TwtWireError> {
@@ -416,7 +410,7 @@ impl IndividualTwtTeardown {
         let body = [
             TWT_ACTION_CATEGORY,
             TWT_TEARDOWN_ACTION,
-            self.flow_id.get() | (self.all_flows as u8) * TEARDOWN_ALL,
+            self.flow_id.get() | ((self.all_flows as u8) * TEARDOWN_ALL),
         ];
         output[..INDIVIDUAL_TWT_TEARDOWN_BODY_LEN].copy_from_slice(&body);
         Ok(INDIVIDUAL_TWT_TEARDOWN_BODY_LEN)

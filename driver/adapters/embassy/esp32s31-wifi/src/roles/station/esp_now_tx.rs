@@ -114,6 +114,9 @@ pub(crate) struct EspNowV2TxLease {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// Both variants remain inline so the bounded no-alloc mailbox can move a
+// complete request by value without another lifetime or storage owner.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum EspNowQueuedRequest {
     V1(EspNowOwnedV1Tx),
     V2(EspNowV2TxLease),
@@ -1288,6 +1291,7 @@ where
             >>::required_before_stop(&self.inner)
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a {
         async move {
             if self.active.is_some()

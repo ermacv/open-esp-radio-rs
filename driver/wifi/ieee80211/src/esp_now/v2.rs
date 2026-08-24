@@ -390,8 +390,7 @@ const fn element_count_for_payload(payload_length: usize) -> usize {
     if payload_length == 0 {
         1
     } else {
-        (payload_length + ESP_NOW_V2_MAX_ELEMENT_PAYLOAD_LEN - 1)
-            / ESP_NOW_V2_MAX_ELEMENT_PAYLOAD_LEN
+        payload_length.div_ceil(ESP_NOW_V2_MAX_ELEMENT_PAYLOAD_LEN)
     }
 }
 

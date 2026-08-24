@@ -126,8 +126,10 @@ where
 
     /// Discard reorder/mailbox ownership retained by the protocol processor.
     pub fn shutdown_discard(&mut self) -> ConnectedRxProtocolShutdown {
-        let mut shutdown = ConnectedRxProtocolShutdown::default();
-        shutdown.esp_now_duplicate_entries = self.dispatcher.stop_esp_now_rx_epoch();
+        let mut shutdown = ConnectedRxProtocolShutdown {
+            esp_now_duplicate_entries: self.dispatcher.stop_esp_now_rx_epoch(),
+            ..ConnectedRxProtocolShutdown::default()
+        };
         if let Some(commands) = &self.reorder_commands {
             while try_receive_rx_reorder_command(commands).is_some() {
                 shutdown.reorder_commands = shutdown.reorder_commands.saturating_add(1);

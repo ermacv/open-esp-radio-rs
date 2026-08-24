@@ -163,7 +163,9 @@ impl RadioRegisters {
         let programmed_target_bits_35_10 =
             ((wake_tsf >> 10) as u32) & super::generated::StationTbttTargetBits35To10::MAX;
         debug_assert!(
-            programmed_target_bits_35_10 >= super::generated::StationTbttTargetBits35To10::MIN
+            (super::generated::StationTbttTargetBits35To10::MIN
+                ..=super::generated::StationTbttTargetBits35To10::MAX)
+                .contains(&programmed_target_bits_35_10)
         );
         super::generated::publish_station_tbtt_target(
             target,

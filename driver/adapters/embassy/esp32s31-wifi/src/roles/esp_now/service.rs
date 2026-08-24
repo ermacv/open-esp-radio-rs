@@ -970,7 +970,7 @@ where
         }
         self.interrupts().mac_runtime().notify_rx_handoff();
         self.finish_active()
-            .map_err(|error| Esp32s31StandaloneEspNowOffChannelRunError::Runtime(error))?;
+            .map_err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime)?;
         self.leave_quarantine_at_home();
         if stop_pending {
             Ok(OffChannelRequestOutcome::Stop)

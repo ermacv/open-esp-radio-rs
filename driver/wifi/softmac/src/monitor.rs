@@ -70,6 +70,10 @@ impl MonitorChannelSequence {
         self.length
     }
 
+    pub const fn is_empty(self) -> bool {
+        self.length == 0
+    }
+
     pub const fn first(self) -> WifiChannel {
         self.channels[0]
     }

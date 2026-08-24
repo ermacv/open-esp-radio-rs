@@ -425,14 +425,14 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     /// queued. A PS-Poll TX completion must not treat its own already-arrived
     /// response as unrelated traffic and force an AP-visible PM=0 transition.
     pub fn non_power_save_delivery_pending(&self) -> bool {
-        self.terminal.len() != 0
-            || self.security.len() != 0
-            || self.receiver.len() != 0
-            || self.he_observation.len() != 0
+        !self.terminal.is_empty()
+            || !self.security.is_empty()
+            || !self.receiver.is_empty()
+            || !self.he_observation.is_empty()
     }
 
     pub fn security_pending(&self) -> bool {
-        self.security.len() != 0
+        !self.security.is_empty()
     }
 
     /// Whether this mailbox epoch has lost any semantic control event.

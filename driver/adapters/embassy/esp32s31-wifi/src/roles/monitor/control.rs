@@ -205,6 +205,10 @@ impl<'resources, M: RawMutex> Esp32s31MonitorCommandReceiver<'resources, M> {
         }
     }
 
+    pub(crate) fn stop_requested(&self) -> bool {
+        self.resources.stop_requested.load(Ordering::Acquire)
+    }
+
     pub(crate) fn complete(&mut self, completion: Esp32s31MonitorCompletion) {
         if self.completion_published {
             return;

@@ -21,6 +21,8 @@ pub mod esp_now_security;
 pub mod interface;
 pub mod monitor;
 
+pub use open_esp_radio_ieee80211::channel::WifiChannel;
+
 pub use configuration::{
     WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
     WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
@@ -47,8 +49,9 @@ pub use esp_now_security::{
     esp_now_encrypted_v1_codec_status,
 };
 pub use monitor::{
-    MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType, MonitorFrameTypeMask,
-    MonitorPublishOutcome, MonitorSink,
+    MONITOR_CHANNEL_SEQUENCE_CAPACITY, MonitorChannelPolicy, MonitorChannelSequence,
+    MonitorChannelSequenceError, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
+    MonitorFrameTypeMask, MonitorPublishOutcome, MonitorSink,
 };
 
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;

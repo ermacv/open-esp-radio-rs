@@ -18,8 +18,8 @@ pub use open_esp_radio_wifi_ap::{
 use open_esp_radio_wifi_softmac::{
     ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowConfigError, EspNowPeerConfig, EspNowPeerId,
     EspNowPeerTableError, EspNowPhyMode, EspNowProtocol, MacServiceCapabilities,
-    WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiStandaloneEspNowPlan,
-    WifiStationConfig,
+    MonitorChannelPolicy, MonitorChannelSequence, WifiAccessPointConfig, WifiConfig,
+    WifiConfigError, WifiStandaloneEspNowPlan, WifiStationConfig,
 };
 pub use open_esp_radio_wifi_sta::request::{
     StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
@@ -602,7 +602,7 @@ impl Default for MonitorCapturePolicy {
 
 /// Complete value-only request for one standalone monitor epoch.
 pub struct MonitorRequest {
-    channel: WifiChannel,
+    channels: MonitorChannelPolicy,
     monitor: WifiMonitorConfig,
     capture: MonitorCapturePolicy,
 }
@@ -610,7 +610,16 @@ pub struct MonitorRequest {
 impl MonitorRequest {
     pub const fn new(channel: WifiChannel, monitor: WifiMonitorConfig) -> Self {
         Self {
-            channel,
+            channels: MonitorChannelPolicy::fixed(channel),
+            monitor,
+            capture: MonitorCapturePolicy::complete_frames(),
+        }
+    }
+
+    /// Capture repeatedly across one checked, ordered channel cycle.
+    pub const fn hopping(sequence: MonitorChannelSequence, monitor: WifiMonitorConfig) -> Self {
+        Self {
+            channels: MonitorChannelPolicy::hopping(sequence),
             monitor,
             capture: MonitorCapturePolicy::complete_frames(),
         }
@@ -622,7 +631,11 @@ impl MonitorRequest {
     }
 
     pub const fn channel(&self) -> WifiChannel {
-        self.channel
+        self.channels.initial_channel()
+    }
+
+    pub const fn channel_policy(&self) -> MonitorChannelPolicy {
+        self.channels
     }
 
     pub const fn monitor_config(&self) -> WifiMonitorConfig {
@@ -638,7 +651,7 @@ impl fmt::Debug for MonitorRequest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("MonitorRequest")
-            .field("channel", &self.channel)
+            .field("channels", &self.channels)
             .field("monitor", &self.monitor)
             .field("capture", &self.capture)
             .finish()

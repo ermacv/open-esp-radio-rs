@@ -5,10 +5,140 @@
 //! borrow. Queue saturation is an ordinary observation loss and must never
 //! backpressure the primary radio owner.
 
+use core::{fmt, num::NonZeroU16};
+
+use open_esp_radio_ieee80211::channel::WifiChannel;
+
 use crate::{
     MacRxEvidence, MacRxMetadata,
     interface::{ChannelContextId, MonitorTapPoint},
 };
+
+/// Maximum number of ordered 2.4-GHz channels in one monitor hopping cycle.
+///
+/// This is a bounded product policy, not a claim that fourteen entries exhaust
+/// every valid 20/40-MHz channel geometry. Each retained entry carries the
+/// complete validated [`WifiChannel`], including its width relationship.
+pub const MONITOR_CHANNEL_SEQUENCE_CAPACITY: usize = 14;
+
+/// Allocation-free ordered channel cycle with one nonzero dwell per channel.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MonitorChannelSequence {
+    channels: [WifiChannel; MONITOR_CHANNEL_SEQUENCE_CAPACITY],
+    length: u8,
+    dwell_millis: NonZeroU16,
+}
+
+impl MonitorChannelSequence {
+    pub fn new(
+        channels: &[WifiChannel],
+        dwell_millis: NonZeroU16,
+    ) -> Result<Self, MonitorChannelSequenceError> {
+        let Some(&first) = channels.first() else {
+            return Err(MonitorChannelSequenceError::Empty);
+        };
+        if channels.len() > MONITOR_CHANNEL_SEQUENCE_CAPACITY {
+            return Err(MonitorChannelSequenceError::TooMany {
+                requested: channels.len(),
+                capacity: MONITOR_CHANNEL_SEQUENCE_CAPACITY,
+            });
+        }
+        let mut stored = [first; MONITOR_CHANNEL_SEQUENCE_CAPACITY];
+        let mut length = 0_usize;
+        for &channel in channels {
+            if stored[..length].contains(&channel) {
+                return Err(MonitorChannelSequenceError::Duplicate(channel));
+            }
+            stored[length] = channel;
+            length += 1;
+        }
+        Ok(Self {
+            channels: stored,
+            length: length as u8,
+            dwell_millis,
+        })
+    }
+
+    pub fn channels(&self) -> &[WifiChannel] {
+        &self.channels[..usize::from(self.length)]
+    }
+
+    pub const fn len(self) -> u8 {
+        self.length
+    }
+
+    pub const fn first(self) -> WifiChannel {
+        self.channels[0]
+    }
+
+    pub const fn dwell(self) -> NonZeroU16 {
+        self.dwell_millis
+    }
+
+    pub const fn dwell_millis(self) -> u16 {
+        self.dwell_millis.get()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MonitorChannelSequenceError {
+    Empty,
+    TooMany { requested: usize, capacity: usize },
+    Duplicate(WifiChannel),
+}
+
+impl fmt::Display for MonitorChannelSequenceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => formatter.write_str("a monitor hopping cycle cannot be empty"),
+            Self::TooMany {
+                requested,
+                capacity,
+            } => write!(
+                formatter,
+                "monitor hopping requested {requested} channels but capacity is {capacity}"
+            ),
+            Self::Duplicate(channel) => {
+                write!(formatter, "monitor hopping repeats channel {channel:?}")
+            }
+        }
+    }
+}
+
+impl core::error::Error for MonitorChannelSequenceError {}
+
+/// Physical-channel policy for one exclusive standalone monitor role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MonitorChannelPolicy {
+    /// Preserve the historical behavior: capture on one channel until stop.
+    Fixed(WifiChannel),
+    /// Repeatedly traverse one bounded ordered cycle.
+    Hopping(MonitorChannelSequence),
+}
+
+impl MonitorChannelPolicy {
+    pub const fn fixed(channel: WifiChannel) -> Self {
+        Self::Fixed(channel)
+    }
+
+    pub const fn hopping(sequence: MonitorChannelSequence) -> Self {
+        Self::Hopping(sequence)
+    }
+
+    pub const fn initial_channel(self) -> WifiChannel {
+        match self {
+            Self::Fixed(channel) => channel,
+            Self::Hopping(sequence) => sequence.first(),
+        }
+    }
+
+    pub const fn hopping_sequence(self) -> Option<MonitorChannelSequence> {
+        match self {
+            Self::Fixed(_) => None,
+            Self::Hopping(sequence) => Some(sequence),
+        }
+    }
+}
 
 /// IEEE 802.11 frame class used by the bounded monitor filter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -205,6 +335,13 @@ pub enum MonitorPublishOutcome {
 /// can wake a consumer after copying into bounded storage, but the radio owner
 /// never awaits that consumer and continues recycling its RX descriptor.
 pub trait MonitorSink<Rate> {
+    /// Start a fresh physical-channel capture epoch.
+    ///
+    /// The default preserves source-only sinks which do not retain channel
+    /// metadata. Queue-backed product sinks override this edge and stamp the
+    /// exact channel into every independently retained frame.
+    fn begin_channel_epoch(&mut self, _channel: WifiChannel) {}
+
     fn try_publish(&mut self, frame: MonitorFrame<'_, Rate>) -> MonitorPublishOutcome;
 }
 

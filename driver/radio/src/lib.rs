@@ -28,7 +28,8 @@ pub use open_esp_radio_ieee80211::{
 };
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_wifi_softmac::{
-    MacRxEvidence, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
+    MONITOR_CHANNEL_SEQUENCE_CAPACITY, MacRxEvidence, MonitorChannelPolicy, MonitorChannelSequence,
+    MonitorChannelSequenceError, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
     MonitorFrameTypeMask, MonitorPublishOutcome, MonitorSink,
 };
 #[cfg(feature = "wifi")]

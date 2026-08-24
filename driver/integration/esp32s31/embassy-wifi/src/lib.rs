@@ -110,9 +110,10 @@ pub use esp_now::{
     prepare_esp32s31_standalone_esp_now,
 };
 pub use monitor::{
-    ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorBasebandFormat,
-    Esp32s31MonitorCaptureStatistics, Esp32s31MonitorFrame, Esp32s31MonitorFrames,
-    Esp32s31MonitorPhyInfo,
+    ESP32S31_MONITOR_CAPTURE_CAPACITY, MONITOR_CHANNEL_SEQUENCE_CAPACITY,
+    Esp32s31MonitorBasebandFormat, Esp32s31MonitorCaptureStatistics, Esp32s31MonitorFrame,
+    Esp32s31MonitorFrames, Esp32s31MonitorPhyInfo, MonitorCapturePolicy, MonitorChannelPolicy,
+    MonitorChannelSequence, MonitorChannelSequenceError, MonitorRequest,
 };
 #[cfg(feature = "diagnostics")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{

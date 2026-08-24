@@ -7,6 +7,10 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+pub use open_esp_radio::{
+    MONITOR_CHANNEL_SEQUENCE_CAPACITY, MonitorCapturePolicy, MonitorChannelPolicy,
+    MonitorChannelSequence, MonitorChannelSequenceError, MonitorRequest,
+};
 use open_esp_radio::RadioSubsystemGeneration;
 use open_esp_radio_esp32s31_wifi_embassy::roles::monitor::{
     Esp32s31MonitorControlResources, Esp32s31MonitorInterrupts, Esp32s31MonitorMemory,
@@ -23,7 +27,7 @@ use open_esp_radio_wifi_embassy::{
     MonitorCaptureSink,
 };
 use open_esp_radio_wifi_softmac::{
-    MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink,
+    MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink, WifiChannel,
 };
 use static_cell::{ConstStaticCell, StaticCell};
 
@@ -144,6 +148,10 @@ impl CaptureSink {
 }
 
 impl MonitorSink<RxPhyInfo> for CaptureSink {
+    fn begin_channel_epoch(&mut self, channel: WifiChannel) {
+        self.inner.begin_channel_epoch(channel);
+    }
+
     fn try_publish(&mut self, frame: MonitorFrame<'_, RxPhyInfo>) -> MonitorPublishOutcome {
         let outcome = self.inner.try_publish(frame);
         let counter = match outcome {

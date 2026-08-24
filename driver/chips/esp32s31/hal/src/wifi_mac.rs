@@ -252,6 +252,17 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac().read_noise_floor_dbm()
     }
 
+    /// Read the reviewed ROM low-rate enable status while the runtime MAC
+    /// register authority is exclusively borrowed.
+    pub fn phy_low_rate_enabled(&self) -> bool {
+        self.pac().phy_low_rate_enabled()
+    }
+
+    /// Apply the complete three-RMW ROM low-rate gate transaction.
+    pub fn configure_phy_low_rate(&mut self, enabled: bool) {
+        self.pac_mut().configure_phy_low_rate(enabled);
+    }
+
     /// Begin the reviewed no-power-save MAC quiesce sequence before PHY
     /// retuning. Sequencing belongs to the HAL; the PAC method is only the
     /// register-local RMW transaction.

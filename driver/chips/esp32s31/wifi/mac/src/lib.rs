@@ -36,7 +36,7 @@ pub mod he;
 pub mod init;
 mod interface_address;
 pub mod irq;
-mod low_rate;
+pub mod low_rate;
 pub mod rate_control;
 pub mod rate_rx;
 pub mod rate_schedule;

@@ -69,6 +69,15 @@ pub use super::esp_now_mailbox::{
     EspNowRxMailboxResources, EspNowRxMailboxShutdown, EspNowRxPublishOutcome, EspNowRxPublisher,
     EspNowRxReceiver,
 };
+pub use super::esp_now_tx::{
+    Esp32s31EspNowConnectedControl, Esp32s31EspNowConnectedControlConfigError,
+    Esp32s31EspNowConnectedControlError, Esp32s31EspNowConnectedControlShutdown,
+    Esp32s31EspNowConnectedControlStartFailure, Esp32s31EspNowTxBinding, EspNowConnectedTx,
+    EspNowOwnedV1Tx, EspNowTxBackpressure, EspNowTxCancelReason, EspNowTxCompletion,
+    EspNowTxHandle, EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError, EspNowTxMailboxOwner,
+    EspNowTxMailboxResources, EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal,
+    EspNowTxTicket, EspNowTxTrySendError, attach_esp_now_tx,
+};
 pub use super::network::EmbassyNetConnectedRxSink;
 pub use super::rx_protocol::{
     ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStopped,

@@ -178,6 +178,77 @@ impl<
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
+> crate::roles::station::esp_now_tx::EspNowConnectedTx
+    for Esp32s31ConnectedTx<
+        '_,
+        '_,
+        '_,
+        M,
+        P,
+        E,
+        T,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+        SLOTS,
+        AMPDU_BUFFER_SIZE,
+        ORDINARY_BUFFER_SIZE,
+    >
+{
+    fn start_esp_now_v1_plaintext<
+        H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware,
+        const PEERS: usize,
+    >(
+        &mut self,
+        hardware: &mut H,
+        protocol: &open_esp_radio_wifi_softmac::EspNowProtocol<PEERS>,
+        request: &crate::roles::station::esp_now_tx::EspNowOwnedV1Tx,
+        active_channel: open_esp_radio_ieee80211::channel::WifiChannel,
+        active_station: open_esp_radio_wifi_softmac::interface::BoundVirtualInterface,
+        config: open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxConfig,
+    ) -> Result<
+        WifiTxProgress,
+        open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError,
+    > {
+        if self.active() {
+            return Err(
+                open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError::Backend(
+                    open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxError::Tx(
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxError::Busy,
+                    ),
+                ),
+            );
+        }
+        let progress = self.ordinary.start_esp_now_v1_plaintext(
+            hardware,
+            protocol,
+            request.peer(),
+            request.random_value(),
+            request.payload(),
+            active_channel,
+            active_station,
+            config,
+        )?;
+        if progress == WifiTxProgress::Pending {
+            self.active = ConnectedTxActive::Ordinary;
+        }
+        Ok(progress)
+    }
+}
+
+impl<
+    M: RawMutex,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+    const SLOTS: usize,
+    const AMPDU_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
 > ConnectedControlTimer
     for Esp32s31ConnectedTx<
         '_,

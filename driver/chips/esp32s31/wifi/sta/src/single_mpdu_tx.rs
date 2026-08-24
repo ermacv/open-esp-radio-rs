@@ -18,8 +18,15 @@ use open_esp_radio_ieee80211::station::{
     StationFrameError,
 };
 use open_esp_radio_ieee80211::station_power_save::{StaNullDataFrame, StaPowerManagement};
-use open_esp_radio_wifi_softmac::{MacTxPlan, MacTxQueueState};
+use open_esp_radio_ieee80211::{channel::WifiChannel, esp_now::EspNowRandomValue};
+use open_esp_radio_wifi_softmac::{
+    EspNowPeerId, EspNowProtocol, EspNowSendError, MacTxPlan, MacTxQueueState,
+    interface::BoundVirtualInterface,
+};
 
+use open_esp_radio_esp32s31_wifi::esp_now::{
+    Esp32s31EspNowTxConfig, Esp32s31EspNowTxError, start_esp_now_v1_plaintext,
+};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{
     OrdinaryTxError, OrdinaryTxOwner, OrdinaryTxParked, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
     TX_METADATA_SIZE,
@@ -86,6 +93,27 @@ pub enum SingleMpduTxError {
     Tx(TxError),
     Retry(OrdinaryRetryError),
     RadioResetRequired(TxResetReason),
+}
+
+/// Failure before one ESP-NOW v1 request acquires the connected ordinary-TX
+/// transaction. Protocol admission and chip publication remain separate so
+/// applications can distinguish a stale peer from a hardware/PHY rejection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SingleMpduEspNowTxError {
+    Protocol(EspNowSendError),
+    Backend(Esp32s31EspNowTxError),
+}
+
+impl From<EspNowSendError> for SingleMpduEspNowTxError {
+    fn from(error: EspNowSendError) -> Self {
+        Self::Protocol(error)
+    }
+}
+
+impl From<Esp32s31EspNowTxError> for SingleMpduEspNowTxError {
+    fn from(error: Esp32s31EspNowTxError) -> Self {
+        Self::Backend(error)
+    }
 }
 
 impl From<TxError> for SingleMpduTxError {
@@ -585,6 +613,40 @@ where
                 },
             )
             .map_err(Into::into)
+    }
+
+    /// Resolve, encode and publish one plaintext ESP-NOW v1 Action MPDU
+    /// through the connected station's sole ordinary descriptor.
+    ///
+    /// `active_channel` and `active_station` must come from the same live
+    /// connected owner that supplied this transmitter. The portable protocol
+    /// keeps peer and requested-PHY policy typed; the chip backend remains the
+    /// only authority which may admit that PHY mode.
+    pub fn start_esp_now_v1_plaintext<H: TxHardware, const PEERS: usize>(
+        &mut self,
+        hardware: &mut H,
+        protocol: &EspNowProtocol<PEERS>,
+        peer: EspNowPeerId,
+        random_value: EspNowRandomValue,
+        payload: &[u8],
+        active_channel: WifiChannel,
+        active_station: BoundVirtualInterface,
+        config: Esp32s31EspNowTxConfig,
+    ) -> Result<WifiTxProgress, SingleMpduEspNowTxError> {
+        if self.ordinary.active() {
+            return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
+        }
+        let prepared =
+            protocol.prepare_v1_tx(peer, self.sequences.non_qos_mut(), random_value, payload)?;
+        start_esp_now_v1_plaintext(
+            &mut self.ordinary,
+            hardware,
+            prepared,
+            active_channel,
+            active_station,
+            config,
+        )
+        .map_err(Into::into)
     }
 
     /// Encode and publish one directed AP reachability Probe Request.

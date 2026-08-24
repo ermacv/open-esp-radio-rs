@@ -77,6 +77,37 @@ where
     }
 }
 
+impl<
+    'resources,
+    M,
+    H,
+    X,
+    const CONTROL_CAPACITY: usize,
+    const TX_CAPACITY: usize,
+    const PEERS: usize,
+> Esp32s31ConnectedStaControlTeardown<H, X>
+    for crate::roles::station::esp_now_tx::Esp32s31EspNowConnectedControl<
+        'resources,
+        M,
+        CONTROL_CAPACITY,
+        TX_CAPACITY,
+        PEERS,
+    >
+where
+    M: RawMutex,
+    H: ConnectedControlHardware,
+    X: ConnectedControlTx,
+{
+    type Report = crate::roles::station::esp_now_tx::Esp32s31EspNowConnectedControlShutdown<PEERS>;
+    type Error = crate::roles::station::esp_now_tx::Esp32s31EspNowConnectedControlError;
+
+    fn shutdown(&mut self, hardware: &mut H, tx: &mut X) -> Result<Self::Report, Self::Error> {
+        crate::roles::station::esp_now_tx::Esp32s31EspNowConnectedControl::shutdown(
+            self, hardware, tx,
+        )
+    }
+}
+
 /// RX-DMA stop capability used by the connected teardown port.
 pub trait Esp32s31ConnectedStaRxTeardown<H>: Sized {
     type Stopped;

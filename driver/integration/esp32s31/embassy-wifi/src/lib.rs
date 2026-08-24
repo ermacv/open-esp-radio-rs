@@ -38,6 +38,7 @@ macro_rules! diagnostics_debug {
 mod composition;
 #[cfg(feature = "diagnostics")]
 mod diagnostics;
+mod esp_now;
 mod facade;
 mod monitor;
 mod radio_resources;
@@ -61,6 +62,19 @@ pub use supervisor::station::Esp32s31MacIrqObservation;
 pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
+};
+pub use esp_now::{
+    ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH, ESP_NOW_DEFAULT_PEER_CAPACITY,
+    ESP_NOW_V1_MAX_PAYLOAD_LEN, Esp32s31EspNowConnectedControl,
+    Esp32s31EspNowConnectedControlConfigError, Esp32s31EspNowConnectedControlError,
+    Esp32s31EspNowConnectedControlShutdown, Esp32s31EspNowTxBinding, Esp32s31EspNowTxConfig,
+    Esp32s31EspNowTxConfigError, Esp32s31EspNowTxHandle, Esp32s31EspNowTxMailboxOwner,
+    Esp32s31EspNowTxResources, EspNowConfig, EspNowConfigError, EspNowDestination,
+    EspNowOwnedV1Tx, EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity, EspNowPeerTableError,
+    EspNowPhyMode, EspNowProtocol, EspNowRandomValue, EspNowTxBackpressure, EspNowTxCancelReason,
+    EspNowTxCompletion, EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError,
+    EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket,
+    EspNowTxTrySendError, EspNowUnicastAddress, EspNowV1WireError, attach_esp_now_tx,
 };
 pub use monitor::{
     ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorBasebandFormat,

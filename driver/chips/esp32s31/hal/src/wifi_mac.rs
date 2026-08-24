@@ -25,7 +25,8 @@ use crate::types::{
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
 use open_esp_radio_esp32s31_pac::{
-    ColdRadioRegisters, RadioRegisters, StaTbttWakePrepareError, StaTbttWakeRestore,
+    ColdRadioRegisters, RadioRegisters, StaModemWakeConfig, StaModemWakePrepareError,
+    StaModemWakeRestore, StaModemWakeRestoreFailure, StaTbttWakePrepareError, StaTbttWakeRestore,
     StaTbttWakeRestoreFailure,
 };
 
@@ -673,6 +674,30 @@ impl<'registers> WifiMacHal<'registers> {
 
     pub fn station_tsf(&mut self) -> u64 {
         self.pac_mut().station_tsf()
+    }
+
+    /// Apply only the reviewed raw modem-wakeup field transaction and retain
+    /// its exact rollback obligation. This does not derive counter units or
+    /// authorize RF/PHY sleep.
+    pub fn configure_station_modem_wakeup(
+        &mut self,
+        config: StaModemWakeConfig,
+    ) -> Result<StaModemWakeRestore, StaModemWakePrepareError> {
+        self.pac_mut().configure_station_modem_wakeup(config)
+    }
+
+    /// Consume the exact field rollback returned by
+    /// [`Self::configure_station_modem_wakeup`].
+    pub fn restore_station_modem_wakeup(
+        &mut self,
+        restore: StaModemWakeRestore,
+    ) -> Result<(), StaModemWakeRestoreFailure> {
+        self.pac_mut().restore_station_modem_wakeup(restore)
+    }
+
+    /// Value-only quarantine diagnostic for a missing rollback token.
+    pub fn station_modem_wakeup_restore_pending(&self) -> bool {
+        self.pac().station_modem_wakeup_restore_pending()
     }
 
     /// Program only the reviewed station-TBTT wake prefix. The returned token

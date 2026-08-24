@@ -36,8 +36,11 @@ pub mod validation;
 pub mod wifi_bb;
 pub mod wifi_mac;
 pub use open_esp_radio_esp32s31_pac::{
-    MacPowerWakeCause, MacTsfTimerIndex, StaTbttWakePrepareError, StaTbttWakeRestore,
-    StaTbttWakeRestoreError, StaTbttWakeRestoreFailure,
+    MacPowerWakeCause, MacTsfTimerIndex, StaBeaconMissLimit, StaBeaconMissTimeoutRaw,
+    StaModemSleepLimit, StaModemWakeConfig, StaModemWakePrepareError, StaModemWakeRestore,
+    StaModemWakeRestoreError, StaModemWakeRestoreFailure, StaTbttAutoPeriod,
+    StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError,
+    StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw,
 };
 pub use power::{PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError};
 pub use types::{

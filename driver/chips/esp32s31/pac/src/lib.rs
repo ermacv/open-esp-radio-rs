@@ -95,7 +95,9 @@ pub use mac_interrupt::{
     MacPowerInterruptRegisters, MacPowerWakeCause, MacTsfTimerIndex,
 };
 pub use mac_modem_wakeup::{
-    StaBeaconMissLimit, StaModemSleepLimit, StaModemWakeConfig, StaTbttAutoPeriod,
+    StaBeaconMissLimit, StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig,
+    StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreError,
+    StaModemWakeRestoreFailure, StaTbttAutoPeriod, StaWakeProtectEarlyTimeRaw,
 };
 pub use mac_rx_dma::MacRxDmaSnapshot;
 pub use mac_rx_policy::{
@@ -393,6 +395,7 @@ pub struct RadioRegisters {
     peripherals: svd::peripheral_ownership::RadioPeripherals,
     wifi_baseband_enabled: bool,
     station_tbtt_wake_prepared: bool,
+    station_modem_wakeup: mac_modem_wakeup::StaModemWakeOwnership,
 }
 
 impl RadioRegisters {
@@ -401,6 +404,7 @@ impl RadioRegisters {
             peripherals,
             wifi_baseband_enabled: false,
             station_tbtt_wake_prepared: false,
+            station_modem_wakeup: mac_modem_wakeup::StaModemWakeOwnership::new(),
         }
     }
 

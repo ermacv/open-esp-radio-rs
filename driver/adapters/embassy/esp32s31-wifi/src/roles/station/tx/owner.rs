@@ -99,6 +99,7 @@ where
             standby_cookie: None,
             standby_prepared: None,
             standby_error: None,
+            deferred_network: None,
             block_ack_windows: [0; 8],
             config,
             rate_control: TeardownResource::new(rate_control),
@@ -378,17 +379,27 @@ where
     }
 
     pub fn has_prepared_network_tx(&self) -> bool {
-        self.standby_prepared.is_some() || self.standby_error.is_some()
+        self.deferred_network.is_some()
+            || self.standby_prepared.is_some()
+            || self.standby_error.is_some()
     }
 
     pub fn preferred_network_batch_size(&self) -> usize {
-        self.aggregate_frame_limit(DATA_TID).max(1)
+        (0_u8..8)
+            .map(|tid| self.aggregate_frame_limit(tid))
+            .max()
+            .unwrap_or(0)
+            .max(1)
     }
 
     pub fn prepared_network_frame_count(&self) -> usize {
-        self.standby_prepared
-            .as_ref()
-            .map_or(0, |prepared| usize::from(prepared.original_subframes))
+        if let Some(prepared) = self.standby_prepared.as_ref() {
+            // A prepared standby contains FIFO predecessors of a frame that
+            // may have been deferred while extending it. Publish this arena
+            // first so the retained successor cannot overtake those leases.
+            return usize::from(prepared.original_subframes);
+        }
+        usize::from(self.deferred_network.is_some())
     }
 
     /// Portable queue state across the aggregate and ordinary descriptor
@@ -603,6 +614,7 @@ where
             || self.ordinary.queue_state() != MacTxQueueState::Ready
             || !self.ampdu.active().is_fully_free()
             || self.cookie.is_some()
+            || self.deferred_network.is_some()
             || self.standby_prepared.is_some()
             || self.standby_cookie.is_some()
             || self.standby_error.is_some()

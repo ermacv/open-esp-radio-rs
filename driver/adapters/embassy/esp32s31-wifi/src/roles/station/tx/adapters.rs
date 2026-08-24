@@ -130,7 +130,7 @@ impl<
         if self.he_trigger_based != Some(request.queue_policy) {
             return Err(ConnectedHeControlRuntimeRejection::QueuePolicyMismatch);
         }
-        if request.queue_policy.tid().value() != DATA_TID {
+        if request.queue_policy.tid().value() != HE_TRIGGER_DATA_TID {
             return Err(ConnectedHeControlRuntimeRejection::QueueTidMismatch);
         }
         if self.active() {
@@ -142,6 +142,11 @@ impl<
         let Some(prepared) = self.standby_prepared.as_ref() else {
             return Err(ConnectedHeControlRuntimeRejection::PreparedQueueUnavailable);
         };
+        if prepared.traffic.tid() != HE_TRIGGER_DATA_TID
+            || prepared.traffic.queue() != LegacyTxQueue::BestEffort
+        {
+            return Err(ConnectedHeControlRuntimeRejection::QueueTidMismatch);
+        }
         if !matches!(self.config.rate, TxPhyRate::He(_)) {
             return Err(ConnectedHeControlRuntimeRejection::UnsupportedQueueFormat);
         }

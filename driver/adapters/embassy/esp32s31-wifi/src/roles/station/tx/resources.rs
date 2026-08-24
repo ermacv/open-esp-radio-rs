@@ -59,6 +59,7 @@ where
 
     pub(super) fn cancel_prepared_network(&mut self) -> Result<(), AggregateTxError> {
         self.standby_error = None;
+        drop(self.deferred_network.take());
         if self.standby_prepared.take().is_none() {
             return Ok(());
         }

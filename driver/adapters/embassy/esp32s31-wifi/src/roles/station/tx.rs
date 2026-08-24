@@ -38,7 +38,10 @@ use open_esp_radio_esp32s31_wifi_mac::{
         AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy, HtAmpduFrameRequest,
         HtAmpduHardware, HtAmpduTxError, RetainedAmpduRetryCompletionError, RetainedDmaAmpduTx,
     },
-    tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
+    tx_runtime::{
+        AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState, WifiTxTraffic,
+        WifiTxTrafficError, WmmTxopUnsupported,
+    },
 };
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     ActionTxConfig, ConnectedTxHandoff, Esp32s31SingleMpduTx, Esp32s31SingleMpduTxParked,
@@ -71,7 +74,7 @@ use crate::{
 use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 
 const AMPDU_ABORT_SETTLE_US: u64 = 16;
-const DATA_TID: u8 = 0;
+const HE_TRIGGER_DATA_TID: u8 = 0;
 
 /// Control-plane notification for the current station TX BlockAck state.
 ///
@@ -164,6 +167,8 @@ pub enum AggregateTxError {
     Encode(StationFrameError),
     Aggregate(HtAmpduTxError),
     Retry(AmpduRetryError),
+    Traffic(WifiTxTrafficError),
+    Unsupported(WmmTxopUnsupported),
     RolePolicy(HtAmpduTxRolePolicyError),
     Ordinary(SingleMpduTxError),
     /// An aggregate detached one MPDU into the ordinary owner, but that owner
@@ -205,7 +210,36 @@ impl From<SingleMpduTxError> for AggregateTxError {
     }
 }
 
+impl From<WifiTxTrafficError> for AggregateTxError {
+    fn from(error: WifiTxTrafficError) -> Self {
+        Self::Traffic(error)
+    }
+}
+
+impl From<WmmTxopUnsupported> for AggregateTxError {
+    fn from(error: WmmTxopUnsupported) -> Self {
+        Self::Unsupported(error)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AggregateTraffic {
+    selected: WifiTxTraffic,
+    he_txop_limit: HeEdcaTxopLimit,
+}
+
+impl AggregateTraffic {
+    const fn tid(self) -> u8 {
+        self.selected.tid()
+    }
+
+    const fn queue(self) -> LegacyTxQueue {
+        self.selected.queue()
+    }
+}
+
 struct AggregateActive<const SLOTS: usize> {
+    traffic: AggregateTraffic,
     config: AmpduTxConfig,
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
@@ -215,6 +249,7 @@ struct AggregateActive<const SLOTS: usize> {
 }
 
 struct AggregatePrepared<const SLOTS: usize> {
+    traffic: AggregateTraffic,
     aggregate_length: u16,
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
@@ -312,6 +347,11 @@ pub struct Esp32s31ConnectedTx<
     standby_cookie: Option<TxCookie>,
     standby_prepared: Option<AggregatePrepared<SLOTS>>,
     standby_error: Option<AggregateTxError>,
+    /// One FIFO successor retained when its WMM TID differs from the current
+    /// aggregate. It remains a network lease and is published before another
+    /// queue entry can overtake it.
+    deferred_network:
+        Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>,
     /// Peer-negotiated BlockAck window per QoS TID; zero means inactive.
     block_ack_windows: [u8; 8],
     config: AggregateTxConfig,

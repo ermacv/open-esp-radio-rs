@@ -13,6 +13,8 @@ use crate::station::{StationFrameError, validate_peer};
 pub const STA_NULL_DATA_FRAME_LEN: usize = 24;
 /// Length of a legacy PS-Poll control MPDU, excluding the hardware-owned FCS.
 pub const STA_PS_POLL_FRAME_LEN: usize = 16;
+/// Largest Association ID assigned to an infrastructure BSS station.
+pub const STA_MAX_ASSOCIATION_ID: u16 = 2_007;
 
 const NULL_DATA_TO_DS_FRAME_CONTROL: u16 = 0x0148;
 const PS_POLL_FRAME_CONTROL: u16 = 0x00a4;
@@ -21,16 +23,16 @@ const POWER_MANAGEMENT_BIT: u16 = 0x1000;
 
 /// Nonzero association identifier carried by a legacy PS-Poll frame.
 ///
-/// The constructor retains the exact 14-bit wire domain already decoded from
-/// successful Association Responses and admitted by the AP-side PS-Poll
-/// parser. Keeping the reserved high bits out of this value prevents a caller
-/// from manufacturing an invalid Duration/ID field.
+/// The Duration/ID field reserves fourteen bits for the encoded value, but an
+/// infrastructure BSS may assign only IDs 1 through 2007. Keeping the larger
+/// reserved range out of this type prevents an invalid Association Response
+/// from becoming a valid-looking PS-Poll transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaAssociationId(u16);
 
 impl StaAssociationId {
     pub const fn new(value: u16) -> Option<Self> {
-        if value != 0 && value <= 0x3fff {
+        if value != 0 && value <= STA_MAX_ASSOCIATION_ID {
             Some(Self(value))
         } else {
             None

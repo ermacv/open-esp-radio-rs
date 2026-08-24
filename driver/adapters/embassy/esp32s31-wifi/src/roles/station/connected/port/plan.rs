@@ -108,6 +108,9 @@ pub enum Esp32s31ConnectedStaEspNowRxError {
         connected: BoundVirtualInterface,
         esp_now: BoundVirtualInterface,
     },
+    /// Passive ESP-NOW receive has no independent wake owner. Admitting it
+    /// while legacy power save may enter doze would silently lose datagrams.
+    RequiresAlwaysAwake,
 }
 
 impl Esp32s31ConnectedStaPlan {
@@ -146,6 +149,9 @@ impl Esp32s31ConnectedStaPlan {
         &mut self,
         epoch: EspNowRxEpoch,
     ) -> Result<(), Esp32s31ConnectedStaEspNowRxError> {
+        if self.power_save.is_some() {
+            return Err(Esp32s31ConnectedStaEspNowRxError::RequiresAlwaysAwake);
+        }
         if epoch.config().station() != self.interface {
             return Err(Esp32s31ConnectedStaEspNowRxError::StationBinding {
                 connected: self.interface,

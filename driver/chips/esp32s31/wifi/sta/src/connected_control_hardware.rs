@@ -5,6 +5,7 @@
 //! describes TSF, RX BlockAck and HE-TID operations, but no executor wakeups
 //! or Embassy task lifecycle.
 
+use open_esp_radio_esp32s31_hal::types::MacStaReceivePolicySnapshot;
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot},
@@ -122,6 +123,17 @@ pub enum StationIndividualTwtHardwareError {
 pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
     fn station_tsf(&mut self) -> u64;
 
+    /// Read the reviewed interface-zero RX identity/filter projection used by
+    /// automatic beacon-monitor admission.
+    ///
+    /// The default is deliberately absent rather than a fabricated zero
+    /// image. Hardware-independent test doubles and ports without this exact
+    /// PAC readback therefore retain the software monitor and fail closed at
+    /// `MissingAssociationReadback`.
+    fn station_beacon_monitor_readback(&mut self) -> Option<MacStaReceivePolicySnapshot> {
+        None
+    }
+
     fn set_he_tid_enabled(
         &mut self,
         tid: u8,
@@ -207,6 +219,10 @@ pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
 impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
     fn station_tsf(&mut self) -> u64 {
         CooperativeRadioHardware::station_tsf(self)
+    }
+
+    fn station_beacon_monitor_readback(&mut self) -> Option<MacStaReceivePolicySnapshot> {
+        Some(self.sta_receive_policy_snapshot())
     }
 
     fn set_he_tid_enabled(

@@ -37,6 +37,7 @@ pub mod connected_control;
 pub mod connected_control_hardware;
 pub mod connected_rx;
 pub mod control_tx;
+pub mod hardware_beacon_monitor;
 pub mod join;
 pub mod peer;
 mod peer_policy;

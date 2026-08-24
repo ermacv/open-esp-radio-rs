@@ -283,6 +283,12 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
         },
     );
     assert_eq!(control.rx_block_ack().maximum_window(), 32);
+    let beacon_binding = control
+        .hardware_beacon_monitor_binding()
+        .expect("connected composition binds one hardware-monitor admission epoch");
+    assert_eq!(beacon_binding.bssid(), plan.link().bssid);
+    assert_eq!(beacon_binding.association_id().get(), 7);
+    assert_eq!(control.hardware_beacon_monitor_frontier(), None);
     assert_eq!(
         control
             .beacon_monitor()
@@ -305,6 +311,19 @@ fn invalid_config_returns_the_exact_peer_before_owner_handoff() {
             limit: 33,
             capacity: 32,
         }
+    );
+    assert_eq!(failure.peer.link, link);
+}
+
+#[test]
+fn invalid_association_id_never_creates_a_beacon_monitor_epoch() {
+    let mut invalid_peer = peer();
+    invalid_peer.link.association_id = 0;
+    let link = invalid_peer.link;
+    let failure = prepare::<32, 32>(invalid_peer, config()).unwrap_err();
+    assert_eq!(
+        failure.error,
+        Esp32s31ConnectedStaConfigError::InvalidAssociationId(0)
     );
     assert_eq!(failure.peer.link, link);
 }

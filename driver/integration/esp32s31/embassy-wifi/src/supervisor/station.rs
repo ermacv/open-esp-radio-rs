@@ -1849,10 +1849,11 @@ pub(crate) async fn run_connected<'state, 'security>(
                 );
                 log_rx_ring_topology("exit", _runner.services().rx());
                 diagnostics_debug!(
-                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} last_event={:?} stale_addba_responses={} last_stale_addba_token={:?} security={:?}",
+                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} hardware_beacon_frontier={:?} last_event={:?} stale_addba_responses={} last_stale_addba_token={:?} security={:?}",
                     control.beacon_lost(),
                     beacon.map_or(0, |monitor| monitor.observed()),
                     beacon.and_then(|monitor| monitor.deadline_micros()),
+                    control.hardware_beacon_monitor_frontier(),
                     control.last_event(),
                     control.stale_tx_block_ack_responses(),
                     control.last_stale_tx_block_ack_token(),

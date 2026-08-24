@@ -314,6 +314,16 @@ impl Esp32s31ConnectedStaPort {
         .expect("connected STA plan validated RX BlockAck policy")
         .with_rx_reorder_commands(resources.reorder_commands);
         control.enable_beacon_loss(plan.beacon_loss);
+        control
+            .enable_hardware_beacon_monitor_frontier(
+                open_esp_radio_esp32s31_wifi_sta::hardware_beacon_monitor::StationBeaconMonitorBinding::new(
+                    plan.link.bssid,
+                    StaAssociationId::new(plan.link.association_id)
+                        .expect("connected plan validated the infrastructure association ID"),
+                ),
+                plan.beacon_loss,
+            )
+            .expect("a fresh connected control owner has no beacon-monitor epoch");
         if let Some(policy) = plan.power_save {
             control.enable_power_save(policy);
             if let Some(association_id) = StaAssociationId::new(plan.link.association_id) {

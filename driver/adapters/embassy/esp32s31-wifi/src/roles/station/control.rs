@@ -40,6 +40,10 @@ pub use open_esp_radio_esp32s31_wifi_sta::{
         StationLowPowerFrontierStatus, StationLowPowerHardwareFrontier,
         station_low_power_hardware_frontier,
     },
+    hardware_beacon_monitor::{
+        StationBeaconMonitorBinding, StationHardwareBeaconMonitorEpoch,
+        StationHardwareBeaconMonitorFrontier, StationHardwareBeaconMonitorStopped,
+    },
 };
 use open_esp_radio_ieee80211::twt::IndividualTwtFlowId;
 use open_esp_radio_wifi_sta::{
@@ -103,6 +107,9 @@ pub struct ConnectedControlShutdown {
     pub tx_block_ack_sessions: u8,
     pub discarded_events: u8,
     pub in_flight: Option<ConnectedControlTxKind>,
+    /// Consumed association admission owner. Its current form proves that the
+    /// automatic monitor stopped before any hardware mutation.
+    pub hardware_beacon_monitor: Option<StationHardwareBeaconMonitorStopped>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -448,6 +455,7 @@ pub struct Esp32s31ConnectedControl<'resources, M: RawMutex, const CAPACITY: usi
     hardware_doze_boundary_enabled: bool,
     doze_restore: Option<StaDozeRestore>,
     last_doze_boundary_failure: Option<StationDozeBoundaryFailure>,
+    hardware_beacon_monitor: Option<StationHardwareBeaconMonitorEpoch>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -509,6 +517,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             hardware_doze_boundary_enabled: false,
             doze_restore: None,
             last_doze_boundary_failure: None,
+            hardware_beacon_monitor: None,
         }
     }
 
@@ -529,6 +538,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             hardware_doze_boundary_enabled: false,
             doze_restore: None,
             last_doze_boundary_failure: None,
+            hardware_beacon_monitor: None,
         }
     }
 
@@ -578,6 +588,38 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
 
     pub fn enable_beacon_loss(&mut self, config: StaBeaconLossConfig) {
         self.core.enable_beacon_loss(config);
+    }
+
+    /// Bind one non-clone automatic-monitor admission owner to this connected
+    /// association. The portable software deadline remains authoritative.
+    pub fn enable_hardware_beacon_monitor_frontier(
+        &mut self,
+        binding: StationBeaconMonitorBinding,
+        policy: StaBeaconLossConfig,
+    ) -> Result<(), StationHardwareBeaconMonitorEpoch> {
+        let epoch = StationHardwareBeaconMonitorEpoch::new(binding, policy);
+        if self.hardware_beacon_monitor.is_some() {
+            return Err(epoch);
+        }
+        self.hardware_beacon_monitor = Some(epoch);
+        Ok(())
+    }
+
+    /// Last one-shot hardware admission result for this association.
+    pub const fn hardware_beacon_monitor_frontier(
+        &self,
+    ) -> Option<StationHardwareBeaconMonitorFrontier> {
+        match self.hardware_beacon_monitor.as_ref() {
+            Some(epoch) => epoch.frontier(),
+            None => None,
+        }
+    }
+
+    pub const fn hardware_beacon_monitor_binding(&self) -> Option<StationBeaconMonitorBinding> {
+        match self.hardware_beacon_monitor.as_ref() {
+            Some(epoch) => Some(epoch.binding()),
+            None => None,
+        }
     }
 
     pub fn enable_power_save(&mut self, policy: StaPowerSavePolicy) {
@@ -830,6 +872,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             .rx_block_ack
             .sessions()
             .with_sessions(|rx_block_ack| self.core.shutdown(hardware, tx, rx_block_ack))?;
+        let hardware_beacon_monitor = self
+            .hardware_beacon_monitor
+            .take()
+            .map(StationHardwareBeaconMonitorEpoch::stop);
         let mut discarded_events = 0_u8;
         while self.receiver.try_receive().is_some() {
             discarded_events = discarded_events.saturating_add(1);
@@ -845,6 +891,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             tx_block_ack_sessions: shutdown.tx_block_ack_sessions,
             discarded_events,
             in_flight: shutdown.in_flight,
+            hardware_beacon_monitor,
         })
     }
 
@@ -961,6 +1008,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         H: ConnectedControlHardware + 'a,
         X: ConnectedControlTx + 'a,
     {
+        if let Some(epoch) = self.hardware_beacon_monitor.as_mut()
+            && epoch.frontier().is_none()
+        {
+            let snapshot = hardware.station_beacon_monitor_readback();
+            let _ = epoch.evaluate_once(snapshot);
+        }
         let allow_doze_entry = !context.network_tx_pending
             && !context.stop_pending
             && self.deferred_control_event.is_none()

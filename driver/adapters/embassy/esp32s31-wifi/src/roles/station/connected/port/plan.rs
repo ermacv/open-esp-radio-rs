@@ -67,6 +67,7 @@ pub enum Esp32s31ConnectedStaConfigError {
         interface: [u8; 6],
         station: [u8; 6],
     },
+    InvalidAssociationId(u16),
     AggregateFrameLimit {
         limit: u8,
         capacity: usize,
@@ -477,6 +478,14 @@ impl Esp32s31ConnectedStaPort {
         {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::PeerDoesNotSupportQos,
+                peer,
+            });
+        }
+        if StaAssociationId::new(peer.link.association_id).is_none() {
+            return Err(Esp32s31ConnectedStaPrepareFailure {
+                error: Esp32s31ConnectedStaConfigError::InvalidAssociationId(
+                    peer.link.association_id,
+                ),
                 peer,
             });
         }

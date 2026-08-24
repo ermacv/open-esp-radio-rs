@@ -5,8 +5,8 @@ use core::{
 
 use open_esp_radio_embassy_net::NoopRawMutex;
 use open_esp_radio_esp32s31_hal::types::{
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacKeyInstallOutcome, MacLegacyTxProgram, MacStaReceivePolicySnapshot,
+    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     MacInterface,
@@ -154,6 +154,7 @@ struct Hardware {
     ccmp_clears: usize,
     twt_admit: bool,
     twt_install_count: usize,
+    station_policy: Option<MacStaReceivePolicySnapshot>,
 }
 
 impl CcmpKeyHardware for Hardware {
@@ -289,6 +290,10 @@ impl RxBlockAckHardware for Hardware {
 impl ConnectedControlHardware for Hardware {
     fn station_tsf(&mut self) -> u64 {
         self.station_tsf
+    }
+
+    fn station_beacon_monitor_readback(&mut self) -> Option<MacStaReceivePolicySnapshot> {
+        self.station_policy
     }
 
     fn set_he_tid_enabled(
@@ -521,6 +526,62 @@ fn connected_low_power_diagnostic_stays_before_physical_sleep() {
         frontier.rf_phy_baseband_clock_sleep_wake,
         StationLowPowerFrontierStatus::MissingReviewedSemantics
     );
+}
+
+#[test]
+fn connected_runtime_binds_beacon_frontier_but_retains_software_monitor() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+    let (_publisher, receiver) = resources.split();
+    let policy = StaBeaconLossConfig::new(100, 10).unwrap();
+    let mut control = Esp32s31ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    control.enable_beacon_loss(policy);
+    control
+        .enable_hardware_beacon_monitor_frontier(
+            StationBeaconMonitorBinding::new(
+                BSSID,
+                open_esp_radio_ieee80211::station_power_save::StaAssociationId::new(7).unwrap(),
+            ),
+            policy,
+        )
+        .unwrap();
+
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        station_policy: Some(MacStaReceivePolicySnapshot {
+            queue_zero_policy: 0,
+            queue_three_policy: 0,
+            bssid: BSSID,
+            association_id: 7,
+            minimum_mpdu_start_spacing: 0,
+            bssid_address_check_enabled: true,
+            interface_is_soft_ap: false,
+            interface_rx_policy_enabled: true,
+            beacon_filter_control: 0,
+        }),
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::Idle)
+    );
+    let frontier = control.hardware_beacon_monitor_frontier().unwrap();
+    assert_eq!(
+        frontier.reached(),
+        open_esp_radio_esp32s31_wifi_sta::hardware_beacon_monitor::StationHardwareBeaconMonitorStage::BeaconMissLimitRepresentable
+    );
+    assert_eq!(
+        frontier.blocker(),
+        open_esp_radio_esp32s31_wifi_sta::hardware_beacon_monitor::StationHardwareBeaconMonitorBlocker::MissingBeaconMissTimeoutUnitConversion
+    );
+    assert!(!frontier.automatic_monitor_active());
+    assert!(control.beacon_monitor().is_some());
 }
 
 #[test]
@@ -1296,6 +1357,7 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
             tx_block_ack_sessions: 1,
             discarded_events: 1,
             in_flight: None,
+            hardware_beacon_monitor: None,
         })
     );
     assert_eq!(hardware.cleared[0], Some(0));

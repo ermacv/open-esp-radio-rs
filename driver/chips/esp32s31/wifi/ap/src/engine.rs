@@ -2,7 +2,10 @@
 
 use crate::{
     beacon::Esp32s31ApBeacon,
-    rx::{Esp32s31ApRxAdmission, Esp32s31ApRxAdmissionRequest, Esp32s31ApRxError},
+    rx::{
+        Esp32s31ApRxAdmission, Esp32s31ApRxAdmissionRequest, Esp32s31ApRxDuplicateOwner,
+        Esp32s31ApRxError,
+    },
     security::{
         Esp32s31ApPairwiseBinding, Esp32s31ApPairwiseKeyStorage, Esp32s31ApSecurity,
         Esp32s31ApSecurityError, Esp32s31ApSecurityStopReport,
@@ -850,7 +853,6 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             // the PP task or surrender MAC ownership.
             return Ok(Esp32s31ApWpa2Outcome::None);
         }
-        self.service.observe_activity(peer, now_micros)?;
         match self.service.on_eapol(peer, frame)? {
             ApWpa2Progress::None => Ok(Esp32s31ApWpa2Outcome::None),
             ApWpa2Progress::Transmit(frame) => Ok(Esp32s31ApWpa2Outcome::Transmit(frame)),
@@ -1098,8 +1100,16 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         if matches!(request.lane(), CcmpReplayLane::Tid(_)) && !status.qos_supported {
             return Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::PeerQosMismatch);
         }
+        // Resolve the infallible fixed duplicate slot before WPA2 replay can
+        // commit its PN. A validated owner always has space; AID reuse changes
+        // the epoch and atomically replaces stale duplicate history.
+        let Some(duplicate_owner) =
+            Esp32s31ApRxDuplicateOwner::new(status.association_id, status.association_epoch)
+        else {
+            return Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::KeyGenerationMismatch);
+        };
         match (self.service.security_mode(), request.ccmp_header()) {
-            (WifiSecurityMode::Open, None) => Esp32s31ApRxAdmission::authorized(),
+            (WifiSecurityMode::Open, None) => Esp32s31ApRxAdmission::authorized(duplicate_owner),
             (WifiSecurityMode::Wpa2Personal, Some(header)) => {
                 if header.key_id() != CcmpKeyId::PAIRWISE {
                     return Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::PairwiseKeyId(
@@ -1119,7 +1129,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     Err(error) => return rejected_rx_security(error),
                 };
                 match self.security.commit_bound_pairwise_rx(candidate) {
-                    Ok(()) => Esp32s31ApRxAdmission::authorized(),
+                    Ok(()) => Esp32s31ApRxAdmission::authorized(duplicate_owner),
                     Err(error) => rejected_rx_security(error),
                 }
             }
@@ -1763,9 +1773,14 @@ mod tests {
             CcmpReplayLane::NonQos,
             Some(CcmpHeader::new(rx_pn3, CcmpKeyId::PAIRWISE)),
         );
+        let duplicate_owner = Esp32s31ApRxDuplicateOwner::new(
+            engine.service.peer_status(peer).unwrap().association_id,
+            engine.service.peer_status(peer).unwrap().association_epoch,
+        )
+        .unwrap();
         assert_eq!(
             engine.admit_rx_data(rx_request),
-            Esp32s31ApRxAdmission::authorized()
+            Esp32s31ApRxAdmission::authorized(duplicate_owner)
         );
         assert_eq!(
             engine.admit_rx_data(rx_request),

@@ -97,9 +97,38 @@ impl Esp32s31ApRxAdmissionRequest {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Esp32s31ApRxAdmissionOutcome {
-    Authorized,
+    Authorized(Esp32s31ApRxDuplicateOwner),
     Unauthorized,
     Rejected(Esp32s31ApRxError),
+}
+
+/// Exact bounded duplicate-filter ownership for one AP association.
+///
+/// AIDs are allocated from `1..=AP_MAX_CLIENTS`, so the owner resolves to a
+/// pre-existing slot before CCMP replay admission can commit. The epoch makes
+/// reuse of the same AID (including same-address reassociation) reset history
+/// instead of inheriting retry fingerprints from its predecessor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApRxDuplicateOwner {
+    slot: u8,
+    association_epoch: u32,
+}
+
+impl Esp32s31ApRxDuplicateOwner {
+    pub(crate) fn new(association_id: u16, association_epoch: u32) -> Option<Self> {
+        let slot = association_id.checked_sub(1)?;
+        if usize::from(slot) >= AP_MAX_CLIENTS {
+            return None;
+        }
+        Some(Self {
+            slot: u8::try_from(slot).ok()?,
+            association_epoch,
+        })
+    }
+
+    const fn slot(self) -> usize {
+        self.slot as usize
+    }
 }
 
 /// Unforgeable result of consulting the live AP controlled-port and key
@@ -111,9 +140,9 @@ pub struct Esp32s31ApRxAdmission {
 }
 
 impl Esp32s31ApRxAdmission {
-    pub(crate) const fn authorized() -> Self {
+    pub(crate) const fn authorized(owner: Esp32s31ApRxDuplicateOwner) -> Self {
         Self {
-            outcome: Esp32s31ApRxAdmissionOutcome::Authorized,
+            outcome: Esp32s31ApRxAdmissionOutcome::Authorized(owner),
         }
     }
 
@@ -132,6 +161,7 @@ impl Esp32s31ApRxAdmission {
 
 struct ApPeerDuplicateState {
     address: [u8; 6],
+    owner: Esp32s31ApRxDuplicateOwner,
     filter: RxDuplicateFilter,
 }
 
@@ -189,6 +219,22 @@ impl Esp32s31ApRxDispatcher {
     pub fn reset(&mut self, config: Esp32s31ApRxConfig) {
         self.config = config;
         self.duplicates.fill_with(|| None);
+    }
+
+    /// Release duplicate ownership when the AP peer close transaction reaches
+    /// its terminal edge. A later AID reuse is safe even if this explicit
+    /// cleanup is skipped because [`Esp32s31ApRxDuplicateOwner`] replaces the
+    /// exact slot on epoch mismatch.
+    pub fn forget_peer(&mut self, peer: [u8; 6]) -> bool {
+        let Some(index) = self
+            .duplicates
+            .iter()
+            .position(|entry| entry.as_ref().is_some_and(|state| state.address == peer))
+        else {
+            return false;
+        };
+        self.duplicates[index] = None;
+        true
     }
 
     /// Extract the same public ordering key used by connected-station RX.
@@ -264,18 +310,17 @@ impl Esp32s31ApRxDispatcher {
             Err(error) => return rejected_data(error),
         };
         let lane = tid.map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
-        match admit(Esp32s31ApRxAdmissionRequest::new(peer, lane, ccmp_header)).outcome {
-            Esp32s31ApRxAdmissionOutcome::Authorized => {}
-            Esp32s31ApRxAdmissionOutcome::Unauthorized => {
-                return Esp32s31ApRxDispatch::Unauthorized;
-            }
-            Esp32s31ApRxAdmissionOutcome::Rejected(error) => {
-                return Esp32s31ApRxDispatch::Rejected(error);
-            }
-        }
-        let Some(duplicates) = self.duplicate_filter(peer) else {
-            return Esp32s31ApRxDispatch::Unauthorized;
-        };
+        let duplicate_owner =
+            match admit(Esp32s31ApRxAdmissionRequest::new(peer, lane, ccmp_header)).outcome {
+                Esp32s31ApRxAdmissionOutcome::Authorized(owner) => owner,
+                Esp32s31ApRxAdmissionOutcome::Unauthorized => {
+                    return Esp32s31ApRxDispatch::Unauthorized;
+                }
+                Esp32s31ApRxAdmissionOutcome::Rejected(error) => {
+                    return Esp32s31ApRxDispatch::Rejected(error);
+                }
+            };
+        let duplicates = self.duplicate_filter(peer, duplicate_owner);
         if duplicates.is_duplicate(retry, sequence_control, tid) {
             return Esp32s31ApRxDispatch::Duplicate;
         }
@@ -312,14 +357,14 @@ impl Esp32s31ApRxDispatcher {
     ) -> Esp32s31ApRxDispatch
     where
         S: Esp32s31ApRxSink,
-        A: FnMut([u8; 6]) -> bool,
+        A: FnMut([u8; 6]) -> Option<Esp32s31ApRxDuplicateOwner>,
     {
         let mut is_authorized = is_authorized;
         self.dispatch(
             segment,
             |request| {
-                if is_authorized(request.peer()) {
-                    Esp32s31ApRxAdmission::authorized()
+                if let Some(owner) = is_authorized(request.peer()) {
+                    Esp32s31ApRxAdmission::authorized(owner)
                 } else {
                     Esp32s31ApRxAdmission::unauthorized()
                 }
@@ -329,24 +374,26 @@ impl Esp32s31ApRxDispatcher {
     }
 
     #[inline(always)]
-    fn duplicate_filter(&mut self, peer: [u8; 6]) -> Option<&mut RxDuplicateFilter> {
-        if let Some(index) = self
-            .duplicates
-            .iter()
-            .position(|entry| entry.as_ref().is_some_and(|state| state.address == peer))
-        {
-            return self.duplicates[index]
-                .as_mut()
-                .map(|state| &mut state.filter);
+    fn duplicate_filter(
+        &mut self,
+        peer: [u8; 6],
+        owner: Esp32s31ApRxDuplicateOwner,
+    ) -> &mut RxDuplicateFilter {
+        let index = owner.slot();
+        let current_matches = self.duplicates[index]
+            .as_ref()
+            .is_some_and(|state| state.address == peer && state.owner == owner);
+        if !current_matches {
+            self.duplicates[index] = Some(ApPeerDuplicateState {
+                address: peer,
+                owner,
+                filter: RxDuplicateFilter::new(),
+            });
         }
-        let index = self.duplicates.iter().position(Option::is_none)?;
-        self.duplicates[index] = Some(ApPeerDuplicateState {
-            address: peer,
-            filter: RxDuplicateFilter::new(),
-        });
         self.duplicates[index]
             .as_mut()
             .map(|state| &mut state.filter)
+            .expect("exact duplicate owner always materializes its bounded slot")
     }
 }
 
@@ -394,6 +441,10 @@ mod tests {
         }
     }
 
+    fn duplicate_owner(association_id: u16, epoch: u32) -> Esp32s31ApRxDuplicateOwner {
+        Esp32s31ApRxDuplicateOwner::new(association_id, epoch).unwrap()
+    }
+
     fn segment(storage: &[u8; 192], descriptor_word0: u32) -> RxSegment<'_> {
         RxSegment {
             descriptor_address: 0x2f00_4000,
@@ -432,17 +483,14 @@ mod tests {
         );
         let mut sink = Sink::default();
         assert_eq!(
-            dispatcher.dispatch_protected(
-                segment(&storage, descriptor_word0),
-                |_| false,
-                &mut sink,
-            ),
+            dispatcher
+                .dispatch_protected(segment(&storage, descriptor_word0), |_| None, &mut sink,),
             Esp32s31ApRxDispatch::Unauthorized
         );
         assert_eq!(
             dispatcher.dispatch_protected(
                 segment(&storage, descriptor_word0),
-                |candidate| candidate == PEER,
+                |candidate| (candidate == PEER).then_some(duplicate_owner(1, 1)),
                 &mut sink,
             ),
             Esp32s31ApRxDispatch::Data {
@@ -458,7 +506,7 @@ mod tests {
         assert_eq!(
             dispatcher.dispatch_protected(
                 segment(&storage, descriptor_word0),
-                |candidate| candidate == PEER,
+                |candidate| (candidate == PEER).then_some(duplicate_owner(1, 1)),
                 &mut sink,
             ),
             Esp32s31ApRxDispatch::Duplicate
@@ -468,7 +516,11 @@ mod tests {
         assert_eq!(
             dispatcher.dispatch_protected(
                 segment(&storage, descriptor_word0),
-                |candidate| candidate == PEER || candidate == OTHER_PEER,
+                |candidate| match candidate {
+                    PEER => Some(duplicate_owner(1, 1)),
+                    OTHER_PEER => Some(duplicate_owner(2, 1)),
+                    _ => None,
+                },
                 &mut sink,
             ),
             Esp32s31ApRxDispatch::Data {
@@ -508,7 +560,7 @@ mod tests {
                 .expect("WPA2 dispatch carries one parsed CCMP header");
             match replay.prepare(request.lane(), header.packet_number()) {
                 Ok(candidate) => match replay.commit(candidate) {
-                    Ok(()) => Esp32s31ApRxAdmission::authorized(),
+                    Ok(()) => Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 1)),
                     Err(error) => Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::Replay(error)),
                 },
                 Err(error) => Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::Replay(error)),
@@ -540,5 +592,66 @@ mod tests {
             Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::PairwiseKeyId(1)),
         );
         assert_eq!(sink.ethernet.len(), 1);
+    }
+
+    #[test]
+    fn duplicate_slots_are_reclaimed_across_close_reassociation_and_stop() {
+        let mut dispatcher = Esp32s31ApRxDispatcher::new(config());
+        let first = duplicate_owner(1, 1);
+        assert!(
+            !dispatcher
+                .duplicate_filter(PEER, first)
+                .is_duplicate(false, 0x1230, None)
+        );
+        assert!(
+            dispatcher
+                .duplicate_filter(PEER, first)
+                .is_duplicate(true, 0x1230, None)
+        );
+
+        assert!(dispatcher.forget_peer(PEER));
+        assert!(
+            !dispatcher
+                .duplicate_filter(PEER, first)
+                .is_duplicate(true, 0x1230, None)
+        );
+
+        // Same-address reassociation retains its AID but owns a new epoch.
+        let reassociated = duplicate_owner(1, 2);
+        assert!(
+            !dispatcher
+                .duplicate_filter(PEER, reassociated)
+                .is_duplicate(true, 0x1230, None)
+        );
+
+        // Churn through every bounded AID and then reuse one. No stale peer
+        // can consume capacity because an AID selects its exact slot.
+        for association_id in 1..=AP_MAX_CLIENTS as u16 {
+            let mut peer = PEER;
+            peer[5] = u8::try_from(association_id).unwrap();
+            let owner = duplicate_owner(association_id, 10 + u32::from(association_id));
+            assert!(!dispatcher.duplicate_filter(peer, owner).is_duplicate(
+                false,
+                association_id << 4,
+                None
+            ));
+        }
+        assert_eq!(
+            dispatcher.duplicates.iter().flatten().count(),
+            AP_MAX_CLIENTS
+        );
+        assert!(
+            !dispatcher
+                .duplicate_filter(OTHER_PEER, duplicate_owner(1, 99))
+                .is_duplicate(true, 0x1230, None)
+        );
+
+        dispatcher.reset(config());
+        assert!(dispatcher.duplicates.iter().all(Option::is_none));
+        assert!(
+            !dispatcher
+                .duplicate_filter(PEER, duplicate_owner(1, 100))
+                .is_duplicate(true, 0x1230, None)
+        );
     }
 }

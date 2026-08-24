@@ -97,10 +97,32 @@ pub enum Wpa2StaSupplicantError {
     UnexpectedAction,
 }
 
+impl Wpa2StaSupplicantError {
+    /// Rejects caused by the current unauthenticated peer frame are
+    /// recoverable within the existing response window. Local state,
+    /// cryptographic ownership and frame-construction failures are not.
+    pub const fn is_peer_input_rejection(self) -> bool {
+        match self {
+            Self::State(error) => error.is_peer_input_rejection(),
+            Self::InvalidMessage3Mic => true,
+            Self::Frame(_) | Self::MissingPtk | Self::UnexpectedAction => false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Wpa2StaProcessError<E> {
     Supplicant(Wpa2StaSupplicantError),
     KeyUnwrap(E),
+}
+
+impl<E> Wpa2StaProcessError<E> {
+    pub const fn is_peer_input_rejection(&self) -> bool {
+        match self {
+            Self::Supplicant(error) => error.is_peer_input_rejection(),
+            Self::KeyUnwrap(_) => false,
+        }
+    }
 }
 
 impl<E> From<Wpa2StaSupplicantError> for Wpa2StaProcessError<E> {
@@ -695,7 +717,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_message3_mic_fails_before_key_install() {
+    fn invalid_message3_mic_is_ignored_and_valid_retry_can_install() {
         let pmk = Pmk::derive(b"password", b"ssid").unwrap();
         let expected_ptk = pmk.derive_ptk(context());
         let mut supplicant =
@@ -720,7 +742,16 @@ mod tests {
                 Wpa2StaSupplicantError::InvalidMessage3Mic
             ))
         ));
-        assert_eq!(supplicant.phase(), Wpa2StaPhase::Failed);
+        assert_eq!(supplicant.phase(), Wpa2StaPhase::AwaitingMessage3);
+
+        let valid_retry = encrypted_message3(&expected_ptk, [0; 8], plain.as_bytes());
+        let Wpa2StaSupplicantAction::InstallKeys(request) =
+            block_on(supplicant.on_frame(valid_retry, &pmk, &mut aes)).unwrap()
+        else {
+            panic!("valid M3 retry must retain the original join")
+        };
+        assert_eq!(request.replay_counter(), 2);
+        assert_eq!(supplicant.phase(), Wpa2StaPhase::InstallingKeys);
     }
 
     #[test]

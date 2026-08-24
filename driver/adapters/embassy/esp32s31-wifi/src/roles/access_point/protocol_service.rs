@@ -1154,6 +1154,7 @@ where
             let _ = self.rx_reorder.stop_discard(agreement.identity());
             hardware.clear_rx_block_ack(agreement.hardware_index)?;
         }
+        self.data_rx.forget_peer(peer);
         Ok(())
     }
 

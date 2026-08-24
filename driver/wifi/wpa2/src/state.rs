@@ -71,6 +71,34 @@ pub enum Wpa2StateError {
     RetainedFrameMismatch,
 }
 
+impl Wpa2StateError {
+    /// Whether this error can be produced solely by rejecting the current
+    /// untrusted peer frame before any authenticated protocol transition.
+    ///
+    /// Completion-ticket, retained-frame and phase failures are deliberately
+    /// excluded: those indicate a local ownership/invariant defect and must
+    /// remain visible to the executor.
+    pub const fn is_peer_input_rejection(self) -> bool {
+        matches!(
+            self,
+            Self::WrongInterface
+                | Self::WrongPeer
+                | Self::UnsupportedDescriptorVersion
+                | Self::UnsupportedMessage
+                | Self::UnexpectedMessage
+                | Self::StaleReplayCounter
+                | Self::ReplayCounterMismatch
+                | Self::ZeroNonce
+                | Self::AuthenticatorNonceMismatch
+                | Self::InvalidKeyLength
+                | Self::InvalidMessage3KeyInfo
+                | Self::NonzeroKeyIv
+                | Self::NonzeroKeyIdentifier
+                | Self::MissingEncryptedKeyData
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Wpa2StaPhase {
     AwaitingMessage1,
@@ -333,8 +361,13 @@ impl Wpa2StaState {
         self.check_completion(ticket, Wpa2StaPhase::VerifyingMessage3)?;
         self.validate_retained_message3(&frame)?;
         if !valid {
-            self.phase = Wpa2StaPhase::Failed;
-            return Ok(Wpa2StaAction::Deauthenticate);
+            // The candidate replay counter is not authenticated until the
+            // MIC succeeds. Roll back the speculative M3 edge so a forged
+            // parse-valid frame cannot kill the join or reserve its replay
+            // value ahead of the real authenticator frame.
+            self.message3_replay = 0;
+            self.phase = Wpa2StaPhase::AwaitingMessage3;
+            return Ok(Wpa2StaAction::None);
         }
 
         let key = frame.key_frame();
@@ -647,11 +680,11 @@ impl Wpa2ApState {
             | Wpa2ApPhase::PreparingMessage3 => Ok(Wpa2ApAction::None),
             Wpa2ApPhase::AwaitingMessage4 | Wpa2ApPhase::VerifyingMessage4 => {
                 if nonce == self.supplicant_nonce {
-                    Ok(Wpa2ApAction::Transmit(Wpa2Transmit {
-                        message: Wpa2TxMessage::PairwiseMessage3,
-                        replay_counter: self.message3_replay,
-                        retransmission: true,
-                    }))
+                    // Public replay/SNonce fields do not authenticate a
+                    // duplicate M2. The bounded AP M3 retry owner will
+                    // retransmit on its timer; never emit a MIC-bearing M3 in
+                    // direct response to an unverified peer frame.
+                    Ok(Wpa2ApAction::None)
                 } else {
                     Err(Wpa2StateError::UnexpectedMessage)
                 }
@@ -709,8 +742,11 @@ impl Wpa2ApState {
         self.check_completion(ticket, Wpa2ApPhase::VerifyingMessage2)?;
         self.validate_retained_message2(&message2)?;
         if !valid {
-            self.phase = Wpa2ApPhase::Failed;
-            return Ok(Wpa2ApAction::DeauthenticatePeer);
+            // SNonce and M2 replay are peer input until the MIC authenticates
+            // them. A spoofed M2 must not poison this peer's M1 transaction.
+            self.supplicant_nonce = [0; WPA2_NONCE_LEN];
+            self.phase = Wpa2ApPhase::AwaitingMessage2;
+            return Ok(Wpa2ApAction::None);
         }
         self.phase = Wpa2ApPhase::PreparingMessage3;
         let ticket = self.issue_ticket();
@@ -748,8 +784,11 @@ impl Wpa2ApState {
         self.check_completion(ticket, Wpa2ApPhase::VerifyingMessage4)?;
         self.validate_retained_message4(&message4)?;
         if !valid {
-            self.phase = Wpa2ApPhase::Failed;
-            return Ok(Wpa2ApAction::DeauthenticatePeer);
+            // Retain the installed-candidate PTK and M3 response window. A
+            // forged M4 can then be ignored while a valid retry still
+            // authorizes exactly this handshake.
+            self.phase = Wpa2ApPhase::AwaitingMessage4;
+            return Ok(Wpa2ApAction::None);
         }
         self.phase = Wpa2ApPhase::Authorized;
         Ok(Wpa2ApAction::AuthorizePeer)

@@ -369,6 +369,7 @@ impl From<Wpa2StateError> for ApServiceError {
 struct ApPeer {
     address: [u8; 6],
     association_id: u16,
+    association_epoch: u32,
     phase: ApPeerPhase,
     wpa2: Option<Wpa2ApState>,
     association_security_binding: Option<AssociationSecurityBinding>,
@@ -414,10 +415,16 @@ impl Default for AccessPointPeerStorage {
 }
 
 impl ApPeer {
-    const fn authenticated(address: [u8; 6], association_id: u16, now_micros: u64) -> Self {
+    const fn authenticated(
+        address: [u8; 6],
+        association_id: u16,
+        association_epoch: u32,
+        now_micros: u64,
+    ) -> Self {
         Self {
             address,
             association_id,
+            association_epoch,
             phase: ApPeerPhase::Authenticated,
             wpa2: None,
             association_security_binding: None,
@@ -486,6 +493,10 @@ const fn new_ap_wpa2_retry() -> Wpa2Retry {
 pub struct ApPeerStatus {
     pub address: [u8; 6],
     pub association_id: u16,
+    /// Non-reusable identity of this AID assignment. Reauthentication keeps
+    /// the bounded AID slot but advances this epoch so receive-side duplicate
+    /// history cannot cross association ownership.
+    pub association_epoch: u32,
     pub phase: ApPeerPhase,
     pub maximum_legacy_rate_500kbps: u8,
     pub ht: Option<HtPeerCapabilities>,
@@ -663,6 +674,7 @@ impl<'peers> AccessPointService<'peers> {
             .map(|peer| ApPeerStatus {
                 address: peer.address,
                 association_id: peer.association_id,
+                association_epoch: peer.association_epoch,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
                 ht: peer.ht,
@@ -693,6 +705,7 @@ impl<'peers> AccessPointService<'peers> {
         Some(ApPeerStatus {
             address: peer.address,
             association_id: peer.association_id,
+            association_epoch: peer.association_epoch,
             phase: peer.phase,
             maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
             ht: peer.ht,
@@ -714,6 +727,7 @@ impl<'peers> AccessPointService<'peers> {
             .map(|peer| ApPeerStatus {
                 address: peer.address,
                 association_id: peer.association_id,
+                association_epoch: peer.association_epoch,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
                 ht: peer.ht,
@@ -1079,6 +1093,7 @@ impl<'peers> AccessPointService<'peers> {
             *destination = source.as_ref().map(|peer| ApPeerStatus {
                 address: peer.address,
                 association_id: peer.association_id,
+                association_epoch: peer.association_epoch,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
                 ht: peer.ht,
@@ -1173,16 +1188,26 @@ impl<'peers> AccessPointService<'peers> {
                 .expect("peer index resolves an occupied entry")
                 .association_id;
             self.advance_peer_generation();
-            self.storage_mut().peers[index] =
-                Some(ApPeer::authenticated(peer, association_id, now_micros));
+            let association_epoch = self.storage().generation;
+            self.storage_mut().peers[index] = Some(ApPeer::authenticated(
+                peer,
+                association_id,
+                association_epoch,
+                now_micros,
+            ));
             (AP_STATUS_SUCCESS, true)
         } else if self.occupied_count() >= self.client_limit.get() {
             (AP_STATUS_TOO_MANY_STATIONS, false)
         } else if let Some(index) = self.storage().peers.iter().position(Option::is_none) {
             let association_id = u16::try_from(index + 1).expect("fifteen AIDs fit u16");
             self.advance_peer_generation();
-            self.storage_mut().peers[index] =
-                Some(ApPeer::authenticated(peer, association_id, now_micros));
+            let association_epoch = self.storage().generation;
+            self.storage_mut().peers[index] = Some(ApPeer::authenticated(
+                peer,
+                association_id,
+                association_epoch,
+                now_micros,
+            ));
             (AP_STATUS_SUCCESS, true)
         } else {
             (AP_STATUS_TOO_MANY_STATIONS, false)
@@ -1568,12 +1593,21 @@ impl<'peers> AccessPointService<'peers> {
         if self.security_mode() != WifiSecurityMode::Wpa2Personal {
             return Err(ApServiceError::SecurityModeMismatch.into());
         }
-        let action = self
+        let action = match self
             .checked_peer_mut(peer)?
             .wpa2
             .as_mut()
             .ok_or(ApServiceError::WrongPeerPhase)?
-            .on_frame(frame)?;
+            .on_frame(frame)
+        {
+            Ok(action) => action,
+            Err(error) if error.is_peer_input_rejection() => {
+                // Unsupported, stale and otherwise unauthenticated EAPOL is
+                // a peer-local receive reject, not a role-control failure.
+                return Ok(ApWpa2Progress::None);
+            }
+            Err(error) => return Err(error.into()),
+        };
         match action {
             Wpa2ApAction::None => Ok(ApWpa2Progress::None),
             Wpa2ApAction::DerivePtk {
@@ -1603,6 +1637,7 @@ impl<'peers> AccessPointService<'peers> {
                         existing.wpa2_retry_alarm = None;
                         Ok(ApWpa2Progress::AuthorizePeer)
                     }
+                    Wpa2ApAction::None => Ok(ApWpa2Progress::None),
                     Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
                     _ => Err(ApWpa2Error::UnexpectedAction),
                 }
@@ -1620,26 +1655,6 @@ impl<'peers> AccessPointService<'peers> {
         context: Wpa2StatePtkContext,
         message2: OwnedEapolFrame<N>,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
-        let association_security_ies_match = self
-            .checked_peer(peer)?
-            .association_security_binding
-            .as_ref()
-            .is_some_and(|binding| {
-                self.wpa2_material()
-                    .is_ok_and(|(pmk, _)| binding.matches(pmk, message2.key_frame().key_data()))
-            });
-        if !association_security_ies_match {
-            let action = self
-                .checked_peer_mut(peer)?
-                .wpa2
-                .as_mut()
-                .ok_or(ApServiceError::WrongPeerPhase)?
-                .complete_ptk(ticket, message2, false)?;
-            return match action {
-                Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
-                _ => Err(ApWpa2Error::UnexpectedAction),
-            };
-        }
         let ptk = self.derive_ptk(PtkContext {
             authenticator_address: context.authenticator_address,
             supplicant_address: context.supplicant_address,
@@ -1656,6 +1671,18 @@ impl<'peers> AccessPointService<'peers> {
             return Err(ApWpa2Error::UnexpectedAction);
         };
         let valid = message2.key_frame().verify_mic(&ptk);
+        // The association commitment is an authenticated semantic binding.
+        // Do not let attacker-controlled Key Data decide peer teardown until
+        // this exact M2 has passed its PTK-derived MIC.
+        let association_security_ies_match = valid
+            && self
+                .checked_peer(peer)?
+                .association_security_binding
+                .as_ref()
+                .is_some_and(|binding| {
+                    self.wpa2_material()
+                        .is_ok_and(|(pmk, _)| binding.matches(pmk, message2.key_frame().key_data()))
+                });
         let action = self
             .checked_peer_mut(peer)?
             .wpa2
@@ -1664,11 +1691,25 @@ impl<'peers> AccessPointService<'peers> {
             .complete_message2_mic(ticket, message2, valid)?;
         let ticket = match action {
             Wpa2ApAction::PrepareMessage3 { ticket } => ticket,
+            Wpa2ApAction::None => return Ok(ApWpa2Progress::None),
             Wpa2ApAction::DeauthenticatePeer => {
                 return Ok(ApWpa2Progress::DeauthenticatePeer);
             }
             _ => return Err(ApWpa2Error::UnexpectedAction),
         };
+
+        if !association_security_ies_match {
+            let action = self
+                .checked_peer_mut(peer)?
+                .wpa2
+                .as_mut()
+                .ok_or(ApServiceError::WrongPeerPhase)?
+                .complete_message3_preparation::<N>(ticket, false)?;
+            return match action {
+                Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
+                _ => Err(ApWpa2Error::UnexpectedAction),
+            };
+        }
 
         let (_, gtk) = self.wpa2_material()?;
         let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
@@ -2006,6 +2047,14 @@ mod tests {
                 .unwrap()
                 .authenticate(&ptk);
         OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, message2.as_bytes()).unwrap()
+    }
+
+    fn corrupt_mic(frame: OwnedEapolFrame<512>) -> OwnedEapolFrame<512> {
+        let mut bytes = [0_u8; 512];
+        let length = frame.as_bytes().len();
+        bytes[..length].copy_from_slice(frame.as_bytes());
+        bytes[81] ^= 1;
+        OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, &bytes[..length]).unwrap()
     }
 
     fn ht_capabilities() -> ApAssociationCapabilities {
@@ -2385,6 +2434,115 @@ mod tests {
     }
 
     #[test]
+    fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
+        const ANONCE: [u8; 32] = [7; 32];
+        const SNONCE: [u8; 32] = [8; 32];
+
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
+        service.authenticate_open(PEER, 0);
+        service
+            .associate_wpa2(
+                PEER,
+                association_security(&SUPPLICANT_RSN),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
+            .unwrap();
+        let original_deadline = service.peer_status(PEER).unwrap().deadline_micros;
+
+        let replay_mismatch = Wpa2TxFrame::<512>::message4(AP, 77).unwrap();
+        let replay_mismatch = OwnedEapolFrame::<512>::try_copy(
+            Wpa2Interface::AccessPoint,
+            PEER,
+            replay_mismatch.as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            service.on_eapol(PEER, replay_mismatch).unwrap(),
+            ApWpa2Progress::None
+        ));
+
+        let unsupported = Wpa2TxFrame::<512>::message1(AP, 9, ANONCE).unwrap();
+        let unsupported = OwnedEapolFrame::<512>::try_copy(
+            Wpa2Interface::AccessPoint,
+            PEER,
+            unsupported.as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            service.on_eapol(PEER, unsupported).unwrap(),
+            ApWpa2Progress::None
+        ));
+
+        // The attacker also supplies mismatched association Key Data. The
+        // mismatch is not actionable because this candidate's MIC is bad.
+        let forged_m2 = corrupt_mic(signed_message2(&WPA2_RSN, &[], ANONCE, SNONCE));
+        assert!(matches!(
+            service.on_eapol(PEER, forged_m2).unwrap(),
+            ApWpa2Progress::None
+        ));
+        assert_eq!(
+            service.wpa2_mut(PEER).unwrap().phase(),
+            Wpa2ApPhase::AwaitingMessage2
+        );
+        assert!(service.pending_ptk(PEER).is_err());
+        assert_eq!(
+            service.peer_status(PEER).unwrap().deadline_micros,
+            original_deadline,
+            "ignored EAPOL must not extend peer liveness"
+        );
+
+        let valid_m2 = signed_message2(&SUPPLICANT_RSN, &[], ANONCE, SNONCE);
+        assert!(matches!(
+            service.on_eapol(PEER, valid_m2).unwrap(),
+            ApWpa2Progress::Transmit(_)
+        ));
+        assert_eq!(
+            service.wpa2_mut(PEER).unwrap().phase(),
+            Wpa2ApPhase::AwaitingMessage4
+        );
+
+        // Neither forged nor even MIC-valid duplicate M2 directly elicits a
+        // fresh M3. The finite authenticator retry timer owns retransmission.
+        let duplicate_m2 = signed_message2(&SUPPLICANT_RSN, &[], ANONCE, SNONCE);
+        assert!(matches!(
+            service.on_eapol(PEER, duplicate_m2).unwrap(),
+            ApWpa2Progress::None
+        ));
+
+        let ptk = Pmk::derive(b"password", b"test-ap")
+            .unwrap()
+            .derive_ptk(PtkContext {
+                authenticator_address: AP,
+                supplicant_address: PEER,
+                authenticator_nonce: ANONCE,
+                supplicant_nonce: SNONCE,
+            });
+        let valid_m4 = Wpa2TxFrame::<512>::message4(AP, 10)
+            .unwrap()
+            .authenticate(&ptk);
+        let valid_m4 =
+            OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, valid_m4.as_bytes())
+                .unwrap();
+        let forged_m4 = corrupt_mic(valid_m4.clone());
+        assert!(matches!(
+            service.on_eapol(PEER, forged_m4).unwrap(),
+            ApWpa2Progress::None
+        ));
+        assert_eq!(
+            service.wpa2_mut(PEER).unwrap().phase(),
+            Wpa2ApPhase::AwaitingMessage4
+        );
+        assert!(matches!(
+            service.on_eapol(PEER, valid_m4).unwrap(),
+            ApWpa2Progress::AuthorizePeer
+        ));
+    }
+
+    #[test]
     fn message2_must_echo_the_exact_association_rsnxe() {
         const ANONCE: [u8; 32] = [7; 32];
         const SNONCE: [u8; 32] = [8; 32];
@@ -2578,11 +2736,12 @@ mod tests {
         // fifteen WPA2 state machines remain in caller-owned static storage.
         assert!(core::mem::size_of::<AccessPointService<'_>>() <= 256);
         // Fifteen independently negotiated TX BlockAck sessions and the
-        // per-peer HMAC-SHA1-128 Association-security commitments remain
-        // explicit. The commitments cost 24 aligned host bytes per peer and
-        // avoid retaining fifteen full 128-byte IE buffers.
+        // per-peer HMAC-SHA1-128 Association-security commitments and exact
+        // non-reusable RX association epochs remain explicit. The epoch tips
+        // the aligned host `ApPeer` layout by eight bytes per peer, but avoids
+        // duplicate history crossing AID reuse without any dynamic table.
         assert!(
-            core::mem::size_of::<AccessPointPeerStorage>() <= 4_584,
+            core::mem::size_of::<AccessPointPeerStorage>() <= 4_688,
             "peer storage size {}",
             core::mem::size_of::<AccessPointPeerStorage>()
         );

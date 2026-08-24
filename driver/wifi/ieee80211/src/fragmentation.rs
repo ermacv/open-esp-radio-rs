@@ -140,6 +140,7 @@ pub enum OpenDataFragmentError {
     OrderedUnsupported,
     RoleMismatch,
     InvalidReceiver,
+    InvalidDestination,
     InvalidTransmitter,
     AmsduUnsupported,
     EmptyPayload,
@@ -157,9 +158,9 @@ pub enum OpenDataFragmentError {
 /// Parse an Open data fragment from one normalized (FCS-free) MPDU.
 ///
 /// A successful value proves exact three-address role mapping with an
-/// individual receiver address, an unprotected Data/QoS-Data subtype, no
-/// HT-Control or A-MSDU, and a nonempty fragment body. Unfragmented MPDUs
-/// remain with the ordinary decapsulation path.
+/// individual receiver and logical destination, an unprotected
+/// Data/QoS-Data subtype, no HT-Control or A-MSDU, and a nonempty fragment
+/// body. Unfragmented MPDUs remain with the ordinary decapsulation path.
 pub fn parse_open_data_fragment(
     role: DataInterfaceRole,
     mpdu: &[u8],
@@ -174,6 +175,14 @@ pub fn parse_open_data_fragment(
         // check belongs to the fragment constructor, not the shared identity
         // parser used by unfragmented receive.
         return Err(OpenDataFragmentError::InvalidReceiver);
+    }
+    let destination = header.identity.destination();
+    if destination == [0; 6] || destination[0] & 1 != 0 {
+        // In To-DS/AP direction Address 1 is the individual BSSID while
+        // Address 3 is the MSDU destination. Fragmentation is forbidden for
+        // that group-addressed MSDU even though its immediate receiver is
+        // individual.
+        return Err(OpenDataFragmentError::InvalidDestination);
     }
     let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
     let fragment_number = (sequence_control & 0x000f) as u8;
@@ -985,6 +994,19 @@ mod tests {
         assert!(
             parse_open_data_identity(DataInterfaceRole::Station, &group[..33]).is_ok(),
             "ordinary group-address identity remains valid"
+        );
+
+        let mut group_destination =
+            fragment(DataInterfaceRole::AccessPoint, 2, 0, true, false, &payload);
+        group_destination[16..22].fill(0xff);
+        assert_eq!(
+            parse_open_data_fragment(DataInterfaceRole::AccessPoint, &group_destination[..33]),
+            Err(OpenDataFragmentError::InvalidDestination)
+        );
+        assert!(
+            parse_open_data_identity(DataInterfaceRole::AccessPoint, &group_destination[..33])
+                .is_ok(),
+            "ordinary To-DS group destination remains valid"
         );
 
         let first = fragment(DataInterfaceRole::AccessPoint, 3, 0, true, false, &payload);

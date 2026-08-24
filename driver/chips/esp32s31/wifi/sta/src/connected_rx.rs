@@ -1720,7 +1720,7 @@ impl ConnectedRxDispatcher {
             return rejected(protection, ConnectedRxError::PeerQosMismatch);
         }
         if view.fragment.fragment_number() == 0
-            && self.duplicate_filter.is_duplicate(
+            && self.duplicate_filter.is_known_duplicate(
                 view.fragment.retry(),
                 view.fragment.sequence_control(),
                 identity.tid(),
@@ -1731,7 +1731,7 @@ impl ConnectedRxDispatcher {
             // this edge so a retry cannot turn an already accepted ordinary
             // MPDU into a new fragment train merely by setting More
             // Fragments. Later fragments remain owned by the reassembler's
-            // per-fragment history.
+            // per-fragment history, and no fragment mutates ordinary history.
             return ConnectedRxDispatch::Duplicate;
         }
         let power_save_delivery =
@@ -2712,6 +2712,63 @@ mod tests {
                 }),
             }
         );
+
+        let mut invalid_first_storage = [0_u8; 192];
+        let invalid_first_signal = open_fragment(
+            &mut invalid_first_storage,
+            8,
+            0,
+            true,
+            false,
+            SOURCE,
+            &[0; 9],
+        );
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&invalid_first_storage, invalid_first_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(4),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::FragmentBuffered {
+                expired: 0,
+                evicted: false,
+            }
+        );
+        let mut invalid_final_storage = [0_u8; 192];
+        let invalid_final_signal =
+            open_fragment(&mut invalid_final_storage, 8, 1, false, false, SOURCE, &[2]);
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&invalid_final_storage, invalid_final_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(5),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::Fragment(OpenDataFragmentError::InvalidLlcSnap),
+            }
+        );
+
+        invalid_first_storage[FRAME_OFFSET + 1] |= 0x08;
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&invalid_first_storage, invalid_first_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(6),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::FragmentBuffered {
+                expired: 0,
+                evicted: false,
+            },
+            "failed fragment trains do not poison ordinary duplicate history"
+        );
+        assert_eq!(dispatcher.clear_open_fragmentation(), 1);
         assert_eq!(sink.ethernet.len(), 1);
     }
 

@@ -497,17 +497,20 @@ impl Esp32s31ApRxDispatcher {
             };
         self.bind_duplicate_owner(peer, duplicate_owner);
         if view.fragment.fragment_number() == 0
-            && self.duplicate_filter(peer, duplicate_owner).is_duplicate(
-                view.fragment.retry(),
-                view.fragment.sequence_control(),
-                identity.tid(),
-            )
+            && self
+                .duplicate_filter(peer, duplicate_owner)
+                .is_known_duplicate(
+                    view.fragment.retry(),
+                    view.fragment.sequence_control(),
+                    identity.tid(),
+                )
         {
             // Fragment zero shares the ordinary MPDU's Sequence Control
             // value. Consult the exact association duplicate owner only at
             // this edge so Retry cannot manufacture a new fragment train by
             // toggling More Fragments on an already accepted ordinary MPDU.
-            // Later fragments remain with the reassembler's own history.
+            // Later fragments remain with the reassembler's own history, and
+            // no fragment mutates ordinary history.
             return Esp32s31ApRxDispatch::Duplicate;
         }
         let raw = view.raw;
@@ -904,6 +907,52 @@ mod tests {
                 OpenDataFragmentError::Orphan { fragment_number: 1 }
             ))
         );
+
+        let mut invalid_first_storage = [0_u8; 192];
+        let invalid_first_descriptor =
+            open_fragment(&mut invalid_first_storage, 8, 0, true, DESTINATION, &[0; 9]);
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&invalid_first_storage, invalid_first_descriptor),
+                4,
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::FragmentBuffered {
+                expired: 0,
+                evicted: false,
+            }
+        );
+        let mut invalid_final_storage = [0_u8; 192];
+        let invalid_final_descriptor =
+            open_fragment(&mut invalid_final_storage, 8, 1, false, DESTINATION, &[2]);
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&invalid_final_storage, invalid_final_descriptor),
+                5,
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(
+                OpenDataFragmentError::InvalidLlcSnap
+            ))
+        );
+
+        invalid_first_storage[PUBLIC_HEADER_SIZE + 1] |= 0x08;
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&invalid_first_storage, invalid_first_descriptor),
+                6,
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::FragmentBuffered {
+                expired: 0,
+                evicted: false,
+            },
+            "failed fragment trains do not poison ordinary duplicate history"
+        );
+        assert_eq!(dispatcher.clear_open_fragmentation(), 1);
         assert_eq!(sink.ethernet.len(), 1);
     }
 

@@ -14,12 +14,34 @@ cargo blobray project files --project path/to/vendor-project.toml
 tools/blobray/scripts/run-limited \
   project analyze --project path/to/vendor-project.toml --jobs 1
 cargo blobray project status --project path/to/vendor-project.toml
+cargo blobray project research next --project path/to/vendor-project.toml
 ```
 
 - `doctor` validates configuration, local inputs and reviewed workspaces.
 - `files` explains ownership and whether each input or generated output exists.
 - `analyze` refreshes symbol, MMIO, interface, linked-IR and navigation facts.
 - `status` reads the current results without regenerating the whole project.
+- `research next` ranks concrete human-review actions by downstream impact.
+
+`research next` combines root-cause blockers, the reverse call graph,
+unreviewed MMIO and interface observations, sparse unknown hardware semantics,
+publication scopes and verification surfaces. Its `G/O/M` metrics mean
+guaranteed unlock, optimistic reverse-reachable impact, and marginal benefit
+after other blockers are resolved. Co-blockers and an estimated research cost
+are explicit score penalties; the JSON report exposes every weighted term so
+the ranking is auditable rather than an opaque recommendation. Restrict the
+result to one radio area when needed:
+
+```console
+cargo blobray project research next --scope ieee802154-baseband-leaves \
+  --project path/to/vendor-project.toml --limit 10
+```
+
+The command is read-only unless `--output` is supplied. Each candidate names
+the missing knowledge, confidence, affected scopes, expected impact and a
+copyable next inspection command. Low confidence on write semantics is
+intentional: W1C, self-clear and hardware-owned behavior require reviewed HIL
+or authoritative documentation and are not inferred from vendor writes.
 
 Preview the exact stage order and cache work before a large analysis:
 

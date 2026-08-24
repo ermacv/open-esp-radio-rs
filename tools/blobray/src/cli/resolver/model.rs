@@ -39,6 +39,10 @@ pub(in crate::cli) enum ResolvedInvocation {
         command: RevisionWorkspaceCommand,
         session: Box<ProjectSession>,
     },
+    ResearchNext {
+        arguments: ResearchNextArgs,
+        session: Box<ProjectSession>,
+    },
     ProjectAuditBindings(Box<ProjectSession>),
     ProjectStatus {
         arguments: ProjectStatusArgs,

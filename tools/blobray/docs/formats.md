@@ -50,7 +50,9 @@ Old inline `memory-map`, `svd`, `platform-pack`, `harness`, and
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output;
 - revision snapshots, diffs and rebase plans. Snapshot schema 1 stores only
-  digests and normalized derived features, never vendor payloads.
+  digests and normalized derived features, never vendor payloads;
+- research-next reports (`schema_version = 1`), including explicit benefit,
+  cost and co-blocker score terms plus copyable follow-up commands.
 
 Generated outputs are disposable and reproducible. They must preserve source
 artifact identity/provenance and must not contain proprietary payloads or full

@@ -71,6 +71,8 @@ impl ResolutionNeeds {
             | Command::RevisionRebase(_) => {
                 Self::new(true, false, false, false, false, false, false)
             }
+            Command::ResearchNext(_) => Self::new(true, false, false, false, false, false, false)
+                .with_configured_knowledge_provider(),
             Command::ProjectAuditBindings(_) => {
                 Self::new(true, false, true, false, false, false, false)
             }

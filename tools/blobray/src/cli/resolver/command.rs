@@ -128,6 +128,10 @@ pub(super) fn resolve_command(
             command: RevisionWorkspaceCommand::Rebase(arguments),
             session: Box::new(environment.into_project_session()?),
         },
+        Command::ResearchNext(arguments) => ResolvedInvocation::ResearchNext {
+            arguments,
+            session: Box::new(environment.into_project_session()?),
+        },
         Command::FunctionInitPack(arguments) => {
             let (project, target) = environment.into_project_target()?;
             ResolvedInvocation::FunctionWorkspace {

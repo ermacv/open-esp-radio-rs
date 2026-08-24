@@ -34,6 +34,7 @@ mod project_inputs;
 mod project_ir_doctor;
 mod project_pipeline;
 mod project_publication;
+mod project_research;
 mod project_revision;
 pub(crate) mod project_status;
 mod project_verification;
@@ -98,6 +99,13 @@ pub(super) fn run_revision_command(
     session: &crate::application::ProjectSession,
 ) -> Result<bool> {
     project_revision::run(command, session)
+}
+
+pub(super) fn run_research_next(
+    arguments: super::ResearchNextArgs,
+    session: &crate::application::ProjectSession,
+) -> Result<bool> {
+    project_research::run(arguments, session)
 }
 
 pub(super) fn run_project_audit_bindings(

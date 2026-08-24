@@ -167,6 +167,22 @@ pub(crate) struct RevisionRebaseArgs {
     pub(crate) check: bool,
 }
 
+#[derive(Clone, Debug, Args)]
+pub(crate) struct ResearchNextArgs {
+    /// Restrict prioritization to one configured review scope.
+    #[arg(long)]
+    pub(crate) scope: Option<String>,
+    /// Maximum number of ranked actions returned.
+    #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u16).range(1..=200), value_name = "N")]
+    pub(crate) limit: u16,
+    /// Optional generated machine-readable research plan.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
+    /// Verify the configured output instead of writing it.
+    #[arg(long, requires = "output")]
+    pub(crate) check: bool,
+}
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct CheckArgs {
     /// Compare generated output with the checked-in file without changing it.

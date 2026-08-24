@@ -34,6 +34,7 @@ fn command_message(command: &Command) -> Option<&'static str> {
         Command::ProjectCheck(_) => "Project check",
         Command::ProjectPublish(_) => "Project publication",
         Command::RevisionSnapshot(_) => "Revision snapshot",
+        Command::ResearchNext(_) => "Research prioritization",
         Command::FunctionValidate(_) => "Function validation",
         Command::FunctionReview(_) => "Function review",
         Command::CodeValidate(_) => "Code-boundary validation",

@@ -1099,10 +1099,12 @@ mod tests {
 
     #[test]
     fn rebase_rejects_an_artifact_guard_from_the_old_revision() {
+        let old_digest = "aa".repeat(32);
+        let new_digest = "bb".repeat(32);
         let mut before = snapshot("old", vec![function("stable", "a")]);
         before.artifacts = vec![RevisionArtifact {
             source: "vendor".to_owned(),
-            sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            sha256: old_digest.clone(),
         }];
         before.assertions = vec![RevisionReviewedRecord {
             id: "fact.guarded".to_owned(),
@@ -1112,14 +1114,14 @@ mod tests {
                 "subject": "stable",
                 "applies-to": {"artifacts": [{
                     "source": "vendor",
-                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    "sha256": old_digest
                 }]}
             }),
         }];
         let mut after = snapshot("new", vec![function("stable", "a")]);
         after.artifacts = vec![RevisionArtifact {
             source: "vendor".to_owned(),
-            sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+            sha256: new_digest,
         }];
 
         let report = rebase(&before, &after);

@@ -141,6 +141,9 @@ Use focused inspection when project status identifies a function, register, or
 blocker:
 
 ```console
+cargo blobray project research next \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+
 cargo blobray inspect function libpp:wDev_AppendRxBlocks \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
@@ -152,7 +155,10 @@ cargo blobray project browse \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-`inspect` is the detailed console view. With `--replacement`, a matching
+`project research next` ranks the current blockers and unreviewed register or
+interface facts by guaranteed, optimistic and co-blocked downstream impact;
+use `--scope ID` to focus Wi-Fi, BLE or 802.15.4. `inspect` is the detailed
+console view. With `--replacement`, a matching
 concrete case shows one canonical ordered effect trace with separate vendor
 and Rust instruction provenance; use `--case ID` to select a case and
 `--details` to show all matching cases. `project browse` is the supplementary

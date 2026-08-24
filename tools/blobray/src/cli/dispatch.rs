@@ -29,6 +29,9 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
         ResolvedInvocation::RevisionWorkspace { command, session } => {
             commands::run_revision_command(command, &session)
         }
+        ResolvedInvocation::ResearchNext { arguments, session } => {
+            commands::run_research_next(arguments, &session)
+        }
         ResolvedInvocation::ProjectAuditBindings(session) => {
             commands::run_project_audit_bindings(&session)
         }

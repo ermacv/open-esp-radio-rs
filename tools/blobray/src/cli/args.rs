@@ -313,6 +313,11 @@ enum ProjectCommand {
         #[command(subcommand)]
         command: ProjectRevisionCommand,
     },
+    /// Rank high-impact analysis and hardware-research actions.
+    Research {
+        #[command(subcommand)]
+        command: ProjectResearchCommand,
+    },
     /// Audit the trust boundary between vendor evidence, probes and production Rust.
     Audit {
         #[command(subcommand)]
@@ -357,6 +362,7 @@ impl ProjectCommand {
             Self::Files(arguments) => Command::ProjectFiles(arguments),
             Self::Cache { command } => command.into_command(),
             Self::Revision { command } => command.into_command(),
+            Self::Research { command } => command.into_command(),
             Self::Audit { command } => command.into_command(),
             Self::Status(arguments) => Command::ProjectStatus(arguments),
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
@@ -380,6 +386,11 @@ leaf_commands!(ProjectRevisionCommand {
     Diff(RevisionDiffArgs) => Command::RevisionDiff, RevisionDiff,
     /// Produce a fail-closed carry/remap/review plan for every reviewed record.
     Rebase(RevisionRebaseArgs) => Command::RevisionRebase, RevisionRebase,
+});
+
+leaf_commands!(ProjectResearchCommand {
+    /// Explain which review action unlocks the most downstream logic.
+    Next(ResearchNextArgs) => Command::ResearchNext, ResearchNext,
 });
 
 leaf_commands!(ProjectAuditCommand {
@@ -560,6 +571,7 @@ pub(crate) enum Command {
     RevisionSnapshot(RevisionSnapshotArgs),
     RevisionDiff(RevisionDiffArgs),
     RevisionRebase(RevisionRebaseArgs),
+    ResearchNext(ResearchNextArgs),
     ProjectAuditBindings(EmptyArgs),
     ProjectStatus(ProjectStatusArgs),
     ProjectBrowse(EmptyArgs),
@@ -699,6 +711,42 @@ mod tests {
         assert_eq!(
             invocation.project,
             Some(PathBuf::from("vendor-project.toml"))
+        );
+    }
+
+    #[test]
+    fn parses_bounded_research_prioritization() {
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "research".to_owned(),
+            "next".to_owned(),
+            "--scope".to_owned(),
+            "ieee802154".to_owned(),
+            "--limit".to_owned(),
+            "7".to_owned(),
+            "--project".to_owned(),
+            "vendor-project.toml".to_owned(),
+        ])
+        .unwrap();
+        let Command::ResearchNext(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.scope.as_deref(), Some("ieee802154"));
+        assert_eq!(arguments.limit, 7);
+        assert_eq!(
+            invocation.project,
+            Some(PathBuf::from("vendor-project.toml"))
+        );
+
+        assert!(
+            ParsedInvocation::parse([
+                "project".to_owned(),
+                "research".to_owned(),
+                "next".to_owned(),
+                "--limit".to_owned(),
+                "0".to_owned(),
+            ])
+            .is_err()
         );
     }
 

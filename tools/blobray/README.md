@@ -54,6 +54,19 @@ Use `--details` only when you need the complete component or file inventory.
 Use `--format json` for automation. Human results go to stdout; diagnostics,
 tracing, and progress go to stderr.
 
+Inspect the project-owned incremental cache without changing it:
+
+```console
+cargo blobray project cache stats \
+  --project /path/to/vendor-project.toml
+```
+
+`cache stats` is a read-only inventory command. JSON reports an absent cache as
+`present: false`; the command does not initialize, migrate, compact, prune, or
+delete cache data. In particular, it is not a garbage-collection command.
+Use `--details` for paths and the per-kind query breakdown; cache writes and
+automatic compaction remain part of analysis execution.
+
 The `cargo blobray` alias intentionally keeps Cargo output
 visible. A cold invocation may first compile the optimized host binary or wait
 for another Cargo process to release its build lock; those messages describe
@@ -81,14 +94,18 @@ launcher below skips Cargo entirely.
      --bind source-artifact:vendor=/opt/vendor/libvendor.a
    ```
 
-3. Validate the resolved workspace and inspect its file map:
+3. Inspect the file map and follow its prerequisite-ordered `Next` actions.
+   A fresh generic project uses these actions to create the reviewed code,
+   interface, and function packs before whole-project analysis. Run `doctor`
+   whenever you want a deep validity check of the inputs created so far:
 
    ```console
    cargo blobray project doctor --project radio-project/vendor-project.toml
    cargo blobray project files --project radio-project/vendor-project.toml
    ```
 
-4. Generate symbol, MMIO, interface, linked-IR, navigation, and review evidence:
+4. When `project files` reports `READY TO ANALYZE`, generate symbol, MMIO,
+   interface, linked-IR, navigation, and review evidence:
 
    ```console
    tools/blobray/scripts/run-limited \

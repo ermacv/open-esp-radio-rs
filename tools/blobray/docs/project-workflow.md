@@ -21,6 +21,21 @@ cargo blobray project status --project path/to/vendor-project.toml
 - `analyze` refreshes symbol, MMIO, interface, linked-IR and navigation facts.
 - `status` reads the current results without regenerating the whole project.
 
+Preview the exact stage order and cache work before a large analysis:
+
+```console
+cargo blobray project analyze --plan --project path/to/vendor-project.toml
+```
+
+The plan is read-only. It reports configured dependencies and distinguishes
+current outputs, CAS restoration, cold computation, check-mode verification,
+deferred decisions, blocked work, failures, and unconfigured stages. If an
+earlier stage must materialize an input, a dependent cache decision is reported
+as `deferred`; Blobray does not guess the digest of an output that has not been
+produced yet. JSON output includes the exact stage signatures that were safe to
+evaluate. Add `--details` to the human view to see every profile/work item,
+output and cause without grouping.
+
 Before publishing or merging a replacement, run:
 
 ```console
@@ -41,23 +56,44 @@ verification-policy requirement makes a production trace a Blobray gate.
 
 Focused inspection, a selected IR profile and `project analyze` use the same
 recovery engine. Full project analysis enumerates all configured roots; it
-does not switch to a second bulk algorithm. The current persistent cutover
-reuses a complete immutable profile/stage projection, including explicit
-incomplete/blocker results, and restores its generated files from CAS. Reuse
-between only partially overlapping root sets requires the remaining
-function-granular query cutover and is not reported as a cache hit today.
-All stale IR profiles selected by one `project analyze` invocation enter the
-builder together, so shared catalogs and reviewed interface knowledge are
-loaded once. Cache-current profiles are not rebuilt.
+does not switch to a second bulk algorithm. The persistent store reuses a
+complete immutable profile/stage projection, including explicit
+incomplete/blocker results, and restores its generated files from CAS. It also
+stores direct-function facts, so partially overlapping root sets can reuse the
+functions they share. All stale IR profiles selected by one `project analyze`
+invocation enter the builder together, so shared catalogs and reviewed
+interface knowledge are loaded once. Cache-current profiles are not rebuilt.
+
+Each direct-function fact is bound to its exact owner identity and body and to
+conservative resolver, MMIO and harness-semantic fingerprints. Other function
+bodies are excluded from that resolver fingerprint: changing one body can
+reuse unchanged facts for the other functions. Resolver layout, MMIO or
+harness changes may conservatively invalidate a wider set; the cache does not
+claim an exact per-function dependency DAG. A provider with summary hooks must
+publish a stable, versioned semantic cache domain. Missing domain identity
+fails closed to cold analysis instead of reusing a potentially stale fact.
 
 The local persistent store lives below `generated/.blobray-cache/`. Removing
 that directory only causes a cold recomputation. It never removes reviewed
 knowledge or generated publication artifacts. Profile IDs and output paths
 are bindings, so renaming an otherwise identical investigation does not change
 its analysis query key. Changing artifact bytes, provenance, ABI/backend
-revision or a semantic input read by the current stage creates a new key. Once
-function-granular persistence is enabled, that invalidation narrows to the
-affected query dependency closure.
+revision or a semantic input covered by the current query domain creates a new
+key. Direct-function reuse remains intentionally conservative across resolver,
+MMIO and harness-semantic changes.
+
+Inspect the store before deciding whether cache growth needs investigation:
+
+```console
+cargo blobray project cache stats --project path/to/vendor-project.toml
+```
+
+The command reports cache-file, database and pack sizes, query kinds, dependency
+and object counts, live records, and currently reclaimable pack bytes. It opens
+an existing cache read-only. If the store has not been created, that state is
+reported without creating `generated/.blobray-cache/` or any SQLite sidecar.
+`cache stats` does not perform garbage collection, compaction, pruning, schema
+migration, or quota enforcement; it only describes the state already on disk.
 
 For performance measurements, set `BLOBRAY_REPORT_USAGE=1` when
 calling `scripts/run-limited`. This selects its process-session watchdog and

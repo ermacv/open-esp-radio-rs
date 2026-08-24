@@ -111,7 +111,7 @@ fn checked_in_project_and_target_owned_review_packs_pass_doctor() {
             .is_some_and(|capabilities| capabilities.iter().all(|capability| {
                 matches!(
                     capability["status"].as_str(),
-                    Some("available" | "ready" | "valid")
+                    Some("available" | "ready" | "valid" | "not-generated" | "facts-not-generated")
                 ) || (capability["name"] == "verification-report"
                     && capability["status"] == "incomplete")
             }))

@@ -6,7 +6,12 @@ use serde::Serialize;
 
 use crate::{
     Result,
-    application::status::model::{DetailValue, ProjectStatusReport, Readiness, TargetIdentity},
+    application::{
+        FollowUpRequirements, ProjectContext,
+        status::model::{
+            DetailValue, ProjectStatusReport, Readiness, StatusValidation, TargetIdentity,
+        },
+    },
     cli::{output, table},
 };
 
@@ -41,13 +46,14 @@ pub(super) struct StatusDocument<'a> {
     scope: &'static str,
     project: ProjectIdentity<'a>,
     target: &'a TargetIdentity,
+    validation: &'a StatusValidation,
     pipeline_status: Readiness,
     phases: BTreeMap<&'a str, PhaseDocument<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     publication: Option<crate::cli::output::Publication>,
 }
 
-pub(super) fn print_text(report: &ProjectStatusReport) {
+pub(super) fn print_text(report: &ProjectStatusReport, context: &ProjectContext<'_>) {
     outputln!("{}", output::heading("Project status"));
     outputln!("Project:  {}", report.project_id);
     outputln!("Manifest: {}", report.manifest);
@@ -57,9 +63,20 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
         report.target.architecture,
         report.target.calling_convention
     );
+    outputln!("Validation: shallow project-status inspection");
+    outputln!("Freshness:  unknown unless a component states otherwise");
+    outputln!("Deep validation:");
+    outputln!(
+        "  {}",
+        context.follow_up_command("project doctor", FollowUpRequirements::ANALYSIS)
+    );
+    outputln!(
+        "  {}",
+        context.follow_up_command("project check", FollowUpRequirements::ANALYSIS)
+    );
     let outcome = match report.overall {
         Readiness::Ready => output::success(
-            "CONFIGURED GATES READY — this is not a whole-project equivalence claim",
+            "SHALLOW OVERVIEW — configured outputs are present; freshness not validated",
         ),
         Readiness::Inventory => {
             output::success("PIPELINE INVENTORY — observed evidence is available for review")
@@ -128,7 +145,7 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
     for phase in &report.phases {
         for component in &phase.components {
             if let Some(action) = component.next_action.as_deref() {
-                let action = sanitize(action);
+                let action = sanitize_next_action(action);
                 let component = format!("{}/{}", phase.name, component.name);
                 if let Some(position) = action_positions.get(&action).copied() {
                     actions[position].1.push(component);
@@ -157,14 +174,7 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
             report.phases.iter().map(|phase| [
                 phase.name.clone(),
                 phase.status.label().to_owned(),
-                phase
-                    .components
-                    .iter()
-                    .filter(|component| {
-                        matches!(component.status, Readiness::Invalid | Readiness::Incomplete)
-                    })
-                    .count()
-                    .to_string(),
+                phase_problem_count(phase).to_string(),
             ]),
         )
     );
@@ -186,6 +196,29 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
                 }),
             )
         );
+        let component_details = report
+            .phases
+            .iter()
+            .flat_map(|phase| {
+                phase.components.iter().flat_map(move |component| {
+                    component.details.iter().map(move |(field, value)| {
+                        [
+                            phase.name.clone(),
+                            component.name.clone(),
+                            field.clone(),
+                            human_detail_value(value),
+                        ]
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        if !component_details.is_empty() {
+            outputln!("\n{}", output::heading("Component details"));
+            outputln!(
+                "{}",
+                table::render(["Phase", "Component", "Field", "Value"], component_details,)
+            );
+        }
         if problems.len() > 8 {
             outputln!("\n{}", output::heading("All diagnostics"));
             for (index, (component, diagnostic)) in problems.iter().enumerate() {
@@ -224,7 +257,7 @@ pub(super) fn document(
         })
         .collect();
     StatusDocument {
-        schema: 6,
+        schema: 7,
         command: "project status",
         scope: "blobray-pipeline",
         project: ProjectIdentity {
@@ -232,10 +265,33 @@ pub(super) fn document(
             manifest: &report.manifest,
         },
         target: &report.target,
+        validation: &report.validation,
         pipeline_status: report.overall,
         phases,
         publication,
     }
+}
+
+fn human_detail_value(value: &DetailValue) -> String {
+    match value {
+        DetailValue::String(value) => sanitize(value),
+        DetailValue::Unsigned(value) => value.to_string(),
+        DetailValue::Bool(value) => value.to_string(),
+        DetailValue::Strings(values) => values.join(", "),
+        DetailValue::LinkedIrProfiles(values) => {
+            structured_detail_summary(values.len(), "linked-IR profile")
+        }
+        DetailValue::MmioRegions(values) => structured_detail_summary(values.len(), "MMIO region"),
+        DetailValue::Artifacts(values) => structured_detail_summary(values.len(), "artifact"),
+        DetailValue::ReviewScopes(values) => {
+            structured_detail_summary(values.len(), "review scope")
+        }
+    }
+}
+
+fn structured_detail_summary(count: usize, kind: &str) -> String {
+    let suffix = if count == 1 { "" } else { "s" };
+    format!("{count} {kind}{suffix} (use --format json for structured values)")
 }
 
 pub(super) fn json_document(document: &StatusDocument<'_>) -> Result<String> {
@@ -245,19 +301,44 @@ pub(super) fn json_document(document: &StatusDocument<'_>) -> Result<String> {
 }
 
 fn sanitize(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn sanitize_next_action(value: &str) -> String {
     value
         .chars()
         .map(|character| match character {
-            '\t' | '\r' | '\n' => ' ',
+            '\r' | '\n' => ' ',
             character => character,
         })
         .collect()
 }
 
+fn phase_problem_count(phase: &crate::application::status::model::Phase) -> usize {
+    phase
+        .components
+        .iter()
+        .filter(|component| component.diagnostic.is_some())
+        .count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::status::model::{Component, Phase, TargetIdentity};
+    use crate::application::status::model::{
+        Component, LinkedIrProfileDetail, Phase, TargetIdentity,
+    };
+
+    #[test]
+    fn next_action_sanitizing_preserves_shell_quoted_argument_bytes() {
+        let command =
+            "blobray project status --project '/tmp/owner'\"'\"'s/project  tree/vendor.toml'";
+        assert_eq!(sanitize_next_action(command), command);
+        assert_eq!(
+            sanitize_next_action("blobray project status\r\n--help"),
+            "blobray project status  --help"
+        );
+    }
 
     #[test]
     fn json_schema_keeps_phase_and_component_states_explicit() {
@@ -281,8 +362,10 @@ mod tests {
         );
         let document: serde_json::Value =
             serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
-        assert_eq!(document["schema"], 6);
+        assert_eq!(document["schema"], 7);
         assert_eq!(document["scope"], "blobray-pipeline");
+        assert_eq!(document["validation"]["depth"], "shallow");
+        assert_eq!(document["validation"]["freshness"], "unknown");
         assert_eq!(document["pipeline_status"], "incomplete");
         assert!(document.get("overall").is_none());
         assert_eq!(
@@ -292,6 +375,68 @@ mod tests {
         assert_eq!(
             document["phases"]["analysis"]["components"][0]["next_action"],
             "run ir build"
+        );
+    }
+
+    #[test]
+    fn human_detail_values_preserve_scalar_and_structured_component_evidence() {
+        assert_eq!(
+            human_detail_value(&DetailValue::String("shallow\ncheck".to_owned())),
+            "shallow check"
+        );
+        assert_eq!(
+            human_detail_value(&DetailValue::Strings(vec![
+                "first".to_owned(),
+                "second".to_owned(),
+            ])),
+            "first, second"
+        );
+        assert_eq!(
+            human_detail_value(&DetailValue::LinkedIrProfiles(vec![
+                LinkedIrProfileDetail {
+                    id: "fixture".to_owned(),
+                    sources: vec!["vendor".to_owned()],
+                    missing_sources: Vec::new(),
+                    entry_contract: "neutral".to_owned(),
+                    contract_status: "ready",
+                    contract_error: None,
+                    output: "generated/fixture.ir".to_owned(),
+                    output_status: "ready",
+                    output_error: None,
+                    functions: 1,
+                    registers: 2,
+                    field_candidates: 3,
+                }
+            ])),
+            "1 linked-IR profile (use --format json for structured values)"
+        );
+        assert_eq!(
+            human_detail_value(&DetailValue::ReviewScopes(Vec::new())),
+            "0 review scopes (use --format json for structured values)"
+        );
+    }
+
+    #[test]
+    fn workflow_problem_count_matches_rendered_diagnostics() {
+        let phase = Phase::collect(
+            "inputs",
+            vec![
+                Component::new("ready-with-warning", Readiness::Ready)
+                    .diagnostic("configured fallback is in use"),
+                Component::new("incomplete-without-diagnostic", Readiness::Incomplete),
+                Component::new("invalid-with-diagnostic", Readiness::Invalid)
+                    .diagnostic("invalid input"),
+            ],
+        );
+
+        assert_eq!(phase_problem_count(&phase), 2);
+    }
+
+    #[test]
+    fn diagnostics_are_compacted_to_one_readable_line() {
+        assert_eq!(
+            sanitize("parse error\n  at line 3\tunknown value\r\n"),
+            "parse error at line 3 unknown value"
         );
     }
 }

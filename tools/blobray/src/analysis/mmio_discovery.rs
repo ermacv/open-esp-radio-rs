@@ -14,7 +14,6 @@ use std::{
     thread,
 };
 
-use indicatif::ProgressStyle;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::{
@@ -446,17 +445,7 @@ fn artifact_progress_span(source: &str, path: &Path, functions: usize) -> tracin
         artifact = %path.display(),
         functions,
     );
-    span.pb_set_style(
-        &ProgressStyle::with_template(
-            "{spinner:.cyan} [{elapsed_precise}] {pos:>5}/{len:<5} {msg}",
-        )
-        .expect("static MMIO progress template")
-        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
-    );
-    span.pb_set_length(functions as u64);
-    span.pb_set_message(&format!("{source}: loading functions"));
-    span.pb_start();
-    span
+    crate::progress::determinate_span(span, functions, &format!("{source}: loading functions"))
 }
 
 fn explore_symbols(

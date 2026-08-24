@@ -42,6 +42,6 @@ pub(super) fn run(context: ProjectContext<'_>) -> Result<bool> {
     verification::collect(&context, &mut report);
     inputs::collect(&context, &mut report);
 
-    render::render(&report);
+    render::render(&report, &context);
     Ok(report.succeeded())
 }

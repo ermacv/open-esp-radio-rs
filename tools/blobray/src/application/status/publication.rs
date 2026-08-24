@@ -1,7 +1,10 @@
 //! Fast publication readiness; exact comparison belongs to publish/check.
 
 use super::model::{Component, Phase, Readiness};
-use crate::{application::ProjectContext, registers::ProjectRegisterWorkspace};
+use crate::{
+    application::{FollowUpRequirements, ProjectContext},
+    registers::ProjectRegisterWorkspace,
+};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     let Some(paths) = &context.project.registers else {
@@ -29,8 +32,11 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                     Component::new("register_outputs", Readiness::Invalid)
                         .diagnostic(error)
                         .next_action(format!(
-                            "refresh review scopes with `blobray project analyze --project {}`",
-                            context.project_path.display()
+                            "refresh review scopes with `{}`",
+                            context.follow_up_command(
+                                "project analyze",
+                                FollowUpRequirements::ANALYSIS,
+                            )
                         )),
                 ],
             );
@@ -43,12 +49,17 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
         Err(error) => {
             return Phase::collect(
                 "publication",
-                vec![Component::new("register_outputs", Readiness::Invalid)
-                    .diagnostic(error)
-                    .next_action(format!(
-                        "resolve register review findings, then run `blobray project publish --check --project {}`",
-                        context.project_path.display()
-                    ))],
+                vec![
+                    Component::new("register_outputs", Readiness::Invalid)
+                        .diagnostic(error)
+                        .next_action(format!(
+                            "resolve register review findings, then run `{}`",
+                            context.follow_up_command(
+                                "project publish --check",
+                                FollowUpRequirements::PROJECT_ONLY,
+                            )
+                        )),
+                ],
             );
         }
     };
@@ -60,18 +71,23 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
             .join(", ");
         return Phase::collect(
             "publication",
-            vec![Component::new("register_outputs", Readiness::Invalid)
-                .detail("unreviewed", unreviewed.len().to_string())
-                .detail("addresses", identities.clone())
-                .diagnostic(format!(
-                    "publication scopes contain {} unreviewed MMIO register(s): {identities}",
-                    unreviewed.len()
-                ))
-                .next_action(format!(
-                    "review the registers in {}, then run `blobray project publish --check --project {}`",
-                    paths.model.display(),
-                    context.project_path.display()
-                ))],
+            vec![
+                Component::new("register_outputs", Readiness::Invalid)
+                    .detail("unreviewed", unreviewed.len().to_string())
+                    .detail("addresses", identities.clone())
+                    .diagnostic(format!(
+                        "publication scopes contain {} unreviewed MMIO register(s): {identities}",
+                        unreviewed.len()
+                    ))
+                    .next_action(format!(
+                        "review the registers in {}, then run `{}`",
+                        paths.model.display(),
+                        context.follow_up_command(
+                            "project publish --check",
+                            FollowUpRequirements::PROJECT_ONLY,
+                        )
+                    )),
+            ],
         );
     }
     Phase::collect(
@@ -105,14 +121,16 @@ fn output(
         Component::new(name, Readiness::Ready)
             .detail("path", path.display().to_string())
             .detail("file_status", "published")
+            .detail("validation_depth", "shallow")
+            .detail("freshness", "unknown")
             .detail("deep_validation", "project publish --check / project check")
     } else {
         Component::new(name, Readiness::Incomplete)
             .detail("path", path.display().to_string())
             .detail("file_status", "missing")
             .next_action(format!(
-                "generate the configured outputs with `blobray project publish --project {}`",
-                context.project_path.display()
+                "generate the configured outputs with `{}`",
+                context.follow_up_command("project publish", FollowUpRequirements::PROJECT_ONLY,)
             ))
     }
 }

@@ -85,6 +85,9 @@ pub(crate) struct ProjectStatusArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ProjectAnalyzeArgs {
+    /// Show the deterministic stage and cache plan without executing analysis.
+    #[arg(long)]
+    pub(crate) plan: bool,
     /// Reproduce and compare every configured output without changing files.
     #[arg(long)]
     pub(crate) check: bool,

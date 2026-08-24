@@ -6,7 +6,6 @@ use std::{
     thread,
 };
 
-use indicatif::ProgressStyle;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::{
@@ -618,6 +617,7 @@ pub(crate) fn build_linked_ir_for_source_with_cache(
         roots.iter().copied(),
         svd,
         source,
+        namespace_identities,
         fact_store.as_deref(),
     );
     let functions = if jobs > 1 && symbol_prefix.is_empty() {
@@ -640,6 +640,7 @@ pub(crate) fn build_linked_ir_for_source_with_cache(
                 progress_label: source,
                 namespace_identities,
                 include_reachable,
+                fact_store: fact_store.as_deref(),
             },
             roots,
             &function_cache,
@@ -696,6 +697,7 @@ struct LinkedFunctionBuild<'a> {
     progress_label: &'a str,
     namespace_identities: bool,
     include_reachable: bool,
+    fact_store: Option<&'a dyn FunctionFactStore>,
 }
 
 fn build_linked_functions_for_roots(
@@ -711,6 +713,7 @@ fn build_linked_functions_for_roots(
         progress_label,
         namespace_identities,
         include_reachable,
+        fact_store,
     } = build;
     let mut functions = Vec::new();
     let identities = IrIdentityCatalog::new(resolver, namespace_identities.then_some(source));
@@ -785,6 +788,7 @@ fn build_linked_functions_for_roots(
         let mut direct_calls = compact_calls(direct_calls);
         annotate_direct_semantic_calls(&mut direct_calls, symbol, resolver, &identities);
         if include_reachable {
+            let mut discovered = Vec::new();
             for call in direct_calls.iter().filter(|call| {
                 matches!(
                     call.kind,
@@ -796,9 +800,11 @@ fn build_linked_functions_for_roots(
                 };
                 if scheduled.insert(symbol_key(callee)) {
                     pending.push_back(callee);
+                    discovered.push(callee);
                     progress.pb_inc_length(1);
                 }
             }
+            function_cache.load_symbols(discovered, fact_store);
         }
         let call_graph_messages = blockers.into_iter().collect::<Vec<_>>();
         let call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
@@ -1092,6 +1098,7 @@ fn build_all_linked_functions_parallel(
                             progress_label: &progress_label,
                             namespace_identities,
                             include_reachable: false,
+                            fact_store: None,
                         },
                         roots,
                         function_cache,
@@ -1125,17 +1132,7 @@ fn linked_ir_progress_span(source: &str, functions: usize) -> tracing::Span {
         source,
         functions,
     );
-    span.pb_set_style(
-        &ProgressStyle::with_template(
-            "{spinner:.cyan} [{elapsed_precise}] {pos:>5}/{len:<5} {msg}",
-        )
-        .expect("static linked-IR progress template")
-        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
-    );
-    span.pb_set_length(functions as u64);
-    span.pb_set_message(&format!("{source}: analyzing functions"));
-    span.pb_start();
-    span
+    crate::progress::determinate_span(span, functions, &format!("{source}: analyzing functions"))
 }
 
 #[cfg(test)]

@@ -176,6 +176,40 @@ impl Readiness {
     }
 }
 
+/// Validation contract for the lightweight project-status projection.
+///
+/// Status collection intentionally avoids the reproducibility work performed by
+/// `project doctor` and `project check`. Keeping that boundary in the shared
+/// model prevents frontends from presenting file presence as validated
+/// freshness.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ValidationDepth {
+    Shallow,
+    Deep,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EvidenceFreshness {
+    Unknown,
+    Current,
+    Stale,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct StatusValidation {
+    pub depth: ValidationDepth,
+    pub freshness: EvidenceFreshness,
+}
+
+impl StatusValidation {
+    const SHALLOW: Self = Self {
+        depth: ValidationDepth::Shallow,
+        freshness: EvidenceFreshness::Unknown,
+    };
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Component {
     pub name: String,
@@ -262,6 +296,7 @@ pub struct ProjectStatusReport {
     pub project_id: String,
     pub manifest: String,
     pub target: TargetIdentity,
+    pub validation: StatusValidation,
     pub overall: Readiness,
     pub phases: Vec<Phase>,
 }
@@ -290,6 +325,7 @@ impl ProjectStatusReport {
             project_id,
             manifest,
             target,
+            validation: StatusValidation::SHALLOW,
             overall,
             phases,
         }
@@ -299,6 +335,22 @@ impl ProjectStatusReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validation_contract_serializes_future_deep_and_fresh_states() {
+        assert_eq!(
+            serde_json::to_value(StatusValidation {
+                depth: ValidationDepth::Deep,
+                freshness: EvidenceFreshness::Current,
+            })
+            .unwrap(),
+            serde_json::json!({ "depth": "deep", "freshness": "current" })
+        );
+        assert_eq!(
+            serde_json::to_value(EvidenceFreshness::Stale).unwrap(),
+            serde_json::json!("stale")
+        );
+    }
 
     #[test]
     fn optional_components_do_not_hide_incomplete_or_invalid_phases() {

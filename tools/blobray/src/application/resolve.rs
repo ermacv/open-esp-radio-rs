@@ -19,6 +19,97 @@ pub(crate) struct ProjectContext<'a> {
     pub(crate) memory_map: Option<&'a MemoryMap>,
     pub(crate) svd_paths: &'a [PathBuf],
     pub(crate) svd: &'a MmioMap,
+    pub(crate) explicit_context: &'a ExplicitProjectContext,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ExplicitProjectContext {
+    pub(crate) target_spec: Option<PathBuf>,
+    pub(crate) run_spec: Option<PathBuf>,
+    pub(crate) svd_paths: Vec<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct FollowUpRequirements {
+    target_spec: bool,
+    run_spec: bool,
+    register_catalog: bool,
+}
+
+impl FollowUpRequirements {
+    pub(crate) const PROJECT_ONLY: Self = Self {
+        target_spec: false,
+        run_spec: false,
+        register_catalog: false,
+    };
+    pub(crate) const TARGET: Self = Self {
+        target_spec: true,
+        run_spec: false,
+        register_catalog: false,
+    };
+    pub(crate) const RUN_SPEC: Self = Self {
+        target_spec: true,
+        run_spec: true,
+        register_catalog: false,
+    };
+    pub(crate) const ANALYSIS: Self = Self {
+        target_spec: true,
+        run_spec: true,
+        register_catalog: true,
+    };
+}
+
+impl ProjectContext<'_> {
+    /// Render a copy/paste follow-up command with every explicit resolution
+    /// override that the destination command consumes.
+    pub(crate) fn follow_up_command(
+        &self,
+        command: &str,
+        requirements: FollowUpRequirements,
+    ) -> String {
+        let mut rendered = format!(
+            "blobray {command} --project {}",
+            crate::shell::arg(self.project_path.as_os_str())
+        );
+        if requirements.target_spec
+            && let Some(path) = self.explicit_context.target_spec.as_deref()
+        {
+            rendered.push_str(&format!(
+                " --target-spec {}",
+                crate::shell::arg(path.as_os_str())
+            ));
+        }
+        if requirements.run_spec
+            && let Some(path) = self.explicit_context.run_spec.as_deref()
+        {
+            rendered.push_str(&format!(
+                " --run-spec {}",
+                crate::shell::arg(path.as_os_str())
+            ));
+        }
+        if requirements.register_catalog {
+            for path in &self.explicit_context.svd_paths {
+                rendered.push_str(&format!(" --svd {}", crate::shell::arg(path.as_os_str())));
+            }
+        }
+        rendered
+    }
+
+    /// Render the executable help entry point for repairing input bindings.
+    /// An explicit run-spec override is an output destination for this command,
+    /// not a resolution root: omitting it would silently edit `local.toml`.
+    pub(crate) fn inputs_init_help_command(&self) -> String {
+        let mut rendered =
+            self.follow_up_command("project inputs init", FollowUpRequirements::PROJECT_ONLY);
+        if let Some(path) = self.explicit_context.run_spec.as_deref() {
+            rendered.push_str(&format!(
+                " --output {}",
+                crate::shell::arg(path.as_os_str())
+            ));
+        }
+        rendered.push_str(" --help");
+        rendered
+    }
 }
 
 pub(crate) struct ProjectSessionOptions {
@@ -53,6 +144,7 @@ pub(crate) struct ProjectSession {
     pub(crate) memory_map: Option<MemoryMap>,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) mmio: MmioMap,
+    pub(crate) explicit_context: ExplicitProjectContext,
     pub(crate) function_workspace:
         OnceLock<std::result::Result<Option<crate::function_workspace::FunctionWorkspace>, String>>,
     pub(crate) code_workspace:
@@ -72,6 +164,11 @@ impl ProjectSession {
     pub(crate) fn open_with(manifest: &Path, options: ProjectSessionOptions) -> Result<Self> {
         let manifest = manifest.to_owned();
         let project = ProjectSpec::load(&manifest)?;
+        let explicit_context = ExplicitProjectContext {
+            target_spec: options.target_spec.clone(),
+            run_spec: options.run_spec.clone(),
+            svd_paths: options.svd_paths.clone(),
+        };
         let target_path = options
             .target_spec
             .unwrap_or_else(|| project.target_spec.clone());
@@ -128,6 +225,7 @@ impl ProjectSession {
             memory_map,
             svd_paths,
             mmio,
+            explicit_context,
             function_workspace: OnceLock::new(),
             code_workspace: OnceLock::new(),
             register_workspace: OnceLock::new(),
@@ -147,6 +245,7 @@ impl ProjectSession {
             memory_map: self.memory_map.as_ref(),
             svd_paths: &self.svd_paths,
             svd: &self.mmio,
+            explicit_context: &self.explicit_context,
         }
     }
 

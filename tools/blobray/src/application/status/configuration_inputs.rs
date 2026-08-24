@@ -126,10 +126,7 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
         };
         let mut component = Component::new("run_spec", status)
             .diagnostic("caller-owned artifact bindings are unavailable")
-            .next_action(format!(
-                "blobray project inputs init --project {}",
-                context.project_path.display()
-            ));
+            .next_action(context.inputs_init_help_command());
         if let Some(path) = context.run_spec_path {
             component = component.detail("path", path.display().to_string());
         }
@@ -201,8 +198,7 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     } else {
         Readiness::Ready
     };
-    let next_action = (status != Readiness::Ready)
-        .then(|| input_repair_action(context.run_spec_path, &records, context.project_path));
+    let next_action = (status != Readiness::Ready).then(|| input_repair_action(context, &records));
     let mut component = Component::new("artifacts", status)
         .detail(
             "run_spec",
@@ -220,10 +216,15 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     Phase::collect("inputs", vec![component])
 }
 
-fn input_repair_action(
+fn input_repair_action(context: &ProjectContext<'_>, records: &[ArtifactDetail]) -> String {
+    let inputs_command = context.inputs_init_help_command();
+    input_repair_action_with_command(context.run_spec_path, records, &inputs_command)
+}
+
+fn input_repair_action_with_command(
     run_spec_path: Option<&std::path::Path>,
     records: &[ArtifactDetail],
-    project_path: &std::path::Path,
+    inputs_command: &str,
 ) -> String {
     let binding = run_spec_path
         .map(|path| path.display().to_string())
@@ -245,10 +246,7 @@ fn input_repair_action(
         );
     }
     if records.is_empty() {
-        return format!(
-            "bind the project inputs with `blobray project inputs init --project {}`",
-            project_path.display()
-        );
+        return format!("bind the project inputs with `{inputs_command}`");
     }
     format!("restore usable symbols in the artifacts bound by {binding}")
 }
@@ -270,10 +268,10 @@ mod tests {
             symbol_facts: None,
             error: None,
         }];
-        let action = input_repair_action(
+        let action = input_repair_action_with_command(
             Some(Path::new("targets/chip/local.toml")),
             &records,
-            Path::new("targets/chip/vendor-project.toml"),
+            "blobray project inputs init --project targets/chip/vendor-project.toml",
         );
         assert!(action.contains("rebuild or restore"));
         assert!(action.contains("source-artifact:libpp -> /tmp/vendor-linked-libpp"));

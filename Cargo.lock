@@ -226,6 +226,7 @@ dependencies = [
  "indicatif",
  "libc",
  "miette",
+ "nix",
  "open-esp-radio-register-model",
  "open-radio-vendor-analysis-model",
  "open-radio-vendor-backend-riscv",

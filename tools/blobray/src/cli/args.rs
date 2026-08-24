@@ -99,17 +99,16 @@ struct Cli {
     #[command(flatten)]
     ui: UiArgs,
 
-    /// Project manifest. Conflicts with an explicit target specification.
+    /// Project manifest. May be paired with a target override for project-scoped development.
     #[arg(
         long,
         global = true,
         value_name = "PATH",
-        conflicts_with = "target_spec",
         help_heading = "Project selection"
     )]
     project: Option<PathBuf>,
 
-    /// Explicit target specification for backend and target-pack development.
+    /// Explicit target specification or project-scoped target override.
     #[arg(
         long,
         global = true,
@@ -144,7 +143,7 @@ struct Cli {
 enum Workflow {
     /// Create, inspect and execute project-owned workflows.
     #[command(
-        after_long_help = "EXISTING PROJECT:\n  project status  → current readiness and exact next actions\n  project files   → ownership and purpose of every configured file\n  project browse  → read-only TUI over generated evidence\n\nNEW PROJECT:\n  project init → project inputs init → project doctor → project analyze\n  registers review/validate → project publish → project verify/check"
+        after_long_help = "EXISTING PROJECT:\n  project status  → current readiness and exact next actions\n  project files   → ownership and purpose of every configured file\n  project browse  → read-only TUI over generated evidence\n\nNEW PROJECT:\n  project init → project inputs init → project files\n  follow each reported Next action until project analyze is ready\n  registers review/validate → project publish → project verify/check"
     )]
     Project {
         #[command(subcommand)]
@@ -281,7 +280,7 @@ leaf_commands!(ToolingCommand {
 enum ProjectCommand {
     /// Create a new project workspace and neutral target specification.
     #[command(
-        after_long_help = "Next: run `blobray project doctor --project PATH/vendor-project.toml`.\nThen add caller-owned binaries with `project inputs init`."
+        after_long_help = "Next: add caller-owned binaries with `blobray project inputs init --project PATH/vendor-project.toml`.\nThen run `blobray project files --project PATH/vendor-project.toml` and follow its prerequisite-ordered Next actions."
     )]
     Init(ProjectInitArgs),
     /// Attach or remove a reusable ecosystem knowledge pack.
@@ -304,6 +303,11 @@ enum ProjectCommand {
         after_long_help = "Use this before editing a project to distinguish local bindings, reviewed knowledge, generated evidence and external artifacts."
     )]
     Files(EmptyArgs),
+    /// Inspect the project-owned incremental cache.
+    Cache {
+        #[command(subcommand)]
+        command: ProjectCacheCommand,
+    },
     /// Audit the trust boundary between vendor evidence, probes and production Rust.
     Audit {
         #[command(subcommand)]
@@ -346,6 +350,7 @@ impl ProjectCommand {
             Self::Inputs { command } => command.into_command(),
             Self::Doctor(arguments) => Command::ProjectDoctor(arguments),
             Self::Files(arguments) => Command::ProjectFiles(arguments),
+            Self::Cache { command } => command.into_command(),
             Self::Audit { command } => command.into_command(),
             Self::Status(arguments) => Command::ProjectStatus(arguments),
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
@@ -356,6 +361,11 @@ impl ProjectCommand {
         }
     }
 }
+
+leaf_commands!(ProjectCacheCommand {
+    /// Report cache size, query inventory, dependencies and reclaimable data.
+    Stats(EmptyArgs) => Command::ProjectCacheStats, Empty,
+});
 
 leaf_commands!(ProjectAuditCommand {
     /// Classify every executable binding and show its maximum admissible claim.
@@ -531,6 +541,7 @@ pub(crate) enum Command {
     ProjectInputsInit(ProjectInputsInitArgs),
     ProjectDoctor(EmptyArgs),
     ProjectFiles(EmptyArgs),
+    ProjectCacheStats(EmptyArgs),
     ProjectAuditBindings(EmptyArgs),
     ProjectStatus(ProjectStatusArgs),
     ProjectBrowse(EmptyArgs),
@@ -654,6 +665,23 @@ mod tests {
         ])
         .unwrap_err();
         assert!(error.to_string().contains("unexpected argument"));
+    }
+
+    #[test]
+    fn parses_project_cache_stats_as_a_typed_leaf() {
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "cache".to_owned(),
+            "stats".to_owned(),
+            "--project".to_owned(),
+            "vendor-project.toml".to_owned(),
+        ])
+        .unwrap();
+        assert!(matches!(invocation.command, Command::ProjectCacheStats(_)));
+        assert_eq!(
+            invocation.project,
+            Some(PathBuf::from("vendor-project.toml"))
+        );
     }
 
     #[test]
@@ -807,8 +835,21 @@ mod tests {
             panic!("unexpected argument type")
         };
         assert!(arguments.check);
+        assert!(!arguments.plan);
         assert!(arguments.deny_unreviewed);
         assert_eq!(arguments.jobs, 2);
+
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "analyze".to_owned(),
+            "--plan".to_owned(),
+        ])
+        .unwrap();
+        let Command::ProjectAnalyze(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert!(arguments.plan);
+        assert!(!arguments.check);
 
         let invocation =
             ParsedInvocation::parse(["project".to_owned(), "check".to_owned()]).unwrap();

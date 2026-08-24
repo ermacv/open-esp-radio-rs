@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use super::model::{Component, LinkedIrProfileDetail, Phase, Readiness};
-use crate::application::ProjectContext;
+use crate::application::{FollowUpRequirements, ProjectContext};
 use crate::{artifacts::inspect_linked_ir, harnesses, run_spec::InputRole};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
@@ -97,12 +97,17 @@ fn event_replays(context: &ProjectContext<'_>) -> Component {
     )
     .detail("pack", functions.pack.display().to_string())
     .detail("count", replays.len())
-    .detail("routes", outputs);
+    .detail("routes", outputs)
+    .detail("validation_depth", "shallow")
+    .detail("freshness", "unknown")
+    .detail("deep_validation", "project doctor / project check");
     for problem in problems {
         component = component.diagnostic(problem);
     }
     if incomplete {
-        component = component.next_action(project_command(context, "project analyze"));
+        component = component.next_action(
+            context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS),
+        );
     }
     component
 }
@@ -115,16 +120,11 @@ fn navigation_index(context: &ProjectContext<'_>) -> Component {
         return Component::new("navigation_index", Readiness::Incomplete)
             .detail("path", spec.output.display().to_string())
             .diagnostic("navigation index has not been generated")
-            .next_action(project_command(context, "project analyze"));
+            .next_action(
+                context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS),
+            );
     }
     generated_output("navigation_index", &spec.output)
-}
-
-fn project_command(context: &ProjectContext<'_>, command: &str) -> String {
-    format!(
-        "blobray {command} --project {}",
-        context.project_path.display()
-    )
 }
 
 fn symbol_inventory(context: &ProjectContext<'_>) -> Component {
@@ -216,6 +216,9 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
         },
     )
     .detail("profiles", profiles)
+    .detail("validation_depth", "shallow")
+    .detail("freshness", "unknown")
+    .detail("deep_validation", "project doctor / project check")
 }
 
 fn mmio_facts(context: &ProjectContext<'_>) -> Component {
@@ -248,6 +251,8 @@ fn generated_output(name: &'static str, path: &std::path::Path) -> Component {
             Component::new(name, Readiness::Ready)
                 .detail("path", path.display().to_string())
                 .detail("bytes", metadata.len())
+                .detail("validation_depth", "shallow")
+                .detail("freshness", "unknown")
                 .detail("deep_validation", "project doctor / project check")
         }
         Ok(_) => Component::new(name, Readiness::Invalid)

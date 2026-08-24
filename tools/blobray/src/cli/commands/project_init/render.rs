@@ -180,7 +180,9 @@ cargo blobray registers review --project vendor-project.toml\n\
 ```\n\n\
 Review `code/boundaries.toml`, `registers/peripherals/*.toml`,\n\
 `interfaces/reviewed.toml` and `functions/reviewed.toml`. Then use `project analyze` to refresh evidence,\n\
-`project analyze --check` in analysis CI, and `project publish --check` for SVD/raw-PAC.\n",
+and `project analyze --check` in analysis CI. Publication is a separate reviewed boundary: configure\n\
+`[review]` and exact `publication-scopes` after inspecting the generated analysis, then run\n\
+`project publish --check` before writing SVD/raw-PAC outputs.\n",
         options.id,
         bindings = bindings
     )

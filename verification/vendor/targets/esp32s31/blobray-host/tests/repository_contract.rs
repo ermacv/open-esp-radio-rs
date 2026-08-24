@@ -99,6 +99,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
         ("BluetoothControllerPeripherals", "bluetooth", 19),
         ("BluetoothInterruptPeripherals", "bluetooth_interrupts", 1),
         ("SharedRadioPeripherals", "shared_radio", 4),
+        ("Ieee802154Peripherals", "ieee802154", 1),
     ];
     let actual = partitions
         .iter()

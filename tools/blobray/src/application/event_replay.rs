@@ -16,6 +16,20 @@ pub(crate) struct EventReplayRequest {
     pub(crate) companion: Option<PathBuf>,
 }
 
+pub(crate) struct PreparedEventReplay {
+    pub(crate) request: EventReplayRequest,
+    manifest: ReplayManifest,
+}
+
+impl PreparedEventReplay {
+    pub(crate) fn requires_reviewed_interfaces(&self) -> bool {
+        self.manifest
+            .phases
+            .iter()
+            .any(|phase| !phase.tables.is_empty())
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct ReplayManifest {
@@ -155,20 +169,46 @@ pub(crate) fn execute(
     target: &TargetSpec,
     project: Option<&ProjectSpec>,
 ) -> Result<crate::artifacts::ReplayEvidenceDocument> {
-    let input = std::fs::read_to_string(&request.manifest)
-        .map_err(|error| crate::Error::read("replay manifest", &request.manifest, error))?;
+    execute_prepared(prepare(request.clone())?, svd, target, project)
+}
+
+pub(crate) fn prepare(request: EventReplayRequest) -> Result<PreparedEventReplay> {
+    let manifest = load_manifest(&request.manifest)?;
+    Ok(PreparedEventReplay { request, manifest })
+}
+
+pub(crate) fn manifest_requires_reviewed_interfaces(path: &Path) -> Result<bool> {
+    Ok(load_manifest(path)?
+        .phases
+        .iter()
+        .any(|phase| !phase.tables.is_empty()))
+}
+
+fn load_manifest(path: &Path) -> Result<ReplayManifest> {
+    let input = std::fs::read_to_string(path)
+        .map_err(|error| crate::Error::read("replay manifest", path, error))?;
     let manifest: ReplayManifest = toml_edit::de::from_str(&input).map_err(|error| {
         crate::Error::invalid(format!(
             "invalid replay manifest {}: {error}",
-            request.manifest.display()
+            path.display()
         ))
     })?;
     if manifest.schema != 2 {
         return Err(crate::Error::invalid(format!(
             "replay manifest {} requires schema = 2",
-            request.manifest.display()
+            path.display()
         )));
     }
+    Ok(manifest)
+}
+
+pub(crate) fn execute_prepared(
+    prepared: PreparedEventReplay,
+    svd: &MmioMap,
+    target: &TargetSpec,
+    project: Option<&ProjectSpec>,
+) -> Result<crate::artifacts::ReplayEvidenceDocument> {
+    let PreparedEventReplay { request, manifest } = prepared;
     let mut image = execution::ExecutableImage::load(&request.artifact)?;
     if let Some(companion) = request.companion.as_deref() {
         image.add_companion(companion)?;
@@ -652,7 +692,51 @@ fn validate_tables(
 
 #[cfg(test)]
 mod tests {
-    use super::{ReplayManifest, ReplayValue};
+    use super::{EventReplayRequest, ReplayManifest, ReplayValue, prepare};
+
+    #[test]
+    fn preparation_exposes_only_the_interface_inputs_the_replay_consumes() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-event-replay-inputs-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            std::fs::remove_dir_all(&directory).unwrap();
+        }
+        std::fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("replay.toml");
+        let request = || EventReplayRequest {
+            manifest: manifest.clone(),
+            artifact: directory.join("vendor.elf"),
+            companion: None,
+        };
+        std::fs::write(
+            &manifest,
+            "schema = 2\n\n[[phases]]\nname = \"plain\"\nsymbol = \"entry\"\n",
+        )
+        .unwrap();
+        assert!(!prepare(request()).unwrap().requires_reviewed_interfaces());
+
+        std::fs::write(
+            &manifest,
+            r#"schema = 2
+
+[[phases]]
+name = "with-table"
+symbol = "entry"
+
+[[phases.tables]]
+layout-id = "fixture::table"
+base-address = 4096
+layout-size = 4
+pointer-cells = []
+slots = []
+"#,
+        )
+        .unwrap();
+        assert!(prepare(request()).unwrap().requires_reviewed_interfaces());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn modeled_call_return_may_reference_a_linked_symbol() {

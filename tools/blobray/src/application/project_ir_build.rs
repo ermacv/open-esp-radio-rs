@@ -69,8 +69,48 @@ pub(crate) fn build_project_ir<'a>(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<BuildDocument<'a>> {
-    let mut function_fact_store =
-        crate::application::query_store::QueryStore::open(project_manifest)?;
+    // Check mode must reproduce evidence without creating, migrating or
+    // updating persistent query-cache state. It intentionally performs
+    // uncached function analysis; write mode keeps the normal fact-store path.
+    let mut function_fact_store = (!request.check)
+        .then(|| crate::application::query_store::QueryStore::open(project_manifest))
+        .transpose()?;
+    build_project_ir_impl(
+        request,
+        project,
+        run_spec,
+        svd,
+        target,
+        function_fact_store.as_mut(),
+    )
+}
+
+/// Build project IR while borrowing the caller's lifetime-owned query store.
+///
+/// Project-wide orchestration already holds the store's exclusive lock. This
+/// entry point reuses that writer for function facts instead of trying to open
+/// a second `QueryStore` for the same database. Check mode never consults the
+/// supplied store, matching [`build_project_ir`]'s read-only behavior.
+pub(crate) fn build_project_ir_with_store<'a>(
+    request: ProjectIrBuildRequest,
+    project: &'a ProjectSpec,
+    run_spec: &RunSpec,
+    svd: &MmioMap,
+    target: &TargetSpec,
+    function_fact_store: &mut crate::application::query_store::QueryStore,
+) -> Result<BuildDocument<'a>> {
+    let function_fact_store = (!request.check).then_some(function_fact_store);
+    build_project_ir_impl(request, project, run_spec, svd, target, function_fact_store)
+}
+
+fn build_project_ir_impl<'a>(
+    request: ProjectIrBuildRequest,
+    project: &'a ProjectSpec,
+    run_spec: &RunSpec,
+    svd: &MmioMap,
+    target: &TargetSpec,
+    mut function_fact_store: Option<&mut crate::application::query_store::QueryStore>,
+) -> Result<BuildDocument<'a>> {
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
     // Resolve and validate every selected input before loading catalogs or
     // beginning expensive analysis. A missing generated ELF must name its
@@ -102,7 +142,9 @@ pub(crate) fn build_project_ir<'a>(
                 interfaces: interfaces.as_ref(),
                 interface_origins: &interface_origins,
                 jobs: request.jobs,
-                function_fact_store: Some(&mut function_fact_store),
+                function_fact_store: function_fact_store
+                    .as_deref_mut()
+                    .map(|store| store as &mut dyn crate::analysis::FunctionFactStore),
             })?;
         let ProjectIrDocuments {
             bundle,

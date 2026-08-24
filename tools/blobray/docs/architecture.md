@@ -86,17 +86,22 @@ request/profile/full scheduler
 `full` means enumerating every function identity and requesting the same
 queries that focused inspection requests. It is scheduling policy, not a
 second analysis implementation. A profile is likewise a set of roots and
-projection options; profile names are never cache inputs. After the
-function-granular cutover, two profiles in one project that request an
-identical function query share one result.
+projection options; profile names are never cache inputs. Persistence has two
+complementary levels. An immutable profile/stage projection and its generated
+outputs can be restored from CAS for an identical request. Linked-IR analysis
+also persists direct-function facts, so different root sets can reuse facts for
+the functions they share instead of repeating every cold function analysis.
 
-The persistent cutover is deliberately two steps. The implemented first step
-persists an immutable profile/stage projection and every generated output in
-CAS, so an identical request can be restored at another output path without
-running recovery. The second step is the function-granular cutover described
-by the query units below. Until that cutover lands, different root sets that
-only partially overlap still repeat the cold function analysis; the store must
-not advertise those inner computations as cache hits.
+A direct-function key binds the exact owner identity and body, relocations and
+memory layout. It also includes conservative fingerprints of the resolver
+identity/layout, MMIO map and harness semantics used by structural tracing.
+Bodies of other functions are not part of that resolver fingerprint, so
+changing one function does not invalidate otherwise unchanged owner facts.
+This is deliberately conservative rather than an exact per-function dependency
+DAG: a resolver, MMIO or harness change may invalidate more facts than the
+changed input ultimately affects. Summary-hook providers must supply a stable,
+versioned semantic cache domain; a hook context without one is not persistently
+cacheable and fails closed to cold analysis.
 
 Query ownership is layered:
 
@@ -104,19 +109,20 @@ Query ownership is layered:
 |---|---|---|---|
 | Artifact catalog | Sections, symbols, relocations, data objects and provenance | Artifact bytes and load mapping | Profiles, reviewed meaning, ledger |
 | Function body | Decode, instruction index, CFG and structural blockers | Artifact catalog, target ABI/backend revision | Vendor/chip semantics, profile identity |
-| Function facts | Direct calls, memory/MMIO effects, guards and unresolved facts | Function body, exact origin relocations | Reviewed hardware meaning, driver, qualification |
+| Function facts | Direct calls, memory/MMIO effects, guards and unresolved facts | Function body, exact origin relocations, conservative resolver/MMIO/harness projection | Driver, qualification policy |
 | Semantic projection | Reviewed names/signatures and opaque boundary contracts | Function facts plus versioned add-on inputs | Inventing effects not authorized by a contract |
 | Link projection | Cross-function targets and transitive summaries | Function facts, artifact catalog, semantic projection | Profile presentation choices |
 | Profile projection | Root/reachability selection and generated documents | Cached query results | Re-running backend recovery |
 
 A query key contains the query kind and semantic revision, the digest and
-provenance identity of the exact artifact bytes it observes, target
-ABI/backend identity, and fingerprints of only the semantic inputs read by
-that query. It never contains output paths, profile names, timestamps, UI
-state, reviewed ledger state, or production-driver state. Results are
-immutable: changed inputs create a new key instead of mutating the meaning of
-an old result. Dependency edges permit precise transitive invalidation and
-make incomplete results cacheable; a blocker is a valid fact, not a cache
+provenance identity of the artifact bytes it owns, target ABI/backend identity,
+and the semantic fingerprints required by that query domain. It never contains
+output paths, profile names, timestamps, UI state, reviewed ledger state, or
+production-driver state. Results are immutable: changed inputs create a new
+key instead of mutating the meaning of an old result. Indexed dependency edges
+describe stage ownership, while direct-function facts use the conservative
+projection above rather than claiming exact dependency-level invalidation.
+Incomplete results remain cacheable; a blocker is a valid fact, not a cache
 failure.
 
 The persistent store is disposable Blobray state under
@@ -149,8 +155,8 @@ Both eligible and completed ineligible traces are immutable reusable results;
 an ineligible cache hit must return the same fail-closed blocker. A result
 whose cause contains recursion is visiting-stack-dependent and is never
 memoized. The memo has a fixed entry ceiling and is discarded with its worker;
-it is an execution optimization, not evidence or a substitute for the future
-persistent function-facts query.
+it is an execution optimization, not evidence and not a replacement for the
+persistent direct-function facts described above.
 
 ## Rust ownership and capability rules
 

@@ -97,6 +97,8 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
     assert!(readme.contains("project inputs init"));
     assert!(readme.contains("--bind source-artifact:vendor=/path/to/vendor.elf"));
     assert!(!readme.contains("--run-spec local.toml"));
+    assert!(readme.contains("Publication is a separate reviewed boundary"));
+    assert!(readme.contains("`[review]` and exact `publication-scopes`"));
     let containment = crate::registers::validate_register_memory_map(
         project.registers.as_ref().unwrap(),
         Some(&memory),

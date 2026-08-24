@@ -23,6 +23,9 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
             commands::run_project_doctor(session.context())
         }
         ResolvedInvocation::ProjectFiles(session) => commands::run_project_files(session.context()),
+        ResolvedInvocation::ProjectCacheStats { project_path } => {
+            commands::run_project_cache_stats(&project_path)
+        }
         ResolvedInvocation::ProjectAuditBindings(session) => {
             commands::run_project_audit_bindings(&session)
         }

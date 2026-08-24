@@ -1,7 +1,7 @@
 //! Loading and merging project, target, run-spec, memory and register inputs.
 
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
 };
 
@@ -72,8 +72,9 @@ pub(super) fn resolve_from(
         command => command,
     };
 
-    // An explicit target selects standalone target/backend development and
-    // therefore deliberately disables implicit project discovery.
+    // An explicit target without an explicit project selects standalone
+    // target/backend development and deliberately disables project discovery.
+    // When both are present, the target is a project-scoped override.
     let project_path = if requested_project.is_some() || requested_target.is_some() {
         requested_project
     } else {
@@ -110,6 +111,20 @@ pub(super) fn resolve_from(
                 )?,
             });
         }
+        Command::ProjectCacheStats(_) => {
+            reject_target_overrides(
+                requested_target.as_ref(),
+                requested_run_spec.as_ref(),
+                &svd_paths,
+                "project cache stats accepts a project manifest, not --target-spec, --run-spec or --svd",
+            )?;
+            return Ok(ResolvedInvocation::ProjectCacheStats {
+                project_path: required_regular_project_path(
+                    project_path,
+                    "project cache stats requires --project or a discovered manifest",
+                )?,
+            });
+        }
         Command::ProjectBrowse(_) => {
             reject_target_overrides(
                 requested_target.as_ref(),
@@ -139,6 +154,7 @@ pub(super) fn resolve_from(
         memory_map,
         resolved_svd_paths,
         mut svd,
+        explicit_context,
     ) = if let Some(manifest) = project_path.as_deref() {
         let session = ProjectSession::open_with(
             manifest,
@@ -160,6 +176,7 @@ pub(super) fn resolve_from(
             session.memory_map,
             session.svd_paths,
             session.mmio,
+            session.explicit_context,
         )
     } else {
         let target_path = requested_target
@@ -179,6 +196,7 @@ pub(super) fn resolve_from(
             memory_map,
             svd_paths,
             svd,
+            Default::default(),
         )
     };
     let svd_paths = resolved_svd_paths;
@@ -220,6 +238,7 @@ pub(super) fn resolve_from(
             memory_map,
             svd_paths,
             svd,
+            explicit_context,
         },
     )
 }
@@ -251,6 +270,23 @@ fn reject_target_overrides(
 
 fn required_project_path(path: Option<PathBuf>, message: &str) -> Result<PathBuf> {
     path.ok_or_else(|| crate::Error::invalid(message))
+}
+
+fn required_regular_project_path(path: Option<PathBuf>, message: &str) -> Result<PathBuf> {
+    let path = required_project_path(path, message)?;
+    let metadata = fs::metadata(&path).map_err(|error| {
+        crate::Error::invalid(format!(
+            "project manifest {} is unavailable: {error}",
+            path.display()
+        ))
+    })?;
+    if !metadata.is_file() {
+        return Err(crate::Error::invalid(format!(
+            "project manifest {} is not a regular file",
+            path.display()
+        )));
+    }
+    Ok(path)
 }
 
 fn require_project(needs: ResolutionNeeds, project: Option<&PathBuf>) -> Result<()> {

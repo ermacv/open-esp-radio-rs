@@ -1,9 +1,10 @@
-//! Persistent, address-independent facts for one structurally analyzed function.
+//! Persistent direct facts for one structurally analyzed function.
 //!
-//! Only call-free, blocker-free leaf results enter this first cache domain.
-//! Call identity and resolver projection remain link-owned and are deliberately
-//! recomputed. Instruction sites are stored as function-relative offsets and
-//! materialized against the authoritative linked definition on every hit.
+//! The owner body is keyed exactly, while the resolver key retains the
+//! conservative semantic/layout projection read by direct tracing without
+//! hashing unrelated function bodies. Instruction sites inside the value are
+//! stored as owner-relative offsets and materialized against the exact keyed
+//! definition on every hit.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -23,13 +24,41 @@ const MAX_CACHED_CALL_VARIANTS: usize = 1_024;
 const MAX_COMPRESSED_FACT_BYTES: usize = 4 * 1024 * 1024;
 
 pub(super) struct FunctionCacheRun {
+    state: FunctionCacheState,
+}
+
+enum FunctionCacheState {
+    DisabledStoreAbsent,
+    DisabledUnsafeSemanticDomain,
+    Enabled(Box<FunctionCacheEnabled>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FunctionCacheDisabledReason {
+    StoreAbsent,
+    UnsafeSemanticDomain,
+}
+
+struct FunctionCacheEnabled {
     hits: Mutex<BTreeMap<String, Vec<u8>>>,
-    loaded: usize,
+    loaded: AtomicUsize,
+    keys: Mutex<FunctionCacheKeys>,
     pending: Mutex<BTreeMap<String, Vec<u8>>>,
     mmio_fingerprint: [u8; 32],
+    namespace_identities: bool,
     resolver_fingerprint: [u8; 32],
     namespace: String,
     reused: AtomicUsize,
+}
+
+#[derive(Default)]
+struct FunctionCacheKeys {
+    by_symbol: BTreeMap<SymbolKey, FunctionCacheKey>,
+}
+
+struct FunctionCacheKey {
+    value: String,
+    looked_up: bool,
 }
 
 impl FunctionCacheRun {
@@ -38,35 +67,90 @@ impl FunctionCacheRun {
         symbols: impl IntoIterator<Item = &'a artifact::ArtifactSymbolDefinition>,
         svd: &MmioMap,
         namespace: &str,
+        namespace_identities: bool,
         store: Option<&dyn FunctionFactStore>,
     ) -> Self {
-        let mmio_fingerprint = mmio_fingerprint(svd);
-        let resolver_fingerprint = resolver_fingerprint(resolver);
-        let mut hits = BTreeMap::new();
-        if let Some(store) = store {
-            let mut keys = BTreeSet::new();
-            for symbol in symbols {
-                keys.insert(function_fact_key(
-                    symbol,
-                    &mmio_fingerprint,
-                    &resolver_fingerprint,
-                ));
+        let state = match store {
+            None => FunctionCacheState::DisabledStoreAbsent,
+            Some(_)
+                if !semantic_cache_domain_is_safe(
+                    resolver.pointer_context.summary_hooks.is_some(),
+                    resolver.pointer_context.semantic_cache_domain,
+                ) =>
+            {
+                FunctionCacheState::DisabledUnsafeSemanticDomain
             }
-            let keys = keys.into_iter().collect::<Vec<_>>();
-            match store.load_function_facts(&keys) {
-                Ok(values) => hits.extend(values),
-                Err(error) => tracing::warn!(%error, "function-fact cache lookup failed"),
-            }
+            Some(_) => FunctionCacheState::Enabled(Box::new(FunctionCacheEnabled {
+                hits: Mutex::new(BTreeMap::new()),
+                loaded: AtomicUsize::new(0),
+                keys: Mutex::new(FunctionCacheKeys::default()),
+                pending: Mutex::new(BTreeMap::new()),
+                mmio_fingerprint: mmio_fingerprint(svd),
+                namespace_identities,
+                resolver_fingerprint: resolver_fingerprint(resolver),
+                namespace: namespace.to_owned(),
+                reused: AtomicUsize::new(0),
+            })),
+        };
+        let cache = Self { state };
+        if cache.disabled_reason() == Some(FunctionCacheDisabledReason::UnsafeSemanticDomain) {
+            tracing::warn!(
+                "persistent function facts disabled: registered summary hooks have no stable semantic cache domain"
+            );
         }
-        let loaded = hits.len();
-        Self {
-            hits: Mutex::new(hits),
-            loaded,
-            pending: Mutex::new(BTreeMap::new()),
-            mmio_fingerprint,
-            resolver_fingerprint,
-            namespace: namespace.to_owned(),
-            reused: AtomicUsize::new(0),
+        cache.load_symbols(symbols, store);
+        cache
+    }
+
+    /// Load facts for symbols discovered after the initial root selection.
+    ///
+    /// Reachability is demand-driven, so these keys are not known during
+    /// [`Self::prepare`]. Reserve and sort every new key before touching the
+    /// store: one caller's newly discovered callees become one deterministic
+    /// lookup, while converging call paths never issue duplicate reads.
+    pub(super) fn load_symbols<'a>(
+        &self,
+        symbols: impl IntoIterator<Item = &'a artifact::ArtifactSymbolDefinition>,
+        store: Option<&dyn FunctionFactStore>,
+    ) {
+        let FunctionCacheState::Enabled(cache) = &self.state else {
+            return;
+        };
+        let Some(store) = store else {
+            return;
+        };
+        let keys = {
+            let mut keys = cache.keys.lock().expect("function cache key lock");
+            let mut lookup = Vec::new();
+            for symbol in symbols {
+                let key = cache.key_for_locked(&mut keys, symbol);
+                if !key.looked_up {
+                    key.looked_up = true;
+                    lookup.push(key.value.clone());
+                }
+            }
+            lookup.sort();
+            lookup
+        };
+        if keys.is_empty() {
+            return;
+        }
+        match store.load_function_facts(&keys) {
+            Ok(values) => {
+                let mut hits = cache.hits.lock().expect("function cache hit lock");
+                let before = hits.len();
+                for (key, value) in values {
+                    if keys.binary_search(&key).is_ok() {
+                        hits.entry(key).or_insert(value);
+                    }
+                }
+                cache
+                    .loaded
+                    .fetch_add(hits.len().saturating_sub(before), Ordering::Relaxed);
+            }
+            Err(error) => {
+                tracing::warn!(%error, keys = keys.len(), "function-fact cache lookup failed")
+            }
         }
     }
 
@@ -75,28 +159,32 @@ impl FunctionCacheRun {
         symbol: &artifact::ArtifactSymbolDefinition,
         analyze: impl FnOnce() -> DirectCallGraph,
     ) -> DirectCallGraph {
-        let key = function_fact_key(symbol, &self.mmio_fingerprint, &self.resolver_fingerprint);
-        let cached = self
+        let FunctionCacheState::Enabled(cache) = &self.state else {
+            return analyze();
+        };
+        let key = cache.key_for(symbol);
+        let cached = cache
             .hits
             .lock()
             .expect("function cache hit lock")
             .remove(&key);
         if let Some(value) = cached
             && let Ok(fact) = decode_fact(&value)
-            && let Some(graph) = fact.materialize(symbol, &self.namespace)
+            && let Some(graph) = fact.materialize(symbol, &cache.namespace)
         {
-            self.reused.fetch_add(1, Ordering::Relaxed);
+            cache.reused.fetch_add(1, Ordering::Relaxed);
             tracing::trace!(symbol = symbol.name, "reused persistent function fact");
             return graph;
         }
         let started = std::time::Instant::now();
         let graph = analyze();
         let elapsed = started.elapsed();
-        if let Some(fact) = PortableDirectFacts::capture(symbol, &graph, &self.namespace)
+        if let Some(fact) = PortableDirectFacts::capture(symbol, &graph, &cache.namespace)
             && let Ok(value) = encode_fact(&fact)
             && value.len() <= MAX_COMPRESSED_FACT_BYTES
         {
-            self.pending
+            cache
+                .pending
                 .lock()
                 .expect("function cache pending lock")
                 .entry(key)
@@ -136,21 +224,85 @@ impl FunctionCacheRun {
     }
 
     pub(super) fn persist(&self, store: &mut dyn FunctionFactStore) {
-        let facts = std::mem::take(&mut *self.pending.lock().expect("function cache pending lock"))
-            .into_iter()
-            .collect::<Vec<_>>();
+        let FunctionCacheState::Enabled(cache) = &self.state else {
+            return;
+        };
+        let facts =
+            std::mem::take(&mut *cache.pending.lock().expect("function cache pending lock"))
+                .into_iter()
+                .collect::<Vec<_>>();
         if !facts.is_empty()
             && let Err(error) = store.store_function_facts(&facts)
         {
             tracing::warn!(%error, facts = facts.len(), "function-fact cache write failed");
         }
         tracing::debug!(
-            loaded = self.loaded,
-            reused = self.reused.load(Ordering::Relaxed),
+            loaded = cache.loaded.load(Ordering::Relaxed),
+            reused = cache.reused.load(Ordering::Relaxed),
             stored = facts.len(),
             "completed persistent function-fact cache session"
         );
     }
+
+    fn disabled_reason(&self) -> Option<FunctionCacheDisabledReason> {
+        match &self.state {
+            FunctionCacheState::DisabledStoreAbsent => {
+                Some(FunctionCacheDisabledReason::StoreAbsent)
+            }
+            FunctionCacheState::DisabledUnsafeSemanticDomain => {
+                Some(FunctionCacheDisabledReason::UnsafeSemanticDomain)
+            }
+            FunctionCacheState::Enabled(_) => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn computed_key_count(&self) -> usize {
+        match &self.state {
+            FunctionCacheState::DisabledStoreAbsent
+            | FunctionCacheState::DisabledUnsafeSemanticDomain => 0,
+            FunctionCacheState::Enabled(cache) => cache
+                .keys
+                .lock()
+                .expect("function cache key lock")
+                .by_symbol
+                .len(),
+        }
+    }
+}
+
+impl FunctionCacheEnabled {
+    /// One resolver run treats `(member, name, address)` as the unique symbol
+    /// identity everywhere else in linked IR. Cache the expensive body-bound
+    /// digest under that same immutable identity so initial lookup and direct
+    /// analysis cannot hash one body twice, even when the catalog supplies a
+    /// cloned definition.
+    fn key_for(&self, symbol: &artifact::ArtifactSymbolDefinition) -> String {
+        let mut keys = self.keys.lock().expect("function cache key lock");
+        self.key_for_locked(&mut keys, symbol).value.clone()
+    }
+
+    fn key_for_locked<'a>(
+        &self,
+        keys: &'a mut FunctionCacheKeys,
+        symbol: &artifact::ArtifactSymbolDefinition,
+    ) -> &'a mut FunctionCacheKey {
+        keys.by_symbol
+            .entry(symbol_key(symbol))
+            .or_insert_with(|| FunctionCacheKey {
+                value: function_fact_key(
+                    symbol,
+                    &self.mmio_fingerprint,
+                    &self.resolver_fingerprint,
+                    self.namespace_identities,
+                ),
+                looked_up: false,
+            })
+    }
+}
+
+fn semantic_cache_domain_is_safe(has_summary_hooks: bool, domain: &str) -> bool {
+    !has_summary_hooks || !domain.trim().is_empty()
 }
 
 fn encode_fact(fact: &PortableDirectFacts) -> crate::Result<Vec<u8>> {
@@ -171,62 +323,165 @@ fn function_fact_key(
     symbol: &artifact::ArtifactSymbolDefinition,
     mmio_fingerprint: &[u8; 32],
     resolver_fingerprint: &[u8; 32],
+    namespace_identities: bool,
 ) -> String {
     let mut hash = Sha256::new();
     hash.update(FUNCTION_FACT_DOMAIN);
     hash.update(mmio_fingerprint);
     hash.update(resolver_fingerprint);
-    hash.update(symbol.name.as_bytes());
-    hash.update([0]);
+    hash.update([u8::from(namespace_identities)]);
+    hash_optional_str(&mut hash, symbol.member.as_deref());
+    hash_str(&mut hash, &symbol.name);
+    hash.update(symbol.address.to_le_bytes());
     hash.update([u8::from(symbol.addresses_resolved)]);
-    hash.update((symbol.bytes.len() as u64).to_le_bytes());
-    hash.update(&symbol.bytes);
+    hash_bytes(&mut hash, &symbol.bytes);
+    hash.update((symbol.relocations.len() as u64).to_le_bytes());
     for relocation in &symbol.relocations {
-        hash.update(
-            relocation
-                .address
-                .wrapping_sub(symbol.address as u32)
-                .to_le_bytes(),
-        );
-        hash.update(relocation_kind(relocation.kind).as_bytes());
-        hash.update([0]);
-        hash.update(relocation.symbol.as_bytes());
-        hash.update([0]);
+        hash.update(relocation.address.to_le_bytes());
+        hash_str(&mut hash, relocation_kind(relocation.kind));
+        hash_str(&mut hash, &relocation.symbol);
         hash.update(relocation.addend.to_le_bytes());
     }
+    hash.update((symbol.memory_regions.len() as u64).to_le_bytes());
     for region in symbol.memory_regions.iter() {
         hash.update(region.start.to_le_bytes());
         hash.update(region.length.to_le_bytes());
         hash.update([u8::from(region.writable)]);
-        hash.update(region.name.as_bytes());
-        hash.update([0]);
+        hash_str(&mut hash, &region.name);
     }
     format!("function-direct:{:x}", hash.finalize())
 }
 
 fn resolver_fingerprint(resolver: &ReferenceResolver) -> [u8; 32] {
-    let base = resolver
+    let symbols = resolver
         .symbols
         .iter()
-        .map(|symbol| symbol.address)
-        .min()
-        .unwrap_or(0);
-    let mut symbols = resolver.symbols.iter().collect::<Vec<_>>();
-    symbols.sort_by_key(|symbol| (&symbol.member, &symbol.name, symbol.address));
+        .chain(resolver.symbols_by_address.values())
+        .map(|symbol| {
+            (
+                symbol.member.as_deref(),
+                symbol.name.as_str(),
+                symbol.address,
+            )
+        })
+        .collect::<BTreeSet<_>>();
     let mut hash = Sha256::new();
-    hash.update(b"blobray/resolver-layout/v1\0");
-    for symbol in symbols {
-        if let Some(member) = &symbol.member {
-            hash.update(member.as_bytes());
-        }
-        hash.update([0]);
-        hash.update(symbol.name.as_bytes());
-        hash.update([0]);
-        hash.update(symbol.address.wrapping_sub(base).to_le_bytes());
-        hash.update((symbol.bytes.len() as u64).to_le_bytes());
-        hash.update(Sha256::digest(&symbol.bytes));
+    hash.update(b"blobray/resolver-semantic-layout/v2\0");
+    hash.update((symbols.len() as u64).to_le_bytes());
+    for (member, name, address) in symbols {
+        hash_optional_str(&mut hash, member);
+        hash_str(&mut hash, name);
+        hash.update(address.to_le_bytes());
     }
+
+    hash.update((resolver.symbols_by_address.len() as u64).to_le_bytes());
+    for (target, symbol) in &resolver.symbols_by_address {
+        hash.update(target.to_le_bytes());
+        hash_symbol_identity(&mut hash, symbol);
+    }
+
+    // data_symbol_location intentionally observes the ordered narrowest-first
+    // projection. Preserve that order rather than treating aliases as a set.
+    hash.update((resolver.data_symbols.len() as u64).to_le_bytes());
+    for symbol in &resolver.data_symbols {
+        hash_optional_str(&mut hash, symbol.member.as_deref());
+        hash_str(&mut hash, &symbol.name);
+        hash.update(symbol.address.to_le_bytes());
+        hash.update(symbol.size.to_le_bytes());
+        hash.update([u8::from(symbol.exported)]);
+    }
+
+    // These maps are immutable for a resolver run and backed by ordered
+    // collections. Some value types deliberately expose only semantic Debug;
+    // framing that deterministic representation gives this build-local cache
+    // a conservative projection without ever hashing raw summary fn pointers.
+    hash_debug_projection(&mut hash, "relocated-calls", &resolver.relocated_calls);
+    let context = &resolver.pointer_context;
+    hash_str(&mut hash, context.semantic_cache_domain);
+    hash.update([u8::from(context.summary_hooks.is_some())]);
+    hash_debug_projection(
+        &mut hash,
+        "reviewed-external-pointer-cells",
+        &context.reviewed_external_pointer_cells,
+    );
+    hash_debug_projection(
+        &mut hash,
+        "function-pointer-cells",
+        &context.function_pointer_cells,
+    );
+    hash_debug_projection(&mut hash, "data-pointer-cells", &context.data_pointer_cells);
+    hash_debug_projection(
+        &mut hash,
+        "relocated-pointer-symbols",
+        &context.relocated_pointer_symbols,
+    );
+    hash_debug_projection(
+        &mut hash,
+        "projected-relocations",
+        &context.projected_relocations,
+    );
+    hash_debug_projection(
+        &mut hash,
+        "function-table-slots",
+        &context.function_table_slots,
+    );
+    hash_debug_projection(
+        &mut hash,
+        "function-target-identities",
+        &context.function_target_identities,
+    );
+    hash_debug_projection(&mut hash, "diagnostic-calls", &context.diagnostic_calls);
+    hash_debug_projection(
+        &mut hash,
+        "reviewed-external-calls",
+        &context.reviewed_external_calls,
+    );
+    hash_debug_projection(
+        &mut hash,
+        "reviewed-external-slots",
+        &context.reviewed_external_slots,
+    );
+    hash_debug_projection(
+        &mut hash,
+        "reviewed-internal-calls",
+        &context.reviewed_internal_calls,
+    );
+    hash_debug_projection(
+        &mut hash,
+        "reviewed-internal-slots",
+        &context.reviewed_internal_slots,
+    );
     hash.finalize().into()
+}
+
+fn hash_symbol_identity(hash: &mut Sha256, symbol: &artifact::ArtifactSymbolDefinition) {
+    hash_optional_str(hash, symbol.member.as_deref());
+    hash_str(hash, &symbol.name);
+    hash.update(symbol.address.to_le_bytes());
+}
+
+fn hash_bytes(hash: &mut Sha256, value: &[u8]) {
+    hash.update((value.len() as u64).to_le_bytes());
+    hash.update(value);
+}
+
+fn hash_str(hash: &mut Sha256, value: &str) {
+    hash_bytes(hash, value.as_bytes());
+}
+
+fn hash_optional_str(hash: &mut Sha256, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            hash.update([1]);
+            hash_str(hash, value);
+        }
+        None => hash.update([0]),
+    }
+}
+
+fn hash_debug_projection(hash: &mut Sha256, label: &str, value: &impl std::fmt::Debug) {
+    hash_str(hash, label);
+    hash_str(hash, &format!("{value:?}"));
 }
 
 fn relocation_kind(kind: artifact::RelocationKind) -> &'static str {
@@ -246,17 +501,18 @@ fn relocation_kind(kind: artifact::RelocationKind) -> &'static str {
 
 fn mmio_fingerprint(svd: &MmioMap) -> [u8; 32] {
     let mut hash = Sha256::new();
+    hash.update(b"blobray/mmio-semantic-layout/v1\0");
+    hash.update((svd.registers.len() as u64).to_le_bytes());
     for register in &svd.registers {
         hash.update(register.address.to_le_bytes());
-        hash.update(register.name.as_bytes());
-        hash.update([0]);
+        hash_str(&mut hash, &register.name);
     }
+    hash.update((svd.regions.len() as u64).to_le_bytes());
     for region in &svd.regions {
         hash.update(region.start.to_le_bytes());
         hash.update(region.end.to_le_bytes());
         hash.update([u8::from(region.readable), u8::from(region.writable)]);
-        hash.update(region.name.as_bytes());
-        hash.update([0]);
+        hash_str(&mut hash, &region.name);
     }
     hash.finalize().into()
 }
@@ -1020,24 +1276,80 @@ fn intern_static_vocabulary(value: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{cell::Cell, sync::Arc};
 
     use super::*;
 
+    static UNKEYED_SUMMARY_HOOKS: direct::RiscvSummaryHooks = direct::RiscvSummaryHooks {
+        secondary_return_target: |_| false,
+        direct_semantic: |_| None,
+        direct_external_semantic: |_| None,
+        direct_external_intrinsic: |_, _| None,
+        reference_intrinsic: |_, _, _| None,
+        standard_memory_function: |_| None,
+        wide_signed_divide: |_, _| None,
+    };
+
+    #[derive(Default)]
+    struct CountingStore {
+        loads: Cell<usize>,
+        stores: usize,
+    }
+
+    impl FunctionFactStore for CountingStore {
+        fn load_function_facts(&self, _keys: &[String]) -> crate::Result<Vec<(String, Vec<u8>)>> {
+            self.loads.set(self.loads.get() + 1);
+            Ok(Vec::new())
+        }
+
+        fn store_function_facts(&mut self, _facts: &[(String, Vec<u8>)]) -> crate::Result<()> {
+            self.stores += 1;
+            Ok(())
+        }
+    }
+
     fn symbol(address: u64) -> artifact::ArtifactSymbolDefinition {
+        named_symbol(Some("radio.o"), "leaf", address, vec![0x13; 0x24])
+    }
+
+    fn named_symbol(
+        member: Option<&str>,
+        name: &str,
+        address: u64,
+        bytes: Vec<u8>,
+    ) -> artifact::ArtifactSymbolDefinition {
         artifact::ArtifactSymbolDefinition {
-            member: Some("radio.o".to_owned()),
-            name: "leaf".to_owned(),
+            member: member.map(str::to_owned),
+            name: name.to_owned(),
             address,
-            bytes: vec![0x13; 0x24],
+            bytes,
             addresses_resolved: true,
             memory_regions: Arc::from([]),
             relocations: Vec::new(),
         }
     }
 
+    fn resolver(symbols: Vec<artifact::ArtifactSymbolDefinition>) -> ReferenceResolver {
+        let symbols_by_address = symbols
+            .iter()
+            .map(|symbol| (symbol.address as u32, symbol.clone()))
+            .collect();
+        ReferenceResolver {
+            symbols,
+            symbols_by_address,
+            symbol_ids: BTreeMap::new(),
+            exported_symbol_keys: BTreeSet::new(),
+            relocated_calls: direct::StructuralRelocatedCalls::new(),
+            pointer_context: direct::StructuralPointerContext::default(),
+            data_symbols: Vec::new(),
+            data_objects: Vec::new(),
+            projected_direct_semantics: BTreeMap::new(),
+            projected_origins: BTreeMap::new(),
+        }
+    }
+
     #[test]
-    fn key_ignores_linked_base_and_sites_rebase_on_materialization() {
+    fn key_binds_owner_base_but_sites_rebase_on_materialization() {
         let mmio = MmioMap {
             registers: Vec::new(),
             regions: Vec::new(),
@@ -1045,9 +1357,9 @@ mod tests {
         let fingerprint = mmio_fingerprint(&mmio);
         let first = symbol(0x4000);
         let second = symbol(0x8000);
-        assert_eq!(
-            function_fact_key(&first, &fingerprint, &[0; 32]),
-            function_fact_key(&second, &fingerprint, &[0; 32])
+        assert_ne!(
+            function_fact_key(&first, &fingerprint, &[0; 32], true),
+            function_fact_key(&second, &fingerprint, &[0; 32], true)
         );
         let graph = DirectCallGraph {
             calls: BTreeSet::from([LinkedCall {
@@ -1106,5 +1418,232 @@ mod tests {
                 "branch at 0x00008020 is incomplete".to_owned(),
             ])
         );
+    }
+
+    #[test]
+    fn unrelated_symbol_body_bytes_do_not_change_the_resolver_projection() {
+        let owner = symbol(0x4000);
+        let unrelated = named_symbol(Some("other.o"), "unrelated", 0x8000, vec![0x13, 0, 0, 0]);
+        let first_resolver = resolver(vec![owner.clone(), unrelated.clone()]);
+        let mut changed = unrelated;
+        changed.bytes = vec![0x67, 0x80, 0, 0, 0x13, 0, 0, 0];
+        let second_resolver = resolver(vec![owner.clone(), changed]);
+
+        let first_projection = resolver_fingerprint(&first_resolver);
+        let second_projection = resolver_fingerprint(&second_resolver);
+        assert_eq!(first_projection, second_projection);
+        assert_eq!(
+            function_fact_key(&owner, &[0; 32], &first_projection, true),
+            function_fact_key(&owner, &[0; 32], &second_projection, true),
+        );
+    }
+
+    #[test]
+    fn owner_member_and_absolute_base_are_part_of_the_function_key() {
+        let first = symbol(0x4000);
+        let mut other_member = first.clone();
+        other_member.member = Some("other.o".to_owned());
+        let mut other_base = first.clone();
+        other_base.address = 0x8000;
+
+        let first_key = function_fact_key(&first, &[0; 32], &[0; 32], true);
+        assert_ne!(
+            first_key,
+            function_fact_key(&other_member, &[0; 32], &[0; 32], true)
+        );
+        assert_ne!(
+            first_key,
+            function_fact_key(&other_base, &[0; 32], &[0; 32], true)
+        );
+        assert_ne!(
+            first_key,
+            function_fact_key(&first, &[0; 32], &[0; 32], false),
+            "namespaced and unnamespaced portable facts must not share a key",
+        );
+    }
+
+    #[test]
+    fn resolver_semantic_inputs_change_the_projection() {
+        let owner = symbol(0x4000);
+        let baseline = resolver_fingerprint(&resolver(vec![owner.clone()]));
+
+        let mut selected_target = resolver(vec![owner.clone()]);
+        selected_target.symbols_by_address.insert(
+            0x9000,
+            named_symbol(None, "selected", 0x9000, vec![0x13; 4]),
+        );
+        assert_ne!(baseline, resolver_fingerprint(&selected_target));
+
+        let mut data_symbol = resolver(vec![owner.clone()]);
+        data_symbol
+            .data_symbols
+            .push(artifact::ArtifactDataSymbolDefinition {
+                member: Some("data.o".to_owned()),
+                name: "state".to_owned(),
+                address: 0x1000_8000,
+                size: 64,
+                exported: true,
+            });
+        assert_ne!(baseline, resolver_fingerprint(&data_symbol));
+
+        let mut relocated_call = resolver(vec![owner.clone()]);
+        relocated_call.relocated_calls.insert(
+            direct::StructuralCallSite::new(&owner, 0x4004),
+            ("callee".to_owned(), Some(0x9000)),
+        );
+        assert_ne!(baseline, resolver_fingerprint(&relocated_call));
+
+        let mut context_domain = resolver(vec![owner]);
+        context_domain.pointer_context.semantic_cache_domain = "test-harness/v2";
+        assert_ne!(baseline, resolver_fingerprint(&context_domain));
+    }
+
+    #[test]
+    fn ordered_context_maps_ignore_insertion_order() {
+        let owner = symbol(0x4000);
+        let mut first = resolver(vec![owner.clone()]);
+        first
+            .pointer_context
+            .reviewed_external_pointer_cells
+            .insert(0x1000, "first".to_owned());
+        first
+            .pointer_context
+            .reviewed_external_pointer_cells
+            .insert(0x2000, "second".to_owned());
+        first
+            .pointer_context
+            .diagnostic_calls
+            .insert("alpha".to_owned(), 1);
+        first
+            .pointer_context
+            .diagnostic_calls
+            .insert("beta".to_owned(), 2);
+        first.relocated_calls.insert(
+            direct::StructuralCallSite::new(&owner, 0x4004),
+            ("alpha".to_owned(), Some(0x8000)),
+        );
+        first.relocated_calls.insert(
+            direct::StructuralCallSite::new(&owner, 0x4008),
+            ("beta".to_owned(), Some(0x9000)),
+        );
+
+        let mut second = resolver(vec![owner.clone()]);
+        second
+            .pointer_context
+            .reviewed_external_pointer_cells
+            .insert(0x2000, "second".to_owned());
+        second
+            .pointer_context
+            .reviewed_external_pointer_cells
+            .insert(0x1000, "first".to_owned());
+        second
+            .pointer_context
+            .diagnostic_calls
+            .insert("beta".to_owned(), 2);
+        second
+            .pointer_context
+            .diagnostic_calls
+            .insert("alpha".to_owned(), 1);
+        second.relocated_calls.insert(
+            direct::StructuralCallSite::new(&owner, 0x4008),
+            ("beta".to_owned(), Some(0x9000)),
+        );
+        second.relocated_calls.insert(
+            direct::StructuralCallSite::new(&owner, 0x4004),
+            ("alpha".to_owned(), Some(0x8000)),
+        );
+
+        assert_eq!(resolver_fingerprint(&first), resolver_fingerprint(&second));
+    }
+
+    #[test]
+    fn unkeyed_summary_hooks_bypass_initial_late_and_persistent_store_io() {
+        let owner = symbol(0x4000);
+        let mut resolver = resolver(vec![owner.clone()]);
+        resolver.pointer_context.summary_hooks = Some(&UNKEYED_SUMMARY_HOOKS);
+        assert!(resolver.pointer_context.semantic_cache_domain.is_empty());
+        let mmio = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        let mut store = CountingStore::default();
+        let cache =
+            FunctionCacheRun::prepare(&resolver, [&owner], &mmio, "test", true, Some(&store));
+        assert_eq!(
+            cache.disabled_reason(),
+            Some(FunctionCacheDisabledReason::UnsafeSemanticDomain)
+        );
+
+        cache.load_symbols([&owner], Some(&store));
+        let analyses = Cell::new(0);
+        let graph = cache.direct_graph(&owner, || {
+            analyses.set(analyses.get() + 1);
+            DirectCallGraph::default()
+        });
+        assert!(graph.calls.is_empty());
+        cache.persist(&mut store);
+
+        assert_eq!(analyses.get(), 1);
+        assert_eq!(store.loads.get(), 0);
+        assert_eq!(store.stores, 0);
+    }
+
+    #[test]
+    fn absent_store_disables_initial_late_and_persistent_cache_work() {
+        let owner = symbol(0x4000);
+        let resolver = resolver(vec![owner.clone()]);
+        let mmio = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        let cache = FunctionCacheRun::prepare(&resolver, [&owner], &mmio, "test", true, None);
+        assert_eq!(
+            cache.disabled_reason(),
+            Some(FunctionCacheDisabledReason::StoreAbsent)
+        );
+        assert_eq!(cache.computed_key_count(), 0);
+
+        let mut late_store = CountingStore::default();
+        cache.load_symbols([&owner], Some(&late_store));
+        let analyses = Cell::new(0);
+        let graph = cache.direct_graph(&owner, || {
+            analyses.set(analyses.get() + 1);
+            DirectCallGraph::default()
+        });
+        assert!(graph.calls.is_empty());
+        cache.persist(&mut late_store);
+
+        assert_eq!(analyses.get(), 1);
+        assert_eq!(cache.computed_key_count(), 0);
+        assert_eq!(late_store.loads.get(), 0);
+        assert_eq!(late_store.stores, 0);
+    }
+
+    #[test]
+    fn initial_lookup_and_direct_analysis_share_one_precomputed_symbol_key() {
+        let owner = symbol(0x4000);
+        let cloned_definition = owner.clone();
+        let resolver = resolver(vec![owner.clone()]);
+        let mmio = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        let store = CountingStore::default();
+        let cache =
+            FunctionCacheRun::prepare(&resolver, [&owner], &mmio, "test", true, Some(&store));
+        assert_eq!(cache.disabled_reason(), None);
+        assert_eq!(cache.computed_key_count(), 1);
+        assert_eq!(store.loads.get(), 1);
+
+        cache.load_symbols([&cloned_definition], Some(&store));
+        let analyses = Cell::new(0);
+        cache.direct_graph(&cloned_definition, || {
+            analyses.set(analyses.get() + 1);
+            DirectCallGraph::default()
+        });
+
+        assert_eq!(analyses.get(), 1);
+        assert_eq!(cache.computed_key_count(), 1);
+        assert_eq!(store.loads.get(), 1);
     }
 }

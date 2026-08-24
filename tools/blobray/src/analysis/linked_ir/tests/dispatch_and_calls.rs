@@ -2,9 +2,43 @@
 
 use super::*;
 
+use std::cell::RefCell;
+
 use open_radio_vendor_analysis_model::{
     ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel,
 };
+
+#[derive(Default)]
+struct CountingFunctionFactStore {
+    facts: BTreeMap<String, Vec<u8>>,
+    load_batches: RefCell<Vec<Vec<String>>>,
+    store_batches: Vec<Vec<String>>,
+}
+
+impl FunctionFactStore for CountingFunctionFactStore {
+    fn load_function_facts(&self, keys: &[String]) -> crate::Result<Vec<(String, Vec<u8>)>> {
+        self.load_batches.borrow_mut().push(keys.to_vec());
+        Ok(keys
+            .iter()
+            .filter_map(|key| {
+                self.facts
+                    .get(key)
+                    .map(|value| (key.clone(), value.clone()))
+            })
+            .collect())
+    }
+
+    fn store_function_facts(&mut self, facts: &[(String, Vec<u8>)]) -> crate::Result<()> {
+        self.store_batches
+            .push(facts.iter().map(|(key, _)| key.clone()).collect());
+        for (key, value) in facts {
+            if let Some(previous) = self.facts.insert(key.clone(), value.clone()) {
+                assert_eq!(previous, *value, "an immutable function fact changed");
+            }
+        }
+        Ok(())
+    }
+}
 
 static LINK_UNIT_DELAY_ARGUMENTS: [crate::ExternalArgumentSpec; 1] =
     [crate::ExternalArgumentSpec {
@@ -525,6 +559,251 @@ fn direct_call_graph_survives_reference_summary_inlining() {
             ("vendor_child", "reachable-internal"),
             ("vendor_parent", "symbol-prefix-root"),
         ]
+    );
+}
+
+#[test]
+fn reachable_callees_are_loaded_as_one_late_cache_batch() {
+    let parent = symbol(
+        "vendor_parent",
+        0x1000,
+        vec![
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+    );
+    let first = symbol("vendor_child_a", 0x2000, vec![0x67, 0x80, 0x00, 0x00]);
+    let second = symbol("vendor_child_b", 0x3000, vec![0x67, 0x80, 0x00, 0x00]);
+    let first_id = 0x8000_0000;
+    let second_id = 0x8000_0001;
+    let resolver = ReferenceResolver {
+        symbols: vec![parent.clone(), first.clone(), second.clone()],
+        symbols_by_address: BTreeMap::from([
+            (first_id, first.clone()),
+            (second_id, second.clone()),
+        ]),
+        symbol_ids: BTreeMap::from([
+            (
+                (parent.member.clone(), parent.name.clone(), parent.address),
+                0x8000_0002,
+            ),
+            (
+                (first.member.clone(), first.name.clone(), first.address),
+                first_id,
+            ),
+            (
+                (second.member.clone(), second.name.clone(), second.address),
+                second_id,
+            ),
+        ]),
+        exported_symbol_keys: BTreeSet::new(),
+        relocated_calls: direct::StructuralRelocatedCalls::from([
+            (
+                direct::StructuralCallSite::new(&parent, 0x1000),
+                (first.name.clone(), Some(first_id)),
+            ),
+            (
+                direct::StructuralCallSite::new(&parent, 0x1008),
+                (second.name.clone(), Some(second_id)),
+            ),
+        ]),
+        pointer_context: direct::StructuralPointerContext::default(),
+        data_symbols: Vec::new(),
+        data_objects: Vec::new(),
+        projected_direct_semantics: BTreeMap::new(),
+        projected_origins: BTreeMap::new(),
+    };
+    let map = MmioMap {
+        registers: Vec::new(),
+        regions: Vec::new(),
+    };
+    let options = LinkedIrSourceOptions {
+        symbol_prefix: "vendor_parent",
+        source: "primary",
+        namespace_identities: false,
+        include_reachable: true,
+        jobs: 1,
+        compact_projected_actions: false,
+    };
+    let mut store = CountingFunctionFactStore::default();
+
+    let cold = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
+    assert_eq!(cold.functions.len(), 3);
+    assert_eq!(store.facts.len(), 3);
+
+    store.load_batches.get_mut().clear();
+    store.store_batches.clear();
+    let warm = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
+
+    assert_eq!(warm, cold, "cache reuse changed linked-IR completeness");
+    assert_eq!(
+        store
+            .load_batches
+            .borrow()
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        [1, 2],
+        "the root should load eagerly and both discovered callees in one late batch"
+    );
+    assert!(
+        store.store_batches.is_empty(),
+        "a cache hit unexpectedly reran direct decode/analysis and produced new facts"
+    );
+}
+
+#[test]
+fn changing_one_function_reuses_unrelated_persistent_facts() {
+    let symbols = vec![
+        symbol("cache_locality_a", 0x1000, vec![0x67, 0x80, 0x00, 0x00]),
+        symbol("cache_locality_b", 0x2000, vec![0x67, 0x80, 0x00, 0x00]),
+        symbol("cache_locality_c", 0x3000, vec![0x67, 0x80, 0x00, 0x00]),
+    ];
+    let mut resolver = empty_resolver();
+    resolver.symbols = symbols.clone();
+    resolver.symbol_ids = symbols
+        .iter()
+        .enumerate()
+        .map(|(index, symbol)| {
+            (
+                (symbol.member.clone(), symbol.name.clone(), symbol.address),
+                0x8000_0000 + index as u32,
+            )
+        })
+        .collect();
+    let map = MmioMap {
+        registers: Vec::new(),
+        regions: Vec::new(),
+    };
+    let options = LinkedIrSourceOptions {
+        symbol_prefix: "",
+        source: "primary",
+        namespace_identities: false,
+        include_reachable: false,
+        jobs: 1,
+        compact_projected_actions: false,
+    };
+    let mut store = CountingFunctionFactStore::default();
+
+    let cold = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
+    assert_eq!(cold.functions.len(), symbols.len());
+    assert_eq!(
+        store.store_batches.iter().map(Vec::len).collect::<Vec<_>>(),
+        [symbols.len()],
+        "the cold run should persist one fact per independent function"
+    );
+
+    store.load_batches.get_mut().clear();
+    store.store_batches.clear();
+    let warm = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
+    assert_eq!(warm, cold, "cache reuse changed linked-IR completeness");
+    assert!(
+        store.store_batches.is_empty(),
+        "the unchanged run should reuse every persistent function fact"
+    );
+
+    let mut changed = empty_resolver();
+    changed.symbols = symbols;
+    changed.symbols[0].bytes = vec![0x13, 0x00, 0x00, 0x00];
+    changed.symbol_ids = resolver.symbol_ids.clone();
+    store.load_batches.get_mut().clear();
+    store.store_batches.clear();
+    let changed_report =
+        build_linked_ir_for_source_with_cache(&changed, &map, options, Some(&mut store));
+
+    assert_eq!(changed_report.functions.len(), changed.symbols.len());
+    assert_eq!(
+        store.store_batches.iter().map(Vec::len).collect::<Vec<_>>(),
+        [1],
+        "changing one function body should not invalidate unrelated direct facts"
+    );
+}
+
+#[test]
+fn linked_base_shift_does_not_reuse_stale_pc_relative_mmio_facts() {
+    let resolver_at = |address| {
+        let owner = symbol(
+            "pc_relative_store",
+            address,
+            vec![
+                0x97, 0x02, 0x00, 0x00, // auipc t0, 0
+                0x23, 0xa0, 0x02, 0x00, // sw zero, 0(t0)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+        );
+        let mut resolver = empty_resolver();
+        resolver.symbol_ids.insert(
+            (owner.member.clone(), owner.name.clone(), owner.address),
+            address as u32,
+        );
+        resolver.symbols = vec![owner];
+        resolver
+    };
+    let original_address = 0x2010_0000;
+    let shifted_address = 0x2010_1000;
+    let original = resolver_at(original_address);
+    let shifted = resolver_at(shifted_address);
+    let map = MmioMap {
+        registers: vec![
+            crate::Register {
+                address: original_address as u32,
+                name: "RADIO.ORIGINAL".to_owned(),
+            },
+            crate::Register {
+                address: shifted_address as u32,
+                name: "RADIO.SHIFTED".to_owned(),
+            },
+        ],
+        regions: vec![crate::MmioRegion {
+            name: "radio".to_owned(),
+            start: original_address as u32,
+            end: shifted_address as u32 + 4,
+            readable: true,
+            writable: true,
+        }],
+    };
+    let options = LinkedIrSourceOptions {
+        symbol_prefix: "pc_relative_store",
+        source: "primary",
+        namespace_identities: false,
+        include_reachable: false,
+        jobs: 1,
+        compact_projected_actions: false,
+    };
+    let mut warm_store = CountingFunctionFactStore::default();
+
+    let cold =
+        build_linked_ir_for_source_with_cache(&original, &map, options, Some(&mut warm_store));
+    assert_eq!(
+        cold.functions[0].mmio_accesses[0].address,
+        original_address as u32
+    );
+    warm_store.store_batches.clear();
+    let warm =
+        build_linked_ir_for_source_with_cache(&shifted, &map, options, Some(&mut warm_store));
+
+    let mut fresh_store = CountingFunctionFactStore::default();
+    let fresh =
+        build_linked_ir_for_source_with_cache(&shifted, &map, options, Some(&mut fresh_store));
+    assert_eq!(
+        fresh.functions[0].mmio_accesses[0].address,
+        shifted_address as u32
+    );
+    assert_eq!(
+        warm, fresh,
+        "a linked-base shift reused stale PC-relative MMIO facts"
+    );
+    assert_eq!(
+        warm_store
+            .store_batches
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        [1],
+        "a linked-base shift must miss the old persistent function fact"
     );
 }
 

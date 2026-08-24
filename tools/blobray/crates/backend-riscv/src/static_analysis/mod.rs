@@ -97,6 +97,12 @@ pub struct RiscvSummaryHooks {
 }
 
 pub struct RiscvHarnessSpec {
+    /// Stable semantic revision for persistent structural-analysis facts.
+    ///
+    /// This must change whenever any summary hook or harness contract can
+    /// change the result of structural tracing. Function pointers are process
+    /// addresses and therefore must never be used as persistent cache keys.
+    pub semantic_cache_domain: &'static str,
     pub contracts: &'static crate::KnowledgeContractSpec,
     pub summaries: &'static RiscvSummaryHooks,
 }

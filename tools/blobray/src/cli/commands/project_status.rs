@@ -43,7 +43,7 @@ pub(super) fn run(arguments: ProjectStatusArgs, context: ProjectContext<'_>) -> 
     }
     let document = render::document(&report, publication.clone());
     if !crate::cli::output::structured(&document) {
-        render::print_text(&report);
+        render::print_text(&report, &context);
         if let Some(publication) = publication {
             outputln!("\nReport {}: {}", publication.status, publication.path);
         }

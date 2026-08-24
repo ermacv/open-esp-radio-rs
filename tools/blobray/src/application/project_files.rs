@@ -74,6 +74,179 @@ pub(crate) struct ProjectFilesReport {
     pub(crate) pending: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ProjectFilesWorkflowState {
+    Blocked,
+    AnalysisPending,
+    ReviewOutputsPending,
+    ReviewConfigurationRequired,
+    PublicationPreflightRequired,
+    VerificationPending,
+    FilesPresent,
+}
+
+impl ProjectFilesReport {
+    pub(crate) fn workflow_state(&self) -> ProjectFilesWorkflowState {
+        if self.required_missing() != 0 {
+            return ProjectFilesWorkflowState::Blocked;
+        }
+        if self.pending_generated_by(|producer| producer == "project analyze") {
+            return ProjectFilesWorkflowState::AnalysisPending;
+        }
+        if self.pending_generated_by(is_review_producer) {
+            return ProjectFilesWorkflowState::ReviewOutputsPending;
+        }
+        if self.pending_generated_by(|producer| producer == "project publish") {
+            if self.file("review-workspace").is_none() {
+                return ProjectFilesWorkflowState::ReviewConfigurationRequired;
+            }
+            return ProjectFilesWorkflowState::PublicationPreflightRequired;
+        }
+        if self.pending_generated_by(|producer| producer == "project verify") {
+            return ProjectFilesWorkflowState::VerificationPending;
+        }
+        ProjectFilesWorkflowState::FilesPresent
+    }
+
+    pub(crate) fn required_missing(&self) -> usize {
+        self.files
+            .iter()
+            .filter(|file| file.required && file.state == ProjectFileState::Missing)
+            .count()
+    }
+
+    pub(crate) fn pending_analysis_outputs(&self) -> usize {
+        self.pending_generated_count_by(|producer| producer == "project analyze")
+    }
+
+    pub(crate) fn pending_review_outputs(&self) -> usize {
+        self.pending_generated_count_by(is_review_producer)
+    }
+
+    pub(crate) fn pending_verification_outputs(&self) -> usize {
+        self.pending_generated_count_by(|producer| producer == "project verify")
+    }
+
+    /// Return only the next commands or manual actions whose prerequisites are
+    /// present. The file inventory deliberately does not recommend every
+    /// producer at once: later bootstrap and publication stages would fail and
+    /// hide the actual first blocker.
+    pub(crate) fn next_actions(&self) -> Vec<String> {
+        if self.is_missing("run-spec") {
+            return vec!["blobray project inputs init --help".to_owned()];
+        }
+
+        let missing_inputs = self
+            .files
+            .iter()
+            .filter(|file| {
+                file.ownership == ProjectFileOwnership::External
+                    && file.state == ProjectFileState::Missing
+            })
+            .filter_map(|file| file.next_action.clone())
+            .collect::<Vec<_>>();
+        if !missing_inputs.is_empty() {
+            return missing_inputs;
+        }
+
+        if self.is_missing("code-pack") {
+            return vec![if self.is_present("symbol-inventory") {
+                "blobray advanced code init-pack".to_owned()
+            } else {
+                "blobray advanced symbols inventory".to_owned()
+            }];
+        }
+        if self.is_missing("interface-pack") {
+            return vec![if self.is_present("interface-facts") {
+                "blobray advanced interfaces init-pack".to_owned()
+            } else {
+                "blobray advanced interfaces discover".to_owned()
+            }];
+        }
+        if self.is_missing("function-pack") {
+            let linked_ir_ready = self
+                .files
+                .iter()
+                .filter(|file| file.role.starts_with("linked-ir:"))
+                .all(|file| file.state == ProjectFileState::Present);
+            return vec![if linked_ir_ready {
+                "blobray advanced functions init-pack".to_owned()
+            } else {
+                "blobray advanced ir build".to_owned()
+            }];
+        }
+
+        if self.required_missing() != 0 {
+            return vec!["blobray project doctor".to_owned()];
+        }
+
+        match self.workflow_state() {
+            ProjectFilesWorkflowState::Blocked => vec!["blobray project doctor".to_owned()],
+            ProjectFilesWorkflowState::AnalysisPending => {
+                vec!["blobray project analyze".to_owned()]
+            }
+            ProjectFilesWorkflowState::ReviewOutputsPending => [
+                "advanced code review",
+                "registers review",
+                "advanced functions review",
+            ]
+            .into_iter()
+            .filter(|producer| self.pending_generated_by(|pending| pending == *producer))
+            .map(|producer| format!("blobray {producer}"))
+            .collect(),
+            ProjectFilesWorkflowState::ReviewConfigurationRequired => vec![format!(
+                "configure [review] and publication-scopes in {}",
+                self.manifest.display()
+            )],
+            ProjectFilesWorkflowState::PublicationPreflightRequired => {
+                vec!["blobray project publish --check".to_owned()]
+            }
+            ProjectFilesWorkflowState::VerificationPending => {
+                vec!["blobray project verify".to_owned()]
+            }
+            ProjectFilesWorkflowState::FilesPresent => {
+                vec!["blobray project status".to_owned()]
+            }
+        }
+    }
+
+    fn file(&self, role: &str) -> Option<&ProjectFileEntry> {
+        self.files.iter().find(|file| file.role == role)
+    }
+
+    fn is_missing(&self, role: &str) -> bool {
+        self.file(role)
+            .is_some_and(|file| file.state == ProjectFileState::Missing)
+    }
+
+    fn is_present(&self, role: &str) -> bool {
+        self.file(role)
+            .is_some_and(|file| file.state == ProjectFileState::Present)
+    }
+
+    fn pending_generated_by(&self, predicate: impl Fn(&str) -> bool) -> bool {
+        self.pending_generated_count_by(predicate) != 0
+    }
+
+    fn pending_generated_count_by(&self, predicate: impl Fn(&str) -> bool) -> usize {
+        self.files
+            .iter()
+            .filter(|file| {
+                file.state == ProjectFileState::Pending
+                    && file.producer.as_deref().is_some_and(&predicate)
+            })
+            .count()
+    }
+}
+
+fn is_review_producer(producer: &str) -> bool {
+    matches!(
+        producer,
+        "advanced code review" | "registers review" | "advanced functions review"
+    )
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectOwnershipReport {
     pub(crate) unowned_reviewed: Vec<PathBuf>,
@@ -199,7 +372,7 @@ fn unowned_files(
     Ok(unowned)
 }
 
-pub(crate) fn collect(context: ProjectContext<'_>) -> Result<ProjectFilesReport> {
+pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport> {
     let project = context.project;
     let mut files = Vec::new();
     push(
@@ -552,7 +725,7 @@ pub(crate) fn collect(context: ProjectContext<'_>) -> Result<ProjectFilesReport>
         .filter(|file| file.state == ProjectFileState::Pending)
         .count();
     Ok(ProjectFilesReport {
-        schema: 1,
+        schema: 2,
         project_id: project.id.clone(),
         manifest: context.project_path.to_owned(),
         files,
@@ -645,6 +818,46 @@ fn push(
 mod tests {
     use super::*;
 
+    fn entry(
+        role: &str,
+        ownership: ProjectFileOwnership,
+        state: ProjectFileState,
+        producer: Option<&str>,
+        required: bool,
+    ) -> ProjectFileEntry {
+        ProjectFileEntry {
+            role: role.to_owned(),
+            ownership,
+            state,
+            path: PathBuf::from(role),
+            producer: producer.map(str::to_owned),
+            consumers: Vec::new(),
+            required,
+            next_action: None,
+        }
+    }
+
+    fn report(files: Vec<ProjectFileEntry>) -> ProjectFilesReport {
+        ProjectFilesReport {
+            schema: 2,
+            project_id: "fixture".to_owned(),
+            manifest: PathBuf::from("vendor-project.toml"),
+            present: files
+                .iter()
+                .filter(|file| file.state == ProjectFileState::Present)
+                .count(),
+            missing: files
+                .iter()
+                .filter(|file| file.state == ProjectFileState::Missing)
+                .count(),
+            pending: files
+                .iter()
+                .filter(|file| file.state == ProjectFileState::Pending)
+                .count(),
+            files,
+        }
+    }
+
     #[test]
     fn ownership_scan_rejects_only_unreferenced_leaf_files() {
         let directory =
@@ -667,5 +880,181 @@ mod tests {
         );
 
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn bootstrap_actions_stop_at_the_first_executable_frontier() {
+        let mut report = report(vec![
+            entry(
+                "run-spec",
+                ProjectFileOwnership::Local,
+                ProjectFileState::Missing,
+                Some("project inputs init"),
+                true,
+            ),
+            entry(
+                "code-pack",
+                ProjectFileOwnership::Reviewed,
+                ProjectFileState::Missing,
+                None,
+                true,
+            ),
+            entry(
+                "symbol-inventory",
+                ProjectFileOwnership::Generated,
+                ProjectFileState::Pending,
+                Some("project analyze"),
+                false,
+            ),
+            entry(
+                "published-svd",
+                ProjectFileOwnership::Generated,
+                ProjectFileState::Pending,
+                Some("project publish"),
+                false,
+            ),
+        ]);
+
+        assert_eq!(report.workflow_state(), ProjectFilesWorkflowState::Blocked);
+        assert_eq!(
+            report.next_actions(),
+            ["blobray project inputs init --help"]
+        );
+
+        let run_spec_index = report
+            .files
+            .iter()
+            .position(|file| file.role == "run-spec")
+            .unwrap();
+        report.files[run_spec_index].state = ProjectFileState::Present;
+        assert_eq!(
+            report.next_actions(),
+            ["blobray advanced symbols inventory"]
+        );
+
+        let symbol_index = report
+            .files
+            .iter()
+            .position(|file| file.role == "symbol-inventory")
+            .unwrap();
+        report.files[symbol_index].state = ProjectFileState::Present;
+        assert_eq!(report.next_actions(), ["blobray advanced code init-pack"]);
+    }
+
+    #[test]
+    fn publication_is_never_recommended_without_review_configuration() {
+        let mut report = report(vec![entry(
+            "published-svd",
+            ProjectFileOwnership::Generated,
+            ProjectFileState::Pending,
+            Some("project publish"),
+            false,
+        )]);
+
+        assert_eq!(
+            report.workflow_state(),
+            ProjectFilesWorkflowState::ReviewConfigurationRequired
+        );
+        assert_eq!(
+            report.next_actions(),
+            ["configure [review] and publication-scopes in vendor-project.toml"]
+        );
+        assert!(
+            report
+                .next_actions()
+                .iter()
+                .all(|action| !action.contains("project publish"))
+        );
+
+        report.files.push(entry(
+            "review-workspace",
+            ProjectFileOwnership::Generated,
+            ProjectFileState::Present,
+            Some("project analyze"),
+            false,
+        ));
+        assert_eq!(
+            report.workflow_state(),
+            ProjectFilesWorkflowState::PublicationPreflightRequired
+        );
+        assert_eq!(report.next_actions(), ["blobray project publish --check"]);
+    }
+
+    #[test]
+    fn pending_review_outputs_are_not_mislabeled_as_analysis_work() {
+        let review = report(vec![
+            entry(
+                "function-review",
+                ProjectFileOwnership::Generated,
+                ProjectFileState::Pending,
+                Some("advanced functions review"),
+                false,
+            ),
+            entry(
+                "register-review",
+                ProjectFileOwnership::Generated,
+                ProjectFileState::Pending,
+                Some("registers review"),
+                false,
+            ),
+            entry(
+                "code-review",
+                ProjectFileOwnership::Generated,
+                ProjectFileState::Pending,
+                Some("advanced code review"),
+                false,
+            ),
+            entry(
+                "published-svd",
+                ProjectFileOwnership::Generated,
+                ProjectFileState::Pending,
+                Some("project publish"),
+                false,
+            ),
+        ]);
+
+        assert_eq!(
+            review.workflow_state(),
+            ProjectFilesWorkflowState::ReviewOutputsPending
+        );
+        assert_eq!(review.pending_analysis_outputs(), 0);
+        assert_eq!(review.pending_review_outputs(), 3);
+        assert_eq!(
+            review.next_actions(),
+            [
+                "blobray advanced code review",
+                "blobray registers review",
+                "blobray advanced functions review",
+            ]
+        );
+    }
+
+    #[test]
+    fn completed_analysis_and_complete_file_maps_have_distinct_states() {
+        let analysis = report(vec![entry(
+            "navigation-index",
+            ProjectFileOwnership::Generated,
+            ProjectFileState::Pending,
+            Some("project analyze"),
+            false,
+        )]);
+        assert_eq!(
+            analysis.workflow_state(),
+            ProjectFilesWorkflowState::AnalysisPending
+        );
+        assert_eq!(analysis.next_actions(), ["blobray project analyze"]);
+
+        let complete = report(vec![entry(
+            "navigation-index",
+            ProjectFileOwnership::Generated,
+            ProjectFileState::Present,
+            Some("project analyze"),
+            false,
+        )]);
+        assert_eq!(
+            complete.workflow_state(),
+            ProjectFilesWorkflowState::FilesPresent
+        );
+        assert_eq!(complete.next_actions(), ["blobray project status"]);
     }
 }

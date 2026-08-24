@@ -388,6 +388,7 @@ static TEST_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     wide_signed_divide: no_test_wide_divide,
 };
 static TEST_RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
+    semantic_cache_domain: "blobray/riscv-harness/test/v1",
     contracts: &TEST_CONTRACTS,
     summaries: &TEST_SUMMARIES,
 };

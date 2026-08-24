@@ -21,11 +21,22 @@ use std::{collections::BTreeMap, path::Path};
 
 pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
-pub(crate) use resolve::{ProjectContext, ProjectSession, ProjectSessionOptions};
+pub use pipeline::StageReport as ProjectAnalysisStageReport;
+pub use project_analysis::{
+    ProjectAnalysisPlanAction, ProjectAnalysisPlanReport, ProjectAnalysisPlanStage,
+    ProjectAnalysisPlanWorkItem, ProjectAnalysisReport, ProjectAnalysisRequest,
+    ProjectAnalysisStatus,
+};
+pub(crate) use query_store::QueryStoreStatistics as ProjectCacheStatistics;
+pub(crate) use resolve::{
+    ExplicitProjectContext, FollowUpRequirements, ProjectContext, ProjectSession,
+    ProjectSessionOptions,
+};
 pub use status::model::{
-    ArtifactDetail, Component as ProjectStatusComponent, DetailValue, LinkedIrProfileDetail,
-    MmioRegionDetail, Phase as ProjectStatusPhase, ProjectStatusReport, Readiness,
-    ReviewScopeDetail, TargetIdentity as ProjectTargetIdentity,
+    ArtifactDetail, Component as ProjectStatusComponent, DetailValue, EvidenceFreshness,
+    LinkedIrProfileDetail, MmioRegionDetail, Phase as ProjectStatusPhase, ProjectStatusReport,
+    Readiness, ReviewScopeDetail, StatusValidation, TargetIdentity as ProjectTargetIdentity,
+    ValidationDepth,
 };
 
 /// Resolved project state and reload-scoped analysis caches.
@@ -76,6 +87,35 @@ impl BlobrayApplication {
         Ok(report)
     }
 
+    /// Execute the complete project-owned analysis/review pipeline.
+    pub fn project_analysis(
+        &mut self,
+        request: ProjectAnalysisRequest,
+    ) -> ApplicationResult<ProjectAnalysisReport> {
+        let request = request.validate()?;
+        let report = project_analysis::analyze_project(&self.resolved, request);
+        if !request.check {
+            // A write run may publish only part of a failed pipeline or restore
+            // CAS outputs while reporting the owning stage as current. Reload
+            // unconditionally so snapshots and focused queries never retain
+            // pre-run OnceLocks or memoized analysis results.
+            let mut resolved = ProjectSession::open(&self.resolved.manifest)?;
+            std::mem::swap(&mut self.resolved, &mut resolved);
+            self.generation = self.generation.saturating_add(1);
+            self.analysis_cache.clear();
+        }
+        Ok(report)
+    }
+
+    /// Compute the exact read-only execution/cache plan for project analysis.
+    pub fn project_analysis_plan(
+        &self,
+        request: ProjectAnalysisRequest,
+    ) -> ApplicationResult<ProjectAnalysisPlanReport> {
+        let request = request.validate()?;
+        Ok(project_analysis::plan_project(&self.resolved, request))
+    }
+
     pub fn compare(
         &mut self,
         request: CompareRequest,
@@ -111,4 +151,9 @@ pub(crate) fn register_detail_for_project(
     address: u32,
 ) -> crate::Result<Option<RegisterDetailSummary>> {
     snapshot::registers::detail(project, catalog, address)
+}
+
+/// Inspect the project-owned persistent cache without creating or repairing it.
+pub(crate) fn project_cache_statistics(manifest: &Path) -> crate::Result<ProjectCacheStatistics> {
+    query_store::QueryStore::statistics(manifest)
 }

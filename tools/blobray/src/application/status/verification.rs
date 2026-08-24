@@ -11,9 +11,9 @@ use serde::Deserialize;
 use super::model::{Component, Phase, Readiness};
 use crate::verification::PROJECT_VERIFICATION_REPORT_SCHEMA;
 use crate::{
-    application::ProjectContext,
+    application::{FollowUpRequirements, ProjectContext},
     project::VerificationWorkspacePaths,
-    run_spec::{InputRole, RunSpec},
+    run_spec::InputRole,
     verification::{dispositions, load_evidence_baseline, profiles},
 };
 
@@ -28,7 +28,7 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
         "verification",
         vec![
             suite_configuration(workspace),
-            suite_inputs(workspace, context.run_spec, context.project_path),
+            suite_inputs(workspace, context),
             last_report_component(context),
         ],
     )
@@ -38,21 +38,14 @@ pub(super) fn last_report_component(context: &ProjectContext<'_>) -> Component {
     let Some(workspace) = context.project.verification.as_ref() else {
         return Component::new("last-verification", Readiness::NotConfigured);
     };
-    last_report(workspace, &context.project.id, context.project_path)
+    last_report(workspace, &context.project.id, context)
 }
 
-fn suite_inputs(
-    workspace: &VerificationWorkspacePaths,
-    run_spec: Option<&RunSpec>,
-    project_path: &Path,
-) -> Component {
-    let Some(run_spec) = run_spec else {
+fn suite_inputs(workspace: &VerificationWorkspacePaths, context: &ProjectContext<'_>) -> Component {
+    let Some(run_spec) = context.run_spec else {
         return Component::new("suite-inputs", Readiness::Incomplete)
             .diagnostic("verification suite artifact bindings are unavailable")
-            .next_action(format!(
-                "run `blobray project inputs init --project {}`",
-                project_path.display()
-            ));
+            .next_action(format!("run `{}`", context.inputs_init_help_command()));
     };
     let configured = run_spec
         .inputs()
@@ -86,8 +79,12 @@ fn suite_inputs(
                 missing.join(", ")
             ))
             .next_action(format!(
-                "bind the missing roles with `blobray project inputs init --project {}`",
-                project_path.display()
+                "bind the missing roles in {} using `{}`",
+                context.run_spec_path.map_or_else(
+                    || "the local run spec".to_owned(),
+                    |path| path.display().to_string()
+                ),
+                context.inputs_init_help_command()
             ))
     }
 }
@@ -241,15 +238,15 @@ struct StoredReplacementSummary {
 fn last_report(
     workspace: &VerificationWorkspacePaths,
     project_id: &str,
-    project_path: &Path,
+    context: &ProjectContext<'_>,
 ) -> Component {
     if !workspace.report.is_file() {
         return Component::new("last-verification", Readiness::Incomplete)
             .detail("path", workspace.report.display().to_string())
             .diagnostic("project verification has not been executed")
             .next_action(format!(
-                "run `blobray project verify --project {}`",
-                project_path.display()
+                "run `{}`",
+                context.follow_up_command("project verify", FollowUpRequirements::ANALYSIS)
             ));
     }
     let input = match fs::read_to_string(&workspace.report) {
@@ -276,8 +273,8 @@ fn last_report(
             .detail("path", workspace.report.display().to_string())
             .diagnostic("project verification report is stale for the current identity or schema")
             .next_action(format!(
-                "run `blobray project verify --project {}`",
-                project_path.display()
+                "run `{}`",
+                context.follow_up_command("project verify", FollowUpRequirements::ANALYSIS)
             ));
     }
     let expected_suite_ids = workspace
@@ -299,8 +296,8 @@ fn last_report(
                 "aggregate verification report is partial or stale for the current suite set",
             )
             .next_action(format!(
-                "run `blobray project verify --project {}`",
-                project_path.display()
+                "run `{}`",
+                context.follow_up_command("project verify", FollowUpRequirements::ANALYSIS)
             ));
     }
     let currency = match artifact_currency(&report.suites) {
@@ -321,8 +318,8 @@ fn last_report(
             .detail("missing_inputs", currency.missing)
             .diagnostic("project verification report no longer matches its recorded inputs")
             .next_action(format!(
-                "run `blobray project verify --project {}`",
-                project_path.display()
+                "run `{}`",
+                context.follow_up_command("project verify", FollowUpRequirements::ANALYSIS)
             ));
     }
     let failed_suites = report
@@ -451,22 +448,31 @@ fn last_report(
                 failed_suites.first().map_or_else(
                     || {
                         format!(
-                            "replay verification with `blobray project verify --project {}`",
-                            project_path.display()
+                            "replay verification with `{}`",
+                            context.follow_up_command(
+                                "project verify",
+                                FollowUpRequirements::ANALYSIS,
+                            )
                         )
                     },
                     |first| {
                         format!(
-                            "replay the first failing suite with `blobray project verify --suite {first} --project {}`",
-                            project_path.display()
+                            "replay the first failing suite with `{}`",
+                            context.follow_up_command(
+                                &format!("project verify --suite {first}"),
+                                FollowUpRequirements::ANALYSIS,
+                            )
                         )
                     },
                 )
             },
             |first| {
                 format!(
-                    "generate and review candidate evidence for {first} with `blobray project verify --suite {first} --candidate-evidence-dir DIR --project {}`",
-                    project_path.display()
+                    "generate and review candidate evidence for {first} with `{}`",
+                    context.follow_up_command(
+                        &format!("project verify --suite {first} --candidate-evidence-dir DIR"),
+                        FollowUpRequirements::ANALYSIS,
+                    )
                 )
             },
         );

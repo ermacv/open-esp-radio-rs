@@ -2,18 +2,20 @@
 
 #![forbid(unsafe_code)]
 
-use super::{RadioRegisters, device_fence};
+use super::{WifiRadioRegisters, device_fence};
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Configure the complete working open promiscuous receive frontier.
     ///
     /// SOURCE: `OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER`, complete
     /// `BLOB_LIBPP_HAL_SNIFFER_ENABLE`, and the register identity independently
     /// confirmed by `BLOB_LIBPP_HAL_SNIFFER_MISC`.
     pub fn configure_open_mac_promiscuous_receive(&mut self) {
-        super::svd::zero_register_write::open_mac_control_cold(&self.peripherals.wifi_mac_control);
+        super::svd::zero_register_write::open_mac_control_cold(
+            &self.peripherals.wifi_mac.wifi_mac_control,
+        );
 
-        let filter = &self.peripherals.wifi_mac_rx_filter;
+        let filter = &self.peripherals.wifi_mac.wifi_mac_rx_filter;
         let control = filter.policy(3);
         // Every line below is a separate fresh-read RMW in the complete
         // hal_sniffer_enable leaf.

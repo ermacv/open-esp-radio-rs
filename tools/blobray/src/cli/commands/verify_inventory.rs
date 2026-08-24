@@ -7,7 +7,7 @@ use super::super::*;
 #[derive(Default)]
 struct SourceInput {
     artifact: Option<PathBuf>,
-    inventory: Option<PathBuf>,
+    inventories: Vec<PathBuf>,
     companion: Option<PathBuf>,
     prefix: Option<String>,
     symbols: Vec<String>,
@@ -16,7 +16,7 @@ struct SourceInput {
 struct ResolvedSourceInput {
     id: String,
     artifact: PathBuf,
-    inventory: Option<PathBuf>,
+    inventories: Vec<PathBuf>,
     companion: Option<PathBuf>,
     selection: ResolvedVendorSelection,
 }
@@ -77,11 +77,15 @@ pub(super) fn execute(
         )?;
     }
     for value in arguments.source_inventory {
-        set_path(
-            &mut source_mut(&mut source_inputs, value.source.as_str())?.inventory,
-            value.path,
-            "--source-inventory",
-        )?;
+        let source = source_mut(&mut source_inputs, value.source.as_str())?;
+        if source.inventories.contains(&value.path) {
+            return Err(crate::Error::invalid(format!(
+                "duplicate --source-inventory {}={}",
+                value.source,
+                value.path.display()
+            )));
+        }
+        source.inventories.push(value.path);
     }
     for value in arguments.source_companion {
         set_path(
@@ -146,7 +150,7 @@ pub(super) fn execute(
             Ok(ResolvedSourceInput {
                 id,
                 artifact,
-                inventory: input.inventory,
+                inventories: input.inventories,
                 companion: input.companion,
                 selection,
             })
@@ -181,7 +185,7 @@ pub(super) fn execute(
         .map(|source| VerifySource {
             name: &source.id,
             artifact: &source.artifact,
-            inventory: source.inventory.as_deref(),
+            inventories: &source.inventories,
             companion: source.companion.as_deref(),
             selection: match &source.selection {
                 ResolvedVendorSelection::All => VendorSymbolSelection::All,
@@ -321,8 +325,13 @@ pub(super) fn execute(
     let mut artifacts = Vec::<(String, &Path)>::new();
     for source in &sources {
         artifacts.push((format!("source:{}:artifact", source.id), &source.artifact));
-        if let Some(inventory) = source.inventory.as_deref() {
-            artifacts.push((format!("source:{}:inventory", source.id), inventory));
+        for (index, inventory) in source.inventories.iter().enumerate() {
+            let role = if index == 0 {
+                format!("source:{}:inventory", source.id)
+            } else {
+                format!("source:{}:inventory:{index}", source.id)
+            };
+            artifacts.push((role, inventory.as_path()));
         }
         if let Some(companion) = source.companion.as_deref() {
             artifacts.push((format!("source:{}:companion", source.id), companion));

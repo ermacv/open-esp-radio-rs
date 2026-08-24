@@ -274,12 +274,14 @@ fn suite_arguments(
                 &suite.id,
             )?,
         });
-        if let Some(path) = optional_input(run_spec, &InputRole::SourceInventory(source.clone())) {
-            arguments.source_inventory.push(SourcePath {
-                source: source.clone(),
-                path,
-            });
-        }
+        arguments.source_inventory.extend(
+            matching_inputs(run_spec, &InputRole::SourceInventory(source.clone()))
+                .into_iter()
+                .map(|path| SourcePath {
+                    source: source.clone(),
+                    path,
+                }),
+        );
         if let Some(path) = optional_input(run_spec, &InputRole::SourceCompanion(source.clone())) {
             arguments.source_companion.push(SourcePath {
                 source: source.clone(),
@@ -321,6 +323,15 @@ fn optional_input(run_spec: &RunSpec, role: &InputRole) -> Option<std::path::Pat
         .iter()
         .find(|input| &input.role == role)
         .map(|input| input.path.clone())
+}
+
+fn matching_inputs(run_spec: &RunSpec, role: &InputRole) -> Vec<std::path::PathBuf> {
+    run_spec
+        .inputs()
+        .iter()
+        .filter(|input| &input.role == role)
+        .map(|input| input.path.clone())
+        .collect()
 }
 
 fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
@@ -433,4 +444,40 @@ fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
         );
     }
     crate::cli::output::text(text);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, time::SystemTime};
+
+    use super::*;
+
+    #[test]
+    fn suite_input_projection_preserves_all_ordered_source_inventories() {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-project-verification-inventories-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let run_path = directory.join("local.toml");
+        fs::write(
+            &run_path,
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:vendor\"\npath = \"linked.elf\"\n\n[[inputs]]\nrole = \"source-inventory:vendor\"\npath = \"first.a\"\n\n[[inputs]]\nrole = \"source-inventory:vendor\"\npath = \"second.a\"\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&run_path).unwrap();
+        let paths = matching_inputs(&run, &InputRole::SourceInventory("vendor".parse().unwrap()));
+        assert_eq!(
+            paths
+                .iter()
+                .map(|path| path.file_name().unwrap().to_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["first.a", "second.a"]
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

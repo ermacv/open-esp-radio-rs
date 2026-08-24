@@ -78,7 +78,7 @@ use crate::phy_xtal_duty::{
     XtalDutyCalibrationParameters, XtalDutyCalibrationTransition,
 };
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::PhyHal;
+use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{analog_i2c, phy_i2c as hal_phy_i2c};
 
@@ -388,16 +388,16 @@ fn master_command_from_snapshot(index: usize, parameter: PhyRfInitParameterSnaps
 
 /// Program the complete PHY-I2C command RAM from Rust-owned cold state.
 ///
-/// The mutable PAC capability is borrowed from `Radio<P, Powered>`, making
-/// exclusive ownership explicit for the complete finite 45-store
-/// transaction.
+/// The shared-PHY capability is borrowed from the active protocol lifecycle,
+/// making exclusive ownership explicit for the complete finite 45-store
+/// transaction without depending on a Wi-Fi radio owner.
 ///
 /// Basis: complete
 /// `libphy.a[phy_i2c.o]::phy_i2c_master_cmd_mem_init`; destinations come from
 /// the SVD-generated 45-element command-RAM array.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_i2c_master_command_memory(
-    registers: &mut PhyHal,
+    registers: &mut impl SharedPhyAccess,
     parameter: PhyRfInitParameterSnapshot,
 ) {
     let dynamic_values = master_dynamic_values_from_snapshot(parameter);
@@ -430,7 +430,7 @@ pub fn configure_i2c_master_command_memory(
 /// before publishing the command. This is a deliberate fail-fast ownership
 /// check, not a claim that the ROM performed the same pre-command check.
 ///
-/// The caller must keep borrowing the same powered radio until
+/// The caller must keep borrowing the same platform I2C owner until
 /// [`try_finish_read`] succeeds.
 #[cfg(target_arch = "riscv32")]
 pub fn try_start_read(
@@ -468,7 +468,7 @@ pub fn try_finish_read(
 /// pre-command busy state once. It never waits or loops on that state and
 /// leaves post-command completion to [`try_finish_write`].
 ///
-/// The caller must keep borrowing the same powered radio until
+/// The caller must keep borrowing the same platform I2C owner until
 /// [`try_finish_write`] succeeds.
 #[cfg(target_arch = "riscv32")]
 pub fn try_start_write(

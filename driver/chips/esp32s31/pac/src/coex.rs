@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage, RadioRegisters};
+use super::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage, WifiRadioRegisters};
 
 pub const COEX_TIMER_COUNT: u8 = 5;
 
@@ -41,11 +41,11 @@ impl CoexTimerRegister {
     }
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Enable one timer in the exact disable-clear/enable-set order.
     pub fn enable_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
-        let timers = &self.peripherals.coex_hw_timer;
+        let timers = &self.peripherals.coexistence.coex_hw_timer;
         timers
             .disable_control(index)
             .modify(|_, writer| writer.disable().clear_bit());
@@ -57,7 +57,7 @@ impl RadioRegisters {
     /// Disable one timer in the exact enable-clear/disable-set order.
     pub fn disable_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
-        let timers = &self.peripherals.coex_hw_timer;
+        let timers = &self.peripherals.coexistence.coex_hw_timer;
         timers
             .enable_control(index)
             .modify(|_, writer| writer.enable().clear_bit());
@@ -70,6 +70,7 @@ impl RadioRegisters {
     pub fn force_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
         self.peripherals
+            .coexistence
             .coex_hw_timer
             .configuration(index)
             .modify(|_, writer| writer.primary_tick_image().set(0));
@@ -79,6 +80,7 @@ impl RadioRegisters {
     pub fn unforce_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
         self.peripherals
+            .coexistence
             .coex_hw_timer
             .configuration(index)
             .modify(|_, writer| writer.primary_tick_image().set(1_000));
@@ -96,7 +98,7 @@ impl RadioRegisters {
         parameter_2: CoexTimerPtiValue,
     ) {
         let index = timer.index();
-        let timers = &self.peripherals.coex_hw_timer;
+        let timers = &self.peripherals.coexistence.coex_hw_timer;
         let configuration = timers.configuration(index);
         configuration.modify(|_, writer| writer.parameter_1().set(parameter_1.get() as u8));
         configuration.modify(|_, writer| writer.parameter_2().set(parameter_2.get() as u8));
@@ -111,6 +113,7 @@ impl RadioRegisters {
     ) {
         let index = timer.index();
         self.peripherals
+            .coexistence
             .coex_hw_timer
             .configuration(index)
             .modify(|_, writer| writer.primary_tick_image().set(primary_tick_image.get()));
@@ -125,6 +128,7 @@ impl RadioRegisters {
     ) {
         let index = timer.index();
         self.peripherals
+            .coexistence
             .coex_hw_timer
             .secondary_target(index)
             .modify(|_, writer| {

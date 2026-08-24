@@ -8,9 +8,10 @@
 //! sequence.
 
 use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
-// Supporting PHY semantic projections still receive an explicit PAC token.
-// Release-relevant production probes below acquire only opaque HAL owners.
-use open_esp_radio_esp32s31_pac::RadioRegisters as SemanticRadioRegisters;
+// Leaf-level PHY comparison probes receive only a borrowed protocol-neutral
+// PHY partition. They cannot acquire, release, or recover the complete Wi-Fi
+// owner. Release-relevant production probes below acquire opaque HAL owners.
+use open_esp_radio_esp32s31_pac::RadioPhyRegisters;
 use open_esp_radio_esp32s31_wifi_mac::ap_tsf::{
     reset_and_start_access_point_tsf, stop_access_point_tsf,
 };
@@ -78,7 +79,7 @@ pub extern "C" fn open_phy_trace_ret_bt_bb_to_index(baseband: u32) -> u32 {
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_disable_agc(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_disable_agc(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::set_enabled(registers, false);
 }
 
@@ -628,9 +629,7 @@ pub extern "C" fn open_libpp_tx_retry_trace_lmac_process_tx_error(
     detail: u32,
     _selector: u32,
 ) {
-    use open_esp_radio_esp32s31_wifi_mac::tx::{
-        TxCompletion, TxCompletionDisposition, TxCookie,
-    };
+    use open_esp_radio_esp32s31_wifi_mac::tx::{TxCompletion, TxCompletionDisposition, TxCookie};
 
     let completion = TxCompletion {
         cookie: TxCookie(0),
@@ -668,10 +667,7 @@ const ORDINARY_TX_PROBE_BUFFER_SIZE: usize = 256;
 struct OrdinaryTxProbePower;
 
 impl open_esp_radio_esp32s31_wifi::tx::WifiTxPowerProfile for OrdinaryTxProbePower {
-    fn power_pair(
-        &self,
-        _rate_code: u8,
-    ) -> open_esp_radio_esp32s31_wifi::tx::WifiTxPowerPair {
+    fn power_pair(&self, _rate_code: u8) -> open_esp_radio_esp32s31_wifi::tx::WifiTxPowerPair {
         open_esp_radio_esp32s31_wifi::tx::WifiTxPowerPair {
             primary: 1,
             alternate: 1,
@@ -708,9 +704,7 @@ impl open_esp_radio_esp32s31_wifi::tx::WifiTxTimer for OrdinaryTxProbeTimer {
 #[inline(never)]
 pub extern "C" fn open_libpp_tx_retry_publication(queue: u32) {
     // SAFETY: this instruction is a machine-visible optimizer barrier only.
-    unsafe {
-        core::arch::asm!("addi zero, zero, 4", in("a0") queue, options(nomem, nostack))
-    };
+    unsafe { core::arch::asm!("addi zero, zero, 4", in("a0") queue, options(nomem, nostack)) };
 }
 
 struct OrdinaryTxProbeHardware {
@@ -743,14 +737,16 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for OrdinaryTxProbeHardwar
         &mut self,
         _queue: u8,
     ) -> Option<open_esp_radio_esp32s31_hal::types::MacTxCompletionRegisters> {
-        Some(open_esp_radio_esp32s31_hal::types::MacTxCompletionRegisters {
-            aux_a: 0,
-            aux_b: 0,
-            aux_c: 0,
-            primary: 5 << 12,
-            alternate: 0,
-            trigger_flow: false,
-        })
+        Some(
+            open_esp_radio_esp32s31_hal::types::MacTxCompletionRegisters {
+                aux_a: 0,
+                aux_b: 0,
+                aux_c: 0,
+                primary: 5 << 12,
+                alternate: 0,
+                trigger_flow: false,
+            },
+        )
     }
 
     fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {
@@ -821,7 +817,7 @@ static ORDINARY_TX_PROBE: OrdinaryTxProbeCell<(
 
 fn initialize_ordinary_tx_probe() -> Result<OrdinaryTxProbeState, u32> {
     use open_esp_radio_esp32s31_wifi::{
-        ordinary_tx::{OrdinaryTxOwner, OrdinaryTxPlan, OrdinaryTxInterface},
+        ordinary_tx::{OrdinaryTxInterface, OrdinaryTxOwner, OrdinaryTxPlan},
         tx::{WifiTxProgress, WifiTxResources},
     };
     use open_esp_radio_esp32s31_wifi_mac::{
@@ -832,11 +828,10 @@ fn initialize_ordinary_tx_probe() -> Result<OrdinaryTxProbeState, u32> {
 
     // SAFETY: initialization runs once in the single-threaded probe image;
     // the resulting DMA owner permanently consumes this static allocation.
-    let dma =
-        open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage::pin_static(unsafe {
-            &mut *ORDINARY_TX_DMA.0.get()
-        })
-        .map_err(|_| 10_u32)?;
+    let dma = open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage::pin_static(unsafe {
+        &mut *ORDINARY_TX_DMA.0.get()
+    })
+    .map_err(|_| 10_u32)?;
     // SAFETY: this storage is initialized once and then borrowed exclusively
     // by the retained `OrdinaryTxOwner` for the rest of the image lifetime.
     let slot = unsafe {
@@ -908,10 +903,11 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
     let Some(events) = irq.try_take_tx() else {
         return 8;
     };
-    let progress = embassy_futures::block_on(state.owner.service(
-        &mut state.hardware,
-        WifiTxWake::Interrupt { events },
-    ));
+    let progress = embassy_futures::block_on(
+        state
+            .owner
+            .service(&mut state.hardware, WifiTxWake::Interrupt { events }),
+    );
     if progress != Ok(WifiTxProgress::Pending) {
         return 6;
     }
@@ -929,10 +925,9 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
             selected_rate: snapshot.current_rate.code(),
             decision: 1,
             retry_bit_mask: u8::from(snapshot.retry_bit_set) * 8,
-            contention_exponent: state
-                .owner
-                .policy()
-                .contention_exponent(open_esp_radio_esp32s31_wifi_mac::tx::LegacyTxQueue::BestEffort),
+            contention_exponent: state.owner.policy().contention_exponent(
+                open_esp_radio_esp32s31_wifi_mac::tx::LegacyTxQueue::BestEffort,
+            ),
         })
     };
     0
@@ -943,10 +938,7 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
 /// decisions and counters come from the exact production state above.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_trace_ack_timeout_state(
-    _queue: u32,
-    _selector: u32,
-) -> u32 {
+pub extern "C" fn open_libpp_tx_retry_trace_ack_timeout_state(_queue: u32, _selector: u32) -> u32 {
     ordinary_tx_ack_timeout_state(0x3fff_5000)
 }
 
@@ -995,13 +987,13 @@ pub extern "C" fn open_rom_power_tsf_trace_hal_get_sta_tsf(low: *mut u32, high: 
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_enable_agc(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_enable_agc(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::set_enabled(registers, true);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_vht_support(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_vht_support(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::set_vht_support(registers, input);
 }
 
@@ -1009,32 +1001,32 @@ pub extern "C" fn open_phy_trace_vht_support(input: u32, registers: &mut Semanti
 #[inline(never)]
 pub extern "C" fn open_phy_trace_csidump_force_lltf_cfg(
     input: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_baseband::set_csi_dump_force_lltf(registers, input);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_hemu_ru26_good_res(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_hemu_ru26_good_res(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_he_ru26_good_response(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_freq_band_reg_set(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_freq_band_reg_set(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::set_frequency_band(registers, input);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_fe_reg_init(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_fe_reg_init(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::initialize_front_end(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_fe_reg_update(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_phy_fe_reg_update(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::update_front_end(registers);
 }
 
@@ -1044,7 +1036,7 @@ pub extern "C" fn open_phy_trace_bbtx_outfilter(
     input_0: u32,
     input_1: u32,
     input_2: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_tx_output_filter(
         registers, input_0, input_1, input_2,
@@ -1053,25 +1045,25 @@ pub extern "C" fn open_phy_trace_bbtx_outfilter(
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_bb_wdt_rst_enable(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_bb_wdt_rst_enable(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::set_watchdog_reset_enabled(registers, input);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_bb_wdt_int_enable(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_bb_wdt_int_enable(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::set_watchdog_interrupt_enabled(registers, input);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_bb_wdt_timeout_clear(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_bb_wdt_timeout_clear(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::clear_watchdog_timeout(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_ret_bb_wdt_get_status(registers: &mut SemanticRadioRegisters) -> u32 {
+pub extern "C" fn open_phy_trace_ret_bb_wdt_get_status(registers: &mut RadioPhyRegisters) -> u32 {
     open_esp_radio_esp32s31_hal::phy_baseband::watchdog_status(registers)
 }
 
@@ -1080,44 +1072,44 @@ pub extern "C" fn open_phy_trace_ret_bb_wdt_get_status(registers: &mut SemanticR
 pub extern "C" fn open_phy_trace_lltf_mask_en(
     input_0: u32,
     input_1: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_lltf_mask(registers, input_0, input_1);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_ant_init(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_ant_init(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::configure_antenna(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_bb_wdg_cfg(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_bb_wdg_cfg(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_watchdog(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_bt_filter_reg(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_bt_filter_reg(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_frequency::configure_bt_filter(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_freq_module_resetn(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_freq_module_resetn(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_frequency::reset_module(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_en_hw_set_freq(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_en_hw_set_freq(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_frequency::set_hardware_control(registers, true);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_dis_hw_set_freq(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_dis_hw_set_freq(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_frequency::set_hardware_control(registers, false);
     ets_delay_us(2);
     // Keep the delay as a non-tail edge so the executor sees the named
@@ -1131,7 +1123,7 @@ pub extern "C" fn open_phy_trace_freq_reg_init(
     _vendor_parameter_0: u32,
     _vendor_parameter_1: u32,
     parameter_override: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_frequency::initialize_registers(
         registers,
@@ -1141,49 +1133,49 @@ pub extern "C" fn open_phy_trace_freq_reg_init(
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_iq_corr_enable(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_iq_corr_enable(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::enable_iq_correction(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_noise_floor_auto_set(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_noise_floor_auto_set(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_noise_floor_auto(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_ret_read_hw_noisefloor(registers: &SemanticRadioRegisters) -> u32 {
+pub extern "C" fn open_phy_trace_ret_read_hw_noisefloor(registers: &RadioPhyRegisters) -> u32 {
     open_esp_radio_esp32s31_hal::phy_baseband::read_hardware_noise_floor(registers) as u32
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_tx_paon_set(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_tx_paon_set(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_tx_pa_on(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_wifi_agc_sat_gain(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_wifi_agc_sat_gain(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::set_saturation_gain(registers, input);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_enable_low_rate(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_enable_low_rate(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::set_low_rate_enabled(registers, true);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_disable_low_rate(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_disable_low_rate(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::set_low_rate_enabled(registers, false);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_ret_is_low_rate_enabled(registers: &SemanticRadioRegisters) -> u32 {
+pub extern "C" fn open_phy_trace_ret_is_low_rate_enabled(registers: &RadioPhyRegisters) -> u32 {
     u32::from(open_esp_radio_esp32s31_hal::phy_agc::low_rate_enabled(
         registers,
     ))
@@ -1191,55 +1183,55 @@ pub extern "C" fn open_phy_trace_ret_is_low_rate_enabled(registers: &SemanticRad
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_bb_dcmem_clr(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_bb_dcmem_clr(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::clear_dc_memory(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_rx_11b_opt(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_rx_11b_opt(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::configure_rx_11b_optimization(registers, input != 0);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_rfrx_sat_rst(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_rfrx_sat_rst(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::configure_rf_rx_saturation(registers, input != 0);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_set_rxclk_en(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_set_rxclk_en(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::pbus::configure_rx_clock(registers, input != 0);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_set_txclk_en(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_set_txclk_en(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::pbus::configure_tx_clock(registers, input != 0);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_pbus_debugmode(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_pbus_debugmode(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::pbus::configure_debug_mode(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_i2c_txrate_init(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_i2c_txrate_init(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_i2c_tx_rate(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_nrx_freq_set(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_nrx_freq_set(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_frequency::configure_nrx_frequency(registers, input);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_bb_cbw_chan_cfg(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_bb_cbw_chan_cfg(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_frequency::configure_channel_cbw(registers, input);
 }
 
@@ -1248,7 +1240,7 @@ pub extern "C" fn open_phy_trace_bb_cbw_chan_cfg(input: u32, registers: &mut Sem
 pub extern "C" fn open_phy_trace_agc_reg_init(
     parameter_121: u32,
     parameter_120: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_agc::initialize_registers(
         registers,
@@ -1259,13 +1251,16 @@ pub extern "C" fn open_phy_trace_agc_reg_init(
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_set_rx_comp_new(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_phy_set_rx_comp_new(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::configure_rx_compensation(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_bb_txpwr_track(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_phy_bb_txpwr_track(
+    input: u32,
+    registers: &mut RadioPhyRegisters,
+) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_tx_power_tracking(
         registers,
         input & 1 != 0,
@@ -1274,31 +1269,31 @@ pub extern "C" fn open_phy_trace_phy_bb_txpwr_track(input: u32, registers: &mut 
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_reg_update_new(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_phy_reg_update_new(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::update_post_initialization(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_dc_mem_clr(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_phy_dc_mem_clr(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::clear_dc_memory(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_set_ftm_en(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_phy_set_ftm_en(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::set_ftm_enabled(registers, input);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_stop_tx_tone_new(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_phy_stop_tx_tone_new(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::stop_tx_tone(registers);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_close_fe_bb_clk(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_phy_close_fe_bb_clk(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_clock::close_frontend_baseband(registers);
 }
 
@@ -1316,7 +1311,7 @@ const fn cfr_value_from_vendor_argument(value: u32) -> open_esp_radio_esp32s31_h
 pub extern "C" fn open_phy_trace_phy_config_hccfr(
     enabled: u32,
     value: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_hccfr(
         registers,
@@ -1327,7 +1322,7 @@ pub extern "C" fn open_phy_trace_phy_config_hccfr(
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_phy_iccfr_en(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_phy_iccfr_en(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_iccfr_gate(registers, input != 0);
 }
 
@@ -1337,7 +1332,7 @@ pub extern "C" fn open_phy_trace_phy_force_iccfr(
     mode: u32,
     enabled: u32,
     value: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_forced_iccfr(
         registers,
@@ -1548,13 +1543,13 @@ pub extern "C" fn open_phy_trace_phy_tx_atten_comp(values: &mut [u8; 3]) {
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_ant_dft_cfg(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_ant_dft_cfg(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::configure_antenna_diversity(registers, input & 1 != 0);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_btbb_wifi_bb_cfg2(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_btbb_wifi_bb_cfg2(registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_bt_wifi_baseband(registers);
 }
 
@@ -1564,7 +1559,7 @@ pub extern "C" fn open_phy_trace_chan_dump_cfg(
     value: u32,
     enabled: u32,
     mode: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_channel_dump(
         registers, value, enabled, mode,
@@ -1573,7 +1568,7 @@ pub extern "C" fn open_phy_trace_chan_dump_cfg(
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_dac_rate_set(rate: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_dac_rate_set(rate: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_baseband::configure_dac_rate(registers, rate);
 }
 
@@ -1582,7 +1577,7 @@ pub extern "C" fn open_phy_trace_dac_rate_set(rate: u32, registers: &mut Semanti
 pub extern "C" fn open_phy_trace_force_pwr_index(
     enabled: u32,
     index: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_memory::configure_forced_power_index(
         registers, enabled, index,
@@ -1594,7 +1589,7 @@ pub extern "C" fn open_phy_trace_force_pwr_index(
 pub extern "C" fn open_phy_trace_force_rx_gain(
     enabled: u32,
     gain: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_agc::configure_forced_rx_gain(
         registers,
@@ -1605,34 +1600,37 @@ pub extern "C" fn open_phy_trace_force_rx_gain(
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_rx11blr_cfg(input: u32, registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_rx11blr_cfg(input: u32, registers: &mut RadioPhyRegisters) {
     open_esp_radio_esp32s31_hal::phy_agc::configure_rx_11b_low_rate(registers, input);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_enable_cca(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_enable_cca(registers: &mut RadioPhyRegisters) {
     let _ = registers;
     open_esp_radio_esp32s31_hal::wifi_mac::validation_set_cca_enabled(true);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_disable_cca(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_disable_cca(registers: &mut RadioPhyRegisters) {
     let _ = registers;
     open_esp_radio_esp32s31_hal::wifi_mac::validation_set_cca_enabled(false);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_sifs_reg_init(registers: &mut SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_sifs_reg_init(registers: &mut RadioPhyRegisters) {
     let _ = registers;
     open_esp_radio_esp32s31_hal::wifi_mac::validation_initialize_sifs();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_save_pbus_reg(output: &mut [u32; 6], registers: &SemanticRadioRegisters) {
+pub extern "C" fn open_phy_trace_save_pbus_reg(
+    output: &mut [u32; 6],
+    registers: &RadioPhyRegisters,
+) {
     *output = open_esp_radio_esp32s31_hal::phy_memory::capture_pbus_memory_boundaries(registers);
 }
 
@@ -1692,7 +1690,7 @@ pub extern "C" fn open_phy_trace_freq_i2c_mem_write(
     address: u32,
     value: u32,
     mode: u32,
-    registers: &mut SemanticRadioRegisters,
+    registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_frequency::write_memory(
         registers,

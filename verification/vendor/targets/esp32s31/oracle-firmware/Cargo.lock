@@ -1349,6 +1349,7 @@ dependencies = [
  "esp-phy",
  "esp-rtos",
  "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-esp-hal",

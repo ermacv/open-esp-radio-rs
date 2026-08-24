@@ -314,6 +314,7 @@ pub(crate) struct ExecutionComparisonPolicy<'a> {
     pub(crate) compare_return: bool,
     pub(crate) case_execution: profiles::CaseExecution,
     pub(crate) transaction_comparison: profiles::TransactionComparison,
+    pub(crate) effect_policy: Option<&'a crate::verification::effect_contract::EffectPolicy>,
     pub(crate) call_equivalences: &'a [profiles::CallEquivalence],
     pub(crate) coverage_domain: &'a [profiles::ProfileCoverageConstraint],
     pub(crate) vendor_setup: &'a [profiles::VendorSetupPhase],

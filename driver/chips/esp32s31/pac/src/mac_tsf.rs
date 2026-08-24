@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::{RadioRegisters, device_fence, svd};
+use super::{WifiRadioRegisters, device_fence, svd};
 
 /// Snapshot either or both station TSF words using the complete ROM leaf's
 /// conditional-output semantics.
@@ -26,7 +26,7 @@ pub(crate) fn snapshot_station_tsf(
         .modify(|_, writer| writer.snapshot_station_tsf().clear_bit());
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Return one coherent station TSF snapshot.
     ///
     /// SOURCE: complete rev0 ROM `hal_get_sta_tsf` at `0x2f82c15c` sets
@@ -37,7 +37,7 @@ impl RadioRegisters {
         let mut low = 0;
         let mut high = 0;
         snapshot_station_tsf(
-            &self.peripherals.wifi_mac_sta_tsf_load,
+            &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load,
             Some(&mut low),
             Some(&mut high),
         );
@@ -53,7 +53,7 @@ impl RadioRegisters {
     /// `0x2010_d858`: first it sets bits 27 and 31, then it replaces bits
     /// 22:19 with one.
     pub fn start_station_tsf(&mut self, value: u64) {
-        let load = &self.peripherals.wifi_mac_sta_tsf_load;
+        let load = &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load;
         super::generated::station_tsf_value_low(
             load,
             super::generated::StationTsfLowWord::new(value as u32),
@@ -64,7 +64,11 @@ impl RadioRegisters {
         );
         load.control().modify(|_, w| w.load_station_tsf().set_bit());
 
-        let control = self.peripherals.wifi_mac_rtc_timer_update.sta_tsf_control();
+        let control = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_rtc_timer_update
+            .sta_tsf_control();
         control.modify(|_, w| {
             w.sta_tsf_enable_low()
                 .set_bit()
@@ -84,7 +88,7 @@ impl RadioRegisters {
     /// bit remains set in the vendor disable branch; this non-symmetric image
     /// is preserved rather than replaced with an intuitive guess.
     pub fn set_station_tsf_wakeup(&mut self, enabled: bool) {
-        let rtc = &self.peripherals.wifi_mac_rtc_timer_update;
+        let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
         rtc.sta_tsf_control().modify(|_, w| {
             if enabled {
                 w.sta_tsf_wakeup_enable().set_bit()
@@ -99,6 +103,7 @@ impl RadioRegisters {
     /// Return the complete shared STA TSF control image for HIL comparison.
     pub fn sta_tsf_control_image(&self) -> u32 {
         self.peripherals
+            .wifi_mac
             .wifi_mac_rtc_timer_update
             .sta_tsf_control()
             .read()

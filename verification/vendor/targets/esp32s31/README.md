@@ -65,6 +65,65 @@ prefixes. It recovers calls, indexed dispatch, event values, memory/MMIO
 effects and blockers. This target project reviews the reusable Espressif and
 ESP32-S31 meaning attached to those facts.
 
+## BLE research boundary
+
+BLE starts as a standalone controller investigation. The authenticated
+`libble_app.a`, `libbtdm_common.a`, `libbtbb.a` and `libphy.a` archives remain
+the observed sources. `libphy.a` is part of this composition because the
+baseband reads its real `phy_param` data object; fixture bytes are not used.
+The `ble-controller` linked unit is only a canonical derived view that
+preserves cross-archive call identity; its lazy profiles expose controller
+lifecycle, HCI transport and NPL-layout slices without treating linked IR as
+hardware truth.
+
+The first ownership-only production slice now exists: one neutral radio root
+can enter either the exclusive Wi-Fi or Bluetooth route, both routes return
+the root losslessly, and the Bluetooth interrupt owner exposes only the two
+reviewed opaque status-to-clear transactions. It deliberately performs no
+controller reset, clock, mask, enable or CPU-routing operation.
+
+The powered lifecycle is not ready yet, but its top-level S31 provenance is no
+longer missing. The authenticated local `libble_app.a` and
+`libbtdm_common.a` hashes exactly match public
+`espressif/esp32s31-bt-lib@7f20740dd66ee774ffce5db0b55507892551aa31`.
+ESP-IDF commit `aeab6dcfbeb44aba4b1f8ed102e3086172833153` binds that
+submodule revision and publishes the corresponding ESP32-S31 controller glue
+in `components/bt/controller/esp32s31/bt.c`. That source is authoritative for
+the outer init/enable/disable/deinit order and rollback shape of this exact
+library set. It does not prove the internal behavior of the called binary
+entries; Blobray facts and compiled-production comparisons retain that role.
+The next lifecycle slice must therefore implement and verify the called
+platform/OSAL, clock/reset, task, BLE-stack and HCI boundaries in that order,
+without exposing one premature monolithic powered capability.
+
+The standalone enable order is also a hard production contract:
+`btdm_lp_reset(true)` calls `esp_phy_enable(PHY_MODEM_BT)` before
+`esp_btbb_enable()`. On the first PHY use, the former reaches
+`register_chipv7_phy`; on the first BT-baseband use, the latter reaches
+`bt_bb_v2_init_cmplx(1)`. The Bluetooth API must therefore produce a completed
+common-PHY typestate before it can expose the finite BT-baseband transaction.
+
+The recovered
+BTDM task lifecycle calls coexistence registration hooks even when BLE is the
+only active radio, so the first slice must provide and verify their standalone
+behavior. Cross-protocol scheduling policy and Wi-Fi+BLE HIL remain a later
+coexistence slice; coexistence must not own either controller lifecycle.
+
+The reviewed register map now covers the primary BTDM controller IRQ banks,
+scheduler command/state transactions, sleep-timer transaction, three hardware
+memory-list pointer pairs and ISO coexistence setup in
+`0x20101000..0x20101348`. It also assigns narrow, evidence-bounded owners to
+`0x20101ff0` and `0x2010891c`. The `0x201098xx` window is modelled as a shared
+BLE hardware accelerator containing distinct encryption and resolving-list
+engines; function context remains evidence and does not promote unknown field
+semantics into reviewed hardware truth. The basic BT baseband and shared AGC
+init/RX/runtime words reached by the standalone controller are reviewed. This
+includes the historically `zb_*`-named leaves that the exact call graph proves
+are executed unconditionally by the common baseband initializer; their names
+are not treated as ownership or feature evidence. The remaining unmapped
+`libbtbb` words belong only to the explicitly deferred BR/EDR, CTE and IEEE
+802.15.4 paths.
+
 The `rx-done-to-pp-task`, `rx-success-to-pp-task` and
 `tx-complete-to-pp-task` routes execute the concrete queue and counted-latch
 lifecycle and require the selector-specific `ppTask` handler. They establish

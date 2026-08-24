@@ -195,9 +195,11 @@ pub(crate) fn verify_source(
         };
         let vendor_input = ArtifactSymbolSelector {
             artifact: source.artifact.to_path_buf(),
-            member: source
-                .inventory
-                .map_or_else(|| vendor.member.clone(), |_| None),
+            member: if source.inventories.is_empty() {
+                vendor.member.clone()
+            } else {
+                None
+            },
             symbol: vendor.name.clone(),
         };
         let vendor_trace = extract(&vendor_input, svd)?;
@@ -226,10 +228,13 @@ pub(crate) fn verify_source(
                 source,
                 rust_artifact,
                 rust_companion,
-                resolved_disposition
-                    .as_ref()
-                    .map(|resolved| resolved.disposition.label()),
-                bounded_feature,
+                execution_profile::ReviewedBinding {
+                    disposition_label: resolved_disposition
+                        .as_ref()
+                        .map(|resolved| resolved.disposition.label()),
+                    bounded_feature,
+                    effect_policy,
+                },
             )?;
             let comparison = evaluation.comparison;
             let verdict = comparison.verdict;

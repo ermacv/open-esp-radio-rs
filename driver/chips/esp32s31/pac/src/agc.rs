@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
 const fn agc_parameter_offset(parameter: u8) -> u8 {
     parameter.wrapping_add(0x50)
@@ -16,7 +16,7 @@ const fn rx_11b_values(enabled: bool) -> (u8, u8, u8, u8, u8) {
     }
 }
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Enable or disable the complete three-edge PHY low-rate path.
     ///
     /// SOURCE: complete rev0 ROM `phy_enable_low_rate` at `0x2f82_5210`

@@ -10,7 +10,8 @@ use std::{
 };
 
 use super::{
-    RegisterFacts, RegisterModel, ReviewAnnotation,
+    RegisterFacts, RegisterModel, ReviewAnnotation, observation_is_reviewed,
+    physical_register_identity, physical_register_is_observed,
     review_draft::{candidate_fields, inferred_access, write_draft},
     review_ir::RegisterReviewIr,
     review_ir_markdown::write_ir_evidence,
@@ -101,7 +102,6 @@ fn render_report(
         .iter()
         .map(|fact| (u64::from(fact.address), u32::from(fact.width)))
         .collect::<BTreeSet<_>>();
-    let model_keys = identities.keys().copied().collect::<BTreeSet<_>>();
     let owned_ranges = owned_ranges
         .iter()
         .map(String::as_str)
@@ -128,13 +128,15 @@ fn render_report(
         .filter(|fact| super::workspace::fact_is_non_operational(fact, &non_operational_functions))
         .map(|fact| (u64::from(fact.address), u32::from(fact.width)))
         .collect::<BTreeSet<_>>();
-    let reviewed = owned_fact_keys
+    let reviewed_fact_keys = owned_fact_keys
         .iter()
-        .filter(|identity| identities.contains_key(identity))
-        .count();
+        .filter(|observation| observation_is_reviewed(identities, observation))
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let reviewed = reviewed_fact_keys.len();
     let model_only = identities
         .keys()
-        .filter(|identity| !fact_keys.contains(identity))
+        .filter(|register| !physical_register_is_observed(register, &fact_keys))
         .count();
     let field_candidates = facts
         .registers
@@ -155,9 +157,11 @@ fn render_report(
         observed: facts.registers.len(),
         reviewed,
         ignored: fact_keys.len() - owned_fact_keys.len(),
-        non_operational: non_operational_fact_keys.difference(&model_keys).count(),
+        non_operational: non_operational_fact_keys
+            .difference(&reviewed_fact_keys)
+            .count(),
         unreviewed: owned_fact_keys
-            .difference(&model_keys)
+            .difference(&reviewed_fact_keys)
             .filter(|key| !non_operational_fact_keys.contains(key))
             .count(),
         model_only,
@@ -278,7 +282,12 @@ fn render_report(
             .collect::<Vec<_>>();
         registers.sort_by_key(|fact| (fact.address, fact.width));
         for fact in &registers {
-            let identity = identities.get(&(u64::from(fact.address), u32::from(fact.width)));
+            let identity = physical_register_identity(
+                identities,
+                u64::from(fact.address),
+                u32::from(fact.width),
+            )
+            .map(|(_, identity)| identity);
             let non_operational = non_operational_fact_keys
                 .contains(&(u64::from(fact.address), u32::from(fact.width)));
             let masks = fact
@@ -315,7 +324,12 @@ fn render_report(
         }
 
         for fact in registers {
-            let identity = identities.get(&(u64::from(fact.address), u32::from(fact.width)));
+            let identity = physical_register_identity(
+                identities,
+                u64::from(fact.address),
+                u32::from(fact.width),
+            )
+            .map(|(_, identity)| identity);
             let non_operational = non_operational_fact_keys
                 .contains(&(u64::from(fact.address), u32::from(fact.width)));
             let ir_register = ir.register(fact.address, fact.width);
@@ -457,7 +471,7 @@ fn render_report(
         output.push_str("These entries are valid model data but were not observed in the current best-effort discovery facts. Absence is not proof that vendor code never accesses them.\n\n");
         output.push_str("| Address | Width | Model identity |\n| --- | ---: | --- |\n");
         for ((address, width), identity) in identities {
-            if !fact_keys.contains(&(*address, *width)) {
+            if !physical_register_is_observed(&(*address, *width), &fact_keys) {
                 writeln!(
                     output,
                     "| `{address:#010x}` | {width} | `{}` |",
@@ -543,5 +557,51 @@ mod tests {
         assert!(report.contains("name = \"FIELD_1_0\""));
         assert!(report.contains("name = \"FIELD_5_4\""));
         assert!(report.contains("Candidate names, access modes and bit ranges are mechanical"));
+    }
+
+    #[test]
+    fn report_matches_subword_observations_to_one_physical_register() {
+        let make_fact = |address| RegisterFact {
+            address,
+            width: 16,
+            catalog_name: "RADIO.CONTROL".to_owned(),
+            reads: 1,
+            writes: 1,
+            read_functions: BTreeSet::new(),
+            write_functions: BTreeSet::new(),
+            read_sites: BTreeSet::new(),
+            write_sites: BTreeSet::new(),
+            write_patterns: Vec::new(),
+            candidate_masks: Vec::new(),
+        };
+        let facts = RegisterFacts {
+            ranges: vec![FactRange {
+                name: "radio".to_owned(),
+                start: 0x1000,
+                end: 0x2000,
+            }],
+            registers: vec![make_fact(0x1010), make_fact(0x1012)],
+        };
+        let identities = BTreeMap::from([((0x1010, 32), "RADIO.CONTROL".to_owned())]);
+
+        let (report, summary) = render_report(
+            &facts,
+            RegisterReviewContext {
+                identities: &identities,
+                annotations: &[],
+                ir: &RegisterReviewIr::default(),
+                owned_ranges: &["radio".to_owned()],
+                non_operational_functions: &[],
+                facts_path: Path::new("mmio.json"),
+                model_path: Path::new("device.toml"),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(summary.reviewed, 2);
+        assert_eq!(summary.unreviewed, 0);
+        assert_eq!(summary.model_only, 0);
+        assert!(report.contains("### `0x00001010/16` — RADIO.CONTROL"));
+        assert!(report.contains("### `0x00001012/16` — RADIO.CONTROL"));
     }
 }

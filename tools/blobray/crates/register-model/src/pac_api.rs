@@ -13,6 +13,8 @@ pub struct PacApiPack {
     #[serde(default)]
     pub options: PacApiOptions,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ownership_partitions: Vec<OwnershipPartition>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flag_domains: Vec<FlagDomain>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enum_domains: Vec<EnumDomain>,
@@ -44,11 +46,26 @@ pub struct PacApiPack {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PacApiOptions {
     #[serde(default)]
-    pub peripheral_ownership: bool,
-    #[serde(default)]
     pub device_access: bool,
     #[serde(default)]
     pub allow_clippy_empty_docs: bool,
+}
+
+/// One target-declared, exhaustive ownership partition of raw SVD peripherals.
+///
+/// The partition is an API-design input, not a fact inferred from register
+/// names, interrupt operations, addresses, or another analysis output.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct OwnershipPartition {
+    /// Generated Rust owner type, for example `BluetoothControllerPeripherals`.
+    pub name: String,
+    /// Field name in the generated `PeripheralPartitions` root.
+    pub member: String,
+    /// Target-owned explanation of this ownership boundary.
+    pub description: String,
+    /// Exact SVD peripheral names consumed by this owner.
+    pub peripherals: Vec<String>,
 }
 
 /// Closed writable bit-mask domain emitted into the public PAC facade.
@@ -136,7 +153,7 @@ pub struct FullRegisterWrite {
     pub field: String,
     /// Reviewed value domain accepted by the closed-PAC bridge.
     ///
-    /// Schema 2 intentionally has no untyped compatibility path: every
+    /// Schema 3 intentionally has no untyped compatibility path: every
     /// complete-register write crossing from the closed PAC into the raw PAC
     /// must carry a register-specific or otherwise reviewed value type.
     pub domain: String,
@@ -204,19 +221,15 @@ impl PacApiPack {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.schema != 2 {
+        if self.schema != 3 {
             return Err(Error::message(format!(
-                "PAC API pack requires schema = 2, got {}",
+                "PAC API pack requires schema = 3, got {}",
                 self.schema
             )));
         }
+        self.validate_ownership_partitions()?;
         self.validate_domains()?;
         let domain_names = self.domain_names();
-        if self.options.peripheral_ownership && self.interrupt_snapshots.is_empty() {
-            return Err(Error::message(
-                "PAC API peripheral-ownership requires at least one interrupt snapshot",
-            ));
-        }
         validate_operations("interrupt-snapshot", &self.interrupt_snapshots)?;
         validate_operations("full-register-write", &self.full_register_writes)?;
         validate_operations("fixed-register-write", &self.fixed_register_writes)?;
@@ -353,6 +366,61 @@ impl PacApiPack {
         Ok(())
     }
 
+    fn validate_ownership_partitions(&self) -> Result<()> {
+        let mut names = BTreeSet::new();
+        let mut members = BTreeSet::new();
+        let mut peripherals = BTreeSet::new();
+        for partition in &self.ownership_partitions {
+            if !is_upper_camel_case(&partition.name)
+                || partition.name == "PeripheralPartitions"
+                || is_rust_keyword(&partition.name)
+            {
+                return Err(Error::message(format!(
+                    "PAC API ownership partition name {:?} is not an available UpperCamelCase Rust type",
+                    partition.name
+                )));
+            }
+            if !names.insert(partition.name.as_str()) {
+                return Err(Error::message(format!(
+                    "PAC API ownership partition repeats type {:?}",
+                    partition.name
+                )));
+            }
+            if !is_lower_snake_case(&partition.member) || is_rust_keyword(&partition.member) {
+                return Err(Error::message(format!(
+                    "PAC API ownership partition {} member {:?} is not lower_snake_case",
+                    partition.name, partition.member
+                )));
+            }
+            if !members.insert(partition.member.as_str()) {
+                return Err(Error::message(format!(
+                    "PAC API ownership partition repeats root member {:?}",
+                    partition.member
+                )));
+            }
+            if partition.description.trim().is_empty() || partition.peripherals.is_empty() {
+                return Err(Error::message(format!(
+                    "PAC API ownership partition {:?} requires a description and at least one exact peripheral",
+                    partition.name
+                )));
+            }
+            for peripheral in &partition.peripherals {
+                if !is_svd_identifier(peripheral) {
+                    return Err(Error::message(format!(
+                        "PAC API ownership partition {} has invalid exact peripheral {:?}",
+                        partition.name, peripheral
+                    )));
+                }
+                if !peripherals.insert(peripheral.as_str()) {
+                    return Err(Error::message(format!(
+                        "PAC API ownership assigns peripheral {peripheral:?} more than once"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn validate_operation_domain(
         &self,
         kind: &str,
@@ -399,6 +467,10 @@ impl PacApiPack {
             + self.enum_domains.len()
             + self.bounded_domains.len()
             + self.opaque_domains.len()
+    }
+
+    pub fn ownership_partition_count(&self) -> usize {
+        self.ownership_partitions.len()
     }
 
     pub fn source_ids(&self) -> BTreeSet<&str> {
@@ -740,14 +812,81 @@ fn is_upper_camel_case(value: &str) -> bool {
         && !value.contains('_')
 }
 
+fn is_svd_identifier(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte == b'_' || byte.is_ascii_alphabetic())
+        && bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+}
+
+fn is_rust_keyword(value: &str) -> bool {
+    matches!(
+        value,
+        "Self"
+            | "abstract"
+            | "as"
+            | "async"
+            | "await"
+            | "become"
+            | "box"
+            | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "do"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "final"
+            | "fn"
+            | "for"
+            | "gen"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "macro"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "override"
+            | "priv"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "try"
+            | "type"
+            | "typeof"
+            | "unsafe"
+            | "unsized"
+            | "use"
+            | "virtual"
+            | "where"
+            | "while"
+            | "yield"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn empty_pack() -> PacApiPack {
         PacApiPack {
-            schema: 2,
+            schema: 3,
             options: PacApiOptions::default(),
+            ownership_partitions: Vec::new(),
             flag_domains: Vec::new(),
             enum_domains: Vec::new(),
             bounded_domains: Vec::new(),
@@ -858,11 +997,16 @@ mod tests {
     }
 
     #[test]
-    fn rejects_implicit_ownership_and_incomplete_masks() {
+    fn rejects_duplicate_ownership_and_incomplete_masks() {
         let mut pack = empty_pack();
-        pack.options.peripheral_ownership = true;
+        pack.ownership_partitions.push(OwnershipPartition {
+            name: "RadioPeripherals".to_owned(),
+            member: "radio".to_owned(),
+            description: "Unique radio register owner.".to_owned(),
+            peripherals: vec!["RADIO".to_owned(), "RADIO".to_owned()],
+        });
         assert!(pack.validate().is_err());
-        pack.options.peripheral_ownership = false;
+        pack.ownership_partitions.clear();
         pack.opaque_domains.push(OpaqueDomain {
             name: "CommandInput".to_owned(),
             description: "Reviewed command input image.".to_owned(),
@@ -884,15 +1028,41 @@ mod tests {
     }
 
     #[test]
-    fn rejects_removed_schema_one_without_compatibility() {
+    fn rejects_removed_schema_two_without_compatibility() {
         let mut pack = empty_pack();
-        pack.schema = 1;
+        pack.schema = 2;
         assert!(
             pack.validate()
                 .unwrap_err()
                 .to_string()
-                .contains("requires schema = 2")
+                .contains("requires schema = 3")
         );
+    }
+
+    #[test]
+    fn rejects_removed_inferred_ownership_option() {
+        let input = r#"schema = 3
+
+[options]
+peripheral-ownership = true
+"#;
+        assert!(toml_edit::de::from_str::<PacApiPack>(input).is_err());
+    }
+
+    #[test]
+    fn rejects_rust_keywords_in_generated_ownership_identifiers() {
+        let mut pack = empty_pack();
+        pack.ownership_partitions.push(OwnershipPartition {
+            name: "Self".to_owned(),
+            member: "radio".to_owned(),
+            description: "Invalid generated owner.".to_owned(),
+            peripherals: vec!["RADIO".to_owned()],
+        });
+        assert!(pack.validate().is_err());
+
+        pack.ownership_partitions[0].name = "RadioPeripherals".to_owned();
+        pack.ownership_partitions[0].member = "type".to_owned();
+        assert!(pack.validate().is_err());
     }
 
     #[test]

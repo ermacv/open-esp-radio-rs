@@ -2,9 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Apply all seventeen fresh-read RMW edges at the COEX tail of `hal_init`.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_init`,
@@ -18,7 +18,7 @@ impl RadioRegisters {
         beamforming: [u8; 3],
         multi_target: [u8; 2],
     ) {
-        let coex = &self.peripherals.wifi_mac_coex_init;
+        let coex = &self.peripherals.coexistence.wifi_mac_coex_init;
 
         coex.default_control()
             .modify(|_, w| w.coex_pti_init_unknown().set_bit());

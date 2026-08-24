@@ -5,9 +5,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Publish one recovered command-RAM word.
     ///
     /// Returns false for an invalid index or for bits outside the three

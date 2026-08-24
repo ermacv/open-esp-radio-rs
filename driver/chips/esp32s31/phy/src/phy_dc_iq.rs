@@ -77,13 +77,16 @@ pub enum PhyDcIqEnablePhase {
 }
 
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_target(registers: &mut open_esp_radio_esp32s31_hal::PhyHal, control: u16) {
+pub(crate) fn configure_target(
+    registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
+    control: u16,
+) {
     open_esp_radio_esp32s31_hal::phy_iq_estimator::configure(registers, control);
 }
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn set_enable_target(
-    registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+    registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     phase: PhyDcIqEnablePhase,
     enabled: bool,
 ) {
@@ -101,7 +104,7 @@ pub(crate) fn set_enable_target(
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn sample_readiness_target(
-    registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+    registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
 ) -> PhyDcIqReadinessSnapshot {
     let snapshot = open_esp_radio_esp32s31_hal::phy_iq_estimator::sample_readiness(registers);
     PhyDcIqReadinessSnapshot {
@@ -112,7 +115,7 @@ pub(crate) fn sample_readiness_target(
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn read_accumulators_target(
-    registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+    registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
 ) -> PhyDcIqAccumulatorSnapshot {
     let snapshot =
         open_esp_radio_esp32s31_hal::phy_iq_estimator::read_dc_iq_accumulators(registers);
@@ -461,7 +464,7 @@ impl PhyDcIqMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> PhyDcIqCompletion {
         match self.action {
             PhyDcIqAction::Configure(request) => {
@@ -515,7 +518,7 @@ impl PhyDcIqReadinessBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> PhyDcIqCompletion {
         let PhyDcIqAction::AwaitReadinessEdge { request, .. } = self.action else {
             unreachable!();

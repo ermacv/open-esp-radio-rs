@@ -13,6 +13,8 @@ pub(super) struct StructuralCheckpoint {
     pub(super) next_mmio_read_token: u32,
     pub(super) next_memory_read_token: u32,
     pub(super) memory_read_sources: std::sync::Arc<BTreeMap<u32, MemoryObjectLocation>>,
+    pub(super) allocation_pointer_cells:
+        std::sync::Arc<BTreeMap<MemoryObjectLocation, Option<SymbolicValue>>>,
     pub(super) next_call_token: u32,
     pub(super) next_external_call_token: u32,
     pub(super) stack: std::sync::Arc<SymbolicStack>,

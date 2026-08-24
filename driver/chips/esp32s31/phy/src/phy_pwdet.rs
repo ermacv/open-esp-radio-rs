@@ -805,7 +805,7 @@ impl PhyPwdetReadyBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyContext,
     ) -> PhyPwdetCompletion {
         PhyPwdetCompletion::SarReadySampled {
             measurement_index: self.measurement_index,
@@ -848,7 +848,7 @@ impl PhyPwdetMmioBinding {
     >(
         self,
         platform: &mut P,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyContext,
     ) -> PhyPwdetCompletion {
         match self.action {
             PhyPwdetAction::ConfigurePbusDebugMode => {
@@ -1024,7 +1024,7 @@ impl PhyPwdetPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<(), PhyPwdetPbusBindingError> {
         self.hardware
             .start_target(registers)
@@ -1034,7 +1034,7 @@ impl PhyPwdetPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn sample_target_once(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<PhyPwdetPbusObservation, PhyPwdetPbusBindingError> {
         match self
             .hardware

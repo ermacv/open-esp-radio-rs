@@ -100,9 +100,10 @@ use super::static_analysis::{
     trace_binary_symbol_with_branches_bounded,
 };
 use crate::{
-    DEFERRED_CALLER_MEMORY_REGION, DraftReferenceEvent, DraftReferenceFlow,
-    DraftReferenceTerminator, FunctionAnalysis, IndexedMmioGuard, LocatedObservableEvent,
-    LocatedReferenceEvent, MemoryAccess, MmioMap, ObservableEvent, RV32_MODELED_ARGUMENT_COUNT,
+    DEFERRED_CALL_RESULT_MEMORY_REGION, DEFERRED_CALLER_MEMORY_REGION, DraftReferenceEvent,
+    DraftReferenceFlow, DraftReferenceTerminator, FunctionAnalysis, IndexedMmioGuard,
+    LocatedObservableEvent, LocatedReferenceEvent, MemoryAccess, MemoryObjectLocation,
+    MemoryObjectRoot, MmioMap, ObservableEvent, RV32_MODELED_ARGUMENT_COUNT,
     RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result, Rv32CallArguments,
     SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact, execution,
     reference_event_is_mmio_read, reference_flow_call_validation_error,
@@ -189,7 +190,6 @@ fn resolve_reference_trace_with_budget(
                 event,
                 DraftReferenceEvent::TailCall { .. }
                     | DraftReferenceEvent::Call { .. }
-                    | DraftReferenceEvent::ModeledDirectCall { .. }
                     | DraftReferenceEvent::DiagnosticCall { .. }
             )
         })

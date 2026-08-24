@@ -518,6 +518,9 @@ fn memory_object_label(object: &LinkedMemoryObject) -> String {
             "{}[arg{argument} * {stride:#x}]",
             memory_object_label(object)
         ),
+        LinkedMemoryObject::Allocation { call_token } => {
+            format!("allocation(call={call_token})")
+        }
         LinkedMemoryObject::ZeroedAllocation { call_token } => {
             format!("zeroed-allocation(call={call_token})")
         }

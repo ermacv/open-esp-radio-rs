@@ -1,5 +1,7 @@
 //! Reusable ESP-IDF function semantics shared across chip providers.
 
+mod bluetooth_controller;
+
 use open_radio_vendor_analysis_model::{
     DirectSemanticFunctionSpec, DraftReferenceEvent, ExpressionOperation,
     ExternalArgumentDirection, ExternalArgumentSpec, ExternalReturnModel, ExternalSemanticSpec,
@@ -122,6 +124,9 @@ pub fn direct_semantic_function(
 pub fn direct_external_semantic_function(
     name: &str,
 ) -> Option<&'static DirectSemanticFunctionSpec> {
+    if let Some(function) = bluetooth_controller::direct_external_semantic_function(name) {
+        return Some(function);
+    }
     match name {
         "ets_delay_us" => Some(&ETS_DELAY_US),
         "esp_wifi_get_mode" => Some(&ESP_WIFI_GET_MODE),

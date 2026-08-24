@@ -109,6 +109,11 @@ const CHARACTER: ExternalArgumentSpec = ExternalArgumentSpec {
     c_type: "int",
     direction: ExternalArgumentDirection::Input,
 };
+const ALLOCATION: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "allocation",
+    c_type: "void *",
+    direction: ExternalArgumentDirection::Input,
+};
 
 const ONE_STRING_ARGUMENT: &[ExternalArgumentSpec] = &[STRING];
 const TWO_STRING_ARGUMENTS: &[ExternalArgumentSpec] = &[LEFT_STRING, RIGHT_STRING];
@@ -119,6 +124,8 @@ const STRING_COPY_ARGUMENTS: &[ExternalArgumentSpec] = &[CHAR_DESTINATION, STRIN
 const STRING_COPY_LENGTH_ARGUMENTS: &[ExternalArgumentSpec] = &[CHAR_DESTINATION, STRING, LENGTH];
 const TOKEN_ARGUMENTS: &[ExternalArgumentSpec] = &[MUTABLE_STRING, DELIMITERS];
 const CHARACTER_ARGUMENTS: &[ExternalArgumentSpec] = &[CHARACTER];
+const ALLOCATE_ARGUMENTS: &[ExternalArgumentSpec] = &[LENGTH];
+const DEALLOCATE_ARGUMENTS: &[ExternalArgumentSpec] = &[ALLOCATION];
 
 static MEMCPY: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
     id: "c.standard.memcpy",
@@ -287,6 +294,24 @@ macro_rules! opaque_c_function {
 }
 
 opaque_c_function!(
+    MALLOC,
+    "c.standard.malloc",
+    "malloc",
+    "memory.allocate",
+    ALLOCATE_ARGUMENTS,
+    "void *",
+    ExternalReturnModel::Allocated { size_argument: 0 }
+);
+opaque_c_function!(
+    FREE,
+    "c.standard.free",
+    "free",
+    "memory.free",
+    DEALLOCATE_ARGUMENTS,
+    "void",
+    ExternalReturnModel::Void
+);
+opaque_c_function!(
     MEMCMP,
     "c.standard.memcmp",
     "memcmp",
@@ -419,6 +444,8 @@ pub fn direct_external_semantic_function(
         "strtok" => Some(&STRTOK),
         "puts" => Some(&PUTS),
         "putchar" => Some(&PUTCHAR),
+        "malloc" => Some(&MALLOC),
+        "free" => Some(&FREE),
         _ => match standard_memory_function(name)? {
             StandardMemoryFunction::Copy => Some(&MEMCPY),
             StandardMemoryFunction::Move => Some(&MEMMOVE),
@@ -516,6 +543,19 @@ mod tests {
         );
         assert_eq!(umoddi3.semantic.operation, "integer.remainder-unsigned-64");
         assert!(direct_external_semantic_function("vendor___umoddi3").is_none());
+        assert_eq!(
+            direct_external_semantic_function("malloc")
+                .unwrap()
+                .return_model,
+            ExternalReturnModel::Allocated { size_argument: 0 }
+        );
+        assert_eq!(
+            direct_external_semantic_function("free")
+                .unwrap()
+                .return_model,
+            ExternalReturnModel::Void
+        );
+        assert!(direct_external_semantic_function("vendor_malloc").is_none());
         assert!(direct_external_semantic_function("sprintf").is_none());
         assert!(direct_external_semantic_function("pp_printf").is_none());
         let arguments = core::array::from_fn(|index| SymbolicValue::input(index as u8));

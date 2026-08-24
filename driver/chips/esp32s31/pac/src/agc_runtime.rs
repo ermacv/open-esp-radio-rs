@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
 /// One complete byte accepted by the recovered forced-RX-gain leaf.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -20,7 +20,7 @@ impl ForcedRxGain {
     }
 }
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Apply complete rev0 ROM `phy_ant_dft_cfg`.
     pub fn configure_antenna_diversity(&mut self, enabled: bool) {
         self.peripherals

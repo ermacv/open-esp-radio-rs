@@ -226,3 +226,41 @@ match-floor = 1
 [[suites.vendor]]
 source = "wifi-sta-lifecycle"
 symbols = ["hal_disable_sta_beacon_filter"]
+
+[[suites]]
+id = "ble-interrupt-prefix"
+rust-artifact-role = "rust-artifact:bluetooth"
+rust-prefix = "open_ble_interrupt_trace_"
+profiles = ["profiles/ble-interrupt-prefix.toml"]
+dispositions = ["dispositions/ble-interrupt-prefix.toml"]
+baselines = ["baselines/ble-interrupt-prefix.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "ble-controller"
+symbols = ["r_sym_ble_ywjh0f9yjTBeI7XgS5da"]
+
+[[suites]]
+id = "ble-scheduler-table-prefix"
+rust-artifact-role = "rust-artifact:bluetooth"
+rust-prefix = "open_ble_scheduler_trace_"
+profiles = ["profiles/ble-scheduler-table-prefix.toml"]
+dispositions = ["dispositions/ble-scheduler-table-prefix.toml"]
+baselines = ["baselines/ble-scheduler-table-prefix.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "ble-controller"
+symbols = ["r_sym_bt_XPuqTHliEO5V9xpR7aJR"]
+
+[[suites]]
+id = "btbb-v2-init-arg-one"
+rust-artifact-role = "rust-artifact:bluetooth"
+rust-prefix = "open_btbb_v2_init_trace_"
+profiles = ["profiles/btbb-v2-init-arg-one.toml"]
+dispositions = ["dispositions/btbb-v2-init-arg-one.toml"]
+baselines = []
+gate = "informational"
+[[suites.vendor]]
+source = "btbb"
+symbols = ["bt_bb_v2_init_cmplx"]

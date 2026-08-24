@@ -7,14 +7,14 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_arch = "riscv32")]
-use crate::{CfrValue, PhyAccess, phy_pac, phy_pac_mut};
+use crate::{CfrValue, SharedPhyAccess, phy_pac, phy_pac_mut};
 
 /// Enable the two IQ-correction modes selected by PHY initialization.
 ///
 /// Complete rev0 ROM `phy_iq_corr_enable` at `0x2f82_7d8c`, size `0x24`,
 /// sets RX- and TX-IQ mode fields with two independent fresh-read updates.
 #[cfg(target_arch = "riscv32")]
-pub fn enable_iq_correction(registers: &mut impl PhyAccess) {
+pub fn enable_iq_correction(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.enable_iq_correction_modes();
 }
@@ -25,7 +25,7 @@ pub fn enable_iq_correction(registers: &mut impl PhyAccess) {
 /// `0x198`, sets the shared status/clock word's bits 14 and 15 through two
 /// independent reads.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_rxiq_root_status(registers: &mut impl PhyAccess) {
+pub fn configure_rxiq_root_status(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_rxiq_root_status();
 }
@@ -35,7 +35,7 @@ pub fn configure_rxiq_root_status(registers: &mut impl PhyAccess) {
 /// Each branch retains the complete pinned parent's four separately ordered
 /// fresh-read field updates.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_rxiq_root_correction(registers: &mut impl PhyAccess, begin: bool) {
+pub fn configure_rxiq_root_correction(registers: &mut impl SharedPhyAccess, begin: bool) {
     let registers = phy_pac_mut(registers);
     registers.configure_rxiq_root_correction(begin);
 }
@@ -45,21 +45,21 @@ pub fn configure_rxiq_root_correction(registers: &mut impl PhyAccess, begin: boo
 /// Basis: complete pinned
 /// `libphy.a[phy_reg.o]::phy_bb_txpwr_track`, size `0xf4`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_tx_power_tracking(registers: &mut impl PhyAccess, enabled: bool) {
+pub fn configure_tx_power_tracking(registers: &mut impl SharedPhyAccess, enabled: bool) {
     let registers = phy_pac_mut(registers);
     registers.configure_tx_power_tracking(enabled);
 }
 
 /// Apply complete pinned `libphy.a[phy_reg.o]::phy_config_hccfr`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_hccfr(registers: &mut impl PhyAccess, enabled: bool, value: CfrValue) {
+pub fn configure_hccfr(registers: &mut impl SharedPhyAccess, enabled: bool, value: CfrValue) {
     let registers = phy_pac_mut(registers);
     registers.configure_hccfr(enabled, value);
 }
 
 /// Apply either complete branch of pinned `libphy.a[phy_reg.o]::phy_iccfr_en`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_iccfr_gate(registers: &mut impl PhyAccess, enabled: bool) {
+pub fn configure_iccfr_gate(registers: &mut impl SharedPhyAccess, enabled: bool) {
     let registers = phy_pac_mut(registers);
     registers.configure_iccfr_gate(enabled);
 }
@@ -67,7 +67,7 @@ pub fn configure_iccfr_gate(registers: &mut impl PhyAccess, enabled: bool) {
 /// Apply complete pinned `libphy.a[phy_reg.o]::phy_force_iccfr`.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_forced_iccfr(
-    registers: &mut impl PhyAccess,
+    registers: &mut impl SharedPhyAccess,
     mode: bool,
     enabled: bool,
     value: CfrValue,
@@ -78,21 +78,26 @@ pub fn configure_forced_iccfr(
 
 /// Apply complete rev0 ROM `phy_btbb_wifi_bb_cfg2`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_bt_wifi_baseband(registers: &mut impl PhyAccess) {
+pub fn configure_bt_wifi_baseband(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_bt_wifi_baseband();
 }
 
 /// Apply complete rev0 ROM `phy_chan_dump_cfg`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_channel_dump(registers: &mut impl PhyAccess, value: u32, enabled: u32, mode: u32) {
+pub fn configure_channel_dump(
+    registers: &mut impl SharedPhyAccess,
+    value: u32,
+    enabled: u32,
+    mode: u32,
+) {
     let registers = phy_pac_mut(registers);
     registers.configure_channel_dump(value, enabled, mode);
 }
 
 /// Apply complete rev0 ROM `phy_dac_rate_set`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_dac_rate(registers: &mut impl PhyAccess, rate: u32) {
+pub fn configure_dac_rate(registers: &mut impl SharedPhyAccess, rate: u32) {
     let registers = phy_pac_mut(registers);
     registers.configure_dac_rate(rate);
 }
@@ -102,7 +107,7 @@ pub fn configure_dac_rate(registers: &mut impl PhyAccess, rate: u32) {
 /// The finite body performs seventeen ordered MMIO updates with the table
 /// memory base-index update retained between its prefix and suffix.
 #[cfg(target_arch = "riscv32")]
-pub fn initialize_front_end(registers: &mut impl PhyAccess) {
+pub fn initialize_front_end(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.initialize_front_end_prefix();
     registers.configure_table_memory_base_index(0xa0);
@@ -111,7 +116,7 @@ pub fn initialize_front_end(registers: &mut impl PhyAccess) {
 
 /// Apply complete pinned `libphy.a[phy_reg.o]::phy_fe_reg_update`.
 #[cfg(target_arch = "riscv32")]
-pub fn update_front_end(registers: &mut impl PhyAccess) {
+pub fn update_front_end(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.update_front_end();
 }
@@ -121,7 +126,7 @@ pub fn update_front_end(registers: &mut impl PhyAccess) {
 /// This leaf intentionally does not restore the two DAC-scale fields owned by
 /// the longer ROM `phy_stop_tx_tone(1)` operation.
 #[cfg(target_arch = "riscv32")]
-pub fn stop_tx_tone(registers: &mut impl PhyAccess) {
+pub fn stop_tx_tone(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.stop_calibration_tone_paths();
 }
@@ -132,7 +137,7 @@ pub fn stop_tx_tone(registers: &mut impl PhyAccess) {
 /// performs two rate updates, then dispatches to complete pinned
 /// `phy_txgain_comp_pacfg_new(1)` for four ordered byte updates.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_i2c_tx_rate(registers: &mut impl PhyAccess) {
+pub fn configure_i2c_tx_rate(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_i2c_tx_rate();
 }
@@ -141,35 +146,35 @@ pub fn configure_i2c_tx_rate(registers: &mut impl PhyAccess) {
 ///
 /// Basis: complete rev0 ROM `phy_bb_wdg_cfg` at `0x2f82_7860`, size `0x2c`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_watchdog(registers: &mut impl PhyAccess) {
+pub fn configure_watchdog(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_baseband_watchdog();
 }
 
 /// Apply complete ROM `phy_vht_support`.
 #[cfg(target_arch = "riscv32")]
-pub fn set_vht_support(registers: &mut impl PhyAccess, input: u32) {
+pub fn set_vht_support(registers: &mut impl SharedPhyAccess, input: u32) {
     let registers = phy_pac_mut(registers);
     registers.set_vht_support(input);
 }
 
 /// Apply complete ROM `phy_csidump_force_lltf_cfg`.
 #[cfg(target_arch = "riscv32")]
-pub fn set_csi_dump_force_lltf(registers: &mut impl PhyAccess, input: u32) {
+pub fn set_csi_dump_force_lltf(registers: &mut impl SharedPhyAccess, input: u32) {
     let registers = phy_pac_mut(registers);
     registers.set_csi_dump_force_lltf(input);
 }
 
 /// Apply complete ROM `phy_hemu_ru26_good_res`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_he_ru26_good_response(registers: &mut impl PhyAccess) {
+pub fn configure_he_ru26_good_response(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_he_ru26_good_response();
 }
 
 /// Apply complete ROM `phy_freq_band_reg_set`, including its VHT tail.
 #[cfg(target_arch = "riscv32")]
-pub fn set_frequency_band(registers: &mut impl PhyAccess, input: u32) {
+pub fn set_frequency_band(registers: &mut impl SharedPhyAccess, input: u32) {
     let registers = phy_pac_mut(registers);
     registers.set_frequency_band(input);
 }
@@ -177,7 +182,7 @@ pub fn set_frequency_band(registers: &mut impl PhyAccess, input: u32) {
 /// Apply complete ROM `phy_bbtx_outfilter`.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_tx_output_filter(
-    registers: &mut impl PhyAccess,
+    registers: &mut impl SharedPhyAccess,
     input_0: u32,
     input_1: u32,
     input_2: u32,
@@ -188,35 +193,35 @@ pub fn configure_tx_output_filter(
 
 /// Apply complete ROM `phy_bb_wdt_rst_enable`.
 #[cfg(target_arch = "riscv32")]
-pub fn set_watchdog_reset_enabled(registers: &mut impl PhyAccess, input: u32) {
+pub fn set_watchdog_reset_enabled(registers: &mut impl SharedPhyAccess, input: u32) {
     let registers = phy_pac_mut(registers);
     registers.set_baseband_watchdog_reset_enabled(input);
 }
 
 /// Apply complete ROM `phy_bb_wdt_int_enable`.
 #[cfg(target_arch = "riscv32")]
-pub fn set_watchdog_interrupt_enabled(registers: &mut impl PhyAccess, input: u32) {
+pub fn set_watchdog_interrupt_enabled(registers: &mut impl SharedPhyAccess, input: u32) {
     let registers = phy_pac_mut(registers);
     registers.set_baseband_watchdog_interrupt_enabled(input);
 }
 
 /// Apply complete ROM `phy_bb_wdt_timeout_clear`.
 #[cfg(target_arch = "riscv32")]
-pub fn clear_watchdog_timeout(registers: &mut impl PhyAccess) {
+pub fn clear_watchdog_timeout(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.clear_baseband_watchdog_timeout();
 }
 
 /// Apply complete ROM `phy_bb_wdt_get_status`.
 #[cfg(target_arch = "riscv32")]
-pub fn watchdog_status(registers: &mut impl PhyAccess) -> u32 {
+pub fn watchdog_status(registers: &mut impl SharedPhyAccess) -> u32 {
     let registers = phy_pac_mut(registers);
     registers.baseband_watchdog_status()
 }
 
 /// Apply complete ROM `phy_lltf_mask_en`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_lltf_mask(registers: &mut impl PhyAccess, input_0: u32, input_1: u32) {
+pub fn configure_lltf_mask(registers: &mut impl SharedPhyAccess, input_0: u32, input_1: u32) {
     let registers = phy_pac_mut(registers);
     registers.configure_lltf_mask(input_0, input_1);
 }
@@ -226,14 +231,14 @@ pub fn configure_lltf_mask(registers: &mut impl PhyAccess, input_0: u32, input_1
 /// Basis: complete rev0 ROM `phy_noise_floor_auto_set` at `0x2f82_7d3c`,
 /// size `0x36`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_noise_floor_auto(registers: &mut impl PhyAccess) {
+pub fn configure_noise_floor_auto(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_noise_floor_auto();
 }
 
 /// Read complete rev0 ROM `phy_read_hw_noisefloor` as signed quarter-dB.
 #[cfg(target_arch = "riscv32")]
-pub fn read_hardware_noise_floor(registers: &impl PhyAccess) -> i32 {
+pub fn read_hardware_noise_floor(registers: &impl SharedPhyAccess) -> i32 {
     let registers = phy_pac(registers);
     registers.read_noise_floor_quarter_db()
 }
@@ -246,7 +251,7 @@ pub fn read_hardware_noise_floor(registers: &impl PhyAccess) -> i32 {
 #[cfg(target_arch = "riscv32")]
 pub fn initialize_baseband(
     platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl PhyAccess,
+    registers: &mut impl SharedPhyAccess,
 ) {
     let registers = phy_pac_mut(registers);
     use crate::phy_frequency;
@@ -262,7 +267,7 @@ pub fn initialize_baseband(
 ///
 /// Basis: complete rev0 ROM `phy_tx_paon_set` at `0x2f82_764c`, size `0x78`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_tx_pa_on(registers: &mut impl PhyAccess) {
+pub fn configure_tx_pa_on(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_tx_pa_on();
 }

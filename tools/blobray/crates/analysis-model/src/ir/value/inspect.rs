@@ -46,6 +46,16 @@ impl SymbolicValue {
             });
         }
         match self {
+            Self::ExternalResult(token)
+                if token & UNINITIALIZED_ALLOCATION_EXTERNAL_RESULT_TOKEN_FLAG != 0 =>
+            {
+                Some(MemoryObjectLocation {
+                    root: MemoryObjectRoot::Allocation {
+                        call_token: external_result_call_token(*token),
+                    },
+                    offset: 0,
+                })
+            }
             Self::ExternalResult(token) if token & ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG != 0 => {
                 Some(MemoryObjectLocation {
                     root: MemoryObjectRoot::ZeroedAllocation {
@@ -373,6 +383,18 @@ impl SymbolicValue {
         }
     }
 
+    /// Whether this value still depends on an internal call result which must
+    /// be composed before it can be accepted as a memory address.
+    pub fn depends_on_call_result(&self) -> bool {
+        self.tree().any(|value| match value {
+            Self::CallResult(_) => true,
+            Self::Bits(bits) => bits
+                .iter()
+                .any(|source| matches!(source, BitSource::CallResult { .. })),
+            _ => false,
+        })
+    }
+
     pub fn as_constant(&self) -> Option<u32> {
         match self {
             Self::Constant(value) => Some(*value),
@@ -550,6 +572,11 @@ impl SymbolicValue {
             Self::FunctionTable(table) => format!("function-table:{}", table.id()),
             Self::FunctionPointer { table, target } => {
                 format!("function-pointer:{}::{target:#010x}", table.id())
+            }
+            Self::ExternalResult(call_token)
+                if call_token & UNINITIALIZED_ALLOCATION_EXTERNAL_RESULT_TOKEN_FLAG != 0 =>
+            {
+                format!("allocation:{}", external_result_call_token(*call_token))
             }
             Self::ExternalResult(call_token)
                 if call_token & ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG != 0 =>
@@ -1020,6 +1047,22 @@ mod tests {
         let rendered = bits.canonical();
         assert!(rendered.contains("external3."), "{rendered}");
         assert!(!rendered.contains("107374"), "{rendered}");
+    }
+
+    #[test]
+    fn allocation_keeps_affine_identity_without_claiming_initialized_bytes() {
+        let value =
+            SymbolicValue::ExternalResult(UNINITIALIZED_ALLOCATION_EXTERNAL_RESULT_TOKEN_FLAG | 5)
+                .add_constant(0x0c);
+
+        assert_eq!(
+            value.memory_object_location_with_reads(&BTreeMap::new()),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Allocation { call_token: 5 },
+                offset: 0x0c,
+            })
+        );
+        assert_eq!(value.canonical(), "expr:Add(allocation:5,const:0x0000000c)");
     }
 
     #[test]

@@ -23,7 +23,8 @@ mod register_lints;
 pub use pac_api::{
     BoundedDomain, EnumDomain, EnumValue, FixedRegisterImage, FixedRegisterWrite, FlagDomain,
     FlagValue, FullRegisterWrite, InterruptSnapshot, MaskedRegisterModify, OpaqueDomain,
-    PacApiOptions, PacApiPack, RegisterImageWrite, ZeroBasedFieldWrite, ZeroRegisterWrite,
+    OwnershipPartition, PacApiOptions, PacApiPack, RegisterImageWrite, ZeroBasedFieldWrite,
+    ZeroRegisterWrite,
 };
 pub use pac_bindings::{generate_pac_binding_index, validate_pac_crate_name};
 pub use register_evidence::{
@@ -176,6 +177,60 @@ pub struct RegisterModel {
 }
 
 impl RegisterModel {
+    /// Returns every file whose contents define this model.
+    ///
+    /// Consumers that cache derived register names or layouts must depend on
+    /// the fragments as well as the top-level manifest.  Depending on the
+    /// manifest alone leaves derived MMIO/IR documents stale after a fragment
+    /// changes without changing the fragment list.
+    pub fn input_paths(path: &Path) -> Result<Vec<PathBuf>> {
+        let input = fs::read_to_string(path)?;
+        let document = input
+            .parse::<toml_edit::Document<String>>()
+            .map_err(|error| {
+                let span = error.span();
+                Error::manifest_span("register model manifest", path, error, span)
+            })?;
+        let manifest: RegisterModelManifest = toml_edit::de::from_str(&input).map_err(|error| {
+            let span = error.span();
+            Error::manifest_span("register model manifest", path, error, span)
+        })?;
+        if manifest.schema != 2 {
+            return Err(Error::manifest_span(
+                "register model manifest",
+                path,
+                "requires schema = 2",
+                document.get("schema").and_then(toml_edit::Item::span),
+            ));
+        }
+        if manifest.fragments.is_empty() {
+            return Err(Error::manifest_span(
+                "register model manifest",
+                path,
+                "requires at least one peripheral fragment",
+                document.get("fragments").and_then(toml_edit::Item::span),
+            ));
+        }
+
+        let base = path.parent().unwrap_or_else(|| Path::new("."));
+        let mut seen = BTreeSet::new();
+        let mut paths = Vec::with_capacity(manifest.fragments.len() + 1);
+        paths.push(path.to_owned());
+        for relative in &manifest.fragments {
+            validate_relative_fragment(relative)
+                .map_err(|error| Error::manifest("register model manifest", path, error))?;
+            if !seen.insert(relative) {
+                return Err(Error::manifest(
+                    "register model manifest",
+                    path,
+                    format!("duplicate fragment {relative:?}"),
+                ));
+            }
+            paths.push(base.join(relative));
+        }
+        Ok(paths)
+    }
+
     pub fn is_model_file(path: &Path) -> Result<bool> {
         let input = fs::read_to_string(path)?;
         let document = input.parse::<toml_edit::DocumentMut>().map_err(|error| {
@@ -713,6 +768,33 @@ mod tests {
         assert_eq!(
             span.unwrap(),
             input.find('1').unwrap()..input.find('1').unwrap() + 1
+        );
+    }
+
+    #[test]
+    fn model_inputs_include_every_fragment() {
+        let directory = std::env::temp_dir().join(format!(
+            "open-radio-register-model-inputs-{}",
+            std::process::id()
+        ));
+        let path = directory.join("device.toml");
+        fs::create_dir_all(directory.join("peripherals")).unwrap();
+        fs::write(
+            &path,
+            "schema = 2\nfragments = [\"peripherals/baseband.toml\", \"peripherals/agc.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n",
+        )
+        .unwrap();
+
+        let inputs = RegisterModel::input_paths(&path).unwrap();
+        fs::remove_dir_all(&directory).unwrap();
+
+        assert_eq!(
+            inputs,
+            vec![
+                path,
+                directory.join("peripherals/baseband.toml"),
+                directory.join("peripherals/agc.toml"),
+            ]
         );
     }
 }

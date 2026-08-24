@@ -1,6 +1,6 @@
 //! Straight-line call composition and caller-context rewriting.
 
-use super::inline::validate_deferred_memory_address;
+use super::inline::{memory_read_sources, validate_deferred_memory_address};
 use super::*;
 
 pub(super) fn flatten_reference_trace(
@@ -16,6 +16,7 @@ pub(super) fn flatten_reference_trace(
     let mut external_tokens = Vec::new();
     let mut call_results = BTreeMap::<u32, SymbolicValue>::new();
     let mut private_stack_reads = BTreeMap::<u32, SymbolicValue>::new();
+    let mut composed_memory_read_sources = BTreeMap::<u32, MemoryObjectLocation>::new();
     let mut private_stack = SymbolicStack::default();
     for index in 0..RV32_STACK_ARGUMENT_COUNT {
         let argument_index = RV32_REGISTER_ARGUMENT_COUNT + index;
@@ -233,7 +234,7 @@ pub(super) fn flatten_reference_trace(
                 if !address.is_resolved() {
                     return Err("memory-read address after a call remains unresolved".to_owned());
                 }
-                validate_deferred_memory_address(region, &address)?;
+                validate_deferred_memory_address(region, &address, &composed_memory_read_sources)?;
                 let token = output
                     .iter()
                     .filter(|event| {
@@ -246,6 +247,12 @@ pub(super) fn flatten_reference_trace(
                         )
                     })
                     .count() as u32;
+                if *width == 32
+                    && let Some(location) =
+                        address.memory_object_location_with_reads(&composed_memory_read_sources)
+                {
+                    composed_memory_read_sources.insert(token, location);
+                }
                 memory_read_tokens.push(token);
                 output.push(DraftReferenceEvent::Memory {
                     access: MemoryAccess::Read,
@@ -280,7 +287,7 @@ pub(super) fn flatten_reference_trace(
                 if !address.is_resolved() || !value.is_resolved() {
                     return Err("memory write after a call remains unresolved".to_owned());
                 }
-                validate_deferred_memory_address(region, &address)?;
+                validate_deferred_memory_address(region, &address, &composed_memory_read_sources)?;
                 output.push(DraftReferenceEvent::Memory {
                     access: MemoryAccess::Write,
                     width: *width,
@@ -568,6 +575,7 @@ pub(super) fn flatten_reference_trace(
                                 Some(&mut private_stack),
                             )?;
                             output = events;
+                            composed_memory_read_sources = memory_read_sources(&output);
                             if is_tail {
                                 tail_return = Some(return_value);
                             } else {

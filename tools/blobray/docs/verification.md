@@ -93,6 +93,10 @@ input state is no longer known. A completed `DIFF` remains a difference and
 does not erase the concrete state needed to report later phases.
 
 `observables` compares ordered MMIO, delay, and fence events;
+`observables-under-effect-contract` compares that same concrete ordered stream
+through the reviewed disposition effect contract, so an explicitly declared
+device-ordering fence may be present on the Rust side while every unlisted
+effect still fails closed;
 `observables-and-calls` also compares every named call boundary;
 `observables-and-reviewed-calls` compares only explicitly listed semantic
 call pairs; and `full` additionally exposes branch and ordinary RAM state.

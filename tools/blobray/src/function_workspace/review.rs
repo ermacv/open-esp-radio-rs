@@ -604,6 +604,9 @@ fn function_memory_object_label(object: &super::FunctionMemoryObjectFact) -> Str
             "{}[arg{argument} * {stride:#x}]",
             function_memory_object_label(object)
         ),
+        super::FunctionMemoryObjectFact::Allocation { call_token } => {
+            format!("allocation:{call_token}")
+        }
         super::FunctionMemoryObjectFact::ZeroedAllocation { call_token } => {
             format!("zeroed-allocation:{call_token}")
         }

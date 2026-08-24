@@ -197,6 +197,169 @@ fn call_summary_substitutes_caller_owned_memory_addresses() {
 }
 
 #[test]
+fn exact_callee_pointer_return_preserves_global_object_provenance_in_parent() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "returned_pointer_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0xef, 0x10, 0x00, 0x00, // jal ra, 0x2000
+            0x83, 0x25, 0x45, 0x00, // lw a1, 4(a0)
+            0x63, 0x84, 0x05, 0x00, // beq a1, zero, 0x1010
+            0x93, 0x05, 0x10, 0x01, // li a1, 0x11
+            0x23, 0x24, 0xb5, 0x00, // sw a1, 8(a0)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let child = artifact::ArtifactSymbolDefinition {
+        member: Some("pointer_owner.o".to_owned()),
+        name: "return_global_pointer".to_owned(),
+        address: 0x2000,
+        bytes: vec![
+            0x03, 0x25, 0x00, 0x00, // lw a0, 0(zero), relaxed global pointer cell
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let symbols = BTreeMap::from([(0x2000, child.clone())]);
+    let mut context = StructuralPointerContext::default();
+    context.projected_relocations.insert(
+        StructuralCallSite::new(&child, 0x2000),
+        vec![StructuralProjectedRelocation {
+            origin_member: Some("pointer_owner.o".to_owned()),
+            origin_symbol: "return_global_pointer".to_owned(),
+            origin_offsets: vec![0],
+            kind: artifact::RelocationKind::Lo12I,
+            symbol: "controller_context".to_owned(),
+            addend: 0,
+            correspondence: "linker-relaxation",
+        }],
+    );
+    let mut visiting = BTreeSet::from([0x1000]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &symbols,
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert_eq!(trace.reference_dependencies, ["return_global_pointer"]);
+    assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
+    let flow = trace
+        .reference_flow
+        .as_ref()
+        .expect("branch must remain explicit");
+    let [
+        DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            address: pointer_cell,
+            ..
+        },
+        DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            address: field_read,
+            ..
+        },
+    ] = flow.events.as_slice()
+    else {
+        panic!("unexpected root events: {flow:#?}");
+    };
+    let pointer_cell = pointer_cell
+        .memory_object_location_with_reads(&BTreeMap::new())
+        .expect("relocated pointer cell");
+    assert!(matches!(
+        &pointer_cell.root,
+        MemoryObjectRoot::RelocatedSymbol { symbol, .. } if symbol == "controller_context"
+    ));
+    let mut read_sources = BTreeMap::from([(0, pointer_cell)]);
+    let field_read = field_read
+        .memory_object_location_with_reads(&read_sources)
+        .expect("field through exact returned pointer");
+    assert_eq!(field_read.offset, 4);
+    read_sources.insert(1, field_read);
+
+    let DraftReferenceTerminator::Branch {
+        taken, not_taken, ..
+    } = &flow.terminator
+    else {
+        panic!("expected explicit branch: {flow:#?}");
+    };
+    for branch in [taken, not_taken] {
+        let [
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                address,
+                ..
+            },
+        ] = branch.events.as_slice()
+        else {
+            panic!("expected one field write: {branch:#?}");
+        };
+        let location = address
+            .memory_object_location_with_reads(&read_sources)
+            .expect("write through exact returned pointer");
+        assert_eq!(location.offset, 8);
+        assert!(matches!(
+            location.root,
+            MemoryObjectRoot::Dereferenced {
+                pointer,
+                pointer_offset: 0,
+            } if matches!(pointer.as_ref(), MemoryObjectRoot::RelocatedSymbol { symbol, .. } if symbol == "controller_context")
+        ));
+    }
+}
+
+#[test]
+fn unresolved_callee_result_does_not_authorize_parent_memory_access() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "opaque_pointer_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0xef, 0x10, 0x00, 0x00, // jal ra, unresolved 0x2000
+            0x83, 0x25, 0x45, 0x00, // lw a1, 4(a0)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let mut visiting = BTreeSet::from([0x1000]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
+        &StructuralPointerContext::default(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible(), "{trace:#?}");
+    assert!(
+        trace.reference_blockers.iter().any(|blocker| {
+            blocker.contains("unresolved-call")
+                || blocker.contains("call-summary-flattening")
+                || blocker.contains("unmodeled-memory-load")
+        }),
+        "{trace:#?}"
+    );
+}
+
+#[test]
 fn private_stack_round_trips_symbolic_values_and_sign_extension() {
     let mut stack = SymbolicStack::default();
     stack.store(-8, 32, &SymbolicValue::input(2));

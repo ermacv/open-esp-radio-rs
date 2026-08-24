@@ -483,6 +483,9 @@ fn memory_root_name(root: &open_radio_vendor_analysis_model::MemoryObjectRoot) -
             argument,
             stride,
         } => format!("{}[arg{argument}*{stride:#x}]", memory_root_name(root)),
+        MemoryObjectRoot::Allocation { call_token } => {
+            format!("allocation:{call_token}")
+        }
         MemoryObjectRoot::ZeroedAllocation { call_token } => {
             format!("zeroed-allocation:{call_token}")
         }

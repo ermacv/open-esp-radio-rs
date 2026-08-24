@@ -29,9 +29,10 @@ use esp_hal::{
     timer::systimer::SystemTimer,
 };
 use open_esp_radio_esp32s31_hal::{
-    ColdRadioRegisters, Radio, RadioRegisters, phy_i2c::PhyI2cMasterControl,
-    phy_temperature::PhyTemperatureSystemControl, wifi_bb::PhyWifiBbControl,
+    Radio, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
+    wifi_bb::PhyWifiBbControl,
 };
+use open_esp_radio_esp32s31_pac::{WifiColdRegisters, WifiRadioRegisters};
 use open_esp_radio_esp32s31_phy::{
     phy_channel::{
         PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
@@ -975,7 +976,7 @@ async fn complete_binding<
 >(
     binding: PhyChipChannelExternalBinding,
     platform: &mut P,
-    registers: &mut RadioRegisters,
+    registers: &mut WifiRadioRegisters,
 ) -> Result<PhyChipChannelCompletion, HilError> {
     match binding {
         PhyChipChannelExternalBinding::Mmio(binding) => {
@@ -1001,7 +1002,7 @@ async fn complete_binding<
 
 async fn run_open_mac_rx(
     platform: &mut EspHalRadioPeripheral,
-    mmio: &mut ColdRadioRegisters,
+    mmio: &mut WifiColdRegisters,
 ) -> bool {
     let storage = RX_STORAGE.init(RxStorage::new());
     let descriptor_base = storage.descriptors.as_ptr().addr() as u32;

@@ -1,6 +1,9 @@
 //! Verification inputs, aggregate gates, protocol inventory, and probe accounting.
 
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+};
 
 use crate::*;
 
@@ -10,7 +13,7 @@ use super::super::ProtocolInventoryReport;
 pub(crate) struct VerifySource<'a> {
     pub(crate) name: &'a str,
     pub(crate) artifact: &'a Path,
-    pub(crate) inventory: Option<&'a Path>,
+    pub(crate) inventories: &'a [PathBuf],
     pub(crate) companion: Option<&'a Path>,
     pub(crate) selection: VendorSymbolSelection<'a>,
 }
@@ -110,35 +113,72 @@ impl VerifySummary {
 }
 
 pub(crate) fn vendor_symbols(source: VerifySource<'_>) -> Result<Vec<ArtifactSymbolIdentity>> {
-    let path = source.inventory.unwrap_or(source.artifact);
-    match source.selection {
-        VendorSymbolSelection::All => list_code_symbols(path, ""),
-        VendorSymbolSelection::Prefix(prefix) => list_code_symbols(path, prefix),
+    let artifact_inventory = [source.artifact.to_path_buf()];
+    let paths = if source.inventories.is_empty() {
+        artifact_inventory.as_slice()
+    } else {
+        source.inventories
+    };
+    let prefix = match source.selection {
+        VendorSymbolSelection::All | VendorSymbolSelection::Symbols(_) => "",
+        VendorSymbolSelection::Prefix(prefix) => prefix,
+    };
+    let selected = match source.selection {
         VendorSymbolSelection::Symbols(selected) => {
-            let symbols = list_code_symbols(path, "")?;
-            let available = symbols
-                .iter()
-                .map(|symbol| symbol.name.as_str())
-                .collect::<BTreeSet<_>>();
-            let missing = selected
-                .iter()
-                .filter(|name| !available.contains(name.as_str()))
-                .cloned()
-                .collect::<Vec<_>>();
-            if !missing.is_empty() {
-                return Err(crate::Error::invalid(format!(
-                    "vendor source {} does not define selected symbol(s): {}",
-                    source.name,
-                    missing.join(", ")
-                )));
+            Some(selected.iter().map(String::as_str).collect::<BTreeSet<_>>())
+        }
+        VendorSymbolSelection::All | VendorSymbolSelection::Prefix(_) => None,
+    };
+    let inventory_symbols = paths
+        .iter()
+        .map(|path| Ok((path.as_path(), list_code_symbols(path, prefix)?)))
+        .collect::<Result<Vec<_>>>()?;
+    merge_inventory_symbols(source.name, inventory_symbols, selected.as_ref())
+}
+
+fn merge_inventory_symbols<'a>(
+    source_name: &str,
+    inventories: impl IntoIterator<Item = (&'a Path, Vec<ArtifactSymbolIdentity>)>,
+    selected: Option<&BTreeSet<&str>>,
+) -> Result<Vec<ArtifactSymbolIdentity>> {
+    let mut symbols = Vec::new();
+    let mut origins = BTreeMap::<String, &Path>::new();
+    for (path, inventory_symbols) in inventories {
+        for symbol in inventory_symbols {
+            if selected.is_some_and(|selected| !selected.contains(symbol.name.as_str())) {
+                continue;
             }
-            let selected = selected.iter().map(String::as_str).collect::<BTreeSet<_>>();
-            Ok(symbols
-                .into_iter()
-                .filter(|symbol| selected.contains(symbol.name.as_str()))
-                .collect())
+            if let Some(previous) = origins.get(&symbol.name) {
+                if *previous != path {
+                    return Err(crate::Error::invalid(format!(
+                        "vendor source {} defines symbol {} in more than one inventory: {} and {}",
+                        source_name,
+                        symbol.name,
+                        previous.display(),
+                        path.display()
+                    )));
+                }
+            } else {
+                origins.insert(symbol.name.clone(), path);
+            }
+            symbols.push(symbol);
         }
     }
+    if let Some(selected) = selected {
+        let available = symbols
+            .iter()
+            .map(|symbol| symbol.name.as_str())
+            .collect::<BTreeSet<_>>();
+        let missing = selected.difference(&available).copied().collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(crate::Error::invalid(format!(
+                "vendor source {} does not define selected symbol(s): {}",
+                source_name,
+                missing.join(", ")
+            )));
+        }
+    }
+    Ok(symbols)
 }
 
 pub(crate) fn protocol_inventory(
@@ -223,4 +263,48 @@ pub(crate) fn rust_probe_suffix_matches(
             .strip_prefix(source)
             .and_then(|suffix| suffix.strip_prefix('_'))
             == Some(vendor_suffix)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn symbol(name: &str) -> ArtifactSymbolIdentity {
+        ArtifactSymbolIdentity {
+            member: Some(format!("{name}.o")),
+            name: name.to_owned(),
+        }
+    }
+
+    #[test]
+    fn selected_symbols_span_ordered_source_inventories_and_ambiguity_fails_closed() {
+        let first = PathBuf::from("first.a");
+        let second = PathBuf::from("second.a");
+        let inventories = vec![
+            (
+                first.as_path(),
+                vec![symbol("first_only"), symbol("repeated_symbol")],
+            ),
+            (
+                second.as_path(),
+                vec![symbol("second_only"), symbol("repeated_symbol")],
+            ),
+        ];
+        let selected = BTreeSet::from(["second_only"]);
+        let symbols =
+            merge_inventory_symbols("fixture", inventories.clone(), Some(&selected)).unwrap();
+        assert_eq!(
+            symbols
+                .iter()
+                .map(|symbol| symbol.name.as_str())
+                .collect::<Vec<_>>(),
+            ["second_only"]
+        );
+
+        let ambiguous = BTreeSet::from(["repeated_symbol"]);
+        let error = merge_inventory_symbols("fixture", inventories, Some(&ambiguous)).unwrap_err();
+        assert!(error.to_string().contains("in more than one inventory"));
+    }
 }

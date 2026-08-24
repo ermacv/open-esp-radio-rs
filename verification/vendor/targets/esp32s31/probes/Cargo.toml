@@ -1,6 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["library", "elf", "register-library", "register-elf"]
+members = [
+    "library",
+    "elf",
+    "register-library",
+    "register-elf",
+    "bluetooth-library",
+    "bluetooth-elf",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,6 +21,7 @@ embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../../driver/adapters/embassy/esp32s31-wifi" }
 open-esp-radio-esp32s31-hal = { path = "../../../../../driver/chips/esp32s31/hal", features = ["validation-probes"] }
+open-esp-radio-esp32s31-bluetooth = { path = "../../../../../driver/chips/esp32s31/bluetooth", features = ["validation-probes"] }
 open-esp-radio-esp32s31-coex = { path = "../../../../../driver/chips/esp32s31/coex" }
 open-esp-radio-esp32s31-pac = { path = "../../../../../driver/chips/esp32s31/pac", features = ["validation-probes"] }
 open-esp-radio-esp32s31-phy = { path = "../../../../../driver/chips/esp32s31/phy" }

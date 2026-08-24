@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
 /// Four-byte ER-SU ACK-rate image selected by the recovered rate policy.
 ///
@@ -105,7 +105,7 @@ impl MacHeBeamformingReportProfile {
     }
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Publish one report profile to 16-QAM, QPSK and BPSK selectors.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac_ctl.o]`
@@ -114,7 +114,11 @@ impl RadioRegisters {
     /// `trc_set_bf_report_rate`. The three fresh-read RMWs and their
     /// high-to-low order are preserved.
     pub fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
-        let report = self.peripherals.wifi_mac_he_init_prefix.bf_report_rate();
+        let report = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_he_init_prefix
+            .bf_report_rate();
 
         report.modify(|_, w| {
             w.qam16_rate()
@@ -157,7 +161,11 @@ impl RadioRegisters {
     /// instruction-exact.
     pub fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
         let encoded = profile.encoded_byte();
-        let ack = self.peripherals.wifi_mac_he_init_suffix.ersu_ack_rate();
+        let ack = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_he_init_suffix
+            .ersu_ack_rate();
 
         ack.modify(|_, w| w.rate_0().set(encoded));
         ack.modify(|_, w| w.rate_1().set(encoded));

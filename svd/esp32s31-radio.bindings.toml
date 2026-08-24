@@ -2244,6 +2244,4542 @@ bit-width = 8
 access = "read-write"
 
 [[registers]]
+address = 537923584
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_CONTROL"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_control"
+
+[[registers.fields]]
+svd-name = "COMMAND"
+method = "command"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537923588
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DISABLE_COMMAND"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_disable_command"
+
+[[registers.fields]]
+svd-name = "COMMAND"
+method = "command"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537923596
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CONTROL_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_control_0"
+
+[[registers.fields]]
+svd-name = "COMMAND"
+method = "command"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537923600
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CONTROL_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_control_1"
+
+[[registers.fields]]
+svd-name = "COMMAND"
+method = "command"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537923604
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CONTROL_2"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_control_2"
+
+[[registers.fields]]
+svd-name = "COMMAND"
+method = "command"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537923668
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_enable_0"
+
+[[registers.fields]]
+svd-name = "SOURCE_0"
+method = "source_0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_1"
+method = "source_1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_8"
+method = "source_8"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_13"
+method = "source_13"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_15"
+method = "source_15"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_16"
+method = "source_16"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_21"
+method = "source_21"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCES_27_28"
+method = "sources_27_28"
+bit-offset = 27
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537923672
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_clear_0"
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537923676
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_status_0"
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537923680
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_enable_1"
+
+[[registers.fields]]
+svd-name = "SOURCE_3"
+method = "source_3"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_4"
+method = "source_4"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_5"
+method = "source_5"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_6"
+method = "source_6"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCES_8_9"
+method = "sources_8_9"
+bit-offset = 8
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_12"
+method = "source_12"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_13"
+method = "source_13"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537923684
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_CLEAR_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_clear_1"
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537923688
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_status_1"
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537923696
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_DIAGNOSTIC_STATE"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_diagnostic_state"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537923700
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SRAM_POINTER_PREFIX"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_sram_pointer_prefix"
+
+[[registers.fields]]
+svd-name = "ADDRESS_PREFIX"
+method = "address_prefix"
+bit-offset = 22
+bit-width = 10
+access = "read-write"
+
+[[registers]]
+address = 537923704
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_REFERENCE"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_reference"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_20"
+method = "value_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "OPAQUE_HIGH_12"
+method = "opaque_high_12"
+bit-offset = 20
+bit-width = 12
+access = "read-write"
+
+[[registers]]
+address = 537923708
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_STATE"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_state"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_20"
+method = "value_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "OPAQUE_STATE_20_29"
+method = "opaque_state_20_29"
+bit-offset = 20
+bit-width = 10
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "OPAQUE_STATE_30"
+method = "opaque_state_30"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BUSY"
+method = "busy"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537923716
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "hal_init_bytes"
+
+[[registers.fields]]
+svd-name = "VALUE_0"
+method = "value_0"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "VALUE_1"
+method = "value_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537923724
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_008C"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "init_zero_008c"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537923728
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "sleep_timer_control"
+
+[[registers.fields]]
+svd-name = "CONFIG_LOW_3"
+method = "config_low_3"
+bit-offset = 0
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_24"
+method = "config_24"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LATCH_REQUEST"
+method = "latch_request"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TIMER_ARM"
+method = "timer_arm"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537923732
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "sleep_timer_value_0"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537923736
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "sleep_timer_value_1"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537923740
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_2"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "sleep_timer_value_2"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537923756
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "sleep_timer_latched_time"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537923768
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_00B8"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "init_zero_00b8"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537923784
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_list_pointer_0"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537923788
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_list_pointer_1"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537923804
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "hal_init_control_0"
+
+[[registers.fields]]
+svd-name = "ENABLE_31"
+method = "enable_31"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537923808
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "hal_init_control_1"
+
+[[registers.fields]]
+svd-name = "CONFIG_3"
+method = "config_3"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_6_7"
+method = "config_6_7"
+bit-offset = 6
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_15"
+method = "config_15"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_18_19"
+method = "config_18_19"
+bit-offset = 18
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537923820
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_pointer_command"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_LOW_4"
+method = "argument_low_4"
+bit-offset = 20
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESULT"
+method = "result"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "START"
+method = "start"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924032
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "hal_init_latch"
+
+[[registers.fields]]
+svd-name = "CONFIG_6"
+method = "config_6"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE_31"
+method = "enable_31"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924036
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_20"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "hal_init_low_20"
+
+[[registers.fields]]
+svd-name = "CONFIG_LOW_20"
+method = "config_low_20"
+bit-offset = 0
+bit-width = 20
+access = "write-only"
+
+[[registers]]
+address = 537924040
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_DIAGNOSTIC_DETAIL_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_diagnostic_detail_0"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537924044
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_DIAGNOSTIC_DETAIL_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_diagnostic_detail_1"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537924084
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_ENABLE"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "iso_coex_enable"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924088
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_CONTROL_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "iso_coex_control_0"
+
+[[registers.fields]]
+svd-name = "ENABLE_0"
+method = "enable_0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924092
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_THRESHOLD"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "iso_coex_threshold"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_10"
+method = "value_low_10"
+bit-offset = 0
+bit-width = 10
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924096
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_CONTROL_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "iso_coex_control_1"
+
+[[registers.fields]]
+svd-name = "ENABLE_0"
+method = "enable_0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924100
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "operational_control_0204"
+
+[[registers.fields]]
+svd-name = "CONTROL_0"
+method = "control_0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924104
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0208"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "operational_status_0208"
+
+[[registers.fields]]
+svd-name = "STATUS_0"
+method = "status_0"
+bit-offset = 0
+bit-width = 1
+access = "read-only"
+
+[[registers]]
+address = 537924108
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "iso_coex_state_0"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537924112
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "iso_coex_state_1"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537924116
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_TIMING_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "iso_coex_timing_0"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_24"
+method = "value_low_24"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924120
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "operational_value_0218"
+
+[[registers.fields]]
+svd-name = "DYNAMIC_LOW_20"
+method = "dynamic_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ZERO_IMAGE_20_30"
+method = "zero_image_20_30"
+bit-offset = 20
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ONE_IMAGE_31"
+method = "one_image_31"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924148
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_TIMING_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "iso_coex_timing_1"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_20"
+method = "value_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924176
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "hal_init_scheduler_control"
+
+[[registers.fields]]
+svd-name = "CONFIG_BYTE_1"
+method = "config_byte_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_16_20"
+method = "config_16_20"
+bit-offset = 16
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE_31"
+method = "enable_31"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924180
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_command_0"
+
+[[registers.fields]]
+svd-name = "PAYLOAD_LOW_24"
+method = "payload_low_24"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STATUS_24"
+method = "status_24"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "OPAQUE_25"
+method = "opaque_25"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STATUS_26"
+method = "status_26"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PAYLOAD_HIGH_27_30"
+method = "payload_high_27_30"
+bit-offset = 27
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "START"
+method = "start"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924184
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_command_1"
+
+[[registers.fields]]
+svd-name = "PAYLOAD_LOW_17"
+method = "payload_low_17"
+bit-offset = 0
+bit-width = 17
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STATUS_17"
+method = "status_17"
+bit-offset = 17
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STATUS_18"
+method = "status_18"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STATUS_19"
+method = "status_19"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PAYLOAD_HIGH_20_30"
+method = "payload_high_20_30"
+bit-offset = 20
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "START"
+method = "start"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924188
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_SOURCE"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_diagnostic_source"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_16"
+method = "value_low_16"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537924192
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_LATCH"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scheduler_diagnostic_latch"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_16"
+method = "value_low_16"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537924220
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_HALF"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "hal_init_low_half"
+
+[[registers.fields]]
+svd-name = "CONFIG_LOW_16"
+method = "config_low_16"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537924224
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "mmgmt_list_1_pointer_a"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_20"
+method = "control_20"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924228
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "mmgmt_list_1_pointer_b"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537924232
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "mmgmt_list_2_pointer_a"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_20"
+method = "control_20"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924236
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "mmgmt_list_2_pointer_b"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537924240
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "mmgmt_list_3_pointer_a"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_20"
+method = "control_20"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537924244
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "mmgmt_list_3_pointer_b"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537924256
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCAN_HW_SNAPSHOT"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "scan_hw_snapshot"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537924388
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0324"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "operational_status_0324"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537924416
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_SNAPSHOT_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_status_snapshot_0"
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537924424
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_INTERRUPT_BANK.IRQ_STATUS_SNAPSHOT_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+peripheral-type = "BluetoothInterruptBank"
+peripheral-module = "bluetooth_interrupt_bank"
+scope = []
+register-method = "irq_status_snapshot_1"
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537924428
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "hal_init_slot_map"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "SLOT_0"
+method = "slot_0"
+bit-offset = 0
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_1"
+method = "slot_1"
+bit-offset = 2
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_2"
+method = "slot_2"
+bit-offset = 4
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_3"
+method = "slot_3"
+bit-offset = 6
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_4"
+method = "slot_4"
+bit-offset = 8
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_5"
+method = "slot_5"
+bit-offset = 10
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_6"
+method = "slot_6"
+bit-offset = 12
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_7"
+method = "slot_7"
+bit-offset = 14
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537924432
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "hal_init_slot_map"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "SLOT_0"
+method = "slot_0"
+bit-offset = 0
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_1"
+method = "slot_1"
+bit-offset = 2
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_2"
+method = "slot_2"
+bit-offset = 4
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_3"
+method = "slot_3"
+bit-offset = 6
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_4"
+method = "slot_4"
+bit-offset = 8
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_5"
+method = "slot_5"
+bit-offset = 10
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_6"
+method = "slot_6"
+bit-offset = 12
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SLOT_7"
+method = "slot_7"
+bit-offset = 14
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537924460
+width = 32
+access = "read-write"
+identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "operational_word_036c"
+fields = []
+
+[[registers]]
+address = 537924644
+width = 32
+access = "write-only"
+identity = "BLE_ISO_SCHEDULER_NOTIFY.COMMAND"
+peripheral = "BLE_ISO_SCHEDULER_NOTIFY"
+peripheral-type = "BleIsoSchedulerNotify"
+peripheral-module = "ble_iso_scheduler_notify"
+scope = []
+register-method = "command"
+
+[[registers.fields]]
+svd-name = "TRIGGER"
+method = "trigger"
+bit-offset = 0
+bit-width = 1
+access = "write-only"
+
+[[registers]]
+address = 537924724
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_ZERO_0074"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_zero_0074"
+
+[[registers.fields]]
+svd-name = "INIT_IMAGE"
+method = "init_image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537924788
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_PRESERVE_BIT_17"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_preserve_bit_17"
+
+[[registers.fields]]
+svd-name = "INIT_CLEAR_LOW"
+method = "init_clear_low"
+bit-offset = 0
+bit-width = 17
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_CLEAR_HIGH"
+method = "init_clear_high"
+bit-offset = 18
+bit-width = 14
+access = "read-write"
+
+[[registers]]
+address = 537924792
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_ONES_00B8"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_ones_00b8"
+
+[[registers.fields]]
+svd-name = "INIT_IMAGE"
+method = "init_image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537924920
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0138"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_value_0138"
+
+[[registers.fields]]
+svd-name = "INIT_IMAGE"
+method = "init_image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537924944
+width = 32
+access = "read-only"
+identity = "BLUETOOTH_RESET_IDLE_STATUS_0.STATUS"
+peripheral = "BLUETOOTH_RESET_IDLE_STATUS_0"
+peripheral-type = "BluetoothResetIdleStatus0"
+peripheral-module = "bluetooth_reset_idle_status_0"
+scope = []
+register-method = "status"
+
+[[registers.fields]]
+svd-name = "LOW_4_UNKNOWN"
+method = "low_4_unknown"
+bit-offset = 0
+bit-width = 4
+access = "read-only"
+
+[[registers]]
+address = 537925200
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "lc_tx_on_delay_config"
+
+[[registers.fields]]
+svd-name = "LC_TX_ON_DELAY"
+method = "lc_tx_on_delay"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_DUPLICATE_BYTE"
+method = "init_duplicate_byte"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537925204
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_bytes_0254"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_0"
+method = "init_byte_0"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_1"
+method = "init_byte_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_2"
+method = "init_byte_2"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537925632
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_control_0400"
+
+[[registers.fields]]
+svd-name = "INIT_ENABLE_22"
+method = "init_enable_22"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_ENABLE_31"
+method = "init_enable_31"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537925720
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_high_half_0458"
+
+[[registers.fields]]
+svd-name = "INIT_HIGH_HALF"
+method = "init_high_half"
+bit-offset = 16
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537925724
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_045C"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_value_045c"
+
+[[registers.fields]]
+svd-name = "INIT_IMAGE"
+method = "init_image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537925760
+width = 32
+access = "write-only"
+identity = "BLE_HW_RESOLVING_LIST.BASE_POINTER"
+peripheral = "BLE_HW_RESOLVING_LIST"
+peripheral-type = "BleHwResolvingList"
+peripheral-module = "ble_hw_resolving_list"
+scope = []
+register-method = "base_pointer"
+
+[[registers.fields]]
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
+bit-offset = 0
+bit-width = 20
+access = "write-only"
+
+[[registers]]
+address = 537925792
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_DYNAMIC_IMAGE_04A0"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_dynamic_image_04a0"
+
+[[registers.fields]]
+svd-name = "INIT_IMAGE"
+method = "init_image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537925796
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_bytes_04a4"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_0"
+method = "init_byte_0"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_1"
+method = "init_byte_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_2"
+method = "init_byte_2"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_3"
+method = "init_byte_3"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537925800
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_bytes_04a8"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_0"
+method = "init_byte_0"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_1"
+method = "init_byte_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_2"
+method = "init_byte_2"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_3"
+method = "init_byte_3"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537925804
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_04AC"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_value_04ac"
+
+[[registers.fields]]
+svd-name = "INIT_IMAGE"
+method = "init_image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537925952
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0540"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_value_0540"
+
+[[registers.fields]]
+svd-name = "INIT_IMAGE"
+method = "init_image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537925964
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_low_5_054c"
+
+[[registers.fields]]
+svd-name = "INIT_LOW_5"
+method = "init_low_5"
+bit-offset = 0
+bit-width = 5
+access = "read-write"
+
+[[registers]]
+address = 537925968
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_bytes_0550"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_0"
+method = "init_byte_0"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_1"
+method = "init_byte_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_2"
+method = "init_byte_2"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537925972
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_bytes_0554"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_0"
+method = "init_byte_0"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_1"
+method = "init_byte_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_2"
+method = "init_byte_2"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_3"
+method = "init_byte_3"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537925976
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_bytes_0558"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_0"
+method = "init_byte_0"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_1"
+method = "init_byte_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_2"
+method = "init_byte_2"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_3"
+method = "init_byte_3"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537925980
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_bytes_055c"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_0"
+method = "init_byte_0"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_1"
+method = "init_byte_1"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_2"
+method = "init_byte_2"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_3"
+method = "init_byte_3"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537926044
+width = 32
+access = "read-write"
+identity = "BLE_HW_CTE_RING_CONTROL.RING_CONTROL"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "ring_control"
+
+[[registers.fields]]
+svd-name = "MAX_BUFFER_NUMBER"
+method = "max_buffer_number"
+bit-offset = 12
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RING_BUFFER_INDEX_CLEAR"
+method = "ring_buffer_index_clear"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537926048
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD0"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926052
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD1"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926056
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD2"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926060
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD3"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926064
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD4"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926068
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD5"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926072
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD6"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 6
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926076
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD7"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 7
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926080
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD8"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 8
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926084
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD9"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 9
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926088
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD10"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 10
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926092
+width = 32
+access = "write-only"
+identity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD11"
+peripheral = "BLE_HW_CTE_RING_CONTROL"
+peripheral-type = "BleHwCteRingControl"
+peripheral-module = "ble_hw_cte_ring_control"
+scope = []
+register-method = "reset_word"
+register-index = 11
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926448
+width = 32
+access = "read-only"
+identity = "BLE_HW_RUNTIME_CONTROL.STATUS0"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "status"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537926452
+width = 32
+access = "read-only"
+identity = "BLE_HW_RUNTIME_CONTROL.STATUS1"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "status"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537926456
+width = 32
+access = "read-only"
+identity = "BLE_HW_RUNTIME_CONTROL.STATUS2"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "status"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537926460
+width = 32
+access = "read-only"
+identity = "BLE_HW_RUNTIME_CONTROL.STATUS3"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "status"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537926464
+width = 32
+access = "read-only"
+identity = "BLE_HW_RUNTIME_CONTROL.STATUS4"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "status"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537926468
+width = 32
+access = "read-only"
+identity = "BLE_HW_RUNTIME_CONTROL.STATUS5"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "status"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537926472
+width = 32
+access = "read-only"
+identity = "BLE_HW_RUNTIME_CONTROL.STATUS6"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "status"
+register-index = 6
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537926476
+width = 32
+access = "read-only"
+identity = "BLE_HW_RUNTIME_CONTROL.STATUS7"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "status"
+register-index = 7
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537926480
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CLEAR0"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "clear"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926484
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CLEAR1"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "clear"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926488
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CLEAR2"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "clear"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926492
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CLEAR3"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "clear"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926496
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CLEAR4"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "clear"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926500
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CLEAR5"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "clear"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926504
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CLEAR6"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "clear"
+register-index = 6
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926508
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CLEAR7"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "clear"
+register-index = 7
+
+[[registers.fields]]
+svd-name = "PENDING_BITS"
+method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926536
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0088"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "config_0088"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_5"
+method = "value_low_5"
+bit-offset = 0
+bit-width = 5
+access = "write-only"
+
+[[registers]]
+address = 537926544
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "config_0090"
+
+[[registers.fields]]
+svd-name = "VALUE_0"
+method = "value_0"
+bit-offset = 0
+bit-width = 5
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "CONFIG_5"
+method = "config_5"
+bit-offset = 5
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "VALUE_1"
+method = "value_1"
+bit-offset = 8
+bit-width = 5
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "CONFIG_13"
+method = "config_13"
+bit-offset = 13
+bit-width = 1
+access = "write-only"
+
+[[registers]]
+address = 537926548
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0094"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "config_0094"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_8"
+method = "value_low_8"
+bit-offset = 0
+bit-width = 8
+access = "write-only"
+
+[[registers]]
+address = 537927664
+width = 32
+access = "write-only"
+identity = "BLE_PHY_INIT_TOGGLE.INIT_TOGGLE"
+peripheral = "BLE_PHY_INIT_TOGGLE"
+peripheral-type = "BlePhyInitToggle"
+peripheral-module = "ble_phy_init_toggle"
+scope = []
+register-method = "init_toggle"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537927680
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "rx_setup_control_0"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537927684
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.CHANNEL_POWER_CONTROL"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "channel_power_control"
+
+[[registers.fields]]
+svd-name = "CHANNEL_POWER_BITS_8_9"
+method = "channel_power_bits_8_9"
+bit-offset = 8
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537927692
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.RX_SETUP_IMAGE_0"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "rx_setup_image_0"
+
+[[registers.fields]]
+svd-name = "TX_SETUP_IMAGE"
+method = "tx_setup_image"
+bit-offset = 8
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_IMAGE"
+method = "config_image"
+bit-offset = 12
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537927696
+width = 32
+access = "read-write"
+identity = "SHARED_BASEBAND_TX_TIMING.AUXILIARY_TX_ON_DELAY"
+peripheral = "SHARED_BASEBAND_TX_TIMING"
+peripheral-type = "SharedBasebandTxTiming"
+peripheral-module = "shared_baseband_tx_timing"
+scope = []
+register-method = "auxiliary_tx_on_delay"
+
+[[registers.fields]]
+svd-name = "ENCODED_IMAGE"
+method = "encoded_image"
+bit-offset = 16
+bit-width = 11
+access = "read-write"
+
+[[registers]]
+address = 537927700
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.LE_TX_ON_DELAY"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "le_tx_on_delay"
+
+[[registers.fields]]
+svd-name = "ENCODED_VALUE_MINUS_10"
+method = "encoded_value_minus_10"
+bit-offset = 19
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537927708
+width = 32
+access = "read-only"
+identity = "BT_V3_2_BASEBAND.TX_CONFIG_CHECK_VALUE"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "tx_config_check_value"
+
+[[registers.fields]]
+svd-name = "HIGH_5_UNKNOWN"
+method = "high_5_unknown"
+bit-offset = 27
+bit-width = 5
+access = "read-only"
+
+[[registers]]
+address = 537927756
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "rx_setup_control_1"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537927776
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_0"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "le_correlation_threshold_0"
+
+[[registers.fields]]
+svd-name = "AA_LC_ENABLE"
+method = "aa_lc_enable"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_2"
+method = "argument_2"
+bit-offset = 26
+bit-width = 6
+access = "read-write"
+
+[[registers]]
+address = 537927780
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_1"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "le_correlation_threshold_1"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_1"
+method = "argument_1"
+bit-offset = 14
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_0"
+method = "argument_0"
+bit-offset = 20
+bit-width = 6
+access = "read-write"
+
+[[registers]]
+address = 537927784
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "rx_correlator_control"
+
+[[registers.fields]]
+svd-name = "RX_SETUP_ENABLE"
+method = "rx_setup_enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FINAL_FORCE_ZERO_13"
+method = "final_force_zero_13"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_VALUE"
+method = "config_value"
+bit-offset = 20
+bit-width = 6
+access = "read-write"
+
+[[registers]]
+address = 537927804
+width = 32
+access = "read-only"
+identity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "software_reset_idle_status"
+
+[[registers.fields]]
+svd-name = "IDLE_BITS_15_16_UNKNOWN"
+method = "idle_bits_15_16_unknown"
+bit-offset = 15
+bit-width = 2
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "IDLE_BITS_20_23_UNKNOWN"
+method = "idle_bits_20_23_unknown"
+bit-offset = 20
+bit-width = 4
+access = "read-only"
+
+[[registers]]
+address = 537927828
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.LC_8M_CONTROL"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "lc_8m_control"
+
+[[registers.fields]]
+svd-name = "LC_8M_ENABLE"
+method = "lc_8m_enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537927856
+width = 32
+access = "read-only"
+identity = "BT_V3_2_BASEBAND.CURRENT_RX_INFO"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "current_rx_info"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537927864
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "tx_cca_control_0"
+
+[[registers.fields]]
+svd-name = "APPLY"
+method = "apply"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_1"
+method = "set_argument_1"
+bit-offset = 1
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PERIOD_ARGUMENT_0_IMAGE"
+method = "period_argument_0_image"
+bit-offset = 9
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PERIOD_FORCE_ZERO_20_22"
+method = "period_force_zero_20_22"
+bit-offset = 20
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE"
+method = "period_argument_0_minus_argument_1_image"
+bit-offset = 23
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_0"
+method = "set_argument_0"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537927868
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_1"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "tx_cca_control_1"
+
+[[registers.fields]]
+svd-name = "DEFAULT_CONFIG_VALUE"
+method = "default_config_value"
+bit-offset = 15
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_4"
+method = "set_argument_4"
+bit-offset = 20
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_3"
+method = "set_argument_3"
+bit-offset = 25
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_2"
+method = "set_argument_2"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_SETUP_ENABLE"
+method = "rx_setup_enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537927872
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_2"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "tx_cca_control_2"
+
+[[registers.fields]]
+svd-name = "RX_SETUP_ENABLE"
+method = "rx_setup_enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_SETUP_DISABLE"
+method = "rx_setup_disable"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_9"
+method = "set_argument_9"
+bit-offset = 2
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_8"
+method = "set_argument_8"
+bit-offset = 7
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_7"
+method = "set_argument_7"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_6"
+method = "set_argument_6"
+bit-offset = 13
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SET_ARGUMENT_5"
+method = "set_argument_5"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537927892
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_STATUS"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "tx_cca_fifo_status"
+
+[[registers.fields]]
+svd-name = "RESET"
+method = "reset"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 25
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "EMPTY"
+method = "empty"
+bit-offset = 29
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "FULL"
+method = "full"
+bit-offset = 30
+bit-width = 1
+access = "read-only"
+
+[[registers]]
+address = 537927896
+width = 32
+access = "read-only"
+identity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_DATA"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "tx_cca_fifo_data"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537927900
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.WATCHDOG_CONTROL"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "watchdog_control"
+
+[[registers.fields]]
+svd-name = "INIT_ARGUMENT_1"
+method = "init_argument_1"
+bit-offset = 13
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_ARGUMENT_0"
+method = "init_argument_0"
+bit-offset = 15
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_FORCE_ONE"
+method = "init_force_one"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537927904
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "gaussian_1m_coefficient_0"
+
+[[registers.fields]]
+svd-name = "BITS_2_9"
+method = "bits_2_9"
+bit-offset = 2
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_10_16"
+method = "bits_10_16"
+bit-offset = 10
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_17_22"
+method = "bits_17_22"
+bit-offset = 17
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_23_27"
+method = "bits_23_27"
+bit-offset = 23
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_28_31"
+method = "bits_28_31"
+bit-offset = 28
+bit-width = 4
+access = "read-write"
+
+[[registers]]
+address = 537927908
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "gaussian_1m_coefficient_1"
+
+[[registers.fields]]
+svd-name = "BITS_2_12"
+method = "bits_2_12"
+bit-offset = 2
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_13_22"
+method = "bits_13_22"
+bit-offset = 13
+bit-width = 10
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_23_31"
+method = "bits_23_31"
+bit-offset = 23
+bit-width = 9
+access = "read-write"
+
+[[registers]]
+address = 537927912
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "gaussian_1m_coefficient_2"
+
+[[registers.fields]]
+svd-name = "BITS_10_20"
+method = "bits_10_20"
+bit-offset = 10
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_21_31"
+method = "bits_21_31"
+bit-offset = 21
+bit-width = 11
+access = "read-write"
+
+[[registers]]
+address = 537927916
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "gaussian_1m_coefficient_3"
+
+[[registers.fields]]
+svd-name = "BITS_10_20"
+method = "bits_10_20"
+bit-offset = 10
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_21_31"
+method = "bits_21_31"
+bit-offset = 21
+bit-width = 11
+access = "read-write"
+
+[[registers]]
+address = 537927920
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "gaussian_2m_coefficient_and_tx_config"
+
+[[registers.fields]]
+svd-name = "TX_SET_LOW_BYTE"
+method = "tx_set_low_byte"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "GAUSSIAN_BITS_8_16"
+method = "gaussian_bits_8_16"
+bit-offset = 8
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "GAUSSIAN_BITS_17_24"
+method = "gaussian_bits_17_24"
+bit-offset = 17
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "GAUSSIAN_BITS_25_31"
+method = "gaussian_bits_25_31"
+bit-offset = 25
+bit-width = 7
+access = "read-write"
+
+[[registers]]
+address = 537927924
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "gaussian_2m_coefficient_1"
+
+[[registers.fields]]
+svd-name = "BITS_0_10"
+method = "bits_0_10"
+bit-offset = 0
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_11_21"
+method = "bits_11_21"
+bit-offset = 11
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_22_31"
+method = "bits_22_31"
+bit-offset = 22
+bit-width = 10
+access = "read-write"
+
+[[registers]]
+address = 537927928
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_2"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "le_correlation_threshold_2"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_1_COPY_0"
+method = "argument_1_copy_0"
+bit-offset = 5
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_1_COPY_1"
+method = "argument_1_copy_1"
+bit-offset = 19
+bit-width = 6
+access = "read-write"
+
+[[registers]]
+address = 537927932
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.RX_FILTER_SELECT"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "rx_filter_select"
+
+[[registers.fields]]
+svd-name = "SELECT_0"
+method = "select_0"
+bit-offset = 13
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SELECT_1"
+method = "select_1"
+bit-offset = 15
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SELECT_2"
+method = "select_2"
+bit-offset = 17
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SELECT_3"
+method = "select_3"
+bit-offset = 19
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SELECT_4"
+method = "select_4"
+bit-offset = 21
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SELECT_5"
+method = "select_5"
+bit-offset = 23
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537927936
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "agc_restart_control"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_6_UNKNOWN"
+method = "restart_bit_6_unknown"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_7_UNKNOWN"
+method = "restart_bit_7_unknown"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_8_UNKNOWN"
+method = "restart_bit_8_unknown"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_9_UNKNOWN"
+method = "restart_bit_9_unknown"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_10_UNKNOWN"
+method = "restart_bit_10_unknown"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_19_UNKNOWN"
+method = "restart_bit_19_unknown"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_20_UNKNOWN"
+method = "restart_bit_20_unknown"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_21_UNKNOWN"
+method = "restart_bit_21_unknown"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537927948
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.BLE_DIAGNOSTIC"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "ble_diagnostic"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_1"
+method = "argument_1"
+bit-offset = 13
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_3"
+method = "argument_3"
+bit-offset = 16
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_2"
+method = "argument_2"
+bit-offset = 20
+bit-width = 4
+access = "read-write"
+
+[[registers]]
+address = 537927972
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.CONTROL"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "control"
+
+[[registers.fields]]
+svd-name = "ANTENNA_ONEHOT_ENABLE"
+method = "antenna_onehot_enable"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "IQ_SELECT_2US"
+method = "iq_select_2us"
+bit-offset = 2
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "IQ_SELECT_1US"
+method = "iq_select_1us"
+bit-offset = 4
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DELAY_RX_AOD"
+method = "delay_rx_aod"
+bit-offset = 6
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DELAY_RX_AOA"
+method = "delay_rx_aoa"
+bit-offset = 14
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ANTENNA_FORCE"
+method = "antenna_force"
+bit-offset = 22
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ANTENNA_FORCE_ON"
+method = "antenna_force_on"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CTE_ENABLE"
+method = "cte_enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537927976
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.ANTENNA_DELAY"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_delay"
+
+[[registers.fields]]
+svd-name = "RX_AOA_2US"
+method = "rx_aoa_2us"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOA_1US"
+method = "rx_aoa_1us"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_AOD_2US"
+method = "tx_aod_2us"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_AOD_1US"
+method = "tx_aod_1us"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537927980
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.ANTENNA_SWITCH_DELAY_1M"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_switch_delay_1m"
+
+[[registers.fields]]
+svd-name = "RX_AOA_2US"
+method = "rx_aoa_2us"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOA_1US"
+method = "rx_aoa_1us"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOD_2US"
+method = "rx_aod_2us"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOD_1US"
+method = "rx_aod_1us"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537927984
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY0"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537927986
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY1"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537927988
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY2"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537927990
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY3"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537927992
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY4"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537927994
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY5"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537927996
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY6"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 6
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537927998
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY7"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 7
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537928000
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY8"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 8
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537928002
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY9"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 9
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537928004
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY10"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 10
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537928006
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY11"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 11
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537928008
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY12"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 12
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537928010
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY13"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 13
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537928012
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY14"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 14
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537928014
+width = 16
+access = "write-only"
+identity = "BT_V3_2_CTE.ANTENNA_MAP_ENTRY15"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_map_entry"
+register-index = 15
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 16
+access = "write-only"
+
+[[registers]]
+address = 537928016
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.SAMPLE_LIMIT"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "sample_limit"
+
+[[registers.fields]]
+svd-name = "SAMPLE"
+method = "sample"
+bit-offset = 15
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SWITCH"
+method = "switch"
+bit-offset = 20
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "REFERENCE"
+method = "reference"
+bit-offset = 25
+bit-width = 7
+access = "read-write"
+
+[[registers]]
+address = 537928020
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.DELAY_TAIL_1US"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "delay_tail_1us"
+
+[[registers.fields]]
+svd-name = "RX_AOD_2M"
+method = "rx_aod_2m"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOA_2M"
+method = "rx_aoa_2m"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOD"
+method = "rx_aod"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOA"
+method = "rx_aoa"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537928024
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.ANTENNA_SWITCH_DELAY_2M"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "antenna_switch_delay_2m"
+
+[[registers.fields]]
+svd-name = "RX_AOA_2US"
+method = "rx_aoa_2us"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOA_1US"
+method = "rx_aoa_1us"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOD_2US"
+method = "rx_aod_2us"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOD_1US"
+method = "rx_aod_1us"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537928028
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.FREQUENCY_STEP_CONTROL"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "frequency_step_control"
+
+[[registers.fields]]
+svd-name = "FSTEP_CTE_ENABLE"
+method = "fstep_cte_enable"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "NFSTEP_CTE"
+method = "nfstep_cte"
+bit-offset = 4
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FSTEP_CTE"
+method = "fstep_cte"
+bit-offset = 12
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537928032
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.DELAY_TAIL_2US"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "delay_tail_2us"
+
+[[registers.fields]]
+svd-name = "RX_AOD_2M"
+method = "rx_aod_2m"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOA_2M"
+method = "rx_aoa_2m"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOD"
+method = "rx_aod"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_AOA"
+method = "rx_aoa"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537928036
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.SQI_CONTROL"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "sqi_control"
+
+[[registers.fields]]
+svd-name = "SQI_ENABLE"
+method = "sqi_enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SQI_SELECT"
+method = "sqi_select"
+bit-offset = 1
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SQI_DELAY_2M"
+method = "sqi_delay_2m"
+bit-offset = 14
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SQI_DELAY"
+method = "sqi_delay"
+bit-offset = 26
+bit-width = 6
+access = "read-write"
+
+[[registers]]
+address = 537928040
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.SQI_DPHI"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "sqi_dphi"
+
+[[registers.fields]]
+svd-name = "SQI_DPHI_DB_OR_READY"
+method = "sqi_dphi_db_or_ready"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SQI_DPHI_MAX"
+method = "sqi_dphi_max"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SQI_DPHI_MIN"
+method = "sqi_dphi_min"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537928044
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.SQI_LIMITS"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "sqi_limits"
+
+[[registers.fields]]
+svd-name = "INBAND_MAX"
+method = "inband_max"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RSSI_MAX"
+method = "rssi_max"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INBAND_MIN"
+method = "inband_min"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RSSI_MIN"
+method = "rssi_min"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537928048
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.RX_SETUP_ARGUMENT"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "rx_setup_argument"
+
+[[registers.fields]]
+svd-name = "TX_ARGUMENT_0"
+method = "tx_argument_0"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_0"
+method = "argument_0"
+bit-offset = 6
+bit-width = 6
+access = "read-write"
+
+[[registers]]
+address = 537928068
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.COEX_CONFIG"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "coex_config"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ONE_18"
+method = "config_force_one_18"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ONE_20"
+method = "config_force_one_20"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537928132
+width = 32
+access = "read-write"
+identity = "BT_V3_2_BASEBAND.RX_DPO_CONTROL"
+peripheral = "BT_V3_2_BASEBAND"
+peripheral-type = "BtV3_2Baseband"
+peripheral-module = "bt_v3_2_baseband"
+scope = []
+register-method = "rx_dpo_control"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ZERO_19"
+method = "config_force_zero_19"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_VALUE"
+method = "config_value"
+bit-offset = 20
+bit-width = 6
+access = "read-write"
+
+[[registers]]
+address = 537928188
+width = 32
+access = "read-write"
+identity = "BT_V3_2_CTE.DATE_AND_CLOCK"
+peripheral = "BT_V3_2_CTE"
+peripheral-type = "BtV3_2Cte"
+peripheral-module = "bt_v3_2_cte"
+scope = []
+register-method = "date_and_clock"
+
+[[registers.fields]]
+svd-name = "BT_BB_DATE"
+method = "bt_bb_date"
+bit-offset = 0
+bit-width = 28
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "CLOCK_ENABLE"
+method = "clock_enable"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLOCK_FORCE_ON"
+method = "clock_force_on"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537929728
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.CTE_DC_SHIFT"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "cte_dc_shift"
+
+[[registers.fields]]
+svd-name = "DC_SHIFT_MAX"
+method = "dc_shift_max"
+bit-offset = 10
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_CONFIG_VALUE"
+method = "rx_config_value"
+bit-offset = 17
+bit-width = 3
+access = "read-write"
+
+[[registers]]
+address = 537929760
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.CTE_RE_GAIN"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "cte_re_gain"
+
+[[registers.fields]]
+svd-name = "RE_GAIN_ENABLE"
+method = "re_gain_enable"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 537929792
 width = 32
 access = "read-write"
@@ -2253,7 +6789,66 @@ peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
 register-method = "rx_gain_force_opaque"
-fields = []
+
+[[registers.fields]]
+svd-name = "DYNAMIC_BITS_0_6"
+method = "dynamic_bits_0_6"
+bit-offset = 0
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TARGET_BITS_13_21"
+method = "target_bits_13_21"
+bit-offset = 13
+bit-width = 9
+access = "read-write"
+
+[[registers]]
+address = 537929796
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.RX_COMP_CONTROL"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "rx_comp_control"
+
+[[registers.fields]]
+svd-name = "DYNAMIC_BITS_0_6"
+method = "dynamic_bits_0_6"
+bit-offset = 0
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DYNAMIC_BITS_7_13"
+method = "dynamic_bits_7_13"
+bit-offset = 7
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FINITE_BITS_14_18"
+method = "finite_bits_14_18"
+bit-offset = 14
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FINITE_BITS_19_23"
+method = "finite_bits_19_23"
+bit-offset = 19
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FINITE_BITS_24_28"
+method = "finite_bits_24_28"
+bit-offset = 24
+bit-width = 5
+access = "read-write"
 
 [[registers]]
 address = 537929800
@@ -2265,6 +6860,123 @@ peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
 register-method = "gain_offset_word_0_opaque"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_0_4"
+method = "positional_bits_0_4"
+bit-offset = 0
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_5_9"
+method = "positional_bits_5_9"
+bit-offset = 5
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_16_23"
+method = "positional_bits_16_23"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_24_31"
+method = "positional_bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929804
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "rx_config_004c"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ZERO_26"
+method = "config_force_zero_26"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537929808
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_GAIN_MAX_CONTROL"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_gain_max_control"
+
+[[registers.fields]]
+svd-name = "DYNAMIC_BITS_14_20"
+method = "dynamic_bits_14_20"
+bit-offset = 14
+bit-width = 7
+access = "read-write"
+
+[[registers]]
+address = 537929812
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_GAIN_IMAGE"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_gain_image"
+
+[[registers.fields]]
+svd-name = "DYNAMIC_BITS_2_8"
+method = "dynamic_bits_2_8"
+bit-offset = 2
+bit-width = 7
+access = "read-write"
+
+[[registers]]
+address = 537929816
+width = 32
+access = "write-only"
+identity = "PHY_BTAGC_RECOVERED.AGC_SAT_GAIN_IMAGE_0"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_sat_gain_image_0"
+fields = []
+
+[[registers]]
+address = 537929820
+width = 32
+access = "write-only"
+identity = "PHY_BTAGC_RECOVERED.AGC_SAT_GAIN_IMAGE_1"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_sat_gain_image_1"
+fields = []
+
+[[registers]]
+address = 537929828
+width = 32
+access = "write-only"
+identity = "PHY_BTAGC_RECOVERED.AGC_SAT_GAIN_CONFIG"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_sat_gain_config"
 fields = []
 
 [[registers]]
@@ -2277,7 +6989,1098 @@ peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
 register-method = "gain_offset_word_1_opaque"
-fields = []
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_0_4"
+method = "positional_bits_0_4"
+bit-offset = 0
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_5"
+method = "positional_bits_5"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_6_10"
+method = "positional_bits_6_10"
+bit-offset = 6
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_11_12"
+method = "positional_bits_11_12"
+bit-offset = 11
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_13"
+method = "positional_bits_13"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_16_23"
+method = "positional_bits_16_23"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_24_31"
+method = "positional_bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929836
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_CONTROL_006C"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_recorrect_control_006c"
+
+[[registers.fields]]
+svd-name = "FINITE_BITS_24_31"
+method = "finite_bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929860
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_CONFIG_0084"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_restart_config_0084"
+
+[[registers.fields]]
+svd-name = "FINITE_BITS_24_31"
+method = "finite_bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929864
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.RX_CONFIG_0088"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "rx_config_0088"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ONE_18"
+method = "config_force_one_18"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ZERO_29"
+method = "config_force_zero_29"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ZERO_30"
+method = "config_force_zero_30"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537929868
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.RX_CONFIG_008C"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "rx_config_008c"
+
+[[registers.fields]]
+svd-name = "TARGET_BITS_0_8"
+method = "target_bits_0_8"
+bit-offset = 0
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TARGET_BITS_9_17"
+method = "target_bits_9_17"
+bit-offset = 9
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ZERO_29"
+method = "config_force_zero_29"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537929876
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.CCA_CONFIG"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "cca_config"
+
+[[registers.fields]]
+svd-name = "CONFIG_VALUE_0"
+method = "config_value_0"
+bit-offset = 0
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_VALUE_1"
+method = "config_value_1"
+bit-offset = 9
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TARGET_BITS_14_22"
+method = "target_bits_14_22"
+bit-offset = 14
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ONE_23"
+method = "config_force_one_23"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537929880
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.CTE_AGC_TARGET"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "cte_agc_target"
+
+[[registers.fields]]
+svd-name = "BASEBAND_TARGET_VALUE"
+method = "baseband_target_value"
+bit-offset = 0
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "AGC_TARGET_VALUE"
+method = "agc_target_value"
+bit-offset = 21
+bit-width = 9
+access = "read-write"
+
+[[registers]]
+address = 537929888
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "shared_rx_sense_and_detect_00a0"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_16_23"
+method = "positional_bits_16_23"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_24_27"
+method = "positional_bits_24_27"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers]]
+address = 537929896
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "shared_rx_sense_and_detect_00a8"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_0_3"
+method = "positional_bits_0_3"
+bit-offset = 0
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_4_11"
+method = "positional_bits_4_11"
+bit-offset = 4
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_12_16"
+method = "positional_bits_12_16"
+bit-offset = 12
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_17_24"
+method = "positional_bits_17_24"
+bit-offset = 17
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929904
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_recorrect_and_target_00b0"
+
+[[registers.fields]]
+svd-name = "RECORRECT_BITS_13_17"
+method = "recorrect_bits_13_17"
+bit-offset = 13
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RECORRECT_BITS_18_22"
+method = "recorrect_bits_18_22"
+bit-offset = 18
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TARGET_BITS_23_31"
+method = "target_bits_23_31"
+bit-offset = 23
+bit-width = 9
+access = "read-write"
+
+[[registers]]
+address = 537929908
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_recorrect_and_target_00b4"
+
+[[registers.fields]]
+svd-name = "RECORRECT_BIT_8"
+method = "recorrect_bit_8"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RECORRECT_BITS_9_13"
+method = "recorrect_bits_9_13"
+bit-offset = 9
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TARGET_BITS_23_31"
+method = "target_bits_23_31"
+bit-offset = 23
+bit-width = 9
+access = "read-write"
+
+[[registers]]
+address = 537929912
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "shared_rx_sense_and_detect_00b8"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_8_11"
+method = "positional_bits_8_11"
+bit-offset = 8
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_BITS_12_19"
+method = "positional_bits_12_19"
+bit-offset = 12
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929916
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_recorrect_and_restart_00bc"
+
+[[registers.fields]]
+svd-name = "RECORRECT_BIT_5"
+method = "recorrect_bit_5"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RECORRECT_BIT_6"
+method = "recorrect_bit_6"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RECORRECT_BIT_7"
+method = "recorrect_bit_7"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RECORRECT_BIT_8"
+method = "recorrect_bit_8"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_31"
+method = "restart_bit_31"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537929920
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_detect_config_00c0"
+
+[[registers.fields]]
+svd-name = "BITS_5_9"
+method = "bits_5_9"
+bit-offset = 5
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_10_14"
+method = "bits_10_14"
+bit-offset = 10
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_15_19"
+method = "bits_15_19"
+bit-offset = 15
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_20_23"
+method = "bits_20_23"
+bit-offset = 20
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_24_31"
+method = "bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929924
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_detect_config_00c4"
+
+[[registers.fields]]
+svd-name = "BITS_10_14"
+method = "bits_10_14"
+bit-offset = 10
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_15_19"
+method = "bits_15_19"
+bit-offset = 15
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_20_23"
+method = "bits_20_23"
+bit-offset = 20
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_24_31"
+method = "bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929936
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_config_00d0"
+
+[[registers.fields]]
+svd-name = "CONFIG_VALUE_LOW"
+method = "config_value_low"
+bit-offset = 11
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_VALUE_HIGH"
+method = "config_value_high"
+bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers]]
+address = 537929940
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D4"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_config_00d4"
+
+[[registers.fields]]
+svd-name = "CONFIG_VALUE"
+method = "config_value"
+bit-offset = 6
+bit-width = 19
+access = "read-write"
+
+[[registers]]
+address = 537929948
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_restart_bits_00dc"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_27"
+method = "restart_bit_27"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_28"
+method = "restart_bit_28"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_29"
+method = "restart_bit_29"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_30"
+method = "restart_bit_30"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESTART_BIT_31"
+method = "restart_bit_31"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537929952
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_restart_image_00e0"
+
+[[registers.fields]]
+svd-name = "BITS_0_7"
+method = "bits_0_7"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_8_15"
+method = "bits_8_15"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_16_23"
+method = "bits_16_23"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_24_31"
+method = "bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929956
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_restart_image_00e4"
+
+[[registers.fields]]
+svd-name = "BITS_0_7"
+method = "bits_0_7"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_8_15"
+method = "bits_8_15"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_16_23"
+method = "bits_16_23"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_24_31"
+method = "bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929960
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_restart_image_00e8"
+
+[[registers.fields]]
+svd-name = "BITS_10_15"
+method = "bits_10_15"
+bit-offset = 10
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_16_23"
+method = "bits_16_23"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_24_31"
+method = "bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929964
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_restart_image_00ec"
+
+[[registers.fields]]
+svd-name = "BITS_0_7"
+method = "bits_0_7"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_8_15"
+method = "bits_8_15"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_16_23"
+method = "bits_16_23"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_24_31"
+method = "bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929968
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_restart_image_00f0"
+
+[[registers.fields]]
+svd-name = "BITS_16_23"
+method = "bits_16_23"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_24_31"
+method = "bits_24_31"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537929976
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_restart_image_00f8"
+
+[[registers.fields]]
+svd-name = "BITS_2_7"
+method = "bits_2_7"
+bit-offset = 2
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_8_13"
+method = "bits_8_13"
+bit-offset = 8
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_14_19"
+method = "bits_14_19"
+bit-offset = 14
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_20_25"
+method = "bits_20_25"
+bit-offset = 20
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_26_31"
+method = "bits_26_31"
+bit-offset = 26
+bit-width = 6
+access = "read-write"
+
+[[registers]]
+address = 537929984
+width = 32
+access = "read-write"
+identity = "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100"
+peripheral = "PHY_BTAGC_RECOVERED"
+peripheral-type = "PhyBtagcRecovered"
+peripheral-module = "phy_btagc_recovered"
+scope = []
+register-method = "agc_restart_image_0100"
+
+[[registers.fields]]
+svd-name = "BITS_12_15"
+method = "bits_12_15"
+bit-offset = 12
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_16_19"
+method = "bits_16_19"
+bit-offset = 16
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_20_23"
+method = "bits_20_23"
+bit-offset = 20
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_24_27"
+method = "bits_24_27"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_28_31"
+method = "bits_28_31"
+bit-offset = 28
+bit-width = 4
+access = "read-write"
+
+[[registers]]
+address = 537930752
+width = 32
+access = "read-write"
+identity = "ZBBB_RADIO_CONTROL.RX_SETUP_IMAGE"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "rx_setup_image"
+
+[[registers.fields]]
+svd-name = "CONFIG_IMAGE"
+method = "config_image"
+bit-offset = 12
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537930764
+width = 32
+access = "read-write"
+identity = "ZBBB_RADIO_CONTROL.RX_SETUP_CONTROL"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "rx_setup_control"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ZERO_LOW"
+method = "config_force_zero_low"
+bit-offset = 0
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONFIG_FORCE_ZERO_8"
+method = "config_force_zero_8"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SHARED_INIT_IMAGE_10_20"
+method = "shared_init_image_10_20"
+bit-offset = 10
+bit-width = 11
+access = "read-write"
+
+[[registers]]
+address = 537930768
+width = 32
+access = "read-write"
+identity = "ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_0"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "shared_rx_init_image_0"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_IMAGE_13_20"
+method = "positional_image_13_20"
+bit-offset = 13
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_IMAGE_21_31"
+method = "positional_image_21_31"
+bit-offset = 21
+bit-width = 11
+access = "read-write"
+
+[[registers]]
+address = 537930772
+width = 32
+access = "read-write"
+identity = "ZBBB_RADIO_CONTROL.SHARED_RX_INIT_CONTROL_0"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "shared_rx_init_control_0"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_FORCE_ZERO_1"
+method = "positional_force_zero_1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537930776
+width = 32
+access = "read-write"
+identity = "ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_1"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "shared_rx_init_image_1"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_IMAGE_0_10"
+method = "positional_image_0_10"
+bit-offset = 0
+bit-width = 11
+access = "read-write"
+
+[[registers]]
+address = 537930792
+width = 32
+access = "read-write"
+identity = "ZBBB_RADIO_CONTROL.SHARED_RX_INIT_CONTROL_1"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "shared_rx_init_control_1"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_FORCE_ONE_30"
+method = "positional_force_one_30"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537930796
+width = 32
+access = "read-write"
+identity = "ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_2"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "shared_rx_init_image_2"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_IMAGE_0_7"
+method = "positional_image_0_7"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_IMAGE_8_31"
+method = "positional_image_8_31"
+bit-offset = 8
+bit-width = 24
+access = "read-write"
+
+[[registers]]
+address = 537930800
+width = 32
+access = "read-write"
+identity = "ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_3"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "shared_rx_init_image_3"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_IMAGE_8_31"
+method = "positional_image_8_31"
+bit-offset = 8
+bit-width = 24
+access = "read-write"
+
+[[registers]]
+address = 537930804
+width = 32
+access = "read-write"
+identity = "ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "shared_rx_init_image_4"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_FORCE_ONE_0"
+method = "positional_force_one_0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_IMAGE_9_19"
+method = "positional_image_9_19"
+bit-offset = 9
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POSITIONAL_IMAGE_20_30"
+method = "positional_image_20_30"
+bit-offset = 20
+bit-width = 11
+access = "read-write"
+
+[[registers]]
+address = 537930808
+width = 32
+access = "read-only"
+identity = "ZBBB_RADIO_CONTROL.SOFTWARE_RESET_IDLE_STATUS"
+peripheral = "ZBBB_RADIO_CONTROL"
+peripheral-type = "ZbbbRadioControl"
+peripheral-module = "zbbb_radio_control"
+scope = []
+register-method = "software_reset_idle_status"
+
+[[registers.fields]]
+svd-name = "LOW_3_REQUIRED_IMAGE"
+method = "low_3_required_image"
+bit-offset = 0
+bit-width = 3
+access = "read-only"
+
+[[registers]]
+address = 537931912
+width = 32
+access = "read-only"
+identity = "SHARED_BASEBAND_RESET_IDLE_STATUS.STATUS"
+peripheral = "SHARED_BASEBAND_RESET_IDLE_STATUS"
+peripheral-type = "SharedBasebandResetIdleStatus"
+peripheral-module = "shared_baseband_reset_idle_status"
+scope = []
+register-method = "status"
+
+[[registers.fields]]
+svd-name = "LOW_4_UNKNOWN"
+method = "low_4_unknown"
+bit-offset = 0
+bit-width = 4
+access = "read-only"
 
 [[registers]]
 address = 537935872
@@ -9384,18 +15187,25 @@ access = "read-write"
 address = 537938980
 width = 32
 access = "read-write"
-identity = "WIFI_MAC_TXRX_SUFFIX.DEFAULT_IMAGE_B"
-peripheral = "WIFI_MAC_TXRX_SUFFIX"
-peripheral-type = "WifiMacTxrxSuffix"
-peripheral-module = "wifi_mac_txrx_suffix"
+identity = "SHARED_RADIO_INIT_CONTROL.CONTROL"
+peripheral = "SHARED_RADIO_INIT_CONTROL"
+peripheral-type = "SharedRadioInitControl"
+peripheral-module = "shared_radio_init_control"
 scope = []
-register-method = "default_image_b"
+register-method = "control"
 
 [[registers.fields]]
-svd-name = "LOW_IMAGE_UNKNOWN"
-method = "low_image_unknown"
+svd-name = "WIFI_INIT_LOW_IMAGE_UNKNOWN"
+method = "wifi_init_low_image_unknown"
 bit-offset = 0
 bit-width = 12
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BT_RX_SETUP_BIT_31_UNKNOWN"
+method = "bt_rx_setup_bit_31_unknown"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]
@@ -28033,6 +33843,1288 @@ register-method = "low_rate_secondary_control"
 svd-name = "LOW_RATE_ENABLE"
 method = "low_rate_enable"
 bit-offset = 11
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537954304
+width = 32
+access = "read-only"
+identity = "BTDM_LOW_POWER_CONFIG.STATUS_0000"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "status_0000"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537954308
+width = 32
+access = "write-only"
+identity = "BTDM_LOW_POWER_CONFIG.COMMAND_0004"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "command_0004"
+fields = []
+
+[[registers]]
+address = 537954312
+width = 32
+access = "write-only"
+identity = "BTDM_LOW_POWER_CONFIG.COMMAND_0008"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "command_0008"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537954348
+width = 32
+access = "read-write"
+identity = "BTDM_LOW_POWER_CONFIG.CONFIG0"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "config"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954352
+width = 32
+access = "read-write"
+identity = "BTDM_LOW_POWER_CONFIG.CONFIG1"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "config"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954356
+width = 32
+access = "read-write"
+identity = "BTDM_LOW_POWER_CONFIG.CONFIG2"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "config"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954360
+width = 32
+access = "read-write"
+identity = "BTDM_LOW_POWER_CONFIG.CONFIG3"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "config"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954364
+width = 32
+access = "read-write"
+identity = "BTDM_LOW_POWER_CONFIG.CONFIG4"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "config"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954368
+width = 32
+access = "read-write"
+identity = "BTDM_LOW_POWER_CONFIG.CONFIG5"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "config"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954372
+width = 32
+access = "read-write"
+identity = "BTDM_LOW_POWER_CONFIG.CONFIG6"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "config"
+register-index = 6
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954376
+width = 32
+access = "read-write"
+identity = "BTDM_LOW_POWER_CONFIG.CONFIG7"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+peripheral-type = "BtdmLowPowerConfig"
+peripheral-module = "btdm_low_power_config"
+scope = []
+register-method = "config"
+register-index = 7
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537954588
+width = 32
+access = "write-only"
+identity = "BLE_PHY_INIT_PHASE.INIT_PHASE"
+peripheral = "BLE_PHY_INIT_PHASE"
+peripheral-type = "BlePhyInitPhase"
+peripheral-module = "ble_phy_init_phase"
+scope = []
+register-method = "init_phase"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958400
+width = 32
+access = "read-write"
+identity = "BLE_HW_ACCELERATOR.INIT_CONFIG"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "init_config"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537958404
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_START"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_start"
+
+[[registers.fields]]
+svd-name = "COMMAND"
+method = "command"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958408
+width = 32
+access = "read-write"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_CONFIG"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_config"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537958412
+width = 32
+access = "read-write"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_BLOCK_LENGTH"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_block_length"
+
+[[registers.fields]]
+svd-name = "BYTES"
+method = "bytes"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537958416
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_0"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_key_word_0"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958420
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_1"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_key_word_1"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958424
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_2"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_key_word_2"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958428
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_3"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_key_word_3"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958432
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_INPUT_BUFFER_ADDRESS"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_input_buffer_address"
+
+[[registers.fields]]
+svd-name = "ADDRESS"
+method = "address"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958436
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_OUTPUT_BUFFER_ADDRESS"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_output_buffer_address"
+
+[[registers.fields]]
+svd-name = "ADDRESS"
+method = "address"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958528
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.RESOLV_SEARCH_START"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "resolv_search_start"
+
+[[registers.fields]]
+svd-name = "COMMAND"
+method = "command"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958536
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.RESOLV_LIST_ARGUMENT"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "resolv_list_argument"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537958540
+width = 32
+access = "write-only"
+identity = "BLE_HW_ACCELERATOR.RESOLV_SEARCH_ARGUMENT"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "resolv_search_argument"
+
+[[registers.fields]]
+svd-name = "ARGUMENT_LOW_28"
+method = "argument_low_28"
+bit-offset = 0
+bit-width = 28
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "MODE"
+method = "mode"
+bit-offset = 28
+bit-width = 1
+access = "write-only"
+
+[[registers]]
+address = 537958560
+width = 32
+access = "read-only"
+identity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_METADATA"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "resolv_result_metadata"
+
+[[registers.fields]]
+svd-name = "RESULT_BYTE"
+method = "result_byte"
+bit-offset = 8
+bit-width = 8
+access = "read-only"
+
+[[registers]]
+address = 537958564
+width = 32
+access = "read-only"
+identity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_POINTER_OFFSET"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "resolv_result_pointer_offset"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537958568
+width = 32
+access = "read-only"
+identity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_PRESENT"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "resolv_result_present"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537958584
+width = 32
+access = "read-write"
+identity = "BLE_HW_ACCELERATOR.ENGINE_CONTROL"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "engine_control"
+
+[[registers.fields]]
+svd-name = "ENCRYPT_CONFIG_BITS"
+method = "encrypt_config_bits"
+bit-offset = 0
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESOLV_CONFIG_BIT"
+method = "resolv_config_bit"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537958588
+width = 32
+access = "read-only"
+identity = "BLE_HW_ACCELERATOR.RESOLV_STATUS"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "resolv_status"
+
+[[registers.fields]]
+svd-name = "COMPLETE"
+method = "complete"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers]]
+address = 537958596
+width = 32
+access = "read-only"
+identity = "BLE_HW_ACCELERATOR.ENCRYPT_COMPLETION_STATUS"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "encrypt_completion_status"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537958604
+width = 32
+access = "read-write"
+identity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_0"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "init_sram_region_0"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537958608
+width = 32
+access = "read-write"
+identity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_1"
+peripheral = "BLE_HW_ACCELERATOR"
+peripheral-type = "BleHwAccelerator"
+peripheral-module = "ble_hw_accelerator"
+scope = []
+register-method = "init_sram_region_1"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537964544
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY0"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964560
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY1"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964576
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY2"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964592
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY3"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964608
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY4"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964624
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY5"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 5
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964640
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY6"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 6
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964656
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY7"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 7
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964672
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY8"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 8
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964688
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY9"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 9
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964704
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY10"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 10
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964720
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY11"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 11
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964736
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY12"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 12
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964752
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY13"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 13
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964768
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY14"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 14
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537964784
+width = 32
+access = "read-write"
+identity = "BTDM_SCHEDULER_TABLE.ENTRY15"
+peripheral = "BTDM_SCHEDULER_TABLE"
+peripheral-type = "BtdmSchedulerTable"
+peripheral-module = "btdm_scheduler_table"
+scope = []
+register-method = "entry"
+register-index = 15
+
+[[registers.fields]]
+svd-name = "STATE_LOW_20"
+method = "state_low_20"
+bit-offset = 0
+bit-width = 20
+access = "read-write"
+
+[[registers]]
+address = 537972736
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.COMMAND_0000"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "command_0000"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537972740
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.COMMAND_0004"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "command_0004"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537972744
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.COMMAND_0008"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "command_0008"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537972752
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.COMMAND_0010"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "command_0010"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537972756
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.COMMAND_0014"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "command_0014"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537972764
+width = 32
+access = "read-write"
+identity = "BTDM_RUNTIME_CONTROL.STATE_001C"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "state_001c"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537972768
+width = 32
+access = "read-write"
+identity = "BTDM_RUNTIME_CONTROL.STATE_0020"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "state_0020"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537972772
+width = 32
+access = "read-write"
+identity = "BTDM_RUNTIME_CONTROL.STATE_0024"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "state_0024"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537972780
+width = 32
+access = "read-write"
+identity = "BTDM_RUNTIME_CONTROL.STATE_002C"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "state_002c"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537972788
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.COMMAND_0034"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "command_0034"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537972792
+width = 32
+access = "read-only"
+identity = "BTDM_RUNTIME_CONTROL.STATUS_0038"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "status_0038"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537972800
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.COMMAND_0040"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "command_0040"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537972804
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.COMMAND_0044"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "command_0044"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537972808
+width = 32
+access = "read-only"
+identity = "BTDM_RUNTIME_CONTROL.STATUS_0048"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "status_0048"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537972812
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.COMMAND_004C"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "command_004c"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537972824
+width = 32
+access = "read-write"
+identity = "BTDM_RUNTIME_CONTROL.CONTROL_0058"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "control_0058"
+
+[[registers.fields]]
+svd-name = "CONTROL_0"
+method = "control_0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_1"
+method = "control_1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_4"
+method = "control_4"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537972836
+width = 32
+access = "read-write"
+identity = "BTDM_RUNTIME_CONTROL.VALUE_0064"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "value_0064"
+fields = []
+
+[[registers]]
+address = 537972840
+width = 32
+access = "write-only"
+identity = "BTDM_RUNTIME_CONTROL.VALUE_0068"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "value_0068"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_24"
+method = "value_low_24"
+bit-offset = 0
+bit-width = 24
+access = "write-only"
+
+[[registers]]
+address = 537972844
+width = 32
+access = "read-write"
+identity = "BTDM_RUNTIME_CONTROL.VALUE_006C"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "value_006c"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537972856
+width = 32
+access = "read-write"
+identity = "BTDM_RUNTIME_CONTROL.CONTROL_0078"
+peripheral = "BTDM_RUNTIME_CONTROL"
+peripheral-type = "BtdmRuntimeControl"
+peripheral-module = "btdm_runtime_control"
+scope = []
+register-method = "control_0078"
+
+[[registers.fields]]
+svd-name = "CONTROL_25"
+method = "control_25"
+bit-offset = 25
 bit-width = 1
 access = "read-write"
 

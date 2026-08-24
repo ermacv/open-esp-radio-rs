@@ -4,10 +4,13 @@
 mod agc;
 mod agc_runtime;
 mod baseband;
+#[cfg(feature = "validation-probes")]
+mod bluetooth_baseband;
+mod bluetooth_interrupt;
+mod bluetooth_scheduler;
 mod cfr;
 pub mod clock;
 mod coex;
-mod coex_bluetooth;
 mod frequency;
 mod generated;
 mod iq_estimator;
@@ -53,6 +56,7 @@ pub mod validation;
 #[cfg(feature = "validation-probes")]
 mod validation_transactions;
 pub use agc_runtime::ForcedRxGain;
+pub use bluetooth_interrupt::BluetoothInterruptObservation;
 pub use cfr::CfrValue;
 pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
 /// Reviewed writable MAC interrupt mask.
@@ -118,6 +122,166 @@ pub use mac_tx_power_init::{
 };
 use open_esp_radio_esp32s31_pac_raw as svd;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
+
+/// Private Wi-Fi and shared-radio owners used by one exclusive Wi-Fi route.
+struct WifiRadioPeripheralOwners {
+    wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
+    radio_phy: RadioPhyRegisters,
+    coexistence: svd::peripheral_ownership::CoexistencePeripherals,
+    shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
+}
+
+/// Unique restricted owner of the shared radio-PHY register partition.
+///
+/// This component is created only while the complete [`RadioHardware`] root
+/// is routed into Wi-Fi or Bluetooth. It has no acquisition or release API:
+/// callers can only borrow it through the active protocol route, so the
+/// physical PHY partition can never outlive or diverge from that route.
+///
+/// The type exposes only reviewed, named PHY transactions. It contains no
+/// Wi-Fi MAC, Bluetooth controller, coexistence, or shared-baseband owner.
+#[must_use = "the shared PHY owner must remain inside its active radio route"]
+pub struct RadioPhyRegisters {
+    peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
+}
+
+/// Bluetooth owners retained, but not exposed, while Wi-Fi is exclusive.
+struct RetainedBluetoothPeripheralOwners {
+    bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
+    bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
+}
+
+/// Wi-Fi owners retained, but not exposed, while Bluetooth is exclusive.
+struct RetainedWifiPeripheralOwners {
+    wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
+    wifi_interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
+}
+
+/// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
+///
+/// This is the sole production acquisition root. It can be consumed by
+/// exactly one standalone protocol route; neither route can manufacture a
+/// second owner. Both routes can return the complete root after their task
+/// and interrupt capabilities have been reunited. Protocol-specific cached
+/// state is deliberately not retained in this neutral owner.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::RadioHardware;
+///
+/// let hardware = RadioHardware::take().unwrap();
+/// let _wifi = hardware.into_wifi();
+/// let _bluetooth = hardware.into_bluetooth();
+/// ```
+#[must_use = "dropping the radio root permanently loses the unique hardware capability"]
+pub struct RadioHardware {
+    wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
+    wifi_interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
+    radio_phy: svd::peripheral_ownership::RadioPhyPeripherals,
+    coexistence: svd::peripheral_ownership::CoexistencePeripherals,
+    bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
+    bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
+    shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
+}
+
+impl RadioHardware {
+    /// Acquire the generated radio singleton once.
+    pub fn take() -> Option<Self> {
+        svd::Peripherals::take().map(Self::from_peripherals)
+    }
+
+    /// Bind the generated singleton to the protocol-neutral restricted root.
+    fn from_peripherals(peripherals: svd::Peripherals) -> Self {
+        let svd::peripheral_ownership::PeripheralPartitions {
+            wifi_mac,
+            wifi_interrupts,
+            radio_phy,
+            coexistence,
+            bluetooth,
+            bluetooth_interrupts,
+            shared_radio,
+        } = svd::peripheral_ownership::partition(peripherals);
+        Self {
+            wifi_mac,
+            wifi_interrupts,
+            radio_phy,
+            coexistence,
+            bluetooth,
+            bluetooth_interrupts,
+            shared_radio,
+        }
+    }
+
+    /// Construct the complete root inside one isolated validation image.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn for_validation() -> Self {
+        Self::from_peripherals(svd::peripheral_ownership::peripherals_for_validation())
+    }
+
+    /// Consume the neutral root into the exclusive standalone Wi-Fi route.
+    pub fn into_wifi(self) -> WifiColdRegisters {
+        let Self {
+            wifi_mac,
+            wifi_interrupts,
+            radio_phy,
+            coexistence,
+            bluetooth,
+            bluetooth_interrupts,
+            shared_radio,
+        } = self;
+        WifiColdRegisters {
+            registers: WifiRadioRegisters {
+                peripherals: WifiRadioPeripheralOwners {
+                    wifi_mac,
+                    radio_phy: RadioPhyRegisters {
+                        peripherals: radio_phy,
+                    },
+                    coexistence,
+                    shared_radio,
+                },
+                retained_bluetooth: RetainedBluetoothPeripheralOwners {
+                    bluetooth,
+                    bluetooth_interrupts,
+                },
+                wifi_baseband_enabled: false,
+            },
+            interrupts: wifi_interrupts,
+        }
+    }
+
+    /// Consume the neutral root into the exclusive standalone Bluetooth route.
+    ///
+    /// This transition is ownership-only. It performs no controller reset,
+    /// clock, interrupt, or enable transaction.
+    pub fn into_bluetooth(self) -> BluetoothColdRegisters {
+        let Self {
+            wifi_mac,
+            wifi_interrupts,
+            radio_phy,
+            coexistence,
+            bluetooth,
+            bluetooth_interrupts,
+            shared_radio,
+        } = self;
+        BluetoothColdRegisters {
+            task: BluetoothTaskRegisters {
+                bluetooth,
+                radio_phy: RadioPhyRegisters {
+                    peripherals: radio_phy,
+                },
+                coexistence,
+                shared_radio,
+                retained_wifi: RetainedWifiPeripheralOwners {
+                    wifi_mac,
+                    wifi_interrupts,
+                },
+            },
+            interrupts: BluetoothInterruptSetup {
+                peripherals: bluetooth_interrupts,
+            },
+        }
+    }
+}
 
 /// Known MAC interrupt bits recovered from reviewed vendor transactions.
 ///
@@ -370,34 +534,37 @@ impl Field32 {
 /// writable transaction must be an explicitly reviewed capability:
 ///
 /// ```compile_fail
-/// use open_esp_radio_esp32s31_pac::RadioRegisters;
+/// use open_esp_radio_esp32s31_pac::WifiRadioRegisters;
 ///
-/// let unreviewed_write = RadioRegisters::write_register;
+/// let unreviewed_write = WifiRadioRegisters::write_register;
 /// ```
-pub struct RadioRegisters {
-    peripherals: svd::peripheral_ownership::RadioPeripherals,
+pub struct WifiRadioRegisters {
+    peripherals: WifiRadioPeripheralOwners,
+    retained_bluetooth: RetainedBluetoothPeripheralOwners,
     wifi_baseband_enabled: bool,
 }
 
-impl RadioRegisters {
-    fn from_peripherals(peripherals: svd::peripheral_ownership::RadioPeripherals) -> Self {
-        Self {
-            peripherals,
-            wifi_baseband_enabled: false,
-        }
-    }
-
+impl WifiRadioRegisters {
     #[cfg(test)]
     fn for_test() -> Self {
-        let peripherals = svd::peripheral_ownership::peripherals_for_validation();
-        let (radio, _) = svd::peripheral_ownership::split(peripherals);
-        Self::from_peripherals(radio)
+        RadioHardware::for_validation().into_wifi().into_running().0
+    }
+
+    /// Reunite a quiescent Wi-Fi task owner with its inactive interrupt setup.
+    ///
+    /// The caller must first disable the CPU routes and recover `interrupts`
+    /// from the finite ISR epoch. This conversion performs no MMIO.
+    pub fn into_cold(self, interrupts: MacInterruptSetup) -> WifiColdRegisters {
+        WifiColdRegisters {
+            registers: self,
+            interrupts: interrupts.into_peripherals(),
+        }
     }
 
     /// Synchronize the owned Wi-Fi-enable image after a platform PAC update.
     ///
     /// This state replaces deep calibration reads through a second, custom
-    /// `MODEM_SYSCON` description. The unique [`RadioRegisters`] owner and
+    /// `MODEM_SYSCON` description. The unique [`WifiRadioRegisters`] owner and
     /// its platform token update it together.
     #[doc(hidden)]
     pub fn set_wifi_baseband_enabled_image(&mut self, enabled: bool) {
@@ -408,6 +575,18 @@ impl RadioRegisters {
     #[doc(hidden)]
     pub fn wifi_baseband_enabled_image(&self) -> bool {
         self.wifi_baseband_enabled
+    }
+
+    /// Borrow the shared PHY component without exposing another owner.
+    #[doc(hidden)]
+    pub fn radio_phy(&self) -> &RadioPhyRegisters {
+        &self.peripherals.radio_phy
+    }
+
+    /// Mutably borrow the shared PHY component without exposing another owner.
+    #[doc(hidden)]
+    pub fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
+        &mut self.peripherals.radio_phy
     }
 
     /// Order descriptor memory and MMIO at a hardware ownership boundary.
@@ -431,43 +610,59 @@ impl RadioRegisters {
 /// removes MAC and WDEVPWR interrupt operations from the ordinary task owner
 /// and returns the initial setup token for a later dual-ISR handoff. A closed
 /// ISR epoch can return the same peripheral ownership to another setup token.
-pub struct ColdRadioRegisters {
-    registers: RadioRegisters,
-    interrupts: svd::peripheral_ownership::InterruptPeripherals,
+pub struct WifiColdRegisters {
+    registers: WifiRadioRegisters,
+    interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
 }
 
-impl ColdRadioRegisters {
-    /// Acquire the generated radio singleton once.
-    pub fn take() -> Option<Self> {
-        svd::Peripherals::take().map(Self::from_peripherals)
-    }
-
-    /// Bind the unique generated PAC singleton to the cold radio lifecycle.
-    pub fn from_peripherals(peripherals: svd::Peripherals) -> Self {
-        let (radio, interrupts) = svd::peripheral_ownership::split(peripherals);
-        Self {
-            registers: RadioRegisters::from_peripherals(radio),
-            interrupts,
-        }
-    }
-
-    #[cfg(any(test, feature = "validation-probes"))]
-    #[doc(hidden)]
-    pub fn for_validation() -> Self {
-        Self::from_peripherals(svd::peripheral_ownership::peripherals_for_validation())
-    }
-
+impl WifiColdRegisters {
     /// Complete the one-way cold-to-running ownership transition.
     ///
     /// This operation itself performs no MMIO. The returned setup token keeps
     /// MAC interrupts masked until its consuming activation transaction
     /// creates the ISR-only [`MacInterruptRegisters`] and
     /// [`MacPowerInterruptRegisters`] capabilities.
-    pub fn into_running(self) -> (RadioRegisters, MacInterruptSetup) {
+    pub fn into_running(self) -> (WifiRadioRegisters, MacInterruptSetup) {
         (
             self.registers,
             MacInterruptSetup::from_peripherals(self.interrupts),
         )
+    }
+
+    /// Return every Wi-Fi, Bluetooth and shared owner to the neutral root.
+    ///
+    /// This is an ownership-only transition. Higher layers remain responsible
+    /// for completing their clock/reset shutdown before changing protocols;
+    /// the next Wi-Fi route starts with a fresh disabled baseband cache.
+    pub fn release(self) -> RadioHardware {
+        let Self {
+            registers:
+                WifiRadioRegisters {
+                    peripherals:
+                        WifiRadioPeripheralOwners {
+                            wifi_mac,
+                            radio_phy,
+                            coexistence,
+                            shared_radio,
+                        },
+                    retained_bluetooth:
+                        RetainedBluetoothPeripheralOwners {
+                            bluetooth,
+                            bluetooth_interrupts,
+                        },
+                    wifi_baseband_enabled: _,
+                },
+            interrupts: wifi_interrupts,
+        } = self;
+        RadioHardware {
+            wifi_mac,
+            wifi_interrupts,
+            radio_phy: radio_phy.peripherals,
+            coexistence,
+            bluetooth,
+            bluetooth_interrupts,
+            shared_radio,
+        }
     }
 
     /// Borrow the radio-register capability during the cold lifecycle.
@@ -478,13 +673,13 @@ impl ColdRadioRegisters {
     /// runtime register owner.  Production crates above HAL never receive
     /// either side of this borrow.
     #[doc(hidden)]
-    pub fn radio(&self) -> &RadioRegisters {
+    pub fn radio(&self) -> &WifiRadioRegisters {
         &self.registers
     }
 
     /// Mutably borrow the radio-register capability during the cold lifecycle.
     #[doc(hidden)]
-    pub fn radio_mut(&mut self) -> &mut RadioRegisters {
+    pub fn radio_mut(&mut self) -> &mut WifiRadioRegisters {
         &mut self.registers
     }
 
@@ -507,12 +702,125 @@ impl ColdRadioRegisters {
     }
 }
 
+/// Exclusive standalone Bluetooth owner before task/interrupt separation.
+///
+/// The cold type exposes no controller transaction. It only preserves the
+/// reviewed raw partitions until a higher layer establishes lifecycle order.
+#[must_use = "the cold Bluetooth route retains every radio owner"]
+pub struct BluetoothColdRegisters {
+    task: BluetoothTaskRegisters,
+    interrupts: BluetoothInterruptSetup,
+}
+
+impl BluetoothColdRegisters {
+    /// Separate the ordinary task owner from the inactive interrupt owner.
+    ///
+    /// This conversion performs no MMIO and does not claim that the hardware
+    /// interrupt route has been configured or enabled.
+    pub fn separate_interrupt_owner(self) -> (BluetoothTaskRegisters, BluetoothInterruptSetup) {
+        (self.task, self.interrupts)
+    }
+
+    /// Return every Wi-Fi, Bluetooth and shared owner to the neutral root.
+    pub fn release(self) -> RadioHardware {
+        let Self { task, interrupts } = self;
+        task.into_hardware(interrupts)
+    }
+}
+
+/// Ordinary task-side owner for one exclusive standalone Bluetooth route.
+///
+/// Wi-Fi and all shared resources remain retained privately. Methods on this
+/// owner are individually reviewed register transactions; possessing it does
+/// not itself prove that common PHY, BTBB or controller lifecycle prerequisites
+/// have run.
+#[must_use = "the Bluetooth task owner must be reunited before release"]
+pub struct BluetoothTaskRegisters {
+    bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
+    radio_phy: RadioPhyRegisters,
+    coexistence: svd::peripheral_ownership::CoexistencePeripherals,
+    shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
+    retained_wifi: RetainedWifiPeripheralOwners,
+}
+
+impl BluetoothTaskRegisters {
+    fn into_hardware(self, interrupts: BluetoothInterruptSetup) -> RadioHardware {
+        let Self {
+            bluetooth,
+            radio_phy,
+            coexistence,
+            shared_radio,
+            retained_wifi:
+                RetainedWifiPeripheralOwners {
+                    wifi_mac,
+                    wifi_interrupts,
+                },
+        } = self;
+        RadioHardware {
+            wifi_mac,
+            wifi_interrupts,
+            radio_phy: radio_phy.peripherals,
+            coexistence,
+            bluetooth,
+            bluetooth_interrupts: interrupts.peripherals,
+            shared_radio,
+        }
+    }
+
+    /// Reunite a quiescent Bluetooth task owner with its inactive IRQ owner.
+    ///
+    /// This conversion performs no MMIO.
+    pub fn into_cold(self, interrupts: BluetoothInterruptSetup) -> BluetoothColdRegisters {
+        BluetoothColdRegisters {
+            task: self,
+            interrupts,
+        }
+    }
+
+    /// Borrow the protocol-neutral PHY partition for one named HAL scope.
+    ///
+    /// The returned owner cannot be taken, released, or retained after this
+    /// task owner is reunited with its interrupt bank.
+    #[doc(hidden)]
+    pub fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
+        &mut self.radio_phy
+    }
+}
+
+/// Inactive owner of the reviewed Bluetooth interrupt partition.
+#[must_use = "the Bluetooth interrupt setup must remain paired with its task owner"]
+pub struct BluetoothInterruptSetup {
+    peripherals: svd::peripheral_ownership::BluetoothInterruptPeripherals,
+}
+
+/// Bluetooth interrupt-bank capability for a future powered ISR epoch.
+///
+/// No public transition currently constructs this type. A later lifecycle
+/// slice must prove clock/reset/mask setup and bind the CPU route before it can
+/// expose the reviewed finite capture-and-acknowledge transaction.
+#[must_use = "the Bluetooth interrupt owner must be deactivated and reunited"]
+pub struct BluetoothInterruptRegisters {
+    peripherals: svd::peripheral_ownership::BluetoothInterruptPeripherals,
+}
+
+impl BluetoothInterruptRegisters {
+    /// Return the unchanged partition to inactive setup ownership.
+    ///
+    /// The caller must disable the CPU route first. This method performs no
+    /// controller transaction.
+    pub fn deactivate(self) -> BluetoothInterruptSetup {
+        BluetoothInterruptSetup {
+            peripherals: self.peripherals,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ColdRadioRegisters, Field32, MacInterruptMask, RadioRegisters, Register32, mac};
+    use super::{Field32, MacInterruptMask, RadioHardware, Register32, WifiRadioRegisters, mac};
 
     fn assert_valid(register: Register32) {
-        assert!(RadioRegisters::contains(register.address()));
+        assert!(WifiRadioRegisters::contains(register.address()));
         assert_eq!(register.address() & 3, 0);
     }
 
@@ -530,18 +838,42 @@ mod tests {
     fn cold_owner_is_consumed_by_interrupt_setup_split() {
         // This host test does not access MMIO and creates no second
         // radio owner; it exercises only the type-level ownership transition.
-        let registers = ColdRadioRegisters::for_validation();
+        let registers = RadioHardware::for_validation().into_wifi();
         let (_running, _setup) = registers.into_running();
+    }
+
+    #[test]
+    fn wifi_route_roundtrip_returns_the_complete_root() {
+        let wifi = RadioHardware::for_validation().into_wifi();
+        let (task, setup) = wifi.into_running();
+        let hardware = task.into_cold(setup).release();
+
+        // A lossless Wi-Fi release makes the mutually exclusive Bluetooth
+        // route available without stealing a second raw singleton.
+        let bluetooth = hardware.into_bluetooth();
+        let _hardware = bluetooth.release();
+    }
+
+    #[test]
+    fn bluetooth_task_and_interrupt_owners_roundtrip_without_mmio() {
+        let bluetooth = RadioHardware::for_validation().into_bluetooth();
+        let (task, setup) = bluetooth.separate_interrupt_owner();
+        let hardware = task.into_cold(setup).release();
+
+        // The inverse route proves that Wi-Fi partitions were retained while
+        // Bluetooth task and IRQ authority were separated.
+        let wifi = hardware.into_wifi();
+        let _hardware = wifi.release();
     }
 
     #[test]
     fn generated_tx_banks_reverse_physical_order_exactly_once() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let control = &registers.peripherals.wifi_mac_tx_queue_control;
-        let vector = &registers.peripherals.wifi_mac_tx_queue_vector;
-        let completion = &registers.peripherals.wifi_mac_tx_completion;
+        let registers = WifiRadioRegisters::for_test();
+        let control = &registers.peripherals.wifi_mac.wifi_mac_tx_queue_control;
+        let vector = &registers.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
+        let completion = &registers.peripherals.wifi_mac.wifi_mac_tx_completion;
         assert_eq!(control.control(3).as_ptr() as usize, 0x2010_4d70);
         assert_eq!(control.control(0).as_ptr() as usize, 0x2010_4d40);
         assert_eq!(vector.plcp1(3).as_ptr() as usize, 0x2010_54d8);
@@ -558,8 +890,8 @@ mod tests {
     fn generated_tx_block_ack_debug_geometry_matches_complete_decoders() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let queues = &registers.peripherals.wifi_mac_rx_dma;
+        let registers = WifiRadioRegisters::for_test();
+        let queues = &registers.peripherals.wifi_mac.wifi_mac_rx_dma;
         assert_eq!(
             queues.tx_queue_information_q0().as_ptr() as usize,
             0x2010_5524
@@ -585,7 +917,10 @@ mod tests {
             0x2010_51d4
         );
 
-        let internal = &registers.peripherals.wifi_mac_internal_tx_block_ack;
+        let internal = &registers
+            .peripherals
+            .wifi_mac
+            .wifi_mac_internal_tx_block_ack;
         assert_eq!(internal.bitmap_high().as_ptr() as usize, 0x2010_429c);
         assert_eq!(internal.control_sequence().as_ptr() as usize, 0x2010_42ac);
     }
@@ -594,8 +929,8 @@ mod tests {
     fn generated_rx_block_ack_banks_match_complete_hal_ampdu_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let block = &registers.peripherals.wifi_mac_rx_dma;
+        let registers = WifiRadioRegisters::for_test();
+        let block = &registers.peripherals.wifi_mac.wifi_mac_rx_dma;
         for physical_index in 0..8 {
             let base = 0x2010_4178 + physical_index * 0x24;
             assert_eq!(
@@ -661,10 +996,11 @@ mod tests {
     fn generated_sta_rx_policy_registers_match_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
+        let registers = WifiRadioRegisters::for_test();
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_bssid_policy
                 .bssid_high(0)
                 .as_ptr() as usize,
@@ -673,34 +1009,52 @@ mod tests {
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_interface_address
                 .address_high(0)
                 .as_ptr() as usize,
             0x2010_4060
         );
         assert_eq!(
-            registers.peripherals.wifi_mac_rx_filter.policy(0).as_ptr() as usize,
+            registers
+                .peripherals
+                .wifi_mac
+                .wifi_mac_rx_filter
+                .policy(0)
+                .as_ptr() as usize,
             0x2010_40d8
         );
         assert_eq!(
-            registers.peripherals.wifi_mac_rx_filter.policy(3).as_ptr() as usize,
+            registers
+                .peripherals
+                .wifi_mac
+                .wifi_mac_rx_filter
+                .policy(3)
+                .as_ptr() as usize,
             0x2010_40e4
         );
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_rx_filter
                 .misc_packet_policy()
                 .as_ptr() as usize,
             0x2010_40f4
         );
         assert_eq!(
-            registers.peripherals.wifi_mac_control.control().as_ptr() as usize,
+            registers
+                .peripherals
+                .wifi_mac
+                .wifi_mac_control
+                .control()
+                .as_ptr() as usize,
             0x2010_4cac
         );
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_regdma_control
                 .control()
                 .as_ptr() as usize,
@@ -712,8 +1066,8 @@ mod tests {
     fn generated_interface_address_pairs_match_complete_leaf_stride() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let addresses = &registers.peripherals.wifi_mac_interface_address;
+        let registers = WifiRadioRegisters::for_test();
+        let addresses = &registers.peripherals.wifi_mac.wifi_mac_interface_address;
         for interface in 0..4 {
             assert_eq!(
                 addresses.address_low(interface).as_ptr() as usize,
@@ -730,8 +1084,8 @@ mod tests {
     fn generated_station_tsf_load_matches_complete_hal_tsf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let load = &registers.peripherals.wifi_mac_sta_tsf_load;
+        let registers = WifiRadioRegisters::for_test();
+        let load = &registers.peripherals.wifi_mac.wifi_mac_sta_tsf_load;
         assert_eq!(load.control().as_ptr() as usize, 0x2010_d814);
         assert_eq!(load.value_low().as_ptr() as usize, 0x2010_d818);
         assert_eq!(load.value_high().as_ptr() as usize, 0x2010_d81c);
@@ -740,6 +1094,7 @@ mod tests {
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_rtc_timer_update
                 .sta_tsf_control()
                 .as_ptr() as usize,
@@ -751,10 +1106,11 @@ mod tests {
     fn generated_cold_handshake_matches_complete_hal_init_prefix() {
         // This host test inspects a generated register pointer only
         // and performs no volatile access.
-        let registers = RadioRegisters::for_test();
+        let registers = WifiRadioRegisters::for_test();
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_cold_handshake
                 .control()
                 .as_ptr() as usize,
@@ -766,10 +1122,11 @@ mod tests {
     fn generated_crypto_aux_register_matches_complete_cold_leaf() {
         // This host test inspects a generated register pointer only
         // and performs no volatile access.
-        let registers = RadioRegisters::for_test();
+        let registers = WifiRadioRegisters::for_test();
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_crypto_control
                 .init_aux_unknown()
                 .as_ptr() as usize,
@@ -781,8 +1138,8 @@ mod tests {
     fn generated_rx_cold_prefix_registers_match_complete_leaf() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let dma = &registers.peripherals.wifi_mac_rx_dma;
+        let registers = WifiRadioRegisters::for_test();
+        let dma = &registers.peripherals.wifi_mac.wifi_mac_rx_dma;
         assert_eq!(dma.rx_cold_control_unknown().as_ptr() as usize, 0x2010_407c);
         assert_eq!(dma.rx_buffer_limit_unknown().as_ptr() as usize, 0x2010_4c68);
         assert_eq!(dma.rx_buffer_base_unknown().as_ptr() as usize, 0x2010_4c6c);
@@ -796,11 +1153,12 @@ mod tests {
     fn generated_mac_enable_gate_matches_complete_leaf() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = ColdRadioRegisters::for_validation();
+        let registers = RadioHardware::for_validation().into_wifi();
         assert_eq!(
             registers
                 .radio()
                 .peripherals
+                .wifi_mac
                 .wifi_mac_core_enable
                 .control()
                 .as_ptr() as usize,
@@ -820,8 +1178,12 @@ mod tests {
     fn generated_debug_oracle_registers_keep_one_canonical_owner() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = ColdRadioRegisters::for_validation();
-        let he = &registers.radio().peripherals.wifi_mac_he_init_prefix;
+        let registers = RadioHardware::for_validation().into_wifi();
+        let he = &registers
+            .radio()
+            .peripherals
+            .wifi_mac
+            .wifi_mac_he_init_prefix;
         assert_eq!(he.parent_enable().as_ptr() as usize, 0x2010_4c2c);
         assert_eq!(he.interrupt_1_raw().as_ptr() as usize, 0x2010_4c30);
         assert_eq!(he.interrupt_1_status().as_ptr() as usize, 0x2010_4c34);
@@ -836,6 +1198,7 @@ mod tests {
             registers
                 .radio()
                 .peripherals
+                .wifi_mac
                 .wifi_mac_rx_dma
                 .csi_dump_config()
                 .as_ptr() as usize,
@@ -847,8 +1210,8 @@ mod tests {
     fn generated_phy_low_rate_registers_match_complete_rom_leaves() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let bb = &registers.peripherals.phy_agc_oracle;
+        let registers = WifiRadioRegisters::for_test();
+        let bb = &registers.peripherals.radio_phy.peripherals.phy_agc_oracle;
         assert_eq!(bb.low_rate_primary_control().as_ptr() as usize, 0x2010_8060);
         assert_eq!(
             bb.low_rate_secondary_control().as_ptr() as usize,
@@ -860,10 +1223,18 @@ mod tests {
     fn generated_phy_feature_and_watchdog_fields_match_complete_rom_leaves() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let agc = &registers.peripherals.phy_agc_oracle;
-        let frequency = &registers.peripherals.phy_frequency_channel_oracle;
-        let baseband = &registers.peripherals.phy_baseband_config_oracle;
+        let registers = WifiRadioRegisters::for_test();
+        let agc = &registers.peripherals.radio_phy.peripherals.phy_agc_oracle;
+        let frequency = &registers
+            .peripherals
+            .radio_phy
+            .peripherals
+            .phy_frequency_channel_oracle;
+        let baseband = &registers
+            .peripherals
+            .radio_phy
+            .peripherals
+            .phy_baseband_config_oracle;
 
         assert_eq!(agc.csi_dump_force_control().as_ptr() as usize, 0x2010_70a4);
         assert_eq!(
@@ -884,8 +1255,8 @@ mod tests {
     fn generated_last_rx_buffer_table_matches_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let table = &registers.peripherals.wifi_mac_last_rx_buffer;
+        let registers = WifiRadioRegisters::for_test();
+        let table = &registers.peripherals.wifi_mac.wifi_mac_last_rx_buffer;
         assert_eq!(table.control().as_ptr() as usize, 0x2010_4120);
         for entry in 0..6 {
             assert_eq!(
@@ -904,6 +1275,7 @@ mod tests {
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_rx_csi_control
                 .control()
                 .as_ptr() as usize,
@@ -915,8 +1287,8 @@ mod tests {
     fn generated_mac_txrx_prefix_matches_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let init = &registers.peripherals.wifi_mac_txrx_prefix;
+        let registers = WifiRadioRegisters::for_test();
+        let init = &registers.peripherals.wifi_mac.wifi_mac_txrx_prefix;
         for queue in 0..4 {
             assert_eq!(
                 init.rx_queue_default(queue).as_ptr() as usize,
@@ -934,8 +1306,8 @@ mod tests {
     fn generated_mac_antenna_init_matches_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let init = &registers.peripherals.wifi_mac_antenna_init;
+        let registers = WifiRadioRegisters::for_test();
+        let init = &registers.peripherals.wifi_mac.wifi_mac_antenna_init;
         assert_eq!(init.common_control().as_ptr() as usize, 0x2010_42b0);
         for physical_bank in 0..4 {
             assert_eq!(
@@ -947,6 +1319,7 @@ mod tests {
             assert_eq!(
                 registers
                     .peripherals
+                    .wifi_mac
                     .wifi_mac_tx_queue_vector
                     .length_control(physical_bank - 4)
                     .as_ptr() as usize,
@@ -959,8 +1332,8 @@ mod tests {
     fn generated_mac_coex_init_matches_complete_setter_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let coex = &registers.peripherals.wifi_mac_coex_init;
+        let registers = WifiRadioRegisters::for_test();
+        let coex = &registers.peripherals.coexistence.wifi_mac_coex_init;
         assert_eq!(coex.rx_pti().as_ptr() as usize, 0x2010_42fc);
         assert_eq!(
             coex.ofdma_tb_and_beamforming().as_ptr() as usize,
@@ -974,8 +1347,8 @@ mod tests {
     fn generated_mac_he_prefix_matches_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let init = &registers.peripherals.wifi_mac_he_init_prefix;
+        let registers = WifiRadioRegisters::for_test();
+        let init = &registers.peripherals.wifi_mac.wifi_mac_he_init_prefix;
         assert_eq!(init.rx_field_control().as_ptr() as usize, 0x2010_4048);
         assert_eq!(init.bf_mode_control().as_ptr() as usize, 0x2010_409c);
         assert_eq!(init.bf_report_rate().as_ptr() as usize, 0x2010_4464);
@@ -984,6 +1357,7 @@ mod tests {
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_beamforming_feedback_test
                 .configuration()
                 .as_ptr() as usize,
@@ -991,6 +1365,8 @@ mod tests {
         );
         assert_eq!(
             registers
+                .peripherals
+                .radio_phy
                 .peripherals
                 .phy_agc_oracle
                 .agc_init_high_control()
@@ -1003,12 +1379,12 @@ mod tests {
     fn generated_mac_he_tb_diagnostics_match_complete_blob_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let statistics = &registers.peripherals.wifi_mac_he_tb_statistics;
+        let registers = WifiRadioRegisters::for_test();
+        let statistics = &registers.peripherals.wifi_mac.wifi_mac_he_tb_statistics;
         assert_eq!(statistics.rx_trigger().as_ptr() as usize, 0x2010_43a0);
         assert_eq!(statistics.tb_transmission().as_ptr() as usize, 0x2010_43a4);
 
-        let diagnostics = &registers.peripherals.wifi_mac_he_tb_diagnostics;
+        let diagnostics = &registers.peripherals.wifi_mac.wifi_mac_he_tb_diagnostics;
         assert_eq!(diagnostics.timing().as_ptr() as usize, 0x2010_44f4);
         assert_eq!(diagnostics.psdu().as_ptr() as usize, 0x2010_44f8);
         assert_eq!(diagnostics.trigger().as_ptr() as usize, 0x2010_44fc);
@@ -1019,8 +1395,8 @@ mod tests {
     fn generated_mac_he_ofdma_diagnostics_match_complete_blob_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let bsr = &registers.peripherals.wifi_mac_he_buffer_status;
+        let registers = WifiRadioRegisters::for_test();
+        let bsr = &registers.peripherals.wifi_mac.wifi_mac_he_buffer_status;
         for tid in 0..8 {
             assert_eq!(
                 bsr.hardware_bsr(tid).as_ptr() as usize,
@@ -1033,7 +1409,7 @@ mod tests {
         }
         assert_eq!(bsr.control().as_ptr() as usize, 0x2010_4db8);
 
-        let vectors = &registers.peripherals.wifi_mac_tx_queue_vector;
+        let vectors = &registers.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
         for physical_queue in 0..4 {
             assert_eq!(
                 vectors.vht_signal_1(physical_queue).as_ptr() as usize,
@@ -1051,24 +1427,31 @@ mod tests {
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_beamforming_report
                 .average_snr()
                 .as_ptr() as usize,
             0x2010_5f94
         );
 
-        let trigger = &registers.peripherals.wifi_mac_he_trigger_rx_diagnostics;
+        let trigger = &registers
+            .peripherals
+            .wifi_mac
+            .wifi_mac_he_trigger_rx_diagnostics;
         assert_eq!(trigger.state().as_ptr() as usize, 0x2010_4508);
         assert_eq!(trigger.basic_user().as_ptr() as usize, 0x2010_451c);
         assert_eq!(trigger.common_phy().as_ptr() as usize, 0x2010_4520);
         assert_eq!(trigger.common_trigger().as_ptr() as usize, 0x2010_4524);
         assert_eq!(trigger.packet_counts().as_ptr() as usize, 0x2010_452c);
 
-        let obss = &registers.peripherals.wifi_mac_he_obss_narrow_band_ru;
+        let obss = &registers
+            .peripherals
+            .wifi_mac
+            .wifi_mac_he_obss_narrow_band_ru;
         assert_eq!(obss.disable_bitmap().as_ptr() as usize, 0x2010_4e9c);
         assert_eq!(obss.control().as_ptr() as usize, 0x2010_4ea0);
 
-        let timers = &registers.peripherals.wifi_mac_he_mu_edca_timer;
+        let timers = &registers.peripherals.wifi_mac.wifi_mac_he_mu_edca_timer;
         for index in 0..4 {
             assert_eq!(
                 timers.timer(index).as_ptr() as usize,
@@ -1081,15 +1464,15 @@ mod tests {
     fn generated_mac_rx_statistics_match_complete_blob_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let colors = &registers.peripherals.wifi_mac_he_color_collision;
+        let registers = WifiRadioRegisters::for_test();
+        let colors = &registers.peripherals.wifi_mac.wifi_mac_he_color_collision;
         assert_eq!(colors.bss_color_bitmap_low().as_ptr() as usize, 0x2010_4040);
         assert_eq!(
             colors.bss_color_bitmap_high().as_ptr() as usize,
             0x2010_4044
         );
 
-        let statistics = &registers.peripherals.wifi_mac_rx_statistics;
+        let statistics = &registers.peripherals.wifi_mac.wifi_mac_rx_statistics;
         assert_eq!(statistics.mpdu_and_cfo().as_ptr() as usize, 0x2010_430c);
         assert_eq!(
             statistics.nrx_error_power_drop().as_ptr() as usize,
@@ -1106,16 +1489,19 @@ mod tests {
         );
         assert_eq!(statistics.trigger().as_ptr() as usize, 0x2010_439c);
 
-        let hangs = &registers.peripherals.wifi_mac_rx_hang_statistics;
+        let hangs = &registers.peripherals.wifi_mac.wifi_mac_rx_hang_statistics;
         assert_eq!(hangs.hang().as_ptr() as usize, 0x2010_4c64);
         assert_eq!(hangs.rx_tx_hang().as_ptr() as usize, 0x2010_4e18);
         assert_eq!(hangs.rx_tx_panic().as_ptr() as usize, 0x2010_4e1c);
 
-        let tx = &registers.peripherals.wifi_mac_tx_statistics;
+        let tx = &registers.peripherals.wifi_mac.wifi_mac_tx_statistics;
         assert_eq!(tx.tx_rts().as_ptr() as usize, 0x2010_4e08);
         assert_eq!(tx.trcts().as_ptr() as usize, 0x2010_4e14);
 
-        let diagnostic = &registers.peripherals.wifi_mac_diagnostic_statistics;
+        let diagnostic = &registers
+            .peripherals
+            .wifi_mac
+            .wifi_mac_diagnostic_statistics;
         assert_eq!(diagnostic.diag4().as_ptr() as usize, 0x2010_43b4);
         assert_eq!(diagnostic.diag8().as_ptr() as usize, 0x2010_44e0);
         assert_eq!(diagnostic.diag0().as_ptr() as usize, 0x2010_4e50);
@@ -1126,10 +1512,11 @@ mod tests {
     fn generated_mac_rx_misc_matches_complete_blob_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
+        let registers = WifiRadioRegisters::for_test();
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_rx_power_save
                 .control()
                 .as_ptr() as usize,
@@ -1138,6 +1525,7 @@ mod tests {
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_rx_bssid_list
                 .control()
                 .as_ptr() as usize,
@@ -1146,6 +1534,7 @@ mod tests {
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_rx_custom_type
                 .control()
                 .as_ptr() as usize,
@@ -1157,13 +1546,15 @@ mod tests {
     fn generated_mac_he_suffix_matches_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let init = &registers.peripherals.wifi_mac_he_init_suffix;
+        let registers = WifiRadioRegisters::for_test();
+        let init = &registers.peripherals.wifi_mac.wifi_mac_he_init_suffix;
         assert_eq!(init.multi_bssid_control().as_ptr() as usize, 0x2010_4020);
         assert_eq!(init.broadcast_ru_low().as_ptr() as usize, 0x2010_4038);
         assert_eq!(init.tx_mode_control().as_ptr() as usize, 0x2010_42b8);
         assert_eq!(
             registers
+                .peripherals
+                .radio_phy
                 .peripherals
                 .phy_frequency_channel_oracle
                 .channel_tx_offset_control()
@@ -1183,6 +1574,7 @@ mod tests {
             assert_eq!(
                 registers
                     .peripherals
+                    .wifi_mac
                     .wifi_mac_tx_queue_control
                     .protection(physical)
                     .as_ptr() as usize,
@@ -1201,8 +1593,8 @@ mod tests {
     fn generated_mac_tx_power_init_matches_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let power = &registers.peripherals.wifi_mac_tx_power_init;
+        let registers = WifiRadioRegisters::for_test();
+        let power = &registers.peripherals.wifi_mac.wifi_mac_tx_power_init;
         for word in 0..10 {
             assert_eq!(
                 power.immediate_response(word).as_ptr() as usize,
@@ -1226,14 +1618,15 @@ mod tests {
     fn generated_mac_hal_tail_matches_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let rtc = &registers.peripherals.wifi_mac_rtc_timer_update;
+        let registers = WifiRadioRegisters::for_test();
+        let rtc = &registers.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
         assert_eq!(rtc.control().as_ptr() as usize, 0x2010_d830);
         assert_eq!(rtc.sta_tsf_control().as_ptr() as usize, 0x2010_d858);
         assert_eq!(rtc.slow_clock_calibration().as_ptr() as usize, 0x2010_d878);
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_rx_csi_control
                 .control()
                 .as_ptr() as usize,
@@ -1245,7 +1638,7 @@ mod tests {
     fn mac_hal_tail_rejects_out_of_range_calibration_before_mmio() {
         // SAFETY: the rejected input returns before any generated register is
         // accessed; the host test therefore performs no volatile MMIO.
-        let mut registers = ColdRadioRegisters::for_validation();
+        let mut registers = RadioHardware::for_validation().into_wifi();
         assert!(!registers.initialize_mac_hal_tail(MacInterruptMask::COLD_RX, 0x0004_0000));
         assert!(!registers.initialize_mac_hal_tail(MacInterruptMask::NONE, u32::MAX));
     }
@@ -1254,8 +1647,8 @@ mod tests {
     fn generated_mac_txrx_callbacks_match_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let callbacks = &registers.peripherals.wifi_mac_txrx_callbacks;
+        let registers = WifiRadioRegisters::for_test();
+        let callbacks = &registers.peripherals.wifi_mac.wifi_mac_txrx_callbacks;
         assert_eq!(callbacks.ack_rate_table().as_ptr() as usize, 0x2010_444c);
         assert_eq!(
             callbacks.ack_cck_rate_table().as_ptr() as usize,
@@ -1286,7 +1679,7 @@ mod tests {
     fn mac_txrx_callbacks_reject_out_of_range_slot_before_mmio() {
         // SAFETY: the rejected input returns before any generated register is
         // accessed; the host test therefore performs no volatile MMIO.
-        let mut registers = RadioRegisters::for_test();
+        let mut registers = WifiRadioRegisters::for_test();
         assert!(!registers.initialize_mac_txrx_callbacks(11));
         assert!(!registers.initialize_mac_txrx_callbacks(u8::MAX));
     }
@@ -1295,23 +1688,37 @@ mod tests {
     fn generated_mac_txrx_suffix_matches_complete_leaf_geometry() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = RadioRegisters::for_test();
-        let init = &registers.peripherals.wifi_mac_txrx_suffix;
+        let registers = WifiRadioRegisters::for_test();
+        let init = &registers.peripherals.wifi_mac.wifi_mac_txrx_suffix;
         assert_eq!(init.aux_enable().as_ptr() as usize, 0x2010_4308);
         assert_eq!(
             registers
                 .peripherals
+                .wifi_mac
                 .wifi_mac_txrx_callbacks
                 .bb_rx_hang_control()
                 .as_ptr() as usize,
             0x2010_4c1c
         );
         assert_eq!(init.default_image_a().as_ptr() as usize, 0x2010_4c20);
-        assert_eq!(init.default_image_b().as_ptr() as usize, 0x2010_4c24);
+        assert_eq!(
+            registers
+                .peripherals
+                .shared_radio
+                .shared_radio_init_control
+                .control()
+                .as_ptr() as usize,
+            0x2010_4c24
+        );
         assert_eq!(init.gate_control().as_ptr() as usize, 0x2010_4c60);
         assert_eq!(init.field_control().as_ptr() as usize, 0x2010_4ca8);
         assert_eq!(
-            registers.peripherals.wifi_mac_rx_dma.rx_control().as_ptr() as usize,
+            registers
+                .peripherals
+                .wifi_mac
+                .wifi_mac_rx_dma
+                .rx_control()
+                .as_ptr() as usize,
             0x2010_4080
         );
     }

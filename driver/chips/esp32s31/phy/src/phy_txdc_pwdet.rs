@@ -1060,7 +1060,7 @@ impl PhyTxDcPwdetMmioBinding {
     >(
         self,
         platform: &mut P,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyContext,
     ) -> PhyTxDcPwdetCompletion {
         match self.action {
             PhyTxDcPwdetAction::CaptureRegisters => {
@@ -1197,7 +1197,7 @@ impl PhyTxDcPwdetSearchPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
         self.hardware.start_target(registers)
     }
@@ -1205,7 +1205,7 @@ impl PhyTxDcPwdetSearchPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<
         crate::phy_pbus::PhyPbusHardwareObservation,
         crate::phy_pbus::PhyPbusHardwareBindingError,
@@ -1335,7 +1335,7 @@ impl PhyTxDcPwdetPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
         self.hardware.start_target(registers)
     }
@@ -1343,7 +1343,7 @@ impl PhyTxDcPwdetPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<
         crate::phy_pbus::PhyPbusHardwareObservation,
         crate::phy_pbus::PhyPbusHardwareBindingError,

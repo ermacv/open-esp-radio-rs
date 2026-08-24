@@ -907,7 +907,7 @@ impl RfpllFrequencyMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> RfpllFrequencyCompletion {
         match self.action {
             RfpllFrequencyAction::StartChannelSwitch {

@@ -4,7 +4,7 @@
 
 use super::{
     MacExtraSoftApRxBlockAckEntryIndex, MacInterface, MacRxBlockAckEntryIndex,
-    MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow, RadioRegisters,
+    MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow, WifiRadioRegisters,
 };
 
 /// Result sampled for one completed TX hardware queue.
@@ -124,10 +124,10 @@ const fn rx_block_ack_register_index(hardware_index: MacRxBlockAckEntryIndex) ->
     7 - hardware_index.get() as usize
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Sample the three words copied by `hal_mac_tx_get_blockack`.
     pub fn read_tx_block_ack_payload(&self, hardware_queue: u8) -> Option<TxBlockAckPayload> {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let (control_and_sequence, bitmap_low, bitmap_high) = match hardware_queue {
             0 => (
                 block.tx_block_ack_control_sequence_q0().read().bits(),
@@ -175,7 +175,7 @@ impl RadioRegisters {
         starting_sequence: MacRxBlockAckStartingSequence,
         window: MacRxBlockAckWindow,
     ) {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
         let images = rx_block_ack_images(interface, peer, tid, window);
         let peer_tail = images.peer_tail_and_policy as u16;
@@ -222,7 +222,7 @@ impl RadioRegisters {
     /// SOURCE: complete `libpp.a[hal_ampdu.o]::
     /// hal_agreement_del_rx_ba`, size `0x72`.
     pub fn delete_rx_block_ack_entry(&mut self, hardware_index: MacRxBlockAckEntryIndex) {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
         block
             .rx_block_ack_entry_control(register_index)
@@ -252,7 +252,7 @@ impl RadioRegisters {
         starting_sequence: MacRxBlockAckStartingSequence,
         window: MacRxBlockAckWindow,
     ) {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
 
         super::svd::zero_register_write::clear_rx_block_ack_entry_control(block, register_index);
@@ -299,7 +299,7 @@ impl RadioRegisters {
         starting_sequence: MacRxBlockAckStartingSequence,
         window: MacRxBlockAckWindow,
     ) -> bool {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let index = hardware_index.get() as u8;
         let images = rx_block_ack_images(interface, peer, tid, window);
 
@@ -383,7 +383,7 @@ impl RadioRegisters {
         starting_sequence: MacRxBlockAckStartingSequence,
         window: MacRxBlockAckWindow,
     ) {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let index = hardware_index.get() as u8;
 
         block
@@ -418,7 +418,7 @@ impl RadioRegisters {
         &mut self,
         hardware_index: MacExtraSoftApRxBlockAckEntryIndex,
     ) -> ExtraSoftApRxBlockAckEntrySnapshot {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let index = hardware_index.get() as u8;
         block
             .extra_softap_rx_block_ack_control()
@@ -481,7 +481,7 @@ impl RadioRegisters {
         &mut self,
         hardware_index: MacExtraSoftApRxBlockAckEntryIndex,
     ) {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let index = hardware_index.get() as u8;
 
         block
@@ -512,7 +512,7 @@ impl RadioRegisters {
         &self,
         hardware_index: MacRxBlockAckEntryIndex,
     ) -> Option<RxBlockAckEntrySnapshot> {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
         let control = block
             .rx_block_ack_entry_control(register_index)
@@ -590,7 +590,7 @@ impl RadioRegisters {
         &self,
         hardware_queue: u8,
     ) -> Option<TxBlockAckRegisterImage> {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let payload = self.read_tx_block_ack_payload(hardware_queue)?;
         let address_high = match hardware_queue {
             0 => block
@@ -628,7 +628,7 @@ impl RadioRegisters {
         &self,
         hardware_queue: u8,
     ) -> Option<TxBlockAckDiagnosticSnapshot> {
-        let block = &self.peripherals.wifi_mac_rx_dma;
+        let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let (
             control_and_sequence,
             bitmap_low,
@@ -773,7 +773,7 @@ impl RadioRegisters {
     /// The blob does not name byte ordering inside the two TA words, so they
     /// remain raw.
     pub fn internal_tx_block_ack_snapshot(&self) -> InternalTxBlockAckSnapshot {
-        let block = &self.peripherals.wifi_mac_internal_tx_block_ack;
+        let block = &self.peripherals.wifi_mac.wifi_mac_internal_tx_block_ack;
         let control = block.control_sequence().read();
         InternalTxBlockAckSnapshot {
             bitmap: u64::from(block.bitmap_low().read().bits())

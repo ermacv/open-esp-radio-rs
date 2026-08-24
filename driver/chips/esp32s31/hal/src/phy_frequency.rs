@@ -6,53 +6,52 @@
 //! `svd/esp32s31-radio.svd`.
 
 #[cfg(target_arch = "riscv32")]
-use crate::{PhyAccess, phy_pac_mut};
+use crate::{PhyInitializationAccess, SharedPhyAccess, phy_pac_mut};
 
-/// Clear the two low Wi-Fi control bits at the start of PHY ownership.
+/// Clear the two low Wi-Fi control bits at the start of common PHY init.
 ///
 /// Pinned `libphy.a[phy_init.o]::register_chipv7_phy`, size `0x1e6`, performs
 /// this update before `phy_force_txrx_off`.
 #[cfg(target_arch = "riscv32")]
-pub fn prepare_wifi_control(
+pub fn prepare_common_phy_control(
     platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl PhyAccess,
+    registers: &mut impl PhyInitializationAccess,
 ) {
-    let registers = phy_pac_mut(registers);
     crate::wifi_bb::prepare_cold_start(platform);
-    registers.set_wifi_baseband_enabled_image(false);
+    PhyInitializationAccess::record_wifi_baseband_enabled(registers, false);
 }
 
 /// Select the two-bit baseband mode used by the Rust cold-init transition.
 #[cfg(target_arch = "riscv32")]
-pub fn set_baseband_mode(registers: &mut impl PhyAccess, mode: u8) {
+pub fn set_baseband_mode(registers: &mut impl SharedPhyAccess, mode: u8) {
     let registers = phy_pac_mut(registers);
     registers.set_frequency_baseband_mode(mode);
 }
 
 /// Pulse complete rev0 ROM `phy_freq_module_resetn`.
 #[cfg(target_arch = "riscv32")]
-pub fn reset_module(registers: &mut impl PhyAccess) {
+pub fn reset_module(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.reset_frequency_module();
 }
 
 /// Select whether hardware owns frequency updates.
 #[cfg(target_arch = "riscv32")]
-pub fn set_hardware_control(registers: &mut impl PhyAccess, enabled: bool) {
+pub fn set_hardware_control(registers: &mut impl SharedPhyAccess, enabled: bool) {
     let registers = phy_pac_mut(registers);
     registers.set_hardware_frequency_control(enabled);
 }
 
 /// Apply complete rev0 ROM `phy_freq_reg_init(2, 4)`.
 #[cfg(target_arch = "riscv32")]
-pub fn initialize_registers(registers: &mut impl PhyAccess, parameter_override: bool) {
+pub fn initialize_registers(registers: &mut impl SharedPhyAccess, parameter_override: bool) {
     let registers = phy_pac_mut(registers);
     registers.initialize_frequency_registers(parameter_override);
 }
 
 /// Apply complete rev0 ROM `phy_freq_i2c_mem_write`.
 #[cfg(target_arch = "riscv32")]
-pub fn write_memory(registers: &mut impl PhyAccess, address: u16, value: u32, mode: u8) {
+pub fn write_memory(registers: &mut impl SharedPhyAccess, address: u16, value: u32, mode: u8) {
     let registers = phy_pac_mut(registers);
     registers.write_frequency_memory(address, value, mode);
 }
@@ -60,7 +59,7 @@ pub fn write_memory(registers: &mut impl PhyAccess, address: u16, value: u32, mo
 /// Publish complete rev0 ROM `phy_freq_i2c_num_addr`.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_i2c_number_addresses(
-    registers: &mut impl PhyAccess,
+    registers: &mut impl SharedPhyAccess,
     control_field: u32,
     words: [u32; 3],
 ) {
@@ -70,35 +69,35 @@ pub fn configure_i2c_number_addresses(
 
 /// Publish the pre-delay half of complete rev0 ROM `phy_freq_chan_en_sw`.
 #[cfg(target_arch = "riscv32")]
-pub fn start_channel_switch(registers: &mut impl PhyAccess, frequency_index: u8) {
+pub fn start_channel_switch(registers: &mut impl SharedPhyAccess, frequency_index: u8) {
     let registers = phy_pac_mut(registers);
     registers.start_frequency_channel_switch(frequency_index);
 }
 
 /// Complete the caller-delayed clear from rev0 ROM `phy_freq_chan_en_sw`.
 #[cfg(target_arch = "riscv32")]
-pub fn clear_channel_switch(registers: &mut impl PhyAccess) {
+pub fn clear_channel_switch(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.clear_frequency_channel_switch();
 }
 
 /// Sample the channel parent's frequency-ready word exactly once.
 #[cfg(target_arch = "riscv32")]
-pub fn sample_frequency_ready(registers: &mut impl PhyAccess) -> bool {
+pub fn sample_frequency_ready(registers: &mut impl SharedPhyAccess) -> bool {
     let registers = phy_pac_mut(registers);
     registers.frequency_ready()
 }
 
 /// Apply complete rev0 ROM `phy_nrx_freq_set`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_nrx_frequency(registers: &mut impl PhyAccess, frequency: u32) {
+pub fn configure_nrx_frequency(registers: &mut impl SharedPhyAccess, frequency: u32) {
     let registers = phy_pac_mut(registers);
     registers.configure_nrx_frequency(frequency);
 }
 
 /// Apply the two NRX writes inside complete rev0 ROM `phy_bb_reg_init`.
 #[cfg(target_arch = "riscv32")]
-pub fn initialize_nrx_baseband(registers: &mut impl PhyAccess) {
+pub fn initialize_nrx_baseband(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.initialize_nrx_baseband();
 }
@@ -113,7 +112,7 @@ pub fn set_baseband_init_control(platform: &mut impl crate::wifi_bb::PhyWifiBbCo
 #[cfg(target_arch = "riscv32")]
 pub fn configure_bss_cbw(
     platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl PhyAccess,
+    registers: &mut impl SharedPhyAccess,
     cbw: u8,
 ) {
     let registers = phy_pac_mut(registers);
@@ -124,14 +123,14 @@ pub fn configure_bss_cbw(
 
 /// Publish the TX-cap readback exactly as ROM `phy_i2c_master_mem_txcap`.
 #[cfg(target_arch = "riscv32")]
-pub fn publish_tx_cap(registers: &mut impl PhyAccess, value: u8) {
+pub fn publish_tx_cap(registers: &mut impl SharedPhyAccess, value: u8) {
     let registers = phy_pac_mut(registers);
     registers.publish_frequency_tx_cap(value);
 }
 
 /// Apply complete rev0 ROM `phy_bb_cbw_chan_cfg`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_channel_cbw(registers: &mut impl PhyAccess, cbw: u32) {
+pub fn configure_channel_cbw(registers: &mut impl SharedPhyAccess, cbw: u32) {
     let registers = phy_pac_mut(registers);
     registers.configure_channel_cbw(cbw);
 }
@@ -140,28 +139,26 @@ pub fn configure_channel_cbw(registers: &mut impl PhyAccess, cbw: u32) {
 #[cfg(target_arch = "riscv32")]
 pub fn set_wifi_enabled(
     platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl PhyAccess,
+    registers: &mut impl PhyInitializationAccess,
     enabled: bool,
 ) {
-    let registers = phy_pac_mut(registers);
     crate::wifi_bb::set_wifi_enabled(platform, enabled);
-    registers.set_wifi_baseband_enabled_image(enabled);
+    PhyInitializationAccess::record_wifi_baseband_enabled(registers, enabled);
 }
 
 /// Apply complete rev0 ROM `phy_mac_enable_bb`.
 #[cfg(target_arch = "riscv32")]
 pub fn enable_mac_baseband(
     platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl PhyAccess,
+    registers: &mut impl PhyInitializationAccess,
 ) {
-    let registers = phy_pac_mut(registers);
     crate::wifi_bb::enable_mac_baseband(platform);
-    registers.set_wifi_baseband_enabled_image(true);
+    PhyInitializationAccess::record_wifi_baseband_enabled(registers, true);
 }
 
 /// Apply complete rev0 ROM `phy_bt_filter_reg`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_bt_filter(registers: &mut impl PhyAccess) {
+pub fn configure_bt_filter(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.configure_bt_filter();
 }

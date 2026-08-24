@@ -15,5 +15,6 @@ pub use value::{
     ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG, BitSource, ExpressionOperation, FloatingPointOperation,
     FloatingRoundingMode, MemoryObjectLocation, MemoryObjectRoot,
     OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG, PRIVATE_STACK_READ_TOKEN_FLAG, SymbolicValue,
-    SymbolicValueTree, external_result_call_token,
+    SymbolicValueTree, UNINITIALIZED_ALLOCATION_EXTERNAL_RESULT_TOKEN_FLAG,
+    external_result_call_token,
 };

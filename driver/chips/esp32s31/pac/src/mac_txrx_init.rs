@@ -2,13 +2,13 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Apply all three ordered fresh-read updates of complete rev0 ROM
     /// `phy_sifs_reg_init`.
     pub fn initialize_phy_wifi_sifs(&mut self) {
-        let callbacks = &self.peripherals.wifi_mac_txrx_callbacks;
+        let callbacks = &self.peripherals.wifi_mac.wifi_mac_txrx_callbacks;
         callbacks
             .delay_secondary()
             .modify(|_, w| w.high_delay_unknown().set(0xea));
@@ -26,7 +26,7 @@ impl RadioRegisters {
     /// offsets `0x08..0xd0`. Callback effects and the direct suffix remain
     /// outside this deliberately bounded operation.
     pub fn initialize_mac_txrx_prefix(&mut self) {
-        let init = &self.peripherals.wifi_mac_txrx_prefix;
+        let init = &self.peripherals.wifi_mac.wifi_mac_txrx_prefix;
 
         init.feature_edges().modify(|_, w| {
             w.first_group_bit_31_unknown()
@@ -95,7 +95,7 @@ impl RadioRegisters {
             return false;
         }
 
-        let callbacks = &self.peripherals.wifi_mac_txrx_callbacks;
+        let callbacks = &self.peripherals.wifi_mac.wifi_mac_txrx_callbacks;
         callbacks
             .delay_primary()
             .modify(|_, w| w.rx_cck_delay().set(0x3b9));
@@ -127,18 +127,21 @@ impl RadioRegisters {
     /// SOURCE: complete pinned `libpp.a[hal_mac.o]::mac_txrx_init`,
     /// offsets `0xee..0x16e`.
     pub fn initialize_mac_txrx_suffix(&mut self) {
-        let callbacks = &self.peripherals.wifi_mac_txrx_callbacks;
+        let callbacks = &self.peripherals.wifi_mac.wifi_mac_txrx_callbacks;
         callbacks
             .bb_rx_hang_control()
             .modify(|_, w| w.txrx_suffix_first_enable_unknown().set_bit());
         callbacks
             .bb_rx_hang_control()
             .modify(|_, w| w.txrx_suffix_second_enable_unknown().set_bit());
-        let init = &self.peripherals.wifi_mac_txrx_suffix;
+        let init = &self.peripherals.wifi_mac.wifi_mac_txrx_suffix;
         init.default_image_a()
             .modify(|_, w| w.low_image_unknown().set(0x0f0));
-        init.default_image_b()
-            .modify(|_, w| w.low_image_unknown().set(0x0f0));
+        self.peripherals
+            .shared_radio
+            .shared_radio_init_control
+            .control()
+            .modify(|_, w| w.wifi_init_low_image_unknown().set(0x0f0));
         init.field_control().modify(|_, w| w.field_unknown().set(4));
         init.gate_control()
             .modify(|_, w| w.low_gate_group_unknown().set(0x7fff));
@@ -147,6 +150,7 @@ impl RadioRegisters {
         init.aux_enable()
             .modify(|_, w| w.enable_unknown().set_bit());
         self.peripherals
+            .wifi_mac
             .wifi_mac_rx_dma
             .rx_control()
             .modify(|_, w| w.walker_enable().clear_bit());

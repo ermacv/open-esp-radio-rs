@@ -8,6 +8,7 @@ use super::{
 };
 
 pub const DEFERRED_CALLER_MEMORY_REGION: &str = "deferred call-composed caller memory";
+pub const DEFERRED_CALL_RESULT_MEMORY_REGION: &str = "deferred exact-call-result memory";
 pub const SECONDARY_CALL_RESULT_TOKEN_FLAG: u32 = 1 << 31;
 
 mod events;

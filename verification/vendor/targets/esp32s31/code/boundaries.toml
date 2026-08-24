@@ -5,11 +5,11 @@ id = "esp32s31-radio-rev0"
 
 [[inputs]]
 source = "archive"
-artifact-sha256 = "2aa7a828f9a0ff6fe92026545e9ef4cae8867bf1b12367c0dabe9bc4f95d6547"
+artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
 
 [[inputs]]
 source = "archive"
-artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+artifact-sha256 = "536cbdd76e269795f75aeb0a32eec1b338622b0c9efaf07269a95e7dea04da0a"
 
 [[inputs]]
 source = "archive"
@@ -20,8 +20,40 @@ source = "ble"
 artifact-sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
 
 [[inputs]]
+source = "bluetooth"
+artifact-sha256 = "45a783ed5e56fb0939f447213c33a5e4a426375f5a817416f1d2a15483cef01c"
+
+[[inputs]]
+source = "ble-controller"
+artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[inputs]]
+source = "ble-controller"
+artifact-sha256 = "5dbd91c45d13a2afc99e5414732aaffe1230737b471ddcf0bbe7e17a9d98e225"
+
+[[inputs]]
+source = "ble-controller"
+artifact-sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
+
+[[inputs]]
+source = "ble-controller"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[inputs]]
+source = "ble-controller"
+artifact-sha256 = "ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df"
+
+[[inputs]]
+source = "ble-controller"
+artifact-sha256 = "fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099"
+
+[[inputs]]
 source = "btbb"
-artifact-sha256 = "340de1f0948e70bb7355e74f1652daad7bcb14c4b0a909bda1fff89f96b63a60"
+artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[inputs]]
+source = "btbb"
+artifact-sha256 = "b9b6d3d88644b0adeb3c15135e601e177da6cd868d8f016f996b8d12d77cab4c"
 
 [[inputs]]
 source = "btbb"
@@ -33,11 +65,11 @@ artifact-sha256 = "fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd
 
 [[inputs]]
 source = "coex"
-artifact-sha256 = "851cac6122d2e047fb22f1059b7875a55b526a07a19d94022fc0e30f4bf2fd6c"
+artifact-sha256 = "9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8"
 
 [[inputs]]
 source = "coex"
-artifact-sha256 = "9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8"
+artifact-sha256 = "c468a92a8fb56cd1ccfc1562ea67172d52d0edcfebd05dc665a672e33aa18250"
 
 [[inputs]]
 source = "coex"
@@ -53,7 +85,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "libnet80211"
-artifact-sha256 = "f850d4044a89888856a8d2ee50835e37c61f4dd92045ba4ea4dfa1b2cd7d77e8"
+artifact-sha256 = "d26493ec9a8c32c48fe6f3b784c6f5f961b1fed791b6191daa8651c42b5d58bf"
 
 [[inputs]]
 source = "libpp"
@@ -77,7 +109,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "rom"
-artifact-sha256 = "2aa7a828f9a0ff6fe92026545e9ef4cae8867bf1b12367c0dabe9bc4f95d6547"
+artifact-sha256 = "536cbdd76e269795f75aeb0a32eec1b338622b0c9efaf07269a95e7dea04da0a"
 
 [[inputs]]
 source = "rom"
@@ -85,11 +117,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "rust"
-artifact-sha256 = "a7d0c752a94c71961e6167a8cfa7d1e6b04979347fa3ac5abe74315efa9fa693"
-
-[[inputs]]
-source = "wifi-key-role"
-artifact-sha256 = "81955b2bb883d80c4a9181cea6741f11e63960c2c84e56f992d1ab2390f5abf5"
+artifact-sha256 = "1519c835d38190b694f7e11bb72a45f0caeec4d8c882802c9b4610edd577a830"
 
 [[inputs]]
 source = "wifi-key-role"
@@ -97,11 +125,15 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "wifi-key-role"
+artifact-sha256 = "da06083a5bb100dd1f337f0724753283ea1145fe1fa0814011f3d626fc4f49e3"
+
+[[inputs]]
+source = "wifi-key-role"
 artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
 
 [[inputs]]
 source = "wifi-registers"
-artifact-sha256 = "3ccccc24d2903ccf653c82497ff553ebda358364e0225341fe43fd61c34eff06"
+artifact-sha256 = "6b3a8c29c54183231ec44b98de69c768b453402e82974ab3e05db306f00a463a"
 
 [[inputs]]
 source = "wifi-sta-ap-receive"
@@ -125,7 +157,7 @@ artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b949
 
 [[inputs]]
 source = "wifi-sta-lifecycle"
-artifact-sha256 = "513f8d08ef1611e4937d17ee0938aebf68b7c9ec16c843ecf2612a48ef2096c1"
+artifact-sha256 = "533c7b33116d6757847d2d5effee9d912d4780a7567789def506357baf65329a"
 
 [[inputs]]
 source = "wifi-sta-lifecycle"

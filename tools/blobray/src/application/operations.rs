@@ -90,6 +90,7 @@ pub(super) fn compare(
             case_execution: crate::verification::profiles::CaseExecution::Independent,
             transaction_comparison:
                 crate::verification::profiles::TransactionComparison::Observables,
+            effect_policy: None,
             call_equivalences: &[],
             coverage_domain: &coverage_domain,
             vendor_setup: &[],

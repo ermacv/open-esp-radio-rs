@@ -11,7 +11,7 @@ use core::{
     sync::atomic::{AtomicU8, Ordering},
 };
 
-use open_esp_radio_esp32s31_pac::RadioRegisters;
+use open_esp_radio_esp32s31_pac::WifiRadioRegisters;
 
 use crate::RadioRuntimeOwner;
 
@@ -196,7 +196,7 @@ impl Esp32s31RadioOwnerArena {
     /// an async suspension.
     fn try_with_ref<T>(
         &self,
-        transaction: impl FnOnce(&RadioRegisters) -> T,
+        transaction: impl FnOnce(&WifiRadioRegisters) -> T,
     ) -> Result<T, Esp32s31RadioOwnerArenaError> {
         match self.state() {
             Esp32s31RadioOwnerArenaState::Empty => {
@@ -222,7 +222,7 @@ impl Esp32s31RadioOwnerArena {
     /// arena back into an unrestricted PAC callback API.
     fn try_with_mut<T>(
         &self,
-        transaction: impl FnOnce(&mut RadioRegisters) -> T,
+        transaction: impl FnOnce(&mut WifiRadioRegisters) -> T,
     ) -> Result<T, Esp32s31RadioOwnerArenaError> {
         match self.state() {
             Esp32s31RadioOwnerArenaState::Empty => {
@@ -281,7 +281,7 @@ impl Esp32s31RadioOwnerArena {
 
     /// Read the current hardware noise floor as a bounded value observation.
     pub fn try_noise_floor_dbm(&self) -> Result<i8, Esp32s31RadioOwnerArenaError> {
-        self.try_with_ref(|registers| registers.read_noise_floor_dbm())
+        self.try_with_ref(|registers| registers.radio_phy().read_noise_floor_dbm())
     }
 
     /// Install one station CCMP image under the runtime serialization owner.
@@ -538,13 +538,13 @@ impl Drop for Esp32s31PublishedRadioOwner<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ColdRadioRegisters, MacInterruptSetup, RadioRuntimeOwner};
+    use crate::{MacInterruptSetup, RadioHardware, RadioRuntimeOwner};
 
     use super::*;
 
     #[test]
     fn stable_publication_reclaims_exactly_once_and_drop_poison_is_sticky() {
-        let cold = ColdRadioRegisters::for_validation();
+        let cold = RadioHardware::for_validation().into_wifi();
         let (registers, _interrupt_setup) = cold.into_running();
         let owner = RadioRuntimeOwner::from_pac(registers);
         let arena = Esp32s31RadioOwnerArena::new();
@@ -580,7 +580,7 @@ mod tests {
 
     #[test]
     fn reclaimed_owner_republishes_only_through_its_exact_arena_binding() {
-        let cold = ColdRadioRegisters::for_validation();
+        let cold = RadioHardware::for_validation().into_wifi();
         let (registers, _interrupt_setup) = cold.into_running();
         let owner = RadioRuntimeOwner::from_pac(registers);
         let arena = Esp32s31RadioOwnerArena::new();
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn published_channel_capability_holds_the_arena_serialization_guard() {
-        let cold = ColdRadioRegisters::for_validation();
+        let cold = RadioHardware::for_validation().into_wifi();
         let (registers, _interrupt_setup) = cold.into_running();
         let owner = RadioRuntimeOwner::from_pac(registers);
         let arena = Esp32s31RadioOwnerArena::new();
@@ -631,7 +631,7 @@ mod tests {
 
     #[test]
     fn published_wifi_mac_capability_holds_the_arena_serialization_guard() {
-        let cold = ColdRadioRegisters::for_validation();
+        let cold = RadioHardware::for_validation().into_wifi();
         let (registers, _interrupt_setup) = cold.into_running();
         let owner = RadioRuntimeOwner::from_pac(registers);
         let arena = Esp32s31RadioOwnerArena::new();
@@ -658,7 +658,7 @@ mod tests {
 
     #[test]
     fn stale_access_cannot_mutate_a_reset_required_arena() {
-        let cold = ColdRadioRegisters::for_validation();
+        let cold = RadioHardware::for_validation().into_wifi();
         let (registers, interrupt_setup) = cold.into_running();
         let owner = RadioRuntimeOwner::from_pac(registers);
         let mut interrupt_setup = MacInterruptSetup {

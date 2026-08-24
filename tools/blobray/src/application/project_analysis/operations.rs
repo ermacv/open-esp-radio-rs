@@ -44,7 +44,10 @@ pub(crate) fn analyze_project(
     };
     let mut operations = ResolvedProjectAnalysisOperations {
         session,
-        cache: ProjectAnalysisCache::load(&session.manifest),
+        cache: ProjectAnalysisCache::load(
+            &session.manifest,
+            crate::harnesses::analysis_cache_identity(session.target.knowledge_provider.as_deref()),
+        ),
         check: request.check,
         functions: None,
         interfaces: None,
@@ -58,6 +61,17 @@ struct ResolvedProjectAnalysisOperations<'a> {
     check: bool,
     functions: Option<FunctionWorkspace>,
     interfaces: Option<InterfaceWorkspace>,
+}
+
+fn register_catalog_input_paths(
+    svd_paths: &[std::path::PathBuf],
+    model: Option<&std::path::Path>,
+) -> Result<Vec<std::path::PathBuf>> {
+    let mut paths = svd_paths.to_vec();
+    if let Some(model) = model {
+        paths.extend(RegisterModel::input_paths(model)?);
+    }
+    Ok(paths)
 }
 
 impl ResolvedProjectAnalysisOperations<'_> {
@@ -82,7 +96,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
         let project = &self.session.project;
         let mut paths = vec![self.session.target_path.clone()];
         paths.extend(self.session.run_spec_path.iter().cloned());
-        paths.extend(self.session.svd_paths.iter().cloned());
+        paths.extend(self.register_catalog_inputs()?);
         for pack in &project.ecosystem_packs {
             paths.push(pack.path.clone());
             paths.extend(pack.knowledge_packs.iter().cloned());
@@ -107,6 +121,17 @@ impl ResolvedProjectAnalysisOperations<'_> {
             paths.push(symbols.output.clone());
         }
         Ok(paths)
+    }
+
+    fn register_catalog_inputs(&self) -> Result<Vec<std::path::PathBuf>> {
+        register_catalog_input_paths(
+            &self.session.svd_paths,
+            self.session
+                .project
+                .registers
+                .as_ref()
+                .map(|registers| registers.model.as_path()),
+        )
     }
 
     fn common_inputs(&self) -> Vec<std::path::PathBuf> {
@@ -202,12 +227,12 @@ impl ResolvedProjectAnalysisOperations<'_> {
         Ok(())
     }
 
-    fn register_workspace_inputs(&self, include_ir: bool) -> Vec<std::path::PathBuf> {
+    fn register_workspace_inputs(&self, include_ir: bool) -> Result<Vec<std::path::PathBuf>> {
         let mut paths = self.common_inputs();
         paths.extend(self.session.project.memory_map.iter().cloned());
         if let Some(registers) = self.session.project.registers.as_ref() {
             paths.push(registers.facts.clone());
-            paths.push(registers.model.clone());
+            paths.extend(RegisterModel::input_paths(&registers.model)?);
             paths.extend(registers.api_pack.iter().cloned());
             paths.extend(registers.lint_pack.iter().cloned());
             paths.extend(registers.evidence_catalogs.iter().cloned());
@@ -215,7 +240,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
                 paths.extend(registers.review_ir_reports.iter().cloned());
             }
         }
-        paths
+        Ok(paths)
     }
 
     fn cache_hit(
@@ -348,7 +373,7 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
     fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<StageRun> {
         let mut inputs = self.run_inputs();
         inputs.extend(self.session.project.memory_map.iter().cloned());
-        inputs.extend(self.session.svd_paths.iter().cloned());
+        inputs.extend(self.register_catalog_inputs()?);
         if let Some(code) = self.session.project.code.as_ref() {
             inputs.push(code.pack.clone());
         }
@@ -526,7 +551,7 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         let mut inputs = self.target_inputs();
         inputs.push(functions.pack.clone());
         inputs.extend(self.session.project.memory_map.iter().cloned());
-        inputs.extend(self.session.svd_paths.iter().cloned());
+        inputs.extend(self.register_catalog_inputs()?);
         for (request, _) in &requests {
             inputs.push(request.manifest.clone());
             inputs.push(request.artifact.clone());
@@ -673,7 +698,7 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
     }
 
     fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<StageRun> {
-        let inputs = self.register_workspace_inputs(false);
+        let inputs = self.register_workspace_inputs(false)?;
         let stage = validation_key("register-validation", deny_unreviewed);
         if self.cache_hit(&stage, self.check, &inputs, &[])? {
             return Ok(StageRun::Current);
@@ -688,7 +713,7 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
     }
 
     fn review_registers(&mut self, check: bool) -> Result<StageRun> {
-        let inputs = self.register_workspace_inputs(true);
+        let inputs = self.register_workspace_inputs(true)?;
         let outputs = self
             .session
             .project
@@ -1052,4 +1077,32 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
     )?;
     super::super::generated_file::write_or_check(output, &contents, check, "register review")?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod cache_input_tests {
+    use super::*;
+
+    #[test]
+    fn register_catalog_inputs_include_model_fragments() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-register-catalog-inputs-{}",
+            std::process::id()
+        ));
+        let model = directory.join("device.toml");
+        let fragment = directory.join("peripherals/baseband.toml");
+        std::fs::create_dir_all(fragment.parent().unwrap()).unwrap();
+        std::fs::write(
+            &model,
+            "schema = 2\nfragments = [\"peripherals/baseband.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n",
+        )
+        .unwrap();
+        let svd = directory.join("public.svd");
+
+        let inputs =
+            register_catalog_input_paths(std::slice::from_ref(&svd), Some(&model)).unwrap();
+        std::fs::remove_dir_all(&directory).unwrap();
+
+        assert_eq!(inputs, vec![svd, model, fragment]);
+    }
 }

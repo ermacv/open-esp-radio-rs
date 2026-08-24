@@ -10,6 +10,15 @@ mod neutral;
 /// state. A data-only chip pack selects it by `id`.
 pub struct KnowledgeProviderDescriptor {
     pub id: &'static str,
+    /// Semantic revision of the compiled provider used by persistent
+    /// analysis queries.
+    ///
+    /// Provider code is not a file-backed project input: it is linked into
+    /// the target-specific Blobray host.  Incrementing this value prevents a
+    /// rebuilt host from accepting linked IR produced by an older set of
+    /// contracts or summary hooks while keeping unrelated structural stages
+    /// cacheable.
+    pub analysis_cache_revision: u32,
     pub contracts: &'static crate::KnowledgeContractSpec,
     pub riscv: Option<&'static crate::RiscvHarnessSpec>,
 }
@@ -63,6 +72,16 @@ pub(crate) fn is_available(provider: &str) -> bool {
         .any(|descriptor| descriptor.id == provider)
 }
 
+pub(crate) fn analysis_cache_identity(provider: Option<&str>) -> String {
+    match provider {
+        None => "neutral-knowledge@1".to_owned(),
+        Some(provider) => knowledge_descriptor(provider).map_or_else(
+            |_| format!("unavailable:{provider}"),
+            |descriptor| format!("{}@{}", descriptor.id, descriptor.analysis_cache_revision),
+        ),
+    }
+}
+
 pub(crate) fn contracts(provider: &str) -> crate::Result<&'static crate::KnowledgeContractSpec> {
     Ok(knowledge_descriptor(provider)?.contracts)
 }
@@ -113,7 +132,9 @@ mod tests {
         assert_eq!(ids.len(), registry().knowledge.len());
         for id in ids {
             assert!(is_available(id));
-            assert_eq!(knowledge_descriptor(id).unwrap().id, id);
+            let descriptor = knowledge_descriptor(id).unwrap();
+            assert_eq!(descriptor.id, id);
+            assert!(descriptor.analysis_cache_revision > 0);
         }
     }
 

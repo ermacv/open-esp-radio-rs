@@ -808,7 +808,8 @@ pub(crate) struct VerifyInventoryArgs {
     /// are available to execution profiles but are not added to source coverage.
     #[arg(long, value_name = "ID=PATH")]
     pub(crate) auxiliary_artifact: Vec<SourcePath>,
-    /// Vendor archive keyed by stable source identifier.
+    /// Ordered vendor archive keyed by stable source identifier. Repeat one
+    /// source for a linked unit composed from multiple origin archives.
     #[arg(long, value_name = "SOURCE=PATH")]
     pub(crate) source_inventory: Vec<SourcePath>,
     /// Companion image keyed by stable source identifier.

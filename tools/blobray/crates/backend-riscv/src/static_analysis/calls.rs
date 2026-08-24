@@ -64,6 +64,7 @@ fn structural_finish_call_with_result(
 }
 
 fn structural_prepare_opaque_call(state: &mut StructuralTraceState, return_address: u32) {
+    state.invalidate_allocation_pointer_cells();
     let arguments = structural_call_arguments(
         &state.values,
         &state.stack,
@@ -123,6 +124,7 @@ fn apply_reviewed_external_call(
         ));
         return StructuralCallControl::Stop;
     }
+    state.invalidate_allocation_pointer_cells();
     for candidate in &mut candidates {
         if candidate.slot_load_site.is_none() {
             candidate.tail = tail;
@@ -178,6 +180,9 @@ fn apply_reviewed_external_call(
             ));
             SymbolicValue::ExternalResult(state.next_external_call_token)
         }
+        Some(ExternalReturnModel::Allocated { .. }) => SymbolicValue::ExternalResult(
+            state.next_external_call_token | UNINITIALIZED_ALLOCATION_EXTERNAL_RESULT_TOKEN_FLAG,
+        ),
         Some(ExternalReturnModel::AllocatedZeroed { .. }) => SymbolicValue::ExternalResult(
             state.next_external_call_token | ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG,
         ),
@@ -317,6 +322,7 @@ fn apply_reviewed_internal_call(
         ));
         return StructuralCallControl::Stop;
     }
+    state.invalidate_allocation_pointer_cells();
     let arguments = structural_call_arguments(
         &state.values,
         &state.stack,
@@ -421,6 +427,22 @@ pub(super) fn apply_relocated_call(
             &mut state.next_memory_read_token,
         )
     {
+        let writes = state.reference_events[intrinsic_event_start..]
+            .iter()
+            .filter_map(|event| match event {
+                DraftReferenceEvent::Memory {
+                    access: MemoryAccess::Write,
+                    width,
+                    address,
+                    value: Some(value),
+                    ..
+                } => Some((address.clone(), *width, value.clone())),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for (address, width, value) in writes {
+            state.observe_memory_write(&address, width, &value);
+        }
         state.locate_reference_events_since(pc as u32, intrinsic_event_start);
         if !matches!(dest, Reg::ZERO | Reg::RA) {
             state.reference_blockers.push(format!(
@@ -457,6 +479,7 @@ pub(super) fn apply_relocated_call(
             ));
             return StructuralCallControl::Stop;
         }
+        state.invalidate_allocation_pointer_cells();
         let arguments = (0..usize::from(argument_count))
             .map(|index| state.values[10 + index].clone())
             .collect::<Vec<_>>()
@@ -508,12 +531,13 @@ pub(super) fn apply_relocated_call(
         .and_then(|hooks| (hooks.direct_external_semantic)(name))
         && !matches!(function.return_model, ExternalReturnModel::Unmodeled)
     {
-        if dest != Reg::RA {
+        if !matches!(dest, Reg::ZERO | Reg::RA) {
             state.reference_blockers.push(format!(
                 "unsupported-modeled-direct-call-link-register at {pc:#x}: {name} uses {dest}"
             ));
             return StructuralCallControl::Stop;
         }
+        state.invalidate_allocation_pointer_cells();
         let (result, high_result) = match function.return_model {
             ExternalReturnModel::Void => (SymbolicValue::Unknown, None),
             ExternalReturnModel::Constant(value) => (SymbolicValue::Constant(value), None),
@@ -526,6 +550,13 @@ pub(super) fn apply_relocated_call(
                 Some(SymbolicValue::ExternalResultHigh(
                     state.next_external_call_token,
                 )),
+            ),
+            ExternalReturnModel::Allocated { .. } => (
+                SymbolicValue::ExternalResult(
+                    state.next_external_call_token
+                        | UNINITIALIZED_ALLOCATION_EXTERNAL_RESULT_TOKEN_FLAG,
+                ),
+                None,
             ),
             ExternalReturnModel::AllocatedZeroed { .. } => (
                 SymbolicValue::ExternalResult(
@@ -541,12 +572,12 @@ pub(super) fn apply_relocated_call(
             ),
             ExternalReturnModel::Unmodeled => unreachable!(),
         };
+        let removed = state.blockers.pop();
+        debug_assert!(removed.is_some_and(|blocker| blocker.starts_with("call/jump instruction")));
         let arguments = (0..usize::from(function.argument_count))
             .map(|index| state.values[10 + index].clone())
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        let removed = state.blockers.pop();
-        debug_assert!(removed.is_some_and(|blocker| blocker.starts_with("call/jump instruction")));
         state
             .reference_events
             .push(DraftReferenceEvent::ModeledDirectCall {
@@ -565,6 +596,13 @@ pub(super) fn apply_relocated_call(
                 arguments,
             });
         state.next_external_call_token += 1;
+        if dest == Reg::ZERO {
+            // `jal zero` preserves the caller's RA, so this modeled sibling
+            // call returns directly to our caller. There is no local
+            // continuation after the semantic boundary.
+            state.return_value = result;
+            return StructuralCallControl::Stop;
+        }
         structural_finish_call_with_result(&mut state.values, return_pc, result);
         if let Some(high_result) = high_result {
             structural_set(&mut state.values, Reg::A1, high_result);
@@ -582,6 +620,7 @@ pub(super) fn apply_relocated_call(
         }
         return StructuralCallControl::Stop;
     };
+    state.invalidate_allocation_pointer_cells();
     let arguments = structural_call_arguments(
         &state.values,
         &state.stack,
@@ -646,6 +685,7 @@ pub(super) fn apply_call_instruction(
                 .blockers
                 .push(format!("call/jump instruction at {pc:#x}: {instruction}"));
             if target < symbol_start || target >= symbol_end {
+                state.invalidate_allocation_pointer_cells();
                 let arguments = structural_call_arguments(
                     &state.values,
                     &state.stack,
@@ -711,6 +751,7 @@ pub(super) fn apply_call_instruction(
                 &state.stack,
                 state.private_stack_may_be_modified_by_call,
             );
+            state.invalidate_allocation_pointer_cells();
             state.private_stack_may_be_modified_by_call |= arguments
                 .iter()
                 .any(|argument| argument.private_stack_offset().is_some());

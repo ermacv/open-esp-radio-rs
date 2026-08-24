@@ -1,0 +1,399 @@
+schema = 3
+default-disposition = "not-yet-ported"
+default-protocol = "ble"
+
+# Only the arg=1 finite MMIO/order/control projection is bound. The vendor
+# version diagnostic, return value and any wider BTBB/controller-ready claim
+# remain outside this validation-only transaction.
+[[functions]]
+source = "btbb"
+symbol = "bt_bb_v2_init_cmplx"
+disposition = "bounded-feature"
+protocol = "ble"
+rust-component = "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::initialize_baseband_v2_printing"
+binding = "v2"
+rust-binding = "exact-production-entry"
+rust-probe = "open_btbb_v2_init_trace_r_sym_bt_bb_v2_init_cmplx_x1"
+comparison-plan = "direct-effects-v1"
+effect-contract = "exact-effects-v2"
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102170 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102170 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010200c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010200c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020f0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020f0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104c24 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104c24 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010204c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010204c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028d0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028d0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028d4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028d4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010288c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010288c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102888 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102888 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020bc }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020bc }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020c0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020c0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102800 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102800 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010284c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010284c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102000 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102000 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102c0c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102c0c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102c00 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102c00 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102844 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102844 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102848 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102848 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102868 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102868 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20107cd0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20107cd0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102840 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102840 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102854 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102854 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028a0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028a0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028a8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028a8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028b8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028b8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102898 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102898 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028b0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028b0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102894 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102894 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028b4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028b4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028bc }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028bc }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102884 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102884 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028e0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028e0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028e4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028e4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028e8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028e8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028ec }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028ec }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028f0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028f0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102900 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102900 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102068 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102068 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102100 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102100 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028dc }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028dc }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028f8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028f8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010286c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010286c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028c0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028c0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201028c4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201028c4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201021c4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201021c4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020fc }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020fc }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102c10 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102c10 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102c18 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102c18 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102c34 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102c34 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102c2c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102c2c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102c30 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102c30 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102c14 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102c14 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102c28 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102c28 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020e0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020e0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020e4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020e4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020e8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020e8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020ec }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020ec }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020f4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020f4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20100870 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20100870 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102014 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102014 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201020b8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201020b8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102010 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102010 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20102184 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20102184 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "fence", fm = 0, predecessor = 15, successor = 15 }
+disposition = { kind = "rust-addition", value = "device-ordering" }

@@ -9,7 +9,7 @@ use crate::{
         RegisterNameSource, RegisterPredicateSummary, RegisterReviewState, RegisterSummary,
         RegisterWorkspaceReport, RegisterWritePatternSummary,
     },
-    registers::{RegisterFacts, RegisterModel, RegisterReviewIr},
+    registers::{RegisterFacts, RegisterModel, RegisterReviewIr, physical_register_identity},
 };
 
 pub(super) fn collect(
@@ -116,11 +116,14 @@ pub(crate) fn detail(
             .iter()
             .find(|fact| fact.address == address && width.is_none_or(|width| fact.width == width))
     });
-    let identity = identities
-        .iter()
-        .find(|((candidate, candidate_width), _)| {
-            *candidate == u64::from(address)
-                && width.is_none_or(|width| u32::from(width) == *candidate_width)
+    let identity = width
+        .and_then(|width| {
+            physical_register_identity(&identities, u64::from(address), u32::from(width))
+        })
+        .or_else(|| {
+            identities
+                .iter()
+                .find(|((candidate, _), _)| *candidate == u64::from(address))
         })
         .map(|(_, identity)| identity);
     let ir_register = width

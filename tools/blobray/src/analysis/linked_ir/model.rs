@@ -258,6 +258,9 @@ pub(crate) enum LinkedMemoryObject {
         argument: u8,
         stride: i64,
     },
+    Allocation {
+        call_token: u32,
+    },
     ZeroedAllocation {
         call_token: u32,
     },
@@ -286,6 +289,7 @@ impl LinkedMemoryObject {
                 argument,
                 stride,
             } => format!("{}[arg{argument} * {stride:#x}]", object.display_name()),
+            Self::Allocation { call_token } => format!("allocation#{call_token}"),
             Self::ZeroedAllocation { call_token } => format!("calloc#{call_token}"),
             Self::OpaqueExternalObject { call_token } => format!("opaque-external#{call_token}"),
         }
@@ -334,6 +338,9 @@ impl LinkedMemoryObject {
                 object: Box::new(Self::from_root_ref(root, address_space, nesting + 1)?),
                 argument: *argument,
                 stride: *stride,
+            },
+            MemoryObjectRoot::Allocation { call_token } => Self::Allocation {
+                call_token: *call_token,
             },
             MemoryObjectRoot::ZeroedAllocation { call_token } => Self::ZeroedAllocation {
                 call_token: *call_token,

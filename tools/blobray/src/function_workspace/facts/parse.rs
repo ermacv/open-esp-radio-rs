@@ -334,6 +334,9 @@ fn memory_object_fact(object: StoredMemoryObject) -> FunctionMemoryObjectFact {
             argument,
             stride,
         },
+        StoredMemoryObject::Allocation { call_token } => {
+            FunctionMemoryObjectFact::Allocation { call_token }
+        }
         StoredMemoryObject::ZeroedAllocation { call_token } => {
             FunctionMemoryObjectFact::ZeroedAllocation { call_token }
         }

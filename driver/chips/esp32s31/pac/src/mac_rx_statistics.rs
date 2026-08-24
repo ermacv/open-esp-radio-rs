@@ -1,6 +1,6 @@
 //! Typed snapshots of hardware RX counters recovered from the blob decoders.
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
 /// BSS-color collision state read by the complete blob debug decoder.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -207,7 +207,7 @@ pub struct MacRxStatisticsSnapshot {
     pub hang: MacRxHangStatistics,
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Read only the receive-buffer starvation counter.
     ///
     /// Unlike [`Self::rx_statistics_snapshot`], this single-register accessor
@@ -217,6 +217,7 @@ impl RadioRegisters {
     /// diagnostic register bank on every wake.
     pub fn mac_rx_buffer_full_count(&self) -> u16 {
         self.peripherals
+            .wifi_mac
             .wifi_mac_rx_statistics
             .buffer_full()
             .read()
@@ -229,9 +230,10 @@ impl RadioRegisters {
     /// SOURCE: complete pinned `libpp.a[hal_debug.o]`
     /// `dbg_read_color_collision`, size `0x64`, and its format strings.
     pub fn he_color_collision_snapshot(&self) -> MacHeColorCollisionSnapshot {
-        let colors = &self.peripherals.wifi_mac_he_color_collision;
+        let colors = &self.peripherals.wifi_mac.wifi_mac_he_color_collision;
         let control = self
             .peripherals
+            .wifi_mac
             .wifi_mac_he_init_prefix
             .rx_field_control()
             .read();
@@ -260,10 +262,10 @@ impl RadioRegisters {
     /// SOURCE: complete pinned `libpp.a[hal_debug.o]`
     /// `dbg_read_rx_count`, size `0x21a`, and its two format strings.
     pub fn rx_statistics_snapshot(&self) -> MacRxStatisticsSnapshot {
-        let registers = &self.peripherals.wifi_mac_rx_statistics;
+        let registers = &self.peripherals.wifi_mac.wifi_mac_rx_statistics;
         let mpdu_and_cfo = registers.mpdu_and_cfo().read();
         let abort = registers.abort().read();
-        let hangs = &self.peripherals.wifi_mac_rx_hang_statistics;
+        let hangs = &self.peripherals.wifi_mac.wifi_mac_rx_hang_statistics;
         let hang = hangs.hang().read();
 
         MacRxStatisticsSnapshot {

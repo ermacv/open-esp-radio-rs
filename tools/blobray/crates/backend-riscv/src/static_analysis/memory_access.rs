@@ -182,6 +182,7 @@ pub(super) fn apply_memory_instruction(
                     state
                         .reference_blockers
                         .push(format!("projected-data-relocation at {pc:#x}: {error}"));
+                    state.invalidate_allocation_pointer_cells();
                     structural_set(&mut state.values, dest, SymbolicValue::Unknown);
                     return true;
                 }
@@ -212,15 +213,12 @@ pub(super) fn apply_memory_instruction(
                                 .flatten()
                         })
                 });
-            let address = if relocated_pointer.is_some() {
-                None
-            } else if let Some(relocation) = projected_relocation.as_ref()
+            let address = if let Some(relocation) = projected_relocation.as_ref()
                 && projected_relaxed_zero_address(
                     relocation,
                     &state.values[usize::from(base.0)],
                     offset.as_i32(),
-                )
-            {
+                ) {
                 Some(StructuralAddress::SymbolMemory(projected_symbol_address(
                     relocation,
                 )))
@@ -276,10 +274,22 @@ pub(super) fn apply_memory_instruction(
                     }
                 }
             };
+            let pointer_cell_was_written = match &address {
+                Some(StructuralAddress::SymbolMemory(address)) => {
+                    state.allocation_pointer_cell_was_written(address, width)
+                }
+                Some(StructuralAddress::Absolute(address)) => state
+                    .allocation_pointer_cell_was_written(&SymbolicValue::Constant(*address), width),
+                _ => false,
+            };
+            let relocated_pointer = (!pointer_cell_was_written)
+                .then_some(relocated_pointer)
+                .flatten();
             let value = match (relocated_pointer, address) {
                 (Some(value), _) if width == 32 => value,
                 (_, Some(StructuralAddress::Absolute(address)))
                     if width == 32
+                        && !pointer_cell_was_written
                         && pointer_context
                             .reviewed_external_pointer_cells
                             .contains_key(&address) =>
@@ -290,6 +300,7 @@ pub(super) fn apply_memory_instruction(
                 }
                 (_, Some(StructuralAddress::Absolute(address)))
                     if width == 32
+                        && !pointer_cell_was_written
                         && pointer_context
                             .function_pointer_cells
                             .contains_key(&address) =>
@@ -297,7 +308,9 @@ pub(super) fn apply_memory_instruction(
                     SymbolicValue::FunctionTable(pointer_context.function_pointer_cells[&address])
                 }
                 (_, Some(StructuralAddress::Absolute(address)))
-                    if width == 32 && pointer_context.data_pointer_cells.contains_key(&address) =>
+                    if width == 32
+                        && !pointer_cell_was_written
+                        && pointer_context.data_pointer_cells.contains_key(&address) =>
                 {
                     pointer_context.data_pointer_cells[&address].clone()
                 }
@@ -386,6 +399,7 @@ pub(super) fn apply_memory_instruction(
                     SymbolicValue::memory_read(read_token, width, signed)
                 }
                 (_, Some(StructuralAddress::SymbolMemory(address))) => {
+                    let forwarded = state.forwarded_allocation_pointer(&address, width);
                     let read_token = state.next_memory_read_token;
                     state.next_memory_read_token += 1;
                     remember_pointer_read_source(state, read_token, width, &address);
@@ -399,7 +413,8 @@ pub(super) fn apply_memory_instruction(
                             value: None,
                         },
                     );
-                    SymbolicValue::memory_read(read_token, width, signed)
+                    forwarded
+                        .unwrap_or_else(|| SymbolicValue::memory_read(read_token, width, signed))
                 }
                 (_, Some(StructuralAddress::DereferencedMemory(address))) => {
                     let read_token = state.next_memory_read_token;
@@ -470,6 +485,8 @@ pub(super) fn apply_memory_instruction(
                     if symbol.memory_region(address, width).is_some() =>
                 {
                     let region = symbol.memory_region(address, width).unwrap();
+                    let address_value = SymbolicValue::Constant(address);
+                    let forwarded = state.forwarded_allocation_pointer(&address_value, width);
                     let read_token = state.next_memory_read_token;
                     state.next_memory_read_token += 1;
                     remember_absolute_pointer_read_source(state, read_token, width, address);
@@ -478,12 +495,13 @@ pub(super) fn apply_memory_instruction(
                         DraftReferenceEvent::Memory {
                             access: MemoryAccess::Read,
                             width,
-                            address: SymbolicValue::Constant(address),
+                            address: address_value,
                             region: region.name.clone(),
                             value: None,
                         },
                     );
-                    SymbolicValue::memory_read(read_token, width, signed)
+                    forwarded
+                        .unwrap_or_else(|| SymbolicValue::memory_read(read_token, width, signed))
                 }
                 _ => {
                     if let Some((address, domain)) =
@@ -547,6 +565,25 @@ pub(super) fn apply_memory_instruction(
                             },
                         );
                         SymbolicValue::memory_read(read_token, width, signed)
+                    } else if state.values[usize::from(base.0)].is_resolved()
+                        && state.values[usize::from(base.0)].depends_on_call_result()
+                    {
+                        let read_token = state.next_memory_read_token;
+                        state.next_memory_read_token += 1;
+                        let address = state.values[usize::from(base.0)]
+                            .clone()
+                            .add_constant(offset.as_u32());
+                        state.push_reference_event(
+                            pc as u32,
+                            DraftReferenceEvent::Memory {
+                                access: MemoryAccess::Read,
+                                width,
+                                address,
+                                region: DEFERRED_CALL_RESULT_MEMORY_REGION.to_owned(),
+                                value: None,
+                            },
+                        );
+                        SymbolicValue::memory_read(read_token, width, signed)
                     } else {
                         state.reference_blockers.push(format!(
                             "unmodeled-memory-load at {pc:#x}: {instruction}{}; base {} = {}",
@@ -584,6 +621,7 @@ pub(super) fn apply_memory_instruction(
                     state
                         .reference_blockers
                         .push(format!("projected-data-relocation at {pc:#x}: {error}"));
+                    state.invalidate_allocation_pointer_cells();
                     return true;
                 }
             };
@@ -615,6 +653,7 @@ pub(super) fn apply_memory_instruction(
                         state
                             .reference_blockers
                             .push(format!("malformed-data-relocation at {pc:#x}: {error}"));
+                        state.invalidate_allocation_pointer_cells();
                         return true;
                     }
                 }
@@ -632,6 +671,7 @@ pub(super) fn apply_memory_instruction(
                     );
                 }
                 Some(StructuralAddress::CallerMemory(address)) => {
+                    state.observe_nonstatic_memory_write(&address);
                     if !value.is_resolved() {
                         state
                             .reference_blockers
@@ -649,6 +689,7 @@ pub(super) fn apply_memory_instruction(
                     );
                 }
                 Some(StructuralAddress::SymbolMemory(address)) => {
+                    state.observe_static_pointer_cell_write(&address, width, &value);
                     if !value.is_resolved() {
                         state
                             .reference_blockers
@@ -666,6 +707,7 @@ pub(super) fn apply_memory_instruction(
                     );
                 }
                 Some(StructuralAddress::DereferencedMemory(address)) => {
+                    state.observe_nonstatic_memory_write(&address);
                     if !value.is_resolved() {
                         state
                             .reference_blockers
@@ -683,6 +725,7 @@ pub(super) fn apply_memory_instruction(
                     );
                 }
                 Some(StructuralAddress::IndexedMemory(address)) => {
+                    state.observe_nonstatic_memory_write(&address);
                     if !value.is_resolved() {
                         state
                             .reference_blockers
@@ -700,6 +743,7 @@ pub(super) fn apply_memory_instruction(
                     );
                 }
                 Some(StructuralAddress::DynamicMemory(address)) => {
+                    state.observe_nonstatic_memory_write(&address);
                     if !value.is_resolved() {
                         state
                             .reference_blockers
@@ -741,10 +785,17 @@ pub(super) fn apply_memory_instruction(
                 {
                     let region = symbol.memory_region(address, width).unwrap();
                     if !region.writable {
+                        state.invalidate_allocation_pointer_cells();
                         state.reference_blockers.push(format!(
                             "read-only-memory-store at {pc:#x}: {instruction} ({})",
                             region.name
                         ));
+                    } else {
+                        state.observe_static_pointer_cell_write(
+                            &SymbolicValue::Constant(address),
+                            width,
+                            &value,
+                        );
                     }
                     if !value.is_resolved() {
                         state
@@ -785,19 +836,39 @@ pub(super) fn apply_memory_instruction(
                     } else if state.values[usize::from(base.0)].is_resolved()
                         && state.values[usize::from(base.0)].depends_on_private_stack_read()
                     {
+                        let address = state.values[usize::from(base.0)]
+                            .clone()
+                            .add_constant(offset.as_u32());
+                        state.observe_nonstatic_memory_write(&address);
                         state.push_reference_event(
                             pc as u32,
                             DraftReferenceEvent::Memory {
                                 access: MemoryAccess::Write,
                                 width,
-                                address: state.values[usize::from(base.0)]
-                                    .clone()
-                                    .add_constant(offset.as_u32()),
+                                address,
                                 region: DEFERRED_CALLER_MEMORY_REGION.to_owned(),
                                 value: Some(value),
                             },
                         );
+                    } else if state.values[usize::from(base.0)].is_resolved()
+                        && state.values[usize::from(base.0)].depends_on_call_result()
+                    {
+                        let address = state.values[usize::from(base.0)]
+                            .clone()
+                            .add_constant(offset.as_u32());
+                        state.observe_nonstatic_memory_write(&address);
+                        state.push_reference_event(
+                            pc as u32,
+                            DraftReferenceEvent::Memory {
+                                access: MemoryAccess::Write,
+                                width,
+                                address,
+                                region: DEFERRED_CALL_RESULT_MEMORY_REGION.to_owned(),
+                                value: Some(value),
+                            },
+                        );
                     } else {
+                        state.invalidate_allocation_pointer_cells();
                         state.reference_blockers.push(format!(
                             "unmodeled-memory-store at {pc:#x}: {instruction}{}; base {} = {}",
                             if symbol.addresses_resolved {

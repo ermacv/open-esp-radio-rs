@@ -1,6 +1,6 @@
 //! Focused project-aware investigation of one MMIO register.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde::Serialize;
 
@@ -81,21 +81,15 @@ fn neighbors(
             }
         }
     }
-    let reviewed = identities
-        .keys()
-        .filter_map(|(address, width)| {
-            Some((u32::try_from(*address).ok()?, u8::try_from(*width).ok()?))
-        })
-        .collect::<BTreeSet<_>>();
-    for ((address, width), identity) in identities {
-        let Ok(address) = u32::try_from(address) else {
+    for ((address, width), identity) in &identities {
+        let Ok(address) = u32::try_from(*address) else {
             continue;
         };
-        let Ok(width) = u8::try_from(width) else {
+        let Ok(width) = u8::try_from(*width) else {
             continue;
         };
         if address.abs_diff(selected.address) <= 0x10 {
-            rows.insert((address, width), identity);
+            rows.insert((address, width), identity.clone());
         }
     }
     Ok(rows
@@ -104,7 +98,12 @@ fn neighbors(
             address,
             width,
             name,
-            reviewed: reviewed.contains(&(address, width)),
+            reviewed: crate::registers::physical_register_identity(
+                &identities,
+                u64::from(address),
+                u32::from(width),
+            )
+            .is_some(),
         })
         .collect())
 }

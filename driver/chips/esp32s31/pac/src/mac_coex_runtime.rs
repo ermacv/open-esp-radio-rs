@@ -2,15 +2,15 @@
 
 #![forbid(unsafe_code)]
 
-use super::{MacItwtClearIndex, MacPti, RadioRegisters};
+use super::{MacItwtClearIndex, MacPti, WifiRadioRegisters};
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Publish receive-beacon and shared receive PTI in vendor instruction order.
     ///
     /// SOURCE: complete pinned
     /// `libpp.a[hal_coex.o]::hal_set_rx_beacon_pti`.
     pub fn set_rx_beacon_pti(&mut self, beacon: MacPti, shared: MacPti) {
-        let runtime = &self.peripherals.wifi_mac_coex_runtime;
+        let runtime = &self.peripherals.coexistence.wifi_mac_coex_runtime;
         super::generated::publish_mac_rx_beacon_pti(
             runtime,
             super::generated::MacRxBeaconPtiMaskedInput::new(beacon.get() << 12),
@@ -28,7 +28,7 @@ impl RadioRegisters {
     /// `libpp.a[hal_coex.o]::hal_clear_rx_beacon_pti`.
     pub fn clear_rx_beacon_pti(&mut self) {
         super::generated::request_mac_rx_beacon_clear(
-            &self.peripherals.wifi_mac_coex_runtime,
+            &self.peripherals.coexistence.wifi_mac_coex_runtime,
             super::generated::MacRxBeaconClearRequest::Beacon,
         );
     }
@@ -40,7 +40,7 @@ impl RadioRegisters {
     /// byte, while the shared-PTI edge preserves bits 31:4 and replaces only
     /// bits 3:0.
     pub fn set_itwt_pti(&mut self, argument_is_zero: bool, shared: MacPti) {
-        let runtime = &self.peripherals.wifi_mac_coex_runtime;
+        let runtime = &self.peripherals.coexistence.wifi_mac_coex_runtime;
         super::generated::publish_mac_itwt_control(
             runtime,
             super::generated::MacItwtControlMaskedInput::new(u32::from(argument_is_zero)),
@@ -56,6 +56,9 @@ impl RadioRegisters {
     /// The individual bit meanings remain unknown. The public index type only
     /// exposes the five-bit shift domain implemented by the instruction.
     pub fn clear_itwt_pti(&mut self, index: MacItwtClearIndex) {
-        super::generated::request_mac_itwt_clear(&self.peripherals.wifi_mac_coex_runtime, index);
+        super::generated::request_mac_itwt_clear(
+            &self.peripherals.coexistence.wifi_mac_coex_runtime,
+            index,
+        );
     }
 }

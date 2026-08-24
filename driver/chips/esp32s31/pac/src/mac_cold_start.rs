@@ -2,13 +2,14 @@
 
 #![forbid(unsafe_code)]
 
-use super::{ColdRadioRegisters, MacInterruptMask};
+use super::{MacInterruptMask, WifiColdRegisters};
 
-impl ColdRadioRegisters {
+impl WifiColdRegisters {
     /// Set the cold-start request bit.
     pub fn request_mac_cold_start(&mut self) {
         self.registers
             .peripherals
+            .wifi_mac
             .wifi_mac_cold_handshake
             .control()
             .modify(|_, w| w.request().set_bit());
@@ -18,6 +19,7 @@ impl ColdRadioRegisters {
     pub fn sample_mac_cold_start(&self) -> u32 {
         self.registers
             .peripherals
+            .wifi_mac
             .wifi_mac_cold_handshake
             .control()
             .read()

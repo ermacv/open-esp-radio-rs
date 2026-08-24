@@ -7,9 +7,10 @@ extern crate std;
 use core::future::Future;
 
 use open_esp_radio_esp32s31_pac::{
-    ColdRadioRegisters, MacInterruptRegisters as PacMacInterruptRegisters,
+    BluetoothTaskRegisters, MacInterruptRegisters as PacMacInterruptRegisters,
     MacInterruptSetup as PacMacInterruptSetup,
-    MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioRegisters,
+    MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioHardware, RadioPhyRegisters,
+    WifiColdRegisters, WifiRadioRegisters,
 };
 pub mod analog_i2c;
 pub mod channel;
@@ -47,102 +48,132 @@ pub use types::{
 /// named HAL operations; it cannot dereference or recover a generic register
 /// block from it.
 pub struct PhyHal {
-    registers: ColdRadioRegisters,
+    registers: WifiColdRegisters,
+}
+
+/// One platform-observed image of the Wi-Fi baseband enable condition.
+///
+/// The shared PBus work-mode leaf uses this condition only to decide whether
+/// its caller must execute the recovered settle pulse. Keeping it separate
+/// prevents the protocol-neutral PHY owner from retaining Wi-Fi state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiBasebandEnableObservation(bool);
+
+impl WifiBasebandEnableObservation {
+    /// Record one semantic platform/PAC readback made by the lifecycle owner.
+    pub const fn from_platform_readback(enabled: bool) -> Self {
+        Self(enabled)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn is_enabled(self) -> bool {
+        self.0
+    }
+}
+
+/// Narrow borrowed HAL capability for the protocol-neutral radio PHY.
+///
+/// This value cannot acquire, release, or recover the underlying PAC owner.
+/// Its lifetime is bounded by the active Wi-Fi or Bluetooth route.
+pub struct SharedPhyHal<'owner> {
+    registers: &'owner mut RadioPhyRegisters,
+    wifi_baseband: WifiBasebandEnableObservation,
 }
 
 mod sealed {
-    use super::RadioRegisters;
+    use super::{BluetoothTaskRegisters, RadioPhyRegisters, WifiBasebandEnableObservation};
 
-    pub trait PhyAccess {
-        fn pac(&self) -> &RadioRegisters;
-        fn pac_mut(&mut self) -> &mut RadioRegisters;
+    pub trait BluetoothSharedPhyBorrow {
+        fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters;
+    }
+
+    impl BluetoothSharedPhyBorrow for BluetoothTaskRegisters {
+        fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
+            self.radio_phy_mut()
+        }
+    }
+
+    pub trait SharedPhyAccess {
+        fn pac(&self) -> &RadioPhyRegisters;
+        fn pac_mut(&mut self) -> &mut RadioPhyRegisters;
+    }
+
+    pub trait SharedPhyContext {
+        fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation;
+    }
+
+    pub trait PhyInitializationAccess {
+        fn record_wifi_baseband_enabled(&mut self, enabled: bool);
     }
 }
 
-/// Sealed marker accepted by named PHY HAL operations.
+/// Sealed conversion from the exclusive Bluetooth task owner to one narrow
+/// shared-PHY borrow.
 ///
-/// External crates can use an acquired [`PhyHal`] but cannot implement this
-/// trait for an arbitrary owner or use it to recover the underlying PAC.
-pub trait PhyAccess: sealed::PhyAccess {}
-
-impl sealed::PhyAccess for PhyHal {
-    fn pac(&self) -> &RadioRegisters {
-        self.registers.radio()
-    }
-
-    fn pac_mut(&mut self) -> &mut RadioRegisters {
-        self.registers.radio_mut()
-    }
-}
-
-impl PhyAccess for PhyHal {}
-
-impl sealed::PhyAccess for RadioRegisters {
-    fn pac(&self) -> &RadioRegisters {
-        self
-    }
-
-    fn pac_mut(&mut self) -> &mut RadioRegisters {
-        self
+/// The implementing PAC owner remains private to the Bluetooth hardware
+/// boundary. Callers can neither implement this trait for another owner nor
+/// recover the underlying register partition from the returned capability.
+#[doc(hidden)]
+pub trait BluetoothSharedPhyBorrow: sealed::BluetoothSharedPhyBorrow {
+    /// Borrow the shared PHY for one finite Bluetooth lower-layer scope.
+    ///
+    /// `wifi_baseband` must be a lifecycle-owned readback; selecting the
+    /// Bluetooth route alone is not evidence that this physical bit is clear.
+    fn borrow_shared_phy(
+        &mut self,
+        wifi_baseband: WifiBasebandEnableObservation,
+    ) -> SharedPhyHal<'_> {
+        SharedPhyHal {
+            registers: sealed::BluetoothSharedPhyBorrow::radio_phy_mut(self),
+            wifi_baseband,
+        }
     }
 }
 
-impl PhyAccess for RadioRegisters {}
+impl BluetoothSharedPhyBorrow for BluetoothTaskRegisters {}
 
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn phy_pac(access: &(impl PhyAccess + ?Sized)) -> &RadioRegisters {
-    sealed::PhyAccess::pac(access)
-}
-
-pub(crate) fn phy_pac_mut(access: &mut (impl PhyAccess + ?Sized)) -> &mut RadioRegisters {
-    sealed::PhyAccess::pac_mut(access)
-}
-
-impl PhyHal {
-    pub fn set_phy_calibration_clock(&mut self, enabled: bool) {
-        self.registers
-            .radio_mut()
-            .set_phy_calibration_clock(enabled);
+/// Sealed protocol-neutral port accepted by named PHY HAL operations.
+///
+/// External crates can use an acquired [`SharedPhyHal`] or Wi-Fi lifecycle
+/// borrow but cannot implement this trait for an arbitrary owner or recover
+/// the underlying PAC.
+pub trait SharedPhyAccess: sealed::SharedPhyAccess {
+    fn set_phy_calibration_clock(&mut self, enabled: bool) {
+        sealed::SharedPhyAccess::pac_mut(self).set_phy_calibration_clock(enabled);
     }
 
-    pub fn set_rx_gain_dc_calibration(&mut self, enabled: bool) {
-        self.registers
-            .radio_mut()
-            .set_rx_gain_dc_calibration(enabled);
+    fn set_rx_gain_dc_calibration(&mut self, enabled: bool) {
+        sealed::SharedPhyAccess::pac_mut(self).set_rx_gain_dc_calibration(enabled);
     }
 
-    pub fn configure_power_control_tone(&mut self, selector: u16, step: u8) {
-        self.registers
-            .radio_mut()
-            .configure_power_control_tone(selector, step);
+    fn configure_power_control_tone(&mut self, selector: u16, step: u8) {
+        sealed::SharedPhyAccess::pac_mut(self).configure_power_control_tone(selector, step);
     }
 
-    pub fn configure_calibration_tone(&mut self, enabled: bool, selector: u16, step: u8) {
-        self.registers
-            .radio_mut()
-            .configure_calibration_tone(enabled, selector, step);
+    fn configure_calibration_tone(&mut self, enabled: bool, selector: u16, step: u8) {
+        sealed::SharedPhyAccess::pac_mut(self).configure_calibration_tone(enabled, selector, step);
     }
 
-    pub fn configure_tx_iq_correction(&mut self, begin: bool) {
-        self.registers.radio_mut().configure_tx_iq_correction(begin);
+    fn configure_tx_iq_correction(&mut self, begin: bool) {
+        sealed::SharedPhyAccess::pac_mut(self).configure_tx_iq_correction(begin);
     }
 
-    pub fn txiq_tone_control(&mut self) -> u32 {
-        self.registers.radio_mut().txiq_tone_control()
+    fn txiq_tone_control(&mut self) -> u32 {
+        sealed::SharedPhyAccess::pac_mut(self).txiq_tone_control()
     }
 
-    pub fn restore_txiq_tone_control(&mut self, saved: u32) {
-        self.registers.radio_mut().restore_txiq_tone_control(saved);
+    fn restore_txiq_tone_control(&mut self, saved: u32) {
+        sealed::SharedPhyAccess::pac_mut(self).restore_txiq_tone_control(saved);
     }
 
-    pub fn configure_txiq_mismatch_power(
+    fn configure_txiq_mismatch_power(
         &mut self,
         first: bool,
         polarity: bool,
         attenuation: u8,
         selector: u16,
     ) {
-        self.registers.radio_mut().configure_txiq_mismatch_power(
+        sealed::SharedPhyAccess::pac_mut(self).configure_txiq_mismatch_power(
             first,
             polarity,
             attenuation,
@@ -150,81 +181,169 @@ impl PhyHal {
         );
     }
 
-    pub fn set_tx_iq_gain_coefficient(&mut self, coefficient: i8) {
+    fn set_tx_iq_gain_coefficient(&mut self, coefficient: i8) {
+        sealed::SharedPhyAccess::pac_mut(self).set_tx_iq_gain_coefficient(coefficient);
+    }
+
+    fn set_tx_iq_phase_coefficient(&mut self, coefficient: i8) {
+        sealed::SharedPhyAccess::pac_mut(self).set_tx_iq_phase_coefficient(coefficient);
+    }
+
+    fn set_rx_iq_gain_coefficient(&mut self, coefficient: i8) {
+        sealed::SharedPhyAccess::pac_mut(self).set_rx_iq_gain_coefficient(coefficient);
+    }
+
+    fn set_rx_iq_phase_coefficient(&mut self, coefficient: i8) {
+        sealed::SharedPhyAccess::pac_mut(self).set_rx_iq_phase_coefficient(coefficient);
+    }
+
+    fn configure_rx_iq_calibration_mode(&mut self) {
+        sealed::SharedPhyAccess::pac_mut(self).configure_rx_iq_calibration_mode();
+    }
+
+    fn configure_adc_rate(&mut self, rate: u32) {
+        sealed::SharedPhyAccess::pac_mut(self).configure_adc_rate(rate);
+    }
+
+    fn set_power_detector_tone_armed(&mut self, armed: bool) {
+        sealed::SharedPhyAccess::pac_mut(self).set_power_detector_tone_armed(armed);
+    }
+
+    fn stop_power_detector_tone(&mut self) {
+        sealed::SharedPhyAccess::pac_mut(self).stop_power_detector_tone();
+    }
+
+    fn trigger_tx_dc_measurement(&mut self) {
+        sealed::SharedPhyAccess::pac_mut(self).trigger_tx_dc_measurement();
+    }
+
+    fn tx_dc_measurement_is_ready(&mut self) -> bool {
+        sealed::SharedPhyAccess::pac_mut(self).tx_dc_measurement_is_ready()
+    }
+
+    fn sample_tx_dc_comparators(&mut self) -> [bool; 2] {
+        sealed::SharedPhyAccess::pac_mut(self).sample_tx_dc_comparators()
+    }
+
+    fn clear_tx_dc_measurement(&mut self) {
+        sealed::SharedPhyAccess::pac_mut(self).clear_tx_dc_measurement();
+    }
+
+    fn open_frontend_baseband_internal_clocks(&mut self) {
+        sealed::SharedPhyAccess::pac_mut(self).open_frontend_baseband_internal_clocks();
+    }
+}
+
+/// Shared PHY access paired with one explicit Wi-Fi-baseband observation.
+///
+/// Only the PBus work-mode settle decision needs this additional context.
+/// Ordinary shared-PHY leaves require [`SharedPhyAccess`] alone.
+pub trait SharedPhyContext: SharedPhyAccess + sealed::SharedPhyContext {
+    fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation {
+        sealed::SharedPhyContext::wifi_baseband_enable_observation(self)
+    }
+}
+
+/// Common PHY-initialization port that tracks temporary Wi-Fi-BB edges.
+///
+/// `register_chipv7_phy` temporarily drives the physical Wi-Fi-BB enable bit
+/// even when entered by the standalone Bluetooth lifecycle. Implementations
+/// update only their local observation after the official platform operation;
+/// this capability conveys no Wi-Fi MAC or protocol-role ownership.
+pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationAccess {
+    fn record_wifi_baseband_enabled(&mut self, enabled: bool) {
+        sealed::PhyInitializationAccess::record_wifi_baseband_enabled(self, enabled);
+    }
+}
+
+impl sealed::SharedPhyAccess for PhyHal {
+    fn pac(&self) -> &RadioPhyRegisters {
+        self.registers.radio().radio_phy()
+    }
+
+    fn pac_mut(&mut self) -> &mut RadioPhyRegisters {
+        self.registers.radio_mut().radio_phy_mut()
+    }
+}
+
+impl sealed::SharedPhyContext for PhyHal {
+    fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation {
+        WifiBasebandEnableObservation::from_platform_readback(
+            self.registers.radio().wifi_baseband_enabled_image(),
+        )
+    }
+}
+
+impl SharedPhyAccess for PhyHal {}
+impl SharedPhyContext for PhyHal {}
+
+impl sealed::PhyInitializationAccess for PhyHal {
+    fn record_wifi_baseband_enabled(&mut self, enabled: bool) {
         self.registers
             .radio_mut()
-            .set_tx_iq_gain_coefficient(coefficient);
+            .set_wifi_baseband_enabled_image(enabled);
     }
+}
 
-    pub fn set_tx_iq_phase_coefficient(&mut self, coefficient: i8) {
+impl PhyInitializationAccess for PhyHal {}
+
+impl sealed::SharedPhyAccess for SharedPhyHal<'_> {
+    fn pac(&self) -> &RadioPhyRegisters {
         self.registers
-            .radio_mut()
-            .set_tx_iq_phase_coefficient(coefficient);
     }
 
-    pub fn set_rx_iq_gain_coefficient(&mut self, coefficient: i8) {
+    fn pac_mut(&mut self) -> &mut RadioPhyRegisters {
         self.registers
-            .radio_mut()
-            .set_rx_iq_gain_coefficient(coefficient);
+    }
+}
+
+impl sealed::SharedPhyContext for SharedPhyHal<'_> {
+    fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation {
+        self.wifi_baseband
+    }
+}
+
+impl SharedPhyAccess for SharedPhyHal<'_> {}
+impl SharedPhyContext for SharedPhyHal<'_> {}
+
+impl sealed::PhyInitializationAccess for SharedPhyHal<'_> {
+    fn record_wifi_baseband_enabled(&mut self, enabled: bool) {
+        self.wifi_baseband = WifiBasebandEnableObservation::from_platform_readback(enabled);
+    }
+}
+
+impl PhyInitializationAccess for SharedPhyHal<'_> {}
+
+impl sealed::SharedPhyAccess for RadioPhyRegisters {
+    fn pac(&self) -> &RadioPhyRegisters {
+        self
     }
 
-    pub fn set_rx_iq_phase_coefficient(&mut self, coefficient: i8) {
-        self.registers
-            .radio_mut()
-            .set_rx_iq_phase_coefficient(coefficient);
+    fn pac_mut(&mut self) -> &mut RadioPhyRegisters {
+        self
     }
+}
 
-    pub fn configure_rx_iq_calibration_mode(&mut self) {
-        self.registers
-            .radio_mut()
-            .configure_rx_iq_calibration_mode();
-    }
+impl SharedPhyAccess for RadioPhyRegisters {}
 
-    pub fn configure_adc_rate(&mut self, rate: u32) {
-        self.registers.radio_mut().configure_adc_rate(rate);
-    }
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn phy_pac(access: &(impl SharedPhyAccess + ?Sized)) -> &RadioPhyRegisters {
+    sealed::SharedPhyAccess::pac(access)
+}
 
-    pub fn set_power_detector_tone_armed(&mut self, armed: bool) {
-        self.registers
-            .radio_mut()
-            .set_power_detector_tone_armed(armed);
-    }
-
-    pub fn stop_power_detector_tone(&mut self) {
-        self.registers.radio_mut().stop_power_detector_tone();
-    }
-
-    pub fn trigger_tx_dc_measurement(&mut self) {
-        self.registers.radio_mut().trigger_tx_dc_measurement();
-    }
-
-    pub fn tx_dc_measurement_is_ready(&mut self) -> bool {
-        self.registers.radio_mut().tx_dc_measurement_is_ready()
-    }
-
-    pub fn sample_tx_dc_comparators(&mut self) -> [bool; 2] {
-        self.registers.radio_mut().sample_tx_dc_comparators()
-    }
-
-    pub fn clear_tx_dc_measurement(&mut self) {
-        self.registers.radio_mut().clear_tx_dc_measurement();
-    }
-
-    pub fn open_frontend_baseband_internal_clocks(&mut self) {
-        self.registers
-            .radio_mut()
-            .open_frontend_baseband_internal_clocks();
-    }
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn phy_pac_mut(access: &mut (impl SharedPhyAccess + ?Sized)) -> &mut RadioPhyRegisters {
+    sealed::SharedPhyAccess::pac_mut(access)
 }
 
 /// Type states for the coarse radio power lifecycle.
 pub mod state {
-    use super::{ColdRadioRegisters, MacInterruptSetup, PhyHal, RadioRuntimeOwner};
+    use super::{MacInterruptSetup, PhyHal, RadioRuntimeOwner, WifiColdRegisters};
 
     /// The application uniquely owns the peripheral, but the open driver has
     /// not yet established its clock/reset prerequisites.
     pub struct Owned {
-        pub(super) registers: ColdRadioRegisters,
+        pub(super) registers: WifiColdRegisters,
     }
 
     /// The radio clock/reset prerequisites have been established and finite
@@ -257,7 +376,7 @@ pub struct Radio<P, State = state::Owned> {
 /// callback. Finite hardware transactions are borrowed through HAL
 /// capabilities.
 pub struct RadioRuntimeOwner {
-    registers: RadioRegisters,
+    registers: WifiRadioRegisters,
 }
 
 impl RadioRuntimeOwner {
@@ -266,7 +385,7 @@ impl RadioRuntimeOwner {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn claim_for_validation() -> Self {
-        Self::from_pac(open_esp_radio_esp32s31_pac::validation::radio_registers())
+        Self::from_pac(open_esp_radio_esp32s31_pac::validation::wifi_radio_registers())
     }
 
     pub fn wifi_mac_hal(&mut self) -> wifi_mac::WifiMacHal<'_> {
@@ -283,7 +402,7 @@ impl RadioRuntimeOwner {
     /// Read the calibrated baseband observation without exposing the PAC
     /// owner or its register encoding.
     pub fn read_noise_floor_dbm(&self) -> i8 {
-        self.registers.read_noise_floor_dbm()
+        self.registers.radio_phy().read_noise_floor_dbm()
     }
 
     pub fn access_point_receive_policy_snapshot(&self) -> wifi_mac::MacApReceivePolicySnapshot {
@@ -338,15 +457,15 @@ impl RadioRuntimeOwner {
         self.registers.he_trigger_receive_diagnostics()
     }
 
-    pub(crate) fn from_pac(registers: RadioRegisters) -> Self {
+    pub(crate) fn from_pac(registers: WifiRadioRegisters) -> Self {
         Self { registers }
     }
 
-    pub(crate) fn pac(&self) -> &RadioRegisters {
+    pub(crate) fn pac(&self) -> &WifiRadioRegisters {
         &self.registers
     }
 
-    pub(crate) fn pac_mut(&mut self) -> &mut RadioRegisters {
+    pub(crate) fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
         &mut self.registers
     }
 }
@@ -449,7 +568,7 @@ impl MacInterruptSetup {
 
     pub(crate) fn prepare_connected_sta_with_pac(
         &mut self,
-        registers: &mut RadioRegisters,
+        registers: &mut WifiRadioRegisters,
     ) -> ConnectedStaInterruptPrepared {
         let _ = self
             .inner
@@ -500,15 +619,26 @@ impl<P> Radio<P, state::Owned> {
     /// A second claim returns the platform token unchanged.
     pub fn claim(peripheral: P) -> Result<Self, P> {
         #[cfg(not(test))]
-        let Some(registers) = ColdRadioRegisters::take() else {
+        let Some(hardware) = RadioHardware::take() else {
             return Err(peripheral);
         };
         #[cfg(test)]
-        let registers = ColdRadioRegisters::for_validation();
-        Ok(Self {
+        let hardware = RadioHardware::for_validation();
+        Ok(Self::from_hardware(peripheral, hardware))
+    }
+
+    /// Bind an already-owned neutral radio root to the standalone Wi-Fi HAL.
+    ///
+    /// This is the consuming re-entry after [`Self::release`] or after a
+    /// mutually exclusive Bluetooth lifecycle has returned the same root. It
+    /// does not acquire another singleton and performs no MMIO.
+    pub fn from_hardware(peripheral: P, hardware: RadioHardware) -> Self {
+        Self {
             peripheral,
-            state: state::Owned { registers },
-        })
+            state: state::Owned {
+                registers: hardware.into_wifi(),
+            },
+        }
     }
 
     /// Construct the complete owner inside an isolated validation image.
@@ -521,14 +651,18 @@ impl<P> Radio<P, state::Owned> {
         Self {
             peripheral,
             state: state::Owned {
-                registers: ColdRadioRegisters::for_validation(),
+                registers: RadioHardware::for_validation().into_wifi(),
             },
         }
     }
 
     /// Release a radio that has not crossed into the powered state.
-    pub fn release(self) -> P {
-        self.peripheral
+    ///
+    /// Both singleton authorities are returned. Dropping the neutral radio
+    /// root would permanently make the Wi-Fi and Bluetooth routes
+    /// unavailable for this boot.
+    pub fn release(self) -> (P, RadioHardware) {
+        (self.peripheral, self.state.registers.release())
     }
 
     /// Adopt radio clocks and resets established by an external PHY oracle.
@@ -616,7 +750,7 @@ impl<P> Radio<P, state::Powered> {
     pub fn channel_hal(&mut self) -> channel::RadioChannelHal<'_, P> {
         channel::RadioChannelHal::from_owned(
             &mut self.peripheral,
-            phy_pac_mut(&mut self.state.registers),
+            self.state.registers.registers.radio_mut(),
         )
     }
 
@@ -811,10 +945,36 @@ mod tests {
     }
 
     #[test]
-    fn unpowered_owner_can_release_the_original_token() {
+    fn unpowered_owner_releases_platform_and_neutral_radio_roots() {
         let owned = Radio::claim(TestPeripheral { id: 9, ready: true })
             .unwrap_or_else(|_| panic!("test radio claim failed"));
-        assert_eq!(owned.release(), TestPeripheral { id: 9, ready: true });
+        let (peripheral, hardware) = owned.release();
+        assert_eq!(peripheral, TestPeripheral { id: 9, ready: true });
+
+        let hardware = hardware.into_bluetooth().release();
+        let _wifi = hardware.into_wifi();
+    }
+
+    #[test]
+    fn released_hardware_reenters_wifi_after_exclusive_bluetooth_route() {
+        let owned = Radio::claim(TestPeripheral {
+            id: 12,
+            ready: true,
+        })
+        .unwrap_or_else(|_| panic!("test radio claim failed"));
+        let (peripheral, hardware) = owned.release();
+        let hardware = hardware.into_bluetooth().release();
+
+        let returned = Radio::from_hardware(peripheral, hardware);
+        require_owned(&returned);
+        let (peripheral, _hardware) = returned.release();
+        assert_eq!(
+            peripheral,
+            TestPeripheral {
+                id: 12,
+                ready: true
+            }
+        );
     }
 
     #[test]
@@ -830,8 +990,9 @@ mod tests {
         };
         let recovered = failure.into_radio();
         require_owned(&recovered);
+        let (peripheral, _hardware) = recovered.release();
         assert_eq!(
-            recovered.release(),
+            peripheral,
             TestPeripheral {
                 id: 11,
                 ready: false

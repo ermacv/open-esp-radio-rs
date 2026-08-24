@@ -9,7 +9,8 @@ use open_esp_radio_esp32s31_coex::{
     CoexClient, CoexError, CoexPti, CoexTimerHardware, CoexTimerIndex,
 };
 use open_esp_radio_esp32s31_pac::{
-    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerRegister, CoexTimerTickImage, RadioRegisters,
+    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerRegister, CoexTimerTickImage,
+    WifiRadioRegisters,
 };
 
 const fn pac_timer(index: CoexTimerIndex) -> CoexTimerRegister {
@@ -23,11 +24,11 @@ const fn pac_timer(index: CoexTimerIndex) -> CoexTimerRegister {
 }
 
 struct CoexTimerHal<'registers> {
-    registers: &'registers mut RadioRegisters,
+    registers: &'registers mut WifiRadioRegisters,
 }
 
 impl<'registers> CoexTimerHal<'registers> {
-    fn new(registers: &'registers mut RadioRegisters) -> Self {
+    fn new(registers: &'registers mut WifiRadioRegisters) -> Self {
         Self { registers }
     }
 }

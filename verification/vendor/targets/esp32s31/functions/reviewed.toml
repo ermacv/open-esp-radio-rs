@@ -5,7 +5,7 @@ id = "esp32s31-radio-rev0"
 [[inputs]]
 profile = "archive-all"
 source = "archive"
-artifact-sha256 = "2aa7a828f9a0ff6fe92026545e9ef4cae8867bf1b12367c0dabe9bc4f95d6547"
+artifact-sha256 = "536cbdd76e269795f75aeb0a32eec1b338622b0c9efaf07269a95e7dea04da0a"
 
 [[inputs]]
 profile = "rom-all"
@@ -20,7 +20,7 @@ artifact-sha256 = "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e
 [[inputs]]
 profile = "libnet80211-all"
 source = "libnet80211"
-artifact-sha256 = "f850d4044a89888856a8d2ee50835e37c61f4dd92045ba4ea4dfa1b2cd7d77e8"
+artifact-sha256 = "d26493ec9a8c32c48fe6f3b784c6f5f961b1fed791b6191daa8651c42b5d58bf"
 
 [[inputs]]
 profile = "wifi-ap-data-path"
@@ -30,22 +30,27 @@ artifact-sha256 = "c4d958d54cbad4b1da93b3672a0574f2f762854b2edc19490c6ebd41bb14c
 [[inputs]]
 profile = "wifi-sta-lifecycle"
 source = "wifi-sta-lifecycle"
-artifact-sha256 = "513f8d08ef1611e4937d17ee0938aebf68b7c9ec16c843ecf2612a48ef2096c1"
+artifact-sha256 = "533c7b33116d6757847d2d5effee9d912d4780a7567789def506357baf65329a"
 
 [[inputs]]
 profile = "wifi-key-role"
 source = "wifi-key-role"
-artifact-sha256 = "81955b2bb883d80c4a9181cea6741f11e63960c2c84e56f992d1ab2390f5abf5"
+artifact-sha256 = "da06083a5bb100dd1f337f0724753283ea1145fe1fa0814011f3d626fc4f49e3"
 
 [[inputs]]
 profile = "coex-all"
 source = "coex"
-artifact-sha256 = "851cac6122d2e047fb22f1059b7875a55b526a07a19d94022fc0e30f4bf2fd6c"
+artifact-sha256 = "c468a92a8fb56cd1ccfc1562ea67172d52d0edcfebd05dc665a672e33aa18250"
 
 [[inputs]]
 profile = "btbb-all"
 source = "btbb"
-artifact-sha256 = "340de1f0948e70bb7355e74f1652daad7bcb14c4b0a909bda1fff89f96b63a60"
+artifact-sha256 = "b9b6d3d88644b0adeb3c15135e601e177da6cd868d8f016f996b8d12d77cab4c"
+
+[[inputs]]
+profile = "ble-controller-all"
+source = "ble-controller"
+artifact-sha256 = "5dbd91c45d13a2afc99e5414732aaffe1230737b471ddcf0bbe7e17a9d98e225"
 
 # Sparse review overlay: add only reviewed or ignored functions, contexts, fields, and logical types.
 # All omitted generated observations remain part of the computed unreviewed backlog.

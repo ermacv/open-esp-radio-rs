@@ -1,0 +1,25 @@
+[package]
+name = "open-esp-radio-esp32s31-radio-platform-esp-hal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ESP-HAL ownership coordinator for ESP32-S31 radio platform resources"
+readme = "README.md"
+
+[features]
+default = []
+esp32s31 = ["dep:esp-hal"]
+
+[dependencies]
+critical-section = "1.2.0"
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "unstable"], optional = true }
+open-esp-radio-esp32s31-bluetooth = { path = "../../../chips/esp32s31/bluetooth" }
+open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+
+[lints]
+workspace = true

@@ -2,7 +2,10 @@
 
 use std::collections::BTreeSet;
 
-use super::{RegisterFacts, RegisterModel, SvdExportSummary};
+use super::{
+    RegisterFacts, RegisterModel, SvdExportSummary, observation_is_reviewed,
+    physical_register_is_observed,
+};
 use crate::{Result, project::RegisterWorkspacePaths};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -75,13 +78,25 @@ impl ProjectRegisterWorkspace {
         Ok(RegisterWorkspaceSummary {
             ranges: self.facts.as_ref().map_or(0, |facts| facts.ranges.len()),
             observed: fact_keys.len(),
-            reviewed: observations.owned.intersection(&model_keys).count(),
+            reviewed: observations
+                .owned
+                .iter()
+                .filter(|observation| observation_is_reviewed(&identities, observation))
+                .count(),
             ignored: observations.outside_scope.len(),
-            non_operational: observations.non_operational.difference(&model_keys).count(),
-            manual: model_keys.difference(&fact_keys).count(),
+            non_operational: observations
+                .non_operational
+                .iter()
+                .filter(|observation| !observation_is_reviewed(&identities, observation))
+                .count(),
+            manual: model_keys
+                .iter()
+                .filter(|register| !physical_register_is_observed(register, &fact_keys))
+                .count(),
             unreviewed: observations
                 .owned
-                .difference(&model_keys)
+                .iter()
+                .filter(|observation| !observation_is_reviewed(&identities, observation))
                 .filter(|key| !observations.non_operational.contains(key))
                 .count(),
             fields: self.model.render_svd()?.1.fields,
@@ -100,7 +115,6 @@ impl ProjectRegisterWorkspace {
             return Ok(BTreeSet::new());
         }
         let identities = self.model.register_identities()?;
-        let model_keys = identities.keys().copied().collect::<BTreeSet<_>>();
         let facts = self.facts.as_ref().ok_or_else(|| {
             crate::Error::invalid(
                 "release-scoped register validation requires MMIO discovery facts",
@@ -124,7 +138,7 @@ impl ProjectRegisterWorkspace {
                 continue;
             }
             let key = (u64::from(address), u32::from(width));
-            if model_keys.contains(&key) {
+            if observation_is_reviewed(&identities, &key) {
                 continue;
             }
             let non_operational = facts

@@ -1,7 +1,9 @@
 //! Cross-validation of reviewed PAC transactions against their release SVD.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use svd_rs::{
-    Access, Device, FieldInfo, ModifiedWriteValues, RegisterCluster, RegisterInfo,
+    Access, Device, FieldInfo, MaybeArray, ModifiedWriteValues, RegisterCluster, RegisterInfo,
     RegisterProperties, Usage, WriteConstraint,
 };
 
@@ -14,11 +16,26 @@ pub(super) struct RegisterBinding<'a> {
     pub(super) is_array: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OwnedRegisterRange {
+    partition: String,
+    identity: String,
+    start: u64,
+    end_exclusive: u64,
+}
+
+#[derive(Clone, Copy)]
+struct RegisterRangeContext<'a> {
+    partition: &'a str,
+    peripheral_base: u64,
+}
+
 impl PacApiPack {
     /// Prove that every reviewed transaction is compatible with the release SVD.
     pub fn validate_against_svd(&self, svd: &str) -> Result<()> {
         self.validate()?;
         let device = svd_parser::parse(svd).map_err(|error| Error::message(error.to_string()))?;
+        self.validate_ownership_partitions_against_svd(&device)?;
 
         for operation in &self.interrupt_snapshots {
             let status = register(
@@ -200,6 +217,247 @@ impl PacApiPack {
         }
         Ok(())
     }
+
+    fn validate_ownership_partitions_against_svd(&self, device: &Device) -> Result<()> {
+        if self.ownership_partitions.is_empty() {
+            return Ok(());
+        }
+
+        let mut known = BTreeSet::new();
+        for peripheral in &device.peripherals {
+            if matches!(peripheral, MaybeArray::Array(_, _)) {
+                return Err(Error::message(format!(
+                    "PAC API ownership does not support SVD peripheral arrays: {:?}",
+                    peripheral.name
+                )));
+            }
+            if !known.insert(peripheral.name.as_str()) {
+                return Err(Error::message(format!(
+                    "release SVD repeats peripheral {:?}",
+                    peripheral.name
+                )));
+            }
+        }
+        let assigned = self
+            .ownership_partitions
+            .iter()
+            .flat_map(|partition| partition.peripherals.iter().map(String::as_str))
+            .collect::<BTreeSet<_>>();
+        let unknown = assigned.difference(&known).copied().collect::<Vec<_>>();
+        if !unknown.is_empty() {
+            return Err(Error::message(format!(
+                "PAC API ownership references unknown SVD peripherals: {}",
+                unknown.join(", ")
+            )));
+        }
+        let missing = known.difference(&assigned).copied().collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(Error::message(format!(
+                "PAC API ownership leaves SVD peripherals unassigned: {}",
+                missing.join(", ")
+            )));
+        }
+        self.validate_partition_register_ranges(device)?;
+        Ok(())
+    }
+
+    fn validate_partition_register_ranges(&self, device: &Device) -> Result<()> {
+        let partitions = self
+            .ownership_partitions
+            .iter()
+            .flat_map(|partition| {
+                partition
+                    .peripherals
+                    .iter()
+                    .map(|peripheral| (peripheral.as_str(), partition.name.as_str()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut ranges = Vec::new();
+        for peripheral in &device.peripherals {
+            let partition = partitions.get(peripheral.name.as_str()).ok_or_else(|| {
+                Error::message(format!(
+                    "PAC API ownership has no partition for SVD peripheral {:?}",
+                    peripheral.name
+                ))
+            })?;
+            let properties = merge_properties(
+                device.default_register_properties,
+                peripheral.default_register_properties,
+            );
+            if let Some(registers) = &peripheral.registers {
+                let context = RegisterRangeContext {
+                    partition,
+                    peripheral_base: peripheral.base_address,
+                };
+                collect_owned_register_ranges(
+                    context,
+                    0,
+                    &peripheral.name,
+                    registers,
+                    properties,
+                    &mut ranges,
+                )?;
+            }
+        }
+
+        ranges.sort_by(|left, right| {
+            (
+                left.start,
+                left.end_exclusive,
+                &left.partition,
+                &left.identity,
+            )
+                .cmp(&(
+                    right.start,
+                    right.end_exclusive,
+                    &right.partition,
+                    &right.identity,
+                ))
+        });
+        for (index, left) in ranges.iter().enumerate() {
+            for right in &ranges[index + 1..] {
+                if right.start >= left.end_exclusive {
+                    break;
+                }
+                if left.partition == right.partition
+                    || left.start >= right.end_exclusive
+                    || right.start >= left.end_exclusive
+                {
+                    continue;
+                }
+                let overlap_start = left.start.max(right.start);
+                let overlap_end = left.end_exclusive.min(right.end_exclusive);
+                return Err(Error::message(format!(
+                    "PAC API ownership partitions {:?} and {:?} overlap physical register bytes {overlap_start:#x}..{overlap_end:#x}: {} ({:#x}..{:#x}) and {} ({:#x}..{:#x})",
+                    left.partition,
+                    right.partition,
+                    left.identity,
+                    left.start,
+                    left.end_exclusive,
+                    right.identity,
+                    right.start,
+                    right.end_exclusive,
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn collect_owned_register_ranges(
+    context: RegisterRangeContext<'_>,
+    parent_offset: u64,
+    parent_identity: &str,
+    children: &[RegisterCluster],
+    inherited: RegisterProperties,
+    ranges: &mut Vec<OwnedRegisterRange>,
+) -> Result<()> {
+    for child in children {
+        match child {
+            RegisterCluster::Register(register) => match register {
+                MaybeArray::Single(info) => collect_owned_register_range(
+                    context,
+                    parent_offset,
+                    parent_identity,
+                    info,
+                    inherited,
+                    ranges,
+                )?,
+                MaybeArray::Array(info, dimension) => {
+                    for expanded in svd_rs::register::expand(info, dimension) {
+                        collect_owned_register_range(
+                            context,
+                            parent_offset,
+                            parent_identity,
+                            &expanded,
+                            inherited,
+                            ranges,
+                        )?;
+                    }
+                }
+            },
+            RegisterCluster::Cluster(cluster) => match cluster {
+                MaybeArray::Single(info) => collect_owned_cluster_ranges(
+                    context,
+                    parent_offset,
+                    parent_identity,
+                    info,
+                    inherited,
+                    ranges,
+                )?,
+                MaybeArray::Array(info, dimension) => {
+                    for expanded in svd_rs::cluster::expand(info, dimension) {
+                        collect_owned_cluster_ranges(
+                            context,
+                            parent_offset,
+                            parent_identity,
+                            &expanded,
+                            inherited,
+                            ranges,
+                        )?;
+                    }
+                }
+            },
+        }
+    }
+    Ok(())
+}
+
+fn collect_owned_register_range(
+    context: RegisterRangeContext<'_>,
+    parent_offset: u64,
+    parent_identity: &str,
+    register: &RegisterInfo,
+    inherited: RegisterProperties,
+    ranges: &mut Vec<OwnedRegisterRange>,
+) -> Result<()> {
+    let identity = format!("{parent_identity}.{}", register.name);
+    let properties = merge_properties(inherited, register.properties);
+    let size_bits = properties
+        .size
+        .ok_or_else(|| Error::message(format!("register {identity} has no inherited size")))?;
+    if size_bits == 0 {
+        return Err(Error::message(format!(
+            "register {identity} has zero physical size"
+        )));
+    }
+    let start = context
+        .peripheral_base
+        .checked_add(parent_offset)
+        .and_then(|base| base.checked_add(u64::from(register.address_offset)))
+        .ok_or_else(|| Error::message(format!("register {identity} address overflows u64")))?;
+    let end_exclusive = start
+        .checked_add(u64::from(size_bits).div_ceil(8))
+        .ok_or_else(|| Error::message(format!("register {identity} range overflows u64")))?;
+    ranges.push(OwnedRegisterRange {
+        partition: context.partition.to_owned(),
+        identity,
+        start,
+        end_exclusive,
+    });
+    Ok(())
+}
+
+fn collect_owned_cluster_ranges(
+    context: RegisterRangeContext<'_>,
+    parent_offset: u64,
+    parent_identity: &str,
+    cluster: &svd_rs::ClusterInfo,
+    inherited: RegisterProperties,
+    ranges: &mut Vec<OwnedRegisterRange>,
+) -> Result<()> {
+    let identity = format!("{parent_identity}.{}", cluster.name);
+    let offset = parent_offset
+        .checked_add(u64::from(cluster.address_offset))
+        .ok_or_else(|| Error::message(format!("cluster {identity} address overflows u64")))?;
+    collect_owned_register_ranges(
+        context,
+        offset,
+        &identity,
+        &cluster.children,
+        merge_properties(inherited, cluster.default_register_properties),
+        ranges,
+    )
 }
 
 pub(super) fn register<'a>(
@@ -368,4 +626,207 @@ const fn merge_properties(
         properties.reset_mask = child.reset_mask;
     }
     properties
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TWO_PERIPHERAL_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name>
+  <version>1</version>
+  <description>ownership fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>RADIO</name>
+      <description>radio</description>
+      <baseAddress>0x40000000</baseAddress>
+    </peripheral>
+    <peripheral>
+      <name>INTERRUPT</name>
+      <description>interrupt</description>
+      <baseAddress>0x40001000</baseAddress>
+    </peripheral>
+  </peripherals>
+</device>
+"#;
+
+    const PARTIALLY_OVERLAPPING_REGISTER_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name>
+  <version>1</version>
+  <description>physical range fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>RADIO</name>
+      <description>radio</description>
+      <baseAddress>0x40000000</baseAddress>
+      <registers>
+        <register>
+          <name>WINDOW</name>
+          <description>four-byte radio window</description>
+          <addressOffset>0x4</addressOffset>
+          <size>32</size>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>INTERRUPT</name>
+      <description>interrupt</description>
+      <baseAddress>0x40000000</baseAddress>
+      <registers>
+        <register>
+          <name>ALIAS</name>
+          <description>two-byte overlapping view</description>
+          <addressOffset>0x6</addressOffset>
+          <size>16</size>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>
+"#;
+
+    const OVERLAPPING_REGISTER_ARRAY_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name>
+  <version>1</version>
+  <description>register array fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>RADIO</name>
+      <description>radio</description>
+      <baseAddress>0x40000000</baseAddress>
+      <registers>
+        <register>
+          <dim>2</dim>
+          <dimIncrement>4</dimIncrement>
+          <dimIndex>0-1</dimIndex>
+          <name>WINDOW%s</name>
+          <description>radio window array</description>
+          <addressOffset>0</addressOffset>
+          <size>32</size>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>INTERRUPT</name>
+      <description>interrupt</description>
+      <baseAddress>0x40000004</baseAddress>
+      <registers>
+        <register>
+          <name>ALIAS</name>
+          <description>alias of the second radio window</description>
+          <addressOffset>0</addressOffset>
+          <size>32</size>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>
+"#;
+
+    fn ownership_pack(peripherals: &str) -> PacApiPack {
+        toml_edit::de::from_str(&format!(
+            r#"schema = 3
+
+[[ownership-partitions]]
+name = "FixturePeripherals"
+member = "fixture"
+description = "Exact fixture ownership."
+peripherals = [{peripherals}]
+"#
+        ))
+        .unwrap()
+    }
+
+    fn separated_ownership_pack() -> PacApiPack {
+        toml_edit::de::from_str(
+            r#"schema = 3
+
+[[ownership-partitions]]
+name = "RadioPeripherals"
+member = "radio"
+description = "Radio register ownership."
+peripherals = ["RADIO"]
+
+[[ownership-partitions]]
+name = "InterruptPeripherals"
+member = "interrupt"
+description = "Interrupt register ownership."
+peripherals = ["INTERRUPT"]
+"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn accepts_an_exact_exhaustive_ownership_partition() {
+        let pack = ownership_pack("\"RADIO\", \"INTERRUPT\"");
+        assert!(pack.validate_against_svd(TWO_PERIPHERAL_SVD).is_ok());
+    }
+
+    #[test]
+    fn rejects_missing_and_new_svd_peripherals() {
+        let pack = ownership_pack("\"RADIO\"");
+        let error = pack
+            .validate_against_svd(TWO_PERIPHERAL_SVD)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unassigned"));
+        assert!(error.contains("INTERRUPT"));
+    }
+
+    #[test]
+    fn rejects_unknown_declared_peripherals() {
+        let pack = ownership_pack("\"RADIO\", \"INTERRUPT\", \"GHOST\"");
+        let error = pack
+            .validate_against_svd(TWO_PERIPHERAL_SVD)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unknown"));
+        assert!(error.contains("GHOST"));
+    }
+
+    #[test]
+    fn rejects_partially_overlapping_register_bytes_across_partitions() {
+        let error = separated_ownership_pack()
+            .validate_against_svd(PARTIALLY_OVERLAPPING_REGISTER_SVD)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("overlap physical register bytes 0x40000006..0x40000008"));
+        assert!(error.contains("RadioPeripherals"));
+        assert!(error.contains("InterruptPeripherals"));
+        assert!(error.contains("RADIO.WINDOW (0x40000004..0x40000008)"));
+        assert!(error.contains("INTERRUPT.ALIAS (0x40000006..0x40000008)"));
+    }
+
+    #[test]
+    fn permits_overlapping_register_views_inside_one_partition() {
+        let pack = ownership_pack("\"RADIO\", \"INTERRUPT\"");
+        assert!(
+            pack.validate_against_svd(PARTIALLY_OVERLAPPING_REGISTER_SVD)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn expands_register_arrays_before_checking_physical_overlap() {
+        let error = separated_ownership_pack()
+            .validate_against_svd(OVERLAPPING_REGISTER_ARRAY_SVD)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("overlap physical register bytes 0x40000004..0x40000008"));
+        assert!(error.contains("RADIO.WINDOW1"));
+        assert!(error.contains("INTERRUPT.ALIAS"));
+    }
 }

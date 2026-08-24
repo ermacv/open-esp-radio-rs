@@ -127,7 +127,7 @@ bitWidth = 1
     if pac {
         fs::write(
             directory.join("registers/api.toml"),
-            "schema = 2\n\n[options]\n",
+            "schema = 3\n\n[options]\n",
         )
         .unwrap();
     }

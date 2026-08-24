@@ -2,9 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Apply the complete prefix through `hal_init_tb_tx`.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac_ctl.o]` parent and
@@ -12,9 +12,10 @@ impl RadioRegisters {
     /// twenty-two fresh-read RMW edges plus one final volatile status/sync read.
     /// It stops immediately before the parent calls `hal_init_tx_pwr`.
     pub fn initialize_mac_he_prefix(&mut self) {
-        let init = &self.peripherals.wifi_mac_he_init_prefix;
+        let init = &self.peripherals.wifi_mac.wifi_mac_he_init_prefix;
         let options = self
             .peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .he_default_control();
 
@@ -90,12 +91,15 @@ impl RadioRegisters {
         // or synchronize hardware state.
         let _ = self
             .peripherals
+            .radio_phy
+            .peripherals
             .phy_agc_oracle
             .agc_init_high_control()
             .read()
             .bits();
 
         self.peripherals
+            .wifi_mac
             .wifi_mac_rx_bssid_list
             .control()
             .modify(|_, w| w.rx_control_9_bssid_position().set(2));

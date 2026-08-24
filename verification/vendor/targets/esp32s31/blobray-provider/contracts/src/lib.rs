@@ -48,6 +48,13 @@ const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
         symbol: "coexist_printf",
         argument_count: 1,
     },
+    // ESP32-S31 archive relocations target the ROM printf entry directly.
+    // The format pointer is the only stable input retained at this variadic
+    // diagnostic boundary; payload registers do not become semantic inputs.
+    DiagnosticCallSpec {
+        symbol: "ets_printf",
+        argument_count: 1,
+    },
 ];
 
 pub const CONTRACTS: KnowledgeContractSpec = KnowledgeContractSpec {
@@ -71,6 +78,7 @@ mod tests {
         assert_eq!(DIAGNOSTIC_CALLS[3].symbol, "pp_printf");
         assert_eq!(DIAGNOSTIC_CALLS[4].symbol, "net80211_printf");
         assert_eq!(DIAGNOSTIC_CALLS[5].symbol, "coexist_printf");
+        assert_eq!(DIAGNOSTIC_CALLS[6].symbol, "ets_printf");
         assert!(
             DIAGNOSTIC_CALLS[3..]
                 .iter()

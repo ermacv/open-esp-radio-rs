@@ -866,7 +866,7 @@ impl PhyChipChannelMmioBinding {
     >(
         self,
         platform: &mut P,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> PhyChipChannelCompletion {
         match self.action {
             PhyChipChannelAction::SetAgc { enabled } => {

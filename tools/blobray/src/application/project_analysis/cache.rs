@@ -17,6 +17,7 @@ use crate::Result;
 pub(super) struct ProjectAnalysisCache {
     store: Option<crate::application::query_store::QueryStore>,
     store_error: Option<String>,
+    compiled_knowledge_identity: String,
     digests: BTreeMap<PathBuf, DigestMemo>,
 }
 
@@ -27,7 +28,7 @@ struct DigestMemo {
 }
 
 impl ProjectAnalysisCache {
-    pub(super) fn load(project_manifest: &Path) -> Self {
+    pub(super) fn load(project_manifest: &Path, compiled_knowledge_identity: String) -> Self {
         let (store, store_error) =
             match crate::application::query_store::QueryStore::open(project_manifest) {
                 Ok(store) => (Some(store), None),
@@ -36,6 +37,7 @@ impl ProjectAnalysisCache {
         Self {
             store,
             store_error,
+            compiled_knowledge_identity,
             digests: BTreeMap::new(),
         }
     }
@@ -145,6 +147,10 @@ impl ProjectAnalysisCache {
         digest.update(env!("CARGO_PKG_VERSION").as_bytes());
         digest.update([0]);
         digest.update(stage_revision(stage)?.to_le_bytes());
+        if stage_uses_compiled_knowledge(stage) {
+            digest.update([0]);
+            digest.update(self.compiled_knowledge_identity.as_bytes());
+        }
         digest.update([0]);
         digest.update(configuration.as_bytes());
         for path in inputs {
@@ -219,6 +225,10 @@ impl ProjectAnalysisCache {
     }
 }
 
+fn stage_uses_compiled_knowledge(stage: &str) -> bool {
+    stage == "linked-ir" || stage.starts_with("linked-ir:") || stage == "event-replays"
+}
+
 /// Explicit semantic revision of each cached generator.
 ///
 /// A digest of the whole executable made presentation-only changes invalidate
@@ -227,13 +237,13 @@ impl ProjectAnalysisCache {
 /// hashes continue to protect project and caller-owned state.
 fn stage_revision(stage: &str) -> Result<u32> {
     if stage.starts_with("linked-ir:") {
-        return Ok(35);
+        return Ok(38);
     }
     match stage {
         "symbol-inventory" => Ok(2),
         "mmio-discovery" => Ok(4),
         "interface-discovery" => Ok(6),
-        "linked-ir" => Ok(35),
+        "linked-ir" => Ok(38),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(5),
         "navigation-index" => Ok(2),
@@ -262,6 +272,10 @@ fn path_key(path: &Path) -> String {
 mod tests {
     use super::*;
 
+    fn load_cache(manifest: &Path) -> ProjectAnalysisCache {
+        ProjectAnalysisCache::load(manifest, "test-knowledge@1".to_owned())
+    }
+
     #[test]
     fn cache_restores_outputs_but_never_reuses_changed_inputs() {
         let directory =
@@ -274,7 +288,7 @@ mod tests {
         fs::write(&input, "input-a").unwrap();
         fs::write(&output, "output-a").unwrap();
 
-        let mut cache = ProjectAnalysisCache::load(&manifest);
+        let mut cache = load_cache(&manifest);
         assert!(
             !cache
                 .is_current(
@@ -375,7 +389,7 @@ mod tests {
         fs::write(&nested_input, "facts-a").unwrap();
         fs::write(&output, "review-a").unwrap();
 
-        let mut cache = ProjectAnalysisCache::load(&manifest);
+        let mut cache = load_cache(&manifest);
         cache
             .record(
                 "function-review",
@@ -425,7 +439,7 @@ mod tests {
         fs::write(&input, "artifact-bytes").unwrap();
         fs::write(&focused, "recovered-function").unwrap();
 
-        let mut cache = ProjectAnalysisCache::load(&manifest);
+        let mut cache = load_cache(&manifest);
         cache
             .record(
                 "linked-ir:focused",
@@ -487,7 +501,7 @@ mod tests {
         let manifest = directory.join("vendor-project.toml");
         let input = directory.join("artifact.elf");
         fs::write(&input, "same-artifact").unwrap();
-        let mut cache = ProjectAnalysisCache::load(&manifest);
+        let mut cache = load_cache(&manifest);
 
         let focused = cache
             .signature(
@@ -505,6 +519,50 @@ mod tests {
             .unwrap();
 
         assert_eq!(focused, full);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn compiled_knowledge_revision_invalidates_only_semantic_stages() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-provider-revision-cache-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("artifact.elf");
+        fs::write(&input, "same-artifact").unwrap();
+
+        let mut first = ProjectAnalysisCache::load(&manifest, "provider@1".to_owned());
+        let mut second = ProjectAnalysisCache::load(&manifest, "provider@2".to_owned());
+        let inputs = std::slice::from_ref(&input);
+
+        assert_ne!(
+            first
+                .signature("linked-ir:test", "roots=all", inputs)
+                .unwrap(),
+            second
+                .signature("linked-ir:test", "roots=all", inputs)
+                .unwrap()
+        );
+        assert_ne!(
+            first.signature("event-replays", "cases=a", inputs).unwrap(),
+            second
+                .signature("event-replays", "cases=a", inputs)
+                .unwrap()
+        );
+        assert_eq!(
+            first
+                .signature("symbol-inventory", "sources=a", inputs)
+                .unwrap(),
+            second
+                .signature("symbol-inventory", "sources=a", inputs)
+                .unwrap()
+        );
+
         fs::remove_dir_all(directory).unwrap();
     }
 }

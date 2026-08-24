@@ -181,7 +181,7 @@ impl PacApiPack {
         let device = svd_parser::parse(svd).map_err(|error| Error::message(error.to_string()))?;
         let mut output = String::new();
         output.push_str(&self.render_interrupt_snapshots());
-        if self.options.peripheral_ownership {
+        if !self.ownership_partitions.is_empty() {
             output.push_str(&self.render_peripheral_ownership(&device)?);
         }
         output.push_str(&self.render_full_register_writes());
@@ -259,30 +259,28 @@ impl PacApiPack {
     }
 
     fn render_peripheral_ownership(&self, device: &Device) -> Result<String> {
-        let interrupt_names = self
-            .interrupt_snapshots
-            .iter()
-            .map(|binding| binding.peripheral.as_str())
-            .collect::<BTreeSet<_>>();
         let peripheral_names = device
             .peripherals
             .iter()
             .map(|peripheral| peripheral.name.clone())
             .collect::<Vec<_>>();
-        let ordinary_peripherals = peripheral_names
-            .iter()
-            .filter(|name| !interrupt_names.contains(name.as_str()))
-            .collect::<Vec<_>>();
-        let interrupt_peripherals = peripheral_names
-            .iter()
-            .filter(|name| interrupt_names.contains(name.as_str()))
-            .collect::<Vec<_>>();
-        if interrupt_peripherals.len() != interrupt_names.len() {
-            return Err(Error::message(
-                "PAC API interrupt ownership references an unknown peripheral",
-            ));
+        let mut rendered_members = BTreeSet::new();
+        let mut rendered_types = BTreeSet::new();
+        for name in &peripheral_names {
+            let member = member_binding_name(name);
+            if !rendered_members.insert(member.clone()) {
+                return Err(Error::message(format!(
+                    "PAC API ownership has colliding rendered peripheral member {member:?}"
+                )));
+            }
+            let ty = type_binding_name(name);
+            if !rendered_types.insert(ty.clone()) {
+                return Err(Error::message(format!(
+                    "PAC API ownership has colliding rendered peripheral type {ty:?}"
+                )));
+            }
         }
-        let fields = |names: &[&String]| {
+        let fields = |names: &[String]| {
             names
                 .iter()
                 .map(|name| {
@@ -294,50 +292,68 @@ impl PacApiPack {
                 })
                 .collect::<String>()
         };
-        let members = |names: &[&String]| {
+        let members = |names: &[String], indent: &str| {
             names
                 .iter()
-                .map(|name| format!("        {},\n", member_binding_name(name)))
+                .map(|name| format!("{indent}{},\n", member_binding_name(name)))
                 .collect::<String>()
         };
-        let all_members = members(&peripheral_names.iter().collect::<Vec<_>>());
-        let ordinary_members = members(&ordinary_peripherals);
-        let interrupt_members = members(&interrupt_peripherals);
-        Ok(format!(
-            "\n/// Safe ownership partitions derived from the SVD interrupt banks.\n\
-             pub mod peripheral_ownership {{\n\
-             /// Radio peripherals which remain available to ordinary task code.\n\
-             #[allow(non_snake_case)]\n\
-             pub struct RadioPeripherals {{\n{}         }}\n\
-             /// Interrupt banks transferred from cold setup to the hard handlers.\n\
-             #[allow(non_snake_case)]\n\
-             pub struct InterruptPeripherals {{\n{}         }}\n\
-             /// Consume the singleton and separate task-owned registers from interrupt banks.\n\
+        let mut output = String::from(
+            "\n/// Target-declared exhaustive ownership partitions of the raw SVD singleton.\n\
+             pub mod peripheral_ownership {\n",
+        );
+        for partition in &self.ownership_partitions {
+            output.push('\n');
+            push_doc(&mut output, &partition.description, "    ");
+            output.push_str(&format!(
+                "    pub struct {} {{\n{}    }}\n",
+                partition.name,
+                fields(&partition.peripherals),
+            ));
+        }
+        output.push_str("\n    /// Complete target-reviewed ownership decomposition.\n");
+        output.push_str("    pub struct PeripheralPartitions {\n");
+        for partition in &self.ownership_partitions {
+            push_doc(&mut output, &partition.description, "        ");
+            output.push_str(&format!(
+                "        pub {}: {},\n",
+                partition.member, partition.name
+            ));
+        }
+        output.push_str(
+            "    }\n\
+             \n    /// Consume the singleton and apply the exhaustive target-owned partition.\n\
              #[inline]\n\
-             pub fn split(\n\
-                 peripherals: crate::Peripherals,\n\
-             ) -> (RadioPeripherals, InterruptPeripherals) {{\n\
-                 let crate::Peripherals {{\n{}             }} = peripherals;\n\
-                 (\n\
-                     RadioPeripherals {{\n{}                 }},\n\
-                     InterruptPeripherals {{\n{}                 }},\n\
-                 )\n\
-             }}\n\
-             /// Acquire a fresh singleton in an isolated compiled-validation image.\n\
-             #[cfg(feature = \"validation-probes\")]\n\
-             #[doc(hidden)]\n\
-             #[inline]\n\
-             pub fn peripherals_for_validation() -> crate::Peripherals {{\n\
-                 // SAFETY: validation images contain one closed probe and no runtime driver.\n\
-                 unsafe {{ crate::Peripherals::steal() }}\n\
-             }}\n\
-             }}\n",
-            fields(&ordinary_peripherals),
-            fields(&interrupt_peripherals),
-            all_members,
-            ordinary_members,
-            interrupt_members,
-        ))
+             pub fn partition(peripherals: crate::Peripherals) -> PeripheralPartitions {\n\
+                 let crate::Peripherals {\n",
+        );
+        output.push_str(&members(&peripheral_names, "            "));
+        output.push_str(
+            "        } = peripherals;\n\
+                     PeripheralPartitions {\n",
+        );
+        for partition in &self.ownership_partitions {
+            output.push_str(&format!(
+                "            {}: {} {{\n{}            }},\n",
+                partition.member,
+                partition.name,
+                members(&partition.peripherals, "                "),
+            ));
+        }
+        output.push_str(
+            "        }\n\
+                 }\n\
+                 \n    /// Acquire a fresh singleton in an isolated compiled-validation image.\n\
+                 #[cfg(feature = \"validation-probes\")]\n\
+                 #[doc(hidden)]\n\
+                 #[inline]\n\
+                 pub fn peripherals_for_validation() -> crate::Peripherals {\n\
+                     // SAFETY: validation images contain one closed probe and no runtime driver.\n\
+                     unsafe { crate::Peripherals::steal() }\n\
+                 }\n\
+                 }\n",
+        );
+        Ok(output)
     }
 
     fn render_full_register_writes(&self) -> String {
@@ -756,16 +772,21 @@ fn member_binding_name(value: &str) -> String {
 fn type_binding_name(value: &str) -> String {
     let value = remove_dimension_placeholder(value);
     let mut output = String::new();
-    let mut capitalize = true;
-    for character in value.chars() {
-        if character == '_' || character == '-' {
-            capitalize = true;
-        } else if capitalize {
-            output.push(character.to_ascii_uppercase());
-            capitalize = false;
-        } else {
-            output.push(character.to_ascii_lowercase());
+    let mut previous_ended_with_digit = false;
+    for part in value.split(['_', '-']).filter(|part| !part.is_empty()) {
+        if previous_ended_with_digit
+            && part.starts_with(|character: char| character.is_ascii_digit())
+        {
+            output.push('_');
         }
+        for (index, character) in part.chars().enumerate() {
+            if index == 0 {
+                output.push(character.to_ascii_uppercase());
+            } else {
+                output.push(character.to_ascii_lowercase());
+            }
+        }
+        previous_ended_with_digit = part.ends_with(|character: char| character.is_ascii_digit());
     }
     output
 }
@@ -800,6 +821,61 @@ mod tests {
     use super::*;
 
     #[test]
+    fn type_binding_matches_svd2rust_for_adjacent_numeric_segments() {
+        assert_eq!(type_binding_name("BT_V3_2_BASEBAND"), "BtV3_2Baseband");
+        assert_eq!(type_binding_name("UART0_CONTROL"), "Uart0Control");
+    }
+
+    #[test]
+    fn renders_target_declared_n_way_ownership_without_legacy_split() {
+        let pack: PacApiPack = toml_edit::de::from_str(
+            r#"schema = 3
+
+[[ownership-partitions]]
+name = "TaskPeripherals"
+member = "task"
+description = "Task-owned register bank."
+peripherals = ["RADIO"]
+
+[[ownership-partitions]]
+name = "IrqPeripherals"
+member = "irq"
+description = "Interrupt-owned register bank."
+peripherals = ["INTERRUPT"]
+"#,
+        )
+        .unwrap();
+        let svd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name>
+  <version>1</version>
+  <description>fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral><name>RADIO</name><description>radio</description><baseAddress>0x40000000</baseAddress></peripheral>
+    <peripheral><name>INTERRUPT</name><description>irq</description><baseAddress>0x40001000</baseAddress></peripheral>
+  </peripherals>
+</device>
+"#;
+
+        let source = pack.render_rust(svd).unwrap();
+        assert!(source.contains("pub struct TaskPeripherals"));
+        assert!(source.contains("pub struct IrqPeripherals"));
+        assert!(source.contains("pub struct PeripheralPartitions"));
+        assert!(source.contains("pub task: TaskPeripherals"));
+        assert!(source.contains("pub irq: IrqPeripherals"));
+        assert!(source.contains("pub fn partition("));
+        assert!(
+            source.contains("let crate::Peripherals {\n            radio,\n            interrupt,")
+        );
+        assert!(!source.contains("RadioPeripherals"));
+        assert!(!source.contains("InterruptPeripherals"));
+        assert!(!source.contains("pub fn split("));
+        assert!(!source.contains(".."));
+    }
+
+    #[test]
     fn masked_image_omits_a_zero_identity_term() {
         assert_eq!(
             masked_image_expression(0xf000_0000, 0x0fff_ffff, 0),
@@ -822,7 +898,7 @@ mod tests {
     #[test]
     fn facade_flags_have_no_public_integer_constructor() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 2
+            r#"schema = 3
 
 [[flag-domains]]
 name = "InterruptMask"

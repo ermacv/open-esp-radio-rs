@@ -2,9 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::{ColdRadioRegisters, MacInterruptMask};
+use super::{MacInterruptMask, WifiColdRegisters};
 
-impl ColdRadioRegisters {
+impl WifiColdRegisters {
     /// Apply the complete direct tail through `hal_timer_update_by_rtc`.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_init`,
@@ -28,22 +28,33 @@ impl ColdRadioRegisters {
         // same bit, and complete hal_init samples and sets it again here.
         self.registers
             .peripherals
+            .wifi_mac
             .wifi_mac_txrx_prefix
             .feature_edges()
             .modify(|_, w| w.third_enable_unknown().set_bit());
 
-        let csi = self.registers.peripherals.wifi_mac_rx_csi_control.control();
+        let csi = self
+            .registers
+            .peripherals
+            .wifi_mac
+            .wifi_mac_rx_csi_control
+            .control();
         // Keep the fresh-read byte replacements separate and in blob order.
         csi.modify(|_, w| w.hal_init_low_byte_unknown().initialized());
         csi.modify(|_, w| w.hal_init_second_byte_unknown().initialized());
 
         self.registers
             .peripherals
+            .wifi_mac
             .wifi_mac_rx_dma
             .rx_control()
             .modify(|_, w| w.hardware_beacon_reload_unknown().set_bit());
 
-        let rtc = &self.registers.peripherals.wifi_mac_rtc_timer_update;
+        let rtc = &self
+            .registers
+            .peripherals
+            .wifi_mac
+            .wifi_mac_rtc_timer_update;
         rtc.control()
             .modify(|_, w| w.rtc_update_enable_unknown().set_bit());
         rtc.slow_clock_calibration()

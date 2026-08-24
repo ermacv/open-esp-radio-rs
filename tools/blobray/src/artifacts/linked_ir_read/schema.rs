@@ -1201,6 +1201,9 @@ pub(crate) enum StoredMemoryObject {
         argument: u8,
         stride: i64,
     },
+    Allocation {
+        call_token: u32,
+    },
     ZeroedAllocation {
         call_token: u32,
     },
@@ -1229,6 +1232,7 @@ impl StoredMemoryObject {
                 argument,
                 stride,
             } => format!("{}[arg{argument} * {stride:#x}]", object.display_name()),
+            Self::Allocation { call_token } => format!("allocation#{call_token}"),
             Self::ZeroedAllocation { call_token } => format!("calloc#{call_token}"),
             Self::OpaqueExternalObject { call_token } => format!("opaque-external#{call_token}"),
         }

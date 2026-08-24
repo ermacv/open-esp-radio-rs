@@ -4,7 +4,7 @@
 //! RF initializer. Numeric MMIO identities stay in the generated PAC.
 
 #[cfg(target_arch = "riscv32")]
-use crate::{PhyAccess, phy_pac_mut};
+use crate::{SharedPhyAccess, phy_pac_mut};
 
 /// Platform operation required by the fixed-crystal PHY prelude.
 ///
@@ -31,7 +31,7 @@ pub fn configure_fixed_xtal_40mhz(platform: &mut impl PhyPreludePlatformControl)
 /// their wrapping unsigned difference with 9,999. This method performs one
 /// read; deadline arithmetic and retry ownership stay in the transition.
 #[cfg(target_arch = "riscv32")]
-pub fn sample_sdm_deadline_counter(registers: &mut impl PhyAccess) -> u32 {
+pub fn sample_sdm_deadline_counter(registers: &mut impl SharedPhyAccess) -> u32 {
     let registers = phy_pac_mut(registers);
     registers.sample_sdm_deadline_counter()
 }

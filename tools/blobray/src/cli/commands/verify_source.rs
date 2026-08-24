@@ -32,7 +32,7 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
     let source = VerifySource {
         name: "vendor",
         artifact: &vendor_artifact,
-        inventory: arguments.vendor_inventory.as_deref(),
+        inventories: arguments.vendor_inventory.as_slice(),
         companion: arguments.vendor_companion.as_deref(),
         selection: VendorSymbolSelection::Prefix(&arguments.vendor_prefix),
     };

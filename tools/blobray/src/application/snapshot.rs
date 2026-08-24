@@ -526,6 +526,9 @@ fn memory_fact_label(object: &FunctionMemoryObjectFact) -> String {
             argument,
             stride,
         } => format!("{}[arg{argument} * {stride:#x}]", memory_fact_label(object)),
+        FunctionMemoryObjectFact::Allocation { call_token } => {
+            format!("allocation:{call_token}")
+        }
         FunctionMemoryObjectFact::ZeroedAllocation { call_token } => {
             format!("zeroed-allocation:{call_token}")
         }

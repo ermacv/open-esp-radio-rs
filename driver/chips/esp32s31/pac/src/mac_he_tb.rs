@@ -1,6 +1,6 @@
 //! Typed ownership of HE trigger-based control and diagnostics.
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
 /// Monotonic hardware counters for HE Trigger reception and TB responses.
 ///
@@ -43,7 +43,7 @@ pub struct MacHeTbTxDiagnostics {
     pub uplink_packet_extension: u8,
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Apply the two HE Operating Mode Control UL-MU disable flags.
     ///
     /// SOURCE: complete pinned `libnet80211.a[ieee80211_he.o]`
@@ -59,6 +59,7 @@ impl RadioRegisters {
     ) {
         let control = self
             .peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .he_default_control();
         control.modify(|_, w| w.ul_mu_disable().bit(ul_mu_disabled));
@@ -71,7 +72,7 @@ impl RadioRegisters {
     /// `hal_he_get_rx_trigger_cnt`, `hal_he_get_tb_times_cnt` and
     /// `hal_he_get_tb_qosnull_cnt`.
     pub fn he_trigger_based_statistics(&self) -> MacHeTbStatistics {
-        let statistics = &self.peripherals.wifi_mac_he_tb_statistics;
+        let statistics = &self.peripherals.wifi_mac.wifi_mac_he_tb_statistics;
         let transmission = statistics.tb_transmission().read();
         MacHeTbStatistics {
             rx_trigger_count: statistics.rx_trigger().read().count().bits(),
@@ -85,7 +86,7 @@ impl RadioRegisters {
     /// SOURCE: complete pinned `libpp.a[hal_debug.o]`
     /// `dbg_read_axtb_diag` and its `WDEVAXTBDIAG0..3` format strings.
     pub fn he_trigger_based_tx_diagnostics(&self) -> MacHeTbTxDiagnostics {
-        let diagnostics = &self.peripherals.wifi_mac_he_tb_diagnostics;
+        let diagnostics = &self.peripherals.wifi_mac.wifi_mac_he_tb_diagnostics;
         let timing = diagnostics.timing().read();
         let psdu = diagnostics.psdu().read();
         let trigger = diagnostics.trigger().read();

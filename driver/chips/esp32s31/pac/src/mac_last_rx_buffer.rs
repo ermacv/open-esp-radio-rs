@@ -2,9 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Publish all six table entries, then their three enable edges.
     ///
     /// SOURCE: complete pinned
@@ -35,7 +35,7 @@ impl RadioRegisters {
             0x0000_00ff,
         ];
 
-        let table = &self.peripherals.wifi_mac_last_rx_buffer;
+        let table = &self.peripherals.wifi_mac.wifi_mac_last_rx_buffer;
         for entry in 0..6 {
             super::svd::zero_based_field_write::mac_last_rx_buffer_entry_control(
                 table,
@@ -62,6 +62,7 @@ impl RadioRegisters {
             .control()
             .modify(|_, w| w.low_enable_group_unknown().set(0x3f));
         self.peripherals
+            .wifi_mac
             .wifi_mac_rx_csi_control
             .control()
             .modify(|_, w| w.last_rx_buffer_enable_unknown().set_bit());

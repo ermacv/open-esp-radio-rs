@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
 /// One HCCFR/ICCFR value accepted by the recovered twelve-bit MMIO fields.
 ///
@@ -34,7 +34,7 @@ impl CfrValue {
     }
 }
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Publish both fields of complete pinned `phy_config_hccfr` in order.
     pub fn configure_hccfr(&mut self, enabled: bool, value: CfrValue) {
         let bb = &self.peripherals.phy_baseband_config_oracle;

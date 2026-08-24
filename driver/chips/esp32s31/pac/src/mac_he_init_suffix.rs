@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
 /// One hardware TX MPDU-length link-table entry.
 ///
@@ -15,7 +15,7 @@ pub struct MacHeTxMpduLengthLink {
     pub high_unknown: u16,
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Sample one of the 120 linked TX MPDU-length entries.
     pub fn he_tx_mpdu_length_link(&self, index: u8) -> Option<MacHeTxMpduLengthLink> {
         if index >= 120 {
@@ -23,6 +23,7 @@ impl RadioRegisters {
         }
         let entry = self
             .peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .he_scratch(usize::from(index));
         let value = entry.read();
@@ -42,7 +43,7 @@ impl RadioRegisters {
     /// phase produced `0x2010_4c7c = 0x1082_3c00` instead of the vendor auth
     /// image whose BSR portion is `0x0000_81c1`.
     pub fn initialize_he_buffer_status_report(&mut self) {
-        let init = &self.peripherals.wifi_mac_he_init_suffix;
+        let init = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
         let control = init.ersu_and_vht_control();
         control.modify(|_, w| w.bsr_enable().set_bit());
         init.he_default_control()
@@ -66,6 +67,7 @@ impl RadioRegisters {
     /// rewrites ACK-rate bytes already initialized by the cold HE suffix.
     pub fn set_he_extended_range_single_user_disabled(&mut self, disabled: bool) {
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .ersu_and_vht_control()
             .modify(|_, w| w.auto_ack_allow_ersu().bit(!disabled));
@@ -84,6 +86,7 @@ impl RadioRegisters {
     pub fn set_he_default_packet_extension_duration(&mut self, duration: u8) {
         debug_assert!(duration < 8);
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .he_default_control()
             .modify(|_, w| w.default_pe_duration().set(duration & 0x07));
@@ -96,7 +99,7 @@ impl RadioRegisters {
     /// below is 163 writes/RMWs plus both conditional multi-BSSID guard reads.
     /// It starts after the separate `dbg_read_tx_power` traversal.
     pub fn initialize_mac_he_suffix(&mut self) {
-        let init = &self.peripherals.wifi_mac_he_init_suffix;
+        let init = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
 
         // Complete hal_he_set_ersu(0), followed by its complete
         // hal_he_set_ersu_ack_rate(0) child. The four bytes are deliberately
@@ -111,6 +114,8 @@ impl RadioRegisters {
 
         // Complete hal_set_tx_min_pwr(-11), then the parent field update.
         self.peripherals
+            .radio_phy
+            .peripherals
             .phy_frequency_channel_oracle
             .channel_tx_offset_control()
             .modify(|_, w| w.minimum_power_index().set(0x35));
@@ -125,12 +130,14 @@ impl RadioRegisters {
         // Physical protection words are traversed high-to-low.
         for physical in (0..4).rev() {
             self.peripherals
+                .wifi_mac
                 .wifi_mac_tx_queue_control
                 .protection(physical)
                 .modify(|_, w| w.software_rts().clear_bit().software_cts().clear_bit());
         }
 
         self.peripherals
+            .wifi_mac
             .wifi_mac_txrx_prefix
             .mode_control()
             .modify(|_, w| w.he_enable_unknown().set_bit());
@@ -157,6 +164,8 @@ impl RadioRegisters {
         uora.modify(|_, w| w.high_window().set(31));
 
         self.peripherals
+            .radio_phy
+            .peripherals
             .phy_frequency_channel_oracle
             .channel_tx_offset_control()
             .modify(|_, w| w.he_parent_enable_unknown().set_bit());

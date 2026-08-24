@@ -555,6 +555,508 @@ fn resolved_memset_relocation_preserves_standard_effects_and_return_pointer() {
 }
 
 #[test]
+fn reviewed_allocator_result_accepts_memset_and_controller_field_write() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "allocate_controller_state".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x13, 0x05, 0x00, 0x01, // li a0, 16
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x13, 0x04, 0x05, 0x00, // mv s0, a0
+            0x93, 0x05, 0x00, 0x00, // li a1, 0
+            0x13, 0x06, 0x00, 0x01, // li a2, 16
+            0x13, 0x05, 0x04, 0x00, // mv a0, s0
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x23, 0x26, 0x04, 0x00, // sw zero, 12(s0)
+            0x13, 0x05, 0x04, 0x00, // mv a0, s0
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: false,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let relocations = direct::StructuralRelocatedCalls::from([
+        (
+            StructuralCallSite::new(&parent, 0x1004),
+            ("test_malloc".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x101c),
+            ("memset".to_owned(), None),
+        ),
+    ]);
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &BTreeMap::new(),
+        &relocations,
+        &synthetic_delay_pointer_context(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert!(matches!(
+        trace.reference_events.first(),
+        Some(DraftReferenceEvent::ModeledDirectCall { function, .. })
+            if function.return_model == ExternalReturnModel::Allocated { size_argument: 0 }
+    ));
+    let writes = trace
+        .reference_events
+        .iter()
+        .filter_map(|event| match event {
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                address,
+                ..
+            } => Some(address),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(writes.len(), 17, "{trace:#?}");
+    assert!(writes.iter().all(|address| matches!(
+        address
+            .memory_object_location_with_reads(&BTreeMap::new())
+            .map(|location| location.root),
+        Some(MemoryObjectRoot::Allocation { call_token: 0 })
+    )));
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .all(|blocker| { !blocker.contains("no writable byte-memory provenance") })
+    );
+}
+
+#[test]
+fn reviewed_allocator_result_accepts_memcpy_destination() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "copy_controller_state".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x93, 0x84, 0x05, 0x00, // mv s1, a1
+            0x13, 0x05, 0x40, 0x00, // li a0, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x13, 0x04, 0x05, 0x00, // mv s0, a0
+            0x13, 0x05, 0x04, 0x00, // mv a0, s0
+            0x93, 0x85, 0x04, 0x00, // mv a1, s1
+            0x13, 0x06, 0x40, 0x00, // li a2, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: false,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let relocations = direct::StructuralRelocatedCalls::from([
+        (
+            StructuralCallSite::new(&parent, 0x1008),
+            ("test_malloc".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x1020),
+            ("memcpy".to_owned(), None),
+        ),
+    ]);
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &BTreeMap::new(),
+        &relocations,
+        &synthetic_delay_pointer_context(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert_eq!(
+        trace
+            .reference_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DraftReferenceEvent::Memory {
+                    access: MemoryAccess::Read,
+                    width: 8,
+                    ..
+                }
+            ))
+            .count(),
+        4
+    );
+    assert_eq!(
+        trace
+            .reference_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                DraftReferenceEvent::Memory {
+                    access: MemoryAccess::Write,
+                    width: 8,
+                    ..
+                }
+            ))
+            .count(),
+        4
+    );
+}
+
+#[test]
+fn allocation_pointer_round_trips_through_exact_global_cell() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "initialize_controller_state".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x93, 0x89, 0x05, 0x00, // mv s3, a1
+            0x13, 0x05, 0x00, 0x01, // li a0, 16
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x93, 0x04, 0x05, 0x00, // mv s1, a0
+            0x37, 0x04, 0x00, 0x00, // lui s0, %hi(controller_state)
+            0x23, 0x20, 0x94, 0x00, // sw s1, %lo(controller_state)(s0)
+            0x13, 0x85, 0x04, 0x00, // mv a0, s1
+            0x93, 0x05, 0x00, 0x00, // li a1, 0
+            0x13, 0x06, 0x00, 0x01, // li a2, 16
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x03, 0x29, 0x04, 0x00, // lw s2, %lo(controller_state)(s0)
+            0x13, 0x05, 0x89, 0x00, // addi a0, s2, 8
+            0x93, 0x85, 0x09, 0x00, // mv a1, s3
+            0x13, 0x06, 0x40, 0x00, // li a2, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: false,
+        memory_regions: Default::default(),
+        relocations: vec![
+            artifact::SymbolRelocation {
+                address: 0x1014,
+                kind: artifact::RelocationKind::Hi20,
+                symbol: "controller_state".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 0x1018,
+                kind: artifact::RelocationKind::Lo12S,
+                symbol: "controller_state".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 0x1030,
+                kind: artifact::RelocationKind::Lo12I,
+                symbol: "controller_state".to_owned(),
+                addend: 0,
+            },
+        ],
+    };
+    let relocations = direct::StructuralRelocatedCalls::from([
+        (
+            StructuralCallSite::new(&parent, 0x1008),
+            ("test_malloc".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x1028),
+            ("memset".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x1040),
+            ("memcpy".to_owned(), None),
+        ),
+    ]);
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &BTreeMap::new(),
+        &relocations,
+        &synthetic_delay_pointer_context(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    let copied_offsets = trace
+        .located_reference_events
+        .iter()
+        .filter_map(|located| match &located.event {
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                address,
+                ..
+            } if located.site == 0x1040 => address
+                .memory_object_location_with_reads(&BTreeMap::new())
+                .and_then(|location| match location.root {
+                    MemoryObjectRoot::Allocation { call_token: 0 } => Some(location.offset),
+                    _ => None,
+                }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(copied_offsets, [8, 9, 10, 11], "{trace:#?}");
+    assert!(trace.reference_blockers.iter().all(|blocker| {
+        !blocker.contains("standard-memory-intrinsic at 0x1040")
+            || !blocker.contains("no writable byte-memory provenance")
+    }));
+}
+
+#[test]
+fn overlapping_global_store_invalidates_allocation_pointer_cell() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "overwrite_controller_pointer".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x13, 0x05, 0x00, 0x01, // li a0, 16
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x93, 0x04, 0x05, 0x00, // mv s1, a0
+            0x37, 0x04, 0x06, 0x10, // lui s0, 0x10060
+            0x23, 0x20, 0x94, 0x00, // sw s1, 0(s0)
+            0x23, 0x11, 0x04, 0x00, // sh zero, 2(s0)
+            0x03, 0x25, 0x04, 0x00, // lw a0, 0(s0)
+            0x93, 0x05, 0x00, 0x00, // li a1, 0
+            0x13, 0x06, 0x40, 0x00, // li a2, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: vec![artifact::MemoryRegion {
+            start: 0x1006_0000,
+            length: 4,
+            writable: true,
+            name: "controller globals".to_owned(),
+        }]
+        .into(),
+        relocations: Vec::new(),
+    };
+    let relocations = direct::StructuralRelocatedCalls::from([
+        (
+            StructuralCallSite::new(&parent, 0x1004),
+            ("test_malloc".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x1028),
+            ("memset".to_owned(), None),
+        ),
+    ]);
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+    let mut pointer_context = synthetic_delay_pointer_context();
+    pointer_context.data_pointer_cells.insert(
+        0x1006_0000,
+        SymbolicValue::ExternalResult(UNINITIALIZED_ALLOCATION_EXTERNAL_RESULT_TOKEN_FLAG | 99),
+    );
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &BTreeMap::new(),
+        &relocations,
+        &pointer_context,
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible());
+    assert!(trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("standard-memory-intrinsic at 0x1028")
+            && blocker.contains("no writable byte-memory provenance")
+    }));
+}
+
+#[test]
+fn unknown_alias_store_invalidates_allocation_pointer_cell() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "ambiguous_controller_pointer".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x13, 0x09, 0x06, 0x00, // mv s2, a2
+            0x13, 0x05, 0x00, 0x01, // li a0, 16
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x93, 0x04, 0x05, 0x00, // mv s1, a0
+            0x37, 0x04, 0x06, 0x10, // lui s0, 0x10060
+            0x23, 0x20, 0x94, 0x00, // sw s1, 0(s0)
+            0x23, 0x20, 0x09, 0x00, // sw zero, 0(s2)
+            0x03, 0x25, 0x04, 0x00, // lw a0, 0(s0)
+            0x93, 0x05, 0x00, 0x00, // li a1, 0
+            0x13, 0x06, 0x40, 0x00, // li a2, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: vec![artifact::MemoryRegion {
+            start: 0x1006_0000,
+            length: 4,
+            writable: true,
+            name: "controller globals".to_owned(),
+        }]
+        .into(),
+        relocations: Vec::new(),
+    };
+    let relocations = direct::StructuralRelocatedCalls::from([
+        (
+            StructuralCallSite::new(&parent, 0x1008),
+            ("test_malloc".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x102c),
+            ("memset".to_owned(), None),
+        ),
+    ]);
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &BTreeMap::new(),
+        &relocations,
+        &synthetic_delay_pointer_context(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible());
+    assert!(trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("standard-memory-intrinsic at 0x102c")
+            && blocker.contains("no writable byte-memory provenance")
+    }));
+}
+
+#[test]
+fn opaque_pointer_stored_in_global_cell_is_not_fresh_allocation() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "opaque_controller_pointer".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x13, 0x05, 0x40, 0x00, // li a0, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x93, 0x04, 0x05, 0x00, // mv s1, a0
+            0x37, 0x04, 0x06, 0x10, // lui s0, 0x10060
+            0x23, 0x20, 0x94, 0x00, // sw s1, 0(s0)
+            0x03, 0x25, 0x04, 0x00, // lw a0, 0(s0)
+            0x93, 0x05, 0x00, 0x00, // li a1, 0
+            0x13, 0x06, 0x40, 0x00, // li a2, 4
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: vec![artifact::MemoryRegion {
+            start: 0x1006_0000,
+            length: 4,
+            writable: true,
+            name: "controller globals".to_owned(),
+        }]
+        .into(),
+        relocations: Vec::new(),
+    };
+    let relocations = direct::StructuralRelocatedCalls::from([
+        (
+            StructuralCallSite::new(&parent, 0x1004),
+            ("test_opaque_pointer".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x1024),
+            ("memset".to_owned(), None),
+        ),
+    ]);
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &BTreeMap::new(),
+        &relocations,
+        &synthetic_delay_pointer_context(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible());
+    assert!(trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("standard-memory-intrinsic at 0x1024")
+            && blocker.contains("no writable byte-memory provenance")
+    }));
+}
+
+#[test]
+fn non_allocator_symbolic_return_does_not_gain_writable_provenance() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("controller.o".to_owned()),
+        name: "opaque_result_is_not_storage".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x13, 0x05, 0x80, 0x00, // li a0, 8
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x13, 0x04, 0x05, 0x00, // mv s0, a0
+            0x93, 0x05, 0x00, 0x00, // li a1, 0
+            0x13, 0x06, 0x80, 0x00, // li a2, 8
+            0x13, 0x05, 0x04, 0x00, // mv a0, s0
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: false,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let relocations = direct::StructuralRelocatedCalls::from([
+        (
+            StructuralCallSite::new(&parent, 0x1004),
+            ("test_opaque_result".to_owned(), None),
+        ),
+        (
+            StructuralCallSite::new(&parent, 0x101c),
+            ("memset".to_owned(), None),
+        ),
+    ]);
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &BTreeMap::new(),
+        &relocations,
+        &synthetic_delay_pointer_context(),
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible());
+    assert!(trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("standard-memory-intrinsic at 0x101c")
+            && blocker.contains("external-result:0")
+            && blocker.contains("no writable byte-memory provenance")
+    }));
+}
+
+#[test]
 fn dynamic_size_memcpy_relocation_remains_fail_closed() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: Some("memory.o".to_owned()),

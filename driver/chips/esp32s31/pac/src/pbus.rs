@@ -5,7 +5,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
 const PBUS_COMMAND_PRESERVE_MASK: u32 = 0xfffe_0001;
 const PBUS_COMMAND_ARGUMENT_MASK: u32 = 0x0001_fffc;
@@ -36,7 +36,7 @@ pub const fn pbus_force_test_command_image(
         | PBUS_TRANSACTION_START
 }
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Replace the four-bit force-TX/RX mode field.
     pub fn set_pbus_force_txrx_mode(&mut self, mode: u8) -> bool {
         if mode > 0x0f {
@@ -63,11 +63,6 @@ impl RadioRegisters {
             .phy_pbus
             .command()
             .modify(|_, w| w.debug_mode_enable().bit(enabled));
-    }
-
-    /// Whether the uniquely owned Wi-Fi baseband path is currently enabled.
-    pub fn wifi_baseband_is_enabled(&mut self) -> bool {
-        self.wifi_baseband_enabled_image()
     }
 
     /// Sample the PBus busy bit exactly once.

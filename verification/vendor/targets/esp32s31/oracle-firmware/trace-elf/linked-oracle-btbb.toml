@@ -1,13 +1,23 @@
-# Focused authoritative execution unit for the reviewed Bluetooth coexistence
-# PTI initializer. The raw libbtbb archive remains the inventory authority.
+# Complete linked analysis unit for the ESP32-S31 Bluetooth baseband and its
+# real PHY data provider. Each entry pulls one baseband archive member;
+# ordinary archive resolution then supplies referenced objects such as the
+# `phy_param` definition from libphy. Disabling section GC preserves every
+# function in the selected members for the lazy btbb-all pass. The raw archives
+# remain the inventory and origin authority.
 schema = 1
 source = "btbb"
 linker-scripts = [
     "../../../../../../hil/targets/esp32s31/linker/rom/esp32s31-eco0.x",
     "link.x",
 ]
-archives = ["../../../../../../_oracles/libbtbb.a"]
-entry-symbols = ["coex_pti_v2"]
+archives = [
+    "../../../../../../_oracles/libbtbb.a",
+    "../../../../../../_oracles/libphy.a",
+]
+entry-symbols = [
+    "coex_pti_v2",
+    "ble_bb_cte_set_cte_en",
+]
 emit-relocations = true
 gc-sections = false
 unresolved-symbols = "ignore-all"

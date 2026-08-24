@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
 const fn tone_path_image(previous: u32, enabled: bool, selector: u16, step: u8) -> u32 {
     let encoded =
@@ -99,7 +99,7 @@ const fn tx_iq_phase_field(coefficient: i8) -> u8 {
     saturated as u8 & 0x7f
 }
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Enable both RX- and TX-IQ correction modes through two fresh RMWs.
     ///
     /// Complete rev0 ROM `phy_iq_corr_enable` at `0x2f82_7d8c` sets both

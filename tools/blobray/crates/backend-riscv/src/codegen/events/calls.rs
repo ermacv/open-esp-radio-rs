@@ -54,6 +54,7 @@ pub(super) fn render_event(
                 ExternalReturnModel::Void | ExternalReturnModel::Unmodeled => {}
                 ExternalReturnModel::Constant(_)
                 | ExternalReturnModel::SymbolicU32
+                | ExternalReturnModel::Allocated { .. }
                 | ExternalReturnModel::AllocatedZeroed { .. }
                 | ExternalReturnModel::OpaquePointer => {
                     writeln!(

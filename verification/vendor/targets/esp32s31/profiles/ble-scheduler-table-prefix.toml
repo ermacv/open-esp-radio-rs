@@ -1,0 +1,134 @@
+schema = 5
+case-execution = "independent"
+transaction-comparison = "observables-under-effect-contract"
+
+# The vendor side stops at the event-construction call following the complete
+# sixteen-entry table loop. The Rust side executes only that table transaction
+# plus its reviewed device-ordering fence. Neither side is used here to claim
+# that the event objects, software lists, scheduler, or controller are ready.
+[[profiles]]
+name = "ble-scheduler-table-low-twenty-clear-prefix"
+claim = "reviewed-domain-equivalence"
+precondition = "valid-task-state-pointer-and-reviewed-sixteen-entry-image-domain"
+vendor-source = "ble-controller"
+vendor-symbol = "r_sym_bt_XPuqTHliEO5V9xpR7aJR"
+rust-symbol = "open_ble_scheduler_trace_r_sym_bt_x_puq_thli_eo5_v9xp_r7a_jr"
+compare-return = false
+
+# Entry zero is varied; every remaining entry has one fixed nonzero image.
+# The resulting reviewed Cartesian domain therefore contains exactly two
+# complete table images, not 2^16 guessed combinations.
+[[profiles.mmio-domains]]
+address = 0x2010b000
+values = [0x00000000, 0xa5afffff]
+[[profiles.mmio-domains]]
+address = 0x2010b010
+values = [0x101abcde]
+[[profiles.mmio-domains]]
+address = 0x2010b020
+values = [0x102abcde]
+[[profiles.mmio-domains]]
+address = 0x2010b030
+values = [0x103abcde]
+[[profiles.mmio-domains]]
+address = 0x2010b040
+values = [0x104abcde]
+[[profiles.mmio-domains]]
+address = 0x2010b050
+values = [0x105abcde]
+[[profiles.mmio-domains]]
+address = 0x2010b060
+values = [0x106abcde]
+[[profiles.mmio-domains]]
+address = 0x2010b070
+values = [0x107abcde]
+[[profiles.mmio-domains]]
+address = 0x2010b080
+values = [0x108abcde]
+[[profiles.mmio-domains]]
+address = 0x2010b090
+values = [0x109abcde]
+[[profiles.mmio-domains]]
+address = 0x2010b0a0
+values = [0x10aabcde]
+[[profiles.mmio-domains]]
+address = 0x2010b0b0
+values = [0x10babcde]
+[[profiles.mmio-domains]]
+address = 0x2010b0c0
+values = [0x10cabcde]
+[[profiles.mmio-domains]]
+address = 0x2010b0d0
+values = [0x10dabcde]
+[[profiles.mmio-domains]]
+address = 0x2010b0e0
+values = [0x10eabcde]
+[[profiles.mmio-domains]]
+address = 0x2010b0f0
+values = [0x10fabcde]
+
+[[profiles.cases]]
+name = "entry-zero-clear-and-fixed-preservation"
+arguments = [0x3fff2000]
+vendor-goal = { kind = "observe-call", symbol = "wr_btdm_osal_event_init" }
+vendor-ram-symbols = [
+    { target-symbol = "r_sym_bt_YnZmsxu068uuC3PC4iu8", offset = 0, value = 0x3fff1000, observe = false },
+]
+vendor-ram = [
+    { address = 0x3fff1000, value = 0 },
+    { address = 0x3fff1004, value = 0 },
+    { address = 0x3fff1014, value = 0 },
+    { address = 0x3fff2000, value = 0 },
+    { address = 0x3fff2004, value = 0 },
+]
+mmio-initial = [
+    { address = 0x2010b000, value = 0x00000000 },
+    { address = 0x2010b010, value = 0x101abcde },
+    { address = 0x2010b020, value = 0x102abcde },
+    { address = 0x2010b030, value = 0x103abcde },
+    { address = 0x2010b040, value = 0x104abcde },
+    { address = 0x2010b050, value = 0x105abcde },
+    { address = 0x2010b060, value = 0x106abcde },
+    { address = 0x2010b070, value = 0x107abcde },
+    { address = 0x2010b080, value = 0x108abcde },
+    { address = 0x2010b090, value = 0x109abcde },
+    { address = 0x2010b0a0, value = 0x10aabcde },
+    { address = 0x2010b0b0, value = 0x10babcde },
+    { address = 0x2010b0c0, value = 0x10cabcde },
+    { address = 0x2010b0d0, value = 0x10dabcde },
+    { address = 0x2010b0e0, value = 0x10eabcde },
+    { address = 0x2010b0f0, value = 0x10fabcde },
+]
+
+[[profiles.cases]]
+name = "entry-zero-preserve-and-fixed-preservation"
+arguments = [0x3fff2000]
+vendor-goal = { kind = "observe-call", symbol = "wr_btdm_osal_event_init" }
+vendor-ram-symbols = [
+    { target-symbol = "r_sym_bt_YnZmsxu068uuC3PC4iu8", offset = 0, value = 0x3fff1000, observe = false },
+]
+vendor-ram = [
+    { address = 0x3fff1000, value = 0 },
+    { address = 0x3fff1004, value = 0 },
+    { address = 0x3fff1014, value = 0 },
+    { address = 0x3fff2000, value = 0 },
+    { address = 0x3fff2004, value = 0 },
+]
+mmio-initial = [
+    { address = 0x2010b000, value = 0xa5afffff },
+    { address = 0x2010b010, value = 0x101abcde },
+    { address = 0x2010b020, value = 0x102abcde },
+    { address = 0x2010b030, value = 0x103abcde },
+    { address = 0x2010b040, value = 0x104abcde },
+    { address = 0x2010b050, value = 0x105abcde },
+    { address = 0x2010b060, value = 0x106abcde },
+    { address = 0x2010b070, value = 0x107abcde },
+    { address = 0x2010b080, value = 0x108abcde },
+    { address = 0x2010b090, value = 0x109abcde },
+    { address = 0x2010b0a0, value = 0x10aabcde },
+    { address = 0x2010b0b0, value = 0x10babcde },
+    { address = 0x2010b0c0, value = 0x10cabcde },
+    { address = 0x2010b0d0, value = 0x10dabcde },
+    { address = 0x2010b0e0, value = 0x10eabcde },
+    { address = 0x2010b0f0, value = 0x10fabcde },
+]

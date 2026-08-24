@@ -198,6 +198,7 @@ fn validate(
         model: &paths.model,
         pac_api: api_pack.as_ref().map(|pack| PacApiDocument {
             schema: pack.schema,
+            ownership_partitions: pack.ownership_partition_count(),
             domains: pack.domain_count(),
             operations: pack.operation_count(),
             sources: pack.source_ids().len(),

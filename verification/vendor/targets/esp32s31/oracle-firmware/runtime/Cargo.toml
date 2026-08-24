@@ -15,6 +15,7 @@ esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 esp-phy = { workspace = true, features = ["esp32s31"] }
 esp-rtos = { workspace = true, features = ["embassy", "esp32s31"] }
 open-esp-radio-esp32s31-hal.workspace = true
+open-esp-radio-esp32s31-pac.workspace = true
 open-esp-radio-esp32s31-phy.workspace = true
 open-esp-radio-esp32s31-wifi-dma.workspace = true
 open-esp-radio-esp32s31-wifi-mac.workspace = true

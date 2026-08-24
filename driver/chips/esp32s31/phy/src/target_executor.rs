@@ -7,7 +7,7 @@
 
 use core::future::Future;
 
-use open_esp_radio_esp32s31_hal::PhyHal;
+use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 use open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl;
 
 use crate::{
@@ -148,7 +148,7 @@ macro_rules! define_pbus_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
         pub async fn $function<D: PhyAsyncDelay>(
             mut binding: $binding,
-            registers: &mut PhyHal,
+            registers: &mut impl SharedPhyAccess,
         ) -> Result<$completion, PhyTargetPortError> {
             let mut started = false;
             for _ in 0..HARDWARE_EDGE_LIMIT {
@@ -188,7 +188,7 @@ macro_rules! define_timeout_pbus_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
         pub async fn $function<D: PhyAsyncDelay>(
             mut binding: $binding,
-            registers: &mut PhyHal,
+            registers: &mut impl SharedPhyAccess,
         ) -> Result<$completion, PhyTargetPortError> {
             let mut started = false;
             for _ in 0..HARDWARE_EDGE_LIMIT {

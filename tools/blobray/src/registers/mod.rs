@@ -5,6 +5,7 @@ mod model_import;
 #[cfg(test)]
 mod model_tests;
 mod pac;
+mod physical;
 mod project_validation;
 mod publication;
 mod review;
@@ -21,6 +22,7 @@ pub(crate) use open_esp_radio_register_model::{
     RegisterModelFragment, RegisterModelManifest, ReviewAnnotation, SvdExportSummary,
 };
 pub(crate) use pac::*;
+pub(crate) use physical::*;
 pub(crate) use project_validation::*;
 pub(crate) use publication::*;
 pub(crate) use review::*;

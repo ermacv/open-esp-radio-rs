@@ -7,9 +7,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Enable or disable the recovered PHY calibration clock.
     ///
     /// SOURCE\[BLOB_LIBPHY_PHY_BB_INIT]; the complete parent sets this bit

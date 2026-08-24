@@ -64,6 +64,7 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioMap) -> Result<bool> 
             case_execution: crate::verification::profiles::CaseExecution::Independent,
             transaction_comparison:
                 crate::verification::profiles::TransactionComparison::Observables,
+            effect_policy: None,
             call_equivalences: &[],
             coverage_domain: &unconstrained_coverage,
             vendor_setup: &[],

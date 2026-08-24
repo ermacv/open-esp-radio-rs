@@ -2193,6 +2193,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-phy",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-coex"
 version = "0.1.0"
 
@@ -2248,6 +2257,16 @@ dependencies = [
 name = "open-esp-radio-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-esp32s31-hal",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-radio-platform-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "open-esp-radio-esp32s31-bluetooth",
  "open-esp-radio-esp32s31-hal",
 ]
 

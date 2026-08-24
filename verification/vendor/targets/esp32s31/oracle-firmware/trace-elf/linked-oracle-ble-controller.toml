@@ -1,0 +1,67 @@
+# Focused link truth for the standalone BLE controller boundary.  This is not
+# a complete host stack or a coexistence runtime: it preserves the controller
+# lifecycle and baseband dependency closure across the controller archives and
+# the real PHY data provider used by the baseband. HCI traffic and controller
+# scheduling are intentionally separate lazy slices rather than unconditional
+# roots here.
+schema = 1
+source = "ble-controller"
+linker-scripts = [
+    "../../../../../../hil/targets/esp32s31/linker/rom/esp32s31-eco0.x",
+    "link.x",
+]
+archives = [
+    "../../../../../../_oracles/libble_app.a",
+    "../../../../../../_oracles/libbtdm_common.a",
+    "../../../../../../_oracles/libbtbb.a",
+    "../../../../../../_oracles/libphy.a",
+]
+entry-symbols = [
+    "r_ble_controller_init",
+    "r_ble_controller_deinit",
+    "r_ble_get_npl_element_info",
+    "r_ble_hci_trans_cfg_hs",
+    "r_ble_hci_trans_hs_cmd_tx",
+    "r_ble_hci_trans_hs_acl_tx",
+    "r_base_stack_initEnv",
+    "r_base_stack_enable",
+    "r_base_stack_disable",
+    "r_base_stack_deinitEnv",
+    "r_btdm_task_init",
+    "r_btdm_task_enable",
+    "r_btdm_task_disable",
+    "r_btdm_task_shutdown",
+    "r_btdm_task_deinit",
+    "esp_register_ext_funcs",
+    "esp_unregister_ext_funcs",
+    "esp_ble_register_bb_funcs",
+    "esp_ble_unregister_bb_funcs",
+    # The public S31 enable glue reaches this through btdm_lp_reset(true),
+    # esp_phy_enable and esp_btbb_enable. Keeping it as an explicit root makes
+    # the standalone hardware inventory include the actual common baseband
+    # initialization without inventing an executable C wrapper.
+    "bt_bb_v2_init_cmplx",
+]
+# These are known C runtime boundaries, not controller functions to recover.
+# The C addon supplies their signatures and semantics to downstream analysis.
+stub-symbols = [
+    "__assert_func",
+    "__ctzsi2",
+    "__divdf3",
+    "__extendsfdf2",
+    "__muldf3",
+    "__popcountsi2",
+    "__truncdfsf2",
+    "__umoddi3",
+    "memcmp",
+    "memcpy",
+    "memmove",
+    "memset",
+    "printf",
+    "puts",
+    "strlen",
+]
+exact-builtins = ["__udivdi3"]
+emit-relocations = true
+gc-sections = true
+unresolved-symbols = "ignore-all"

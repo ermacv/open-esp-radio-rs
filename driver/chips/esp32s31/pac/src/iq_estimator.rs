@@ -2,13 +2,13 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
 const fn truncate_control_window(control: u16) -> u16 {
     control & 0x7fff
 }
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Publish the complete rev0 ROM estimator configuration prefix.
     ///
     /// Complete `phy_iq_est_enable` performs three separate fresh-read RMW

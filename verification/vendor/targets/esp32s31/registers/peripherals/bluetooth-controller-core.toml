@@ -1,0 +1,1660 @@
+schema = 2
+
+[[peripherals]]
+name = "BLUETOOTH_CONTROLLER_CORE"
+description = """
+Bluetooth controller-core register view grouped by runtime responsibility rather
+than vendor object boundaries. It owns scheduler, sleep-timer, controller
+initialization, memory-list, scan-snapshot and ISO-coexistence state reached
+through the 0x20101000 physical block. Interrupt programming, enable/status,
+acknowledgement and ISR diagnostics belong exclusively to
+BLUETOOTH_INTERRUPT_BANK.
+"""
+baseAddress = 0x20101000
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_CONTROL"
+description = "A complete btdm_sched.c leaf writes the finite complete image 1 when its reviewed predicate succeeds. Inner action remains unknown."
+addressOffset = 0x0
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "COMMAND"
+bitOffset = 0
+bitWidth = 32
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_DISABLE_COMMAND"
+description = "The scheduler lifecycle function reached from both BTDM task disable and shutdown writes the finite complete image 1 before waiting for the scheduler state to become idle. Inner command semantics remain unknown."
+addressOffset = 0x04
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "COMMAND"
+bitOffset = 0
+bitWidth = 32
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_SRAM_POINTER_PREFIX"
+description = "Hardware initialization publishes bits 22..31 from an SRAM configuration address; scheduler list users OR this prefix with compressed 20-bit pointer values shifted left by two."
+addressOffset = 0x74
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "ADDRESS_PREFIX"
+bitOffset = 22
+bitWidth = 10
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_REFERENCE"
+description = "Scheduler users compare bits 0..19 and also publish complete images. Upper encoding remains unknown."
+addressOffset = 0x78
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "VALUE_LOW_20"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers.register.fields]]
+name = "OPAQUE_HIGH_12"
+bitOffset = 20
+bitWidth = 12
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_STATE"
+description = "Shared scheduler state. Command transactions wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits."
+addressOffset = 0x7C
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "VALUE_LOW_20"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers.register.fields]]
+name = "OPAQUE_STATE_20_29"
+bitOffset = 20
+bitWidth = 10
+[[peripherals.registers.register.fields]]
+name = "OPAQUE_STATE_30"
+bitOffset = 30
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "BUSY"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "HAL_INIT_BYTES"
+description = "Complete BTDM HAL initialization replaces bytes zero and one with two independently runtime-derived values while preserving bits 16..31. Their inner meanings remain unknown."
+addressOffset = 0x84
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "VALUE_0"
+bitOffset = 0
+bitWidth = 8
+[[peripherals.registers.register.fields]]
+name = "VALUE_1"
+bitOffset = 8
+bitWidth = 8
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SLEEP_TIMER_CONTROL"
+description = "BTDM sleep/wakeup transaction control. Initialization programs bits 0..2 and bit 24; callers set bit 26 and wait for hardware to clear it before reading latched time; the timer-programming path sets bit 31."
+addressOffset = 0x90
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "CONFIG_LOW_3"
+bitOffset = 0
+bitWidth = 3
+[[peripherals.registers.register.fields]]
+name = "CONFIG_24"
+bitOffset = 24
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LATCH_REQUEST"
+bitOffset = 26
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "TIMER_ARM"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SLEEP_TIMER_VALUE_0"
+description = "First runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."
+addressOffset = 0x94
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SLEEP_TIMER_VALUE_1"
+description = "Second runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."
+addressOffset = 0x98
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SLEEP_TIMER_VALUE_2"
+description = "Third runtime-derived complete word published immediately before SLEEP_TIMER_CONTROL.TIMER_ARM. Inner meaning remains unknown."
+addressOffset = 0x9C
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SLEEP_TIMER_LATCHED_TIME"
+description = "BTDM sleep/wakeup paths set SLEEP_TIMER_CONTROL.LATCH_REQUEST, wait for hardware to clear it, then read this complete latched time image."
+addressOffset = 0xAC
+size = 32
+access = "read-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_LIST_POINTER_0"
+description = "First 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."
+addressOffset = 0xC8
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "COMPRESSED_SRAM_POINTER"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_LIST_POINTER_1"
+description = "Second 20-bit scheduler-list pointer; software reconstructs SRAM address as SCHEDULER_SRAM_POINTER_PREFIX | (value << 2)."
+addressOffset = 0xCC
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "COMPRESSED_SRAM_POINTER"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_POINTER_COMMAND"
+description = "Pointer command transaction: compressed pointer in bits 0..19, four-bit argument in bits 20..23 and START in bit 31; completion returns a two-bit result in bits 28..29."
+addressOffset = 0xEC
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "COMPRESSED_SRAM_POINTER"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers.register.fields]]
+name = "ARGUMENT_LOW_4"
+bitOffset = 20
+bitWidth = 4
+[[peripherals.registers.register.fields]]
+name = "RESULT"
+bitOffset = 28
+bitWidth = 2
+[[peripherals.registers.register.fields]]
+name = "START"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "HAL_INIT_CONTROL_0"
+description = "BTDM HAL initialization sets bit 31 through a fresh-read RMW. The control meaning remains unknown."
+addressOffset = 0xDC
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "ENABLE_31"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "HAL_INIT_CONTROL_1"
+description = "BTDM HAL initialization replaces and sets the six independently observed positions 3, 6, 7, 15, 18 and 19. Positional groups preserve the exact masks without assigning hardware meaning."
+addressOffset = 0xE0
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "CONFIG_3"
+bitOffset = 3
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "CONFIG_6_7"
+bitOffset = 6
+bitWidth = 2
+[[peripherals.registers.register.fields]]
+name = "CONFIG_15"
+bitOffset = 15
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "CONFIG_18_19"
+bitOffset = 18
+bitWidth = 2
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "HAL_INIT_LATCH"
+description = "BTDM HAL initialization writes the finite complete image 0x40 and then sets bit 31 through a fresh-read RMW. Inner semantics remain unknown."
+addressOffset = 0x1C0
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "CONFIG_6"
+bitOffset = 6
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "ENABLE_31"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "HAL_INIT_LOW_20"
+description = "BTDM HAL initialization writes the finite complete image 0x000FFFFF. Inner semantics remain unknown."
+addressOffset = 0x1C4
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "CONFIG_LOW_20"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ISO_COEX_ENABLE"
+description = "ISO coexistence initialization sets bit 0; deinitialization clears it."
+addressOffset = 0x1F4
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "ENABLE"
+bitOffset = 0
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ISO_COEX_CONTROL_0"
+description = "ISO coexistence initialization sets bit 0. Inner control semantics remain unknown."
+addressOffset = 0x1F8
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "ENABLE_0"
+bitOffset = 0
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ISO_COEX_THRESHOLD"
+description = "ISO coexistence initialization writes low ten-bit value 100 and then sets bit 31."
+addressOffset = 0x1FC
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "VALUE_LOW_10"
+bitOffset = 0
+bitWidth = 10
+[[peripherals.registers.register.fields]]
+name = "ENABLE"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ISO_COEX_CONTROL_1"
+description = "ISO coexistence initialization sets bit 0. Inner control semantics remain unknown."
+addressOffset = 0x200
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "ENABLE_0"
+bitOffset = 0
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ISO_COEX_STATE_0"
+description = "ISO coexistence initialization and deinitialization write the complete zero image."
+addressOffset = 0x20C
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ISO_COEX_STATE_1"
+description = "ISO coexistence initialization and deinitialization write the complete zero image."
+addressOffset = 0x210
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ISO_COEX_TIMING_0"
+description = "ISO coexistence initialization publishes a runtime-derived low 24-bit value and then sets bit 31."
+addressOffset = 0x214
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "VALUE_LOW_24"
+bitOffset = 0
+bitWidth = 24
+[[peripherals.registers.register.fields]]
+name = "ENABLE"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ISO_COEX_TIMING_1"
+description = "ISO coexistence initialization publishes a runtime-derived low 20-bit value and then sets bit 31."
+addressOffset = 0x234
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "VALUE_LOW_20"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers.register.fields]]
+name = "ENABLE"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "HAL_INIT_SCHEDULER_CONTROL"
+description = "BTDM HAL initialization configures byte one to 0x20, bits 16..20 to 0x10 and sets bit 31. Names remain positional because the controller meaning is not recovered."
+addressOffset = 0x250
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "CONFIG_BYTE_1"
+bitOffset = 8
+bitWidth = 8
+[[peripherals.registers.register.fields]]
+name = "CONFIG_16_20"
+bitOffset = 16
+bitWidth = 5
+[[peripherals.registers.register.fields]]
+name = "ENABLE_31"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_COMMAND_0"
+description = "First scheduler command/status transaction. Writers publish a complete payload with START bit 31; complete wait/check paths inspect status bits 24 and 26."
+addressOffset = 0x254
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "PAYLOAD_LOW_24"
+bitOffset = 0
+bitWidth = 24
+[[peripherals.registers.register.fields]]
+name = "STATUS_24"
+bitOffset = 24
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "OPAQUE_25"
+bitOffset = 25
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "STATUS_26"
+bitOffset = 26
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "PAYLOAD_HIGH_27_30"
+bitOffset = 27
+bitWidth = 4
+[[peripherals.registers.register.fields]]
+name = "START"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_COMMAND_1"
+description = "Second scheduler command/status transaction. Writers publish payload with START bit 31; complete wait/check paths inspect status bits 17, 18 and 19."
+addressOffset = 0x258
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "PAYLOAD_LOW_17"
+bitOffset = 0
+bitWidth = 17
+[[peripherals.registers.register.fields]]
+name = "STATUS_17"
+bitOffset = 17
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "STATUS_18"
+bitOffset = 18
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "STATUS_19"
+bitOffset = 19
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "PAYLOAD_HIGH_20_30"
+bitOffset = 20
+bitWidth = 11
+[[peripherals.registers.register.fields]]
+name = "START"
+bitOffset = 31
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_DIAGNOSTIC_SOURCE"
+description = "Complete scheduler diagnostic path reads this word and copies its low halfword to SCHEDULER_DIAGNOSTIC_LATCH."
+addressOffset = 0x25C
+size = 32
+access = "read-only"
+[[peripherals.registers.register.fields]]
+name = "VALUE_LOW_16"
+bitOffset = 0
+bitWidth = 16
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCHEDULER_DIAGNOSTIC_LATCH"
+description = "Complete scheduler diagnostic path writes the low 16 bits from SCHEDULER_DIAGNOSTIC_SOURCE; other paths can clear the complete word."
+addressOffset = 0x260
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "VALUE_LOW_16"
+bitOffset = 0
+bitWidth = 16
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "HAL_INIT_LOW_HALF"
+description = "BTDM HAL initialization first clears and then sets all bits in the low halfword through two fresh-read RMW operations. Inner semantics remain unknown."
+addressOffset = 0x27C
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "CONFIG_LOW_16"
+bitOffset = 0
+bitWidth = 16
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "MMGMT_LIST_1_POINTER_A"
+description = "Selector 1 pointer A; memory-management paths also independently consume or clear control bit 20."
+addressOffset = 0x280
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "COMPRESSED_SRAM_POINTER"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers.register.fields]]
+name = "CONTROL_20"
+bitOffset = 20
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "MMGMT_LIST_1_POINTER_B"
+description = "Selector 1 pointer B."
+addressOffset = 0x284
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "COMPRESSED_SRAM_POINTER"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "MMGMT_LIST_2_POINTER_A"
+description = "Selector 2 pointer A; memory-management paths also independently consume or clear control bit 20."
+addressOffset = 0x288
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "COMPRESSED_SRAM_POINTER"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers.register.fields]]
+name = "CONTROL_20"
+bitOffset = 20
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "MMGMT_LIST_2_POINTER_B"
+description = "Selector 2 pointer B."
+addressOffset = 0x28C
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "COMPRESSED_SRAM_POINTER"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "MMGMT_LIST_3_POINTER_A"
+description = "Selector 3 pointer A; memory-management paths also independently consume or clear control bit 20."
+addressOffset = 0x290
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "COMPRESSED_SRAM_POINTER"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers.register.fields]]
+name = "CONTROL_20"
+bitOffset = 20
+bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "MMGMT_LIST_3_POINTER_B"
+description = "Selector 3 pointer B."
+addressOffset = 0x294
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "COMPRESSED_SRAM_POINTER"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "SCAN_HW_SNAPSHOT"
+description = "BLE scan code reads this complete word twice until stable, converts it and stores the result in scan state. Inner hardware encoding remains unknown."
+addressOffset = 0x2A0
+size = 32
+access = "read-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+[[peripherals.registers]]
+[peripherals.registers.register]
+dim = 2
+dimIncrement = 0x4
+dimIndex = "0,1"
+name = "HAL_INIT_SLOT_MAP%s"
+description = "Two adjacent words each hold eight independently initialized two-bit lanes. The complete BTDM HAL loop proves the lane geometry and finite initialization sequence but not the hardware meaning of either the words or lane values."
+addressOffset = 0x34C
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "SLOT_0"
+bitOffset = 0
+bitWidth = 2
+[[peripherals.registers.register.fields]]
+name = "SLOT_1"
+bitOffset = 2
+bitWidth = 2
+[[peripherals.registers.register.fields]]
+name = "SLOT_2"
+bitOffset = 4
+bitWidth = 2
+[[peripherals.registers.register.fields]]
+name = "SLOT_3"
+bitOffset = 6
+bitWidth = 2
+[[peripherals.registers.register.fields]]
+name = "SLOT_4"
+bitOffset = 8
+bitWidth = 2
+[[peripherals.registers.register.fields]]
+name = "SLOT_5"
+bitOffset = 10
+bitWidth = 2
+[[peripherals.registers.register.fields]]
+name = "SLOT_6"
+bitOffset = 12
+bitWidth = 2
+[[peripherals.registers.register.fields]]
+name = "SLOT_7"
+bitOffset = 14
+bitWidth = 2
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "INIT_ZERO_008C"
+description = "One complete controller function writes the finite zero image twice. Its operation meaning remains unknown."
+addressOffset = 0x8C
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "INIT_ZERO_00B8"
+description = "One complete controller function writes the finite zero image twice. Its operation meaning remains unknown."
+addressOffset = 0xB8
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "OPERATIONAL_CONTROL_0204"
+description = "Complete operational functions independently set and clear bit zero through fresh-read RMW operations."
+addressOffset = 0x204
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "CONTROL_0"
+bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "OPERATIONAL_STATUS_0208"
+description = "Two complete operational functions consume bit zero as the second wait predicate after setting OPERATIONAL_CONTROL_0204 bit zero. They continue waiting while this bit is one and SCHEDULER_STATE.BUSY is set, then clear the control bit. The remaining bits and the hardware meaning of bit zero are unknown."
+addressOffset = 0x208
+size = 32
+access = "read-only"
+[[peripherals.registers.register.fields]]
+name = "STATUS_0"
+bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "OPERATIONAL_VALUE_0218"
+description = "Operational functions read the complete word. A complete writer publishes bit 31 set, bits 30:20 clear and a dynamic low-20-bit image."
+addressOffset = 0x218
+size = 32
+access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "DYNAMIC_LOW_20"
+bitOffset = 0
+bitWidth = 20
+[[peripherals.registers.register.fields]]
+name = "ZERO_IMAGE_20_30"
+bitOffset = 20
+bitWidth = 11
+[[peripherals.registers.register.fields]]
+name = "ONE_IMAGE_31"
+bitOffset = 31
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "OPERATIONAL_STATUS_0324"
+description = "Two complete operational functions read the complete word; its inner encoding remains unknown."
+addressOffset = 0x324
+size = 32
+access = "read-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "OPERATIONAL_WORD_036C"
+description = "Complete operational functions read and publish dynamic complete images. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."
+addressOffset = 0x36C
+size = 32
+access = "read-write"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE"
+sources = [
+    "BLOB_LIBBTDM_SCHEDULER_REGISTERS",
+    "BLOB_LIBBTDM_SCHEDULER_LIFECYCLE",
+    "BLOB_LIBBTDM_HAL_CONTROLLER_INIT",
+    "BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS",
+    "BLOB_LIBBLE_MMGMT_HW_LISTS",
+    "BLOB_LIBBLE_ISO_COEX_REGISTERS",
+    "BLOB_LIBBLE_SCAN_HW_SNAPSHOT",
+    "BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS",
+    "BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS",
+    "BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL",
+]
+provenance = "derived"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_CONTROL"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_CONTROL.COMMAND"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SRAM_POINTER_PREFIX"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SRAM_POINTER_PREFIX.ADDRESS_PREFIX"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_REFERENCE"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_REFERENCE.VALUE_LOW_20"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_REFERENCE.OPAQUE_HIGH_12"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_STATE"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_STATE.VALUE_LOW_20"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_STATE.OPAQUE_STATE_20_29"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_STATE.OPAQUE_STATE_30"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_STATE.BUSY"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.CONFIG_LOW_3"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.CONFIG_24"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.LATCH_REQUEST"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.TIMER_ARM"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_0"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_0.IMAGE"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_1"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_1.IMAGE"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_2"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_VALUE_2.IMAGE"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME.IMAGE"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_0"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_0.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_1"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LIST_POINTER_1.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND.ARGUMENT_LOW_4"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND.RESULT"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_POINTER_COMMAND.START"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_ENABLE"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_ENABLE.ENABLE"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_CONTROL_0"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_CONTROL_0.ENABLE_0"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_THRESHOLD"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_THRESHOLD.VALUE_LOW_10"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_THRESHOLD.ENABLE"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_CONTROL_1"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_CONTROL_1.ENABLE_0"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_0"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_0.IMAGE"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_1"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_STATE_1.IMAGE"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_TIMING_0"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_TIMING_0.VALUE_LOW_24"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_TIMING_0.ENABLE"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_TIMING_1"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_TIMING_1.VALUE_LOW_20"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.ISO_COEX_TIMING_1.ENABLE"
+sources = ["BLOB_LIBBLE_ISO_COEX_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.PAYLOAD_LOW_24"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.STATUS_24"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.OPAQUE_25"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.STATUS_26"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.PAYLOAD_HIGH_27_30"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0.START"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1.PAYLOAD_LOW_17"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1.STATUS_17"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1.STATUS_18"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1.STATUS_19"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1.PAYLOAD_HIGH_20_30"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1.START"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_SOURCE"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_SOURCE.VALUE_LOW_16"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_LATCH"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_LATCH.VALUE_LOW_16"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A.CONTROL_20"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A.CONTROL_20"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A.CONTROL_20"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCAN_HW_SNAPSHOT"
+sources = ["BLOB_LIBBLE_SCAN_HW_SNAPSHOT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCAN_HW_SNAPSHOT.IMAGE"
+sources = ["BLOB_LIBBLE_SCAN_HW_SNAPSHOT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DISABLE_COMMAND"
+sources = ["BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DISABLE_COMMAND.COMMAND"
+sources = ["BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES.VALUE_0"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES.VALUE_1"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_0"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_0.ENABLE_31"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1.CONFIG_3"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1.CONFIG_6_7"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1.CONFIG_15"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1.CONFIG_18_19"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH.CONFIG_6"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH.ENABLE_31"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_20"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_20.CONFIG_LOW_20"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL.CONFIG_BYTE_1"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL.CONFIG_16_20"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL.ENABLE_31"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_HALF"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_HALF.CONFIG_LOW_16"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_0"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_1"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_2"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_3"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_4"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_5"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_6"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_7"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_008C"
+sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_008C.IMAGE"
+sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_00B8"
+sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.INIT_ZERO_00B8.IMAGE"
+sources = ["BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_CONTROL_0204.CONTROL_0"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0208"
+sources = ["BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0208.STATUS_0"
+sources = ["BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218.DYNAMIC_LOW_20"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218.ZERO_IMAGE_20_30"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218.ONE_IMAGE_31"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0324"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_STATUS_0324.IMAGE"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

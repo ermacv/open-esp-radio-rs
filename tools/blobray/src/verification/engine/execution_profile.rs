@@ -17,18 +17,23 @@ pub(super) struct Evaluation {
     pub(super) matched_status: FunctionVerificationStatus,
 }
 
+pub(super) struct ReviewedBinding<'a> {
+    pub(super) disposition_label: Option<&'a str>,
+    pub(super) bounded_feature: bool,
+    pub(super) effect_policy: Option<&'a effect_contract::EffectPolicy>,
+}
+
 pub(super) fn evaluate(
     svd: &MmioMap,
     profile: &profiles::Profile,
     source: VerifySource<'_>,
     rust_artifact: &Path,
     rust_companion: Option<&Path>,
-    disposition_label: Option<&str>,
-    bounded_feature: bool,
+    binding: ReviewedBinding<'_>,
 ) -> Result<Evaluation> {
     let reviewed_domain =
         profile.claim == open_radio_vendor_semantics::VerificationClaim::ReviewedDomainEquivalence;
-    if reviewed_domain != bounded_feature {
+    if reviewed_domain != binding.bounded_feature {
         return Err(crate::Error::invalid(format!(
             "profile {} claim {} requires disposition {}, but {}:{} uses {}",
             profile.name,
@@ -40,7 +45,7 @@ pub(super) fn evaluate(
             },
             source.name,
             profile.vendor_symbol,
-            disposition_label.unwrap_or("<unreviewed>")
+            binding.disposition_label.unwrap_or("<unreviewed>")
         )));
     }
 
@@ -60,6 +65,12 @@ pub(super) fn evaluate(
             compare_return: profile.compare_return,
             case_execution: profile.case_execution,
             transaction_comparison: profile.transaction_comparison,
+            effect_policy: matches!(
+                profile.transaction_comparison,
+                profiles::TransactionComparison::ObservablesUnderEffectContract
+            )
+            .then_some(binding.effect_policy)
+            .flatten(),
             call_equivalences: &profile.call_equivalences,
             coverage_domain: &profile.coverage_constraints(),
             vendor_setup: &profile.vendor_setup,

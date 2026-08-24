@@ -53,7 +53,8 @@ pub(super) fn structural_effective_address(
                     MemoryObjectRoot::Indexed { .. } => {
                         return Some(StructuralAddress::IndexedMemory(address));
                     }
-                    MemoryObjectRoot::ZeroedAllocation { .. } => {
+                    MemoryObjectRoot::Allocation { .. }
+                    | MemoryObjectRoot::ZeroedAllocation { .. } => {
                         return Some(StructuralAddress::DynamicMemory(address));
                     }
                     MemoryObjectRoot::OpaqueExternalObject { .. } => {
@@ -83,9 +84,12 @@ pub(super) fn structural_value_address(value: &SymbolicValue) -> Option<Structur
         } => Some(StructuralAddress::SymbolMemory(value.clone())),
         _ if value.caller_memory_address() => Some(StructuralAddress::CallerMemory(value.clone())),
         _ if matches!(
-            value.memory_object_location().map(|location| location.root),
+            value
+                .memory_object_location_with_reads(&BTreeMap::new())
+                .map(|location| location.root),
             Some(
                 MemoryObjectRoot::Indexed { .. }
+                    | MemoryObjectRoot::Allocation { .. }
                     | MemoryObjectRoot::ZeroedAllocation { .. }
                     | MemoryObjectRoot::OpaqueExternalObject { .. }
             )

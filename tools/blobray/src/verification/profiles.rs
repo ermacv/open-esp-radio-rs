@@ -78,6 +78,13 @@ pub enum TransactionComparison {
     StateAndReviewedCalls,
     /// Compare the ordered externally observable MMIO/delay/fence stream.
     Observables,
+    /// Compare the ordered observable stream through the effect contract
+    /// attached to the reviewed production binding.
+    ///
+    /// This is deliberately not a profile-local normalizer. The disposition
+    /// remains the sole owner of every required, omitted, replaced, or added
+    /// effect, and an absent rule fails closed.
+    ObservablesUnderEffectContract,
     /// Also compare named call boundaries at their exact position in the
     /// observable stream. Call-site addresses are provenance, not equality.
     ObservablesAndCalls,
@@ -954,6 +961,21 @@ mod schema_tests {
             Err(error) => error.to_string(),
         };
         assert!(missing_execution.contains("case-execution"));
+    }
+
+    #[test]
+    fn reviewed_effect_contract_comparison_is_an_explicit_profile_mode() {
+        let document = minimal_profile("independent", "[[profiles.cases]]\nname = \"first\"\n")
+            .replace(
+                "transaction-comparison = \"observables\"",
+                "transaction-comparison = \"observables-under-effect-contract\"",
+            );
+        let profiles = finish(toml_edit::de::from_str(&document).unwrap()).unwrap();
+
+        assert_eq!(
+            profiles[0].transaction_comparison,
+            TransactionComparison::ObservablesUnderEffectContract
+        );
     }
 
     #[test]

@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 
 use super::{
-    MacInterface, MacPti, MacTxPtiCount, MacTxQueueIndex, RadioRegisters, device_fence,
+    MacInterface, MacPti, MacTxPtiCount, MacTxQueueIndex, WifiRadioRegisters, device_fence,
     mac_tx_queue,
 };
 
@@ -195,11 +195,11 @@ pub enum MacTxDetachOutcome<T> {
 /// The value borrows the register owner, so it cannot be retained while that
 /// same owner starts another queue transaction. Its fields and target
 /// constructor remain private to this crate; safe production code can obtain
-/// it only from [`RadioRegisters::with_detached_mac_tx`]. Validation builds
+/// it only from [`WifiRadioRegisters::with_detached_mac_tx`]. Validation builds
 /// additionally expose an isolated model constructor for compiled probes.
 pub struct MacTxQueueDetached<'registers> {
     descriptor_address_low: u32,
-    _registers: PhantomData<&'registers mut RadioRegisters>,
+    _registers: PhantomData<&'registers mut WifiRadioRegisters>,
 }
 
 impl MacTxQueueDetached<'_> {
@@ -242,17 +242,17 @@ const fn physical_bank(queue: u8) -> usize {
     (ORDINARY_QUEUE_COUNT - 1 - queue) as usize
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Execute complete `hal_set_tx_pti` over one bounded logical queue.
     pub fn set_tx_pti(&mut self, queue: MacTxQueueIndex, program: MacTxPtiProgram) {
         let bank = physical_bank(queue.get() as u8);
-        let control = &self.peripherals.wifi_mac_tx_queue_control;
+        let control = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         control.config(bank).modify(|_, writer| {
             writer
                 .scheduler_priority()
                 .set(program.scheduler_priority.get() as u8)
         });
-        let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
+        let pti = self.peripherals.wifi_mac.wifi_mac_tx_queue_vector.pti(bank);
         pti.modify(|_, writer| writer.pti_2().set(program.pti_2.get() as u8));
         pti.modify(|_, writer| writer.pti_1().set(program.pti_1.get() as u8));
         pti.modify(|_, writer| writer.pti_0().set(program.pti_0.get() as u8));
@@ -298,6 +298,7 @@ impl RadioRegisters {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         let control_word = self
             .peripherals
+            .wifi_mac
             .wifi_mac_tx_queue_control
             .control(physical_bank(queue))
             .read()
@@ -310,7 +311,7 @@ impl RadioRegisters {
     /// two Wi-Fi MAC CCA fields through separate fresh-read updates.
     pub fn set_phy_wifi_cca_enabled(&mut self, enabled: bool) {
         let image = if enabled { 0 } else { 2 };
-        let control = self.peripherals.wifi_mac_tx_common.cca_control();
+        let control = self.peripherals.wifi_mac.wifi_mac_tx_common.cca_control();
         control.modify(|_, w| w.force().set(image));
         control.modify(|_, w| w.phy_aux_force().set(image));
     }
@@ -326,36 +327,42 @@ impl RadioRegisters {
         MacHeTxVectorSnapshot {
             plcp0: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_tx_queue_control
                 .control(bank)
                 .read()
                 .bits(),
             plcp1: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_tx_queue_vector
                 .plcp1(bank)
                 .read()
                 .bits(),
             he_signal_a1: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_tx_queue_vector
                 .he_su_signal_a1(bank)
                 .read()
                 .bits(),
             he_signal_a2_length: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_tx_queue_vector
                 .he_su_signal_a2_length(bank)
                 .read()
                 .bits(),
             he_control: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_tx_queue_vector
                 .he_control(bank)
                 .read()
                 .bits(),
             software_he_control_enabled: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_tx_queue_vector
                 .he_control_config(bank)
                 .read()
@@ -363,12 +370,14 @@ impl RadioRegisters {
                 .bit_is_set(),
             power: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_tx_queue_vector
                 .power(bank)
                 .read()
                 .bits(),
             length_control: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_tx_queue_vector
                 .length_control(bank)
                 .read()
@@ -390,7 +399,7 @@ impl RadioRegisters {
         assert!(program.contention_window <= 0x03ff);
 
         let bank = physical_bank(queue);
-        let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
+        let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         let control = control_bank.control(bank);
         if control.read().bits() & ENABLE_VALID_MASK != 0 {
             return false;
@@ -408,11 +417,12 @@ impl RadioRegisters {
             super::generated::MacTxControlImage::new(program.plcp0),
         );
         super::generated::publish_mac_tx_plcp1(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxPlcp1Image::new(program.plcp1),
         );
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
@@ -420,12 +430,12 @@ impl RadioRegisters {
             .protection(bank)
             .modify(|_, w| w.software_cts().clear_bit());
         super::generated::publish_mac_tx_length_control(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxLengthControlImage::new(program.length_control),
         );
         super::generated::publish_mac_tx_power(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxPowerImage::new(program.power),
         );
@@ -441,7 +451,7 @@ impl RadioRegisters {
         control_bank
             .config(bank)
             .modify(|_, w| w.scheduler_priority().set(program.scheduler_priority));
-        let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
+        let pti = self.peripherals.wifi_mac.wifi_mac_tx_queue_vector.pti(bank);
         pti.modify(|_, w| w.pti_2().set(program.packet_priority));
         pti.modify(|_, w| w.pti_1().set(program.packet_priority));
         pti.modify(|_, w| w.pti_0().set(program.packet_priority));
@@ -471,7 +481,7 @@ impl RadioRegisters {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         let bank = physical_bank(queue);
         {
-            let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
+            let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
             let control = control_bank.control(bank);
             if control.read().bits() & ENABLE_VALID_MASK != 0 {
                 return false;
@@ -487,7 +497,7 @@ impl RadioRegisters {
         self.program_ht_mac_tx_ppdu(queue, program);
 
         mac_tx_queue::configure_edca(
-            &self.peripherals.wifi_mac_tx_queue_control,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
             u32::from(queue),
             program.aifsn,
             program.contention_window,
@@ -513,7 +523,7 @@ impl RadioRegisters {
         assert!(program.priority_count <= 0x0fff);
 
         let bank = physical_bank(queue);
-        let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
+        let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         super::generated::publish_mac_tx_control(
             control_bank,
             bank,
@@ -525,11 +535,12 @@ impl RadioRegisters {
             .protection(bank)
             .modify(|_, w| w.software_cts().clear_bit());
         super::generated::publish_mac_tx_plcp1(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxPlcp1Image::new(program.plcp1),
         );
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
@@ -537,19 +548,20 @@ impl RadioRegisters {
         // The parent owns this independent PTI-low edge. `mac_tx_set_pti`
         // follows later and intentionally preserves it while updating the
         // four PTI lanes and the count.
-        let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
+        let pti = self.peripherals.wifi_mac.wifi_mac_tx_queue_vector.pti(bank);
         pti.modify(|_, writer| writer.txop().bit(program.txop));
 
         // The bounded HT branch enters `mac_tx_set_htsig` here. It publishes
         // HT-SIG, the three descriptor-count edges, the three negotiated
         // minimum-MPDU spacing edges and the two length words.
         super::generated::publish_mac_tx_ht_signal(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxHtSignalImage::new(program.ht_signal),
         );
         let descriptor_counts = self
             .peripherals
+            .wifi_mac
             .wifi_mac_tx_queue_vector
             .ht_descriptor_counts(bank);
         descriptor_counts.modify(|_, w| w.descriptor_count_a().set(program.descriptor_count_a));
@@ -572,17 +584,17 @@ impl RadioRegisters {
         });
 
         super::generated::publish_mac_tx_length_control(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxLengthControlImage::new(program.length_control),
         );
         super::generated::publish_mac_tx_data_length(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxDataLengthImage::new(program.data_length),
         );
         super::generated::publish_mac_tx_power(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxPowerImage::new(program.power),
         );
@@ -613,7 +625,7 @@ impl RadioRegisters {
         assert!(program.contention_window <= 0x03ff);
 
         let bank = physical_bank(queue);
-        let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
+        let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         let control = control_bank.control(bank);
         if control.read().bits() & ENABLE_VALID_MASK != 0 {
             return false;
@@ -628,11 +640,12 @@ impl RadioRegisters {
             super::generated::MacTxControlImage::new(program.plcp0),
         );
         super::generated::publish_mac_tx_plcp1(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxPlcp1Image::new(program.plcp1),
         );
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
@@ -658,17 +671,18 @@ impl RadioRegisters {
         // SOURCE: complete mac_tx_set_hesig stores A1 then A2/length before
         // publishing the same three descriptor-count edges used by HT.
         super::generated::publish_mac_tx_he_signal_a1(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxHeSignalA1Image::new(program.he_signal_a1),
         );
         super::generated::publish_mac_tx_he_signal_a2_length(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxHeSignalA2LengthImage::new(program.he_signal_a2_length),
         );
         let descriptor_counts = self
             .peripherals
+            .wifi_mac
             .wifi_mac_tx_queue_vector
             .ht_descriptor_counts(bank);
         descriptor_counts.modify(|_, w| w.descriptor_count_a().set(program.descriptor_count_a));
@@ -679,7 +693,7 @@ impl RadioRegisters {
         // HE reaches mac_tx_set_len for LENGTH_CONTROL, but its flag-bit-31
         // branch intentionally skips the non-HE DATA_LENGTH register.
         super::generated::publish_mac_tx_length_control(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxLengthControlImage::new(program.length_control),
         );
@@ -694,11 +708,12 @@ impl RadioRegisters {
             .software_he_control
             .map_or((0, false), |image| (image, true));
         super::generated::publish_mac_tx_he_control(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxHeControlImage::new(he_control),
         );
         self.peripherals
+            .wifi_mac
             .wifi_mac_tx_queue_vector
             .he_control_config(bank)
             .modify(|_, w| {
@@ -708,7 +723,7 @@ impl RadioRegisters {
         // The complete parent selects and publishes the data/RTS power pair
         // only after the HE-Control leaf returns.
         super::generated::publish_mac_tx_power(
-            &self.peripherals.wifi_mac_tx_queue_vector,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
             bank,
             super::generated::MacTxPowerImage::new(program.power),
         );
@@ -716,7 +731,7 @@ impl RadioRegisters {
         control_bank
             .config(bank)
             .modify(|_, w| w.scheduler_priority().set(program.scheduler_priority));
-        let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
+        let pti = self.peripherals.wifi_mac.wifi_mac_tx_queue_vector.pti(bank);
         pti.modify(|_, w| w.pti_2().set(program.packet_priority));
         pti.modify(|_, w| w.pti_1().set(program.packet_priority));
         pti.modify(|_, w| w.pti_0().set(program.packet_priority));
@@ -744,7 +759,7 @@ impl RadioRegisters {
         // changed control fields after the initial PLCP0 publication.
         //
         mac_tx_queue::publish_queue(
-            &self.peripherals.wifi_mac_tx_queue_control,
+            &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
             u32::from(queue),
         );
         device_fence();
@@ -753,14 +768,14 @@ impl RadioRegisters {
     pub fn take_mac_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         let completion_mask = 1_u32 << queue;
-        let common = &self.peripherals.wifi_mac_tx_common;
+        let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
         if common.complete_state().read().bits() & completion_mask == 0 {
             return None;
         }
 
         let bank = physical_bank(queue);
-        let completion = &self.peripherals.wifi_mac_tx_completion;
-        let tx_results = &self.peripherals.wifi_mac_rx_dma;
+        let completion = &self.peripherals.wifi_mac.wifi_mac_tx_completion;
+        let tx_results = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let (aux_a, aux_b) = match queue {
             0 => (
                 tx_results
@@ -826,6 +841,7 @@ impl RadioRegisters {
         let completion_mask = 1_u32 << queue;
         if self
             .peripherals
+            .wifi_mac
             .wifi_mac_tx_common
             .complete_state()
             .read()
@@ -849,7 +865,7 @@ impl RadioRegisters {
     pub fn begin_mac_tx_timeout_abort(&mut self, queue: u8) -> bool {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         let timeout_mask = 1_u32 << (16 + queue);
-        let common = &self.peripherals.wifi_mac_tx_common;
+        let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
         if common.queue_state().read().bits() & timeout_mask == 0 {
             return false;
         }
@@ -867,8 +883,8 @@ impl RadioRegisters {
         detached: impl FnOnce(MacTxQueueDetached<'registers>) -> R,
     ) -> MacTxDetachOutcome<R> {
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        let common = &self.peripherals.wifi_mac_tx_common;
-        let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
+        let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
+        let queue_control = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         let bank = physical_bank(queue);
         let control_word = queue_control.control(bank).read().bits();
         let queue_index = u32::from(queue);

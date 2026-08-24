@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 
 use super::{
-    MacInterruptMask, MacInterruptSnapshot, MacPowerInterruptSnapshot, RadioRegisters,
+    MacInterruptMask, MacInterruptSnapshot, MacPowerInterruptSnapshot, WifiRadioRegisters,
     device_fence,
     svd::{self, interrupt_snapshot},
 };
@@ -52,11 +52,20 @@ pub struct MacInterruptSetup {
 
 impl MacInterruptSetup {
     pub(super) fn from_peripherals(
-        peripherals: svd::peripheral_ownership::InterruptPeripherals,
+        peripherals: svd::peripheral_ownership::WifiInterruptPeripherals,
     ) -> Self {
         Self {
             peripheral: peripherals.wifi_mac_interrupt,
             power_peripheral: peripherals.wifi_mac_power_interrupt,
+        }
+    }
+
+    /// Reassemble the generated Wi-Fi interrupt partition after a finite
+    /// inactive epoch. This is ownership-only and performs no MMIO.
+    pub(super) fn into_peripherals(self) -> svd::peripheral_ownership::WifiInterruptPeripherals {
+        svd::peripheral_ownership::WifiInterruptPeripherals {
+            wifi_mac_interrupt: self.peripheral,
+            wifi_mac_power_interrupt: self.power_peripheral,
         }
     }
 
@@ -67,10 +76,10 @@ impl MacInterruptSetup {
     /// CONTROL bits 2:0 are cleared before interrupt-enable bit 15.
     pub fn prepare_connected_sta_without_power_save(
         &mut self,
-        registers: &mut RadioRegisters,
+        registers: &mut WifiRadioRegisters,
     ) -> ConnectedStaWithoutPowerSavePrepared {
         disable_sta_beacon_filter(
-            &registers.peripherals.wifi_mac_sta_beacon_filter,
+            &registers.peripherals.wifi_mac.wifi_mac_sta_beacon_filter,
             &self.peripheral,
         );
         ConnectedStaWithoutPowerSavePrepared { _private: () }
@@ -114,7 +123,7 @@ impl MacInterruptSetup {
 /// Disjoint generated register capability intended for the hard power ISR.
 ///
 /// This bank is split from the cold owner together with
-/// [`MacInterruptRegisters`]. Ordinary [`super::RadioRegisters`] therefore
+/// [`MacInterruptRegisters`]. Ordinary [`super::WifiRadioRegisters`] therefore
 /// cannot race its STATUS/CLEAR transaction from task context.
 pub struct MacPowerInterruptRegisters {
     peripheral: svd::WifiMacPowerInterrupt,

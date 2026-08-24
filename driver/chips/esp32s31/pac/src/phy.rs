@@ -2,9 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Capture and clear the two RX-DCO control bits through two fresh reads.
     pub fn capture_and_clear_rx_dco_control(&mut self) -> u8 {
         let control = self.peripherals.phy_rx_dco_oracle.control();

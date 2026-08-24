@@ -141,7 +141,8 @@ where
         config.calibration_identity,
         calibration_cache,
     );
-    let mut port = TargetPhyRegisterPort::<_, D, _>::new(&mut powered, observer.clone());
+    let (platform, registers) = powered.phy_hal_parts();
+    let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(platform, registers, observer.clone());
     let registration = match run_phy_register(&mut transition, &mut port).await {
         Ok(outcome) => outcome,
         Err(error) => {

@@ -95,6 +95,74 @@ include-reachable = true
 entry-contract = "none"
 output = "generated/findings/btbb-all.ir"
 
+# Canonical derived view of the standalone BLE controller boundary.  The
+# authenticated archives remain the observed source; this linked unit exists
+# to preserve cross-archive call identity and ordering for semantic analysis.
+[[analysis.ir]]
+id = "ble-controller-all"
+sources = ["ble-controller"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ble-controller-all.ir"
+
+# Small lifecycle and interface views remain cheap navigation slices.  They do
+# not claim register coverage; ble-controller-all owns the complete lazy pass
+# used to derive controller MMIO shapes and candidate field partitions.
+[[analysis.ir]]
+id = "ble-controller-lifecycle"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_controller_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-controller-lifecycle.ir"
+
+[[analysis.ir]]
+id = "ble-hci-transport"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_hci_trans_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-hci-transport.ir"
+
+[[analysis.ir]]
+id = "ble-npl-boundary"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_get_npl_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-npl-boundary.ir"
+
+[[analysis.ir]]
+id = "ble-npl-layout"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_ble_ll_get_npl_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-npl-layout.ir"
+
+[[analysis.ir]]
+id = "ble-stack-lifecycle"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_base_stack_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-stack-lifecycle.ir"
+
+[[analysis.ir]]
+id = "ble-task-lifecycle"
+sources = ["ble-controller"]
+roots = "symbol-prefix"
+symbol-prefix = "r_btdm_task_"
+include-reachable = false
+entry-contract = "none"
+output = "generated/findings/ble-task-lifecycle.ir"
+
 [registers]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
@@ -116,6 +184,13 @@ linked-ir = [
     "generated/findings/wifi-key-role.ir",
     "generated/findings/coex-all.ir",
     "generated/findings/btbb-all.ir",
+    "generated/findings/ble-controller-all.ir",
+    "generated/findings/ble-controller-lifecycle.ir",
+    "generated/findings/ble-hci-transport.ir",
+    "generated/findings/ble-npl-boundary.ir",
+    "generated/findings/ble-npl-layout.ir",
+    "generated/findings/ble-stack-lifecycle.ir",
+    "generated/findings/ble-task-lifecycle.ir",
 ]
 # `phy_reg_check` is a diagnostic register dump: it reads every word in broad
 # MMIO windows and prints the values without using them to control hardware.
@@ -124,8 +199,14 @@ linked-ir = [
 # `wdev_record_rx_linked_list` snapshots descriptor/MMIO state into the debug
 # ring consumed by `wdev_dump_rx_linked_list`; its two otherwise unknown reads
 # at 0x20104090/0x20104094 do not control the RX path.
+# `r_sym_ble_q4fRanBdVgftXY2ep3Zs` is the complete base_stack.c diagnostic
+# snapshot leaf: it formats register values, copies two scratch images and is
+# reached only by the BLE log-buffer trigger.  Its 0x201014bc/cc reads and
+# 0x201014c8 scratch write are retained as observations but do not define the
+# standalone controller's operational register debt.
 non-operational-functions = [
     "archive:phy_reg_check",
+    "ble-controller:r_sym_ble_q4fRanBdVgftXY2ep3Zs",
     "libpp:wdev_record_rx_linked_list",
     "libpp-replay:wdev_record_rx_linked_list",
     "wifi-key-role:dbg_dump_rx_links",
@@ -184,6 +265,7 @@ profiles = [
     "wifi-key-role",
     "coex-all",
     "btbb-all",
+    "ble-controller-all",
 ]
 
 [functions.review]
@@ -196,6 +278,7 @@ output = "generated/reports/function-review.md"
 output = "generated/findings/review-scopes.json"
 publication-scopes = [
     "phy-init",
+    "ble-standalone-runtime-hardware",
 ]
 
 [[review.scopes]]
@@ -431,4 +514,76 @@ include-reachable = true
 id = "ble-coex-client"
 profiles = ["btbb-all"]
 roots = ["btbb:coex_pti_v2"]
+include-reachable = true
+
+[[review.scopes]]
+id = "ble-controller-lifecycle"
+profiles = [
+    "ble-controller-lifecycle",
+    "ble-npl-boundary",
+    "ble-npl-layout",
+]
+roots = [
+    "ble-controller:r_ble_controller_init",
+    "ble-controller:r_ble_controller_deinit",
+    "ble-controller:r_ble_get_npl_element_info",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "ble-host-controller-interface"
+profiles = ["ble-hci-transport"]
+roots = [
+    "ble-controller:r_ble_hci_trans_init",
+    "ble-controller:r_ble_hci_trans_cfg_hs",
+    "ble-controller:r_ble_hci_trans_hs_cmd_tx",
+    "ble-controller:r_ble_hci_trans_hs_acl_tx",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "ble-runtime-lifecycle"
+profiles = [
+    "ble-stack-lifecycle",
+    "ble-task-lifecycle",
+]
+roots = [
+    "ble-controller:r_base_stack_initEnv",
+    "ble-controller:r_base_stack_enable",
+    "ble-controller:r_base_stack_disable",
+    "ble-controller:r_base_stack_deinitEnv",
+    "ble-controller:r_btdm_task_init",
+    "ble-controller:r_btdm_task_enable",
+    "ble-controller:r_btdm_task_disable",
+    "ble-controller:r_btdm_task_shutdown",
+    "ble-controller:r_btdm_task_deinit",
+]
+include-reachable = false
+
+# Operational lifecycle coverage is intentionally separate from the cheap
+# navigation slices above.  The canonical linked profile follows every direct
+# cross-archive edge rooted at the public controller, base-stack and BTDM task
+# transactions.  This scope is not a publication gate until every reached
+# MMIO fact has a reviewed owner and optional feature callbacks have been
+# classified explicitly.
+[[review.scopes]]
+id = "ble-standalone-runtime-hardware"
+profiles = ["ble-controller-all"]
+roots = [
+    # Reached by the pinned public S31 outer enable glue through
+    # btdm_lp_reset(true) -> esp_phy_enable/esp_btbb_enable. The wrapper source
+    # proves reachability; this linked vendor body remains the effect authority.
+    "ble-controller:bt_bb_v2_init_cmplx",
+    "ble-controller:r_ble_controller_init",
+    "ble-controller:r_ble_controller_deinit",
+    "ble-controller:r_base_stack_initEnv",
+    "ble-controller:r_base_stack_enable",
+    "ble-controller:r_base_stack_disable",
+    "ble-controller:r_base_stack_deinitEnv",
+    "ble-controller:r_btdm_task_init",
+    "ble-controller:r_btdm_task_enable",
+    "ble-controller:r_btdm_task_disable",
+    "ble-controller:r_btdm_task_shutdown",
+    "ble-controller:r_btdm_task_deinit",
+]
 include-reachable = true

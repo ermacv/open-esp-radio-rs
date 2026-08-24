@@ -12,6 +12,7 @@ generated_unsafe_leaf="driver/chips/esp32s31/pac-raw"
 audited_unsafe_leaves=(
     "driver/common/dma"
     "driver/chips/esp32s31/wifi/dma"
+    "driver/adapters/esp-hal/esp32s31-radio-platform"
     "driver/adapters/embassy/esp32s31-platform"
     "driver/integration/esp32s31/embassy-wifi"
 )
@@ -50,11 +51,12 @@ for manifest in "${manifests[@]}"; do
     fi
 done
 
-# The restricted PAC is an implementation dependency of the HAL. Crates above
-# HAL cannot bypass that boundary through either ordinary or dev dependencies.
+# The restricted PAC is an implementation dependency of chip hardware
+# backends. Crates above those backends cannot bypass that boundary through
+# either ordinary or dev dependencies.
 for manifest in "${manifests[@]}"; do
     case "$manifest" in
-        driver/chips/esp32s31/pac/Cargo.toml|driver/chips/esp32s31/pac-raw/Cargo.toml|driver/chips/esp32s31/hal/Cargo.toml)
+        driver/chips/esp32s31/pac/Cargo.toml|driver/chips/esp32s31/pac-raw/Cargo.toml|driver/chips/esp32s31/hal/Cargo.toml|driver/chips/esp32s31/bluetooth/Cargo.toml)
             continue
             ;;
     esac
@@ -121,18 +123,20 @@ for source in "${all_allowing_sources[@]}"; do
     fi
 done
 
-# PAC owner types are implementation details of the generated/restricted PAC
-# and HAL. PHY receives an opaque powered-lifecycle borrow instead; runtime,
-# protocol, integration, and application-facing crates use finite HAL
+# PAC leaf-owner types are implementation details of the generated/restricted
+# PAC and the matching chip hardware backends. The protocol-neutral
+# RadioHardware root may cross the composition boundary by value; runtime,
+# protocol, integration, and application-facing crates receive only finite
 # operations or opaque lifecycle owners.
-if rg -n '\b(ColdRadioRegisters|RadioRegisters)\b' \
+if rg -n '\b(ColdRadioRegisters|RadioRegisters|WifiColdRegisters|WifiRadioRegisters|BluetoothColdRegisters|BluetoothTaskRegisters|BluetoothInterruptSetup|BluetoothInterruptRegisters)\b' \
     driver \
     --glob '*.rs' \
     --glob '!driver/chips/esp32s31/pac/**' \
     --glob '!driver/chips/esp32s31/pac-raw/**' \
-    --glob '!driver/chips/esp32s31/hal/**'
+    --glob '!driver/chips/esp32s31/hal/**' \
+    --glob '!driver/chips/esp32s31/bluetooth/**'
 then
-    echo "PAC owner escaped above the HAL implementation boundary" >&2
+    echo "PAC leaf owner escaped above a chip hardware implementation boundary" >&2
     exit 1
 fi
 
@@ -158,11 +162,11 @@ fi
 # widening must remain explicit inside HAL. An implicit Deref recreates every
 # runtime PAC method on the cold owner and hides the ownership boundary from
 # call sites.
-if rg -n 'impl([[:space:]]*<[^>]+>)?[[:space:]]+(core::ops::)?Deref(Mut)?[[:space:]]+for[[:space:]]+ColdRadioRegisters' \
+if rg -n 'impl([[:space:]]*<[^>]+>)?[[:space:]]+(core::ops::)?Deref(Mut)?[[:space:]]+for[[:space:]]+(ColdRadioRegisters|WifiColdRegisters|BluetoothColdRegisters)' \
     driver/chips/esp32s31/pac \
     --glob '*.rs'
 then
-    echo "ColdRadioRegisters must not dereference to the runtime PAC owner" >&2
+    echo "a cold PAC owner must not dereference to a runtime PAC owner" >&2
     exit 1
 fi
 
@@ -190,7 +194,7 @@ fi
 # Value snapshots may be re-exported, but a crate above the PAC must never
 # publicly forward the unique register owner under either its original name
 # or a module alias.
-if rg -n 'pub use .*open_esp_radio_esp32s31_pac.*(RadioRegisters|ColdRadioRegisters| as registers)' \
+if rg -n 'pub use .*open_esp_radio_esp32s31_pac.*(RadioRegisters|ColdRadioRegisters|WifiRadioRegisters|WifiColdRegisters|BluetoothColdRegisters|BluetoothTaskRegisters|BluetoothInterruptSetup|BluetoothInterruptRegisters| as registers)' \
     driver \
     --glob '*.rs'
 then
@@ -198,14 +202,16 @@ then
     exit 1
 fi
 
-# Hiding the dependency is insufficient if a public HAL signature still asks
-# callers to provide the PAC owner. Validation entry points acquire their
-# owner internally and production callers receive only opaque HAL capabilities.
-if rg -n 'pub (unsafe )?fn [^(]+\([^)]*(RadioRegisters|ColdRadioRegisters)|pub fn new\([^)]*(RadioRegisters|ColdRadioRegisters)' \
+# Hiding the dependency is insufficient if a public chip-hardware signature
+# asks callers to provide one leaf PAC owner. The neutral `RadioHardware`
+# composition root is intentionally allowed to cross by value; protocol leaf
+# owners remain private and production callers receive finite capabilities.
+if rg -n 'pub (unsafe )?fn [^(]+\([^)]*(RadioRegisters|ColdRadioRegisters|WifiRadioRegisters|WifiColdRegisters|BluetoothColdRegisters|BluetoothTaskRegisters|BluetoothInterruptSetup|BluetoothInterruptRegisters)|pub fn new\([^)]*(RadioRegisters|ColdRadioRegisters|WifiRadioRegisters|WifiColdRegisters|BluetoothColdRegisters|BluetoothTaskRegisters|BluetoothInterruptSetup|BluetoothInterruptRegisters)' \
     driver/chips/esp32s31/hal/src \
+    driver/chips/esp32s31/bluetooth/src \
     --glob '*.rs'
 then
-    echo "HAL public API exposes a PAC owner parameter" >&2
+    echo "chip hardware public API exposes a PAC leaf-owner parameter" >&2
     exit 1
 fi
 

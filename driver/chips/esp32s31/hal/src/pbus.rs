@@ -1,7 +1,7 @@
 //! Owned access to the recovered ESP32-S31 PHY PBus registers.
 
 #[cfg(target_arch = "riscv32")]
-use crate::{PhyAccess, phy_pac_mut};
+use crate::{SharedPhyAccess, SharedPhyContext, phy_pac_mut};
 
 /// A PBus command could not be published or completed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,7 +32,7 @@ fn force_txrx_mode_bits(enabled: bool, phase: u8) -> u32 {
 /// a one-microsecond delay after each. This method owns exactly one
 /// replacement; the Rust transition owns phase order and both timers.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_force_txrx(registers: &mut impl PhyAccess, enabled: bool, phase: u8) {
+pub fn configure_force_txrx(registers: &mut impl SharedPhyAccess, enabled: bool, phase: u8) {
     let registers = phy_pac_mut(registers);
     let written = registers.set_pbus_force_txrx_mode(force_txrx_mode(enabled, phase));
     // Do not place the MMIO call itself in `debug_assert!`: release builds
@@ -47,7 +47,7 @@ pub fn configure_force_txrx(registers: &mut impl PhyAccess, enabled: bool, phase
 /// `phy_pbus_force_mode(1)`. They clear `MODE.WORK_MODE_ENABLE`, then set
 /// `COMMAND.DEBUG_MODE_ENABLE`, with one fresh read before each write.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_debug_mode(registers: &mut impl PhyAccess) {
+pub fn configure_debug_mode(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.set_pbus_work_mode(false);
     registers.set_pbus_debug_mode(true);
@@ -61,11 +61,13 @@ pub fn configure_debug_mode(registers: &mut impl PhyAccess) {
 /// instruction-evidenced condition; the delayed pulse itself belongs to the
 /// caller's async transition.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_work_mode(registers: &mut impl PhyAccess) -> bool {
+pub fn configure_work_mode(registers: &mut impl SharedPhyContext) -> bool {
+    let settle_required =
+        SharedPhyContext::wifi_baseband_enable_observation(registers).is_enabled();
     let registers = phy_pac_mut(registers);
     registers.set_pbus_debug_mode(false);
     registers.set_pbus_work_mode(true);
-    registers.wifi_baseband_is_enabled()
+    settle_required
 }
 
 /// Publish one PBus force-test command before the first busy sample.
@@ -78,7 +80,12 @@ pub fn configure_work_mode(registers: &mut impl PhyAccess) -> bool {
 /// edge publishes first; completion sampling and its finite Rust deadline are
 /// owned by [`try_finish_force_test`].
 #[cfg(target_arch = "riscv32")]
-pub fn start_force_test(registers: &mut impl PhyAccess, selector: u8, path: u8, test_value: u16) {
+pub fn start_force_test(
+    registers: &mut impl SharedPhyAccess,
+    selector: u8,
+    path: u8,
+    test_value: u16,
+) {
     let registers = phy_pac_mut(registers);
     registers.publish_pbus_force_test(selector, path, test_value);
 }
@@ -90,7 +97,7 @@ pub fn start_force_test(registers: &mut impl PhyAccess, selector: u8, path: u8, 
 /// `COMMAND.TRANSACTION_START`; this HAL performs only one observation so the
 /// Rust async owner controls retries and timeout.
 #[cfg(target_arch = "riscv32")]
-pub fn try_finish_force_test(registers: &mut impl PhyAccess) -> Result<(), PbusError> {
+pub fn try_finish_force_test(registers: &mut impl SharedPhyAccess) -> Result<(), PbusError> {
     let registers = phy_pac_mut(registers);
     if registers.pbus_is_busy() {
         return Err(PbusError::Busy);
@@ -106,7 +113,7 @@ pub fn try_finish_force_test(registers: &mut impl PhyAccess) -> Result<(), PbusE
 /// for selector 1's low RX-DCO consumer, their analog meanings remain
 /// intentionally unknown.
 #[cfg(target_arch = "riscv32")]
-pub fn read_result(registers: &mut impl PhyAccess, selector: u8, path: u8) -> Option<u16> {
+pub fn read_result(registers: &mut impl SharedPhyAccess, selector: u8, path: u8) -> Option<u16> {
     let registers = phy_pac_mut(registers);
     registers.read_pbus_result(selector, path)
 }
@@ -117,7 +124,7 @@ pub fn read_result(registers: &mut impl PhyAccess, selector: u8, path: u8) -> Op
 /// `0x20`. The body never distinguishes the two constituent clocks, so the
 /// PAC and HAL retain pair-level semantics.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_rx_clock(registers: &mut impl PhyAccess, enabled: bool) {
+pub fn configure_rx_clock(registers: &mut impl SharedPhyAccess, enabled: bool) {
     let registers = phy_pac_mut(registers);
     registers.set_pbus_rx_clock_pair(enabled);
 }
@@ -128,7 +135,7 @@ pub fn configure_rx_clock(registers: &mut impl PhyAccess, enabled: bool) {
 /// `0x24`. The body never distinguishes the two constituent clocks, so the
 /// PAC and HAL retain pair-level semantics.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_tx_clock(registers: &mut impl PhyAccess, enabled: bool) {
+pub fn configure_tx_clock(registers: &mut impl SharedPhyAccess, enabled: bool) {
     let registers = phy_pac_mut(registers);
     registers.set_pbus_tx_clock_pair(enabled);
 }

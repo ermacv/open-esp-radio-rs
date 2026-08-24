@@ -220,6 +220,9 @@ fn test_direct_external_semantic(symbol: &str) -> Option<&'static DirectSemantic
         "ets_delay_us" => Some(&TEST_DELAY_DIRECT_SEMANTIC),
         "rtc_clk_xtal_freq_get" => Some(&TEST_XTAL_DIRECT_SEMANTIC),
         "__umoddi3" => Some(&TEST_UMODDI3_DIRECT_SEMANTIC),
+        "test_malloc" => Some(&TEST_ALLOC_DIRECT_SEMANTIC),
+        "test_opaque_result" => Some(&TEST_OPAQUE_RESULT_DIRECT_SEMANTIC),
+        "test_opaque_pointer" => Some(&TEST_OPAQUE_POINTER_DIRECT_SEMANTIC),
         _ => None,
     }
 }
@@ -308,6 +311,65 @@ static TEST_UMODDI3_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemantic
     },
     evidence: "test-exact-compiler-runtime-symbol",
 };
+
+static TEST_ALLOC_ARGUMENTS: [ExternalArgumentSpec; 1] = [ExternalArgumentSpec {
+    name: "size",
+    c_type: "size_t",
+    direction: ExternalArgumentDirection::Input,
+}];
+
+static TEST_ALLOC_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+    id: "test-allocate",
+    source: "test-c-addon",
+    c_name: "test_malloc",
+    argument_count: 1,
+    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+    return_model: ExternalReturnModel::Allocated { size_argument: 0 },
+    semantic: ExternalSemanticSpec {
+        operation: "memory.allocate",
+        arguments: &TEST_ALLOC_ARGUMENTS,
+        return_type: "void *",
+        replacement: None,
+        event_dispatch: None,
+    },
+    evidence: "test reviewed allocator contract",
+};
+
+static TEST_OPAQUE_RESULT_DIRECT_SEMANTIC: DirectSemanticFunctionSpec =
+    DirectSemanticFunctionSpec {
+        id: "test-opaque-result",
+        source: "test-addon",
+        c_name: "test_opaque_result",
+        argument_count: 1,
+        body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+        return_model: ExternalReturnModel::SymbolicU32,
+        semantic: ExternalSemanticSpec {
+            operation: "opaque.return",
+            arguments: &TEST_ALLOC_ARGUMENTS,
+            return_type: "u32",
+            replacement: None,
+            event_dispatch: None,
+        },
+        evidence: "test non-allocator return contract",
+    };
+
+static TEST_OPAQUE_POINTER_DIRECT_SEMANTIC: DirectSemanticFunctionSpec =
+    DirectSemanticFunctionSpec {
+        id: "test-opaque-pointer",
+        source: "test-addon",
+        c_name: "test_opaque_pointer",
+        argument_count: 1,
+        body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+        return_model: ExternalReturnModel::OpaquePointer,
+        semantic: ExternalSemanticSpec {
+            operation: "opaque.pointer",
+            arguments: &TEST_ALLOC_ARGUMENTS,
+            return_type: "void *",
+            replacement: None,
+            event_dispatch: None,
+        },
+        evidence: "test opaque pointer contract",
+    };
 
 fn no_test_wide_divide(
     _symbol: &artifact::ArtifactSymbolDefinition,

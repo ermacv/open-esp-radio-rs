@@ -1,10 +1,152 @@
 # Reviewed ESP32-S31 closed-PAC domains and safe transactions; no discovery facts or hardware metadata.
-schema = 2
+schema = 3
 
 [options]
-peripheral-ownership = true
 device-access = true
 allow-clippy-empty-docs = true
+
+[[ownership-partitions]]
+name = "WifiMacPeripherals"
+member = "wifi_mac"
+description = "ESP32-S31 Wi-Fi MAC register views owned by the Wi-Fi hardware lifecycle."
+peripherals = [
+    "WIFI_MAC_ANTENNA_INIT",
+    "WIFI_MAC_AUX_TSF_CONTROL",
+    "WIFI_MAC_BEACON_IE_CRC",
+    "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST",
+    "WIFI_MAC_BEAMFORMING_REPORT",
+    "WIFI_MAC_BSSID_POLICY",
+    "WIFI_MAC_COLD_HANDSHAKE",
+    "WIFI_MAC_CONTROL",
+    "WIFI_MAC_CORE_ENABLE",
+    "WIFI_MAC_CRYPTO_CONTROL",
+    "WIFI_MAC_DIAGNOSTIC_STATISTICS",
+    "WIFI_MAC_HE_BUFFER_STATUS",
+    "WIFI_MAC_HE_COLOR_COLLISION",
+    "WIFI_MAC_HE_INIT_PREFIX",
+    "WIFI_MAC_HE_INIT_SUFFIX",
+    "WIFI_MAC_HE_MU_EDCA_TIMER",
+    "WIFI_MAC_HE_OBSS_NARROW_BAND_RU",
+    "WIFI_MAC_HE_TB_DIAGNOSTICS",
+    "WIFI_MAC_HE_TB_STATISTICS",
+    "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS",
+    "WIFI_MAC_INTERFACE_ADDRESS",
+    "WIFI_MAC_INTERNAL_TX_BLOCK_ACK",
+    "WIFI_MAC_KEY_TABLE",
+    "WIFI_MAC_LAST_RX_BUFFER",
+    "WIFI_MAC_REGDMA_CONTROL",
+    "WIFI_MAC_RTC_TIMER_UPDATE",
+    "WIFI_MAC_RX_BSSID_LIST",
+    "WIFI_MAC_RX_CSI_CONTROL",
+    "WIFI_MAC_RX_CUSTOM_TYPE",
+    "WIFI_MAC_RX_DMA",
+    "WIFI_MAC_RX_END_STATE",
+    "WIFI_MAC_RX_FILTER",
+    "WIFI_MAC_RX_HANG_STATISTICS",
+    "WIFI_MAC_RX_POWER_SAVE",
+    "WIFI_MAC_RX_RUNTIME_RESULTS",
+    "WIFI_MAC_RX_STATISTICS",
+    "WIFI_MAC_STA_BEACON_FILTER",
+    "WIFI_MAC_STA_TBTT_TARGET",
+    "WIFI_MAC_STA_TSF_LOAD",
+    "WIFI_MAC_TSF_STATUS",
+    "WIFI_MAC_TSF_TIMER",
+    "WIFI_MAC_TXRX_CALLBACKS",
+    "WIFI_MAC_TXRX_PREFIX",
+    "WIFI_MAC_TXRX_SUFFIX",
+    "WIFI_MAC_TX_COMMON",
+    "WIFI_MAC_TX_COMPLETION",
+    "WIFI_MAC_TX_POWER_INIT",
+    "WIFI_MAC_TX_QUEUE_CONTROL",
+    "WIFI_MAC_TX_QUEUE_VECTOR",
+    "WIFI_MAC_TX_STATISTICS",
+]
+
+[[ownership-partitions]]
+name = "WifiInterruptPeripherals"
+member = "wifi_interrupts"
+description = "Wi-Fi interrupt banks transferred from cold setup to the hard interrupt handlers."
+peripherals = [
+    "WIFI_MAC_INTERRUPT",
+    "WIFI_MAC_POWER_INTERRUPT",
+]
+
+[[ownership-partitions]]
+name = "RadioPhyPeripherals"
+member = "radio_phy"
+description = "Role-neutral RF and PHY register views serialized by the shared radio lifecycle."
+peripherals = [
+    "PHY_AGC_ORACLE",
+    "PHY_AGC_RECOVERED_GAPS",
+    "PHY_BASEBAND_CONFIG_ORACLE",
+    "PHY_BB_RECOVERED_GAPS",
+    "PHY_BRX_RECOVERED_GAPS",
+    "PHY_BTAGC_RECOVERED",
+    "PHY_CLOCK_ORACLE",
+    "PHY_COLD_DEADLINE_ORACLE",
+    "PHY_FECTRL_RECOVERED",
+    "PHY_FEDATA_RECOVERED",
+    "PHY_FEDATA_WIFI_RECOVERED",
+    "PHY_FREQUENCY_CHANNEL_ORACLE",
+    "PHY_I2C_COMMAND_RAM",
+    "PHY_IQ_ESTIMATOR_ORACLE",
+    "PHY_MEMORY",
+    "PHY_NRX_RECOVERED_GAPS",
+    "PHY_PBUS",
+    "PHY_RX_DCO_ORACLE",
+]
+
+[[ownership-partitions]]
+name = "CoexistencePeripherals"
+member = "coexistence"
+description = "Shared coexistence register views owned by the radio arbitration service rather than either protocol role."
+peripherals = [
+    "COEX_HW_TIMER",
+    "PHY_FECOEX_RECOVERED",
+    "WIFI_MAC_COEX_INIT",
+    "WIFI_MAC_COEX_RUNTIME",
+]
+
+[[ownership-partitions]]
+name = "BluetoothControllerPeripherals"
+member = "bluetooth"
+description = "Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle."
+peripherals = [
+    "BLE_HW_ACCELERATOR",
+    "BLE_HW_CTE_RING_CONTROL",
+    "BLE_HW_RESOLVING_LIST",
+    "BLE_HW_RUNTIME_CONTROL",
+    "BLE_ISO_SCHEDULER_NOTIFY",
+    "BLE_PHY_INIT_PHASE",
+    "BLE_PHY_INIT_TOGGLE",
+    "BLUETOOTH_CONTROLLER_CORE",
+    "BLUETOOTH_RESET_IDLE_STATUS_0",
+    "BTDM_LOW_POWER_CONFIG",
+    "BTDM_RUNTIME_CONTROL",
+    "BTDM_SCHEDULER_TABLE",
+    "BTMAC_BLE_PHY_INIT",
+    "BT_V3_2_BASEBAND",
+    "BT_V3_2_CTE",
+]
+
+[[ownership-partitions]]
+name = "BluetoothInterruptPeripherals"
+member = "bluetooth_interrupts"
+description = "Bluetooth controller interrupt registers transferred independently from task lifecycle ownership to the hard ISR."
+peripherals = [
+    "BLUETOOTH_INTERRUPT_BANK",
+]
+
+[[ownership-partitions]]
+name = "SharedRadioPeripherals"
+member = "shared_radio"
+description = "Protocol-neutral physical register words touched by more than one radio lifecycle and serialized before either protocol receives a narrow capability."
+peripherals = [
+    "SHARED_RADIO_INIT_CONTROL",
+    "SHARED_BASEBAND_RESET_IDLE_STATUS",
+    "SHARED_BASEBAND_TX_TIMING",
+    "ZBBB_RADIO_CONTROL",
+]
 
 [[enum-domains]]
 name = "MacInterface"
@@ -411,6 +553,22 @@ status-register = "STATUS"
 clear-register = "CLEAR"
 clear-field = "EVENTS"
 sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
+
+[[interrupt-snapshots]]
+name = "bluetooth_interrupt_bank_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+status-register = "IRQ_STATUS_SNAPSHOT_0"
+clear-register = "IRQ_CLEAR_0"
+clear-field = "PENDING_BITS"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[interrupt-snapshots]]
+name = "bluetooth_interrupt_bank_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+status-register = "IRQ_STATUS_SNAPSHOT_1"
+clear-register = "IRQ_CLEAR_1"
+clear-field = "PENDING_BITS"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[full-register-writes]]
 name = "mac_interrupt_enable"

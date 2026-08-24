@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
 /// Hardware-visible subset of one parsed HE20 peer.
 ///
@@ -30,7 +30,7 @@ const fn repeated_packet_padding(packet_padding_eight_us: u8) -> u32 {
     padding_us | (padding_us << 5) | (padding_us << 10) | (padding_us << 15) | (padding_us << 20)
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Enable interface-zero HE BSSID matching before installing peer state.
     ///
     /// SOURCE: complete `libpp.a[hal_mac_ctl.o]::
@@ -42,13 +42,14 @@ impl RadioRegisters {
     fn initialize_interface_zero_he_bssid(&mut self) {
         let control = self
             .peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .multi_bssid_control();
         // Keep the four fresh-read RMW edges distinct and in blob order.
         control.modify(|_, w| w.he_bssid_enable().set_bit());
         control.modify(|_, w| w.bssid_select().set(0));
 
-        let power_save = self.peripherals.wifi_mac_rx_power_save.control();
+        let power_save = self.peripherals.wifi_mac.wifi_mac_rx_power_save.control();
         power_save.modify(|_, w| w.intra_ppdu_ps_enable().set_bit());
         power_save.modify(|_, w| w.intra_ps_check_bss_color_enable().set_bit());
     }
@@ -68,7 +69,7 @@ impl RadioRegisters {
         }
 
         self.initialize_interface_zero_he_bssid();
-        let init = &self.peripherals.wifi_mac_he_init_suffix;
+        let init = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
         let color_information = config.bss_color_information;
         if color_information & 0xbf != 0 {
             let color = color_information & 0x3f;
@@ -86,6 +87,7 @@ impl RadioRegisters {
         }
 
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_init_prefix
             .rx_field_control()
             .modify(|r, w| w.bitmap_control().set(r.bitmap_control().bits() | 1));
@@ -108,7 +110,7 @@ impl RadioRegisters {
                 .set(duration)
         });
 
-        let queues = &self.peripherals.wifi_mac_tx_queue_vector;
+        let queues = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
         for physical in 0..4 {
             queues
                 .he_rts_control(physical)
@@ -142,6 +144,7 @@ impl RadioRegisters {
         }
 
         self.peripherals
+            .wifi_mac
             .wifi_mac_bssid_policy
             .bssid_high(0)
             .modify(|_, w| {
@@ -151,7 +154,7 @@ impl RadioRegisters {
                     .set(association_id)
             });
 
-        let init = &self.peripherals.wifi_mac_he_init_suffix;
+        let init = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
         let broadcast_low = init.broadcast_ru_low();
         broadcast_low.modify(|_, w| {
             w.association_id()

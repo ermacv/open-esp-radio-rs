@@ -6,13 +6,16 @@
 //! register identities, polling policy, or runtime/protocol state.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::PhyHal;
+use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::channel::RadioChannelHal;
 
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn set_phy_register_calibration_clock(registers: &mut PhyHal, enabled: bool) {
+pub(crate) fn set_phy_register_calibration_clock(
+    registers: &mut impl SharedPhyAccess,
+    enabled: bool,
+) {
     registers.set_phy_calibration_clock(enabled);
 }
 
@@ -20,14 +23,14 @@ pub(crate) fn set_phy_register_calibration_clock(registers: &mut PhyHal, enabled
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_bb_agc_register_update(
     platform: &mut impl open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl,
-    registers: &mut PhyHal,
+    registers: &mut impl SharedPhyAccess,
 ) {
     open_esp_radio_esp32s31_hal::phy_agc::update_baseband_registers(platform, registers);
 }
 
 /// Complete rev0 ROM `phy_enable_agc`, size `0x28`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn enable_phy_agc(registers: &mut PhyHal) {
+pub(crate) fn enable_phy_agc(registers: &mut impl SharedPhyAccess) {
     open_esp_radio_esp32s31_hal::phy_agc::set_enabled(registers, true);
 }
 
@@ -38,13 +41,13 @@ pub(crate) fn enable_phy_agc(registers: &mut PhyHal) {
 /// Re-enabling uses the already recovered three-write `phy_enable_agc`
 /// sequence. Both branches are finite and touch no software state.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn set_phy_channel_agc(registers: &mut PhyHal, enabled: bool) {
+pub(crate) fn set_phy_channel_agc(registers: &mut impl SharedPhyAccess, enabled: bool) {
     open_esp_radio_esp32s31_hal::phy_agc::set_enabled(registers, enabled);
 }
 
 /// Complete both branches of rev0 ROM `phy_rx_11b_opt`, size `0xc4`.
 #[cfg(target_arch = "riscv32")]
-fn configure_phy_rx_11b_optimization(registers: &mut PhyHal, enabled: bool) {
+fn configure_phy_rx_11b_optimization(registers: &mut impl SharedPhyAccess, enabled: bool) {
     open_esp_radio_esp32s31_hal::phy_agc::configure_rx_11b_optimization(registers, enabled);
 }
 
@@ -56,7 +59,7 @@ pub(crate) fn configure_phy_registers(
              impl open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
              + open_esp_radio_esp32s31_hal::power_detector_platform::PhyPowerDetectorPlatformControl
          ),
-    registers: &mut PhyHal,
+    registers: &mut impl open_esp_radio_esp32s31_hal::PhyInitializationAccess,
     parameters: crate::phy_bb::PhyRegisterInitParameters,
 ) {
     open_esp_radio_esp32s31_hal::phy_baseband::enable_iq_correction(registers);
@@ -91,7 +94,7 @@ pub(crate) fn configure_phy_rx_table(
              impl open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
              + open_esp_radio_esp32s31_hal::power_detector_platform::PhyPowerDetectorPlatformControl
          ),
-    registers: &mut PhyHal,
+    registers: &mut impl open_esp_radio_esp32s31_hal::PhyInitializationAccess,
     parameters: crate::phy_bb::PhyRxTableInitParameters,
 ) {
     let mut index = 0_u8;
@@ -183,7 +186,10 @@ fn bluetooth_tx_gain_seed_halfword(
 /// Apply the complete direct-register prefix/suffix of ROM
 /// `phy_set_rx_gain_cal_dc`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_rx_gain_dc_registers(registers: &mut PhyHal, enabled: bool) {
+pub(crate) fn configure_phy_rx_gain_dc_registers(
+    registers: &mut impl SharedPhyAccess,
+    enabled: bool,
+) {
     if enabled {
         registers.set_phy_calibration_clock(true);
     }
@@ -205,7 +211,7 @@ pub(crate) fn configure_phy_rx_gain_dc_registers(registers: &mut PhyHal, enabled
 /// callback, loop, wait, allocation, or software-global access.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_calibration_tone(
-    registers: &mut PhyHal,
+    registers: &mut impl SharedPhyAccess,
     enabled: bool,
     selector: u8,
     step: u8,
@@ -219,7 +225,11 @@ pub(crate) fn configure_phy_calibration_tone(
 /// the DAC scale and TX-gain compensation, and leaves both disabled while the
 /// power-control loop measures the tone.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_power_control_tone(registers: &mut PhyHal, selector: u16, step: u8) {
+pub(crate) fn configure_phy_power_control_tone(
+    registers: &mut impl SharedPhyAccess,
+    selector: u16,
+    step: u8,
+) {
     registers.configure_power_control_tone(selector, step);
 }
 
@@ -228,7 +238,7 @@ pub(crate) fn configure_phy_power_control_tone(registers: &mut PhyHal, selector:
 #[cfg(target_arch = "riscv32")]
 #[inline(always)]
 pub(crate) fn configure_phy_calibration_tone_wide(
-    registers: &mut PhyHal,
+    registers: &mut impl SharedPhyAccess,
     enabled: bool,
     selector: u16,
     step: u8,
@@ -241,19 +251,19 @@ pub(crate) fn configure_phy_calibration_tone_wide(
 /// Reference: complete ROM `phy_rfcal_txiq` prefix and suffix. Each branch is
 /// one finite read/modify/write and owns no software state.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_txiq_correction(registers: &mut PhyHal, begin: bool) {
+pub(crate) fn configure_phy_txiq_correction(registers: &mut impl SharedPhyAccess, begin: bool) {
     registers.configure_tx_iq_correction(begin);
 }
 
 /// Capture the complete tone-control word saved by ROM `phy_rfcal_txiq`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn read_phy_txiq_tone_control(registers: &mut PhyHal) -> u32 {
+pub(crate) fn read_phy_txiq_tone_control(registers: &mut impl SharedPhyAccess) -> u32 {
     registers.txiq_tone_control()
 }
 
 /// Restore the exact tone-control word after TX-IQ work-mode cleanup.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn restore_phy_txiq_tone_control(registers: &mut PhyHal, saved: u32) {
+pub(crate) fn restore_phy_txiq_tone_control(registers: &mut impl SharedPhyAccess, saved: u32) {
     registers.restore_txiq_tone_control(saved);
 }
 
@@ -265,7 +275,7 @@ pub(crate) fn restore_phy_txiq_tone_control(registers: &mut PhyHal, saved: u32) 
 /// separate async actions in `phy_txiq`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_txiq_mis_power(
-    registers: &mut PhyHal,
+    registers: &mut impl SharedPhyAccess,
     first: bool,
     polarity: bool,
     attenuation: u8,
@@ -277,7 +287,7 @@ pub(crate) fn configure_phy_txiq_mis_power(
 /// Publish one bounded TX-IQ gain or phase coefficient.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_txiq_coefficient(
-    registers: &mut PhyHal,
+    registers: &mut impl SharedPhyAccess,
     kind: crate::phy_txiq::PhyTxIqCoefficientKind,
     value: i8,
 ) {
@@ -294,7 +304,7 @@ pub(crate) fn configure_phy_txiq_coefficient(
 /// Publish one bounded RX-IQ gain or phase coefficient.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_rxiq_coefficient(
-    registers: &mut PhyHal,
+    registers: &mut impl SharedPhyAccess,
     kind: crate::phy_rxiq::PhyRxIqCoefficientKind,
     value: i8,
 ) {
@@ -310,7 +320,7 @@ pub(crate) fn configure_phy_rxiq_coefficient(
 
 /// Select the finite correction path at entry to ROM `phy_rfcal_rxiq`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_rxiq_calibration_mode(registers: &mut PhyHal) {
+pub(crate) fn configure_phy_rxiq_calibration_mode(registers: &mut impl SharedPhyAccess) {
     registers.configure_rx_iq_calibration_mode();
 }
 
@@ -320,7 +330,7 @@ pub(crate) fn configure_phy_rxiq_calibration_mode(registers: &mut PhyHal) {
 /// This leaf preserves the following two fresh-read writes to the generated
 /// PAC `ADC_RATE_AND_FRONT_END_CONTROL` identity.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_adc_rate(registers: &mut PhyHal, rate: u32) {
+pub(crate) fn configure_phy_adc_rate(registers: &mut impl SharedPhyAccess, rate: u32) {
     registers.configure_adc_rate(rate);
 }
 
@@ -331,7 +341,7 @@ pub(crate) fn configure_phy_adc_rate(registers: &mut PhyHal, rate: u32) {
 /// repeated fresh-read writes to the same register. There is no wait, delay,
 /// loop, callback, or mutable software-state access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_front_end_registers(registers: &mut PhyHal) {
+pub(crate) fn configure_phy_front_end_registers(registers: &mut impl SharedPhyAccess) {
     open_esp_radio_esp32s31_hal::phy_baseband::initialize_front_end(registers);
 }
 
@@ -343,19 +353,19 @@ pub(crate) fn configure_phy_front_end_registers(registers: &mut PhyHal) {
 /// tail-call to `phy_dac_scale_set`. There is no loop, delay, callback, or
 /// mutable software-state access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_front_end_update(registers: &mut PhyHal) {
+pub(crate) fn configure_phy_front_end_update(registers: &mut impl SharedPhyAccess) {
     open_esp_radio_esp32s31_hal::phy_baseband::update_front_end(registers);
 }
 
 /// Arm one PWDET tone sample before the async one-microsecond timer edge.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn arm_phy_power_detector_tone(registers: &mut PhyHal) {
+pub(crate) fn arm_phy_power_detector_tone(registers: &mut impl SharedPhyAccess) {
     registers.set_power_detector_tone_armed(true);
 }
 
 /// Clear the temporary tone-arm bit selected by former `phy_param[0x1aa]`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn clear_phy_power_detector_tone_arm(registers: &mut PhyHal) {
+pub(crate) fn clear_phy_power_detector_tone_arm(registers: &mut impl SharedPhyAccess) {
     registers.set_power_detector_tone_armed(false);
 }
 
@@ -365,32 +375,32 @@ pub(crate) fn clear_phy_power_detector_tone_arm(registers: &mut PhyHal) {
 /// is an unconditional cleanup leaf with no wait, branch, callback, or
 /// software-global access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn stop_phy_power_detector_tone(registers: &mut PhyHal) {
+pub(crate) fn stop_phy_power_detector_tone(registers: &mut impl SharedPhyAccess) {
     registers.stop_power_detector_tone();
 }
 
 /// Trigger one TX-DC comparator measurement using the three fresh-read writes
 /// at rev0 ROM `phy_txdc_cal+0x9c..=0xbe`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn trigger_phy_tx_dc_measurement(registers: &mut PhyHal) {
+pub(crate) fn trigger_phy_tx_dc_measurement(registers: &mut impl SharedPhyAccess) {
     registers.trigger_tx_dc_measurement();
 }
 
 /// Read one TX-DC readiness sample. Repetition remains an executor decision.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn read_phy_tx_dc_ready_status(registers: &mut PhyHal) -> bool {
+pub(crate) fn read_phy_tx_dc_ready_status(registers: &mut impl SharedPhyAccess) -> bool {
     registers.tx_dc_measurement_is_ready()
 }
 
 /// Preserve the two independent post-ready comparator reads from the ROM.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn read_phy_tx_dc_comparator_status(registers: &mut PhyHal) -> [bool; 2] {
+pub(crate) fn read_phy_tx_dc_comparator_status(registers: &mut impl SharedPhyAccess) -> [bool; 2] {
     registers.sample_tx_dc_comparators()
 }
 
 /// Clear the TX-DC measurement controls as two fresh-read writes.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn clear_phy_tx_dc_measurement(registers: &mut PhyHal) {
+pub(crate) fn clear_phy_tx_dc_measurement(registers: &mut impl SharedPhyAccess) {
     registers.clear_tx_dc_measurement();
 }
 
@@ -420,13 +430,22 @@ trait PhyGainMemory {
 }
 
 #[cfg(target_arch = "riscv32")]
-impl PhyGainMemory for PhyHal {
+struct SharedPhyGainMemory<'registers, T: SharedPhyAccess> {
+    registers: &'registers mut T,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<T: SharedPhyAccess> PhyGainMemory for SharedPhyGainMemory<'_, T> {
     fn table_memory_base_index(&self) -> u8 {
-        open_esp_radio_esp32s31_hal::phy_memory::read_table_memory_base_index(self)
+        open_esp_radio_esp32s31_hal::phy_memory::read_table_memory_base_index(self.registers)
     }
 
     fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8) {
-        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(self, words, index);
+        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(
+            self.registers,
+            words,
+            index,
+        );
     }
 }
 
@@ -477,11 +496,11 @@ fn publish_phy_tx_gain_memory_to(
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn publish_phy_tx_gain_memory(
-    registers: &mut PhyHal,
+    registers: &mut impl SharedPhyAccess,
     bank: bool,
     image: crate::phy_channel::PhyWifiTxGainImage,
 ) {
-    publish_phy_tx_gain_memory_to(registers, bank, image);
+    publish_phy_tx_gain_memory_to(&mut SharedPhyGainMemory { registers }, bank, image);
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -499,7 +518,7 @@ pub(crate) fn publish_phy_tx_gain_memory_channel<P>(
 /// explicitly Bluetooth-owned.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn publish_bluetooth_tx_gain_memory(
-    registers: &mut PhyHal,
+    registers: &mut impl SharedPhyAccess,
     image: crate::phy_bluetooth::PhyBluetoothTxGainImage,
 ) {
     let hardware_base =

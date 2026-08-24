@@ -954,7 +954,7 @@ impl PhyState {
         }
     }
 
-    pub fn begin_full_wifi_calibration(&mut self, config: PhyConfig) {
+    pub fn begin_full_calibration(&mut self, config: PhyConfig) {
         self.config = config;
         self.common.crystal_selector = 0;
         self.clear_calibration_status();

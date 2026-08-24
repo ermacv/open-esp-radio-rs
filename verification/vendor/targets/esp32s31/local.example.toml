@@ -27,6 +27,10 @@ role = "rust-artifact"
 path = "/path/to/rust-trace-probes.elf"
 
 [[inputs]]
+role = "rust-artifact:bluetooth"
+path = "/path/to/rust-bluetooth-trace-probes.elf"
+
+[[inputs]]
 role = "source-artifact:libpp"
 path = "/path/to/linked-libpp.elf"
 
@@ -99,15 +103,48 @@ path = "/path/to/esp32s31_rev0_rom.elf"
 
 [[inputs]]
 role = "source-artifact:btbb"
-path = "/path/to/libbtbb.a"
+path = "/path/to/linked-btbb.elf"
 
 [[inputs]]
 role = "source-inventory:btbb"
 path = "/path/to/libbtbb.a"
 
-# Controller archives are inventory-only until the minimal advertising link
-# unit is defined. They remain visible to symbol navigation without making the
-# artifact-wide IR profiles prohibitively broad.
+# libbtbb reads the real `phy_param` object owned by libphy. The canonical
+# linked unit contains that provider, so its raw origin inventory must be part
+# of the same source instead of being represented by fixture bytes.
+[[inputs]]
+role = "source-inventory:btbb"
+path = "/path/to/libphy.a"
+
+# The focused linked unit composes controller, BTDM/NPL and baseband archives
+# for lifecycle/HCI call-order analysis.  Independent inventories remain the
+# archive-level provenance and navigation authorities.
+[[inputs]]
+role = "source-artifact:ble-controller"
+path = "/path/to/linked-ble-controller.elf"
+
+[[inputs]]
+role = "source-inventory:ble-controller"
+path = "/path/to/libble_app.a"
+
+[[inputs]]
+role = "source-inventory:ble-controller"
+path = "/path/to/libbtdm_common.a"
+
+[[inputs]]
+role = "source-inventory:ble-controller"
+path = "/path/to/libbtbb.a"
+
+[[inputs]]
+role = "source-inventory:ble-controller"
+path = "/path/to/libphy.a"
+
+[[inputs]]
+role = "source-companion:ble-controller"
+path = "/path/to/esp32s31_rev0_rom.elf"
+
+# Exact archive inventories also remain independently addressable for source
+# classification and navigation outside the linked lifecycle unit.
 [[inputs]]
 role = "source-inventory:ble"
 path = "/path/to/libble_app.a"

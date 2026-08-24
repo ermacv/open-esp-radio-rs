@@ -1,0 +1,816 @@
+schema = 2
+
+[[peripherals]]
+name = "BTMAC_BLE_PHY_INIT"
+description = """
+ESP32-S31 BTMAC words initialized by the complete BLE PHY register-init
+function. The function identity is supported by the matching ble_phy.c object
+layout from the ESP32-C61 ecosystem library, while every address, mask and
+value below comes only from the ESP32-S31 artifact. Neutral INIT names retain
+the exact operation without promoting the cross-chip hint to hardware truth."""
+baseAddress = 0x20101400
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_ZERO_0074"
+description = "BLE PHY register initialization writes the complete zero image. Inner hardware semantics remain unknown."
+addressOffset = 0x74
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_PRESERVE_BIT_17"
+description = "BLE PHY register initialization preserves only bit 17 and clears every other bit."
+addressOffset = 0xB4
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_CLEAR_LOW"
+bitOffset = 0
+bitWidth = 17
+
+[[peripherals.registers.register.fields]]
+name = "INIT_CLEAR_HIGH"
+bitOffset = 18
+bitWidth = 14
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_ONES_00B8"
+description = "BLE PHY register initialization writes the complete all-ones image."
+addressOffset = 0xB8
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_VALUE_0138"
+description = "BLE PHY register initialization writes the finite complete image 0x0000065B."
+addressOffset = 0x138
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "LC_TX_ON_DELAY_CONFIG"
+description = "BLE transmit timing configuration. ble_tx_config_check independently prints byte zero as lc_tx_on_delay; BLE PHY initialization writes the same runtime-derived byte image into bytes zero and two."
+addressOffset = 0x250
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "LC_TX_ON_DELAY"
+description = "Low byte printed as lc_tx_on_delay by complete ble_tx_config_check. BLE PHY initialization stores a configuration byte minus one."
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_DUPLICATE_BYTE"
+description = "BLE PHY initialization receives the same configuration-byte-minus-one image as LC_TX_ON_DELAY. No independent semantic name is claimed."
+bitOffset = 16
+bitWidth = 8
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_BYTES_0254"
+description = "BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2."
+addressOffset = 0x254
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_0"
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_1"
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_2"
+bitOffset = 16
+bitWidth = 8
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_CONTROL_0400"
+description = "BLE PHY initialization first writes bit 31 as a complete image and then sets bit 22 through a fresh-read RMW."
+addressOffset = 0x400
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_ENABLE_22"
+bitOffset = 22
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "INIT_ENABLE_31"
+bitOffset = 31
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_HIGH_HALF_0458"
+description = "BLE PHY initialization replaces the upper halfword with the finite image 0x000F."
+addressOffset = 0x458
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_HIGH_HALF"
+bitOffset = 16
+bitWidth = 16
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_VALUE_045C"
+description = "BLE PHY register initialization writes the finite complete image 8."
+addressOffset = 0x45C
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_DYNAMIC_IMAGE_04A0"
+description = "BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown."
+addressOffset = 0x4A0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_BYTES_04A4"
+description = "BLE PHY register initialization writes four byte images equal to 2."
+addressOffset = 0x4A4
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_0"
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_1"
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_2"
+bitOffset = 16
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_3"
+bitOffset = 24
+bitWidth = 8
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_BYTES_04A8"
+description = "BLE PHY register initialization writes four byte images equal to 2."
+addressOffset = 0x4A8
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_0"
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_1"
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_2"
+bitOffset = 16
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_3"
+bitOffset = 24
+bitWidth = 8
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_VALUE_04AC"
+description = "BLE PHY register initialization writes the finite complete image 0x00FF0002."
+addressOffset = 0x4AC
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_VALUE_0540"
+description = "BLE PHY register initialization writes the finite complete image 2000."
+addressOffset = 0x540
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_LOW_5_054C"
+description = "BLE PHY initialization replaces the low five bits with the finite image 0x12."
+addressOffset = 0x54C
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_LOW_5"
+bitOffset = 0
+bitWidth = 5
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_BYTES_0550"
+description = "BLE PHY initialization replaces the low three bytes with 0x03, 0x03 and 0x44."
+addressOffset = 0x550
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_0"
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_1"
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_2"
+bitOffset = 16
+bitWidth = 8
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_BYTES_0554"
+description = "BLE PHY initialization replaces all four bytes with 0x10, 0x10, 0x3C and 0x28."
+addressOffset = 0x554
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_0"
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_1"
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_2"
+bitOffset = 16
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_3"
+bitOffset = 24
+bitWidth = 8
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_BYTES_0558"
+description = "BLE PHY initialization replaces all four bytes with 0x0C, 0x08, 0x0C and 0x0C."
+addressOffset = 0x558
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_0"
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_1"
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_2"
+bitOffset = 16
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_3"
+bitOffset = 24
+bitWidth = 8
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_BYTES_055C"
+description = "BLE PHY initialization replaces all four bytes with 0x08."
+addressOffset = 0x55C
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_0"
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_1"
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_2"
+bitOffset = 16
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_3"
+bitOffset = 24
+bitWidth = 8
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "derived"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_ZERO_0074"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_ZERO_0074.INIT_IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_PRESERVE_BIT_17"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_PRESERVE_BIT_17.INIT_CLEAR_LOW"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_PRESERVE_BIT_17.INIT_CLEAR_HIGH"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_ONES_00B8"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_ONES_00B8.INIT_IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0138"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0138.INIT_IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG.LC_TX_ON_DELAY"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG.INIT_DUPLICATE_BYTE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_1"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_2"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400.INIT_ENABLE_22"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400.INIT_ENABLE_31"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458.INIT_HIGH_HALF"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_045C"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_045C.INIT_IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_DYNAMIC_IMAGE_04A0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_DYNAMIC_IMAGE_04A0.INIT_IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_1"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_2"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_3"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_1"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_2"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_3"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_04AC"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_04AC.INIT_IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0540"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0540.INIT_IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C.INIT_LOW_5"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550.INIT_BYTE_0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550.INIT_BYTE_1"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550.INIT_BYTE_2"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_1"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_2"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_3"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_1"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_2"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_3"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_1"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_2"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_3"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

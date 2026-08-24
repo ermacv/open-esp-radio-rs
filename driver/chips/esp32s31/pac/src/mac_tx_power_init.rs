@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
 /// Number of two-byte rate entries produced by complete `hal_init_tx_pwr`.
 pub const MAC_TX_POWER_RATE_COUNT: usize = 43;
@@ -142,14 +142,14 @@ const fn partial_ru_power_slot(selector: MacPartialRuPowerSelector) -> PartialRu
     }
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Read the runtime maximum TX-power index for one partial RU.
     ///
     /// SOURCE: complete `hal_mac_get_tb_max_pwr` including both relocation
     /// jump tables. The returned six-bit value is a PHY gain-table index, not
     /// a radiated dBm value.
     pub fn partial_ru_max_tx_power(&self, selector: MacPartialRuPowerSelector) -> MacTxPowerIndex {
-        let init = &self.peripherals.wifi_mac_tx_power_init;
+        let init = &self.peripherals.wifi_mac.wifi_mac_tx_power_init;
         let value = match partial_ru_power_slot(selector) {
             PartialRuPowerSlot::Packed { word, lane } => {
                 let register = init.tb_ru_power(word).read();
@@ -178,7 +178,7 @@ impl RadioRegisters {
         selector: MacPartialRuPowerSelector,
         power: MacTxPowerIndex,
     ) {
-        let init = &self.peripherals.wifi_mac_tx_power_init;
+        let init = &self.peripherals.wifi_mac.wifi_mac_tx_power_init;
         match partial_ru_power_slot(selector) {
             PartialRuPowerSlot::Packed { word, lane } => {
                 let register = init.tb_ru_power(word);
@@ -204,7 +204,7 @@ impl RadioRegisters {
     /// `BLOB_LIBPP_HAL_TX_POWER_INIT`. This method preserves all 56
     /// fresh-read RMW edges and their original child-call order.
     pub fn initialize_mac_tx_power(&mut self, table: &MacTxPowerTable) {
-        let init = &self.peripherals.wifi_mac_tx_power_init;
+        let init = &self.peripherals.wifi_mac.wifi_mac_tx_power_init;
 
         // Complete hal_init_tb_power: rates 16..=25, one six-bit field per RMW.
         let tb0 = init.tb_power(0);

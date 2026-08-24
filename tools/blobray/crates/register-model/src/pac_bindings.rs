@@ -437,16 +437,21 @@ fn array_binding_name(value: &str, dim_name: Option<&str>) -> String {
 fn type_binding_name(value: &str) -> String {
     let value = remove_dimension_placeholder(value);
     let mut output = String::new();
-    let mut capitalize = true;
-    for character in value.chars() {
-        if character == '_' || character == '-' {
-            capitalize = true;
-        } else if capitalize {
-            output.push(character.to_ascii_uppercase());
-            capitalize = false;
-        } else {
-            output.push(character.to_ascii_lowercase());
+    let mut previous_ended_with_digit = false;
+    for part in value.split(['_', '-']).filter(|part| !part.is_empty()) {
+        if previous_ended_with_digit
+            && part.starts_with(|character: char| character.is_ascii_digit())
+        {
+            output.push('_');
         }
+        for (index, character) in part.chars().enumerate() {
+            if index == 0 {
+                output.push(character.to_ascii_uppercase());
+            } else {
+                output.push(character.to_ascii_lowercase());
+            }
+        }
+        previous_ended_with_digit = part.ends_with(|character: char| character.is_ascii_digit());
     }
     output
 }
@@ -458,6 +463,12 @@ fn access_label(access: Option<Access>) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn type_binding_matches_svd2rust_for_adjacent_numeric_segments() {
+        assert_eq!(type_binding_name("BT_V3_2_BASEBAND"), "BtV3_2Baseband");
+        assert_eq!(type_binding_name("UART0_CONTROL"), "Uart0Control");
+    }
 
     const SIMPLE_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">

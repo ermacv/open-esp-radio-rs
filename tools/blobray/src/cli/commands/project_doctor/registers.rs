@@ -193,7 +193,7 @@ fn collect_pac_api(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                 .field("domains", pack.domain_count())
                 .field("operations", pack.operation_count())
                 .field("sources", pack.source_ids().len())
-                .field("peripheral-ownership", pack.options.peripheral_ownership)
+                .field("ownership-partitions", pack.ownership_partition_count())
                 .field("device-access", pack.options.device_access)
                 .field("pack", path.display().to_string())
                 .field("output", display_optional(paths.api_output.as_deref())),

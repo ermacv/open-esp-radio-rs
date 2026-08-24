@@ -10,6 +10,68 @@ mod scenario;
 use diff::{coverage_gap, ordered_transactions, ordered_transactions_equal, trace_difference};
 pub(crate) use scenario::*;
 
+/// Project a concrete replay trace into the same fail-closed effect vocabulary
+/// used by symbolic binding contracts.
+///
+/// The execution backend intentionally remains independent of reviewed
+/// dispositions. This adapter lives in the generic verifier and rejects
+/// unnamed MMIO instead of inventing a register identity.
+fn concrete_effects(
+    events: &[execution::ExecutionEvent],
+) -> core::result::Result<Vec<effect_contract::ContractEffect>, String> {
+    events
+        .iter()
+        .map(|event| match event {
+            execution::ExecutionEvent::Read {
+                width,
+                address,
+                register,
+                value,
+                ..
+            } => Ok(effect_contract::ContractEffect::MmioRead {
+                register: effect_contract::RegisterId {
+                    address: *address,
+                    width: *width,
+                    name: register.clone().ok_or_else(|| {
+                        format!("cannot apply an effect contract to unnamed MMIO {address:#010x}")
+                    })?,
+                },
+                value: effect_contract::ContractValue::Concrete(*value),
+            }),
+            execution::ExecutionEvent::Write {
+                width,
+                address,
+                register,
+                value,
+                ..
+            } => Ok(effect_contract::ContractEffect::MmioWrite {
+                register: effect_contract::RegisterId {
+                    address: *address,
+                    width: *width,
+                    name: register.clone().ok_or_else(|| {
+                        format!("cannot apply an effect contract to unnamed MMIO {address:#010x}")
+                    })?,
+                },
+                value: effect_contract::ContractValue::Concrete(*value),
+            }),
+            execution::ExecutionEvent::DelayMicros(micros) => {
+                Ok(effect_contract::ContractEffect::Delay {
+                    micros: effect_contract::ContractValue::Concrete(*micros),
+                })
+            }
+            execution::ExecutionEvent::Fence {
+                fm,
+                predecessor,
+                successor,
+            } => Ok(effect_contract::ContractEffect::Fence {
+                fm: *fm,
+                predecessor: *predecessor,
+                successor: *successor,
+            }),
+        })
+        .collect()
+}
+
 fn artifact_report(input: ExecutionInput<'_>) -> Result<ArtifactReport> {
     Ok(ArtifactReport {
         path: input.artifact.display().to_string(),
@@ -388,10 +450,22 @@ pub(crate) fn compare_execution_scenarios(
         compare_return,
         case_execution,
         transaction_comparison,
+        effect_policy,
         call_equivalences,
         coverage_domain,
         vendor_setup,
     } = policy;
+    let compare_under_effect_contract = matches!(
+        transaction_comparison,
+        profiles::TransactionComparison::ObservablesUnderEffectContract
+    );
+    if compare_under_effect_contract != effect_policy.is_some() {
+        return Err(crate::Error::invalid(if compare_under_effect_contract {
+            "observables-under-effect-contract requires one reviewed disposition effect contract"
+        } else {
+            "a disposition effect contract may affect concrete execution only when the profile selects observables-under-effect-contract"
+        }));
+    }
     if compare_return
         && scenarios.iter().any(|scenario| {
             !matches!(
@@ -670,21 +744,69 @@ pub(crate) fn compare_execution_scenarios(
         );
         rust_executed_pcs.extend(rust_result.executed_pcs.iter().copied());
 
-        let transactions_equal = ordered_transactions_equal(
-            &vendor_result,
-            &rust_result,
-            transaction_comparison,
-            compare_return,
-            call_equivalences,
-        );
         let events_equal = vendor_result.events == rust_result.events;
+        let effect_contract_outcome = effect_policy.map(|policy| {
+            let vendor_effects = concrete_effects(&vendor_result.events)
+                .map_err(|error| format!("vendor observable: {error}"))?;
+            let rust_effects = concrete_effects(&rust_result.events)
+                .map_err(|error| format!("Rust observable: {error}"))?;
+            effect_contract::compare_effects(&vendor_effects, &rust_effects, policy)
+                .map_err(|error| error.to_string())
+        });
+        let effect_contract_outcome = match effect_contract_outcome.transpose() {
+            Ok(outcome) => outcome,
+            Err(reason) => {
+                incomplete_cases += 1;
+                case_reports.push(CaseReport::Incomplete {
+                    name: named.name.clone(),
+                    environment,
+                    vendor_error: Some(format!(
+                        "concrete effect-contract comparison is incomplete: {reason}"
+                    )),
+                    rust_error: None,
+                });
+                continue;
+            }
+        };
+        if let Some(outcome) = &effect_contract_outcome
+            && outcome.verdict == effect_contract::EquivalenceVerdict::Incomplete
+        {
+            incomplete_cases += 1;
+            case_reports.push(CaseReport::Incomplete {
+                name: named.name.clone(),
+                environment,
+                vendor_error: Some(format!(
+                    "concrete effect-contract comparison is incomplete: {}",
+                    outcome.reason.as_deref().unwrap_or("unclassified effect")
+                )),
+                rust_error: None,
+            });
+            continue;
+        }
+        let contract_equal = effect_contract_outcome
+            .as_ref()
+            .is_some_and(|outcome| outcome.verdict == effect_contract::EquivalenceVerdict::Match);
+        let transactions_equal = if compare_under_effect_contract {
+            contract_equal
+        } else {
+            ordered_transactions_equal(
+                &vendor_result,
+                &rust_result,
+                transaction_comparison,
+                compare_return,
+                call_equivalences,
+            )
+        };
         let memory_equal = vendor_result.memory_changes == rust_result.memory_changes;
         let returns_equal =
             !compare_return || vendor_result.return_value == rust_result.return_value;
         let case_equal = if transaction_comparison.state_domain() {
             transactions_equal
         } else {
-            events_equal && transactions_equal && memory_equal && returns_equal
+            (events_equal || compare_under_effect_contract && contract_equal)
+                && transactions_equal
+                && memory_equal
+                && returns_equal
         };
         if case_equal {
             matched_cases += 1;
@@ -833,5 +955,84 @@ mod tests {
         };
 
         assert!(coverage_is_complete(&coverage));
+    }
+
+    #[test]
+    fn concrete_effect_contract_accepts_only_the_reviewed_ordering_fence() {
+        let read = execution::ExecutionEvent::Read {
+            width: 32,
+            address: 0x2010_1340,
+            region: "radio".to_owned(),
+            register: Some("IRQ_STATUS".to_owned()),
+            value: 0xa55a_00f0,
+        };
+        let write = execution::ExecutionEvent::Write {
+            width: 32,
+            address: 0x2010_1058,
+            region: "radio".to_owned(),
+            register: Some("IRQ_CLEAR".to_owned()),
+            value: 0xa55a_00f0,
+        };
+        let fence = execution::ExecutionEvent::Fence {
+            fm: 0,
+            predecessor: 15,
+            successor: 15,
+        };
+        let policy = effect_contract::EffectPolicy::new(
+            effect_contract::EffectComparison::ExactEffectsV2,
+            [
+                (
+                    effect_contract::EffectSelector::MmioRead {
+                        width: 32,
+                        address: 0x2010_1340,
+                    },
+                    effect_contract::EffectDisposition::Required,
+                ),
+                (
+                    effect_contract::EffectSelector::MmioWrite {
+                        width: 32,
+                        address: 0x2010_1058,
+                    },
+                    effect_contract::EffectDisposition::Required,
+                ),
+                (
+                    effect_contract::EffectSelector::Fence {
+                        fm: 0,
+                        predecessor: 15,
+                        successor: 15,
+                    },
+                    effect_contract::EffectDisposition::RustAddition(
+                        effect_contract::RustAdditionReason::DeviceOrdering,
+                    ),
+                ),
+            ],
+        )
+        .unwrap();
+
+        let vendor = concrete_effects(&[read.clone(), write.clone()]).unwrap();
+        let rust = concrete_effects(&[read.clone(), write.clone(), fence]).unwrap();
+        let outcome = effect_contract::compare_effects(&vendor, &rust, &policy).unwrap();
+        assert_eq!(outcome.verdict, effect_contract::EquivalenceVerdict::Match);
+
+        let reordered = concrete_effects(&[write, read]).unwrap();
+        let outcome = effect_contract::compare_effects(&vendor, &reordered, &policy).unwrap();
+        assert_eq!(outcome.verdict, effect_contract::EquivalenceVerdict::Diff);
+    }
+
+    #[test]
+    fn concrete_effect_contract_rejects_unnamed_mmio() {
+        let event = execution::ExecutionEvent::Read {
+            width: 32,
+            address: 0x2010_1340,
+            region: "radio".to_owned(),
+            register: None,
+            value: 0,
+        };
+
+        assert!(
+            concrete_effects(&[event])
+                .unwrap_err()
+                .contains("unnamed MMIO")
+        );
     }
 }

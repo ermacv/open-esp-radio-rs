@@ -1,7 +1,7 @@
 //! Owned access to the ESP32-S31 PHY analog-register I2C master.
 
 #[cfg(target_arch = "riscv32")]
-use crate::{PhyAccess, phy_pac_mut};
+use crate::{SharedPhyAccess, phy_pac_mut};
 
 /// One of the two analog-register command hosts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -193,7 +193,7 @@ pub fn configure_bbpll_calibration(platform: &mut impl PhyI2cMasterControl, enab
 /// for the instruction-recovered block/register/data word.
 #[cfg(target_arch = "riscv32")]
 pub fn write_command_memory(
-    registers: &mut impl PhyAccess,
+    registers: &mut impl SharedPhyAccess,
     index: usize,
     command: u32,
 ) -> Result<(), PhyI2cError> {

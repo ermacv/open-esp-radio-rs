@@ -1,8 +1,8 @@
 //! Generated-PAC ownership for the complete cold MAC antenna transaction.
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Apply all 34 fresh-read RMW edges of `hal_attenna_init`.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac_tx.o]`
@@ -10,8 +10,8 @@ impl RadioRegisters {
     /// is intentional. Both array traversals run from `0x20105510` down to
     /// `0x201051ac` with a `0x7c` stride.
     pub fn initialize_mac_antenna(&mut self) {
-        let init = &self.peripherals.wifi_mac_antenna_init;
-        let vectors = &self.peripherals.wifi_mac_tx_queue_vector;
+        let init = &self.peripherals.wifi_mac.wifi_mac_antenna_init;
+        let vectors = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
 
         // First complete reverse traversal: one fresh-read edge per word.
         for physical_bank in (4..8).rev() {

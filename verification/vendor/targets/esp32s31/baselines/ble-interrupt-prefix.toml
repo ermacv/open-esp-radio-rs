@@ -1,0 +1,15 @@
+schema = 2
+
+[[evidence]]
+source = "ble-controller"
+symbol = "r_sym_ble_ywjh0f9yjTBeI7XgS5da"
+kind = "reviewed-domain-equivalence/profile:scenario/ble-nrt-interrupt-ordered-mmio-prefix"
+digest = "9e48637e18041031c1393c520d8ec0c5f90f3f882da24f0473ceaaafc3f9ebf4"
+
+[evidence.components]
+comparison-orchestrator = "e42a4a325c692985f10fdb9791a70567d804034e4a3ac437b9ec645d6d94d375"
+execution-image = "13e5feb0a32b46a70f83f6e7e2bc16be1d2983bf66a13ba8343aab538bbcc4c1"
+execution-machine = "67dc2bea179a218b2d3f2d1799dbf0c51a51b05db86e7c39e12df4aa2b5b4633"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
+profile = "34f97121ec26030ba9260b3091a0254406fe3def0dc30613ab1dfcb6194f5a7a"
+profile-parser = "5c2f787fc137882a506001142f59550f0ad90985388dffa2f92f9c3e036985cc"

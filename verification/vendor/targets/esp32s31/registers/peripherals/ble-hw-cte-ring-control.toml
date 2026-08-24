@@ -1,0 +1,89 @@
+schema = 2
+
+[[peripherals]]
+name = "BLE_HW_CTE_RING_CONTROL"
+description = """
+Late direction-finding hardware state recovered from complete ESP32-S31
+ble_hw_cte.c leaves. The block is kept separate from the minimum standalone
+BLE controller: advertising, scanning and ordinary connections do not require
+CTE sample-ring support. Only observed reset and ring-limit fields are named.
+"""
+baseAddress = 0x2010199C
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "RING_CONTROL"
+description = "Reset writes the complete word as zero; independent accessors update the ring index and maximum-buffer fields through halfword RMW operations."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "MAX_BUFFER_NUMBER"
+description = "The setter truncates its argument to three bits and replaces bits 12..14; the getter returns the same field."
+bitOffset = 12
+bitWidth = 3
+
+[[peripherals.registers.register.fields]]
+name = "RING_BUFFER_INDEX_CLEAR"
+description = "The named clear accessor sets bit 15. The active level and any hardware self-clear behavior remain unproven."
+bitOffset = 15
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+dim = 12
+dimIncrement = 0x4
+dimIndex = "0,1,2,3,4,5,6,7,8,9,10,11"
+name = "RESET_WORD%s"
+description = "Complete 32-bit word cleared by r_ble_hw_cte_reset; no other semantics are assigned."
+addressOffset = 0x4
+size = 32
+access = "write-only"
+
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[review]]
+entity = "BLE_HW_CTE_RING_CONTROL"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+provenance = "derived"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLE_HW_CTE_RING_CONTROL.RING_CONTROL"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLE_HW_CTE_RING_CONTROL.RING_CONTROL.MAX_BUFFER_NUMBER"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLE_HW_CTE_RING_CONTROL.RING_CONTROL.RING_BUFFER_INDEX_CLEAR"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD%s"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLE_HW_CTE_RING_CONTROL.RESET_WORD%s.IMAGE"
+sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

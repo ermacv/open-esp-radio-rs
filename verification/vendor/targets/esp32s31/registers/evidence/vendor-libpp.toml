@@ -143,7 +143,7 @@ description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788
 
 [[sources]]
 id = "BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"
-description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_txrx_init body, direct suffix offsets 0xee..0x16e after the hal_he_set_mac_delay, hal_he_set_ack_rate and hal_he_set_bbrxhung_time calls. It proves nine fresh-read RMW edges ending with RX_CONTROL walker-disable bit 31 clear."
+description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o mac_txrx_init body, direct suffix offsets 0xee..0x16e after the hal_he_set_mac_delay, hal_he_set_ack_rate and hal_he_set_bbrxhung_time calls. It proves nine fresh-read RMW edges, including replacement of 0x20104C24 bits 11:0 with 0x0F0 while preserving bits 31:12, and ends with RX_CONTROL walker-disable bit 31 clear."
 
 [[sources]]
 id = "BLOB_LIBPP_HAL_INIT_RX_POLICY"

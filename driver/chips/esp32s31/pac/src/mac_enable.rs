@@ -2,9 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::{ColdRadioRegisters, MacInterruptMask};
+use super::{MacInterruptMask, WifiColdRegisters};
 
-impl ColdRadioRegisters {
+impl WifiColdRegisters {
     /// Enable the shared MAC gates and publish the enabled-event bitmap.
     ///
     /// SOURCE: complete pinned
@@ -14,6 +14,7 @@ impl ColdRadioRegisters {
     pub fn enable_mac_with_interrupt_mask(&mut self, event_mask: MacInterruptMask) {
         self.registers
             .peripherals
+            .wifi_mac
             .wifi_mac_core_enable
             .control()
             .modify(|_, w| w.mac_disable_gates_unknown().enabled());

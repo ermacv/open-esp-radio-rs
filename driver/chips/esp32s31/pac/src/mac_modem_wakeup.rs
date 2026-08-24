@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::{RadioRegisters, device_fence, svd};
+use super::{WifiRadioRegisters, device_fence, svd};
 
 /// Four-bit hardware limit used by the modem beacon-miss counter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -156,7 +156,7 @@ pub(crate) fn set_tbtt_auto_period(registers: &svd::WifiMacRegdmaControl, value:
     published
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Disable modem-state wakeup protection for an always-awake STA.
     ///
     /// SOURCE: complete
@@ -170,6 +170,7 @@ impl RadioRegisters {
     /// so callers must not use it as a generic TX-enable operation.
     pub fn disable_mac_modem_state_wakeup_protect(&mut self) {
         self.peripherals
+            .wifi_mac
             .wifi_mac_rtc_timer_update
             .sta_tsf_control()
             .modify(|_, writer| writer.modem_state_wakeup_protect_enable().clear_bit());
@@ -190,7 +191,7 @@ impl RadioRegisters {
     /// WDEVPWR interrupt bank. Those edges must be qualified and scheduled by
     /// their separate owners before HIL enables this transaction.
     pub fn configure_station_modem_wakeup(&mut self, config: StaModemWakeConfig) {
-        let rtc = &self.peripherals.wifi_mac_rtc_timer_update;
+        let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
         set_beacon_miss_timeout(rtc, config.beacon_miss_timeout);
         set_beacon_miss_limit(rtc, config.beacon_miss_limit.get());
         enable_beacon_miss_limit_wakeup(rtc);
@@ -198,7 +199,7 @@ impl RadioRegisters {
         enable_modem_state_sleep_limit_wakeup(rtc);
         enable_modem_state_wakeup_protect(rtc);
 
-        let regdma = &self.peripherals.wifi_mac_regdma_control;
+        let regdma = &self.peripherals.wifi_mac.wifi_mac_regdma_control;
         set_wakeup_protect_early_time(regdma, config.wakeup_protect_early_time);
         match config.tbtt_auto_period {
             Some(period) => {

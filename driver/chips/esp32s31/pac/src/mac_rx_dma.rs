@@ -4,7 +4,7 @@
 
 use open_esp_radio_dma::StableDmaRange;
 
-use super::{RadioRegisters, device_fence, svd};
+use super::{WifiRadioRegisters, device_fence, svd};
 
 /// Read-only hardware frontier of the MAC RX descriptor walker.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,10 +78,10 @@ pub(crate) fn request_descriptor_reload(registers: &svd::WifiMacRxDma) {
         .modify(|_, writer| writer.append_descriptor_reload().set_bit());
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Snapshot the complete published RX walker frontier without changing it.
     pub fn mac_rx_dma_snapshot(&self) -> MacRxDmaSnapshot {
-        let dma = &self.peripherals.wifi_mac_rx_dma;
+        let dma = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let control = dma.rx_control().read();
         let next_descriptor_word = dma.rx_next_descriptor().read().bits();
         MacRxDmaSnapshot {
@@ -100,7 +100,7 @@ impl RadioRegisters {
     /// `libpp.a[hal_mac.o]::mac_rxbuf_init`. Its final descriptor-base store
     /// is deliberately excluded because the RX ring owner publishes it later.
     pub fn initialize_mac_rx_buffer_prefix(&mut self) {
-        let dma = &self.peripherals.wifi_mac_rx_dma;
+        let dma = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         dma.rx_buffer_limit_unknown()
             .modify(|_, w| w.low_unknown().set(0x000f_ffff));
         dma.rx_buffer_base_unknown()
@@ -113,12 +113,12 @@ impl RadioRegisters {
 
     /// Read the complete hardware word. HAL owns any address-field projection.
     pub fn mac_rx_last_descriptor_word(&self) -> u32 {
-        read_last_descriptor(&self.peripherals.wifi_mac_rx_dma)
+        read_last_descriptor(&self.peripherals.wifi_mac.wifi_mac_rx_dma)
     }
 
     /// Read the complete hardware word. HAL owns any address-field projection.
     pub fn mac_rx_next_descriptor_word(&self) -> u32 {
-        read_next_descriptor(&self.peripherals.wifi_mac_rx_dma)
+        read_next_descriptor(&self.peripherals.wifi_mac.wifi_mac_rx_dma)
     }
 
     /// Reconstruct the complete last descriptor pointer exactly as the
@@ -126,11 +126,12 @@ impl RadioRegisters {
     /// but this form keeps the high-window composition available without a
     /// duplicated handwritten register transaction.
     pub fn mac_rx_last_descriptor_address(&self) -> u32 {
-        read_last_descriptor_address(&self.peripherals.wifi_mac_rx_dma)
+        read_last_descriptor_address(&self.peripherals.wifi_mac.wifi_mac_rx_dma)
     }
 
     pub fn mac_rx_walker_enabled(&self) -> bool {
         self.peripherals
+            .wifi_mac
             .wifi_mac_rx_dma
             .rx_control()
             .read()
@@ -139,7 +140,7 @@ impl RadioRegisters {
     }
 
     pub fn mac_rx_reload_pending(&self) -> bool {
-        descriptor_reload_pending(&self.peripherals.wifi_mac_rx_dma)
+        descriptor_reload_pending(&self.peripherals.wifi_mac.wifi_mac_rx_dma)
     }
 
     /// Select the address window carried by a retained descriptor range.
@@ -151,6 +152,7 @@ impl RadioRegisters {
         assert!(address_high <= 0x0fff);
         assert_eq!(address_high, (binding.start() >> 20) as u16);
         self.peripherals
+            .wifi_mac
             .wifi_mac_rx_dma
             .rx_descriptor_high_window()
             .modify(|_, w| w.address_high().set(address_high));
@@ -159,34 +161,34 @@ impl RadioRegisters {
     /// Publish a descriptor head contained by the retained DMA range.
     pub fn write_mac_rx_descriptor_base(&mut self, binding: &StableDmaRange<'_>, address: u32) {
         assert!(binding.contains(address, 1));
-        write_descriptor_base(&self.peripherals.wifi_mac_rx_dma, address);
+        write_descriptor_base(&self.peripherals.wifi_mac.wifi_mac_rx_dma, address);
     }
 
     /// Start the walker only while its descriptor backing authority is held.
     pub fn publish_mac_rx_walker_enable(&mut self, _binding: &StableDmaRange<'_>) {
-        set_walker_enabled(&self.peripherals.wifi_mac_rx_dma, true);
+        set_walker_enabled(&self.peripherals.wifi_mac.wifi_mac_rx_dma, true);
     }
 
     /// Ask the live walker to follow newly published descriptor links.
     pub fn request_mac_rx_descriptor_reload(&mut self, _binding: &StableDmaRange<'_>) {
-        request_descriptor_reload(&self.peripherals.wifi_mac_rx_dma);
+        request_descriptor_reload(&self.peripherals.wifi_mac.wifi_mac_rx_dma);
     }
 
     /// Start and confirm the walker while descriptor authority is retained.
     pub fn try_enable_mac_rx_walker(&mut self, _binding: &StableDmaRange<'_>) -> bool {
-        let control = self.peripherals.wifi_mac_rx_dma.rx_control();
+        let control = self.peripherals.wifi_mac.wifi_mac_rx_dma.rx_control();
         let previous = control.read();
         if previous.walker_enable().bit() {
             return false;
         }
-        set_walker_enabled(&self.peripherals.wifi_mac_rx_dma, true);
+        set_walker_enabled(&self.peripherals.wifi_mac.wifi_mac_rx_dma, true);
         device_fence();
         control.read().walker_enable().bit()
     }
 
     pub fn try_disable_mac_rx_walker(&mut self) -> bool {
-        let control = self.peripherals.wifi_mac_rx_dma.rx_control();
-        set_walker_enabled(&self.peripherals.wifi_mac_rx_dma, false);
+        let control = self.peripherals.wifi_mac.wifi_mac_rx_dma.rx_control();
+        set_walker_enabled(&self.peripherals.wifi_mac.wifi_mac_rx_dma, false);
         device_fence();
         !control.read().walker_enable().bit()
     }

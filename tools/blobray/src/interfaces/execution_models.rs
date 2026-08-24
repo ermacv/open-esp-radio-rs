@@ -77,7 +77,8 @@ pub(super) fn resolve(
                     ));
                 }
                 let arguments = slot.arguments.as_deref().unwrap_or_default();
-                if let ExternalReturnModel::AllocatedZeroed { size_argument } = model.return_model
+                if let ExternalReturnModel::Allocated { size_argument }
+                | ExternalReturnModel::AllocatedZeroed { size_argument } = model.return_model
                 {
                     let Some(argument_type) = arguments.get(usize::from(size_argument)) else {
                         return Err(super::validation::ValidationError::slot(

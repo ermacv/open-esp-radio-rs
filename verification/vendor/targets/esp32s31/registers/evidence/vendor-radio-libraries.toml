@@ -27,11 +27,139 @@ description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db
 
 [[sources]]
 id = "BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK"
-description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o ble_tx_config_check body, size 0x1c0. Its loads, masks and pinned field-name strings prove the BLE TX timing fields, including RF_ON_BT_DELAY and PA_ON_BT_DELAY in the canonical FECTRL word at 0x20100870."
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o ble_tx_config_check body, size 0x1c0. Its loads, masks and pinned field-name strings prove the BLE TX timing fields, including RF_ON_BT_DELAY and PA_ON_BT_DELAY in the canonical FECTRL word at 0x20100870. The same complete body reads 0x2010201c and consumes exactly bits 31:27 as an otherwise unnamed input to its diagnostic arithmetic; no stronger hardware meaning is assigned."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o bbmac_idle_for_swrst body, size 0x3c. The leaf returns success only when 0x2010207c bits 20:23 and 15:16, 0x20101550 bits 0:3 and 0x20103088 bits 0:3 are zero and 0x20102c38 bits 0:2 equal one. These are exact read predicates; the source does not assign meanings to individual status bits."
+
+[[sources]]
+id = "BLOB_LIBBTBB_CHANNEL_POWER_CONTROL"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o bt_get_channel_pwr_set and bt_get_channel_pwr_unset bodies, sizes 0x50 and 0x1e. Their fresh-read RMW operations set or clear exactly 0x20102004 bits 8:9 while preserving all other bits. The aggregate field name records only the named function boundary; individual bit semantics remain unknown."
+
+[[sources]]
+id = "BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o set_gauss_coeff_1m and set_gauss_coeff_2m bodies, sizes 0xf6 and 0x86. Their ordered fresh-read RMW operations prove the exact masks and finite field images recorded for 0x201020e0..0x201020f4. The function identities distinguish 1M and 2M coefficient sets; positional field names deliberately avoid inventing individual coefficient semantics."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BT_TX_SET"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o bt_bb_v2_tx_set body, size 0x34. One fresh-read RMW replaces exactly the low byte of 0x201020f0 with 0xf5 while preserving bits 31:8. This fact shares a physical word with the independently observed 2M Gaussian-coefficient fields."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BT_AGC_RESTART_SET"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o bt_agc_restart_set body, size 0x2e6. At 0x20102100 it performs separate fresh-read RMW operations that set exactly bits 6, 7, 8, 9, 10, 19, 20 and 21. Other words touched by the complete body are intentionally outside this bounded standalone-BLE slice and remain unreviewed here."
 
 [[sources]]
 id = "BLOB_LIBBTBB_BT_CTE_ACCESSORS"
-description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; bt_cte.o public getter/setter pairs. Matching independent masks provide instruction-exact CTE and BTAGC field geometry; these BT-only registers remain evidence for a separate canonical BT-radio SVD rather than duplicate singleton peripherals in this Wi-Fi-oriented map."
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_cte.o public getter/setter set. Matching independent masks provide instruction-exact CTE and shared BTAGC field geometry. ble_bb_cte_set_ant_map additionally proves an indexed 16-bit MMIO window from 0x20102130 while its input-dependent count leaves the hardware capacity open. The observations populate canonical BT_V3_2 and BTAGC physical owners; they do not create per-function singleton peripherals."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete named bt_bb_v2.o accessors and finite configuration leaves for LE TX delay, LE correlation thresholds, RX correlator/filter/DPO, TX CCA/FIFO, baseband watchdog, diagnostics and coexistence. Their direct loads, stores and RMW masks prove the recorded BT_V3_2 and BTAGC register/field geometry. Neutral ARGUMENT_N names preserve unknown C parameter semantics instead of promoting them to hardware meaning; CONFIG_VALUE fields record exact finite constants without claiming why the hardware uses them."
+
+[[sources]]
+id = "BLOB_LIBBLE_PHY_INIT_REGISTERS"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete member 72.o symbol r_sym_ble_3472b6bNiQdnWkYo6Ggv body, size 0x2f6. Its position in the ble_phy.c object symbol sequence matches the named ESP32-C61 r_ble_phy_init_registers ecosystem counterpart. That correspondence supplies only the function-role hint; all reviewed ESP32-S31 addresses, masks, values and ordering come from the ESP32-S31 body. Besides the independently bounded BTMAC accesses, the body proves an ordered 0/1 initialization toggle at 0x20101ff0, ordered phase images 0x20/0x40 at 0x2010891c and finite BLE-accelerator initialization images at 0x20109800, 0x201098cc and 0x201098d0. Narrow owners are used for the first two addresses because neither adjacency nor the cross-chip role hint proves a wider physical block."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BT_RX_SETUP"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete named bt_bb_rx_set body and its complete bt_agc_v2_set leaf. Their fresh-read RMW operations prove the recorded BTAGC field geometry and finite images. The parent body also performs a fresh-read RMW that clears 0x20104C24 bit 31 while preserving bits 30:0; that physical word is independently used by Wi-Fi MAC initialization and therefore has a shared-radio owner. Neutral CONFIG names deliberately avoid assigning undocumented receive/AGC semantics beyond the function boundary."
+
+[[sources]]
+id = "BLOB_LIBBTBB_SHARED_RX_INIT"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete named zb_rx_v0_0_set body, size 0xf0. It is called unconditionally by complete bt_bb_v2_init_cmplx and again by complete bt_bb_v2_rx_set. Its ordered fresh-read RMW operations prove the exact disjoint masks and finite images recorded at 0x20102C10..0x20102C34. The historical function prefix is retained only as call-identity evidence: the physical words remain in the protocol-neutral shared-radio owner and no Zigbee-only or BLE-only hardware semantics are inferred."
+
+[[sources]]
+id = "BLOB_LIBBTBB_SHARED_TX_TIMING_INIT"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete named bt_bb_set_zb_tx_on_delay body, size 0x32. Complete bt_bb_v2_init_cmplx calls it unconditionally with argument 60. The leaf performs one fresh-read RMW at 0x20102010, replacing bits 16:26 with ((argument - 10) << 3) while preserving every other bit. The historical function name is evidence for the call boundary, not a claim of exclusive Zigbee ownership; the physical word is retained by the shared-radio partition."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o bt_bb_v2_rx_set body, size 0x42, and complete directly selected configuration leaves bt_set_rx_comp (0x94), bt_agc_gain_set (0x46), bt_agc_recorrect_set (0xc8), bt_agc_restart_set (0x2e6), bt_agc_detect_set (0x108), bt_agc_rssi_thresh (0x5e) and bt_agc_target_set (0x96). Complete bt_bb_set_rx_sense (0x80) independently proves the whole-word dynamic writes that overlap finite subfields in shared BTAGC words. Direct accesses prove the exact masks and finite or dynamic images recorded for the sparse 0x20102844..0x20102900 words. Whole-word dynamic writes remain register-level evidence and are not projected as overlapping SVD fields. Positional names retain unknown hardware semantics."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o bt_agc_gain_max and bt_agc_sat_gain bodies, sizes 0x34 and 0x52. The first performs one fresh-read RMW that replaces exactly 0x20102850 bits 20:14 with a dynamic image. The second writes argument 0 as complete images to 0x20102858 and 0x2010285c and writes the complete finite image 0x00000404 to 0x20102864. Dynamic complete images are intentionally reviewed at register level without an overlapping SVD field."
+
+[[sources]]
+id = "BLOB_LIBBLE_HW_ENCRYPT_BLOCK"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete member 10.o symbol r_sym_ble_STLOrgXoO0PUowzw9geF body, size 0xee in the archive and 0xe8 after linking. Its position in the ble_hw.c object symbol sequence matches the named ESP32-C61 r_ble_hw_encrypt_block counterpart. The function assembles four little-endian words from argument bytes 0..15, publishes argument+16 and argument+32 pointers, writes length 16 and finite control images, starts the engine, and polls the completion word. Cross-chip evidence names the operation only; all register facts come from ESP32-S31 bytes."
+
+[[sources]]
+id = "BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete member 10.o symbol r_sym_ble_NZbbpXEXzbgRpDNnAbBu body, size 0xd6 in the archive and 0xce after linking. Its section index 43 exactly matches named ESP32-C61 ble_hw.c r_ble_hw_resolv_list_search. The ESP32-S31 body publishes the two input images, mode bit 28, finite control image 0x400 and start image 1, polls status bit 2 with a finite timeout, then reads the result-present word, compressed SRAM result pointer and result metadata. The cross-chip artifact supplies only the function identity."
+
+[[sources]]
+id = "BLOB_LIBBLE_HW_RESOLV_LIST_SET"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete member 10.o symbol r_sym_ble_HMLMZPGDFKHQBGsbW7FL body, size 0x12. Its section index 45 exactly matches named ESP32-C61 ble_hw.c r_ble_hw_resolv_list_set. The ESP32-S31 body writes (argument >> 2) masked to twenty bits as a complete image at 0x20101880. The cross-chip artifact supplies only the function identity; the address, compression and write shape come from ESP32-S31 bytes."
+
+[[sources]]
+id = "BLOB_LIBBLE_HW_STATUS_CLEAR"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete member 56.o symbol r_sym_ble_hhjP4z2JeZSZI1tCMd9k, size 0x64. Its finite eight-iteration loop writes 0xFFFFFFFF to 0x20101b50 + index*4, reads the paired complete word at 0x20101b30 + index*4, and invokes a diagnostic callback only when that status is nonzero. The evidence proves eight status/clear pairs and their directions; individual source meanings remain unknown."
+
+[[sources]]
+id = "BLOB_LIBBLE_HW_RUNTIME_CONFIG"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete member 60.o symbols r_sym_ble_tO1ITpHlkI8hqnMyUkv0, r_sym_ble_zXjrWnnoyQEBCxht1snF and r_sym_ble_2rW77MQZQnEM4AEy0oE9. They publish complete ESP32-S31 images at 0x20101b88, 0x20101b90 and 0x20101b94 from controller configuration bytes. Exact masks are low five bits, two low-five-bit values separated by fixed bits 5 and 13, and one low byte respectively. Function roles remain intentionally unnamed because the matching source identity is not recovered."
+
+[[sources]]
+id = "BLOB_LIBBLE_HW_CTE_RING_CONTROL"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete ble_hw_cte.c member 11.o. Its section order and exact function sizes match the independently named ESP32-C61 ble_hw_cte.c object, identifying r_sym_ble_PVzdn6TosnCqbu5D1klI as r_ble_hw_cte_reset and the three accessors at sections 11..13 as ring-buffer-index clear and max-buffer-number set/get. The ESP32-S31 bodies prove that reset clears thirteen complete words at 0x2010199c..0x201019cc, that bit 15 of the first word is independently set, and that bits 12..14 are replaced with the low three argument bits and read back. The cross-chip object supplies only function identities; all addresses, widths and masks come from ESP32-S31 instructions."
+
+[[sources]]
+id = "BLOB_LIBBLE_ISO_SCHEDULER_NOTIFY"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete member 36.o symbols r_sym_ble_zh8XBuaT8Wy4Jvky7T8T and r_sym_ble_Iz1Chq2XDIpX4iL8g2ft. Both publish the complete image 1 at 0x20101424 after manipulating software-owned ISO state; the first does so only when the current object exists and flag bit 0 at object offset 6 is set, while the second does so after its queue/publication path. The evidence proves a shared ISO-path command strobe but does not establish the command's undocumented hardware effect."
+
+[[sources]]
+id = "BLOB_LIBBTDM_CONTROLLER_IRQ"
+description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete btdm_hal.c member 7.o interrupt allocation/deallocation leaves and complete _oracles/libble_app.a nrtIsr_stack.c member 103.o symbol r_sym_ble_ywjh0f9yjTBeI7XgS5da. The HAL leaves prove the three finite IRQ-control writes at 0x2010100c..0x20101014. The ISR leaf copies the two raw status snapshots at 0x20101340 and 0x20101348 into the corresponding clear registers at 0x20101058 and 0x20101064. Independent enable-register RMW users prove the two enable/status/clear banks and observed bit geometry."
+
+[[sources]]
+id = "BLOB_LIBBTDM_SCHEDULER_REGISTERS"
+description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete btdm_sched.c member 19.o scheduler list and command transactions. They reconstruct list pointers from the 0x20101074 SRAM prefix plus 20-bit compressed pointers at 0x201010c8/cc, publish pointer/opcode/START to 0x201010ec, and separately publish payload plus START bit 31 to 0x20101254 or 0x20101258. Wait paths use the sign bit of 0x2010107c, inspect recorded command status bits, clear START, and copy the low 16 bits of 0x2010125c into 0x20101260. Names below describe only these observed transactions; command opcodes and status meanings remain unknown."
+
+[[sources]]
+id = "BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"
+description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete btdm_sched.c member 19.o symbols r_sym_bt_74l62ZLsZuXg67pPHSd7 and r_sym_bt_XPuqTHliEO5V9xpR7aJR. The first is reached from both r_btdm_task_disable and r_btdm_task_shutdown, writes the finite complete image 1 to 0x20101004, then waits on the already reviewed scheduler state. The second is reached from r_btdm_task_init, initializes its software event objects and clears bits 0..19 of exactly sixteen stride-0x10 words at 0x2010b000..0x2010b0f0 while preserving their upper twelve bits. These observations establish lifecycle transactions and array geometry; the hardware meaning of the command and entry payload remains unknown."
+
+[[sources]]
+id = "BLOB_LIBBTDM_HAL_CONTROLLER_INIT"
+description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete btdm_hal.c member 7.o symbol r_sym_bt_aGdrujd2MUAzWYH75baR, size 0x22c. The complete ESP32-S31 body publishes two runtime-derived bytes to 0x20101084, finite initialization fields at 0x201010dc/e0, 0x201011c0/c4, 0x20101250/7c and two adjacent eight-lane two-bit maps at 0x2010134c/50. Every address, mask, constant and ordering claim comes from this body. HAL_INIT and positional names intentionally do not assign undocumented controller semantics."
+
+[[sources]]
+id = "BLOB_LIBBTDM_RUNTIME_CONTROL"
+description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete direct MMIO users in the low-level member 9.o and btdm_sleep.c member 20.o. They prove the sparse 0x20108800/08/2c..48 and 0x2010d000..78 register set, all recorded access directions, finite complete images, dynamic low-24-bit publications and independent bit RMWs. The source establishes BTDM runtime/sleep ownership but not the undocumented meaning of positional words; no field name below is inferred from address adjacency."
+
+[[sources]]
+id = "BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete member 30.o symbols r_sym_ble_Lvdx6uFL4ttfphyryygo (origin size 0x1e6) and r_sym_ble_erAV4viTh2RgjlMINBm8 (size 0x122). The first performs two complete zero writes each to 0x2010108c and 0x201010b8. The second publishes complete dynamic images to 0x20108804. Function roles remain unnamed; the evidence proves only physical ownership, direction, values and complete-word geometry."
+
+[[sources]]
+id = "BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"
+description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48d807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete member 19.o symbols r_sym_bt_DkrQYQcoyzIHdYi0CzWE (origin size 0x138), r_sym_bt_qkNMymdnaJnYUfzpKgEp (0x2b0) and r_sym_bt_VrTmsQfPlkmys4UL0NZp (0x156). Their direct controller-window accesses prove bit-zero set/clear RMWs at 0x20101204, complete reads plus publications of 0x80000000 | dynamic_low_20 at 0x20101218, complete reads at 0x20101324 and complete dynamic publications plus independent low-nibble clears at 0x2010136c. Positional names deliberately retain the unknown operation semantics."
+
+[[sources]]
+id = "BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL"
+description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete member 19.o symbols r_sym_bt_DkrQYQcoyzIHdYi0CzWE (origin size 0x138) and r_sym_bt_qkNMymdnaJnYUfzpKgEp (0x2b0). Both complete functions share the same controller wait tail. After setting 0x20101204 bit zero, software first observes 0x20101324 bit zero against 0x2010107c bit 31, then observes 0x20101208 bit zero against the same scheduler-state bit, and finally clears 0x20101204 bit zero. The second predicate continues while 0x20101208 bit zero is one. The evidence assigns no meaning to that bit or to the unconsumed bits."
+
+[[sources]]
+id = "BLOB_LIBBTDM_RUNTIME_OPERATIONAL_GAPS"
+description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48d807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete member 20.o symbols r_sym_bt_32zs9B7Gv9vHIVpsl2A7 (origin size 0x2e0) and r_sym_bt_aOsjkDNQyOII2OseK6av (0x34e). Their direct accesses publish finite complete images 0x10, 0x20, 0x40 and 0x80 as well as dynamic complete images to 0x20108804, read and clear the complete word at 0x2010d01c, and read or publish complete dynamic images at 0x2010d064. No undocumented operation meaning is assigned."
+
+[[sources]]
+id = "BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"
+description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete btdm_sleep.c member 20.o functions. The timer-programming path writes three computed words to 0x20101094..0x2010109c and sets bit 31 in 0x20101090. Independent sleep/wakeup paths set bit 26, wait for hardware to clear it, and then consume the latched controller time from 0x201010ac. Initialization also proves control bits 0..2 and bit 24. The evidence establishes a sleep-timer transaction but does not assign inner counter/window semantics to the three data words."
+
+[[sources]]
+id = "BLOB_LIBBLE_MMGMT_HW_LISTS"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete ble_phy.c member 72.o selectors r_sym_ble_LboRu27EaU8MV8Q7UUfZ and r_sym_ble_ZzrExMrn8EDiTFI7PENK plus their complete ble_lll_mmgmt.c member 61.o users. Selector values 1, 2 and 3 choose three register pairs at 0x20101280..0x20101294. Each selector writes bits 0..19 as the SRAM pointer shifted right by two while preserving bits 20..31; allocator/free paths read each value twice until stable, reconstruct the pointer with 0x2f000000 | (value[19:0] << 2), and independently consume or clear bit 20. The pair direction and hardware list-class names remain unknown."
+
+[[sources]]
+id = "BLOB_LIBBLE_ISO_COEX_REGISTERS"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete ble_lll_iso_coex.c member 58.o initialization and deinitialization symbols r_sym_ble_KufRRLcH0grts5OsqfbT and r_sym_ble_DeW6gnXXMwIjWEmDQH8m. Their finite operations and pinned diagnostic strings prove the ISO coexistence ownership of the recorded enable, timing and control registers. Unknown individual interrupt-source and timing semantics retain positional names."
+
+[[sources]]
+id = "BLOB_LIBBLE_SCAN_HW_SNAPSHOT"
+description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete ble_lll_scan.c member 65.o symbol r_sym_ble_dVzA86K657ki9LwtVCkc. It reads 0x201012a0 twice until stable, passes the stable complete image to one converter and stores the result into scan environment offset 0x70. The scan ownership and atomic-snapshot access are exact; the hardware encoding and converter semantics remain unknown."
 
 [[sources]]
 id = "BLOB_LIBBTBB_COEX_PTI_V2"

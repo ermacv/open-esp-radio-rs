@@ -2168,7 +2168,7 @@ impl PhyRxIqEstimatorMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyContext,
     ) -> PhyRxIqEstimatorCompletion {
         match self.action {
             PhyRxIqEstimatorAction::Configure(request) => {
@@ -2239,7 +2239,7 @@ impl PhyRxIqEstimatorReadinessBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> PhyRxIqEstimatorCompletion {
         let PhyRxIqEstimatorAction::AwaitReadinessEdge { request, .. } = self.action else {
             unreachable!();
@@ -2334,7 +2334,7 @@ impl PhyRxIqCalibrationMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> PhyRxIqRfCalibrationCompletion {
         match self.action {
             PhyRxIqRfCalibrationAction::ConfigureCalibrationMode => {
@@ -2380,7 +2380,7 @@ impl PhyRxIqCoverMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> PhyRxIqCoverCompletion {
         match self.action {
             PhyRxIqCoverAction::ConfigureCoefficient {
@@ -2424,7 +2424,7 @@ impl PhyRxIqGainMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> PhyRxIqGainCompletion {
         match self.action {
             PhyRxIqGainAction::ConfigureTxIq { kind, value } => {
@@ -2475,7 +2475,7 @@ impl PhyRxIqInitMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyContext,
     ) -> PhyRxIqInitCompletion {
         match self.action {
             PhyRxIqInitAction::ConfigureRootStatus => {
@@ -2704,7 +2704,7 @@ impl PhyRxIqGainPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
         self.hardware.start_target(registers)
     }
@@ -2712,7 +2712,7 @@ impl PhyRxIqGainPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<
         crate::phy_pbus::PhyPbusHardwareObservation,
         crate::phy_pbus::PhyPbusHardwareBindingError,
@@ -2887,7 +2887,7 @@ impl PhyRxIqInitPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
         self.hardware.start_target(registers)
     }
@@ -2895,7 +2895,7 @@ impl PhyRxIqInitPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<
         crate::phy_pbus::PhyPbusHardwareObservation,
         crate::phy_pbus::PhyPbusHardwareBindingError,

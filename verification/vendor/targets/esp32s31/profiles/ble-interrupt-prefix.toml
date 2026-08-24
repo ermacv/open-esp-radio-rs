@@ -1,0 +1,62 @@
+schema = 5
+case-execution = "independent"
+transaction-comparison = "observables-under-effect-contract"
+
+# The vendor side stops at the first logging call immediately following the
+# reviewed sample/sample/ack/ack prefix. The Rust side executes the complete
+# production PAC transaction, including its explicitly reviewed ordering
+# fence. This profile does not claim the vendor logging/callback suffix.
+[[profiles]]
+name = "ble-nrt-interrupt-ordered-mmio-prefix"
+claim = "reviewed-domain-equivalence"
+precondition = "nrt-entry-through-first-log-call-finite-status-domain"
+vendor-source = "ble-controller"
+vendor-symbol = "r_sym_ble_ywjh0f9yjTBeI7XgS5da"
+rust-symbol = "open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da"
+compare-return = false
+[[profiles.mmio-domains]]
+address = 0x20101340
+values = [0x00000000, 0xa55a00f0]
+[[profiles.mmio-domains]]
+address = 0x20101348
+values = [0x00000000, 0x5aa5f00f]
+
+[[profiles.cases]]
+name = "both-empty"
+vendor-goal = { kind = "observe-call", symbol = "r_ble_log_set_buf_index_flag" }
+[[profiles.cases.mmio-initial]]
+address = 0x20101340
+value = 0x00000000
+[[profiles.cases.mmio-initial]]
+address = 0x20101348
+value = 0x00000000
+
+[[profiles.cases]]
+name = "second-bank-populated"
+vendor-goal = { kind = "observe-call", symbol = "r_ble_log_set_buf_index_flag" }
+[[profiles.cases.mmio-initial]]
+address = 0x20101340
+value = 0x00000000
+[[profiles.cases.mmio-initial]]
+address = 0x20101348
+value = 0x5aa5f00f
+
+[[profiles.cases]]
+name = "first-bank-populated"
+vendor-goal = { kind = "observe-call", symbol = "r_ble_log_set_buf_index_flag" }
+[[profiles.cases.mmio-initial]]
+address = 0x20101340
+value = 0xa55a00f0
+[[profiles.cases.mmio-initial]]
+address = 0x20101348
+value = 0x00000000
+
+[[profiles.cases]]
+name = "both-populated"
+vendor-goal = { kind = "observe-call", symbol = "r_ble_log_set_buf_index_flag" }
+[[profiles.cases.mmio-initial]]
+address = 0x20101340
+value = 0xa55a00f0
+[[profiles.cases.mmio-initial]]
+address = 0x20101348
+value = 0x5aa5f00f

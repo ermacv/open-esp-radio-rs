@@ -2,9 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Reset the SoftAP TSF value and start its hardware domain.
     ///
     /// SOURCE: the `arg0 == 0` path of complete
@@ -13,7 +13,11 @@ impl RadioRegisters {
     /// SoftAP load request and finally sets both high control bits through a
     /// fresh read-modify-write.
     pub fn reset_and_start_softap_tsf(&mut self) {
-        let control = self.peripherals.wifi_mac_aux_tsf_control.softap_control();
+        let control = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_aux_tsf_control
+            .softap_control();
         control.modify(|_, writer| {
             writer
                 .tsf_enable()
@@ -22,7 +26,7 @@ impl RadioRegisters {
                 .clear_bit()
         });
 
-        let load = &self.peripherals.wifi_mac_sta_tsf_load;
+        let load = &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load;
         super::generated::station_tsf_value_low(load, super::generated::StationTsfLowWord::new(0));
         super::generated::station_tsf_value_high(
             load,
@@ -48,6 +52,7 @@ impl RadioRegisters {
     /// recovered SVD because no complete enable leaf proves its semantics.
     pub fn stop_softap_tsf(&mut self) {
         self.peripherals
+            .wifi_mac
             .wifi_mac_aux_tsf_control
             .softap_control()
             .modify(|_, writer| {
@@ -62,6 +67,7 @@ impl RadioRegisters {
     /// Return the SoftAP control image for diagnostics and HIL comparison.
     pub fn softap_tsf_control_image(&self) -> u32 {
         self.peripherals
+            .wifi_mac
             .wifi_mac_aux_tsf_control
             .softap_control()
             .read()

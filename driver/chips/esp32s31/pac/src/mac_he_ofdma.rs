@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::WifiRadioRegisters;
 
 const ORDINARY_QUEUE_COUNT: u8 = 4;
 const MPDU_LENGTH_LINK_END: u8 = 0x7f;
@@ -368,7 +368,7 @@ pub struct MacHeReceiveConfigurationSnapshot {
     pub beamforming: MacHeBeamformingConfigurationSnapshot,
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Read the beamforming-report average SNR without using floating point.
     ///
     /// SOURCE: complete `libpp.a[hal_debug.o]::
@@ -378,6 +378,7 @@ impl RadioRegisters {
     pub fn beamforming_average_snr(&self) -> MacBeamformingAverageSnr {
         let raw_code = self
             .peripherals
+            .wifi_mac
             .wifi_mac_beamforming_report
             .average_snr()
             .read()
@@ -424,9 +425,10 @@ impl RadioRegisters {
         let queue = reservation.queue;
         let physical_queue = 7 - usize::from(queue);
         let vector_bank = 3 - usize::from(queue);
-        let suffix = &self.peripherals.wifi_mac_he_init_suffix;
+        let suffix = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
         let timer = self
             .peripherals
+            .wifi_mac
             .wifi_mac_he_mu_edca_timer
             .timer(usize::from(queue));
 
@@ -442,6 +444,7 @@ impl RadioRegisters {
                 .modify(|_, w| w.mpdu_length().set(length).next_link().set(next));
             if next == MPDU_LENGTH_LINK_END {
                 self.peripherals
+                    .wifi_mac
                     .wifi_mac_tx_queue_vector
                     .he_mpdu_length_tail(vector_bank)
                     .modify(|_, w| w.link_index().set(index));
@@ -469,6 +472,7 @@ impl RadioRegisters {
         }
 
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_buffer_status
             .software_bsr(usize::from(queue))
             .modify(|_, w| w.value().set(queued_msdu_bytes));
@@ -477,6 +481,7 @@ impl RadioRegisters {
         // hardware update is live, so lengthening the interval before the
         // validity RMW changes observable behavior.
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_buffer_status
             .control()
             .modify(|r, w| w.valid_bitmap().set(r.valid_bitmap().bits() | (1 << queue)));
@@ -494,6 +499,7 @@ impl RadioRegisters {
     pub fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
         let physical_queue = 7 - usize::from(reservation.queue);
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .queue_control(physical_queue)
             .modify(|_, w| w.trigger_based_enable().clear_bit());
@@ -514,25 +520,33 @@ impl RadioRegisters {
         let queue = reservation.queue;
         let physical_queue = 7 - usize::from(queue);
         let vector_bank = 3 - usize::from(queue);
-        let suffix = &self.peripherals.wifi_mac_he_init_suffix;
+        let suffix = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
         let queue_control = suffix.queue_control(physical_queue).read();
         let timer = self
             .peripherals
+            .wifi_mac
             .wifi_mac_he_mu_edca_timer
             .timer(usize::from(queue))
             .read();
         let first = suffix.he_scratch(usize::from(reservation.first)).read();
         let tail = self
             .peripherals
+            .wifi_mac
             .wifi_mac_tx_queue_vector
             .he_mpdu_length_tail(vector_bank)
             .read();
         let bsr = self
             .peripherals
+            .wifi_mac
             .wifi_mac_he_buffer_status
             .software_bsr(usize::from(queue))
             .read();
-        let control = self.peripherals.wifi_mac_he_buffer_status.control().read();
+        let control = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_he_buffer_status
+            .control()
+            .read();
 
         MacHeTriggerTxQueueSnapshot {
             logical_queue: queue,
@@ -558,7 +572,11 @@ impl RadioRegisters {
     /// `libnet80211.a[ieee80211_ht.o]`. The separate initial read and
     /// fresh read inside `modify` preserve the two-read/one-write blob edge.
     pub fn set_he_trigger_based_tid_enabled(&mut self, tid: MacHeTid, enabled: bool) {
-        let control = self.peripherals.wifi_mac_he_buffer_status.control();
+        let control = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_he_buffer_status
+            .control();
         let old_bitmap = control.read().tid_bitmap().bits();
         let bitmap = if enabled {
             old_bitmap | tid.mask()
@@ -575,7 +593,7 @@ impl RadioRegisters {
     /// `dbg_read_bsr_info` and `libpp.a[hal_mac_ctl.o]`
     /// `hal_he_get_hw_txq_bsr`.
     pub fn he_buffer_status_snapshot(&self) -> MacHeBufferStatusSnapshot {
-        let registers = &self.peripherals.wifi_mac_he_buffer_status;
+        let registers = &self.peripherals.wifi_mac.wifi_mac_he_buffer_status;
         let mut hardware = [0_u32; MacHeTid::COUNT];
         let mut software = [0_u32; MacHeTid::COUNT];
         for tid in 0..MacHeTid::COUNT {
@@ -606,15 +624,26 @@ impl RadioRegisters {
     /// SOURCE: complete pinned `libpp.a[hal_debug.o]`
     /// `dbg_read_rx_misc`, size `0x42a`, and its function-local strings.
     pub fn he_receive_configuration_snapshot(&self) -> MacHeReceiveConfigurationSnapshot {
-        let suffix = &self.peripherals.wifi_mac_he_init_suffix;
+        let suffix = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
         let multi = suffix.multi_bssid_control().read();
         let options1 = suffix.ersu_and_vht_control().read();
         let options2 = suffix.he_default_control().read();
         let padding = suffix.he_packet_padding().read();
-        let power_save = self.peripherals.wifi_mac_rx_power_save.control().read();
-        let custom = self.peripherals.wifi_mac_rx_custom_type.control().read();
+        let power_save = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_rx_power_save
+            .control()
+            .read();
+        let custom = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_rx_custom_type
+            .control()
+            .read();
         let beamforming = self
             .peripherals
+            .wifi_mac
             .wifi_mac_he_init_prefix
             .bf_timing_control()
             .read();
@@ -649,6 +678,7 @@ impl RadioRegisters {
             ],
             rx_control_9_bssid_position: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_rx_bssid_list
                 .control()
                 .read()
@@ -703,6 +733,7 @@ impl RadioRegisters {
     /// "tb care CCA and NAV"; the debug ignore mode clears it.
     pub fn set_he_trigger_based_cca_and_nav_care(&mut self, care: bool) {
         self.peripherals
+            .wifi_mac
             .wifi_mac_he_init_suffix
             .ersu_and_vht_control()
             .modify(|_, w| w.tb_care_cca_and_nav().bit(care));
@@ -715,7 +746,7 @@ impl RadioRegisters {
     /// is symbol-exact; the individual twenty-bit bitmap and five-bit class
     /// identities remain approximate and are marked as such in the SVD.
     pub fn set_he_obss_narrow_band_ru_disabled(&mut self, disabled: bool) {
-        let registers = &self.peripherals.wifi_mac_he_obss_narrow_band_ru;
+        let registers = &self.peripherals.wifi_mac.wifi_mac_he_obss_narrow_band_ru;
         super::svd::zero_based_field_write::mac_he_obss_narrow_band_ru_disable_bitmap(
             registers,
             if disabled { 0x000f_ffff } else { 0 },
@@ -733,7 +764,7 @@ impl RadioRegisters {
     /// SOURCE: complete pinned `libpp.a[hal_debug.o]`
     /// `dbg_read_ax_diag`, size `0x466`, and its `WDEVAXDIAG0..9` strings.
     pub fn he_trigger_receive_diagnostics(&self) -> MacHeTriggerRxDiagnostics {
-        let registers = &self.peripherals.wifi_mac_he_trigger_rx_diagnostics;
+        let registers = &self.peripherals.wifi_mac.wifi_mac_he_trigger_rx_diagnostics;
         let state = registers.state().read();
         let length = registers.length().read();
         let dependent = registers.trigger_dependent().read();
@@ -786,7 +817,7 @@ impl RadioRegisters {
     /// feedback producer. These diagnostic bits therefore observe the
     /// hardware sequence configured by `hal_init_bf`.
     pub fn he_beamforming_diagnostics(&self) -> MacHeBeamformingDiagnostics {
-        let registers = &self.peripherals.wifi_mac_he_trigger_rx_diagnostics;
+        let registers = &self.peripherals.wifi_mac.wifi_mac_he_trigger_rx_diagnostics;
         let state = registers.state().read();
         let padding = registers.padding().read();
 
@@ -808,9 +839,9 @@ impl RadioRegisters {
     /// addressing, normalized here so array index equals the blob's logged
     /// logical queue number.
     pub fn he_queue_scheduling_snapshot(&self) -> MacHeQueueSchedulingSnapshot {
-        let suffix = &self.peripherals.wifi_mac_he_init_suffix;
-        let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
-        let timers = &self.peripherals.wifi_mac_he_mu_edca_timer;
+        let suffix = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
+        let queue_control = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
+        let timers = &self.peripherals.wifi_mac.wifi_mac_he_mu_edca_timer;
 
         let trigger_queues = core::array::from_fn(|logical_queue| {
             let physical_queue = 7 - logical_queue;

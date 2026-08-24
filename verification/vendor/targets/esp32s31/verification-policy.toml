@@ -333,3 +333,63 @@ vendor = { source = "libpp", symbol = "hal_mac_tsf_reset", fingerprint = "sha256
 disposition = "verified"
 requirement = "softap-tsf-start-transaction"
 rationale = "Selector zero clears the SoftAP control pair, writes a zero TSF value, requests the SoftAP load and restores the control pair. The vendor beacon-tick global is replaced by the Rust beacon scheduler epoch."
+
+[[surfaces]]
+id = "ble-nrt-interrupt-ordered-mmio-prefix"
+description = "The compiled restricted PAC transaction preserves the reviewed sample/sample/ack/ack prefix of the ESP32-S31 BLE NRT interrupt entry without claiming its logging and callback suffix."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ble-nrt-interrupt-prefix-reviewed-domain"
+description = "All four combinations of the finite two-bank status domain preserve ordered reads and write back the respective complete images before the first vendor logging call."
+suite = "ble-interrupt-prefix"
+source = "ble-controller"
+symbol = "r_sym_ble_ywjh0f9yjTBeI7XgS5da"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ble-nrt-interrupt-prefix"
+vendor = { source = "ble-controller", symbol = "r_sym_ble_ywjh0f9yjTBeI7XgS5da", fingerprint = "sha256:a674875a77ad36de4432fea0daa4519a57312dfc06e324c2d076ea5ced3fd9d1" }
+disposition = "verified"
+requirement = "ble-nrt-interrupt-prefix-reviewed-domain"
+rationale = "The fingerprint pins the reviewed finite profile, including the exact vendor stop goal and four ordered status-image combinations. The concrete effect contract admits only the production device-ordering fence after the four required MMIO effects; every unlisted effect fails closed."
+
+[[surfaces]]
+id = "ble-scheduler-table-low-twenty-clear-prefix"
+description = "The compiled restricted PAC transaction preserves the first finite controller-core MMIO loop: sixteen ordered fresh-read updates that clear only bits 19:0 of the sparse scheduler table."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ble-scheduler-table-prefix-reviewed-domain"
+description = "Both complete table images in the reviewed finite domain preserve sixteen ordered reads and writes and every high twelve-bit entry image before the first vendor event-construction call."
+suite = "ble-scheduler-table-prefix"
+source = "ble-controller"
+symbol = "r_sym_bt_XPuqTHliEO5V9xpR7aJR"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ble-scheduler-table-prefix"
+vendor = { source = "ble-controller", symbol = "r_sym_bt_XPuqTHliEO5V9xpR7aJR", fingerprint = "sha256:2fd99fb4b71ccd3b5e08c4cb1cd1713bb5f5665402a1f40dddd6a5999199111f" }
+disposition = "verified"
+requirement = "ble-scheduler-table-prefix-reviewed-domain"
+rationale = "The fingerprint pins the two-case profile, exact sixteen-entry MMIO domain and vendor stop at wr_btdm_osal_event_init. The effect contract admits only the production device-ordering fence after the 32 required ordered MMIO effects; no event/list or complete-controller equivalence is claimed."
+
+[[surfaces]]
+id = "btbb-v2-init-arg-one-ordered-mmio"
+description = "The compiled restricted PAC transaction preserves the exact finite MMIO order and values observed for bt_bb_v2_init_cmplx(1), without claiming its diagnostic, return value, common-PHY prerequisite or complete controller readiness."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "btbb-v2-init-arg-one-reviewed-domain"
+description = "Both complementary complete register images and both reviewed linked gain-byte cases preserve every ordered read-modify-write effect for the arg=1 path."
+suite = "btbb-v2-init-arg-one"
+source = "btbb"
+symbol = "bt_bb_v2_init_cmplx"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "btbb-v2-init-arg-one-mmio"
+vendor = { source = "btbb", symbol = "bt_bb_v2_init_cmplx", fingerprint = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+disposition = "verified"
+requirement = "btbb-v2-init-arg-one-reviewed-domain"
+rationale = "Temporary candidate pin replaced immediately after the first deterministic two-case comparison; no evidence is promoted with this value."

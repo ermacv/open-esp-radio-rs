@@ -24,7 +24,7 @@ use crate::types::{
     MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
-use open_esp_radio_esp32s31_pac::{ColdRadioRegisters, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{WifiColdRegisters, WifiRadioRegisters};
 
 /// Complete identity of one hardware MAC interface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,8 +51,8 @@ pub struct MacColdHandshakeTimeout {
 /// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_init`, offsets
 /// `0x00..0x3a`. The vendor waits forever; this HAL operation owns the finite
 /// sample limit, polling, and multi-register cleanup order.
-pub fn begin_cold_mac_handshake(
-    registers: &mut ColdRadioRegisters,
+pub(crate) fn begin_cold_mac_handshake(
+    registers: &mut WifiColdRegisters,
     sample_limit: u32,
 ) -> Result<MacColdHandshakeOutcome, MacColdHandshakeTimeout> {
     registers.request_mac_cold_start();
@@ -83,11 +83,11 @@ pub fn begin_cold_mac_handshake(
 /// beyond that lifecycle owner. It exposes reviewed cold transactions only;
 /// neither the PAC owner nor arbitrary register access is available.
 pub struct WifiMacColdHal<'registers> {
-    registers: &'registers mut ColdRadioRegisters,
+    registers: &'registers mut WifiColdRegisters,
 }
 
 impl<'registers> WifiMacColdHal<'registers> {
-    pub(crate) fn from_owned(registers: &'registers mut ColdRadioRegisters) -> Self {
+    pub(crate) fn from_owned(registers: &'registers mut WifiColdRegisters) -> Self {
         Self { registers }
     }
 
@@ -181,7 +181,10 @@ impl<'registers> WifiMacColdHal<'registers> {
     }
 
     pub fn disable_phy_low_rate(&mut self) {
-        self.registers.radio_mut().configure_phy_low_rate(false);
+        self.registers
+            .radio_mut()
+            .radio_phy_mut()
+            .configure_phy_low_rate(false);
     }
 
     pub fn configure_open_promiscuous_receive(&mut self) {
@@ -193,22 +196,22 @@ impl<'registers> WifiMacColdHal<'registers> {
 
 /// Closed HAL authority for reviewed runtime Wi-Fi MAC transactions.
 ///
-/// This type intentionally exposes neither the contained [`RadioRegisters`]
+/// This type intentionally exposes neither the contained [`WifiRadioRegisters`]
 /// nor `Deref`. LMAC code can request only the finite operations defined here.
 enum WifiMacRegisters<'registers> {
-    Owned(&'registers mut RadioRegisters),
-    Published(RefMut<'registers, RadioRegisters>),
+    Owned(&'registers mut WifiRadioRegisters),
+    Published(RefMut<'registers, WifiRadioRegisters>),
 }
 
 impl WifiMacRegisters<'_> {
-    fn pac(&self) -> &RadioRegisters {
+    fn pac(&self) -> &WifiRadioRegisters {
         match self {
             Self::Owned(registers) => registers,
             Self::Published(registers) => registers,
         }
     }
 
-    fn pac_mut(&mut self) -> &mut RadioRegisters {
+    fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
         match self {
             Self::Owned(registers) => registers,
             Self::Published(registers) => registers,
@@ -221,23 +224,23 @@ pub struct WifiMacHal<'registers> {
 }
 
 impl<'registers> WifiMacHal<'registers> {
-    pub(crate) fn from_owned(registers: &'registers mut RadioRegisters) -> Self {
+    pub(crate) fn from_owned(registers: &'registers mut WifiRadioRegisters) -> Self {
         Self {
             registers: WifiMacRegisters::Owned(registers),
         }
     }
 
-    pub(crate) fn from_published(registers: RefMut<'registers, RadioRegisters>) -> Self {
+    pub(crate) fn from_published(registers: RefMut<'registers, WifiRadioRegisters>) -> Self {
         Self {
             registers: WifiMacRegisters::Published(registers),
         }
     }
 
-    fn pac(&self) -> &RadioRegisters {
+    fn pac(&self) -> &WifiRadioRegisters {
         self.registers.pac()
     }
 
-    fn pac_mut(&mut self) -> &mut RadioRegisters {
+    fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
         self.registers.pac_mut()
     }
 
@@ -249,7 +252,7 @@ impl<'registers> WifiMacHal<'registers> {
     /// policy. This exposes the measured value, not the underlying register
     /// owner or encoding.
     pub fn read_noise_floor_dbm(&self) -> i8 {
-        self.pac().read_noise_floor_dbm()
+        self.pac().radio_phy().read_noise_floor_dbm()
     }
 
     /// Begin the reviewed no-power-save MAC quiesce sequence before PHY
@@ -768,13 +771,13 @@ pub fn validation_configure_role_receive_policy(policy: MacRoleReceivePolicy) {
 
 /// Apply complete rev0 ROM `phy_enable_cca` or `phy_disable_cca`.
 #[cfg(all(feature = "validation-probes", target_arch = "riscv32"))]
-fn set_cca_enabled(registers: &mut RadioRegisters, enabled: bool) {
+fn set_cca_enabled(registers: &mut WifiRadioRegisters, enabled: bool) {
     registers.set_phy_wifi_cca_enabled(enabled);
 }
 
 /// Apply complete rev0 ROM `phy_sifs_reg_init`.
 #[cfg(all(feature = "validation-probes", target_arch = "riscv32"))]
-fn initialize_sifs(registers: &mut RadioRegisters) {
+fn initialize_sifs(registers: &mut WifiRadioRegisters) {
     registers.initialize_phy_wifi_sifs();
 }
 

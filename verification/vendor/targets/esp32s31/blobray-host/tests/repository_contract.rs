@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
 use std::{fs, path::Path};
 
@@ -43,6 +44,170 @@ fn rust_source_tree(root: &Path) -> String {
         .map(|path| fs::read_to_string(&path).expect("read Rust architecture owner"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn toml_document(path: &Path) -> toml_edit::DocumentMut {
+    fs::read_to_string(path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
+        .parse()
+        .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()))
+}
+
+fn rust_struct_body<'source>(source: &'source str, name: &str) -> &'source str {
+    let header = format!("pub struct {name} {{");
+    let header_start = source
+        .find(&header)
+        .unwrap_or_else(|| panic!("generated raw PAC lacks `{header}`"));
+    let open = header_start + header.len() - 1;
+    let mut depth = 1_usize;
+    for (offset, character) in source[open + 1..].char_indices() {
+        match character {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &source[open + 1..open + 1 + offset];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("generated raw PAC has an unterminated `{name}` owner")
+}
+
+#[test]
+fn target_declares_exhaustive_raw_pac_ownership_partitions() {
+    let repository = repository_root();
+    let target = repository.join("verification/vendor/targets/esp32s31");
+    let api_path = target.join("registers/api.toml");
+    let api_source = fs::read_to_string(&api_path).expect("read target PAC API pack");
+    let api = toml_document(&api_path);
+    assert_eq!(api["schema"].as_integer(), Some(3));
+    assert!(
+        !api_source.contains("peripheral-ownership"),
+        "the removed inferred-ownership option must not return"
+    );
+
+    let partitions = api["ownership-partitions"]
+        .as_array_of_tables()
+        .expect("schema-3 target pack must declare ownership partitions");
+    let expected = [
+        ("WifiMacPeripherals", "wifi_mac", 50_usize),
+        ("WifiInterruptPeripherals", "wifi_interrupts", 2),
+        ("RadioPhyPeripherals", "radio_phy", 18),
+        ("CoexistencePeripherals", "coexistence", 4),
+        ("BluetoothControllerPeripherals", "bluetooth", 15),
+        ("BluetoothInterruptPeripherals", "bluetooth_interrupts", 1),
+        ("SharedRadioPeripherals", "shared_radio", 4),
+    ];
+    let actual = partitions
+        .iter()
+        .map(|partition| {
+            let name = partition["name"]
+                .as_str()
+                .expect("ownership partition name");
+            let member = partition["member"]
+                .as_str()
+                .expect("ownership partition member");
+            let count = partition["peripherals"]
+                .as_array()
+                .expect("ownership partition peripherals")
+                .len();
+            (name, member, count)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+
+    let model_path = target.join("registers/device.toml");
+    let model = toml_document(&model_path);
+    let fragments = model["fragments"]
+        .as_array()
+        .expect("register model fragment list");
+    let mut model_peripherals = BTreeSet::new();
+    for fragment in fragments {
+        let relative = fragment.as_str().expect("register model fragment path");
+        let document = toml_document(&target.join("registers").join(relative));
+        for peripheral in document["peripherals"]
+            .as_array_of_tables()
+            .expect("register model peripheral declarations")
+        {
+            let name = peripheral["name"]
+                .as_str()
+                .expect("register model peripheral name");
+            assert!(
+                model_peripherals.insert(name.to_owned()),
+                "register model repeats peripheral {name}"
+            );
+        }
+    }
+
+    let mut declared_owner = BTreeMap::new();
+    for partition in partitions {
+        let owner = partition["name"]
+            .as_str()
+            .expect("ownership partition name");
+        let peripherals = partition["peripherals"]
+            .as_array()
+            .expect("ownership partition peripherals");
+        assert!(
+            !peripherals.is_empty(),
+            "ownership partition {owner} must not be empty"
+        );
+        for peripheral in peripherals {
+            let peripheral = peripheral.as_str().expect("owned peripheral name");
+            assert!(
+                declared_owner
+                    .insert(peripheral.to_owned(), owner.to_owned())
+                    .is_none(),
+                "target assigns peripheral {peripheral} more than once"
+            );
+        }
+    }
+    let declared_peripherals = declared_owner.keys().cloned().collect::<BTreeSet<_>>();
+    let missing = model_peripherals
+        .difference(&declared_peripherals)
+        .cloned()
+        .collect::<Vec<_>>();
+    let unknown = declared_peripherals
+        .difference(&model_peripherals)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        missing.is_empty() && unknown.is_empty(),
+        "target PAC ownership is not an exact model cover; missing={missing:?}, unknown={unknown:?}"
+    );
+
+    let raw = fs::read_to_string(repository.join("driver/chips/esp32s31/pac-raw/src/lib.rs"))
+        .expect("read generated raw PAC");
+    for removed in [
+        "pub struct RadioPeripherals",
+        "pub struct InterruptPeripherals",
+        "pub fn split(",
+        "peripheral-ownership",
+    ] {
+        assert!(
+            !raw.contains(removed),
+            "generated raw PAC restored removed ownership surface `{removed}`"
+        );
+    }
+    assert!(raw.contains("pub fn partition(peripherals: crate::Peripherals)"));
+    let root = rust_struct_body(&raw, "PeripheralPartitions");
+    for (name, member, _) in expected {
+        assert!(
+            root.contains(&format!("pub {member}: {name}")),
+            "generated root does not expose target partition {member}: {name}"
+        );
+        let body = rust_struct_body(&raw, name);
+        for (peripheral, owner) in &declared_owner {
+            if owner == name {
+                let field = peripheral.to_ascii_lowercase();
+                assert!(
+                    body.contains(&format!("pub {field}:")),
+                    "generated {name} lacks target-owned peripheral {peripheral}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -119,7 +284,7 @@ fn closed_chip_pac_is_the_only_driver_dependency_on_the_raw_pac() {
         "use open_esp_radio_esp32s31_pac::svd;",
         "use open_esp_radio_esp32s31_pac::Register32;",
         "MacInterruptMask(0xdead_beef)",
-        "RadioRegisters::write_register",
+        "WifiRadioRegisters::write_register",
     ] {
         assert!(
             facade.contains(rejected),
@@ -129,17 +294,24 @@ fn closed_chip_pac_is_the_only_driver_dependency_on_the_raw_pac() {
 }
 
 #[test]
-fn hal_is_the_only_driver_dependency_on_the_closed_pac() {
+fn only_esp32s31_hardware_boundaries_depend_on_the_closed_pac() {
     let repository = repository_root();
     let driver = repository.join("driver");
     let hal_manifest = driver.join("chips/esp32s31/hal/Cargo.toml");
+    let bluetooth_manifest = driver.join("chips/esp32s31/bluetooth/Cargo.toml");
     let pac_manifest = driver.join("chips/esp32s31/pac/Cargo.toml");
     let raw_manifest = driver.join("chips/esp32s31/pac-raw/Cargo.toml");
+    let permitted = [
+        hal_manifest.as_path(),
+        bluetooth_manifest.as_path(),
+        pac_manifest.as_path(),
+        raw_manifest.as_path(),
+    ];
     let mut manifests = Vec::new();
     named_files(&driver, "Cargo.toml", &mut manifests);
     let violations = manifests
         .into_iter()
-        .filter(|path| path != &hal_manifest && path != &pac_manifest && path != &raw_manifest)
+        .filter(|path| !permitted.contains(&path.as_path()))
         .filter(|path| {
             fs::read_to_string(path)
                 .expect("read driver manifest")
@@ -148,7 +320,7 @@ fn hal_is_the_only_driver_dependency_on_the_closed_pac() {
         .collect::<Vec<_>>();
     assert!(
         violations.is_empty(),
-        "driver crates bypass the HAL, including through dev-dependencies: {violations:#?}"
+        "only the exact ESP32-S31 Wi-Fi and Bluetooth hardware boundaries may depend on the closed PAC: {violations:#?}"
     );
 
     let pac_manifest = fs::read_to_string(pac_manifest).expect("read closed PAC manifest");
@@ -184,8 +356,8 @@ fn powered_phy_capability_cannot_recover_the_pac_owner() {
         .filter(|path| {
             let source = fs::read_to_string(path).expect("read PHY source");
             source.contains("open_esp_radio_esp32s31_pac")
-                || source.contains("RadioRegisters")
-                || source.contains("ColdRadioRegisters")
+                || source.contains("WifiRadioRegisters")
+                || source.contains("WifiColdRegisters")
         })
         .collect::<Vec<_>>();
     assert!(
@@ -195,26 +367,59 @@ fn powered_phy_capability_cannot_recover_the_pac_owner() {
 }
 
 #[test]
-fn hal_public_functions_do_not_accept_a_pac_owner() {
-    let hal = repository_root().join("driver/chips/esp32s31/hal/src");
+fn chip_hardware_boundaries_do_not_expose_restricted_pac_owners() {
+    let chip = repository_root().join("driver/chips/esp32s31");
+    let forbidden_owners = [
+        "WifiRadioRegisters",
+        "WifiColdRegisters",
+        "BluetoothColdRegisters",
+        "BluetoothTaskRegisters",
+        "BluetoothInterruptSetup",
+        "BluetoothInterruptRegisters",
+    ];
     let mut files = Vec::new();
-    rust_files(&hal, &mut files);
+    rust_files(&chip.join("hal/src"), &mut files);
+    rust_files(&chip.join("bluetooth/src"), &mut files);
     let violations = files
         .into_iter()
-        .filter(|path| {
-            fs::read_to_string(path)
-                .expect("read HAL source")
-                .lines()
-                .any(|line| {
-                    line.contains("pub fn ")
-                        && line.contains('(')
-                        && (line.contains("RadioRegisters") || line.contains("ColdRadioRegisters"))
-                })
+        .filter_map(|path| {
+            let source = fs::read_to_string(&path).expect("read chip hardware boundary source");
+            let mut public_declarations = Vec::new();
+            let mut lines = source.lines();
+            while let Some(line) = lines.next() {
+                let trimmed = line.trim_start();
+                let public_function = trimmed.starts_with("pub ") && trimmed.contains("fn ");
+                if public_function {
+                    let mut declaration = line.to_owned();
+                    while !declaration.contains('{') && !declaration.contains(';') {
+                        let Some(next) = lines.next() else {
+                            break;
+                        };
+                        declaration.push_str(next);
+                    }
+                    public_declarations.push(declaration);
+                } else if trimmed.starts_with("pub use ") {
+                    let mut declaration = line.to_owned();
+                    while !declaration.contains(';') {
+                        let Some(next) = lines.next() else {
+                            break;
+                        };
+                        declaration.push_str(next);
+                    }
+                    public_declarations.push(declaration);
+                }
+            }
+            let exposed = public_declarations.into_iter().find(|declaration| {
+                forbidden_owners
+                    .iter()
+                    .any(|owner| declaration.contains(owner))
+            });
+            exposed.map(|declaration| (path, declaration))
         })
         .collect::<Vec<_>>();
     assert!(
         violations.is_empty(),
-        "HAL public signatures expose PAC owner parameters: {violations:#?}"
+        "chip hardware boundaries expose restricted PAC owner types: {violations:#?}"
     );
 }
 
@@ -605,6 +810,7 @@ fn analysis_input_builder_owns_every_generated_project_role() {
         "source-artifact:wifi-key-role",
         "source-artifact:coex",
         "source-artifact:btbb",
+        "source-artifact:ble-controller",
         "rust-artifact",
         "rust-artifact:wifi-registers",
     ]
@@ -722,7 +928,8 @@ fn channel_lifecycle_reaches_the_pac_only_through_the_hal() {
     assert!(production_trace.contains("Radio::claim_for_validation(platform)"));
     assert!(production_trace.contains("channel_hal()"));
     assert!(!production_trace.contains("pac::validation"));
-    assert!(!production_trace.contains("RadioRegisters"));
+    assert!(!production_trace.contains("WifiRadioRegisters"));
+    assert!(!production_trace.contains("WifiColdRegisters"));
 
     let capability =
         fs::read_to_string(driver.join("hal/src/channel.rs")).expect("read channel HAL capability");
@@ -765,16 +972,27 @@ fn compiled_probe_operations_do_not_call_pac_validation_directly() {
     let exported = pac_validation
         .lines()
         .filter(|line| line.trim_start().starts_with("pub fn "))
+        .map(|line| {
+            line.trim_start()
+                .strip_prefix("pub fn ")
+                .expect("filtered public function")
+                .split('(')
+                .next()
+                .expect("public function name")
+        })
         .collect::<Vec<_>>();
     assert_eq!(
-        exported.len(),
-        4,
-        "PAC validation regained semantic operations"
+        exported,
+        [
+            "wifi_radio_registers",
+            "mac_interrupt_setup",
+            "mac_interrupt_registers",
+            "mac_power_interrupt_registers",
+            "bluetooth_interrupt_registers",
+            "initialize_bluetooth_baseband_v2",
+        ],
+        "PAC validation surface changed without updating the exact compiled-probe contract"
     );
-    assert!(pac_validation.contains("pub fn radio_registers()"));
-    assert!(pac_validation.contains("pub fn mac_interrupt_setup()"));
-    assert!(pac_validation.contains("pub fn mac_interrupt_registers()"));
-    assert!(pac_validation.contains("pub fn mac_power_interrupt_registers()"));
 
     let hal = repository.join("driver/chips/esp32s31/hal/src");
     let mut hal_files = Vec::new();

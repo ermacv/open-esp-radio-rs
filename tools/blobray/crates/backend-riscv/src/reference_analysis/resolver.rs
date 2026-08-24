@@ -671,6 +671,31 @@ impl ReferenceResolver {
 mod tests {
     use super::*;
     use crate::RiscvSummaryHooks;
+    use open_radio_vendor_analysis_model::{
+        DirectSemanticFunctionSpec, ExternalReturnModel, ExternalSemanticSpec,
+        SemanticFunctionBodyPolicy,
+    };
+
+    static TEST_TAIL_BOUNDARY: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+        id: "test.tail-boundary",
+        source: "backend-riscv-test",
+        c_name: "test_tail_boundary",
+        argument_count: 0,
+        body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+        return_model: ExternalReturnModel::Constant(7),
+        semantic: ExternalSemanticSpec {
+            operation: "test.tail-boundary",
+            arguments: &[],
+            return_type: "uint32_t",
+            replacement: None,
+            event_dispatch: None,
+        },
+        evidence: "synthetic exact relocated tail-call regression",
+    };
+
+    fn test_direct_external_semantic(name: &str) -> Option<&'static DirectSemanticFunctionSpec> {
+        (name == TEST_TAIL_BOUNDARY.c_name).then_some(&TEST_TAIL_BOUNDARY)
+    }
 
     #[test]
     fn unresolved_call_uses_only_a_unique_exact_exported_companion_address() {
@@ -858,6 +883,63 @@ mod tests {
                 .iter()
                 .all(|blocker| !blocker.contains("unresolved-call-relocation"))
         );
+    }
+
+    #[test]
+    fn modeled_direct_boundary_accepts_relocated_tail_call() {
+        let owner = artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: "controller_tail_wrapper".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x6f, 0x00, 0x00, 0x00, // jal zero, 0; relocation supplies identity
+            ],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let hooks = Box::leak(Box::new(RiscvSummaryHooks {
+            secondary_return_target: |_| false,
+            direct_semantic: |_| None,
+            direct_external_semantic: test_direct_external_semantic,
+            direct_external_intrinsic: |_, _| None,
+            reference_intrinsic: |_, _, _| None,
+            standard_memory_function: |_| None,
+            wide_signed_divide: |_, _| None,
+        }));
+        let context = StructuralPointerContext {
+            summary_hooks: Some(hooks),
+            ..StructuralPointerContext::default()
+        };
+        let mut relocated_calls = StructuralRelocatedCalls::new();
+        relocated_calls.insert(
+            StructuralCallSite::new(&owner, 0x1000),
+            (TEST_TAIL_BOUNDARY.c_name.to_owned(), None),
+        );
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &owner,
+            &BTreeMap::new(),
+            &relocated_calls,
+            &context,
+            None,
+            &MmioMap::new(crate::RegisterCatalog::default(), Vec::new()).unwrap(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert_eq!(trace.return_value, SymbolicValue::Constant(7));
+        assert!(
+            trace.reference_blockers.is_empty(),
+            "unexpected blockers: {:?}",
+            trace.reference_blockers
+        );
+        assert!(matches!(
+            trace.reference_events.as_slice(),
+            [DraftReferenceEvent::ModeledDirectCall { function, .. }]
+                if function.id == TEST_TAIL_BOUNDARY.id
+        ));
     }
 
     #[test]

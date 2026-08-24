@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
 /// One packed PBUS-memory group boundary.
 ///
@@ -35,7 +35,7 @@ const fn split_pbus_command(command: u16) -> Result<(u8, bool, bool), PhyMemoryE
     ))
 }
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Publish one PBUS-memory entry in complete rev0 ROM access order.
     pub fn program_pbus_memory_entry(
         &mut self,

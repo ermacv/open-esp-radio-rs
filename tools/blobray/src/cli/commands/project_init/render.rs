@@ -82,9 +82,8 @@ output = \"generated/reports/function-review.md\"\n",
 pub(super) fn render_register_api() -> String {
     "# Reviewed public domains and transactions bridged to the internal raw PAC.\n\
 # Keep this pack empty until a vendor access has exact evidence and policy.\n\
-schema = 2\n\
+schema = 3\n\
 \n[options]\n\
-peripheral-ownership = false\n\
 device-access = false\n\
 allow-clippy-empty-docs = false\n"
         .to_owned()

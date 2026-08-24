@@ -11,13 +11,19 @@ pub const ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG: u32 = 1 << 30;
 /// Marks an external result as a reviewed pointer to an opaque runtime-owned
 /// object while retaining the call identity in the remaining bits.
 pub const OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG: u32 = 1 << 29;
+/// Marks an [`SymbolicValue::ExternalResult`] as the base of a reviewed fresh
+/// uninitialized allocation while preserving the call token.
+pub const UNINITIALIZED_ALLOCATION_EXTERNAL_RESULT_TOKEN_FLAG: u32 = 1 << 28;
 
 /// Return the real call identity carried by an external-result token.
 ///
 /// Allocation provenance uses one otherwise-unused bit internally. Consumers
 /// that render or index calls must never expose that implementation detail.
 pub const fn external_result_call_token(token: u32) -> u32 {
-    token & !(ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG | OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG)
+    token
+        & !(ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG
+            | OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG
+            | UNINITIALIZED_ALLOCATION_EXTERNAL_RESULT_TOKEN_FLAG)
 }
 
 /// Stable root of an affine memory address recovered from machine code.
@@ -50,6 +56,9 @@ pub enum MemoryObjectRoot {
         stride: i64,
     },
     /// Fresh memory returned by one reviewed allocator call in this function.
+    Allocation {
+        call_token: u32,
+    },
     ZeroedAllocation {
         call_token: u32,
     },

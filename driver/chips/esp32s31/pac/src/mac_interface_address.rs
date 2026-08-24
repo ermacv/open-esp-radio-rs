@@ -2,9 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::{MacInterface, RadioRegisters};
+use super::{MacInterface, WifiRadioRegisters};
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Publish one MAC address and enable it for receive-policy matching.
     ///
     /// SOURCE: complete pinned
@@ -15,7 +15,7 @@ impl RadioRegisters {
     /// into the preceding full-word high-address store.
     pub fn program_receive_interface_address(&mut self, interface: MacInterface, address: [u8; 6]) {
         let interface = interface.bits() as usize;
-        let addresses = &self.peripherals.wifi_mac_interface_address;
+        let addresses = &self.peripherals.wifi_mac.wifi_mac_interface_address;
         super::svd::zero_based_field_write::mac_interface_address_low(
             addresses,
             interface,

@@ -46,6 +46,9 @@ pub(crate) enum FunctionMemoryObjectFact {
         argument: u8,
         stride: i64,
     },
+    Allocation {
+        call_token: u32,
+    },
     ZeroedAllocation {
         call_token: u32,
     },

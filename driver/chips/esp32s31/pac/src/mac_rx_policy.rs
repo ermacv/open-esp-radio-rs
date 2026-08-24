@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::{MacInterface, RadioRegisters};
+use super::{MacInterface, WifiRadioRegisters};
 
 /// Read-only associated-STA receive-policy evidence.
 ///
@@ -111,12 +111,12 @@ pub enum MacRoleReceivePolicy {
     AccessPointDisabled,
 }
 
-impl RadioRegisters {
+impl WifiRadioRegisters {
     /// Publish one interface BSSID through the complete four-edge vendor leaf.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_mac_set_bssid`.
     pub fn program_interface_bssid(&mut self, interface: MacInterface, bssid_address: [u8; 6]) {
-        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
         let index = interface.bits() as usize;
         let bssid = bssids.bssid_high(index);
         bssid.modify(|_, w| w.address_check_enable().clear_bit());
@@ -138,12 +138,18 @@ impl RadioRegisters {
     }
 
     pub fn ap_receive_policy_snapshot(&self) -> MacApReceivePolicySnapshot {
-        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
         let bssid_low = bssids.bssid_low(1).read().bytes_0_3().bits().to_le_bytes();
         let bssid_high = bssids.bssid_high(1).read();
         let high = bssid_high.bssid_high().bits().to_le_bytes();
         MacApReceivePolicySnapshot {
-            queue_one_policy: self.peripherals.wifi_mac_rx_filter.policy(1).read().bits(),
+            queue_one_policy: self
+                .peripherals
+                .wifi_mac
+                .wifi_mac_rx_filter
+                .policy(1)
+                .read()
+                .bits(),
             bssid: [
                 bssid_low[0],
                 bssid_low[1],
@@ -156,6 +162,7 @@ impl RadioRegisters {
             interface_is_soft_ap: bssid_high.interface_is_soft_ap().bit_is_set(),
             interface_rx_policy_enabled: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_interface_address
                 .address_high(1)
                 .read()
@@ -167,12 +174,13 @@ impl RadioRegisters {
     /// Snapshot every register frontier that can suppress associated-STA
     /// beacons while still admitting directed management traffic.
     pub fn sta_receive_policy_snapshot(&self) -> MacStaReceivePolicySnapshot {
-        let filters = &self.peripherals.wifi_mac_rx_filter;
-        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let filters = &self.peripherals.wifi_mac.wifi_mac_rx_filter;
+        let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
         let bssid_low = bssids.bssid_low(0).read().bytes_0_3().bits();
         let bssid_high = bssids.bssid_high(0).read();
         let interface = self
             .peripherals
+            .wifi_mac
             .wifi_mac_interface_address
             .address_high(0)
             .read();
@@ -190,6 +198,7 @@ impl RadioRegisters {
             interface_rx_policy_enabled: interface.rx_policy_enable().bit_is_set(),
             beacon_filter_control: self
                 .peripherals
+                .wifi_mac
                 .wifi_mac_sta_beacon_filter
                 .control()
                 .read()
@@ -204,9 +213,9 @@ impl RadioRegisters {
     /// offsets `0x56..0x90`, and complete `hal_mac_rx_set_policy`.
     /// All 31 fresh-read RMW edges remain separate and in blob order.
     pub fn initialize_cold_receive_policy(&mut self) {
-        let filters = &self.peripherals.wifi_mac_rx_filter;
-        let bssids = &self.peripherals.wifi_mac_bssid_policy;
-        let interfaces = &self.peripherals.wifi_mac_interface_address;
+        let filters = &self.peripherals.wifi_mac.wifi_mac_rx_filter;
+        let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
+        let interfaces = &self.peripherals.wifi_mac.wifi_mac_interface_address;
 
         for queue in 0..4 {
             let filter = filters.policy(queue);
@@ -271,7 +280,7 @@ impl RadioRegisters {
     /// queue three's promiscuous path, so the associated transition must
     /// restore its normal filtering and hardware auto-ACK policy.
     pub fn apply_sta_link_receive_policy(&mut self, bssid_address: [u8; 6]) {
-        let sniffer = self.peripherals.wifi_mac_rx_filter.policy(3);
+        let sniffer = self.peripherals.wifi_mac.wifi_mac_rx_filter.policy(3);
 
         // Complete `hal_sniffer_disable`, size 0x44. Preserve its seven
         // separate fresh-read RMW edges: clear AUTOACK_DISABLE, then restore
@@ -302,10 +311,14 @@ impl RadioRegisters {
     /// incorrectly attribute the open driver's sniffer teardown to the vendor
     /// parent function.
     pub fn apply_sta_policy_six(&mut self, bssid_address: [u8; 6], mode: MacStaPolicyMode) {
-        let filter = self.peripherals.wifi_mac_rx_filter.policy(0);
-        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let filter = self.peripherals.wifi_mac.wifi_mac_rx_filter.policy(0);
+        let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
         let bssid = bssids.bssid_high(0);
-        let interface = self.peripherals.wifi_mac_interface_address.address_high(0);
+        let interface = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_interface_address
+            .address_high(0);
 
         // `ic_set_bssid(0, bssid)` delegates to the complete
         // `hal_mac_set_bssid` leaf. Keep its four hardware edges ordered:
@@ -379,10 +392,14 @@ impl RadioRegisters {
         // `ic_set_bssid(1, ap)` / complete `hal_mac_set_bssid`.
         self.program_interface_bssid(MacInterface::AccessPoint, access_point);
 
-        let filter = self.peripherals.wifi_mac_rx_filter.policy(1);
-        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let filter = self.peripherals.wifi_mac.wifi_mac_rx_filter.policy(1);
+        let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
         let bssid = bssids.bssid_high(1);
-        let interface = self.peripherals.wifi_mac_interface_address.address_high(1);
+        let interface = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_interface_address
+            .address_high(1);
 
         // `ic_set_rx_policy(interface=1, mode=0, control=1, management=1)`.
         filter.modify(|_, w| {
@@ -404,10 +421,14 @@ impl RadioRegisters {
     /// management=0)`. The address and BSSID banks are deliberately retained
     /// so a concurrent station context is not reconstructed or disturbed.
     pub fn disable_ap_receive_policy(&mut self) {
-        let filter = self.peripherals.wifi_mac_rx_filter.policy(1);
-        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let filter = self.peripherals.wifi_mac.wifi_mac_rx_filter.policy(1);
+        let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
         let bssid = bssids.bssid_high(1);
-        let interface = self.peripherals.wifi_mac_interface_address.address_high(1);
+        let interface = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_interface_address
+            .address_high(1);
 
         filter.modify(|_, w| {
             w.receive_management_not_check_bssid()
@@ -428,10 +449,14 @@ impl RadioRegisters {
     /// management=0)` followed by `ic_set_rx_policy_ubssid_check(0, false)`
     /// and therefore preserves interface-one state.
     pub fn disable_sta_receive_policy(&mut self) {
-        let filter = self.peripherals.wifi_mac_rx_filter.policy(0);
-        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let filter = self.peripherals.wifi_mac.wifi_mac_rx_filter.policy(0);
+        let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
         let bssid = bssids.bssid_high(0);
-        let interface = self.peripherals.wifi_mac_interface_address.address_high(0);
+        let interface = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_interface_address
+            .address_high(0);
 
         filter.modify(|_, w| {
             w.receive_management_not_check_bssid()

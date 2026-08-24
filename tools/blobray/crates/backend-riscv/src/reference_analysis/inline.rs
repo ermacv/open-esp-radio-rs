@@ -2,15 +2,57 @@
 
 use super::*;
 
+pub(super) fn memory_read_sources(
+    events: &[DraftReferenceEvent],
+) -> BTreeMap<u32, MemoryObjectLocation> {
+    let mut sources = BTreeMap::new();
+    let mut token = 0_u32;
+    for event in events {
+        let DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            width,
+            address,
+            ..
+        } = event
+        else {
+            continue;
+        };
+        if *width == 32
+            && let Some(location) = address.memory_object_location_with_reads(&sources)
+        {
+            sources.insert(token, location);
+        }
+        token += 1;
+    }
+    sources
+}
+
 pub(super) fn validate_deferred_memory_address(
     region: &str,
     address: &SymbolicValue,
+    read_sources: &BTreeMap<u32, MemoryObjectLocation>,
 ) -> std::result::Result<(), String> {
     if region == DEFERRED_CALLER_MEMORY_REGION && !address.caller_memory_address() {
         return Err(format!(
             "deferred memory address {} did not resolve to affine caller-owned RAM",
             address.canonical()
         ));
+    }
+    if region == DEFERRED_CALL_RESULT_MEMORY_REGION {
+        let location = address
+            .memory_object_location_with_reads(read_sources)
+            .ok_or_else(|| {
+                format!(
+                    "deferred call-result memory address {} has no exact object provenance",
+                    address.canonical()
+                )
+            })?;
+        if matches!(location.root, MemoryObjectRoot::Absolute { .. }) {
+            return Err(format!(
+                "deferred call-result memory address {} resolved only to an untyped absolute value",
+                address.canonical()
+            ));
+        }
     }
     Ok(())
 }
@@ -62,6 +104,7 @@ pub fn inline_reference_summary(
     let mut memory_read_tokens = Vec::new();
     let mut external_tokens = Vec::new();
     let mut private_stack_reads = BTreeMap::new();
+    let mut composed_memory_read_sources = memory_read_sources(prefix);
 
     let substitute = |value: &SymbolicValue,
                       read_tokens: &[u32],
@@ -257,8 +300,15 @@ pub fn inline_reference_summary(
                         callee.symbol
                     ));
                 }
-                validate_deferred_memory_address(region, &address)?;
-                memory_read_tokens.push(next_memory_read_token);
+                validate_deferred_memory_address(region, &address, &composed_memory_read_sources)?;
+                let token = next_memory_read_token;
+                if *width == 32
+                    && let Some(location) =
+                        address.memory_object_location_with_reads(&composed_memory_read_sources)
+                {
+                    composed_memory_read_sources.insert(token, location);
+                }
+                memory_read_tokens.push(token);
                 next_memory_read_token += 1;
                 DraftReferenceEvent::Memory {
                     access: MemoryAccess::Read,
@@ -307,7 +357,7 @@ pub fn inline_reference_summary(
                         callee.symbol
                     ));
                 }
-                validate_deferred_memory_address(region, &address)?;
+                validate_deferred_memory_address(region, &address, &composed_memory_read_sources)?;
                 DraftReferenceEvent::Memory {
                     access: MemoryAccess::Write,
                     width: *width,

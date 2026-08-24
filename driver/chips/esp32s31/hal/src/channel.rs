@@ -2,7 +2,7 @@
 
 use core::cell::RefMut;
 
-use open_esp_radio_esp32s31_pac::RadioRegisters;
+use open_esp_radio_esp32s31_pac::WifiRadioRegisters;
 
 use crate::{
     phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
@@ -15,20 +15,20 @@ use crate::{
 /// the radio owner. No PAC owner or generic register accessor is exposed.
 #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
 enum ChannelRegisters<'radio> {
-    Owned(&'radio mut RadioRegisters),
-    Published(RefMut<'radio, RadioRegisters>),
+    Owned(&'radio mut WifiRadioRegisters),
+    Published(RefMut<'radio, WifiRadioRegisters>),
 }
 
 #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
 impl ChannelRegisters<'_> {
-    fn get(&self) -> &RadioRegisters {
+    fn get(&self) -> &WifiRadioRegisters {
         match self {
             Self::Owned(registers) => registers,
             Self::Published(registers) => registers,
         }
     }
 
-    fn get_mut(&mut self) -> &mut RadioRegisters {
+    fn get_mut(&mut self) -> &mut WifiRadioRegisters {
         match self {
             Self::Owned(registers) => registers,
             Self::Published(registers) => registers,
@@ -46,7 +46,7 @@ pub struct RadioChannelHal<'radio, P> {
 impl<'radio, P> RadioChannelHal<'radio, P> {
     pub(crate) fn from_owned(
         platform: &'radio mut P,
-        registers: &'radio mut RadioRegisters,
+        registers: &'radio mut WifiRadioRegisters,
     ) -> Self {
         Self {
             platform,
@@ -56,7 +56,7 @@ impl<'radio, P> RadioChannelHal<'radio, P> {
 
     pub(crate) fn from_published(
         platform: &'radio mut P,
-        registers: RefMut<'radio, RadioRegisters>,
+        registers: RefMut<'radio, WifiRadioRegisters>,
     ) -> Self {
         Self {
             platform,
@@ -77,50 +77,60 @@ impl<P> RadioChannelHal<'_, P> {
     }
 
     pub fn set_agc_enabled(&mut self, enabled: bool) {
-        crate::phy_agc::set_enabled(self.registers.get_mut(), enabled);
+        crate::phy_agc::set_enabled(self.registers.get_mut().radio_phy_mut(), enabled);
     }
 
     pub fn start_frequency_switch(&mut self, frequency_index: u8) {
-        crate::phy_frequency::start_channel_switch(self.registers.get_mut(), frequency_index);
+        crate::phy_frequency::start_channel_switch(
+            self.registers.get_mut().radio_phy_mut(),
+            frequency_index,
+        );
     }
 
     pub fn clear_frequency_switch(&mut self) {
-        crate::phy_frequency::clear_channel_switch(self.registers.get_mut());
+        crate::phy_frequency::clear_channel_switch(self.registers.get_mut().radio_phy_mut());
     }
 
     pub fn frequency_ready(&mut self) -> bool {
-        crate::phy_frequency::sample_frequency_ready(self.registers.get_mut())
+        crate::phy_frequency::sample_frequency_ready(self.registers.get_mut().radio_phy_mut())
     }
 
     pub fn configure_nrx(&mut self, frequency_mhz: u16) {
         crate::phy_frequency::configure_nrx_frequency(
-            self.registers.get_mut(),
+            self.registers.get_mut().radio_phy_mut(),
             u32::from(frequency_mhz),
         );
     }
 
     pub fn configure_rx_compensation(&mut self) {
-        crate::phy_agc::configure_rx_compensation(self.registers.get_mut());
+        crate::phy_agc::configure_rx_compensation(self.registers.get_mut().radio_phy_mut());
     }
 
     pub fn publish_tx_cap(&mut self, value: u8) {
-        crate::phy_frequency::publish_tx_cap(self.registers.get_mut(), value);
+        crate::phy_frequency::publish_tx_cap(self.registers.get_mut().radio_phy_mut(), value);
     }
 
     pub fn configure_channel_cbw(&mut self, cbw: u8) {
-        crate::phy_frequency::configure_channel_cbw(self.registers.get_mut(), u32::from(cbw));
+        crate::phy_frequency::configure_channel_cbw(
+            self.registers.get_mut().radio_phy_mut(),
+            u32::from(cbw),
+        );
     }
 
     pub fn clear_dc_memory(&mut self) {
-        crate::phy_agc::clear_dc_memory(self.registers.get_mut());
+        crate::phy_agc::clear_dc_memory(self.registers.get_mut().radio_phy_mut());
     }
 
     pub fn table_memory_base_index(&self) -> u8 {
-        crate::phy_memory::read_table_memory_base_index(self.registers.get())
+        crate::phy_memory::read_table_memory_base_index(self.registers.get().radio_phy())
     }
 
     pub fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8) {
-        crate::phy_memory::program_gain_memory_entry(self.registers.get_mut(), words, index);
+        crate::phy_memory::program_gain_memory_entry(
+            self.registers.get_mut().radio_phy_mut(),
+            words,
+            index,
+        );
     }
 
     pub fn request_mac_stop(&mut self) {
@@ -147,7 +157,11 @@ impl<P: PhyI2cMasterControl> RadioChannelHal<'_, P> {
 #[cfg(target_arch = "riscv32")]
 impl<P: PhyWifiBbControl> RadioChannelHal<'_, P> {
     pub fn configure_bss_cbw(&mut self, cbw: u8) {
-        crate::phy_frequency::configure_bss_cbw(self.platform, self.registers.get_mut(), cbw);
+        crate::phy_frequency::configure_bss_cbw(
+            self.platform,
+            self.registers.get_mut().radio_phy_mut(),
+            cbw,
+        );
     }
 }
 

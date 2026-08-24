@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::RadioPhyRegisters;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ChannelCbwFields {
@@ -62,7 +62,7 @@ fn nrx_frequency_image(shift_source: u32, previous: u32, frequency: u32) -> u32 
     (previous & 0xff00_0000) | (quotient & 0x00ff_ffff)
 }
 
-impl RadioRegisters {
+impl RadioPhyRegisters {
     /// Select the recovered two-bit baseband mode.
     pub fn set_frequency_baseband_mode(&mut self, mode: u8) {
         assert!(mode <= 3, "baseband mode must fit two bits");

@@ -410,9 +410,6 @@ where
         hardware_mic_length: usize,
         rate: TxPhyRate,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
-        if matches!(rate, TxPhyRate::He(_)) {
-            return Err(SingleMpduTxError::UnsupportedHeOrdinaryMpdu);
-        }
         self.ordinary
             .start(
                 hardware,
@@ -452,9 +449,6 @@ where
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
         if self.ordinary.active() {
             return Err(SingleMpduTxError::Busy);
-        }
-        if matches!(self.config.exchange.initial_rate, TxPhyRate::He(_)) {
-            return Err(SingleMpduTxError::UnsupportedHeOrdinaryMpdu);
         }
         if ethernet.len() < 14 {
             return Err(SingleMpduTxError::EthernetFrameTooShort);

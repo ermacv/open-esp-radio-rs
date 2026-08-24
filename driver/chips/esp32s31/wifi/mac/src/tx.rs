@@ -3316,6 +3316,58 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         Ok(())
     }
 
+    /// Programs and starts one HE20 SU S-MPDU on an ordinary EDCA queue.
+    ///
+    /// The source descriptor retains the encoded MPDU (and any
+    /// hardware-generated CCMP MIC/FCS space). The HE queue vector supplies
+    /// the S-MPDU delimiter/APEP geometry recovered by
+    /// [`he_smpdu_q0_image`]; this path deliberately does not borrow the
+    /// multi-descriptor A-MPDU owner or its BlockAck completion contract.
+    pub fn submit_he_smpdu<H: TxHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+        cookie: TxCookie,
+        queue: LegacyTxQueue,
+        config: HeSmpduTxConfig,
+    ) -> Result<(), TxError> {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {
+            return Err(TxError::Stale);
+        }
+        let image = he_smpdu_q0_image(slot.dma.binding().descriptor_address(), config)
+            .ok_or(TxError::Invalid)?;
+        let index = queue.index();
+        let program = MacHeTxProgram {
+            plcp0: image.plcp0,
+            plcp1: image.plcp1,
+            he_signal_a1: image.he_signal_a1,
+            he_signal_a2_length: image.he_signal_a2_length,
+            software_he_control: None,
+            power: image.power,
+            length_control: image.length_control,
+            descriptor_count_a: image.descriptor_count_a,
+            descriptor_count_b: image.descriptor_count_b,
+            protection_spacing: image.protection_spacing,
+            timeout: config.timeout,
+            scheduler_priority: config.scheduler_priority,
+            packet_priority: config.pti,
+            priority_count: config.pti_count,
+            aifsn: config.aifsn,
+            contention_window: config.contention_window,
+            interface: config.interface,
+        };
+        let publication = slot.dma.publication().map_err(map_dma_storage_error)?;
+        if !hardware.prepare_bound_he_tx(&publication, index, program) {
+            return Err(TxError::QueueActive);
+        }
+
+        slot.queue = queue;
+        publication.commit(|start| {
+            hardware.start_bound_he_tx(start, index, image.plcp0);
+        });
+        Ok(())
+    }
+
     /// Publishes the software owner immediately before the future management
     /// TX layer performs its final q0 ENABLE|VALID write under MAC-IRQ
     /// exclusion. Full q0 PPDU/rate configuration must precede this call; this

@@ -1,4 +1,4 @@
-//! Shared owner for one ESP32-S31 ordinary legacy/HT TX transaction.
+//! Shared owner for one ESP32-S31 ordinary legacy/HT/HE TX transaction.
 //!
 //! Protocol layers encode an MPDU while this owner is free, then hand it a
 //! compact publication plan. Descriptor ownership, EDCA state, retry state,
@@ -14,8 +14,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     MacInterface,
     edca::EdcaContentionParameters,
     tx::{
-        HtTxConfig, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxCookie, TxError, TxHardware,
-        TxPhyRate, TxSlot, TxSlotState,
+        HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxCookie,
+        TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
     },
     tx_runtime::{
         OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryCounters, OrdinaryRetryDecision,
@@ -32,6 +32,10 @@ pub const TX_METADATA_SIZE: usize = 8;
 pub const TX_CCMP_MIC_SIZE: usize = 8;
 pub const TX_FCS_SIZE: usize = 4;
 const TX_ABORT_SETTLE_US: u64 = 16;
+/// Metadata bit set by the complete HE S-MPDU preparation leaf before DMA
+/// publication. It selects the single-MPDU container geometry while the low
+/// twenty bits retain MPDU+MIC+FCS length.
+const HE_SMPDU_METADATA_FLAG: u32 = 1 << 24;
 
 /// ESP32-S31 MAC interface context selected for one ordinary TX queue.
 ///
@@ -462,10 +466,6 @@ where
         if self.active.is_some() {
             return Err(OrdinaryTxError::Busy);
         }
-        if matches!(plan.exchange.initial_rate, TxPhyRate::He(_)) {
-            return Err(OrdinaryTxError::UnsupportedHeOrdinaryMpdu);
-        }
-
         let hardware_frame_length = plan
             .frame_length
             .checked_add(plan.hardware_mic_length + TX_FCS_SIZE)
@@ -771,6 +771,19 @@ where
             .now_micros()
             .checked_add(active.completion_timeout_us)
             .ok_or(OrdinaryTxError::DeadlineOverflow)?;
+        let rate = active.retry.current_rate()?;
+        let metadata = self.slot.as_mut().buffer_mut()?;
+        let mut metadata_word = u32::from_le_bytes(
+            metadata[..4]
+                .try_into()
+                .expect("TX metadata word has a fixed four-byte prefix"),
+        );
+        if matches!(rate, TxPhyRate::He(_)) {
+            metadata_word |= HE_SMPDU_METADATA_FLAG;
+        } else {
+            metadata_word &= !HE_SMPDU_METADATA_FLAG;
+        }
+        metadata[..4].copy_from_slice(&metadata_word.to_le_bytes());
         let cookie = self
             .slot
             .as_mut()
@@ -850,7 +863,35 @@ where
                     .as_mut()
                     .submit_ht(hardware, cookie, queue, config)?;
             }
-            TxPhyRate::He(_) => return Err(OrdinaryTxError::UnsupportedHeOrdinaryMpdu),
+            TxPhyRate::He(rate) => {
+                let mpdu_length = u16::try_from(
+                    active
+                        .frame_length
+                        .checked_add(active.hardware_mic_length)
+                        .ok_or(OrdinaryTxError::BufferSizeOverflow)?,
+                )
+                .map_err(|_| OrdinaryTxError::BufferSizeOverflow)?;
+                let mut config =
+                    HeSmpduTxConfig::new(rate, self.policy.he_bss_color(), mpdu_length)
+                        .ok_or(OrdinaryTxError::BufferSizeOverflow)?;
+                let data_power = self.power.power_pair(rate.power_lookup_code());
+                let rts_rate = rate.vendor_rts_rate();
+                let rts_power = self.power.power_pair(rts_rate.code());
+                config.data_power_primary = data_power.primary as u8;
+                config.data_power_alternate = data_power.alternate as u8;
+                config.rts_power_primary = rts_power.primary as u8;
+                config.rts_power_alternate = rts_power.alternate as u8;
+                config.aifsn = contention.aifsn();
+                config.contention_window = contention_window;
+                config.scheduler_priority = active.scheduler_priority;
+                config.pti = active.packet_priority;
+                config.pti_count = 1;
+                config.hardware_key_selector = active.hardware_key_selector;
+                config.interface = active.route.mac_interface();
+                self.slot
+                    .as_mut()
+                    .submit_he_smpdu(hardware, cookie, queue, config)?;
+            }
         }
         Ok(())
     }

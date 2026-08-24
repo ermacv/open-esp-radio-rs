@@ -66,6 +66,8 @@ pub const WPA2_KEY_DATA_CAPACITY: usize = 512;
 pub const WPA2_UNWRAPPED_KEY_DATA_CAPACITY: usize = WPA2_KEY_DATA_CAPACITY - 8;
 
 const WPA2_PRF_LABEL: &[u8] = b"Pairwise key expansion";
+const WPA2_ASSOCIATION_SECURITY_BINDING_LABEL: &[u8] =
+    b"open-esp-radio-rs AP association security IEs";
 const EAPOL_KEY_MIC_START: usize = 81;
 const EAPOL_KEY_MIC_END: usize = 97;
 
@@ -87,6 +89,22 @@ pub struct PtkContext {
 /// Pairwise master key. The bytes cannot be formatted and are cleared on drop.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Pmk([u8; 32]);
+
+/// PMK-authenticated commitment to the exact Association RSN IE plus RSNXE.
+///
+/// An authenticator stores this bounded value per peer instead of retaining a
+/// second copy of the complete management-frame elements. It can later bind
+/// Message 2 Key Data to the exact Association bytes without exposing the PMK
+/// or expanding the fixed AP peer table by the IE capacity for every client.
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct AssociationSecurityBinding([u8; 16]);
+
+impl AssociationSecurityBinding {
+    pub fn matches(&self, pmk: &Pmk, association_security_ies: &[u8]) -> bool {
+        let mac = pmk.association_security_binding_mac(association_security_ies);
+        mac.verify_truncated_left(&self.0).is_ok()
+    }
+}
 
 impl Pmk {
     /// Import an already-derived 256-bit PSK.
@@ -139,6 +157,29 @@ impl Pmk {
         }
         canonical.zeroize();
         Ptk(ptk)
+    }
+
+    pub fn bind_association_security_ies(
+        &self,
+        association_security_ies: &[u8],
+    ) -> AssociationSecurityBinding {
+        let mut digest = self
+            .association_security_binding_mac(association_security_ies)
+            .finalize()
+            .into_bytes();
+        let mut binding = [0; 16];
+        binding.copy_from_slice(&digest[..16]);
+        digest.zeroize();
+        AssociationSecurityBinding(binding)
+    }
+
+    fn association_security_binding_mac(&self, association_security_ies: &[u8]) -> Hmac<Sha1> {
+        let mut mac = Hmac::<Sha1>::new_from_slice(&self.0)
+            .expect("WPA2 PMK length is always accepted by HMAC");
+        mac.update(WPA2_ASSOCIATION_SECURITY_BINDING_LABEL);
+        mac.update(&(association_security_ies.len() as u64).to_be_bytes());
+        mac.update(association_security_ies);
+        mac
     }
 }
 
@@ -349,6 +390,12 @@ impl<'a> EapolKeyFrame<'a> {
             .expect("validated EAPOL-Key nonce range")
     }
 
+    pub fn key_iv(self) -> &'a [u8; 16] {
+        self.bytes[49..65]
+            .try_into()
+            .expect("validated EAPOL-Key IV range")
+    }
+
     pub fn mic(self) -> &'a [u8; 16] {
         self.bytes[81..97]
             .try_into()
@@ -359,6 +406,12 @@ impl<'a> EapolKeyFrame<'a> {
         self.bytes[65..73]
             .try_into()
             .expect("validated EAPOL-Key RSC range")
+    }
+
+    pub fn key_identifier(self) -> &'a [u8; 8] {
+        self.bytes[73..81]
+            .try_into()
+            .expect("validated EAPOL-Key identifier range")
     }
 
     pub const fn key_data(self) -> &'a [u8] {
@@ -489,6 +542,20 @@ mod tests {
                 0x97, 0x10, 0xa1, 0x2e,
             ]
         );
+    }
+
+    #[test]
+    fn association_security_binding_commits_to_every_byte_and_the_pmk() {
+        let pmk = Pmk::from_bytes([0x11; 32]);
+        let other_pmk = Pmk::from_bytes([0x22; 32]);
+        let association_security_ies = [0x30, 2, 1, 0, 0xf4, 1, 0x20];
+        let binding = pmk.bind_association_security_ies(&association_security_ies);
+
+        assert!(binding.matches(&pmk, &association_security_ies));
+        let mut changed = association_security_ies;
+        changed[6] ^= 1;
+        assert!(!binding.matches(&pmk, &changed));
+        assert!(!binding.matches(&other_pmk, &association_security_ies));
     }
 
     #[test]

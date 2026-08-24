@@ -34,6 +34,7 @@ const RSN_OUI: [u8; 3] = [0x00, 0x0f, 0xac];
 const RSN_CIPHER_CCMP: u8 = 4;
 const RSN_AKM_PSK: u8 = 2;
 const RSN_CAPABILITY_MFPR: u16 = 1 << 6;
+const RSN_CAPABILITY_MFPC: u16 = 1 << 7;
 const RSN_CAPABILITY_SPP_AMSDU_CAPABLE: u16 = 1 << 10;
 // One-stream HT20 with short guard interval. Channel-width, STBC, LDPC,
 // large A-MSDU and 40-MHz claims remain disabled until their matching
@@ -2106,11 +2107,32 @@ pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, Sta
     if !has_psk {
         return Err(StaSecurityError::UnsupportedAkm);
     }
+    let capabilities = if offset < body.len() {
+        read_rsn_u16(body, &mut offset)?
+    } else {
+        0
+    };
     if offset < body.len() {
-        let capabilities = read_rsn_u16(body, &mut offset)?;
-        if capabilities & RSN_CAPABILITY_MFPR != 0 {
-            return Err(StaSecurityError::ManagementFrameProtectionRequired);
+        let pmkid_count = usize::from(read_rsn_u16(body, &mut offset)?);
+        let pmkid_bytes = pmkid_count
+            .checked_mul(16)
+            .ok_or(StaSecurityError::MalformedRsn)?;
+        skip_rsn_bytes(body, &mut offset, pmkid_bytes)?;
+    }
+    if offset < body.len() {
+        // The optional Group Management Cipher Suite is retained only as a
+        // syntactic boundary. This WPA2 profile does not negotiate PMF, and
+        // MFPR is rejected below.
+        if capabilities & RSN_CAPABILITY_MFPC == 0 {
+            return Err(StaSecurityError::MalformedRsn);
         }
+        let _group_management_cipher = read_rsn_suite(body, &mut offset)?;
+    }
+    if offset != body.len() {
+        return Err(StaSecurityError::MalformedRsn);
+    }
+    if capabilities & RSN_CAPABILITY_MFPR != 0 {
+        return Err(StaSecurityError::ManagementFrameProtectionRequired);
     }
 
     let mut selected = SelectedRsn::EMPTY;
@@ -2227,6 +2249,17 @@ fn read_rsn_suite(bytes: &[u8], offset: &mut usize) -> Result<[u8; 4], StaSecuri
     Ok([value[0], value[1], value[2], value[3]])
 }
 
+fn skip_rsn_bytes(bytes: &[u8], offset: &mut usize, length: usize) -> Result<(), StaSecurityError> {
+    let end = offset
+        .checked_add(length)
+        .ok_or(StaSecurityError::MalformedRsn)?;
+    bytes
+        .get(*offset..end)
+        .ok_or(StaSecurityError::MalformedRsn)?;
+    *offset = end;
+    Ok(())
+}
+
 fn is_rsn_suite(suite: [u8; 4], selector: u8) -> bool {
     suite[..3] == RSN_OUI && suite[3] == selector
 }
@@ -2316,6 +2349,14 @@ mod tests {
         record.rsn_ie[1] = (offset - 2) as u8;
         record.rsn_ie_len = offset as u8;
         record
+    }
+
+    fn append_rsn_tail(record: &mut ScanRecord, tail: &[u8]) {
+        let offset = usize::from(record.rsn_ie_len);
+        let end = offset + tail.len();
+        record.rsn_ie[offset..end].copy_from_slice(tail);
+        record.rsn_ie[1] = (end - 2) as u8;
+        record.rsn_ie_len = end as u8;
     }
 
     #[test]
@@ -2524,6 +2565,43 @@ mod tests {
             select_wpa2_psk_rsn(&record),
             Err(StaSecurityError::ManagementFrameProtectionRequired)
         );
+    }
+
+    #[test]
+    fn complete_optional_rsn_tails_are_consumed_exactly() {
+        let mut with_pmkid = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
+        let mut pmkid_tail = [0x5a; 18];
+        pmkid_tail[..2].copy_from_slice(&1_u16.to_le_bytes());
+        append_rsn_tail(&mut with_pmkid, &pmkid_tail);
+        assert!(select_wpa2_psk_rsn(&with_pmkid).is_ok());
+
+        let mut with_group_management = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 1 << 7);
+        append_rsn_tail(&mut with_group_management, &[0, 0, 0x00, 0x0f, 0xac, 6]);
+        assert!(select_wpa2_psk_rsn(&with_group_management).is_ok());
+    }
+
+    #[test]
+    fn truncated_or_trailing_rsn_optional_fields_are_rejected() {
+        let mut truncated_pmkid = [0; 17];
+        truncated_pmkid[..2].copy_from_slice(&1_u16.to_le_bytes());
+        let truncated_group_management = [0, 0, 0x00, 0x0f, 0xac];
+        let group_management_without_mfpc = [0, 0, 0x00, 0x0f, 0xac, 6];
+        let trailing_after_group_management = [0, 0, 0x00, 0x0f, 0xac, 6, 0xa5];
+
+        for tail in [
+            &[0xa5][..],
+            &truncated_pmkid,
+            &truncated_group_management,
+            &group_management_without_mfpc,
+            &trailing_after_group_management,
+        ] {
+            let mut record = access_point_with_rsn(&[[0, 0x0f, 0xac, 2]], 0);
+            append_rsn_tail(&mut record, tail);
+            assert_eq!(
+                select_wpa2_psk_rsn(&record),
+                Err(StaSecurityError::MalformedRsn)
+            );
+        }
     }
 
     #[test]

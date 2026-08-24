@@ -381,6 +381,8 @@ pub struct ApAssociationSecurityObservation<'a> {
     pub privacy: bool,
     pub rsn_ie: Option<&'a [u8]>,
     pub rsn_ie_count: u8,
+    pub rsnxe: Option<&'a [u8]>,
+    pub rsnxe_count: u8,
     /// A legacy WPA vendor IE (00:50:f2:01) was present. It is never an
     /// acceptable substitute for RSN and makes a mixed request invalid.
     pub legacy_wpa_present: bool,
@@ -512,6 +514,8 @@ fn association_security_observation(
         privacy,
         rsn_ie: None,
         rsn_ie_count: 0,
+        rsnxe: None,
+        rsnxe_count: 0,
         legacy_wpa_present: false,
         malformed_elements: false,
     };
@@ -528,6 +532,10 @@ fn association_security_observation(
         if remaining[0] == 48 {
             observation.rsn_ie_count = observation.rsn_ie_count.saturating_add(1);
             observation.rsn_ie.get_or_insert(record);
+        }
+        if remaining[0] == 244 {
+            observation.rsnxe_count = observation.rsnxe_count.saturating_add(1);
+            observation.rsnxe.get_or_insert(record);
         }
         if remaining[0] == 221 && length >= 4 && record[2..6] == [0x00, 0x50, 0xf2, 0x01] {
             observation.legacy_wpa_present = true;
@@ -1150,6 +1158,8 @@ mod tests {
                     privacy: false,
                     rsn_ie: Some(&association[39..42]),
                     rsn_ie_count: 1,
+                    rsnxe: None,
+                    rsnxe_count: 0,
                     legacy_wpa_present: false,
                     malformed_elements: false,
                 },
@@ -1158,6 +1168,31 @@ mod tests {
                 qos_supported: false,
             })
         );
+    }
+
+    #[test]
+    fn association_retains_exact_rsnxe_and_duplicate_count() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut association = [0_u8; 38];
+        association[4..10].copy_from_slice(&access_point);
+        association[10..16].copy_from_slice(&peer);
+        association[16..22].copy_from_slice(&access_point);
+        association[24..26].copy_from_slice(&0x0010_u16.to_le_bytes());
+        association[28..31].copy_from_slice(&[48, 1, 0]);
+        association[31..34].copy_from_slice(&[244, 1, 0x20]);
+        association[34..38].copy_from_slice(&[244, 2, 0x40, 0x00]);
+
+        let Some(ApManagementRequest::Association { security, .. }) =
+            parse_ap_management_request(&association, access_point)
+        else {
+            panic!("association request must parse");
+        };
+        assert_eq!(security.rsn_ie, Some(&association[28..31]));
+        assert_eq!(security.rsn_ie_count, 1);
+        assert_eq!(security.rsnxe, Some(&association[31..34]));
+        assert_eq!(security.rsnxe_count, 2);
+        assert!(!security.malformed_elements);
     }
 
     #[test]

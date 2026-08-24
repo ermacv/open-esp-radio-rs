@@ -13,12 +13,12 @@ use open_esp_radio_ieee80211::block_ack::{
 use open_esp_radio_ieee80211::ht::HtPeerCapabilities;
 use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_wpa2::{
-    OwnedEapolFrame, Pmk, Ptk, PtkContext,
+    AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
     ap::validate_wpa2_ap_rsn,
     frames::{
-        OwnedRsnIe, WPA2_PLAIN_KEY_DATA_CAPACITY, Wpa2FrameError, Wpa2Gtk, Wpa2PlainKeyData,
-        Wpa2TxFrame, build_ap_action_frame,
+        OwnedAssociationSecurityIes, OwnedRsnIe, WPA2_PLAIN_KEY_DATA_CAPACITY, Wpa2FrameError,
+        Wpa2Gtk, Wpa2PlainKeyData, Wpa2TxFrame, build_ap_action_frame,
     },
     retry::{Wpa2Retry, Wpa2RetryAction, Wpa2RetryAlarm, Wpa2RetryConfig, Wpa2RetryError},
     state::{
@@ -371,6 +371,7 @@ struct ApPeer {
     association_id: u16,
     phase: ApPeerPhase,
     wpa2: Option<Wpa2ApState>,
+    association_security_binding: Option<AssociationSecurityBinding>,
     pending_ptk: Option<Ptk>,
     wpa2_retry: Wpa2Retry,
     wpa2_retry_alarm: Option<Wpa2RetryAlarm>,
@@ -419,6 +420,7 @@ impl ApPeer {
             association_id,
             phase: ApPeerPhase::Authenticated,
             wpa2: None,
+            association_security_binding: None,
             pending_ptk: None,
             wpa2_retry: new_ap_wpa2_retry(),
             wpa2_retry_alarm: None,
@@ -617,16 +619,31 @@ impl<'peers> AccessPointService<'peers> {
         }
         match self.security_mode() {
             WifiSecurityMode::Open => {
-                !security.privacy && security.rsn_ie_count == 0 && security.rsn_ie.is_none()
+                !security.privacy
+                    && security.rsn_ie_count == 0
+                    && security.rsn_ie.is_none()
+                    && security.rsnxe_count == 0
+                    && security.rsnxe.is_none()
             }
             WifiSecurityMode::Wpa2Personal => {
-                security.privacy
-                    && security.rsn_ie_count == 1
-                    && security
-                        .rsn_ie
-                        .is_some_and(|rsn| validate_wpa2_ap_rsn(rsn).is_ok())
+                Self::validated_wpa2_association_security_ies(security).is_some()
             }
         }
+    }
+
+    fn validated_wpa2_association_security_ies(
+        security: ApAssociationSecurityObservation<'_>,
+    ) -> Option<OwnedAssociationSecurityIes> {
+        if !security.privacy
+            || security.rsn_ie_count != 1
+            || security.rsnxe_count > 1
+            || security.rsnxe_count == 0 && security.rsnxe.is_some()
+            || security.rsnxe_count == 1 && security.rsnxe.is_none()
+        {
+            return None;
+        }
+        let rsn = validate_wpa2_ap_rsn(security.rsn_ie?).ok()?;
+        OwnedAssociationSecurityIes::try_copy(rsn.owned(), security.rsnxe.unwrap_or(&[])).ok()
     }
 
     pub const fn address(&self) -> [u8; 6] {
@@ -1188,7 +1205,21 @@ impl<'peers> AccessPointService<'peers> {
         if self.security_mode() != WifiSecurityMode::Wpa2Personal {
             return Err(ApServiceError::SecurityModeMismatch);
         }
-        let security_matches = self.matches_association_security(security);
+        let association_security_ies = if security.malformed_elements || security.legacy_wpa_present
+        {
+            None
+        } else {
+            Self::validated_wpa2_association_security_ies(security)
+        };
+        let security_matches = association_security_ies.is_some();
+        let association_security_binding = match association_security_ies.as_ref() {
+            Some(ies) => Some(
+                self.wpa2_material()?
+                    .0
+                    .bind_association_security_ies(ies.as_bytes()),
+            ),
+            None => None,
+        };
         let access_point = self.address;
         let inactive_timeout_micros = self.inactive_timeout.micros();
         let existing = self.checked_peer_mut(peer)?;
@@ -1217,6 +1248,7 @@ impl<'peers> AccessPointService<'peers> {
         )?;
         existing.phase = ApPeerPhase::Securing;
         existing.wpa2 = Some(wpa2);
+        existing.association_security_binding = association_security_binding;
         existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
         existing.ht = capabilities.ht;
         existing.qos_supported = capabilities.qos_supported;
@@ -1268,6 +1300,7 @@ impl<'peers> AccessPointService<'peers> {
         }
         existing.phase = ApPeerPhase::Authorized;
         existing.wpa2 = None;
+        existing.association_security_binding = None;
         existing.pending_ptk = None;
         existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
         existing.ht = capabilities.ht;
@@ -1587,6 +1620,26 @@ impl<'peers> AccessPointService<'peers> {
         context: Wpa2StatePtkContext,
         message2: OwnedEapolFrame<N>,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
+        let association_security_ies_match = self
+            .checked_peer(peer)?
+            .association_security_binding
+            .as_ref()
+            .is_some_and(|binding| {
+                self.wpa2_material()
+                    .is_ok_and(|(pmk, _)| binding.matches(pmk, message2.key_frame().key_data()))
+            });
+        if !association_security_ies_match {
+            let action = self
+                .checked_peer_mut(peer)?
+                .wpa2
+                .as_mut()
+                .ok_or(ApServiceError::WrongPeerPhase)?
+                .complete_ptk(ticket, message2, false)?;
+            return match action {
+                Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
+                _ => Err(ApWpa2Error::UnexpectedAction),
+            };
+        }
         let ptk = self.derive_ptk(PtkContext {
             authenticator_address: context.authenticator_address,
             supplicant_address: context.supplicant_address,
@@ -1692,6 +1745,7 @@ impl<'peers> AccessPointService<'peers> {
             return Err(ApServiceError::WrongPeerPhase);
         }
         existing.phase = ApPeerPhase::Authorized;
+        existing.association_security_binding = None;
         existing.pending_ptk = None;
         existing.wpa2_retry.cancel();
         existing.wpa2_retry_alarm = None;
@@ -1896,7 +1950,9 @@ mod tests {
     use open_esp_radio_wpa2::{
         EapolKeyMessage, OwnedEapolFrame, PtkContext, Wpa2Interface,
         aes::software_aes128_key_unwrap,
-        frames::{OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame, parse_gtk_key_data},
+        frames::{
+            OwnedAssociationSecurityIes, OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame, parse_gtk_key_data,
+        },
         state::{Wpa2ApAction, Wpa2Ticket},
     };
 
@@ -1909,6 +1965,49 @@ mod tests {
     const SUPPLICANT_RSN: [u8; 22] = [
         0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0x0c, 0,
     ];
+
+    fn association_security<'a>(rsn_ie: &'a [u8]) -> ApAssociationSecurityObservation<'a> {
+        association_security_with_rsnxe(rsn_ie, None)
+    }
+
+    fn association_security_with_rsnxe<'a>(
+        rsn_ie: &'a [u8],
+        rsnxe: Option<&'a [u8]>,
+    ) -> ApAssociationSecurityObservation<'a> {
+        ApAssociationSecurityObservation {
+            privacy: true,
+            rsn_ie: Some(rsn_ie),
+            rsn_ie_count: 1,
+            rsnxe,
+            rsnxe_count: u8::from(rsnxe.is_some()),
+            legacy_wpa_present: false,
+            malformed_elements: false,
+        }
+    }
+
+    fn signed_message2(
+        rsn_ie: &[u8],
+        rsnxe: &[u8],
+        authenticator_nonce: [u8; 32],
+        supplicant_nonce: [u8; 32],
+    ) -> OwnedEapolFrame<512> {
+        let ptk = Pmk::derive(b"password", b"test-ap")
+            .unwrap()
+            .derive_ptk(PtkContext {
+                authenticator_address: AP,
+                supplicant_address: PEER,
+                authenticator_nonce,
+                supplicant_nonce,
+            });
+        let rsn_ie = OwnedRsnIe::<64>::try_copy(rsn_ie).unwrap();
+        let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, rsnxe).unwrap();
+        let message2 =
+            Wpa2TxFrame::<512>::message2_with_security_ies(AP, 9, supplicant_nonce, &security_ies)
+                .unwrap()
+                .authenticate(&ptk);
+        OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, message2.as_bytes()).unwrap()
+    }
+
     fn ht_capabilities() -> ApAssociationCapabilities {
         ApAssociationCapabilities {
             maximum_legacy_rate_500kbps: 108,
@@ -2042,7 +2141,14 @@ mod tests {
         );
         service.authenticate_open(PEER, 0);
         service
-            .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 2_000)
+            .associate_wpa2(
+                PEER,
+                association_security(&WPA2_RSN),
+                ht_capabilities(),
+                [7; 32],
+                9,
+                2_000,
+            )
             .unwrap();
         assert_eq!(service.next_peer_deadline(), Some(10_002_000));
         service.observe_activity(PEER, 5_000_000).unwrap();
@@ -2067,7 +2173,14 @@ mod tests {
         service.authenticate_open(PEER, 0);
         assert_eq!(
             service
-                .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 1)
+                .associate_wpa2(
+                    PEER,
+                    association_security(&WPA2_RSN),
+                    ht_capabilities(),
+                    [7; 32],
+                    9,
+                    1,
+                )
                 .unwrap(),
             ApMlmeAction::AssociationResponse {
                 peer: PEER,
@@ -2107,7 +2220,7 @@ mod tests {
             service
                 .associate_wpa2(
                     PEER,
-                    &WPA2_RSN,
+                    association_security(&WPA2_RSN),
                     ApAssociationCapabilities {
                         maximum_legacy_rate_500kbps: 0,
                         ht: None,
@@ -2141,7 +2254,14 @@ mod tests {
         // Supplicants may add their own RSN capabilities. Message 3 must not
         // reflect those bytes back: it authenticates the AP's beacon RSN IE.
         service
-            .associate_wpa2(PEER, &SUPPLICANT_RSN, ht_capabilities(), ANONCE, 9, 1)
+            .associate_wpa2(
+                PEER,
+                association_security(&SUPPLICANT_RSN),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
             .unwrap();
         let message1 = service.begin_wpa2_frame::<512>(PEER).unwrap();
         assert_eq!(
@@ -2236,12 +2356,98 @@ mod tests {
     }
 
     #[test]
+    fn message2_must_echo_the_exact_association_rsn() {
+        const ANONCE: [u8; 32] = [7; 32];
+        const SNONCE: [u8; 32] = [8; 32];
+
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
+        service.authenticate_open(PEER, 0);
+        service
+            .associate_wpa2(
+                PEER,
+                association_security(&SUPPLICANT_RSN),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
+            .unwrap();
+
+        assert!(matches!(
+            service
+                .on_eapol(PEER, signed_message2(&WPA2_RSN, &[], ANONCE, SNONCE))
+                .unwrap(),
+            ApWpa2Progress::DeauthenticatePeer
+        ));
+        assert_eq!(service.wpa2_mut(PEER).unwrap().phase(), Wpa2ApPhase::Failed);
+        assert!(service.pending_ptk(PEER).is_err());
+    }
+
+    #[test]
+    fn message2_must_echo_the_exact_association_rsnxe() {
+        const ANONCE: [u8; 32] = [7; 32];
+        const SNONCE: [u8; 32] = [8; 32];
+        const RSNXE: [u8; 3] = [0xf4, 1, 0x20];
+
+        let mut rejected_storage = AccessPointPeerStorage::new();
+        let mut rejected = service(&mut rejected_storage);
+        rejected.authenticate_open(PEER, 0);
+        rejected
+            .associate_wpa2(
+                PEER,
+                association_security_with_rsnxe(&SUPPLICANT_RSN, Some(&RSNXE)),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
+            .unwrap();
+        assert!(matches!(
+            rejected
+                .on_eapol(PEER, signed_message2(&SUPPLICANT_RSN, &[], ANONCE, SNONCE),)
+                .unwrap(),
+            ApWpa2Progress::DeauthenticatePeer
+        ));
+
+        let mut accepted_storage = AccessPointPeerStorage::new();
+        let mut accepted = service(&mut accepted_storage);
+        accepted.authenticate_open(PEER, 0);
+        accepted
+            .associate_wpa2(
+                PEER,
+                association_security_with_rsnxe(&SUPPLICANT_RSN, Some(&RSNXE)),
+                ht_capabilities(),
+                ANONCE,
+                9,
+                1,
+            )
+            .unwrap();
+        assert!(matches!(
+            accepted
+                .on_eapol(
+                    PEER,
+                    signed_message2(&SUPPLICANT_RSN, &RSNXE, ANONCE, SNONCE),
+                )
+                .unwrap(),
+            ApWpa2Progress::Transmit(_)
+        ));
+    }
+
+    #[test]
     fn exhausted_pairwise_update_count_closes_the_peer() {
         let mut storage = AccessPointPeerStorage::new();
         let mut service = service(&mut storage);
         service.authenticate_open(PEER, 0);
         service
-            .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 1)
+            .associate_wpa2(
+                PEER,
+                association_security(&WPA2_RSN),
+                ht_capabilities(),
+                [7; 32],
+                9,
+                1,
+            )
             .unwrap();
         service.begin_wpa2_frame::<512>(PEER).unwrap();
         service.observe_wpa2_transmit(PEER, false, true, 0).unwrap();
@@ -2273,7 +2479,14 @@ mod tests {
         let mut service = service(&mut storage);
         service.authenticate_open(PEER, 0);
         assert_eq!(
-            service.associate_wpa2(PEER, &[0x30, 0], LEGACY_CAPABILITIES, [7; 32], 9, 1,),
+            service.associate_wpa2(
+                PEER,
+                association_security(&[0x30, 0]),
+                LEGACY_CAPABILITIES,
+                [7; 32],
+                9,
+                1,
+            ),
             Ok(ApMlmeAction::AssociationResponse {
                 peer: PEER,
                 status: AP_STATUS_INVALID_RSN,
@@ -2324,7 +2537,7 @@ mod tests {
                 service
                     .associate_wpa2(
                         peer,
-                        &WPA2_RSN,
+                        association_security(&WPA2_RSN),
                         ht_capabilities(),
                         [suffix; 32],
                         u64::from(suffix),
@@ -2364,11 +2577,12 @@ mod tests {
         // The service itself travels through the typed lifecycle, while all
         // fifteen WPA2 state machines remain in caller-owned static storage.
         assert!(core::mem::size_of::<AccessPointService<'_>>() <= 256);
-        // Fifteen independently negotiated TX BlockAck sessions add 104
-        // bytes beyond the former WPA2-only 4-KiB ceiling. Keep that cost
-        // explicit instead of moving agreement state to a global singleton.
+        // Fifteen independently negotiated TX BlockAck sessions and the
+        // per-peer HMAC-SHA1-128 Association-security commitments remain
+        // explicit. The commitments cost 24 aligned host bytes per peer and
+        // avoid retaining fifteen full 128-byte IE buffers.
         assert!(
-            core::mem::size_of::<AccessPointPeerStorage>() <= 4_224,
+            core::mem::size_of::<AccessPointPeerStorage>() <= 4_584,
             "peer storage size {}",
             core::mem::size_of::<AccessPointPeerStorage>()
         );
@@ -2380,13 +2594,27 @@ mod tests {
         let mut service = service(&mut storage);
         service.authenticate_open(PEER, 1);
         service
-            .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 1)
+            .associate_wpa2(
+                PEER,
+                association_security(&WPA2_RSN),
+                ht_capabilities(),
+                [7; 32],
+                9,
+                1,
+            )
             .unwrap();
         service.checked_peer_mut(PEER).unwrap().phase = ApPeerPhase::Authorized;
 
         service.authenticate_open(OTHER, 1);
         service
-            .associate_wpa2(OTHER, &WPA2_RSN, LEGACY_CAPABILITIES, [8; 32], 10, 1)
+            .associate_wpa2(
+                OTHER,
+                association_security(&WPA2_RSN),
+                LEGACY_CAPABILITIES,
+                [8; 32],
+                10,
+                1,
+            )
             .unwrap();
         service.checked_peer_mut(OTHER).unwrap().phase = ApPeerPhase::Authorized;
 

@@ -553,12 +553,9 @@ mod tests {
         task::{Context, Poll, Waker},
     };
 
-    use hmac::Mac;
-
     use super::*;
     use crate::{
-        EAPOL_KEY_FIXED_LEN, EAPOL_KEY_PACKET_LEN, EAPOL_PACKET_TYPE_KEY, RSN_KEY_DESCRIPTOR_TYPE,
-        aes::{Wpa2SoftwareAes, Wpa2UnwrappedKeyData},
+        aes::{Wpa2SoftwareAes, Wpa2UnwrappedKeyData, software_aes128_key_wrap},
         frames::{Wpa2Gtk, Wpa2PlainKeyData},
         keys::Wpa2KeyKind,
     };
@@ -595,30 +592,16 @@ mod tests {
         }
     }
 
-    fn plain_message3(ptk: &Ptk, key_rsc: [u8; 8], key_data: &[u8]) -> crate::OwnedEapolFrame<512> {
-        const PAIRWISE: u16 = 1 << 3;
-        const INSTALL: u16 = 1 << 6;
-        const ACK: u16 = 1 << 7;
-        const MIC: u16 = 1 << 8;
-        const SECURE: u16 = 1 << 9;
-
-        let len = EAPOL_KEY_PACKET_LEN + key_data.len();
-        let mut bytes = [0_u8; 512];
-        bytes[0] = 2;
-        bytes[1] = EAPOL_PACKET_TYPE_KEY;
-        bytes[2..4].copy_from_slice(&((EAPOL_KEY_FIXED_LEN + key_data.len()) as u16).to_be_bytes());
-        bytes[4] = RSN_KEY_DESCRIPTOR_TYPE;
-        bytes[5..7].copy_from_slice(&(PAIRWISE | INSTALL | ACK | MIC | SECURE | 2).to_be_bytes());
-        bytes[7..9].copy_from_slice(&16_u16.to_be_bytes());
-        bytes[9..17].copy_from_slice(&2_u64.to_be_bytes());
-        bytes[17..49].copy_from_slice(&ANONCE);
-        bytes[65..73].copy_from_slice(&key_rsc);
-        bytes[97..99].copy_from_slice(&(key_data.len() as u16).to_be_bytes());
-        bytes[EAPOL_KEY_PACKET_LEN..len].copy_from_slice(key_data);
-        let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(ptk.kck()).unwrap();
-        mac.update(&bytes[..len]);
-        bytes[81..97].copy_from_slice(&mac.finalize().into_bytes()[..16]);
-        crate::OwnedEapolFrame::<512>::try_copy(Wpa2Interface::Station, AP, &bytes[..len]).unwrap()
+    fn encrypted_message3(
+        ptk: &Ptk,
+        key_rsc: [u8; 8],
+        plain_key_data: &[u8],
+    ) -> crate::OwnedEapolFrame<512> {
+        let wrapped = software_aes128_key_wrap(ptk.kek(), plain_key_data).unwrap();
+        let frame = Wpa2TxFrame::<512>::message3(LOCAL, 2, ANONCE, key_rsc, wrapped.as_bytes())
+            .unwrap()
+            .authenticate(ptk);
+        owned(&frame)
     }
 
     struct GroupKeyUnwrap {
@@ -676,14 +659,14 @@ mod tests {
         let gtk = Wpa2Gtk::new(2, false, [0x5a; 16]).unwrap();
         let plain = Wpa2PlainKeyData::<64>::build(&rsn, &gtk).unwrap();
         let rsc = [7, 6, 5, 4, 3, 2, 1, 0];
-        let message3 = plain_message3(&expected_ptk, rsc, plain.as_bytes());
+        let message3 = encrypted_message3(&expected_ptk, rsc, plain.as_bytes());
         let Wpa2StaSupplicantAction::InstallKeys(request) =
             block_on(supplicant.on_frame(message3, &pmk, &mut aes)).unwrap()
         else {
             panic!("Message 3 must produce one key transaction")
         };
         assert_eq!(request.replay_counter(), 2);
-        assert!(!request.encrypted_key_data());
+        assert!(request.encrypted_key_data());
         assert_eq!(request.plain_key_data_len(), plain.as_bytes().len());
         assert_eq!(request.pairwise().peer(), &AP);
         assert_eq!(
@@ -723,7 +706,7 @@ mod tests {
         let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
         let gtk = Wpa2Gtk::new(1, false, [9; 16]).unwrap();
         let plain = Wpa2PlainKeyData::<64>::build(&rsn, &gtk).unwrap();
-        let message3 = plain_message3(&expected_ptk, [0; 8], plain.as_bytes());
+        let message3 = encrypted_message3(&expected_ptk, [0; 8], plain.as_bytes());
         let mut bytes = [0; 512];
         let len = message3.as_bytes().len();
         bytes[..len].copy_from_slice(message3.as_bytes());

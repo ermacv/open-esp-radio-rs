@@ -79,7 +79,10 @@ cargo blobray project research next --scope ieee802154-baseband-leaves \
 
 The command is read-only unless `--output` is supplied. Each candidate names
 the missing knowledge, confidence, affected scopes, expected impact and a
-copyable next inspection command. Low confidence on write semantics is
+copyable next inspection command. Report schema 2 ranks unique user actions:
+independent findings that lead to the same inspection command remain listed as
+`related_findings` instead of consuming duplicate top-N slots. Low confidence
+on write semantics is
 intentional: W1C, self-clear and hardware-owned behavior require reviewed HIL
 or authoritative documentation and are not inferred from vendor writes.
 

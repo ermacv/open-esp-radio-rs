@@ -59,8 +59,9 @@ silently layering executable assumptions from different ownership scopes.
 - SVD, raw PAC, bindings index, and restricted API output;
 - revision snapshots, diffs and rebase plans. Snapshot schema 1 stores only
   digests and normalized derived features, never vendor payloads;
-- research-next reports (`schema_version = 1`), including explicit benefit,
-  cost and co-blocker score terms plus copyable follow-up commands.
+- research-next reports (`schema_version = 2`), including explicit benefit,
+  cost and co-blocker score terms, unique follow-up actions, and every related
+  finding grouped below its copyable command.
 
 Generated outputs are disposable and reproducible. They must preserve source
 artifact identity/provenance and must not contain proprietary payloads or full

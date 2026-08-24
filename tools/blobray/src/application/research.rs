@@ -12,7 +12,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 1;
+pub(crate) const RESEARCH_SCHEMA: u32 = 2;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct ResearchScoreBreakdown {
@@ -24,6 +24,14 @@ pub(crate) struct ResearchScoreBreakdown {
     pub(crate) publication_weight: u64,
     pub(crate) cost_penalty: u64,
     pub(crate) co_blocker_penalty: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct RelatedResearchFinding {
+    pub(crate) id: String,
+    pub(crate) kind: String,
+    pub(crate) knowledge_required: String,
+    pub(crate) summary: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -47,6 +55,9 @@ pub(crate) struct ResearchCandidate {
     pub(crate) knowledge_required: String,
     pub(crate) next_command: String,
     pub(crate) summary: String,
+    /// Other independently scored findings resolved by the same next action.
+    /// They remain visible rather than consuming duplicate ranked slots.
+    pub(crate) related_findings: Vec<RelatedResearchFinding>,
     pub(crate) score_breakdown: ResearchScoreBreakdown,
 }
 
@@ -57,7 +68,9 @@ pub(crate) struct ResearchNextReport {
     pub(crate) project: String,
     pub(crate) scope: Option<String>,
     pub(crate) analyzed_scopes: Vec<String>,
+    /// Count before grouping findings that lead to the same user action.
     pub(crate) total_candidates: usize,
+    pub(crate) total_actions: usize,
     pub(crate) returned_candidates: usize,
     pub(crate) verification_diagnostic: Option<String>,
     pub(crate) candidates: Vec<ResearchCandidate>,
@@ -146,6 +159,8 @@ pub(crate) fn next(
             .then_with(|| left.id.cmp(&right.id))
     });
     let total_candidates = ranked.len();
+    let mut ranked = coalesce_actions(ranked);
+    let total_actions = ranked.len();
     ranked.truncate(limit);
     for (index, candidate) in ranked.iter_mut().enumerate() {
         candidate.rank = index + 1;
@@ -157,6 +172,7 @@ pub(crate) fn next(
         scope: scope_filter.map(str::to_owned),
         analyzed_scopes,
         total_candidates,
+        total_actions,
         returned_candidates: ranked.len(),
         verification_diagnostic,
         candidates: ranked,
@@ -686,8 +702,41 @@ fn finalize(
         knowledge_required: knowledge_required(&candidate.kind).to_owned(),
         next_command,
         summary: candidate.message,
+        related_findings: Vec::new(),
         score_breakdown,
     }
+}
+
+fn coalesce_actions(candidates: Vec<ResearchCandidate>) -> Vec<ResearchCandidate> {
+    let mut actions = Vec::<ResearchCandidate>::new();
+    let mut by_command = BTreeMap::<String, usize>::new();
+    for candidate in candidates {
+        if let Some(index) = by_command.get(&candidate.next_command).copied() {
+            let action = &mut actions[index];
+            action.related_findings.push(RelatedResearchFinding {
+                id: candidate.id,
+                kind: candidate.kind,
+                knowledge_required: candidate.knowledge_required,
+                summary: candidate.summary,
+            });
+            merge_strings(&mut action.scopes, candidate.scopes);
+            merge_strings(
+                &mut action.verification_surfaces,
+                candidate.verification_surfaces,
+            );
+            merge_strings(&mut action.publication_scopes, candidate.publication_scopes);
+        } else {
+            by_command.insert(candidate.next_command.clone(), actions.len());
+            actions.push(candidate);
+        }
+    }
+    actions
+}
+
+fn merge_strings(target: &mut Vec<String>, source: Vec<String>) {
+    target.extend(source);
+    target.sort();
+    target.dedup();
 }
 
 fn cost_units(kind: &str, functions: usize) -> u64 {
@@ -821,6 +870,37 @@ mod tests {
             result.next_command,
             "blobray inspect function leaf --project <project>"
         );
+    }
+
+    #[test]
+    fn one_user_action_keeps_all_related_findings_without_duplicate_ranks() {
+        fn candidate(id: &str, message: &str) -> Accumulator {
+            Accumulator {
+                id: id.to_owned(),
+                kind: "interface-layout".to_owned(),
+                severity: "warning".to_owned(),
+                message: message.to_owned(),
+                direct: ["ble-controller::logger".to_owned()].into(),
+                guaranteed: BTreeSet::new(),
+                optimistic: ["ble-controller::logger".to_owned()].into(),
+                marginal: ["ble-controller::logger".to_owned()].into(),
+                co_blockers: BTreeSet::new(),
+                roots: BTreeSet::new(),
+                scopes: ["ble".to_owned()].into(),
+                publication_scopes: ["ble".to_owned()].into(),
+            }
+        }
+
+        let actions = coalesce_actions(vec![
+            finalize(candidate("slot-a", "review slot A"), &BTreeMap::new()),
+            finalize(candidate("slot-b", "review slot B"), &BTreeMap::new()),
+        ]);
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id, "slot-a");
+        assert_eq!(actions[0].related_findings.len(), 1);
+        assert_eq!(actions[0].related_findings[0].id, "slot-b");
+        assert_eq!(actions[0].related_findings[0].summary, "review slot B");
     }
 
     #[test]

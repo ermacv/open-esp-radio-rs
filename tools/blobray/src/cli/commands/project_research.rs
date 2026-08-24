@@ -25,8 +25,9 @@ pub(super) fn run(
 fn render(report: &research::ResearchNextReport) {
     outputln!("{}", output::heading("Research next"));
     outputln!(
-        "\nRanked {} of {} candidates across {} review scopes.",
+        "\nRanked {} of {} actions from {} findings across {} review scopes.",
         report.returned_candidates,
+        report.total_actions,
         report.total_candidates,
         report.analyzed_scopes.len()
     );
@@ -51,7 +52,8 @@ fn render(report: &research::ResearchNextReport) {
                 "Unlock G/O/M",
                 "Co",
                 "Cost",
-                "Candidate"
+                "Findings",
+                "Action"
             ],
             report.candidates.iter().map(|candidate| [
                 candidate.rank.to_string(),
@@ -65,27 +67,75 @@ fn render(report: &research::ResearchNextReport) {
                 ),
                 candidate.co_blockers.to_string(),
                 candidate.estimated_cost.clone(),
-                table::compact(&candidate.id, 44),
+                (candidate.related_findings.len() + 1).to_string(),
+                table::compact(action_label(&candidate.next_command), 44),
             ]),
         )
     );
     let first = &report.candidates[0];
     outputln!("\n{}", output::heading("Highest-impact action"));
-    outputln!("Why: {}", first.summary);
+    outputln!(
+        "Why: {}",
+        if output::details() {
+            first.summary.clone()
+        } else {
+            table::compact(&first.summary, 320)
+        }
+    );
     outputln!("Knowledge: {}", first.knowledge_required);
     outputln!("Confidence: {}", first.confidence);
+    if !first.related_findings.is_empty() {
+        outputln!(
+            "Also covers: {} related finding(s)",
+            first.related_findings.len()
+        );
+    }
     outputln!("Next: {}", first.next_command);
 
     if output::details() {
         for candidate in report.candidates.iter().skip(1) {
             outputln!(
-                "\n#{} {} — {}\n  Knowledge: {}\n  Next: {}",
+                "\n#{} {} — {}\n  Knowledge: {}\n  Related findings: {}\n  Next: {}",
                 candidate.rank,
                 candidate.id,
                 candidate.summary,
                 candidate.knowledge_required,
+                candidate.related_findings.len(),
                 candidate.next_command
             );
+            for finding in &candidate.related_findings {
+                outputln!(
+                    "    - {} ({}): {}",
+                    finding.id,
+                    finding.kind,
+                    finding.summary
+                );
+            }
         }
+    }
+}
+
+fn action_label(command: &str) -> String {
+    command
+        .strip_prefix("blobray inspect ")
+        .and_then(|value| value.split_once(" --project").map(|(target, _)| target))
+        .unwrap_or(command)
+        .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn action_label_removes_copyable_command_boilerplate() {
+        assert_eq!(
+            action_label("blobray inspect function ble:controller_init --project <project>"),
+            "function ble:controller_init"
+        );
+        assert_eq!(
+            action_label("blobray project status --project <project>"),
+            "blobray project status --project <project>"
+        );
     }
 }

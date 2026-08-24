@@ -118,6 +118,7 @@ pub struct Esp32s31StationJoinResources<
     pub transmit: &'transmit mut T,
     pub frame: &'scratch mut [u8],
     pub station: Esp32s31StaAttemptStation,
+    pub listen_interval: open_esp_radio_wifi_sta::request::StationListenInterval,
     pub security: Esp32s31StaAttemptSecurity<'security>,
     pub attempt_observer: AO,
 }
@@ -198,6 +199,7 @@ where
         transmit,
         frame,
         station,
+        listen_interval,
         security,
         attempt_observer,
     } = resources;
@@ -226,6 +228,7 @@ where
         ),
         Esp32s31StaAttemptStorage::new(frame),
         station,
+        listen_interval,
         security,
     );
     let mut attempt =

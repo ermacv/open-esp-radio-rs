@@ -1,5 +1,5 @@
-use open_esp_radio_esp32s31_wifi_sta::association::ESP32S31_STA_LISTEN_INTERVAL;
 use open_esp_radio_ieee80211::{scan::ScanRecord, station::StaAssociationPreference};
+use open_esp_radio_wifi_sta::request::StationListenInterval;
 
 /// Driver resources borrowed for one join runner lifetime.
 pub struct Esp32s31StaJoinRadio<'hardware, 'transmit, H, R, T> {
@@ -49,7 +49,12 @@ impl Esp32s31StaJoinStation {
             station_address,
             access_point,
             association_preference,
-            listen_interval: ESP32S31_STA_LISTEN_INTERVAL,
+            listen_interval: StationListenInterval::DEFAULT.get(),
         }
+    }
+
+    pub const fn with_listen_interval(mut self, listen_interval: StationListenInterval) -> Self {
+        self.listen_interval = listen_interval.get();
+        self
     }
 }

@@ -39,9 +39,10 @@ pub use requests::{
     AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
     AccessPointInactiveTimeoutError, AccessPointRequest, AccessPointRequestError,
     AccessPointSecurity, MonitorCapturePolicy, MonitorRequest, StationAccessPointRequest,
-    StationDiscovery, StationRequest, StationScanChannelIter, StationScanChannelOrderIter,
-    StationScanChannels, StationScanChannelsError, StationScanPolicy, StationSecurity,
-    WifiScanRequest, WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
+    StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
+    StationRequest, StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
+    StationScanChannelsError, StationScanPolicy, StationSecurity, WifiScanRequest,
+    WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
     WifiServiceRequestError, WifiServiceRequestFailure, WifiSupervisorConfiguration,
 };
 #[cfg(feature = "wifi")]

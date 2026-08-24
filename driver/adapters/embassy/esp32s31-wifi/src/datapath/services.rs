@@ -47,6 +47,16 @@ pub trait DatapathControlService<H, X> {
         true
     }
 
+    /// Require one control transition before the scheduler may claim a new
+    /// network TX lease (for example, to advertise PM=0 first).
+    fn required_before_network_tx(&self) -> bool {
+        false
+    }
+
+    fn required_before_stop(&self) -> bool {
+        false
+    }
+
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a;
 }
 
@@ -364,6 +374,14 @@ where
 
     fn control_ready(&self, now_micros: u64) -> bool {
         self.role.control.ready(&self.role.tx, now_micros)
+    }
+
+    fn control_required_before_network_tx(&self) -> bool {
+        self.role.control.required_before_network_tx()
+    }
+
+    fn control_required_before_stop(&self) -> bool {
+        self.role.control.required_before_stop()
     }
 
     fn wait_control_ready<'a>(&'a mut self) -> impl Future<Output = ()> + 'a

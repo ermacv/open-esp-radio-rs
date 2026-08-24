@@ -101,6 +101,103 @@ pub struct StaDozePermit {
     pub dtim_period: u8,
 }
 
+/// Failure to bind a logical doze permit to the live TSF clock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaDozePrepareError {
+    WakeDeadlinePassed,
+}
+
+/// Affine, live authorization presented to a chip-specific doze leaf.
+///
+/// This token is intentionally neither `Copy` nor `Clone`. Entry consumes it;
+/// a failed entry returns the same token so the owner can retry or roll back
+/// without manufacturing authority.
+pub struct StaPreparedDoze {
+    permit: StaDozePermit,
+}
+
+impl StaPreparedDoze {
+    pub fn prepare(permit: StaDozePermit, station_tsf: u64) -> Result<Self, StaDozePrepareError> {
+        if !strictly_future_tsf(station_tsf, permit.wake_tsf) {
+            return Err(StaDozePrepareError::WakeDeadlinePassed);
+        }
+        Ok(Self { permit })
+    }
+
+    pub const fn permit(&self) -> &StaDozePermit {
+        &self.permit
+    }
+
+    /// Enter hardware doze using an explicit leaf supplied by the platform
+    /// owner. Success creates the only token that authorizes restoration.
+    pub fn enter_with<H, E>(
+        self,
+        hardware: &mut H,
+        enter: impl FnOnce(&mut H, &StaDozePermit) -> Result<(), E>,
+    ) -> Result<StaDozeRestore, StaDozeEntryFailure<E>> {
+        match enter(hardware, &self.permit) {
+            Ok(()) => Ok(StaDozeRestore {
+                permit: self.permit,
+            }),
+            Err(error) => Err(StaDozeEntryFailure {
+                error,
+                prepared: self,
+            }),
+        }
+    }
+}
+
+/// Failed hardware entry with the unconsumed logical authority returned.
+pub struct StaDozeEntryFailure<E> {
+    pub error: E,
+    pub prepared: StaPreparedDoze,
+}
+
+/// Unique proof that hardware doze entry succeeded and must be restored
+/// before control/network TX, reconnect or station shutdown.
+pub struct StaDozeRestore {
+    permit: StaDozePermit,
+}
+
+impl StaDozeRestore {
+    pub const fn permit(&self) -> &StaDozePermit {
+        &self.permit
+    }
+
+    pub fn restore_with<H, E>(
+        self,
+        hardware: &mut H,
+        restore: impl FnOnce(&mut H) -> Result<(), E>,
+    ) -> Result<StaDozeRestored, StaDozeRestoreFailure<E>> {
+        match restore(hardware) {
+            Ok(()) => Ok(StaDozeRestored {
+                permit: self.permit,
+            }),
+            Err(error) => Err(StaDozeRestoreFailure {
+                error,
+                restore: self,
+            }),
+        }
+    }
+}
+
+/// Failed restoration with the obligation token returned intact.
+pub struct StaDozeRestoreFailure<E> {
+    pub error: E,
+    pub restore: StaDozeRestore,
+}
+
+/// Receipt proving that one entered doze transaction was restored.
+pub struct StaDozeRestored {
+    permit: StaDozePermit,
+}
+
+impl StaDozeRestored {
+    pub const fn permit(&self) -> &StaDozePermit {
+        &self.permit
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaStayAwakeReason {
     TrafficPending,

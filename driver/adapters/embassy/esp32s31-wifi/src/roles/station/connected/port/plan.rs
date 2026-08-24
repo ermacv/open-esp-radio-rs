@@ -21,6 +21,7 @@ pub struct Esp32s31ConnectedStaConfig {
     pub tx: Esp32s31ConnectedStaTxPolicy,
     pub block_ack: Esp32s31ConnectedStaBlockAckPolicy,
     pub receive: Esp32s31ConnectedStaRxPolicy,
+    pub power: StationPowerMode,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,6 +75,7 @@ pub enum Esp32s31ConnectedStaConfigError {
     TxBlockAck(TxBlockAckError),
     RxBlockAck(RxBlockAckSessionsError),
     BeaconLoss(StaBeaconLossConfigError),
+    PowerSave(StaPowerSavePolicyError),
 }
 
 /// Complete owner return when connected policy validation fails.
@@ -94,6 +96,7 @@ pub struct Esp32s31ConnectedStaPlan {
     pub(super) aggregate_rate_policy: StaTxRatePolicy,
     pub(super) rate_control: Option<StaRateControlAssociation>,
     pub(super) beacon_loss: StaBeaconLossConfig,
+    pub(super) power_save: Option<StaPowerSavePolicy>,
 }
 
 impl Esp32s31ConnectedStaPlan {
@@ -115,6 +118,10 @@ impl Esp32s31ConnectedStaPlan {
 
     pub const fn beacon_loss(&self) -> StaBeaconLossConfig {
         self.beacon_loss
+    }
+
+    pub const fn power_save(&self) -> Option<StaPowerSavePolicy> {
+        self.power_save
     }
 
     pub const fn rx_config(&self) -> ConnectedRxConfig {
@@ -278,6 +285,21 @@ impl Esp32s31ConnectedStaPort {
                 });
             }
         };
+        let power_save = match config.power.power_save_policy() {
+            None => None,
+            Some(policy) => match StaPowerSavePolicy::new(
+                peer.link.beacon_interval_tu,
+                policy.wake_guard_micros(),
+            ) {
+                Ok(policy) => Some(policy),
+                Err(error) => {
+                    return Err(Esp32s31ConnectedStaPrepareFailure {
+                        error: Esp32s31ConnectedStaConfigError::PowerSave(error),
+                        peer,
+                    });
+                }
+            },
+        };
 
         let Esp32s31ConnectedStaPeer { link, rate_control } = peer;
         let data_policy = sta_tx_rate_policy(link, config.tx.rate, false);
@@ -292,6 +314,7 @@ impl Esp32s31ConnectedStaPort {
             aggregate_rate_policy: aggregate_policy,
             rate_control: Some(rate_control),
             beacon_loss,
+            power_save,
         })
     }
 }

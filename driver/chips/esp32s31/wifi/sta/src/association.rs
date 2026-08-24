@@ -10,6 +10,7 @@ use open_esp_radio_ieee80211::{
 };
 
 use open_esp_radio_esp32s31_wifi::tx::WifiTxPowerProfile;
+use open_esp_radio_wifi_sta::request::StationListenInterval;
 
 /// Recovered minimum power advertised by the ESP32-S31 HE STA.
 ///
@@ -18,7 +19,7 @@ use open_esp_radio_esp32s31_wifi::tx::WifiTxPowerProfile;
 pub const ESP32S31_STA_MINIMUM_TX_POWER_DBM: i8 = -11;
 
 /// Listen interval used by the qualified ESP32-S31 infrastructure STA path.
-pub const ESP32S31_STA_LISTEN_INTERVAL: u16 = 3;
+pub const ESP32S31_STA_LISTEN_INTERVAL: u16 = StationListenInterval::DEFAULT.get();
 
 /// Complete association inputs derived from scan policy and calibration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

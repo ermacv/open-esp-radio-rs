@@ -122,6 +122,10 @@ const HE20_VENDOR_MCS9_CAPABILITY_IE: [u8; 24] = [
 
 const fn owned_he20_mcs9_capability_ie() -> [u8; 24] {
     let mut capability = HE20_VENDOR_MCS9_CAPABILITY_IE;
+    // HE MAC Capabilities bit 1 is TWT Requester Support. The open driver has
+    // no TWT negotiation or wake transaction owner, so it must not inherit
+    // that vendor claim.
+    capability[3] &= !(1 << 1);
     // The hardware beamforming-report sequence and its rate profile are
     // Rust-owned, so keep the two beamforming-feedback bits. There is still
     // no open triggered or non-triggered CQI report producer: advertising
@@ -144,14 +148,14 @@ const HE_UL_MU_POWER_CAPABILITY_IE_LEN: usize = 14;
 const HE_UL_MU_POWER_CAPABILITY_EXTENSION_ID: u8 = 60;
 const POWER_CAPABILITY_IE_LEN: usize = 4;
 // Exact vendor Extended Capabilities IE adjacent to the HE/UL-MU capability
-// pair. It advertises Event, Multiple BSSID and TWT requester support. The HE
-// capability above already carries the same TWT requester contract.
+// pair. Retain Event and Multiple BSSID, but clear Extended Capabilities bit
+// 77 (TWT requester) until negotiation and wake ownership exist.
 //
 // SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: exact frame 7624 bytes.
 // SOURCE: complete `libnet80211.a[ieee80211_output.o]::
 // ieee80211_add_extcap` emits this 12-byte body for the captured STA state.
 const HE20_EXTENDED_CAPABILITY_IE: [u8; 14] =
-    [127, 12, 0x80, 0x00, 0x40, 0, 0, 0, 0, 0, 0, 0x20, 0, 0];
+    [127, 12, 0x80, 0x00, 0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 // WMM Information, version one, U-APSD disabled.
 //
 // SOURCE: the same promoted `sta_link.rs::WMM_INFORMATION_IE`, cross-checked
@@ -2792,6 +2796,10 @@ mod tests {
             &HE20_OWNED_MCS9_CAPABILITY_IE
         );
         assert_eq!(
+            HE20_OWNED_MCS9_CAPABILITY_IE[3],
+            HE20_VENDOR_MCS9_CAPABILITY_IE[3] & !(1 << 1)
+        );
+        assert_eq!(
             HE20_OWNED_MCS9_CAPABILITY_IE[15],
             HE20_VENDOR_MCS9_CAPABILITY_IE[15] & !(1 << 4)
         );
@@ -2800,7 +2808,7 @@ mod tests {
             HE20_VENDOR_MCS9_CAPABILITY_IE[18] & !(1 << 1)
         );
         for index in 0..HE20_VENDOR_MCS9_CAPABILITY_IE.len() {
-            if index != 15 && index != 18 {
+            if index != 3 && index != 15 && index != 18 {
                 assert_eq!(
                     HE20_OWNED_MCS9_CAPABILITY_IE[index],
                     HE20_VENDOR_MCS9_CAPABILITY_IE[index],

@@ -137,7 +137,8 @@ where
                     owner.station.station_address,
                     owner.station.access_point,
                     owner.station.association_preference,
-                ),
+                )
+                .with_listen_interval(owner.listen_interval),
             );
             port.prepare_authentication();
             let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
@@ -183,7 +184,8 @@ where
                     owner.station.station_address,
                     owner.station.access_point,
                     owner.station.association_preference,
-                ),
+                )
+                .with_listen_interval(owner.listen_interval),
             );
             let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
             let result = runner

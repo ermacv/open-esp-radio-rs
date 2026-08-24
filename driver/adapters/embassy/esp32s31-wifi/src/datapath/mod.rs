@@ -323,6 +323,14 @@ pub trait DatapathServices<
         true
     }
 
+    fn control_required_before_network_tx(&self) -> bool {
+        false
+    }
+
+    fn control_required_before_stop(&self) -> bool {
+        false
+    }
+
     /// VIF that owns a role-generated live TX transaction.
     ///
     /// Standalone runners infer their sole interface. A paired runner requires

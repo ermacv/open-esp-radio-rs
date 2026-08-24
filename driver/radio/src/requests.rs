@@ -16,7 +16,8 @@ use open_esp_radio_wifi_softmac::{
     MacServiceCapabilities, WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiStationConfig,
 };
 pub use open_esp_radio_wifi_sta::request::{
-    StationDiscovery, StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
+    StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
+    StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
     StationScanChannelsError, StationScanPolicy,
 };
 use open_esp_radio_wifi_sta::station::StaReconnectPolicy;
@@ -240,6 +241,7 @@ pub struct StationRequest {
     security: StationSecurity,
     reconnect: StaReconnectPolicy,
     scan: StationScanPolicy,
+    power_mode: StationPowerMode,
 }
 
 impl StationRequest {
@@ -254,6 +256,7 @@ impl StationRequest {
             security,
             reconnect,
             scan,
+            power_mode: StationPowerMode::AlwaysAwake,
         }
     }
 
@@ -273,11 +276,28 @@ impl StationRequest {
         self.scan
     }
 
-    pub fn into_parts(self) -> (StationDiscovery, StationSecurity, StaReconnectPolicy) {
+    pub const fn power_mode(&self) -> StationPowerMode {
+        self.power_mode
+    }
+
+    pub const fn with_power_mode(mut self, power_mode: StationPowerMode) -> Self {
+        self.power_mode = power_mode;
+        self
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        StationDiscovery,
+        StationSecurity,
+        StaReconnectPolicy,
+        StationPowerMode,
+    ) {
         (
             StationDiscovery::new(self.ssid, self.scan),
             self.security,
             self.reconnect,
+            self.power_mode,
         )
     }
 }
@@ -290,6 +310,7 @@ impl fmt::Debug for StationRequest {
             .field("security", &self.security)
             .field("reconnect", &self.reconnect)
             .field("scan", &self.scan)
+            .field("power_mode", &self.power_mode)
             .finish()
     }
 }

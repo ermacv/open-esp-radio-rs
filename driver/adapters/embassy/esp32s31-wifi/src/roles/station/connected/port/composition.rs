@@ -305,6 +305,9 @@ impl Esp32s31ConnectedStaPort {
         .expect("connected STA plan validated RX BlockAck policy")
         .with_rx_reorder_commands(resources.reorder_commands);
         control.enable_beacon_loss(plan.beacon_loss);
+        if let Some(policy) = plan.power_save {
+            control.enable_power_save(policy);
+        }
         if plan.config.block_ack.request_initial_tx_block_ack
             && matches!(plan.aggregate_tx_rate, TxPhyRate::Ht(_) | TxPhyRate::He(_))
         {

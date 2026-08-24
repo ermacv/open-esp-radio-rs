@@ -80,7 +80,7 @@ fn constrain_station_to_paired_channel(
     request: StationRequest,
     channel: WifiChannel,
 ) -> StationRequest {
-    let (discovery, security, reconnect) = request.into_parts();
+    let (discovery, security, reconnect, power_mode) = request.into_parts();
     let scan = discovery.scan();
     let channels = StationScanChannels::from_primary_channels(&[channel.primary()])
         .expect("validated 2.4-GHz AP channel is a valid station scan channel");
@@ -90,6 +90,7 @@ fn constrain_station_to_paired_channel(
         reconnect,
         StationScanPolicy::new(channels, scan.dwell(), scan.association_preference()),
     )
+    .with_power_mode(power_mode)
 }
 
 impl ProductionWifiEpochRunner {
@@ -145,7 +146,10 @@ impl ProductionWifiEpochRunner {
                 epoch,
                 network,
                 interface,
-                connected_config(),
+                // Same-radio SoftAP cannot remain available while the STA
+                // sleeps. Association keeps the requested listen interval,
+                // but paired operation deliberately suppresses PM=1.
+                connected_config(StationPowerMode::AlwaysAwake),
                 peer,
                 pairwise,
                 group,

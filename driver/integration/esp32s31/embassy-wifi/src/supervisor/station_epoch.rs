@@ -4,6 +4,7 @@ use super::*;
 
 pub(super) struct ProductionStationEnginePort<O> {
     mode: ProductionStationMode,
+    power_mode: StationPowerMode,
     access_point: ProductionAccessPointResources,
     monitor: ProductionMonitorResources,
     _owner: PhantomData<fn() -> O>,
@@ -17,11 +18,13 @@ pub(super) enum ProductionStationMode {
 
 impl<O> ProductionStationEnginePort<O> {
     fn new(
+        power_mode: StationPowerMode,
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,
     ) -> Self {
         Self {
             mode: ProductionStationMode::Service,
+            power_mode,
             access_point,
             monitor,
             _owner: PhantomData,
@@ -29,11 +32,13 @@ impl<O> ProductionStationEnginePort<O> {
     }
 
     fn paired_cutover(
+        power_mode: StationPowerMode,
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,
     ) -> Self {
         Self {
             mode: ProductionStationMode::PairedCutover,
+            power_mode,
             access_point,
             monitor,
             _owner: PhantomData,
@@ -212,7 +217,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 epoch,
                 network,
                 interface,
-                connected_config(),
+                connected_config(self.power_mode),
                 peer,
                 pairwise,
                 group,
@@ -449,6 +454,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 .expect("station attempt owns ordinary TX"),
             frame,
             station,
+            listen_interval: self.power_mode.listen_interval(),
             security,
             attempt_observer: ProductionAttemptObserver,
         })
@@ -593,6 +599,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 .expect("station attempt owns ordinary TX"),
             frame,
             station,
+            listen_interval: self.power_mode.listen_interval(),
             security,
             attempt_observer: ProductionAttemptObserver,
         })
@@ -945,7 +952,7 @@ impl ProductionWifiEpochRunner {
         request: StationRequest,
         mode: ProductionStationMode,
     ) -> Result<(ProductionStationControl, ProductionStationTask), ProductionWifiFault> {
-        let (discovery, security, reconnect) = request.into_parts();
+        let (discovery, security, reconnect, power_mode) = request.into_parts();
         let (wifi, physical_resources, station_role, access_point_resources, monitor_resources) =
             stopped.into_parts();
         let station_resources = join_station_activation_resources(physical_resources, station_role);
@@ -1100,9 +1107,14 @@ impl ProductionWifiEpochRunner {
         };
         let port = match mode {
             ProductionStationMode::Service => {
-                ProductionStationEnginePort::new(access_point_resources, monitor_resources)
+                ProductionStationEnginePort::new(
+                    power_mode,
+                    access_point_resources,
+                    monitor_resources,
+                )
             }
             ProductionStationMode::PairedCutover => ProductionStationEnginePort::paired_cutover(
+                power_mode,
                 access_point_resources,
                 monitor_resources,
             ),

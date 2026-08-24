@@ -43,6 +43,7 @@ pub struct Esp32s31StaAttemptTargetOwner<
     pub(super) transmit: &'transmit mut T,
     pub(super) frame: &'scratch mut [u8],
     pub(super) station: Esp32s31StaAttemptStation,
+    pub(super) listen_interval: open_esp_radio_wifi_sta::request::StationListenInterval,
     pub(super) security: Esp32s31StaAttemptSecurity<'security>,
     pub(super) prepared_peer: Option<Esp32s31PreparedStaPeer>,
     pub(super) association: Option<AssociationResponse>,
@@ -99,6 +100,7 @@ impl<
         >,
         storage: Esp32s31StaAttemptStorage<'scratch>,
         station: Esp32s31StaAttemptStation,
+        listen_interval: open_esp_radio_wifi_sta::request::StationListenInterval,
         security: Esp32s31StaAttemptSecurity<'security>,
     ) -> Self {
         Self {
@@ -109,6 +111,7 @@ impl<
             transmit: radio.transmit,
             frame: storage.frame,
             station,
+            listen_interval,
             security,
             prepared_peer: None,
             association: None,

@@ -26,11 +26,14 @@ pub use open_esp_radio_esp32s31_wifi_sta::{
         ConnectedControlTxFailure, ConnectedControlTxKind, ConnectedDisconnectReason,
         Esp32s31ConnectedControlCore,
     },
-    connected_control_hardware::ConnectedControlHardware,
+    connected_control_hardware::{ConnectedControlHardware, StationDozeHardwareError},
 };
 use open_esp_radio_wifi_sta::{
     link_monitor::{StaBeaconLossConfig, StaBeaconMonitor},
-    power_save::{StaDozePermit, StaPowerSavePlanner, StaPowerSavePolicy},
+    power_save::{
+        StaDozePermit, StaDozePrepareError, StaDozeRestore, StaDozeRestoreFailure, StaDozeRestored,
+        StaPowerSavePlanner, StaPowerSavePolicy, StaPowerSaveState, StaPreparedDoze,
+    },
 };
 use open_esp_radio_wpa2::{
     aes::{SoftwareAesKeyUnwrapError, Wpa2SoftwareAes},
@@ -413,6 +416,46 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.take_doze_permit()
     }
 
+    /// Bind the next logical permit to the live hardware TSF. The returned
+    /// affine token still cannot enter RF/PHY sleep by itself; callers must
+    /// present it to `ConnectedControlHardware::enter_station_doze`, whose
+    /// production implementation deliberately fails closed until that leaf
+    /// is audited.
+    pub fn prepare_doze_transaction<H>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<Option<StaPreparedDoze>, StaDozePrepareError>
+    where
+        H: ConnectedControlHardware,
+    {
+        self.take_doze_permit()
+            .map(|permit| StaPreparedDoze::prepare(permit, hardware.station_tsf()))
+            .transpose()
+    }
+
+    pub fn enter_prepared_doze<H>(
+        prepared: StaPreparedDoze,
+        hardware: &mut H,
+    ) -> Result<
+        open_esp_radio_wifi_sta::power_save::StaDozeRestore,
+        open_esp_radio_wifi_sta::power_save::StaDozeEntryFailure<StationDozeHardwareError>,
+    >
+    where
+        H: ConnectedControlHardware,
+    {
+        prepared.enter_with(hardware, ConnectedControlHardware::enter_station_doze)
+    }
+
+    pub fn restore_from_doze<H>(
+        restore: StaDozeRestore,
+        hardware: &mut H,
+    ) -> Result<StaDozeRestored, StaDozeRestoreFailure<StationDozeHardwareError>>
+    where
+        H: ConnectedControlHardware,
+    {
+        restore.restore_with(hardware, ConnectedControlHardware::restore_station_awake)
+    }
+
     pub fn shutdown<H, X>(
         &mut self,
         hardware: &mut H,
@@ -553,6 +596,31 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             ));
         }
 
+        // Do not dequeue a terminal, security or BlockAck event while the AP
+        // still believes the station is asleep. The core first publishes an
+        // acknowledged PM=0 Null Data transaction; the mailbox retains the
+        // event until that transaction completes.
+        if !self.receiver.is_empty()
+            && self
+                .core
+                .power_save()
+                .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
+        {
+            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
+                self.core.service_step(
+                    ConnectedControlPorts {
+                        hardware,
+                        tx,
+                        reorder: &mut reorder,
+                        rx_block_ack,
+                    },
+                    None,
+                    true,
+                    context,
+                )
+            });
+        }
+
         // A peer disconnect keeps terminal priority once TX ownership is
         // free. GTK rekey then precedes non-terminal BlockAck work.
         if let Some(event) = self.receiver.try_receive_terminal() {
@@ -619,6 +687,18 @@ where
             || self
                 .next_alarm_deadline()
                 .is_some_and(|deadline| deadline <= now_micros)
+    }
+
+    fn required_before_network_tx(&self) -> bool {
+        self.core
+            .power_save()
+            .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
+    }
+
+    fn required_before_stop(&self) -> bool {
+        self.core
+            .power_save()
+            .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
     }
 
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a {

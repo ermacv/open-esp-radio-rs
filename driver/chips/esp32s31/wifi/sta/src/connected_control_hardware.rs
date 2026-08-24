@@ -11,6 +11,13 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreementError},
     tx::TxHardware,
 };
+use open_esp_radio_wifi_sta::power_save::StaDozePermit;
+
+/// Fail-closed result until an audited RF/PHY wake transaction leaf exists.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationDozeHardwareError {
+    Unsupported,
+}
 
 /// ESP32-S31 register operations required by connected BlockAck control.
 pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
@@ -21,6 +28,20 @@ pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
         tid: u8,
         enabled: bool,
     ) -> Result<(), S31RxBlockAckAgreementError>;
+
+    /// Enter modem doze. No ESP32-S31 implementation exists yet: WDEVPWR
+    /// causes, RF/PHY retention and wake ordering are not sufficiently owned.
+    fn enter_station_doze(
+        &mut self,
+        _permit: &StaDozePermit,
+    ) -> Result<(), StationDozeHardwareError> {
+        Err(StationDozeHardwareError::Unsupported)
+    }
+
+    /// Restore every hardware owner changed by `enter_station_doze`.
+    fn restore_station_awake(&mut self) -> Result<(), StationDozeHardwareError> {
+        Err(StationDozeHardwareError::Unsupported)
+    }
 
     /// Atomically consume the current association's authority to replace its
     /// single active group-key entry. Hardware test doubles which do not

@@ -56,6 +56,7 @@ fn peer() -> Esp32s31ConnectedStaPeer {
 
 fn config() -> Esp32s31ConnectedStaConfig {
     Esp32s31ConnectedStaConfig {
+        power: StationPowerMode::AlwaysAwake,
         tx: Esp32s31ConnectedStaTxPolicy {
             rate: Esp32s31ConnectedStaRateConfig {
                 high_throughput_enabled: true,

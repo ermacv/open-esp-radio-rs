@@ -118,7 +118,7 @@ use crate::radio_resources::{
 use crate::diagnostics::{Esp32s31ConnectedRxObservation, Esp32s31ConnectedRxObserver};
 use crate::supervisor::{
     ControlTx, ProductionStationBoardResources, ProductionStationRuntime, RX_BUFFER_SIZE,
-    RX_DESCRIPTOR_COUNT, RxStorage, TxStorage, production_station_runtime,
+    RX_DESCRIPTOR_COUNT, RxStorage, StationPowerMode, TxStorage, production_station_runtime,
 };
 pub(super) type ControlResources =
     ConnectedControlResources<CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
@@ -1115,8 +1115,9 @@ async fn observe_protocol_task_polls<F: core::future::Future>(
     .await
 }
 
-pub(super) const fn connected_config() -> Esp32s31ConnectedStaConfig {
+pub(super) const fn connected_config(power: StationPowerMode) -> Esp32s31ConnectedStaConfig {
     Esp32s31ConnectedStaConfig {
+        power,
         tx: Esp32s31ConnectedStaTxPolicy {
             rate: Esp32s31ConnectedStaRateConfig {
                 high_throughput_enabled: true,

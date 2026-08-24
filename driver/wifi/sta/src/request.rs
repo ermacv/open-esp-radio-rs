@@ -5,7 +5,10 @@
 //! chip adapter can consume the exact application policy without depending on
 //! the top-level radio facade.
 
-use core::{fmt, num::NonZeroU16};
+use core::{
+    fmt,
+    num::{NonZeroU16, NonZeroU32},
+};
 
 pub use open_esp_radio_ieee80211::ssid::{WifiSsid, WifiSsidError};
 use open_esp_radio_ieee80211::station::StaAssociationPreference;
@@ -13,6 +16,91 @@ use open_esp_radio_ieee80211::station::StaAssociationPreference;
 const CHANNEL_ONE_BIT: u16 = 1;
 const CHANNEL_FOURTEEN_BIT: u16 = 1 << 13;
 const ALL_2_4_GHZ_CHANNEL_BITS: u16 = (CHANNEL_FOURTEEN_BIT << 1) - 1;
+
+/// Number of beacon intervals an infrastructure AP may buffer traffic for
+/// this station after association.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct StationListenInterval(NonZeroU16);
+
+impl StationListenInterval {
+    /// Conservative legacy value used by the existing qualified STA path.
+    pub const DEFAULT: Self = Self(NonZeroU16::new(3).unwrap());
+
+    pub const fn new(beacon_intervals: u16) -> Option<Self> {
+        match NonZeroU16::new(beacon_intervals) {
+            Some(interval) => Some(Self(interval)),
+            None => None,
+        }
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0.get()
+    }
+}
+
+impl Default for StationListenInterval {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+/// Application policy for legacy 802.11 station power-save signalling.
+///
+/// The guard is validated again against the associated AP's beacon interval
+/// before a connected owner is built. This value authorizes PM signalling;
+/// it does not by itself authorize RF, PHY, clock or wake-register changes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StationPowerSavePolicy {
+    listen_interval: StationListenInterval,
+    wake_guard_micros: NonZeroU32,
+}
+
+impl StationPowerSavePolicy {
+    pub const fn new(
+        listen_interval: StationListenInterval,
+        wake_guard_micros: NonZeroU32,
+    ) -> Self {
+        Self {
+            listen_interval,
+            wake_guard_micros,
+        }
+    }
+
+    pub const fn listen_interval(self) -> StationListenInterval {
+        self.listen_interval
+    }
+
+    pub const fn wake_guard_micros(self) -> u32 {
+        self.wake_guard_micros.get()
+    }
+}
+
+/// Station power policy for one complete service/reconnect epoch.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum StationPowerMode {
+    /// Preserve the historical behavior: never advertise PM=1.
+    #[default]
+    AlwaysAwake,
+    /// Use legacy TIM/DTIM-aware PM signalling after association.
+    LegacyPowerSave(StationPowerSavePolicy),
+}
+
+impl StationPowerMode {
+    pub const fn listen_interval(self) -> StationListenInterval {
+        match self {
+            Self::AlwaysAwake => StationListenInterval::DEFAULT,
+            Self::LegacyPowerSave(policy) => policy.listen_interval(),
+        }
+    }
+
+    pub const fn power_save_policy(self) -> Option<StationPowerSavePolicy> {
+        match self {
+            Self::AlwaysAwake => None,
+            Self::LegacyPowerSave(policy) => Some(policy),
+        }
+    }
+}
 
 /// Allocation-free set of 2.4-GHz primary channels selected for scanning.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

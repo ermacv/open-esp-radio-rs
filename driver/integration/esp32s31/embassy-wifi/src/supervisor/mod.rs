@@ -32,7 +32,7 @@ use crate::composition::supervisor::{
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::{
-    AccessPointRequest, StationDiscovery, StationRequest, StationSecurity,
+    AccessPointRequest, StationDiscovery, StationPowerMode, StationRequest, StationSecurity,
     WIFI_SCAN_RESULT_CAPACITY, WifiAccessPointConfig, WifiConfig, WifiScanFailure, WifiScanReport,
     WifiScanRequest, WifiScanResult, WifiServicePlanningError, WifiServiceRequest,
     WifiStartFailure, WifiStartReport, WifiStationConfig, WifiStopReport,

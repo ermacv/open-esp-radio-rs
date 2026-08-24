@@ -632,7 +632,7 @@ impl Esp32s31ConnectedControlCore {
             return self.disconnect_for_beacon_loss(hardware, tx, reorder, rx_block_ack);
         }
 
-        if context.network_tx_pending
+        if self.has_pending_traffic(context, control_event_pending)
             && self
                 .power_save
                 .as_ref()

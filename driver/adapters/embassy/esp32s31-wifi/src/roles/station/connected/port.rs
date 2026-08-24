@@ -34,7 +34,11 @@ use open_esp_radio_wifi_softmac::{
     MacServiceCapabilities, MacTxPlan, WifiPlan,
     interface::{BoundVirtualInterface, VifRole},
 };
-use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};
+use open_esp_radio_wifi_sta::{
+    link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError},
+    power_save::{StaPowerSavePolicy, StaPowerSavePolicyError},
+    request::StationPowerMode,
+};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::{

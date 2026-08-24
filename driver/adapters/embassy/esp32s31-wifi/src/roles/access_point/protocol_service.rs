@@ -544,6 +544,11 @@ where
             frame.mpdu,
             self.mac.engine().service_address(),
         );
+        let null_data_power_save_observation =
+            observe_ap_null_data_power_save_for_access_point(
+                frame.mpdu,
+                self.mac.engine().service_address(),
+            );
         let ampdu_contained = matches!(
             frame.metadata.ampdu,
             MacRxEvidence::HardwareObserved(true) | MacRxEvidence::ProtocolValidated(true)
@@ -797,7 +802,7 @@ where
             });
             return Err(Esp32s31AccessPointControlError::ReceiveBatchCapacity);
         }
-        if let Some(peer) = activity_peer {
+        let payload_activity = activity_peer.map(|peer| {
             let power_state = match power_save_observation {
                 Some(ApPowerSaveObservation::Sleeping { peer: observed }) if observed == peer => {
                     Some(ApPeerPowerState::Sleeping)
@@ -807,6 +812,22 @@ where
                 }
                 _ => None,
             };
+            (peer, power_state)
+        });
+        let null_data_activity = match null_data_power_save_observation {
+            Some(ApPowerSaveObservation::Sleeping { peer })
+                if self.mac.engine().is_authorized_peer(peer) =>
+            {
+                Some((peer, Some(ApPeerPowerState::Sleeping)))
+            }
+            Some(ApPowerSaveObservation::Active { peer })
+                if self.mac.engine().is_authorized_peer(peer) =>
+            {
+                Some((peer, Some(ApPeerPowerState::Active)))
+            }
+            _ => None,
+        };
+        if let Some((peer, power_state)) = payload_activity.or(null_data_activity) {
             self.protocol_actions
                 .publisher()
                 .try_publish(Esp32s31AccessPointProtocolAction::Control(

@@ -69,7 +69,8 @@ use open_esp_radio_ieee80211::data::{
 };
 use open_esp_radio_ieee80211::{
     ap::{
-        ApManagementRequest, ApPowerSaveObservation, observe_ap_power_save_for_access_point,
+        ApManagementRequest, ApPowerSaveObservation,
+        observe_ap_null_data_power_save_for_access_point, observe_ap_power_save_for_access_point,
         parse_ap_management_request,
     },
     block_ack::BlockAckAction,

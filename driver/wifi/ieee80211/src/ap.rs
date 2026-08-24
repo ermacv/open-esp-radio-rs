@@ -13,6 +13,7 @@ use crate::{
         HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
         ht_operation_ie, ht_peer_capabilities,
     },
+    station_power_save::STA_NULL_DATA_FRAME_LEN,
 };
 
 const AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN: usize = 51;
@@ -655,6 +656,46 @@ pub fn observe_ap_power_save_for_access_point(
         return None;
     }
     Some(observation)
+}
+
+/// Parse the exact legacy Null Data frame used by an associated station to
+/// publish a power-management transition.
+///
+/// Unlike ordinary payload data, Null Data has no Ethernet body whose
+/// successful decapsulation can establish the peer identity. Admission is
+/// therefore deliberately complete at this boundary: the MPDU must be the
+/// exact 24-byte To-DS Null Data geometry emitted by `StaNullDataFrame`, both
+/// BSSID address fields must name the active AP, the transmitter must be a
+/// valid unicast address, and fragmentation is rejected. Only the Retry and
+/// Power Management flag bits may vary.
+pub fn observe_ap_null_data_power_save_for_access_point(
+    frame: &[u8],
+    access_point: [u8; 6],
+) -> Option<ApPowerSaveObservation> {
+    const NULL_DATA_TO_DS_FRAME_CONTROL: u16 = 0x0148;
+    const RETRY: u16 = 0x0800;
+    const POWER_MANAGEMENT: u16 = 0x1000;
+
+    if frame.len() != STA_NULL_DATA_FRAME_LEN {
+        return None;
+    }
+    let frame_control = u16::from_le_bytes([frame[0], frame[1]]);
+    if frame_control & !(RETRY | POWER_MANAGEMENT) != NULL_DATA_TO_DS_FRAME_CONTROL
+        || frame[4..10] != access_point
+        || frame[16..22] != access_point
+        || frame[22] & 0x0f != 0
+    {
+        return None;
+    }
+    let peer: [u8; 6] = frame[10..16].try_into().ok()?;
+    if peer == [0; 6] || peer == [0xff; 6] || peer[0] & 1 != 0 {
+        return None;
+    }
+    if frame_control & POWER_MANAGEMENT != 0 {
+        Some(ApPowerSaveObservation::Sleeping { peer })
+    } else {
+        Some(ApPowerSaveObservation::Active { peer })
+    }
 }
 
 #[cfg(test)]

@@ -615,7 +615,7 @@ where
                 produced_data,
             ) = {
                 let processor = &mut *self;
-                let mac = &processor.mac;
+                let mac = &mut processor.mac;
                 let data_rx = &mut processor.data_rx;
                 #[cfg(any(feature = "diagnostics", test))]
                 let report = &mut processor.observer.observation;
@@ -641,7 +641,7 @@ where
                             AccessPointProtectedFrameDispatch::dispatch(
                                 data_rx,
                                 ordered,
-                                |peer| mac.engine().authorized_peer_qos(peer),
+                                |request| mac.engine_mut().admit_rx_data(request),
                                 publication,
                                 current_buffer as usize,
                                 current_is_amsdu,
@@ -1102,7 +1102,7 @@ where
         now_micros: u64,
     ) -> Result<(), Esp32s31AccessPointControlError> {
         let processor = &mut *self;
-        let mac = &processor.mac;
+        let mac = &mut processor.mac;
         let data_rx = &mut processor.data_rx;
         #[cfg(any(feature = "diagnostics", test))]
         let report = &mut processor.observer.observation;
@@ -1112,7 +1112,7 @@ where
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
             let outcome = data_rx.dispatch(
                 segment,
-                |peer| mac.engine().authorized_peer_qos(peer),
+                |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
             let _ = observe_protected_dispatch(
@@ -1162,7 +1162,7 @@ where
         now_micros: u64,
     ) -> Result<bool, Esp32s31AccessPointControlError> {
         let processor = &mut *self;
-        let mac = &processor.mac;
+        let mac = &mut processor.mac;
         let data_rx = &mut processor.data_rx;
         #[cfg(any(feature = "diagnostics", test))]
         let report = &mut processor.observer.observation;
@@ -1172,7 +1172,7 @@ where
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
             let outcome = data_rx.dispatch(
                 segment,
-                |peer| mac.engine().authorized_peer_qos(peer),
+                |request| mac.engine_mut().admit_rx_data(request),
                 &mut sink,
             );
             let _ = observe_protected_dispatch(
@@ -1190,7 +1190,7 @@ where
                 let peer = data_rx.reorder_key(segment).map(|key| key.peer);
                 let outcome = data_rx.dispatch(
                     segment,
-                    |peer| mac.engine().authorized_peer_qos(peer),
+                    |request| mac.engine_mut().admit_rx_data(request),
                     &mut sink,
                 );
                 let _ = observe_protected_dispatch(

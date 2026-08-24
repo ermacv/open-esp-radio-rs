@@ -2,6 +2,7 @@
 
 use crate::{
     beacon::Esp32s31ApBeacon,
+    rx::{Esp32s31ApRxAdmission, Esp32s31ApRxAdmissionRequest, Esp32s31ApRxError},
     security::{
         Esp32s31ApPairwiseBinding, Esp32s31ApPairwiseKeyStorage, Esp32s31ApSecurity,
         Esp32s31ApSecurityError, Esp32s31ApSecurityStopReport,
@@ -24,6 +25,7 @@ use open_esp_radio_ieee80211::{
         write_ht_association_response_frame_for_security, write_open_authentication_response,
     },
     beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, dtim, write_ht_beacon},
+    ccmp::{CcmpKeyId, CcmpReplayLane},
     channel::WifiChannel,
     security::WifiSecurityMode,
     ssid::WifiSsid,
@@ -79,6 +81,25 @@ impl From<Esp32s31ApSecurityError> for Esp32s31ApEngineError {
 impl From<ApWpa2Error> for Esp32s31ApEngineError {
     fn from(error: ApWpa2Error) -> Self {
         Self::Wpa2(error)
+    }
+}
+
+fn rejected_rx_security(error: Esp32s31ApSecurityError) -> Esp32s31ApRxAdmission {
+    match error {
+        Esp32s31ApSecurityError::Replay(error) => {
+            Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::Replay(error))
+        }
+        Esp32s31ApSecurityError::SecurityModeMismatch => {
+            Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::SecurityModeMismatch)
+        }
+        Esp32s31ApSecurityError::Crypto(_)
+        | Esp32s31ApSecurityError::PacketNumber(_)
+        | Esp32s31ApSecurityError::PairwiseStorageNotEmpty
+        | Esp32s31ApSecurityError::PairwiseAlreadyInstalled
+        | Esp32s31ApSecurityError::AssociationIdAlreadyInstalled
+        | Esp32s31ApSecurityError::WrongPeer => {
+            Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::KeyGenerationMismatch)
+        }
     }
 }
 
@@ -1056,12 +1077,54 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.service.peer_status(peer)
     }
 
-    /// RX QoS geometry admitted by this peer's successful association.
-    pub fn authorized_peer_qos(&self, peer: [u8; 6]) -> Option<bool> {
-        self.service
+    /// Admit one AP data MPDU against the live controlled port and exact PTK
+    /// generation, committing its CCMP PN before Ethernet publication.
+    ///
+    /// The RX dispatcher calls this only after software BlockAck release and
+    /// hardware MIC verification. Keeping replay state beside the installed
+    /// key makes PTK install, clear and reinstall the only reset edges.
+    pub fn admit_rx_data(
+        &mut self,
+        request: Esp32s31ApRxAdmissionRequest,
+    ) -> Esp32s31ApRxAdmission {
+        let peer = request.peer();
+        let Some(status) = self
+            .service
             .peer_status(peer)
             .filter(|status| status.phase == ApPeerPhase::Authorized)
-            .map(|status| status.qos_supported)
+        else {
+            return Esp32s31ApRxAdmission::unauthorized();
+        };
+        if matches!(request.lane(), CcmpReplayLane::Tid(_)) && !status.qos_supported {
+            return Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::PeerQosMismatch);
+        }
+        match (self.service.security_mode(), request.ccmp_header()) {
+            (WifiSecurityMode::Open, None) => Esp32s31ApRxAdmission::authorized(),
+            (WifiSecurityMode::Wpa2Personal, Some(header)) => {
+                if header.key_id() != CcmpKeyId::PAIRWISE {
+                    return Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::PairwiseKeyId(
+                        header.key_id().value(),
+                    ));
+                }
+                let binding = match self.security.bind_pairwise(peer, status.association_id) {
+                    Ok(binding) => binding,
+                    Err(error) => return rejected_rx_security(error),
+                };
+                let candidate = match self.security.prepare_bound_pairwise_rx(
+                    binding,
+                    request.lane(),
+                    header.packet_number(),
+                ) {
+                    Ok(candidate) => candidate,
+                    Err(error) => return rejected_rx_security(error),
+                };
+                match self.security.commit_bound_pairwise_rx(candidate) {
+                    Ok(()) => Esp32s31ApRxAdmission::authorized(),
+                    Err(error) => rejected_rx_security(error),
+                }
+            }
+            _ => Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::SecurityModeMismatch),
+        }
     }
 
     pub fn downlink_disposition(
@@ -1340,6 +1403,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
 mod tests {
     use super::*;
     use open_esp_radio_esp32s31_hal::types::MacKeyInstallOutcome;
+    use open_esp_radio_ieee80211::ccmp::{CcmpHeader, CcmpPacketNumber, CcmpReplayError};
     use open_esp_radio_wpa2::{
         OwnedEapolFrame, Pmk, PtkContext, Wpa2Interface,
         frames::{OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame},
@@ -1487,6 +1551,7 @@ mod tests {
             .unwrap();
 
         let mut association = [0; 56];
+        association[24..26].copy_from_slice(&0x0010_u16.to_le_bytes());
         association[4..10].copy_from_slice(&ap);
         association[10..16].copy_from_slice(&peer);
         association[16..22].copy_from_slice(&ap);
@@ -1631,6 +1696,7 @@ mod tests {
             .unwrap();
 
         let mut association = [0; 56];
+        association[24..26].copy_from_slice(&0x0010_u16.to_le_bytes());
         association[4..10].copy_from_slice(&ap);
         association[10..16].copy_from_slice(&peer);
         association[16..22].copy_from_slice(&ap);
@@ -1691,6 +1757,24 @@ mod tests {
         ));
         assert_eq!(engine.observation().authorized_peers, 1);
 
+        let rx_pn3 = CcmpPacketNumber::new(3).unwrap();
+        let rx_request = Esp32s31ApRxAdmissionRequest::new(
+            peer,
+            CcmpReplayLane::NonQos,
+            Some(CcmpHeader::new(rx_pn3, CcmpKeyId::PAIRWISE)),
+        );
+        assert_eq!(
+            engine.admit_rx_data(rx_request),
+            Esp32s31ApRxAdmission::authorized()
+        );
+        assert_eq!(
+            engine.admit_rx_data(rx_request),
+            Esp32s31ApRxAdmission::rejected(Esp32s31ApRxError::Replay(CcmpReplayError::Replayed {
+                packet_number: rx_pn3,
+                highest: rx_pn3,
+            })),
+        );
+
         let repeated_message4 = Wpa2TxFrame::<512>::message4(ap, 10)
             .unwrap()
             .authenticate(&ptk);
@@ -1717,7 +1801,7 @@ mod tests {
         let encoded = engine
             .encode_protected_ethernet(peer, &ethernet, &mut protected)
             .unwrap();
-        assert_eq!(encoded.hardware_key_selector, 8);
+        assert_eq!(encoded.hardware_key_selector, Some(8));
         assert_eq!(&protected[..2], &0x4208_u16.to_le_bytes());
         assert_eq!(&protected[22..24], &0x0010_u16.to_le_bytes());
         assert_eq!(&protected[24..32], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
@@ -1728,7 +1812,7 @@ mod tests {
         let encoded = engine
             .encode_protected_ethernet([0xff; 6], &ethernet, &mut protected)
             .unwrap();
-        assert_eq!(encoded.hardware_key_selector, 2);
+        assert_eq!(encoded.hardware_key_selector, Some(2));
         assert_eq!(&protected[24..32], &[3, 0, 0, 0x60, 0, 0, 0, 0]);
         assert_eq!(engine.service.current_data_sequence(), 3);
 
@@ -1740,6 +1824,11 @@ mod tests {
             .unwrap();
         assert_eq!(hardware.cleared, [8]);
         assert!(!engine.is_authorized_peer(peer));
+        assert_eq!(
+            engine.admit_rx_data(rx_request),
+            Esp32s31ApRxAdmission::unauthorized(),
+            "reauthentication closes the controlled port before old-PN admission"
+        );
         assert_eq!(engine.service.peer_status(peer).unwrap().association_id, 1);
 
         let _stopped = engine.stop(&mut hardware);

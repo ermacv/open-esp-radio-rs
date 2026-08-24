@@ -39,8 +39,9 @@ use open_esp_radio_esp32s31_wifi_ap::{
         Esp32s31ApTxCompletionAction,
     },
     rx::{
-        Esp32s31ApRxConfig, Esp32s31ApRxDispatch, Esp32s31ApRxDispatcher, Esp32s31ApRxError,
-        Esp32s31ApRxEvent, Esp32s31ApRxSink,
+        Esp32s31ApRxAdmission, Esp32s31ApRxAdmissionRequest, Esp32s31ApRxConfig,
+        Esp32s31ApRxDispatch, Esp32s31ApRxDispatcher, Esp32s31ApRxError, Esp32s31ApRxEvent,
+        Esp32s31ApRxSink,
     },
 };
 #[cfg(any(feature = "diagnostics", test))]

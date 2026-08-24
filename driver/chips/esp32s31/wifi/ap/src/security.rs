@@ -4,6 +4,9 @@ use open_esp_radio_esp32s31_wifi_mac::crypto::{
     AP_PAIRWISE_SLOT_COUNT, ApGroupCcmpSlot, ApPairwiseCcmpSlot, CcmpTxPacketNumberError,
     CryptoKeyError, install_ap_group_ccmp, install_ap_pairwise_ccmp,
 };
+use open_esp_radio_ieee80211::ccmp::{
+    CcmpPacketNumber, CcmpReplayError, CcmpReplayLane, CcmpRxReplayCandidate, CcmpRxReplayState,
+};
 use open_esp_radio_wpa2::{Ptk, frames::Wpa2Gtk};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -15,6 +18,7 @@ pub enum Esp32s31ApSecurityError {
     PairwiseAlreadyInstalled,
     AssociationIdAlreadyInstalled,
     WrongPeer,
+    Replay(CcmpReplayError),
 }
 
 impl From<CryptoKeyError> for Esp32s31ApSecurityError {
@@ -26,6 +30,12 @@ impl From<CryptoKeyError> for Esp32s31ApSecurityError {
 impl From<CcmpTxPacketNumberError> for Esp32s31ApSecurityError {
     fn from(error: CcmpTxPacketNumberError) -> Self {
         Self::PacketNumber(error)
+    }
+}
+
+impl From<CcmpReplayError> for Esp32s31ApSecurityError {
+    fn from(error: CcmpReplayError) -> Self {
+        Self::Replay(error)
     }
 }
 
@@ -44,12 +54,24 @@ pub struct Esp32s31ApPairwiseBinding {
     index: u8,
     peer: [u8; 6],
     hardware_index: u8,
+    generation: u32,
 }
 
 impl Esp32s31ApPairwiseBinding {
     pub const fn hardware_index(self) -> u8 {
         self.hardware_index
     }
+}
+
+/// Two-phase replay admission tied to one exact pairwise-key generation.
+///
+/// The binding is revalidated at commit, so a candidate prepared before a
+/// peer clear or PTK replacement cannot mutate the replacement key's replay
+/// frontier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApPairwiseRxCandidate {
+    binding: Esp32s31ApPairwiseBinding,
+    replay: CcmpRxReplayCandidate,
 }
 
 pub struct Esp32s31ApSecurityStartFailure<'storage> {
@@ -69,12 +91,17 @@ impl core::fmt::Debug for Esp32s31ApSecurityStartFailure<'_> {
 /// Stable caller-owned table of installed AP pairwise-key capabilities.
 pub struct Esp32s31ApPairwiseKeyStorage {
     pairwise: [Option<ApPairwiseCcmpSlot>; AP_PAIRWISE_SLOT_COUNT as usize],
+    generations: [u32; AP_PAIRWISE_SLOT_COUNT as usize],
+    rx_replay: [CcmpRxReplayState; AP_PAIRWISE_SLOT_COUNT as usize],
 }
 
 impl Esp32s31ApPairwiseKeyStorage {
     pub const fn new() -> Self {
         Self {
             pairwise: [const { None }; AP_PAIRWISE_SLOT_COUNT as usize],
+            generations: [0; AP_PAIRWISE_SLOT_COUNT as usize],
+            rx_replay: [const { CcmpRxReplayState::new(CcmpPacketNumber::ZERO) };
+                AP_PAIRWISE_SLOT_COUNT as usize],
         }
     }
 }
@@ -170,18 +197,20 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
             .map_err(|_| CryptoKeyError::InvalidAccessPointAssociationId)?,
         );
         let destination = self
-            .slots_mut()
-            .get_mut(index)
+            .slots()
+            .get(index)
             .ok_or(CryptoKeyError::InvalidAccessPointAssociationId)?;
         if destination.is_some() {
             return Err(Esp32s31ApSecurityError::AssociationIdAlreadyInstalled);
         }
-        *destination = Some(install_ap_pairwise_ccmp(
-            hardware,
-            peer,
-            association_id,
-            ptk.temporal_key(),
-        )?);
+        let next_generation = self.storage().generations[index]
+            .checked_add(1)
+            .expect("AP pairwise-key generation space is not reusable");
+        let slot = install_ap_pairwise_ccmp(hardware, peer, association_id, ptk.temporal_key())?;
+        let storage = self.storage_mut();
+        storage.pairwise[index] = Some(slot);
+        storage.generations[index] = next_generation;
+        storage.rx_replay[index] = CcmpRxReplayState::default();
         Ok(())
     }
 
@@ -204,6 +233,11 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
             .take()
             .expect("matching pairwise slot is occupied");
         slot.clear(hardware);
+        let storage = self.storage_mut();
+        storage.generations[index] = storage.generations[index]
+            .checked_add(1)
+            .expect("AP pairwise-key generation space is not reusable");
+        storage.rx_replay[index] = CcmpRxReplayState::default();
         Ok(())
     }
 
@@ -254,24 +288,46 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
                 .map_err(|_| CryptoKeyError::InvalidAccessPointAssociationId)?,
             peer,
             hardware_index: slot.hardware_index(),
+            generation: self.storage().generations[index],
         })
+    }
+
+    /// Prepare one post-reorder, hardware-authenticated pairwise CCMP MPDU.
+    ///
+    /// Callers must commit the returned token before publishing any Ethernet
+    /// view. The token remains fenced to this exact installed PTK generation.
+    pub fn prepare_bound_pairwise_rx(
+        &self,
+        binding: Esp32s31ApPairwiseBinding,
+        lane: CcmpReplayLane,
+        packet_number: CcmpPacketNumber,
+    ) -> Result<Esp32s31ApPairwiseRxCandidate, Esp32s31ApSecurityError> {
+        let index = self.validate_pairwise_binding(binding)?;
+        let replay = self.storage().rx_replay[index].prepare(lane, packet_number)?;
+        Ok(Esp32s31ApPairwiseRxCandidate { binding, replay })
+    }
+
+    /// Commit a prepared PN only while its pairwise key generation is still
+    /// current. A clear/reinstall edge invalidates the candidate first.
+    pub fn commit_bound_pairwise_rx(
+        &mut self,
+        candidate: Esp32s31ApPairwiseRxCandidate,
+    ) -> Result<(), Esp32s31ApSecurityError> {
+        let index = self.validate_pairwise_binding(candidate.binding)?;
+        self.storage_mut().rx_replay[index].commit(candidate.replay)?;
+        Ok(())
     }
 
     pub fn next_bound_pairwise_tx_ccmp_header(
         &mut self,
         binding: Esp32s31ApPairwiseBinding,
     ) -> Result<[u8; 8], Esp32s31ApSecurityError> {
-        if matches!(self, Self::Open { .. }) {
-            return Err(Esp32s31ApSecurityError::SecurityModeMismatch);
-        }
+        let index = self.validate_pairwise_binding(binding)?;
         let slot = self
             .slots_mut()
-            .get_mut(usize::from(binding.index))
+            .get_mut(index)
             .and_then(Option::as_mut)
-            .filter(|slot| {
-                slot.peer() == &binding.peer && slot.hardware_index() == binding.hardware_index
-            })
-            .ok_or(Esp32s31ApSecurityError::WrongPeer)?;
+            .expect("validated pairwise binding owns an occupied slot");
         Ok(slot.next_tx_ccmp_header()?)
     }
 
@@ -328,9 +384,15 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
             ),
         };
         let mut pairwise_slots_cleared = 0_u8;
-        for pairwise in storage.pairwise.iter_mut().filter_map(Option::take) {
-            pairwise.clear(hardware);
-            pairwise_slots_cleared = pairwise_slots_cleared.saturating_add(1);
+        for index in 0..storage.pairwise.len() {
+            if let Some(pairwise) = storage.pairwise[index].take() {
+                pairwise.clear(hardware);
+                storage.generations[index] = storage.generations[index]
+                    .checked_add(1)
+                    .expect("AP pairwise-key generation space is not reusable");
+                storage.rx_replay[index] = CcmpRxReplayState::default();
+                pairwise_slots_cleared = pairwise_slots_cleared.saturating_add(1);
+            }
         }
         let report = if let Some(group) = group {
             let group_hardware_index = group.hardware_index();
@@ -356,12 +418,46 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
     }
 
     fn slots_mut(&mut self) -> &mut [Option<ApPairwiseCcmpSlot>; AP_PAIRWISE_SLOT_COUNT as usize] {
-        &mut match self {
+        &mut self.storage_mut().pairwise
+    }
+
+    fn storage(&self) -> &Esp32s31ApPairwiseKeyStorage {
+        match self {
+            Self::Open { storage } | Self::Wpa2Personal { storage, .. } => storage,
+        }
+        .as_deref()
+        .expect("active AP security owns pairwise-key storage")
+    }
+
+    fn storage_mut(&mut self) -> &mut Esp32s31ApPairwiseKeyStorage {
+        match self {
             Self::Open { storage } | Self::Wpa2Personal { storage, .. } => storage,
         }
         .as_deref_mut()
         .expect("active AP security owns pairwise-key storage")
-        .pairwise
+    }
+
+    fn validate_pairwise_binding(
+        &self,
+        binding: Esp32s31ApPairwiseBinding,
+    ) -> Result<usize, Esp32s31ApSecurityError> {
+        if matches!(self, Self::Open { .. }) {
+            return Err(Esp32s31ApSecurityError::SecurityModeMismatch);
+        }
+        let index = usize::from(binding.index);
+        let storage = self.storage();
+        let slot = storage
+            .pairwise
+            .get(index)
+            .and_then(Option::as_ref)
+            .filter(|slot| {
+                slot.peer() == &binding.peer
+                    && slot.hardware_index() == binding.hardware_index
+                    && storage.generations[index] == binding.generation
+            })
+            .ok_or(Esp32s31ApSecurityError::WrongPeer)?;
+        debug_assert_eq!(slot.hardware_index(), binding.hardware_index);
+        Ok(index)
     }
 }
 
@@ -430,8 +526,13 @@ mod tests {
         let (report, _pairwise) = security.stop(&mut hardware);
         assert_eq!(hardware.installs, [2, 8, 9]);
         assert_eq!(hardware.clears, [8, 9, 2]);
-        assert_eq!(report.pairwise_slots_cleared, 2);
-        assert_eq!(report.group_hardware_index, 2);
+        assert_eq!(
+            report,
+            Esp32s31ApSecurityStopReport::Wpa2Personal {
+                pairwise_slots_cleared: 2,
+                group_hardware_index: 2,
+            }
+        );
     }
 
     #[test]
@@ -475,12 +576,87 @@ mod tests {
             )),
         );
         let (report, _pairwise) = security.stop(&mut hardware);
-        assert_eq!(report.pairwise_slots_cleared, 15);
+        assert_eq!(
+            report,
+            Esp32s31ApSecurityStopReport::Wpa2Personal {
+                pairwise_slots_cleared: 15,
+                group_hardware_index: 2,
+            }
+        );
         assert_eq!(
             hardware.clears,
             (8..=22)
                 .chain(core::iter::once(2))
                 .collect::<std::vec::Vec<_>>()
         );
+    }
+
+    #[test]
+    fn rx_replay_is_per_tid_and_fenced_across_pairwise_key_reinstall() {
+        let peer = [3; 6];
+        let mut hardware = Hardware::default();
+        let gtk = Wpa2Gtk::new(1, true, [0x55; 16]).unwrap();
+        let mut pairwise = Esp32s31ApPairwiseKeyStorage::new();
+        let mut security =
+            Esp32s31ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();
+        let ptk = Pmk::derive(b"password", b"ssid")
+            .unwrap()
+            .derive_ptk(PtkContext {
+                authenticator_address: [2; 6],
+                supplicant_address: peer,
+                authenticator_nonce: [4; 32],
+                supplicant_nonce: [5; 32],
+            });
+        security
+            .install_pairwise(&mut hardware, peer, 1, &ptk)
+            .unwrap();
+        let first_generation = security.bind_pairwise(peer, 1).unwrap();
+        let pn1 = CcmpPacketNumber::new(1).unwrap();
+        let pn4 = CcmpPacketNumber::new(4).unwrap();
+        let pn5 = CcmpPacketNumber::new(5).unwrap();
+
+        let first = security
+            .prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn4)
+            .unwrap();
+        security.commit_bound_pairwise_rx(first).unwrap();
+        assert_eq!(
+            security.prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn4,),
+            Err(Esp32s31ApSecurityError::Replay(CcmpReplayError::Replayed {
+                packet_number: pn4,
+                highest: pn4,
+            })),
+            "a different 802.11 sequence cannot make a reused PN admissible"
+        );
+
+        for lane in [CcmpReplayLane::Tid(1), CcmpReplayLane::Tid(7)] {
+            let candidate = security
+                .prepare_bound_pairwise_rx(first_generation, lane, pn1)
+                .unwrap();
+            security.commit_bound_pairwise_rx(candidate).unwrap();
+        }
+
+        let prepared_before_clear = security
+            .prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn5)
+            .unwrap();
+        security.clear_peer(&mut hardware, peer).unwrap();
+        security
+            .install_pairwise(&mut hardware, peer, 1, &ptk)
+            .unwrap();
+        let replacement_generation = security.bind_pairwise(peer, 1).unwrap();
+        assert_ne!(replacement_generation, first_generation);
+        assert_eq!(
+            security.commit_bound_pairwise_rx(prepared_before_clear),
+            Err(Esp32s31ApSecurityError::WrongPeer),
+            "a candidate from the cleared key cannot advance its replacement"
+        );
+        assert_eq!(
+            security.prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn5,),
+            Err(Esp32s31ApSecurityError::WrongPeer),
+        );
+
+        let replacement = security
+            .prepare_bound_pairwise_rx(replacement_generation, CcmpReplayLane::NonQos, pn1)
+            .unwrap();
+        security.commit_bound_pairwise_rx(replacement).unwrap();
     }
 }

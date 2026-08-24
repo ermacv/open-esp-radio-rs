@@ -10,7 +10,7 @@ use core::future::Future;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CcmpTxPacketNumberError, StaPairwiseCcmpSlot},
     tx::{LegacyTxQueue, TxError, TxHardware, TxPhyRate},
-    tx_runtime::{OrdinaryRetryError, WifiTxRuntimePolicy},
+    tx_runtime::{OrdinaryRetryError, WifiTxRuntimePolicy, WifiTxTraffic, WifiTxTrafficError},
 };
 use open_esp_radio_ieee80211::management::ProbeRequest;
 use open_esp_radio_ieee80211::station::{
@@ -140,6 +140,11 @@ pub enum SingleMpduTxError {
     Encode(StationFrameError),
     Tx(TxError),
     Retry(OrdinaryRetryError),
+    Traffic(WifiTxTrafficError),
+    TrafficSelectionMismatch {
+        expected: WifiTxTraffic,
+        provided: WifiTxTraffic,
+    },
     RadioResetRequired(TxResetReason),
 }
 
@@ -180,6 +185,12 @@ impl From<TxError> for SingleMpduTxError {
 impl From<OrdinaryRetryError> for SingleMpduTxError {
     fn from(error: OrdinaryRetryError) -> Self {
         Self::Retry(error)
+    }
+}
+
+impl From<WifiTxTrafficError> for SingleMpduTxError {
+    fn from(error: WifiTxTrafficError) -> Self {
+        Self::Traffic(error)
     }
 }
 
@@ -297,6 +308,14 @@ where
 
     pub fn policy_mut(&mut self) -> &mut WifiTxRuntimePolicy {
         self.ordinary.policy_mut()
+    }
+
+    pub fn select_network_traffic(
+        &self,
+        ethernet: &[u8],
+    ) -> Result<WifiTxTraffic, WifiTxTrafficError> {
+        self.policy()
+            .select_network_traffic(ethernet, self.config.peer_qos)
     }
 
     pub fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
@@ -491,9 +510,27 @@ where
         hardware_mic_length: usize,
         rate: TxPhyRate,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        self.start_prepared_encoded_retry_for_category(
+            hardware,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            self.config.exchange.access_category,
+        )
+    }
+
+    pub fn start_prepared_encoded_retry_for_category<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        frame_length: usize,
+        hardware_mic_length: usize,
+        rate: TxPhyRate,
+        access_category: open_esp_radio_ieee80211::wmm::WmmAccessCategory,
+    ) -> Result<WifiTxProgress, SingleMpduTxError> {
         if self.security_mode() == WifiSecurityMode::Open || hardware_mic_length == 0 {
             return Err(SingleMpduTxError::SecurityModeMismatch);
         }
+        let queue = LegacyTxQueue::from_access_category(access_category);
         self.ordinary
             .start(
                 hardware,
@@ -501,7 +538,7 @@ where
                     frame_length,
                     descriptor_capacity: None,
                     exchange: MacTxPlan {
-                        access_category: LegacyTxQueue::BestEffort.access_category(),
+                        access_category,
                         initial_rate: rate,
                         publication_limit: self.config.exchange.publication_limit,
                         publication_timeout_micros: self.config.exchange.publication_timeout_micros,
@@ -510,8 +547,8 @@ where
                     hardware_key_selector: self.security.hardware_key_selector(),
                     interface:
                         open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
-                    scheduler_priority: LegacyTxQueue::BestEffort.vendor_data_scheduler_priority(),
-                    packet_priority: LegacyTxQueue::BestEffort.vendor_data_packet_priority(),
+                    scheduler_priority: queue.vendor_data_scheduler_priority(),
+                    packet_priority: queue.vendor_data_packet_priority(),
                 },
             )
             .map_err(Into::into)
@@ -531,11 +568,30 @@ where
         hardware: &mut H,
         ethernet: &[u8],
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        let traffic = self.select_network_traffic(ethernet)?;
+        self.start_with_traffic(hardware, ethernet, traffic)
+    }
+
+    /// Publish one classified network MPDU through the matching EDCA queue
+    /// and QoS sequence space.
+    pub fn start_with_traffic<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        ethernet: &[u8],
+        traffic: WifiTxTraffic,
+    ) -> Result<WifiTxProgress, SingleMpduTxError> {
         if self.ordinary.active() {
             return Err(SingleMpduTxError::Busy);
         }
         if ethernet.len() < 14 {
             return Err(SingleMpduTxError::EthernetFrameTooShort);
+        }
+        let expected = self.select_network_traffic(ethernet)?;
+        if traffic != expected {
+            return Err(SingleMpduTxError::TrafficSelectionMismatch {
+                expected,
+                provided: traffic,
+            });
         }
 
         let destination = ethernet[..6]
@@ -547,8 +603,8 @@ where
         let ether_type = u16::from_be_bytes([ethernet[12], ethernet[13]]);
         let sequence_number = self
             .sequences
-            .take_data(self.config.peer_qos.then_some(0))
-            .expect("TID zero is a valid sequence space");
+            .take_data(self.config.peer_qos.then_some(traffic.tid()))
+            .expect("classified TID is a valid sequence space");
         let (frame_length, hardware_mic_length, hardware_key_selector) = {
             let buffer = self.ordinary.buffer_mut()?;
             match &mut self.security {
@@ -572,7 +628,7 @@ where
                         bssid: self.config.bssid,
                         destination,
                         sequence_number,
-                        user_priority: 0,
+                        user_priority: traffic.tid(),
                         peer_qos: self.config.peer_qos,
                         ccmp_header: key.next_tx_ccmp_header()?,
                         ether_type,
@@ -585,19 +641,23 @@ where
                 ),
             }
         };
+        let queue = traffic.queue();
         self.ordinary
             .start(
                 hardware,
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    exchange: self.config.exchange,
+                    exchange: MacTxPlan {
+                        access_category: traffic.access_category,
+                        ..self.config.exchange
+                    },
                     hardware_mic_length,
                     hardware_key_selector,
                     interface:
                         open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
-                    scheduler_priority: LegacyTxQueue::BestEffort.vendor_data_scheduler_priority(),
-                    packet_priority: LegacyTxQueue::BestEffort.vendor_data_packet_priority(),
+                    scheduler_priority: queue.vendor_data_scheduler_priority(),
+                    packet_priority: queue.vendor_data_packet_priority(),
                 },
             )
             .map_err(Into::into)
@@ -1201,6 +1261,70 @@ mod tests {
         ));
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
         assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
+    }
+
+    #[test]
+    fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+        let mut frame = ethernet();
+        frame[14] = 0x45;
+        frame[15] = 46 << 2;
+
+        assert_eq!(tx.start(&mut hardware, &frame), Ok(WifiTxProgress::Pending));
+        let (queue, program) = hardware.legacy.expect("classified legacy queue image");
+        assert_eq!(queue, LegacyTxQueue::Voice.hardware_index());
+        assert_eq!(
+            program.scheduler_priority,
+            LegacyTxQueue::Voice.vendor_data_scheduler_priority()
+        );
+        assert_eq!(
+            program.packet_priority,
+            LegacyTxQueue::Voice.vendor_data_packet_priority()
+        );
+        assert_eq!(tx.sequences.peek_qos(6), Some(8));
+        assert_eq!(tx.sequences.peek_qos(0), Some(7));
+
+        hardware.completion = Some(completion(5));
+        assert_eq!(
+            crate::test_support::block_on(tx.service(
+                &mut hardware,
+                WifiTxWake::Interrupt {
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                },
+            )),
+            Ok(WifiTxProgress::Pending)
+        );
+        assert_eq!(tx.policy().contention_exponent(LegacyTxQueue::Voice), 3);
+        assert_eq!(
+            tx.policy().contention_exponent(LegacyTxQueue::BestEffort),
+            4
+        );
+
+        hardware.completion = Some(completion(0));
+        assert_eq!(
+            crate::test_support::block_on(tx.service(
+                &mut hardware,
+                WifiTxWake::Interrupt {
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                },
+            )),
+            Ok(WifiTxProgress::Complete)
+        );
+        assert_eq!(tx.policy().contention_exponent(LegacyTxQueue::Voice), 2);
+        let bytes = tx.ordinary.slot.as_mut().buffer_mut().unwrap();
+        assert_eq!(bytes[TX_METADATA_SIZE + 24] & 0x0f, 6);
+
+        let voice = tx.select_network_traffic(&frame).unwrap();
+        assert!(matches!(
+            tx.start_with_traffic(&mut hardware, &ethernet(), voice),
+            Err(SingleMpduTxError::TrafficSelectionMismatch { provided, .. })
+                if provided == voice
+        ));
     }
 
     #[test]

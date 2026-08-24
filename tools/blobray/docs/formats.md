@@ -14,6 +14,8 @@ unknown fields.
   optional compiled knowledge-provider ID;
 - `vendor-project.toml`: composition, reviewed workspaces, and generated
   output selection; it does not own reusable chip facts;
+- `[reviewed-knowledge].packs`: sparse accepted assertions and vendor-bug
+  records with stable IDs, evidence, provenance and applicability;
 - local run specification: ignored bindings to caller-owned private artifacts.
 
 The schema-3 project, target, ecosystem, and chip formats are a clean break.
@@ -26,6 +28,10 @@ Old inline `memory-map`, `svd`, `platform-pack`, `harness`, and
   comparison inputs, declarations, and report paths; it has no executable
   verdict provider and grants no analysis knowledge;
 - register/interface/function packs: reviewed assertions and evidence links;
+- sparse reviewed-knowledge packs (`schema = 1`): opaque subject/kind/value
+  facts and vendor bugs. Empty evidence, hints, duplicate IDs, invalid artifact
+  hashes and overlapping assertions fail closed; pack and record applicability
+  are intersected rather than overridden;
 - disposition manifests: reviewed vendor-to-production binding and claim
   declarations, never execution truth;
 - verification policy: required comparisons and bounded properties;

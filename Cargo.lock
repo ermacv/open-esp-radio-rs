@@ -231,6 +231,7 @@ dependencies = [
  "open-radio-vendor-analysis-model",
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-execution-model",
+ "open-radio-vendor-review",
  "open-radio-vendor-semantics",
  "petgraph",
  "ratatui",
@@ -2585,6 +2586,18 @@ dependencies = [
  "open-radio-vendor-execution-model",
  "open-radio-vendor-harness-esp32s31",
  "open-radio-vendor-semantics",
+]
+
+[[package]]
+name = "open-radio-vendor-review"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-contracts",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.19",
+ "toml_edit",
 ]
 
 [[package]]

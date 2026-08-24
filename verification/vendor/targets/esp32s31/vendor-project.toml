@@ -7,6 +7,9 @@ ecosystem-packs = ["ecosystem.toml"]
 chip-pack = "chip.toml"
 verification-addon = "verification-addon.toml"
 
+[reviewed-knowledge]
+packs = ["reviewed/ieee802154.toml"]
+
 [analysis.symbols]
 output = "generated/findings/symbols.json"
 

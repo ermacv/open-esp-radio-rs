@@ -15,6 +15,22 @@ does not own or rewrite the underlying observations. Validation rejects
 overlapping definitions, unreviewed access, missing evidence and unsafe API
 exposure.
 
+New human conclusions belong in sparse `[reviewed-knowledge]` packs. A stable
+physical subject such as `mmio:cpu:0x20103128/32` can independently acquire a
+`register-name` or `hardware-write-semantics` assertion. Observed software
+reads/writes remain generated evidence; W1C, self-clear and trigger behavior
+remain absent or explicitly unknown until reviewed hardware evidence proves
+them. Suspected incorrect vendor access is a separate vendor-bug record and
+must not redefine the hardware semantic.
+
+Sparse packs are already validated and inventoried as reviewed project inputs.
+The layered register-model cutover composes reusable chip geometry, generated
+review candidates and those sparse assertions before publication. Conflicting
+assertions with overlapping applicability already fail closed; until the
+cutover is complete, existing schema-2 register fragments remain the
+publication input. Complete SVD-shaped generated geometry is the target
+output, not the normal unit of a human change.
+
 ## Normal workflow
 
 ```console

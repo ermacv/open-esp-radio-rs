@@ -326,6 +326,7 @@ mod tests {
             run_spec: None,
             memory_map: None,
             svd_paths: Vec::new(),
+            reviewed_knowledge: Vec::new(),
             symbol_inventory: None,
             navigation_index: None,
             code: None,

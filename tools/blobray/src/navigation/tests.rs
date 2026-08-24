@@ -172,6 +172,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         run_spec: None,
         memory_map: None,
         svd_paths: Vec::new(),
+        reviewed_knowledge: Vec::new(),
         symbol_inventory: Some(SymbolInventorySpec {
             output: symbols_path,
         }),

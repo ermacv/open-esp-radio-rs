@@ -1,0 +1,36 @@
+# Sparse reviewed facts. Generated MMIO geometry and access observations stay
+# under generated/; this file grows only when a reviewer accepts new meaning.
+schema = 1
+id = "esp32s31-rev0-ieee802154"
+
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+
+[applies-to]
+ecosystems = ["esp-idf"]
+chips = ["esp32s31"]
+chip-revisions = ["rev0"]
+artifact-lineages = ["esp32s31-radio"]
+
+[[assertions]]
+id = "ieee802154.event-status.name"
+subject = "mmio:cpu:0x20103128/32"
+kind = "register-name"
+value = "EVENT_STATUS"
+
+[[assertions.evidence]]
+source = "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"
+locator = "ieee802154_ll_get_events"
+
+[[assertions]]
+id = "ieee802154.event-status.write-semantics"
+subject = "mmio:cpu:0x20103128/32"
+kind = "hardware-write-semantics"
+value = "unknown"
+note = "The vendor accessor performs a masked self-write; W1C or another clear contract is not proven."
+
+[[assertions.evidence]]
+source = "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"
+locator = "ieee802154_ll_clear_events"

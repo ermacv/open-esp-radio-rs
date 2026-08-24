@@ -58,6 +58,9 @@ verification-addon = "verification.toml"
 run-spec = "local.toml"
 chip-pack = "chip.toml"
 
+[reviewed-knowledge]
+packs = ["reviewed/radio.toml"]
+
 [analysis.symbols]
 output = "generated/symbols.json"
 
@@ -171,6 +174,26 @@ all = true
 "#,
     )
     .unwrap();
+    std::fs::create_dir_all(directory.join("reviewed")).unwrap();
+    std::fs::write(
+        directory.join("reviewed/radio.toml"),
+        r#"schema = 1
+id = "fixture-radio"
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+[[assertions]]
+id = "radio.control.name"
+subject = "mmio:cpu:0x1000/32"
+kind = "register-name"
+value = "CONTROL"
+[[assertions.evidence]]
+source = "FIXTURE"
+locator = "review"
+"#,
+    )
+    .unwrap();
 
     let project = ProjectSpec::load(&path).unwrap();
     std::fs::remove_dir_all(&directory).unwrap();
@@ -179,6 +202,10 @@ all = true
     assert_eq!(project.run_spec, Some(directory.join("local.toml")));
     assert_eq!(project.memory_map, Some(directory.join("memory.toml")));
     assert_eq!(project.svd_paths, [directory.join("registers/base.svd")]);
+    assert_eq!(
+        project.reviewed_knowledge,
+        [directory.join("reviewed/radio.toml")]
+    );
     assert_eq!(
         project.symbol_inventory,
         Some(SymbolInventorySpec {

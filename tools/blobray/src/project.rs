@@ -234,6 +234,9 @@ pub(crate) struct ProjectSpec {
     pub(crate) run_spec: Option<PathBuf>,
     pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
+    /// Sparse human-reviewed facts. Generated observations and complete
+    /// register models are deliberately not stored in these packs.
+    pub(crate) reviewed_knowledge: Vec<PathBuf>,
     pub(crate) symbol_inventory: Option<SymbolInventorySpec>,
     pub(crate) navigation_index: Option<NavigationIndexSpec>,
     pub(crate) code: Option<CodeWorkspacePaths>,

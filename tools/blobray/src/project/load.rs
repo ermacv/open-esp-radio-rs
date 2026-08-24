@@ -49,6 +49,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             "target-spec",
             "ecosystem-packs",
             "chip-pack",
+            "reviewed-knowledge",
             "run-spec",
             "analysis",
             "code",
@@ -126,6 +127,9 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         )
         .collect::<Vec<_>>();
     crate::interfaces::SemanticCatalogs::load(&semantic_catalogs)?;
+    let reviewed_knowledge = load_reviewed_knowledge(&document, base, source)?;
+    open_radio_vendor_review::ReviewKnowledge::load_all(&reviewed_knowledge)
+        .map_err(|error| source.item(document.get("reviewed-knowledge"), error.to_string()))?;
     let ir_profiles = load_ir_profiles(&document, base, source)?;
     let symbol_inventory = load_symbol_inventory(&document, base, &ir_profiles, source)?;
     let navigation_index = load_navigation_index(
@@ -538,6 +542,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         run_spec,
         memory_map,
         svd_paths,
+        reviewed_knowledge,
         symbol_inventory,
         navigation_index,
         code,
@@ -550,6 +555,31 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     };
     crate::verification::policy::validate_project(&project)?;
     Ok(project)
+}
+
+fn load_reviewed_knowledge(
+    document: &Table,
+    base: &Path,
+    source: ProjectSource<'_>,
+) -> Result<Vec<PathBuf>> {
+    let Some(item) = document.get("reviewed-knowledge") else {
+        return Ok(Vec::new());
+    };
+    let table = item.as_table().ok_or_else(|| {
+        source.item(
+            Some(item),
+            "project manifest reviewed-knowledge must be a table",
+        )
+    })?;
+    reject_unknown_keys(table, &["packs"], "project reviewed-knowledge", source)?;
+    table_path_array(
+        table,
+        "packs",
+        "project reviewed-knowledge",
+        base,
+        source,
+        false,
+    )
 }
 
 fn load_review_workspace(

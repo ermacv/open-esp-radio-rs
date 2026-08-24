@@ -57,7 +57,10 @@ The schema-3 composition is deliberately layered:
 3. `chip.toml` owns reusable memory-map, SVD, ROM, and compiled knowledge
    selection;
 4. `vendor-project.toml` references these inputs and owns only composition;
-5. reviewed project workspaces own investigation-specific assertions.
+5. sparse reviewed-knowledge packs own investigation-specific assertions and
+   vendor bugs with stable IDs, evidence and bounded applicability;
+6. reviewed project workspaces own the remaining investigation-specific
+   contracts while their generated candidates remain disposable.
 
 Pack order is not an override mechanism. Conflicting definitions fail closed.
 Two projects may reference the same chip pack without copying its address map.

@@ -471,6 +471,18 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
             None,
         );
     }
+    for (index, path) in project.reviewed_knowledge.iter().enumerate() {
+        push(
+            &mut files,
+            format!("reviewed-knowledge[{index}]"),
+            ProjectFileOwnership::Reviewed,
+            path,
+            None,
+            &["reviewed assertions", "revision rebase"],
+            true,
+            None,
+        );
+    }
 
     let run_spec_path = configured_run_spec(context.project_path, project.run_spec.as_deref());
     push(

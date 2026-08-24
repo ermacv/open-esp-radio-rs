@@ -24,5 +24,6 @@ pub use crate::roles::station::connected::{
     EspNowTxBackpressure, EspNowTxCancelReason, EspNowTxCompletion, EspNowTxHandle,
     EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError, EspNowTxMailboxOwner,
     EspNowTxMailboxResources, EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal,
-    EspNowTxTicket, EspNowTxTrySendError,
+    EspNowTxTicket, EspNowTxTrySendError, EspNowV2RxEvent, EspNowV2RxMailboxError,
+    EspNowV2TxTrySendError,
 };

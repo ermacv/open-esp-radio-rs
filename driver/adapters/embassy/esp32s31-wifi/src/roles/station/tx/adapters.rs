@@ -248,6 +248,46 @@ impl<
         }
         Ok(progress)
     }
+
+    fn start_esp_now_v2_plaintext<
+        H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware,
+        const PEERS: usize,
+    >(
+        &mut self,
+        hardware: &mut H,
+        protocol: &open_esp_radio_wifi_softmac::EspNowProtocol<PEERS>,
+        request: crate::roles::station::esp_now_tx::EspNowV2TxRequest<'_>,
+        active_channel: open_esp_radio_ieee80211::channel::WifiChannel,
+        active_station: open_esp_radio_wifi_softmac::interface::BoundVirtualInterface,
+        config: open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxConfig,
+    ) -> Result<
+        WifiTxProgress,
+        open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError,
+    > {
+        if self.active() {
+            return Err(
+                open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError::Backend(
+                    open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxError::Tx(
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxError::Busy,
+                    ),
+                ),
+            );
+        }
+        let progress = self.ordinary.start_esp_now_v2_plaintext(
+            hardware,
+            protocol,
+            request.peer(),
+            request.random_value(),
+            request.payload(),
+            active_channel,
+            active_station,
+            config,
+        )?;
+        if progress == WifiTxProgress::Pending {
+            self.active = ConnectedTxActive::Ordinary;
+        }
+        Ok(progress)
+    }
 }
 
 impl<

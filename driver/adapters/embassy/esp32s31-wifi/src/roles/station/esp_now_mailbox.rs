@@ -1,18 +1,27 @@
-//! Owned, bounded ESP-NOW receive handoff for one connected STA epoch.
+//! Owned, bounded ESP-NOW receive handoff for connected and standalone epochs.
 
 use core::{
+    cell::RefCell,
     future::Future,
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
+use embassy_sync::{
+    blocking_mutex::Mutex as BlockingMutex,
+    channel::{Channel, Receiver, Sender, TrySendError},
+};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
 use open_esp_radio_esp32s31_wifi_sta::standalone_esp_now_rx::{
-    StandaloneEspNowRxEvent, StandaloneEspNowRxSink,
+    StandaloneEspNowRxEvent, StandaloneEspNowRxSink, StandaloneEspNowV2RxEvent,
 };
-use open_esp_radio_wifi_softmac::{EspNowOwnedReceivedV1, MacRxMetadata};
+use open_esp_radio_ieee80211::esp_now::{
+    ESP_NOW_V2_MAX_PAYLOAD_LEN, EspNowDestination, EspNowRandomValue, EspNowUnicastAddress,
+};
+use open_esp_radio_wifi_softmac::{
+    EspNowOwnedReceivedV1, EspNowPeerId, EspNowReceivedV2, MacRxMetadata,
+};
 
 use crate::{
     datapath::rx::staging::{
@@ -31,6 +40,50 @@ pub struct EspNowOwnedRxEvent {
     pub metadata: MacRxMetadata<RxPhyInfo>,
 }
 
+/// Small metadata result paired with bytes copied into the caller's v2
+/// buffer. The 1470-byte payload itself never crosses an Embassy channel.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EspNowV2RxEvent {
+    pub epoch: u32,
+    pub peer: EspNowPeerId,
+    pub destination: EspNowDestination,
+    pub source: EspNowUnicastAddress,
+    pub random_value: EspNowRandomValue,
+    pub sequence_number: u16,
+    pub retry: bool,
+    pub payload_length: usize,
+    pub metadata: MacRxMetadata<RxPhyInfo>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct EspNowV2RxLease {
+    epoch: u32,
+    slot: usize,
+}
+
+#[derive(Clone, Copy)]
+struct EspNowV2RxHeader {
+    event: EspNowV2RxEvent,
+}
+
+struct EspNowV2RxSlot {
+    header: Option<EspNowV2RxHeader>,
+    payload: [u8; ESP_NOW_V2_MAX_PAYLOAD_LEN],
+}
+
+impl EspNowV2RxSlot {
+    const EMPTY: Self = Self {
+        header: None,
+        payload: [0; ESP_NOW_V2_MAX_PAYLOAD_LEN],
+    };
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowV2RxMailboxError {
+    BufferTooSmall { required: usize, available: usize },
+    MissingPayloadSlot,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspNowRxMailboxEpochError {
     GenerationExhausted,
@@ -47,6 +100,8 @@ pub enum EspNowRxPublishOutcome {
 /// shares neither storage nor capacity with the connected control mailbox.
 pub struct EspNowRxMailboxResources<M: RawMutex, const CAPACITY: usize> {
     channel: Channel<M, EspNowOwnedRxEvent, CAPACITY>,
+    v2_channel: Channel<M, EspNowV2RxLease, CAPACITY>,
+    v2_slots: BlockingMutex<M, RefCell<[EspNowV2RxSlot; CAPACITY]>>,
     generation: AtomicU32,
     dropped: AtomicU32,
     stale_publications: AtomicU32,
@@ -56,6 +111,8 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxMailboxResources<M, CAPACITY> {
     pub const fn new() -> Self {
         Self {
             channel: Channel::new(),
+            v2_channel: Channel::new(),
+            v2_slots: BlockingMutex::new(RefCell::new([const { EspNowV2RxSlot::EMPTY }; CAPACITY])),
             generation: AtomicU32::new(0),
             dropped: AtomicU32::new(0),
             stale_publications: AtomicU32::new(0),
@@ -78,9 +135,14 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxMailboxResources<M, CAPACITY> {
         ),
         EspNowRxMailboxEpochError,
     > {
-        let resources: &Self = self;
-        let receiver = resources.channel.receiver();
+        let receiver = self.channel.receiver();
+        let v2_receiver = self.v2_channel.receiver();
         while receiver.try_receive().is_ok() {}
+        while v2_receiver.try_receive().is_ok() {}
+        for slot in self.v2_slots.get_mut().get_mut() {
+            slot.header = None;
+        }
+        let resources: &Self = self;
         let epoch = self
             .generation
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |generation| {
@@ -93,6 +155,8 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxMailboxResources<M, CAPACITY> {
         Ok((
             EspNowRxPublisher {
                 sender: resources.channel.sender(),
+                v2_sender: resources.v2_channel.sender(),
+                v2_slots: &resources.v2_slots,
                 generation: &resources.generation,
                 epoch,
                 dropped: &resources.dropped,
@@ -100,6 +164,8 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxMailboxResources<M, CAPACITY> {
             },
             EspNowRxReceiver {
                 receiver,
+                v2_receiver,
+                v2_slots: &resources.v2_slots,
                 epoch,
                 dropped: &resources.dropped,
                 stale_publications: &resources.stale_publications,
@@ -119,6 +185,8 @@ impl<M: RawMutex, const CAPACITY: usize> Default for EspNowRxMailboxResources<M,
 #[derive(Clone, Copy)]
 pub struct EspNowRxPublisher<'resources, M: RawMutex, const CAPACITY: usize> {
     sender: Sender<'resources, M, EspNowOwnedRxEvent, CAPACITY>,
+    v2_sender: Sender<'resources, M, EspNowV2RxLease, CAPACITY>,
+    v2_slots: &'resources BlockingMutex<M, RefCell<[EspNowV2RxSlot; CAPACITY]>>,
     generation: &'resources AtomicU32,
     epoch: u32,
     dropped: &'resources AtomicU32,
@@ -152,6 +220,57 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxPublisher<'_, M, CAPACITY> {
             }
         }
     }
+
+    pub fn try_publish_v2(
+        &self,
+        received: EspNowReceivedV2<'_>,
+        metadata: MacRxMetadata<RxPhyInfo>,
+    ) -> EspNowRxPublishOutcome {
+        if self.generation.load(Ordering::Acquire) != self.epoch {
+            saturating_increment(self.stale_publications);
+            return EspNowRxPublishOutcome::StaleEpoch;
+        }
+        let frame = received.frame();
+        let slot = self.v2_slots.lock(|slots| {
+            let mut slots = slots.borrow_mut();
+            let index = slots.iter().position(|slot| slot.header.is_none())?;
+            let payload_length = frame
+                .action()
+                .copy_payload(&mut slots[index].payload)
+                .ok()?;
+            slots[index].header = Some(EspNowV2RxHeader {
+                event: EspNowV2RxEvent {
+                    epoch: self.epoch,
+                    peer: received.peer(),
+                    destination: frame.destination(),
+                    source: frame.source(),
+                    random_value: frame.action().random_value(),
+                    sequence_number: frame.sequence_number(),
+                    retry: frame.retry(),
+                    payload_length,
+                    metadata,
+                },
+            });
+            Some(index)
+        });
+        let Some(slot) = slot else {
+            saturating_increment(self.dropped);
+            return EspNowRxPublishOutcome::Full;
+        };
+        match self.v2_sender.try_send(EspNowV2RxLease {
+            epoch: self.epoch,
+            slot,
+        }) {
+            Ok(()) => EspNowRxPublishOutcome::Published,
+            Err(TrySendError::Full(_)) => {
+                self.v2_slots.lock(|slots| {
+                    slots.borrow_mut()[slot].header = None;
+                });
+                saturating_increment(self.dropped);
+                EspNowRxPublishOutcome::Full
+            }
+        }
+    }
 }
 
 impl<M: RawMutex, const CAPACITY: usize> StandaloneEspNowRxSink
@@ -160,11 +279,21 @@ impl<M: RawMutex, const CAPACITY: usize> StandaloneEspNowRxSink
     fn publish(&mut self, event: StandaloneEspNowRxEvent<'_>) {
         let _ = self.try_publish(event.received, event.metadata);
     }
+
+    fn supports_v2(&self) -> bool {
+        true
+    }
+
+    fn publish_v2(&mut self, event: StandaloneEspNowV2RxEvent<'_>) {
+        let _ = self.try_publish_v2(event.received, event.metadata);
+    }
 }
 
 /// Application-side capability for one connected epoch.
 pub struct EspNowRxReceiver<'resources, M: RawMutex, const CAPACITY: usize> {
     receiver: Receiver<'resources, M, EspNowOwnedRxEvent, CAPACITY>,
+    v2_receiver: Receiver<'resources, M, EspNowV2RxLease, CAPACITY>,
+    v2_slots: &'resources BlockingMutex<M, RefCell<[EspNowV2RxSlot; CAPACITY]>>,
     epoch: u32,
     dropped: &'resources AtomicU32,
     stale_publications: &'resources AtomicU32,
@@ -193,12 +322,86 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxReceiver<'_, M, CAPACITY> {
         }
     }
 
+    pub fn try_receive_v2(
+        &self,
+        output: &mut [u8],
+    ) -> Result<Option<EspNowV2RxEvent>, EspNowV2RxMailboxError> {
+        self.require_v2_output(output)?;
+        loop {
+            let Some(lease) = self.v2_receiver.try_receive().ok() else {
+                return Ok(None);
+            };
+            if lease.epoch == self.epoch {
+                return self.copy_v2(lease, output).map(Some);
+            }
+            self.release_v2(lease);
+        }
+    }
+
+    pub async fn receive_v2(
+        &self,
+        output: &mut [u8],
+    ) -> Result<EspNowV2RxEvent, EspNowV2RxMailboxError> {
+        self.require_v2_output(output)?;
+        loop {
+            let lease = self.v2_receiver.receive().await;
+            if lease.epoch == self.epoch {
+                return self.copy_v2(lease, output);
+            }
+            self.release_v2(lease);
+        }
+    }
+
+    fn require_v2_output(&self, output: &[u8]) -> Result<(), EspNowV2RxMailboxError> {
+        if output.len() < ESP_NOW_V2_MAX_PAYLOAD_LEN {
+            return Err(EspNowV2RxMailboxError::BufferTooSmall {
+                required: ESP_NOW_V2_MAX_PAYLOAD_LEN,
+                available: output.len(),
+            });
+        }
+        Ok(())
+    }
+
+    fn copy_v2(
+        &self,
+        lease: EspNowV2RxLease,
+        output: &mut [u8],
+    ) -> Result<EspNowV2RxEvent, EspNowV2RxMailboxError> {
+        self.v2_slots.lock(|slots| {
+            let mut slots = slots.borrow_mut();
+            let Some(slot) = slots.get_mut(lease.slot) else {
+                return Err(EspNowV2RxMailboxError::MissingPayloadSlot);
+            };
+            let Some(header) = slot.header.take() else {
+                return Err(EspNowV2RxMailboxError::MissingPayloadSlot);
+            };
+            if header.event.epoch != lease.epoch {
+                return Err(EspNowV2RxMailboxError::MissingPayloadSlot);
+            }
+            output[..header.event.payload_length]
+                .copy_from_slice(&slot.payload[..header.event.payload_length]);
+            Ok(header.event)
+        })
+    }
+
+    fn release_v2(&self, lease: EspNowV2RxLease) {
+        self.v2_slots.lock(|slots| {
+            if let Some(slot) = slots.borrow_mut().get_mut(lease.slot)
+                && slot
+                    .header
+                    .is_some_and(|header| header.event.epoch == lease.epoch)
+            {
+                slot.header = None;
+            }
+        });
+    }
+
     pub fn len(&self) -> usize {
-        self.receiver.len()
+        self.receiver.len() + self.v2_receiver.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.receiver.is_empty()
+        self.receiver.is_empty() && self.v2_receiver.is_empty()
     }
 
     pub fn dropped(&self) -> u32 {
@@ -214,6 +417,10 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxReceiver<'_, M, CAPACITY> {
     pub fn shutdown(self) -> EspNowRxMailboxShutdown {
         let mut discarded = 0_u32;
         while self.receiver.try_receive().is_ok() {
+            discarded = discarded.saturating_add(1);
+        }
+        while let Ok(lease) = self.v2_receiver.try_receive() {
+            self.release_v2(lease);
             discarded = discarded.saturating_add(1);
         }
         EspNowRxMailboxShutdown {
@@ -270,6 +477,21 @@ impl<M: RawMutex, S: ConnectedRxSink, const CAPACITY: usize> ConnectedRxSink
             let _ = self.publisher.try_publish(received, metadata);
         }
         self.inner.publish(event);
+    }
+
+    fn supports_esp_now_v2(&self) -> bool {
+        true
+    }
+
+    fn publish_esp_now_v2(
+        &mut self,
+        received: EspNowReceivedV2<'_>,
+        metadata: MacRxMetadata<RxPhyInfo>,
+    ) {
+        let _ = self.publisher.try_publish_v2(received, metadata);
+        if self.inner.supports_esp_now_v2() {
+            self.inner.publish_esp_now_v2(received, metadata);
+        }
     }
 }
 

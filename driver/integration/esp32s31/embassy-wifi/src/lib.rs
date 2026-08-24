@@ -64,7 +64,8 @@ pub use facade::{
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
 };
 pub use esp_now::{
-    ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH,
+    ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH,
+    ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH,
     ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY, ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_KEY_LEN,
     ESP_NOW_RX_REPLAY_WINDOW_BITS, ESP_NOW_V1_MAX_PAYLOAD_LEN,
     ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN, ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN,
@@ -77,6 +78,7 @@ pub use esp_now::{
     Esp32s31EspNowCryptoError, Esp32s31EspNowKeyOwner, Esp32s31EspNowKeySlot,
     Esp32s31EspNowLongRangeMissing, Esp32s31EspNowLongRangeRate,
     Esp32s31EspNowLongRangeReached, Esp32s31EspNowLongRangeUnsupported,
+    Esp32s31EspNowRxPublisher, Esp32s31EspNowRxReceiver, Esp32s31EspNowRxResources,
     Esp32s31EspNowTxBinding, Esp32s31EspNowTxConfig, Esp32s31EspNowTxConfigError,
     Esp32s31EspNowTxError, Esp32s31EspNowTxHandle, Esp32s31EspNowTxMailboxOwner,
     Esp32s31EspNowTxResources, Esp32s31StandaloneEspNowBinding,
@@ -104,9 +106,11 @@ pub use esp_now::{
     EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket, EspNowTxTrySendError,
     EspNowUnicastAddress, EspNowV1WireError, EspNowV2Action, EspNowV2Element,
     EspNowV2Elements, EspNowV2Frame, EspNowV2Payload, EspNowV2Reassembly,
-    EspNowV2ReceiveError, EspNowV2SendError, EspNowV2WireError, StandaloneEspNowPeerError,
+    EspNowV2ReceiveError, EspNowV2RxEvent, EspNowV2RxMailboxError, EspNowV2RxOutcome,
+    EspNowV2SendError, EspNowV2TxTrySendError, EspNowV2WireError, EspNowVersionError,
+    EspNowWireVersion, StandaloneEspNowPeerError,
     StandaloneEspNowRequest, WifiStandaloneEspNowPlan, attach_esp_now_tx,
-    encrypted_peer_destination, esp_now_encrypted_v1_codec_status,
+    encrypted_peer_destination, esp_now_encrypted_v1_codec_status, esp_now_wire_version,
     prepare_esp32s31_standalone_esp_now,
 };
 pub use monitor::{

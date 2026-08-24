@@ -10,15 +10,18 @@ use open_esp_radio_esp32s31_wifi::protected_data_rx::view_protected_data;
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
 use open_esp_radio_ieee80211::{
     data::{DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter},
-    esp_now::{ESP_NOW_ACTION_CATEGORY, ESP_NOW_ORGANIZATION_IDENTIFIER},
+    esp_now::{
+        ESP_NOW_ACTION_CATEGORY, ESP_NOW_ORGANIZATION_IDENTIFIER, EspNowVersionError,
+        EspNowWireVersion, esp_now_wire_version,
+    },
     ndpa::{HeNdpa, HeNdpaError},
     station::{StaDisconnect, parse_sta_disconnect},
     station_beacon::{StaBeaconError, StaBeaconObservation, parse_sta_beacon},
     trigger::{TriggerCommonInfo, TriggerParseError, parse_trigger_frame},
 };
 use open_esp_radio_wifi_softmac::{
-    EspNowPeerId, EspNowReceiveError, EspNowReceivedV1, EspNowRxEpoch, EspNowRxOutcome,
-    MacRxMetadata,
+    EspNowPeerId, EspNowReceiveError, EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch,
+    EspNowRxOutcome, EspNowV2ReceiveError, EspNowV2RxOutcome, MacRxMetadata,
 };
 #[cfg(test)]
 use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence};
@@ -221,6 +224,18 @@ impl ConnectedRxEvent<'_> {
 /// Integration boundary for network delivery, diagnostics and PAC effects.
 pub trait ConnectedRxSink {
     fn publish(&mut self, event: ConnectedRxEvent<'_>);
+
+    /// Opt in only when the sink copies/reassembles v2 before dispatch returns.
+    fn supports_esp_now_v2(&self) -> bool {
+        false
+    }
+
+    fn publish_esp_now_v2(
+        &mut self,
+        _received: EspNowReceivedV2<'_>,
+        _metadata: MacRxMetadata<RxPhyInfo>,
+    ) {
+    }
 }
 
 /// Closed reason for a frame that reached the connected dispatcher but could
@@ -233,6 +248,9 @@ pub enum ConnectedRxError {
     Ndpa(HeNdpaError),
     Beacon(StaBeaconError),
     EspNow(EspNowReceiveError),
+    EspNowV2(EspNowV2ReceiveError),
+    EspNowVersion(EspNowVersionError),
+    EspNowV2SinkUnavailable,
     Data(DataDecapError),
 }
 
@@ -248,6 +266,12 @@ pub enum ConnectedRxDispatch {
         peer: EspNowPeerId,
     },
     EspNowDuplicate {
+        peer: EspNowPeerId,
+    },
+    EspNowV2 {
+        peer: EspNowPeerId,
+    },
+    EspNowV2Duplicate {
         peer: EspNowPeerId,
     },
     PeerDisconnect,
@@ -536,27 +560,65 @@ impl ConnectedRxDispatcher {
                 if self.esp_now.is_none() || !is_esp_now_action_candidate(body) {
                     return ConnectedRxDispatch::Ignored;
                 }
-                let outcome = match self
-                    .esp_now
-                    .as_mut()
-                    .expect("candidate admission checked ESP-NOW epoch presence")
-                    .receive_v1(&mpdu[..management.length])
-                {
-                    Ok(outcome) => outcome,
+                let version = match esp_now_wire_version(body) {
+                    Ok(version) => version,
                     Err(error) => {
-                        return rejected(protection, ConnectedRxError::EspNow(error));
+                        return rejected(protection, ConnectedRxError::EspNowVersion(error));
                     }
                 };
-                match outcome {
-                    EspNowRxOutcome::Received(received) => {
-                        let metadata = decode_normalized_rx_metadata(raw)
-                            .unwrap_or_else(MacRxMetadata::unavailable);
-                        let peer = received.peer();
-                        sink.publish(ConnectedRxEvent::EspNow { received, metadata });
-                        ConnectedRxDispatch::EspNow { peer }
+                match version {
+                    EspNowWireVersion::V1 => {
+                        let outcome = match self
+                            .esp_now
+                            .as_mut()
+                            .expect("candidate admission checked ESP-NOW epoch presence")
+                            .receive_v1(&mpdu[..management.length])
+                        {
+                            Ok(outcome) => outcome,
+                            Err(error) => {
+                                return rejected(protection, ConnectedRxError::EspNow(error));
+                            }
+                        };
+                        match outcome {
+                            EspNowRxOutcome::Received(received) => {
+                                let metadata = decode_normalized_rx_metadata(raw)
+                                    .unwrap_or_else(MacRxMetadata::unavailable);
+                                let peer = received.peer();
+                                sink.publish(ConnectedRxEvent::EspNow { received, metadata });
+                                ConnectedRxDispatch::EspNow { peer }
+                            }
+                            EspNowRxOutcome::Duplicate { peer } => {
+                                ConnectedRxDispatch::EspNowDuplicate { peer }
+                            }
+                        }
                     }
-                    EspNowRxOutcome::Duplicate { peer } => {
-                        ConnectedRxDispatch::EspNowDuplicate { peer }
+                    EspNowWireVersion::V2 => {
+                        if !sink.supports_esp_now_v2() {
+                            return rejected(protection, ConnectedRxError::EspNowV2SinkUnavailable);
+                        }
+                        let outcome = match self
+                            .esp_now
+                            .as_mut()
+                            .expect("candidate admission checked ESP-NOW epoch presence")
+                            .receive_v2(&mpdu[..management.length])
+                        {
+                            Ok(outcome) => outcome,
+                            Err(error) => {
+                                return rejected(protection, ConnectedRxError::EspNowV2(error));
+                            }
+                        };
+                        match outcome {
+                            EspNowV2RxOutcome::Received(received) => {
+                                let metadata = decode_normalized_rx_metadata(raw)
+                                    .unwrap_or_else(MacRxMetadata::unavailable);
+                                let peer = received.peer();
+                                sink.publish_esp_now_v2(received, metadata);
+                                ConnectedRxDispatch::EspNowV2 { peer }
+                            }
+                            EspNowV2RxOutcome::Duplicate { peer } => {
+                                ConnectedRxDispatch::EspNowV2Duplicate { peer }
+                            }
+                        }
                     }
                 }
             }

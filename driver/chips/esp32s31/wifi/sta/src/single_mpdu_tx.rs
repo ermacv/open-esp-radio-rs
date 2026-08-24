@@ -22,12 +22,13 @@ use open_esp_radio_ieee80211::station_power_save::{
 };
 use open_esp_radio_ieee80211::{channel::WifiChannel, esp_now::EspNowRandomValue};
 use open_esp_radio_wifi_softmac::{
-    EspNowPeerId, EspNowProtocol, EspNowSendError, MacTxPlan, MacTxQueueState,
+    EspNowPeerId, EspNowProtocol, EspNowSendError, EspNowV2SendError, MacTxPlan, MacTxQueueState,
     interface::BoundVirtualInterface,
 };
 
 use open_esp_radio_esp32s31_wifi::esp_now::{
     Esp32s31EspNowTxConfig, Esp32s31EspNowTxError, start_esp_now_v1_plaintext,
+    start_esp_now_v2_plaintext,
 };
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{
     OrdinaryTxError, OrdinaryTxOwner, OrdinaryTxParked, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
@@ -98,18 +99,25 @@ pub enum SingleMpduTxError {
     RadioResetRequired(TxResetReason),
 }
 
-/// Failure before one ESP-NOW v1 request acquires the connected ordinary-TX
+/// Failure before one plaintext ESP-NOW request acquires the connected ordinary-TX
 /// transaction. Protocol admission and chip publication remain separate so
 /// applications can distinguish a stale peer from a hardware/PHY rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SingleMpduEspNowTxError {
     Protocol(EspNowSendError),
+    V2Protocol(EspNowV2SendError),
     Backend(Esp32s31EspNowTxError),
 }
 
 impl From<EspNowSendError> for SingleMpduEspNowTxError {
     fn from(error: EspNowSendError) -> Self {
         Self::Protocol(error)
+    }
+}
+
+impl From<EspNowV2SendError> for SingleMpduEspNowTxError {
+    fn from(error: EspNowV2SendError) -> Self {
+        Self::V2Protocol(error)
     }
 }
 
@@ -635,6 +643,36 @@ where
         let prepared =
             protocol.prepare_v1_tx(peer, self.sequences.non_qos_mut(), random_value, payload)?;
         start_esp_now_v1_plaintext(
+            &mut self.ordinary,
+            hardware,
+            prepared,
+            active_channel,
+            active_station,
+            config,
+        )
+        .map_err(Into::into)
+    }
+
+    /// Resolve and publish one plaintext v2 Action MPDU through the same
+    /// connected ordinary transaction as v1.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_esp_now_v2_plaintext<H: TxHardware, const PEERS: usize>(
+        &mut self,
+        hardware: &mut H,
+        protocol: &EspNowProtocol<PEERS>,
+        peer: EspNowPeerId,
+        random_value: EspNowRandomValue,
+        payload: &[u8],
+        active_channel: WifiChannel,
+        active_station: BoundVirtualInterface,
+        config: Esp32s31EspNowTxConfig,
+    ) -> Result<WifiTxProgress, SingleMpduEspNowTxError> {
+        if self.ordinary.active() {
+            return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
+        }
+        let prepared =
+            protocol.prepare_v2_tx(peer, self.sequences.non_qos_mut(), random_value, payload)?;
+        start_esp_now_v2_plaintext(
             &mut self.ordinary,
             hardware,
             prepared,

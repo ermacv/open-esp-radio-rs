@@ -39,7 +39,10 @@ use crate::{
 };
 
 use open_esp_radio_esp32s31_wifi::{
-    esp_now::{Esp32s31EspNowTxConfig, Esp32s31EspNowTxError, start_esp_now_v1_plaintext},
+    esp_now::{
+        Esp32s31EspNowTxConfig, Esp32s31EspNowTxError, start_esp_now_v1_plaintext,
+        start_esp_now_v2_plaintext,
+    },
     ordinary_tx::{
         OrdinaryTxError, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
         TX_METADATA_SIZE, TxResetReason, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
@@ -192,6 +195,35 @@ where
         }
         let prepared = protocol.prepare_v1_tx(peer, sequence, random_value, payload)?;
         start_esp_now_v1_plaintext(
+            &mut self.ordinary,
+            hardware,
+            prepared,
+            active_channel,
+            active_station,
+            config,
+        )
+        .map_err(Into::into)
+    }
+
+    /// Resolve and publish one standalone plaintext ESP-NOW v2 Action MPDU.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_esp_now_v2_plaintext<H: TxHardware, const PEERS: usize>(
+        &mut self,
+        hardware: &mut H,
+        protocol: &EspNowProtocol<PEERS>,
+        sequence: &mut StaSequenceCounter,
+        peer: EspNowPeerId,
+        random_value: EspNowRandomValue,
+        payload: &[u8],
+        active_channel: WifiChannel,
+        active_station: BoundVirtualInterface,
+        config: Esp32s31EspNowTxConfig,
+    ) -> Result<WifiTxProgress, SingleMpduEspNowTxError> {
+        if self.ordinary.active() {
+            return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
+        }
+        let prepared = protocol.prepare_v2_tx(peer, sequence, random_value, payload)?;
+        start_esp_now_v2_plaintext(
             &mut self.ordinary,
             hardware,
             prepared,

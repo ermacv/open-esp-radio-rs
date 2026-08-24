@@ -44,9 +44,9 @@ use crate::{
     roles::{
         esp_now::rx::{Esp32s31StandaloneEspNowReceive, Esp32s31StandaloneEspNowRxProgress},
         station::esp_now_tx::{
-            EspNowQueuedTx, EspNowTxCancelReason, EspNowTxMailboxInvariantError,
-            EspNowTxMailboxOwner, EspNowTxMailboxShutdown, EspNowTxRuntimeFailure,
-            EspNowTxTerminal,
+            EspNowQueuedRequest, EspNowQueuedTx, EspNowTxCancelReason,
+            EspNowTxMailboxInvariantError, EspNowTxMailboxOwner, EspNowTxMailboxShutdown,
+            EspNowTxRuntimeFailure, EspNowTxTerminal,
         },
     },
 };
@@ -606,27 +606,68 @@ where
         // No ordinary transaction is live, so any coalesced TX signal belongs
         // to an earlier role/transaction and must not complete this request.
         let _ = self.interrupts().mac_runtime().try_take_tx();
-        let result = {
-            let hardware = self
-                .hardware
-                .as_mut()
-                .expect("ESP-NOW hardware owner exists");
-            let tx = self.tx.as_mut().expect("ESP-NOW TX owner exists");
-            let protocol = self
-                .protocol
-                .as_ref()
-                .expect("ESP-NOW protocol owner exists");
-            tx.start_esp_now_v1_plaintext(
-                hardware,
-                protocol,
-                &mut self.sequence,
-                queued.request.peer(),
-                queued.request.random_value(),
-                queued.request.payload(),
-                self.binding.channel,
-                self.binding.station,
-                self.binding.tx,
-            )
+        let result = match queued.request {
+            EspNowQueuedRequest::V1(request) => {
+                let hardware = self
+                    .hardware
+                    .as_mut()
+                    .expect("ESP-NOW hardware owner exists");
+                let tx = self.tx.as_mut().expect("ESP-NOW TX owner exists");
+                let protocol = self
+                    .protocol
+                    .as_ref()
+                    .expect("ESP-NOW protocol owner exists");
+                tx.start_esp_now_v1_plaintext(
+                    hardware,
+                    protocol,
+                    &mut self.sequence,
+                    request.peer(),
+                    request.random_value(),
+                    request.payload(),
+                    self.binding.channel,
+                    self.binding.station,
+                    self.binding.tx,
+                )
+            }
+            EspNowQueuedRequest::V2(_) => {
+                let mailbox = self.mailbox.as_ref().expect("ESP-NOW mailbox owner exists");
+                let hardware = self
+                    .hardware
+                    .as_mut()
+                    .expect("ESP-NOW hardware owner exists");
+                let tx = self.tx.as_mut().expect("ESP-NOW TX owner exists");
+                let protocol = self
+                    .protocol
+                    .as_ref()
+                    .expect("ESP-NOW protocol owner exists");
+                let request = mailbox.with_v2_request(&queued, |request| {
+                    tx.start_esp_now_v2_plaintext(
+                        hardware,
+                        protocol,
+                        &mut self.sequence,
+                        request.peer(),
+                        request.random_value(),
+                        request.payload(),
+                        self.binding.channel,
+                        self.binding.station,
+                        self.binding.tx,
+                    )
+                });
+                match request {
+                    Ok(result) => result,
+                    Err(error) => {
+                        mailbox
+                            .publish(
+                                queued,
+                                EspNowTxTerminal::RuntimeFailure(
+                                    EspNowTxRuntimeFailure::MissingV2PayloadSlot,
+                                ),
+                            )
+                            .map_err(Esp32s31StandaloneEspNowRunError::Mailbox)?;
+                        return Err(Esp32s31StandaloneEspNowRunError::Mailbox(error));
+                    }
+                }
+            }
         };
         match result {
             Ok(WifiTxProgress::Pending) => {

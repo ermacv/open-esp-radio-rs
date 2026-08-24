@@ -24,7 +24,7 @@ pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::{
     Esp32s31EspNowTxBinding, EspNowOwnedV1Tx, EspNowTxBackpressure, EspNowTxCancelReason,
     EspNowTxCompletion, EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError,
     EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket,
-    EspNowTxTrySendError, attach_esp_now_tx,
+    EspNowTxTrySendError, EspNowV2TxTrySendError, attach_esp_now_tx,
 };
 pub use open_esp_radio_esp32s31_wifi_embassy::roles::esp_now::{
     Esp32s31StandaloneEspNowBinding, Esp32s31StandaloneEspNowBindingError,
@@ -34,6 +34,7 @@ pub use open_esp_radio_esp32s31_wifi_embassy::roles::esp_now::{
     Esp32s31StandaloneEspNowService, Esp32s31StandaloneEspNowStopError,
     Esp32s31StandaloneEspNowStopped, EspNowRxMailboxEpochError, EspNowRxMailboxResources,
     EspNowRxMailboxShutdown, EspNowRxPublishOutcome, EspNowRxPublisher, EspNowRxReceiver,
+    EspNowV2RxEvent, EspNowV2RxMailboxError,
 };
 pub use open_esp_radio_ieee80211::esp_now::{
     ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_V1_MAX_PAYLOAD_LEN,
@@ -45,6 +46,7 @@ pub use open_esp_radio_ieee80211::esp_now::{
     EspNowProtectedV1Envelope, EspNowProtectedV1WireError, EspNowRandomValue,
     EspNowUnicastAddress, EspNowV1WireError, EspNowV2Action, EspNowV2Element,
     EspNowV2Elements, EspNowV2Frame, EspNowV2Payload, EspNowV2Reassembly, EspNowV2WireError,
+    EspNowVersionError, EspNowWireVersion, esp_now_wire_version,
 };
 pub use open_esp_radio_wifi_softmac::{
     ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY, ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_KEY_LEN,
@@ -57,7 +59,7 @@ pub use open_esp_radio_wifi_softmac::{
     EspNowPeerTableError, EspNowPhyMode, EspNowPmk, EspNowPmkError, EspNowPmkId,
     EspNowPmkMutationFailure, EspNowPmkOwner, EspNowPreparedEncryptedV1Tx, EspNowPreparedV2Tx,
     EspNowProtocol, EspNowReceivedV2, EspNowRemovedEncryptedPeer, EspNowRxReplayCandidate,
-    EspNowV2ReceiveError, EspNowV2SendError, encrypted_peer_destination,
+    EspNowV2ReceiveError, EspNowV2RxOutcome, EspNowV2SendError, encrypted_peer_destination,
     esp_now_encrypted_v1_codec_status,
 };
 
@@ -96,6 +98,7 @@ pub fn prepare_esp32s31_standalone_esp_now<const PEERS: usize>(
 
 /// Small product default; applications may select another fixed capacity.
 pub const ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH: usize = 4;
+pub const ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH: usize = 4;
 
 pub type Esp32s31EspNowTxHandle<
     'resources,
@@ -148,6 +151,59 @@ impl<const CAPACITY: usize> Esp32s31EspNowTxResources<CAPACITY> {
 }
 
 impl<const CAPACITY: usize> Default for Esp32s31EspNowTxResources<CAPACITY> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub type Esp32s31EspNowRxPublisher<
+    'resources,
+    const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH,
+> = open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::EspNowRxPublisher<
+    'resources,
+    CriticalSectionRawMutex,
+    CAPACITY,
+>;
+
+pub type Esp32s31EspNowRxReceiver<
+    'resources,
+    const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH,
+> = open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::EspNowRxReceiver<
+    'resources,
+    CriticalSectionRawMutex,
+    CAPACITY,
+>;
+
+/// Explicit, allocation-free RX mailbox storage for v1 events and v2 payload
+/// slots. Applications opt in by placing this owner and attaching its
+/// publisher to the connected or standalone normal-RX sink.
+pub struct Esp32s31EspNowRxResources<
+    const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH,
+> {
+    inner: EspNowRxMailboxResources<CriticalSectionRawMutex, CAPACITY>,
+}
+
+impl<const CAPACITY: usize> Esp32s31EspNowRxResources<CAPACITY> {
+    pub const fn new() -> Self {
+        Self {
+            inner: EspNowRxMailboxResources::new(),
+        }
+    }
+
+    pub fn begin_epoch(
+        &mut self,
+    ) -> Result<
+        (
+            Esp32s31EspNowRxPublisher<'_, CAPACITY>,
+            Esp32s31EspNowRxReceiver<'_, CAPACITY>,
+        ),
+        EspNowRxMailboxEpochError,
+    > {
+        self.inner.begin_epoch()
+    }
+}
+
+impl<const CAPACITY: usize> Default for Esp32s31EspNowRxResources<CAPACITY> {
     fn default() -> Self {
         Self::new()
     }

@@ -10,10 +10,13 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
     PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
     extract_management,
 };
-use open_esp_radio_ieee80211::esp_now::{ESP_NOW_ACTION_CATEGORY, ESP_NOW_ORGANIZATION_IDENTIFIER};
+use open_esp_radio_ieee80211::esp_now::{
+    ESP_NOW_ACTION_CATEGORY, ESP_NOW_ORGANIZATION_IDENTIFIER, EspNowVersionError,
+    EspNowWireVersion, esp_now_wire_version,
+};
 use open_esp_radio_wifi_softmac::{
-    EspNowPeerId, EspNowReceiveError, EspNowReceivedV1, EspNowRxEpoch, EspNowRxOutcome,
-    MacRxMetadata,
+    EspNowPeerId, EspNowReceiveError, EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch,
+    EspNowRxOutcome, EspNowV2ReceiveError, EspNowV2RxOutcome, MacRxMetadata,
 };
 
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
@@ -25,12 +28,24 @@ pub struct StandaloneEspNowRxEvent<'frame> {
     pub metadata: MacRxMetadata<RxPhyInfo>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct StandaloneEspNowV2RxEvent<'frame> {
+    pub received: EspNowReceivedV2<'frame>,
+    pub metadata: MacRxMetadata<RxPhyInfo>,
+}
+
 /// Finite publication boundary for a standalone application service.
 ///
 /// A sink which retains a datagram must copy it before returning. The shared
 /// Embassy ESP-NOW RX mailbox already provides that owned bounded handoff.
 pub trait StandaloneEspNowRxSink {
     fn publish(&mut self, event: StandaloneEspNowRxEvent<'_>);
+
+    fn supports_v2(&self) -> bool {
+        false
+    }
+
+    fn publish_v2(&mut self, _event: StandaloneEspNowV2RxEvent<'_>) {}
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,12 +53,17 @@ pub enum StandaloneEspNowRxError {
     PublicHeader,
     Rx(RxError),
     Protocol(EspNowReceiveError),
+    V2Protocol(EspNowV2ReceiveError),
+    Version(EspNowVersionError),
+    V2SinkUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StandaloneEspNowRxDispatch {
     Received { peer: EspNowPeerId },
     Duplicate { peer: EspNowPeerId },
+    V2Received { peer: EspNowPeerId },
+    V2Duplicate { peer: EspNowPeerId },
     Ignored,
     Rejected(StandaloneEspNowRxError),
 }
@@ -104,19 +124,52 @@ impl<const PEERS: usize> StandaloneEspNowRxDispatcher<PEERS> {
         if management.length < 24 || !is_esp_now_action_candidate(&mpdu[24..management.length]) {
             return StandaloneEspNowRxDispatch::Ignored;
         }
-        match self.epoch.receive_v1(&mpdu[..management.length]) {
-            Ok(EspNowRxOutcome::Received(received)) => {
-                let peer = received.peer();
-                let metadata =
-                    decode_normalized_rx_metadata(raw).unwrap_or_else(MacRxMetadata::unavailable);
-                sink.publish(StandaloneEspNowRxEvent { received, metadata });
-                StandaloneEspNowRxDispatch::Received { peer }
-            }
-            Ok(EspNowRxOutcome::Duplicate { peer }) => {
-                StandaloneEspNowRxDispatch::Duplicate { peer }
-            }
+        let body = &mpdu[24..management.length];
+        let version = match esp_now_wire_version(body) {
+            Ok(version) => version,
             Err(error) => {
-                StandaloneEspNowRxDispatch::Rejected(StandaloneEspNowRxError::Protocol(error))
+                return StandaloneEspNowRxDispatch::Rejected(StandaloneEspNowRxError::Version(
+                    error,
+                ));
+            }
+        };
+        match version {
+            EspNowWireVersion::V1 => match self.epoch.receive_v1(&mpdu[..management.length]) {
+                Ok(EspNowRxOutcome::Received(received)) => {
+                    let peer = received.peer();
+                    let metadata = decode_normalized_rx_metadata(raw)
+                        .unwrap_or_else(MacRxMetadata::unavailable);
+                    sink.publish(StandaloneEspNowRxEvent { received, metadata });
+                    StandaloneEspNowRxDispatch::Received { peer }
+                }
+                Ok(EspNowRxOutcome::Duplicate { peer }) => {
+                    StandaloneEspNowRxDispatch::Duplicate { peer }
+                }
+                Err(error) => {
+                    StandaloneEspNowRxDispatch::Rejected(StandaloneEspNowRxError::Protocol(error))
+                }
+            },
+            EspNowWireVersion::V2 => {
+                if !sink.supports_v2() {
+                    return StandaloneEspNowRxDispatch::Rejected(
+                        StandaloneEspNowRxError::V2SinkUnavailable,
+                    );
+                }
+                match self.epoch.receive_v2(&mpdu[..management.length]) {
+                    Ok(EspNowV2RxOutcome::Received(received)) => {
+                        let peer = received.peer();
+                        let metadata = decode_normalized_rx_metadata(raw)
+                            .unwrap_or_else(MacRxMetadata::unavailable);
+                        sink.publish_v2(StandaloneEspNowV2RxEvent { received, metadata });
+                        StandaloneEspNowRxDispatch::V2Received { peer }
+                    }
+                    Ok(EspNowV2RxOutcome::Duplicate { peer }) => {
+                        StandaloneEspNowRxDispatch::V2Duplicate { peer }
+                    }
+                    Err(error) => StandaloneEspNowRxDispatch::Rejected(
+                        StandaloneEspNowRxError::V2Protocol(error),
+                    ),
+                }
             }
         }
     }

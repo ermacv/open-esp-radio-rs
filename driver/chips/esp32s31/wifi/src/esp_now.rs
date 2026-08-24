@@ -1,4 +1,4 @@
-//! ESP32-S31 handoff for ESP-NOW v1.
+//! ESP32-S31 handoff for plaintext ESP-NOW v1 and v2.
 //!
 //! The portable protocol owner supplies an already validated vendor Action
 //! MPDU. This module binds it to the ordinary station queue only after the
@@ -17,13 +17,14 @@ use open_esp_radio_esp32s31_wifi_mac::{
 use open_esp_radio_ieee80211::{channel::WifiChannel, wmm::WmmAccessCategory};
 use open_esp_radio_wifi_softmac::{
     EspNowEncryptedPeerId, EspNowHtGuardInterval, EspNowHtMcs, EspNowLmk, EspNowOfdmRate,
-    EspNowPhyMode, EspNowPreparedEncryptedV1Tx, EspNowPreparedV1Tx, MacTxPlan,
+    EspNowPhyMode, EspNowPreparedEncryptedV1Tx, EspNowPreparedV1Tx, EspNowPreparedV2Tx, MacTxPlan,
     interface::BoundVirtualInterface,
 };
 
 use crate::{
     ordinary_tx::{
-        OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOwner, OrdinaryTxPlan, TX_METADATA_SIZE,
+        OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOwner, OrdinaryTxPlan, TX_FCS_SIZE,
+        TX_METADATA_SIZE,
     },
     tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxProgress, WifiTxTimer},
 };
@@ -321,7 +322,102 @@ where
             active: active_station,
         });
     }
-    let (initial_rate, retry_rate_policy) = match prepared.phy_mode() {
+    let (initial_rate, retry_rate_policy) =
+        plaintext_tx_policy(hardware, prepared.phy_mode(), config)?;
+
+    let frame_length = {
+        let buffer = ordinary.buffer_mut().map_err(Esp32s31EspNowTxError::Tx)?;
+        let Some(frame_buffer) = buffer.get_mut(TX_METADATA_SIZE..) else {
+            return Err(Esp32s31EspNowTxError::Tx(
+                OrdinaryTxError::BufferSizeOverflow,
+            ));
+        };
+        prepared
+            .encode(frame_buffer)
+            .map_err(Esp32s31EspNowTxError::Wire)?
+    };
+    publish_plaintext(
+        ordinary,
+        hardware,
+        frame_length,
+        prepared.destination().is_broadcast(),
+        initial_rate,
+        retry_rate_policy,
+        config,
+    )
+}
+
+/// Encode and publish one validated plaintext ESP-NOW v2 frame through the
+/// same ordinary station owner, retry policy and IRQ lifecycle as v1.
+///
+/// A generic buffer smaller than the complete metadata plus MPDU requirement
+/// is rejected before `buffer_mut` can expose or mutate DMA storage.
+pub fn start_esp_now_v2_plaintext<H, P, E, T, const BUFFER_SIZE: usize>(
+    ordinary: &mut OrdinaryTxOwner<'_, P, E, T, BUFFER_SIZE>,
+    hardware: &mut H,
+    prepared: EspNowPreparedV2Tx<'_>,
+    active_channel: WifiChannel,
+    active_station: BoundVirtualInterface,
+    config: Esp32s31EspNowTxConfig,
+) -> Result<WifiTxProgress, Esp32s31EspNowTxError>
+where
+    H: TxHardware,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+{
+    if prepared.home_channel() != active_channel {
+        return Err(Esp32s31EspNowTxError::ChannelMismatch {
+            prepared: prepared.home_channel(),
+            active: active_channel,
+        });
+    }
+    if prepared.station() != active_station {
+        return Err(Esp32s31EspNowTxError::StationBindingMismatch {
+            prepared: prepared.station(),
+            active: active_station,
+        });
+    }
+    let required = TX_METADATA_SIZE
+        .checked_add(prepared.encoded_len())
+        .and_then(|length| length.checked_add(TX_FCS_SIZE))
+        .and_then(|length| length.checked_add(3))
+        .map(|length| length & !3)
+        .ok_or(Esp32s31EspNowTxError::Tx(
+            OrdinaryTxError::BufferSizeOverflow,
+        ))?;
+    if BUFFER_SIZE < required {
+        return Err(Esp32s31EspNowTxError::BufferTooSmall {
+            required,
+            available: BUFFER_SIZE,
+        });
+    }
+    let (initial_rate, retry_rate_policy) =
+        plaintext_tx_policy(hardware, prepared.phy_mode(), config)?;
+    let frame_length = {
+        let buffer = ordinary.buffer_mut().map_err(Esp32s31EspNowTxError::Tx)?;
+        let frame_buffer = &mut buffer[TX_METADATA_SIZE..];
+        prepared
+            .encode(frame_buffer)
+            .map_err(Esp32s31EspNowTxError::V2Wire)?
+    };
+    publish_plaintext(
+        ordinary,
+        hardware,
+        frame_length,
+        prepared.destination().is_broadcast(),
+        initial_rate,
+        retry_rate_policy,
+        config,
+    )
+}
+
+fn plaintext_tx_policy<H: TxHardware>(
+    hardware: &mut H,
+    phy_mode: EspNowPhyMode,
+    config: Esp32s31EspNowTxConfig,
+) -> Result<(TxPhyRate, OrdinaryRetryRatePolicy), Esp32s31EspNowTxError> {
+    Ok(match phy_mode {
         EspNowPhyMode::LegacyDsss1M => (
             TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
             OrdinaryRetryRatePolicy::Normal,
@@ -377,20 +473,25 @@ where
                 },
             ));
         }
-    };
+    })
+}
 
-    let frame_length = {
-        let buffer = ordinary.buffer_mut().map_err(Esp32s31EspNowTxError::Tx)?;
-        let Some(frame_buffer) = buffer.get_mut(TX_METADATA_SIZE..) else {
-            return Err(Esp32s31EspNowTxError::Tx(
-                OrdinaryTxError::BufferSizeOverflow,
-            ));
-        };
-        prepared
-            .encode(frame_buffer)
-            .map_err(Esp32s31EspNowTxError::Wire)?
-    };
-    let publication_limit = if prepared.destination().is_broadcast() {
+fn publish_plaintext<H, P, E, T, const BUFFER_SIZE: usize>(
+    ordinary: &mut OrdinaryTxOwner<'_, P, E, T, BUFFER_SIZE>,
+    hardware: &mut H,
+    frame_length: usize,
+    broadcast: bool,
+    initial_rate: TxPhyRate,
+    retry_rate_policy: OrdinaryRetryRatePolicy,
+    config: Esp32s31EspNowTxConfig,
+) -> Result<WifiTxProgress, Esp32s31EspNowTxError>
+where
+    H: TxHardware,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+{
+    let publication_limit = if broadcast {
         1
     } else {
         config.unicast_publication_limit
@@ -474,7 +575,12 @@ pub enum Esp32s31EspNowTxError {
         error: MacLowRateTransitionError,
     },
     LongRangeUnsupported(Esp32s31EspNowLongRangeUnsupported),
+    BufferTooSmall {
+        required: usize,
+        available: usize,
+    },
     Wire(open_esp_radio_ieee80211::esp_now::EspNowV1WireError),
+    V2Wire(open_esp_radio_ieee80211::esp_now::EspNowV2WireError),
     Tx(OrdinaryTxError),
 }
 
@@ -505,7 +611,15 @@ impl fmt::Display for Esp32s31EspNowTxError {
                 "ESP32-S31 ESP-NOW LR {:?} reached {:?}; missing {:?}",
                 frontier.selection, frontier.reached, frontier.missing
             ),
+            Self::BufferTooSmall {
+                required,
+                available,
+            } => write!(
+                formatter,
+                "ESP-NOW v2 TX needs {required} buffer bytes, only {available} are available"
+            ),
             Self::Wire(error) => write!(formatter, "ESP-NOW frame error: {error}"),
+            Self::V2Wire(error) => write!(formatter, "ESP-NOW v2 frame error: {error}"),
             Self::Tx(error) => write!(formatter, "ESP-NOW ordinary TX error: {error:?}"),
         }
     }

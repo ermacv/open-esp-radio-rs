@@ -4,7 +4,7 @@
 )]
 
 //! No-allocation application handoff and connected-control scheduling for
-//! plaintext ESP-NOW v1 transmit.
+//! plaintext ESP-NOW v1/v2 transmit.
 //!
 //! The application owns copied payloads and observes one terminal completion
 //! for every admitted ticket. The scheduler owns peer resolution and the sole
@@ -13,12 +13,16 @@
 //! chip ESP-NOW backend.
 
 use core::{
+    cell::RefCell,
     future::Future,
     sync::atomic::{AtomicU32, Ordering},
 };
 
 use embassy_futures::select::{Either, select};
-use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
+use embassy_sync::{
+    blocking_mutex::Mutex as BlockingMutex,
+    channel::{Channel, Receiver, Sender, TrySendError},
+};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxConfig;
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
@@ -28,7 +32,10 @@ use open_esp_radio_esp32s31_wifi_sta::{
 };
 use open_esp_radio_ieee80211::{
     channel::WifiChannel,
-    esp_now::{ESP_NOW_V1_MAX_PAYLOAD_LEN, EspNowRandomValue, EspNowV1Payload, EspNowV1WireError},
+    esp_now::{
+        ESP_NOW_V1_MAX_PAYLOAD_LEN, ESP_NOW_V2_MAX_PAYLOAD_LEN, EspNowRandomValue, EspNowV1Payload,
+        EspNowV1WireError, EspNowV2Payload, EspNowV2WireError,
+    },
 };
 use open_esp_radio_wifi_softmac::{EspNowPeerId, EspNowProtocol, interface::BoundVirtualInterface};
 
@@ -102,9 +109,63 @@ impl EspNowTxTicket {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct EspNowV2TxLease {
+    slot: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EspNowQueuedRequest {
+    V1(EspNowOwnedV1Tx),
+    V2(EspNowV2TxLease),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct EspNowQueuedTx {
     pub(crate) ticket: EspNowTxTicket,
-    pub(crate) request: EspNowOwnedV1Tx,
+    pub(crate) peer: EspNowPeerId,
+    pub(crate) request: EspNowQueuedRequest,
+}
+
+#[derive(Clone, Copy)]
+struct EspNowV2TxHeader {
+    ticket: EspNowTxTicket,
+    peer: EspNowPeerId,
+    random_value: EspNowRandomValue,
+    payload_length: u16,
+}
+
+struct EspNowV2TxSlot {
+    header: Option<EspNowV2TxHeader>,
+    payload: [u8; ESP_NOW_V2_MAX_PAYLOAD_LEN],
+}
+
+impl EspNowV2TxSlot {
+    const EMPTY: Self = Self {
+        header: None,
+        payload: [0; ESP_NOW_V2_MAX_PAYLOAD_LEN],
+    };
+}
+
+/// Borrowed view of an application request while its preallocated slot is
+/// synchronously copied into the ordinary TX arena.
+pub struct EspNowV2TxRequest<'payload> {
+    peer: EspNowPeerId,
+    random_value: EspNowRandomValue,
+    payload: &'payload [u8],
+}
+
+impl EspNowV2TxRequest<'_> {
+    pub const fn peer(&self) -> EspNowPeerId {
+        self.peer
+    }
+
+    pub const fn random_value(&self) -> EspNowRandomValue {
+        self.random_value
+    }
+
+    pub const fn payload(&self) -> &[u8] {
+        self.payload
+    }
 }
 
 /// Why an admitted request ended without starting a new transmission.
@@ -119,6 +180,7 @@ pub enum EspNowTxCancelReason {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspNowTxRuntimeFailure {
     MissingOrdinaryTxOutcome,
+    MissingV2PayloadSlot,
     TxLifecycle(SingleMpduTxError),
 }
 
@@ -163,13 +225,22 @@ pub struct EspNowTxTrySendError {
     pub request: EspNowOwnedV1Tx,
 }
 
+/// Failed v2 admission. The caller's borrowed payload is never consumed;
+/// bytes become mailbox-owned only after this call succeeds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowV2TxTrySendError {
+    Wire(EspNowV2WireError),
+    Backpressure(EspNowTxBackpressure),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspNowTxMailboxInvariantError {
     CompletionQueueFull,
     PublisherInFlight,
+    MissingV2PayloadSlot,
 }
 
-/// Static request/completion queues and their reconnect generation.
+/// Static request/completion queues, v2 payload slots and reconnect generation.
 ///
 /// Both channels have the same capacity. Admission reserves one completion
 /// slot before publishing a request, so stop/reconnect can synchronously emit
@@ -182,6 +253,7 @@ pub struct EspNowTxMailboxResources<M: RawMutex, const CAPACITY: usize> {
     next_request: AtomicU32,
     outstanding: AtomicU32,
     publishers: AtomicU32,
+    v2_slots: BlockingMutex<M, RefCell<[EspNowV2TxSlot; CAPACITY]>>,
 }
 
 impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxResources<M, CAPACITY> {
@@ -193,6 +265,7 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxResources<M, CAPACITY> {
             next_request: AtomicU32::new(0),
             outstanding: AtomicU32::new(0),
             publishers: AtomicU32::new(0),
+            v2_slots: BlockingMutex::new(RefCell::new([const { EspNowV2TxSlot::EMPTY }; CAPACITY])),
         }
     }
 
@@ -220,6 +293,9 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxResources<M, CAPACITY> {
         let completion_receiver = self.completions.receiver();
         while request_receiver.try_receive().is_ok() {}
         while completion_receiver.try_receive().is_ok() {}
+        for slot in self.v2_slots.get_mut().get_mut() {
+            slot.header = None;
+        }
         let epoch = current + 1;
         self.next_request.store(0, Ordering::Release);
         self.outstanding.store(0, Ordering::Release);
@@ -234,6 +310,7 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxResources<M, CAPACITY> {
                 next_request: &self.next_request,
                 outstanding: &self.outstanding,
                 publishers: &self.publishers,
+                v2_slots: &self.v2_slots,
                 epoch,
             },
             EspNowTxMailboxOwner {
@@ -241,6 +318,7 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxResources<M, CAPACITY> {
                 completions: self.completions.sender(),
                 generation: &self.generation,
                 publishers: &self.publishers,
+                v2_slots: &self.v2_slots,
                 epoch,
                 open: true,
             },
@@ -256,8 +334,9 @@ impl<M: RawMutex, const CAPACITY: usize> Default for EspNowTxMailboxResources<M,
 
 /// Application capability for one connected ESP-NOW TX epoch.
 ///
-/// `try_send` is intentionally non-blocking: queue saturation is visible as
-/// typed backpressure and a task can continue draining terminal completions.
+/// Both `try_send` and `try_send_v2` are intentionally non-blocking: queue
+/// saturation is visible as typed backpressure while an application drains
+/// terminal completions.
 pub struct EspNowTxHandle<'resources, M: RawMutex, const CAPACITY: usize> {
     requests: Sender<'resources, M, EspNowQueuedTx, CAPACITY>,
     completions: Receiver<'resources, M, EspNowTxCompletion, CAPACITY>,
@@ -265,6 +344,7 @@ pub struct EspNowTxHandle<'resources, M: RawMutex, const CAPACITY: usize> {
     next_request: &'resources AtomicU32,
     outstanding: &'resources AtomicU32,
     publishers: &'resources AtomicU32,
+    v2_slots: &'resources BlockingMutex<M, RefCell<[EspNowV2TxSlot; CAPACITY]>>,
     epoch: u32,
 }
 
@@ -332,14 +412,110 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxHandle<'_, M, CAPACITY> {
             epoch: self.epoch,
             request: request_id,
         };
-        match self.requests.try_send(EspNowQueuedTx { ticket, request }) {
+        match self.requests.try_send(EspNowQueuedTx {
+            ticket,
+            peer: request.peer(),
+            request: EspNowQueuedRequest::V1(request),
+        }) {
             Ok(()) => Ok(ticket),
             Err(TrySendError::Full(queued)) => {
                 self.outstanding.fetch_sub(1, Ordering::AcqRel);
                 Err(EspNowTxTrySendError {
                     reason: EspNowTxBackpressure::QueueFull,
-                    request: queued.request,
+                    request: match queued.request {
+                        EspNowQueuedRequest::V1(request) => request,
+                        EspNowQueuedRequest::V2(_) => {
+                            unreachable!("v1 admission cannot publish a v2 lease")
+                        }
+                    },
                 })
+            }
+        }
+    }
+
+    /// Copy and admit one v2 request into a preallocated payload slot.
+    ///
+    /// The 1470-byte storage never enters an Embassy channel or an async
+    /// future; only its generation-fenced slot lease is queued.
+    pub fn try_send_v2(
+        &self,
+        peer: EspNowPeerId,
+        random_value: EspNowRandomValue,
+        payload: &[u8],
+    ) -> Result<EspNowTxTicket, EspNowV2TxTrySendError> {
+        let payload = EspNowV2Payload::new(payload).map_err(EspNowV2TxTrySendError::Wire)?;
+        if self.generation.load(Ordering::Acquire) != self.epoch {
+            return Err(EspNowV2TxTrySendError::Backpressure(
+                EspNowTxBackpressure::StaleEpoch,
+            ));
+        }
+        self.publishers.fetch_add(1, Ordering::AcqRel);
+        let _publication = EspNowTxPublicationLease {
+            publishers: self.publishers,
+        };
+        if self.generation.load(Ordering::Acquire) != self.epoch {
+            return Err(EspNowV2TxTrySendError::Backpressure(
+                EspNowTxBackpressure::StaleEpoch,
+            ));
+        }
+        let request_id = self
+            .next_request
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                current.checked_add(1)
+            })
+            .map(|previous| previous + 1)
+            .map_err(|_| {
+                EspNowV2TxTrySendError::Backpressure(EspNowTxBackpressure::RequestIdExhausted)
+            })?;
+        if self
+            .outstanding
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                (usize::try_from(current).unwrap_or(usize::MAX) < CAPACITY).then_some(current + 1)
+            })
+            .is_err()
+        {
+            return Err(EspNowV2TxTrySendError::Backpressure(
+                EspNowTxBackpressure::QueueFull,
+            ));
+        }
+        let ticket = EspNowTxTicket {
+            epoch: self.epoch,
+            request: request_id,
+        };
+        let slot = self.v2_slots.lock(|slots| {
+            let mut slots = slots.borrow_mut();
+            let index = slots.iter().position(|slot| slot.header.is_none())?;
+            slots[index].payload[..payload.len()].copy_from_slice(payload.bytes());
+            slots[index].header = Some(EspNowV2TxHeader {
+                ticket,
+                peer,
+                random_value,
+                payload_length: payload.len() as u16,
+            });
+            Some(index)
+        });
+        let Some(slot) = slot else {
+            self.outstanding.fetch_sub(1, Ordering::AcqRel);
+            return Err(EspNowV2TxTrySendError::Backpressure(
+                EspNowTxBackpressure::QueueFull,
+            ));
+        };
+        let queued = EspNowQueuedTx {
+            ticket,
+            peer,
+            request: EspNowQueuedRequest::V2(EspNowV2TxLease { slot }),
+        };
+        match self.requests.try_send(queued) {
+            Ok(()) => Ok(ticket),
+            Err(TrySendError::Full(queued)) => {
+                self.v2_slots.lock(|slots| {
+                    slots.borrow_mut()[slot].header = None;
+                });
+                self.outstanding.fetch_sub(1, Ordering::AcqRel);
+                let _ = queued;
+                Err(EspNowV2TxTrySendError::Backpressure(
+                    EspNowTxBackpressure::QueueFull,
+                ))
             }
         }
     }
@@ -380,6 +556,7 @@ pub struct EspNowTxMailboxOwner<'resources, M: RawMutex, const CAPACITY: usize> 
     completions: Sender<'resources, M, EspNowTxCompletion, CAPACITY>,
     generation: &'resources AtomicU32,
     publishers: &'resources AtomicU32,
+    v2_slots: &'resources BlockingMutex<M, RefCell<[EspNowV2TxSlot; CAPACITY]>>,
     epoch: u32,
     open: bool,
 }
@@ -409,6 +586,49 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxOwner<'_, M, CAPACITY> {
         self.requests.try_receive().ok()
     }
 
+    pub(crate) fn with_v2_request<R>(
+        &self,
+        queued: &EspNowQueuedTx,
+        use_request: impl FnOnce(EspNowV2TxRequest<'_>) -> R,
+    ) -> Result<R, EspNowTxMailboxInvariantError> {
+        let EspNowQueuedRequest::V2(lease) = queued.request else {
+            return Err(EspNowTxMailboxInvariantError::MissingV2PayloadSlot);
+        };
+        self.v2_slots.lock(|slots| {
+            let slots = slots.borrow();
+            let Some(slot) = slots.get(lease.slot) else {
+                return Err(EspNowTxMailboxInvariantError::MissingV2PayloadSlot);
+            };
+            let Some(header) = slot.header else {
+                return Err(EspNowTxMailboxInvariantError::MissingV2PayloadSlot);
+            };
+            if header.ticket != queued.ticket || header.peer != queued.peer {
+                return Err(EspNowTxMailboxInvariantError::MissingV2PayloadSlot);
+            }
+            Ok(use_request(EspNowV2TxRequest {
+                peer: header.peer,
+                random_value: header.random_value,
+                payload: &slot.payload[..usize::from(header.payload_length)],
+            }))
+        })
+    }
+
+    fn release_v2_slot(&self, queued: &EspNowQueuedTx) {
+        let EspNowQueuedRequest::V2(lease) = queued.request else {
+            return;
+        };
+        self.v2_slots.lock(|slots| {
+            let mut slots = slots.borrow_mut();
+            if slots
+                .get(lease.slot)
+                .and_then(|slot| slot.header)
+                .is_some_and(|header| header.ticket == queued.ticket)
+            {
+                slots[lease.slot].header = None;
+            }
+        });
+    }
+
     pub(crate) fn close(&mut self) {
         if !self.open {
             return;
@@ -427,10 +647,11 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxOwner<'_, M, CAPACITY> {
         queued: EspNowQueuedTx,
         terminal: EspNowTxTerminal,
     ) -> Result<(), EspNowTxMailboxInvariantError> {
+        self.release_v2_slot(&queued);
         self.completions
             .try_send(EspNowTxCompletion {
                 ticket: queued.ticket,
-                peer: queued.request.peer(),
+                peer: queued.peer,
                 terminal,
             })
             .map_err(|TrySendError::Full(_)| EspNowTxMailboxInvariantError::CompletionQueueFull)
@@ -482,6 +703,16 @@ pub trait EspNowConnectedTx: ConnectedControlTx {
         hardware: &mut H,
         protocol: &EspNowProtocol<PEERS>,
         request: &EspNowOwnedV1Tx,
+        active_channel: WifiChannel,
+        active_station: BoundVirtualInterface,
+        config: Esp32s31EspNowTxConfig,
+    ) -> Result<WifiTxProgress, SingleMpduEspNowTxError>;
+
+    fn start_esp_now_v2_plaintext<H: TxHardware, const PEERS: usize>(
+        &mut self,
+        hardware: &mut H,
+        protocol: &EspNowProtocol<PEERS>,
+        request: EspNowV2TxRequest<'_>,
         active_channel: WifiChannel,
         active_station: BoundVirtualInterface,
         config: Esp32s31EspNowTxConfig,
@@ -844,14 +1075,43 @@ impl<
             .protocol
             .as_ref()
             .ok_or(Esp32s31EspNowConnectedControlError::AlreadyShutdown)?;
-        match tx.start_esp_now_v1_plaintext(
-            hardware,
-            protocol,
-            &queued.request,
-            self.active_channel,
-            self.active_station,
-            self.config,
-        ) {
+        let result = match queued.request {
+            EspNowQueuedRequest::V1(request) => tx.start_esp_now_v1_plaintext(
+                hardware,
+                protocol,
+                &request,
+                self.active_channel,
+                self.active_station,
+                self.config,
+            ),
+            EspNowQueuedRequest::V2(_) => {
+                let request = self.mailbox()?.with_v2_request(&queued, |request| {
+                    tx.start_esp_now_v2_plaintext(
+                        hardware,
+                        protocol,
+                        request,
+                        self.active_channel,
+                        self.active_station,
+                        self.config,
+                    )
+                });
+                match request {
+                    Ok(result) => result,
+                    Err(error) => {
+                        self.mailbox()?
+                            .publish(
+                                queued,
+                                EspNowTxTerminal::RuntimeFailure(
+                                    EspNowTxRuntimeFailure::MissingV2PayloadSlot,
+                                ),
+                            )
+                            .map_err(Esp32s31EspNowConnectedControlError::Mailbox)?;
+                        return Err(Esp32s31EspNowConnectedControlError::Mailbox(error));
+                    }
+                }
+            }
+        };
+        match result {
             Ok(WifiTxProgress::Pending) => {
                 self.active = Some(queued);
                 Ok(DatapathControlProgress::TxPending)

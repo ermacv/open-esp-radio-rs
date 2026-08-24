@@ -172,6 +172,20 @@ impl<S: ConnectedRxSink> ConnectedRxSink for AlwaysReadyConnectedRxSink<S> {
     ) {
         self.0.publish(event);
     }
+
+    fn supports_esp_now_v2(&self) -> bool {
+        self.0.supports_esp_now_v2()
+    }
+
+    fn publish_esp_now_v2(
+        &mut self,
+        received: open_esp_radio_wifi_softmac::EspNowReceivedV2<'_>,
+        metadata: open_esp_radio_wifi_softmac::MacRxMetadata<
+            open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo,
+        >,
+    ) {
+        self.0.publish_esp_now_v2(received, metadata);
+    }
 }
 
 impl<S: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>

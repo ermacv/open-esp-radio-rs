@@ -31,7 +31,7 @@ struct EspNowRxFingerprint {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct EspNowRxPeerSlot {
-    peer: Option<(EspNowPeerId, EspNowUnicastAddress)>,
+    peer: Option<(EspNowPeerId, EspNowUnicastAddress, EspNowPeerCapability)>,
     history: [Option<EspNowRxFingerprint>; ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY],
     next_history: usize,
 }
@@ -568,7 +568,7 @@ impl<const N: usize> EspNowProtocol<N> {
                 continue;
             };
             slots[peer.index] = EspNowRxPeerSlot {
-                peer: Some((peer, address)),
+                peer: Some((peer, address, config.capability)),
                 history: [None; ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY],
                 next_history: 0,
             };
@@ -596,6 +596,7 @@ impl<const N: usize> EspNowProtocol<N> {
             let expected = match peer_slot.config {
                 Some(EspNowPeerConfig {
                     destination: EspNowDestination::Unicast(address),
+                    capability,
                     ..
                 }) => {
                     peer_count += 1;
@@ -605,6 +606,7 @@ impl<const N: usize> EspNowProtocol<N> {
                             generation: peer_slot.generation,
                         },
                         address,
+                        capability,
                     ))
                 }
                 Some(_) | None => None,
@@ -708,8 +710,7 @@ impl<const N: usize> EspNowProtocol<N> {
     }
 
     /// Structurally parse and admit one portable plaintext v2 frame from an
-    /// explicitly v2-capable individual peer. This does not claim that a chip
-    /// backend has wired the frame into its normal-RX path and does not perform
+    /// explicitly v2-capable individual peer. This direct API does not perform
     /// the duplicate suppression owned by a live runtime RX epoch.
     pub fn receive_v2<'frame>(
         &self,
@@ -813,11 +814,11 @@ impl<const N: usize> EspNowRxEpoch<N> {
         let source = frame.source();
         let Some(slot) = self.slots.iter_mut().find(|slot| {
             slot.peer
-                .is_some_and(|(_, configured_source)| configured_source == source)
+                .is_some_and(|(_, configured_source, _)| configured_source == source)
         }) else {
             return Err(EspNowReceiveError::UnknownPeer(source));
         };
-        let (peer, _) = slot
+        let (peer, _, _) = slot
             .peer
             .expect("an ESP-NOW RX slot selected by source is occupied");
         let fingerprint = EspNowRxFingerprint {
@@ -830,6 +831,53 @@ impl<const N: usize> EspNowRxEpoch<N> {
         slot.history[slot.next_history] = Some(fingerprint);
         slot.next_history = (slot.next_history + 1) % ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY;
         Ok(EspNowRxOutcome::Received(EspNowReceivedV1 { peer, frame }))
+    }
+
+    /// Parse, capability-check and admit one complete plaintext v2 MPDU.
+    ///
+    /// The same per-peer random-value/sequence fingerprint history is shared
+    /// with v1, so a live epoch cannot publish a duplicate merely because the
+    /// sender changed its wire version. Capability is checked before the
+    /// fingerprint is committed.
+    pub fn receive_v2<'frame>(
+        &mut self,
+        bytes: &'frame [u8],
+    ) -> Result<EspNowV2RxOutcome<'frame>, EspNowV2ReceiveError> {
+        let frame = EspNowV2Frame::parse(bytes).map_err(EspNowV2ReceiveError::Wire)?;
+        if !matches!(frame.destination(), EspNowDestination::Broadcast)
+            && frame.destination() != EspNowDestination::Unicast(self.config.local_address)
+        {
+            return Err(EspNowV2ReceiveError::ForeignDestination(
+                frame.destination(),
+            ));
+        }
+
+        let source = frame.source();
+        let Some(slot) = self.slots.iter_mut().find(|slot| {
+            slot.peer
+                .is_some_and(|(_, configured_source, _)| configured_source == source)
+        }) else {
+            return Err(EspNowV2ReceiveError::UnknownPeer(source));
+        };
+        let (peer, _, capability) = slot
+            .peer
+            .expect("an ESP-NOW RX slot selected by source is occupied");
+        if !capability.supports_v2() {
+            return Err(EspNowV2ReceiveError::PeerNotV2Capable { peer, capability });
+        }
+        let fingerprint = EspNowRxFingerprint {
+            random_value: frame.action().random_value(),
+            sequence_number: frame.sequence_number(),
+        };
+        if slot.history.contains(&Some(fingerprint)) {
+            return Ok(EspNowV2RxOutcome::Duplicate { peer });
+        }
+        slot.history[slot.next_history] = Some(fingerprint);
+        slot.next_history = (slot.next_history + 1) % ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY;
+        Ok(EspNowV2RxOutcome::Received(EspNowReceivedV2 {
+            peer,
+            frame,
+        }))
     }
 
     /// Clear duplicate state before the surrounding normal-RX owner is
@@ -852,6 +900,13 @@ impl<const N: usize> EspNowRxEpoch<N> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspNowRxOutcome<'frame> {
     Received(EspNowReceivedV1<'frame>),
+    Duplicate { peer: EspNowPeerId },
+}
+
+/// Result of live v2 admission before an integration copies the payload.
+#[derive(Clone, Copy, Debug)]
+pub enum EspNowV2RxOutcome<'frame> {
+    Received(EspNowReceivedV2<'frame>),
     Duplicate { peer: EspNowPeerId },
 }
 
@@ -905,9 +960,8 @@ impl EspNowPreparedV1Tx<'_> {
 
 /// Portable, fully validated v2 plaintext handoff.
 ///
-/// S31 runtime support remains a separate ownership boundary; this value may
-/// be encoded by an application/backend that explicitly owns a sufficiently
-/// large ordinary Action-frame TX buffer.
+/// A chip runtime may encode this value only while it owns a sufficiently
+/// large ordinary Action-frame TX buffer and the active station/channel.
 #[derive(Clone, Copy, Debug)]
 pub struct EspNowPreparedV2Tx<'payload> {
     peer: EspNowPeerId,
@@ -1023,6 +1077,68 @@ impl EspNowOwnedReceivedV1 {
             payload_length: payload.len() as u8,
             payload: owned_payload,
         }
+    }
+
+    pub const fn peer(&self) -> EspNowPeerId {
+        self.peer
+    }
+
+    pub const fn destination(&self) -> EspNowDestination {
+        self.destination
+    }
+
+    pub const fn source(&self) -> EspNowUnicastAddress {
+        self.source
+    }
+
+    pub const fn random_value(&self) -> EspNowRandomValue {
+        self.random_value
+    }
+
+    pub const fn sequence_number(&self) -> u16 {
+        self.sequence_number
+    }
+
+    pub const fn retry(&self) -> bool {
+        self.retry
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        &self.payload[..usize::from(self.payload_length)]
+    }
+}
+
+/// Owned v2 datagram safe to retain after the RX staging lease is released.
+///
+/// The large payload lives only in explicitly provisioned application
+/// storage. Runtime dispatch continues to borrow the 1700-byte RX arena.
+#[derive(Debug)]
+pub struct EspNowOwnedReceivedV2 {
+    peer: EspNowPeerId,
+    destination: EspNowDestination,
+    source: EspNowUnicastAddress,
+    random_value: EspNowRandomValue,
+    sequence_number: u16,
+    retry: bool,
+    payload_length: u16,
+    payload: [u8; open_esp_radio_ieee80211::esp_now::ESP_NOW_V2_MAX_PAYLOAD_LEN],
+}
+
+impl EspNowOwnedReceivedV2 {
+    pub fn copy_from(received: EspNowReceivedV2<'_>) -> Result<Self, EspNowV2WireError> {
+        let frame = received.frame();
+        let mut payload = [0_u8; open_esp_radio_ieee80211::esp_now::ESP_NOW_V2_MAX_PAYLOAD_LEN];
+        let payload_length = frame.action().copy_payload(&mut payload)?;
+        Ok(Self {
+            peer: received.peer(),
+            destination: frame.destination(),
+            source: frame.source(),
+            random_value: frame.action().random_value(),
+            sequence_number: frame.sequence_number(),
+            retry: frame.retry(),
+            payload_length: payload_length as u16,
+            payload,
+        })
     }
 
     pub const fn peer(&self) -> EspNowPeerId {

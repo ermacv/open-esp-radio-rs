@@ -44,6 +44,97 @@ pub const ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN: usize = ESP_NOW_MANAGEMENT_HEADER_L
     + ESP_NOW_V1_MAX_PAYLOAD_LEN
     + ESP_NOW_CCMP_MIC_LEN;
 
+/// Plaintext wire version selected from the first vendor element.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowWireVersion {
+    V1,
+    V2,
+}
+
+/// Failure to classify an ESP-NOW Action body before its version-specific
+/// strict parser takes ownership.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowVersionError {
+    ActionTooShort { minimum: usize },
+    UnsupportedActionCategory(u8),
+    InvalidActionOrganizationIdentifier,
+    UnsupportedElementId(u8),
+    ElementBodyTooShort { declared: u8 },
+    InvalidElementOrganizationIdentifier,
+    UnsupportedElementType(u8),
+    UnsupportedVersion(u8),
+}
+
+/// Classify a candidate Action body without weakening either version codec.
+///
+/// Only the common prefix and first vendor-element header are inspected.
+/// Callers must immediately pass the complete MPDU to the selected strict
+/// v1/v2 parser; this function is not admission by itself.
+pub fn esp_now_wire_version(body: &[u8]) -> Result<EspNowWireVersion, EspNowVersionError> {
+    const MINIMUM: usize = 15;
+    if body.len() < MINIMUM {
+        return Err(EspNowVersionError::ActionTooShort { minimum: MINIMUM });
+    }
+    if body[0] != ESP_NOW_ACTION_CATEGORY {
+        return Err(EspNowVersionError::UnsupportedActionCategory(body[0]));
+    }
+    if body[1..4] != ESP_NOW_ORGANIZATION_IDENTIFIER {
+        return Err(EspNowVersionError::InvalidActionOrganizationIdentifier);
+    }
+    if body[8] != ESP_NOW_VENDOR_ELEMENT_ID {
+        return Err(EspNowVersionError::UnsupportedElementId(body[8]));
+    }
+    if body[9] < VENDOR_ELEMENT_FIXED_BODY_LEN as u8 {
+        return Err(EspNowVersionError::ElementBodyTooShort { declared: body[9] });
+    }
+    if body[10..13] != ESP_NOW_ORGANIZATION_IDENTIFIER {
+        return Err(EspNowVersionError::InvalidElementOrganizationIdentifier);
+    }
+    if body[13] != ESP_NOW_VENDOR_ELEMENT_TYPE {
+        return Err(EspNowVersionError::UnsupportedElementType(body[13]));
+    }
+    match body[14] & 0x0f {
+        ESP_NOW_V1_VERSION => Ok(EspNowWireVersion::V1),
+        ESP_NOW_V2_VERSION => Ok(EspNowWireVersion::V2),
+        version => Err(EspNowVersionError::UnsupportedVersion(version)),
+    }
+}
+
+impl fmt::Display for EspNowVersionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ActionTooShort { minimum } => write!(
+                formatter,
+                "ESP-NOW Action body is shorter than {minimum} bytes"
+            ),
+            Self::UnsupportedActionCategory(category) => {
+                write!(formatter, "unsupported Action category {category}")
+            }
+            Self::InvalidActionOrganizationIdentifier => {
+                formatter.write_str("invalid ESP-NOW Action organization identifier")
+            }
+            Self::UnsupportedElementId(id) => {
+                write!(formatter, "unsupported ESP-NOW element id {id}")
+            }
+            Self::ElementBodyTooShort { declared } => write!(
+                formatter,
+                "ESP-NOW vendor element declares only {declared} body bytes"
+            ),
+            Self::InvalidElementOrganizationIdentifier => {
+                formatter.write_str("invalid ESP-NOW element organization identifier")
+            }
+            Self::UnsupportedElementType(element_type) => {
+                write!(formatter, "unsupported ESP-NOW element type {element_type}")
+            }
+            Self::UnsupportedVersion(version) => {
+                write!(formatter, "unsupported ESP-NOW version {version}")
+            }
+        }
+    }
+}
+
+impl core::error::Error for EspNowVersionError {}
+
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
 const PROTOCOL_VERSION_MASK: u16 = 0x0003;
 const FRAME_TYPE_AND_SUBTYPE_MASK: u16 = 0x00fc;

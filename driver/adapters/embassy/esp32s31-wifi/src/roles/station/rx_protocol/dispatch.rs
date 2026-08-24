@@ -271,6 +271,20 @@ impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
             metadata,
         });
     }
+
+    fn supports_esp_now_v2(&self) -> bool {
+        self.sink.supports_esp_now_v2()
+    }
+
+    fn publish_esp_now_v2(
+        &mut self,
+        received: open_esp_radio_wifi_softmac::EspNowReceivedV2<'_>,
+        metadata: open_esp_radio_wifi_softmac::MacRxMetadata<
+            open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo,
+        >,
+    ) {
+        self.sink.publish_esp_now_v2(received, metadata);
+    }
 }
 
 async fn dispatch_non_amsdu_segment<

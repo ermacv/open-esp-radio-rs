@@ -165,10 +165,12 @@ impl<
             hardware,
             self.storage,
             |segment: RxSegment<'_>| match dispatcher.dispatch(segment, mpdu, sink) {
-                StandaloneEspNowRxDispatch::Received { .. } => {
+                StandaloneEspNowRxDispatch::Received { .. }
+                | StandaloneEspNowRxDispatch::V2Received { .. } => {
                     progress.received = progress.received.saturating_add(1)
                 }
-                StandaloneEspNowRxDispatch::Duplicate { .. } => {
+                StandaloneEspNowRxDispatch::Duplicate { .. }
+                | StandaloneEspNowRxDispatch::V2Duplicate { .. } => {
                     progress.duplicates = progress.duplicates.saturating_add(1)
                 }
                 StandaloneEspNowRxDispatch::Ignored => {

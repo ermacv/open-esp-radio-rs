@@ -31,3 +31,7 @@ pub use crate::roles::monitor::service::{
     ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK, Esp32s31MonitorRunError, Esp32s31MonitorRunFailure,
     Esp32s31MonitorRunReport, Esp32s31MonitorStopError, Esp32s31MonitorStoppedAccessError,
 };
+pub use open_esp_radio_esp32s31_wifi::monitor_injection::{
+    Esp32s31MonitorInjectionAdmission, Esp32s31MonitorInjectionAdmissionError,
+    Esp32s31MonitorInjectionUnsupported,
+};

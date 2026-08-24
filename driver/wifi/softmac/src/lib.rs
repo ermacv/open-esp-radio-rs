@@ -51,7 +51,9 @@ pub use esp_now_security::{
 pub use monitor::{
     MONITOR_CHANNEL_SEQUENCE_CAPACITY, MonitorChannelPolicy, MonitorChannelSequence,
     MonitorChannelSequenceError, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
-    MonitorFrameTypeMask, MonitorPublishOutcome, MonitorSink,
+    MonitorFrameTypeMask, MonitorInjectionBindingError, MonitorInjectionChannelBinding,
+    MonitorInjectionFrameError, MonitorInjectionFrameType, MonitorInjectionMpdu,
+    MonitorInjectionRate, MonitorInjectionRequest, MonitorPublishOutcome, MonitorSink,
 };
 
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;

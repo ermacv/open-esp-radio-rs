@@ -22,6 +22,7 @@ pub mod datapath;
 pub mod esp_now;
 #[cfg(target_arch = "riscv32")]
 pub mod mac_start;
+pub mod monitor_injection;
 pub mod ordinary_tx;
 pub mod protected_data_rx;
 #[cfg(target_arch = "riscv32")]

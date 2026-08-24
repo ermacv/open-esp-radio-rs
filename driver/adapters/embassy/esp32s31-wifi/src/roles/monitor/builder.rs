@@ -928,6 +928,21 @@ where
         self.owner.current_channel()
     }
 
+    /// Reach the current S31 injection frontier through this task's actual
+    /// capture dwell. The present backend fails at its unassigned monitor TX
+    /// interface before borrowing sequence, DMA or IRQ state.
+    pub fn admit_injection_frontier<const TX_BUFFER_SIZE: usize>(
+        &self,
+        request: open_esp_radio_wifi_softmac::MonitorInjectionRequest<'_>,
+    ) -> Result<
+        open_esp_radio_esp32s31_wifi::monitor_injection::Esp32s31MonitorInjectionAdmission,
+        open_esp_radio_esp32s31_wifi::monitor_injection::Esp32s31MonitorInjectionAdmissionError,
+    > {
+        self.owner
+            .service
+            .admit_injection::<TX_BUFFER_SIZE>(self.owner.plan, request)
+    }
+
     /// Run the finite role epoch. The task-side command receiver is private,
     /// so only the paired controller can request the terminal edge.
     pub async fn run(

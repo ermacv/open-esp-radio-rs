@@ -27,7 +27,8 @@ use open_esp_radio_wifi_embassy::{
     MonitorCaptureSink,
 };
 use open_esp_radio_wifi_softmac::{
-    MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink, WifiChannel,
+    MonitorDropReason, MonitorFrame, MonitorInjectionChannelBinding, MonitorPublishOutcome,
+    MonitorSink, WifiChannel,
 };
 use static_cell::{ConstStaticCell, StaticCell};
 
@@ -150,6 +151,14 @@ impl CaptureSink {
 impl MonitorSink<RxPhyInfo> for CaptureSink {
     fn begin_channel_epoch(&mut self, channel: WifiChannel) {
         self.inner.begin_channel_epoch(channel);
+    }
+
+    fn end_channel_epoch(&mut self) {
+        self.inner.end_channel_epoch();
+    }
+
+    fn injection_channel_binding(&self) -> Option<MonitorInjectionChannelBinding> {
+        self.inner.injection_channel_binding()
     }
 
     fn try_publish(&mut self, frame: MonitorFrame<'_, RxPhyInfo>) -> MonitorPublishOutcome {

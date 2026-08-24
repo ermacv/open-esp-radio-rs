@@ -20,6 +20,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     irq::MacInterruptRoute,
     rx::{RxDma, RxPhyInfo},
 };
+use open_esp_radio_wifi_softmac::{MonitorInjectionRequest, WifiStandaloneMonitorPlan};
 use open_esp_radio_wifi_softmac::{MonitorSink, WifiChannel};
 
 use crate::{
@@ -325,6 +326,28 @@ where
         Ok(())
     }
 
+    /// Reach the exact S31 injection frontier through this task's real dwell
+    /// owner. The current backend always returns `UnassignedMacInterface`
+    /// after binding and finite-buffer validation, before any TX mutation.
+    pub(crate) fn admit_injection<const TX_BUFFER_SIZE: usize>(
+        &self,
+        plan: WifiStandaloneMonitorPlan,
+        request: MonitorInjectionRequest<'_>,
+    ) -> Result<
+        open_esp_radio_esp32s31_wifi::monitor_injection::Esp32s31MonitorInjectionAdmission,
+        open_esp_radio_esp32s31_wifi::monitor_injection::Esp32s31MonitorInjectionAdmissionError,
+    > {
+        open_esp_radio_esp32s31_wifi::monitor_injection::admit_esp32s31_monitor_injection::<
+            RxPhyInfo,
+            S,
+            TX_BUFFER_SIZE,
+        >(
+            plan,
+            self.sink.as_ref().expect("monitor sink owner exists"),
+            request,
+        )
+    }
+
     /// Decompose the service only after every hardware actor acknowledged its
     /// stopped edge. Role composition uses this to return the common Wi-Fi
     /// owner; active and faulted services remain intact.
@@ -536,6 +559,13 @@ where
     pub async fn stop(
         &mut self,
     ) -> Result<Esp32s31MacInterruptEpochDrain, Esp32s31MonitorStopError<R::Error>> {
+        // Stop wins over injection admission. Revocation happens before IRQ
+        // quiesce/RX-walker waits, and a failed stop never republishes this
+        // dwell as usable.
+        self.sink
+            .as_mut()
+            .expect("monitor sink owner exists")
+            .end_channel_epoch();
         let interrupt_drain = if self.interrupt_active() {
             let platform = self
                 .platform
@@ -606,6 +636,10 @@ where
     /// structural failure retains every hardware-visible owner for board reset
     /// instead of unwinding or releasing aliased resources.
     fn stop_on_drop(&mut self) {
+        self.sink
+            .as_mut()
+            .expect("monitor sink owner exists")
+            .end_channel_epoch();
         if self.interrupt_active() {
             let quiesced = {
                 let platform = self

@@ -5,7 +5,10 @@
 //! borrow. Queue saturation is an ordinary observation loss and must never
 //! backpressure the primary radio owner.
 
-use core::{fmt, num::NonZeroU16};
+use core::{
+    fmt,
+    num::{NonZeroU16, NonZeroU32},
+};
 
 use open_esp_radio_ieee80211::channel::WifiChannel;
 
@@ -114,6 +117,311 @@ pub enum MonitorChannelPolicy {
     Fixed(WifiChannel),
     /// Repeatedly traverse one bounded ordered cycle.
     Hopping(MonitorChannelSequence),
+}
+
+/// Exact physical-channel dwell which may admit one monitor injection.
+///
+/// `generation` is the surrounding radio-service generation and
+/// `channel_epoch` is the monotonically increasing dwell identity published
+/// by the monitor capture owner.  Carrying both values prevents a retained
+/// capture from authorizing transmission after either a hop or a complete
+/// monitor restart.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MonitorInjectionChannelBinding {
+    generation: u32,
+    channel_epoch: NonZeroU32,
+    channel: WifiChannel,
+}
+
+impl MonitorInjectionChannelBinding {
+    /// Describe the dwell expected by an application request.
+    ///
+    /// Constructing this copyable value grants no authority. Admission
+    /// compares it with the independently published binding owned by the live
+    /// monitor task/sink.
+    pub const fn new(
+        generation: u32,
+        channel_epoch: u32,
+        channel: WifiChannel,
+    ) -> Result<Self, MonitorInjectionBindingError> {
+        match NonZeroU32::new(channel_epoch) {
+            Some(channel_epoch) => Ok(Self {
+                generation,
+                channel_epoch,
+                channel,
+            }),
+            None => Err(MonitorInjectionBindingError::ZeroChannelEpoch),
+        }
+    }
+
+    pub const fn generation(self) -> u32 {
+        self.generation
+    }
+
+    pub const fn channel_epoch(self) -> u32 {
+        self.channel_epoch.get()
+    }
+
+    pub const fn channel(self) -> WifiChannel {
+        self.channel
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MonitorInjectionBindingError {
+    ZeroChannelEpoch,
+}
+
+impl fmt::Display for MonitorInjectionBindingError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a monitor injection channel epoch must be nonzero")
+    }
+}
+
+impl core::error::Error for MonitorInjectionBindingError {}
+
+/// Standard legacy rate accepted by the portable monitor-injection boundary.
+///
+/// There is deliberately no raw rate code, HT/HE or long-range variant.  A
+/// backend must add a separately reviewed typed profile before any of those
+/// PHY geometries can reach its queue-vector or PLCP owner.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MonitorInjectionRate {
+    #[default]
+    Dsss1MLong,
+    Dsss2MLong,
+    Cck5M5Long,
+    Cck11MLong,
+    Dsss2MShort,
+    Cck5M5Short,
+    Cck11MShort,
+    Ofdm6M,
+    Ofdm9M,
+    Ofdm12M,
+    Ofdm18M,
+    Ofdm24M,
+    Ofdm36M,
+    Ofdm48M,
+    Ofdm54M,
+}
+
+/// Supported header geometry of one source-supplied monitor MPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MonitorInjectionFrameType {
+    Management,
+    Data,
+    NullData,
+}
+
+/// A header-geometry-checked, unprotected IEEE 802.11 MPDU without an FCS.
+///
+/// The constructor name makes FCS ownership explicit: the caller supplies
+/// bytes ending at the MPDU body, while a concrete backend must append or ask
+/// hardware to append the FCS exactly once.  The source cannot infer whether
+/// four arbitrary trailing bytes were intended as an FCS, so that part of the
+/// contract is represented by this type rather than guessed from contents.
+/// Management bodies remain opaque raw-policy bytes; this type does not claim
+/// that subtype-specific information elements or action contents are valid.
+///
+/// The initial implementation intentionally admits only ordinary 24-byte
+/// management headers, non-QoS three-address data and exact Null Data.  It
+/// rejects protected, fragmented, ordered, four-address, QoS, control and
+/// extension frames before a sequence allocator, key owner or DMA buffer can
+/// be borrowed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MonitorInjectionMpdu<'frame> {
+    bytes: &'frame [u8],
+    frame_type: MonitorInjectionFrameType,
+}
+
+impl<'frame> MonitorInjectionMpdu<'frame> {
+    pub fn from_no_fcs(bytes: &'frame [u8]) -> Result<Self, MonitorInjectionFrameError> {
+        const BASE_HEADER_LENGTH: usize = 24;
+        const PROTOCOL_VERSION_MASK: u16 = 0x0003;
+        const FRAME_TYPE_MASK: u16 = 0x000c;
+        const MANAGEMENT_FRAME: u16 = 0x0000;
+        const DATA_FRAME: u16 = 0x0008;
+        const TO_DS: u16 = 0x0100;
+        const FROM_DS: u16 = 0x0200;
+        const MORE_FRAGMENTS: u16 = 0x0400;
+        const PROTECTED: u16 = 0x4000;
+        const ORDERED: u16 = 0x8000;
+
+        if bytes.len() < BASE_HEADER_LENGTH {
+            return Err(MonitorInjectionFrameError::TooShort {
+                required: BASE_HEADER_LENGTH,
+                available: bytes.len(),
+            });
+        }
+        let frame_control = u16::from_le_bytes([bytes[0], bytes[1]]);
+        if frame_control & PROTOCOL_VERSION_MASK != 0 {
+            return Err(MonitorInjectionFrameError::UnsupportedProtocolVersion(
+                (frame_control & PROTOCOL_VERSION_MASK) as u8,
+            ));
+        }
+        if frame_control & PROTECTED != 0 {
+            return Err(MonitorInjectionFrameError::ProtectedFrame);
+        }
+        if frame_control & MORE_FRAGMENTS != 0
+            || u16::from_le_bytes([bytes[22], bytes[23]]) & 0x000f != 0
+        {
+            return Err(MonitorInjectionFrameError::FragmentedFrame);
+        }
+        if frame_control & ORDERED != 0 {
+            return Err(MonitorInjectionFrameError::OrderedFrame);
+        }
+
+        let frame_type = match frame_control & FRAME_TYPE_MASK {
+            MANAGEMENT_FRAME => {
+                if frame_control & (TO_DS | FROM_DS) != 0 {
+                    return Err(MonitorInjectionFrameError::UnsupportedManagementFlags);
+                }
+                MonitorInjectionFrameType::Management
+            }
+            DATA_FRAME => {
+                if frame_control & (TO_DS | FROM_DS) == (TO_DS | FROM_DS) {
+                    return Err(MonitorInjectionFrameError::FourAddressData);
+                }
+                let subtype = ((frame_control >> 4) & 0x0f) as u8;
+                match subtype {
+                    0 => MonitorInjectionFrameType::Data,
+                    4 if bytes.len() == BASE_HEADER_LENGTH => MonitorInjectionFrameType::NullData,
+                    4 => {
+                        return Err(MonitorInjectionFrameError::InvalidNullDataLength {
+                            expected: BASE_HEADER_LENGTH,
+                            actual: bytes.len(),
+                        });
+                    }
+                    8..=15 => return Err(MonitorInjectionFrameError::QosData),
+                    _ => return Err(MonitorInjectionFrameError::UnsupportedDataSubtype(subtype)),
+                }
+            }
+            raw => {
+                return Err(MonitorInjectionFrameError::UnsupportedFrameType(
+                    ((raw >> 2) & 0x03) as u8,
+                ));
+            }
+        };
+        Ok(Self { bytes, frame_type })
+    }
+
+    pub const fn bytes(self) -> &'frame [u8] {
+        self.bytes
+    }
+
+    pub const fn len(self) -> usize {
+        self.bytes.len()
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.bytes.is_empty()
+    }
+
+    pub const fn frame_type(self) -> MonitorInjectionFrameType {
+        self.frame_type
+    }
+
+    pub const fn is_group_addressed(self) -> bool {
+        self.bytes[4] & 1 != 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MonitorInjectionFrameError {
+    TooShort { required: usize, available: usize },
+    UnsupportedProtocolVersion(u8),
+    ProtectedFrame,
+    FragmentedFrame,
+    OrderedFrame,
+    UnsupportedManagementFlags,
+    FourAddressData,
+    QosData,
+    UnsupportedDataSubtype(u8),
+    InvalidNullDataLength { expected: usize, actual: usize },
+    UnsupportedFrameType(u8),
+}
+
+impl fmt::Display for MonitorInjectionFrameError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TooShort {
+                required,
+                available,
+            } => write!(
+                formatter,
+                "monitor injection requires at least {required} no-FCS MPDU bytes, got {available}"
+            ),
+            Self::UnsupportedProtocolVersion(version) => write!(
+                formatter,
+                "monitor injection does not support 802.11 protocol version {version}"
+            ),
+            Self::ProtectedFrame => {
+                formatter.write_str("monitor injection does not own a protected/keyed TX path")
+            }
+            Self::FragmentedFrame => {
+                formatter.write_str("monitor injection does not own fragment sequencing")
+            }
+            Self::OrderedFrame => {
+                formatter.write_str("monitor injection does not own ordered/HT-Control geometry")
+            }
+            Self::UnsupportedManagementFlags => formatter
+                .write_str("monitor management injection requires both DS direction bits clear"),
+            Self::FourAddressData => {
+                formatter.write_str("monitor injection does not own four-address data geometry")
+            }
+            Self::QosData => {
+                formatter.write_str("monitor injection does not own QoS data geometry")
+            }
+            Self::UnsupportedDataSubtype(subtype) => write!(
+                formatter,
+                "monitor injection does not support data subtype {subtype}"
+            ),
+            Self::InvalidNullDataLength { expected, actual } => write!(
+                formatter,
+                "monitor Null Data injection requires exactly {expected} bytes, got {actual}"
+            ),
+            Self::UnsupportedFrameType(frame_type) => write!(
+                formatter,
+                "monitor injection does not support frame type {frame_type}"
+            ),
+        }
+    }
+}
+
+impl core::error::Error for MonitorInjectionFrameError {}
+
+/// Complete borrowed request for one exact standalone-monitor dwell.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MonitorInjectionRequest<'frame> {
+    binding: MonitorInjectionChannelBinding,
+    rate: MonitorInjectionRate,
+    mpdu: MonitorInjectionMpdu<'frame>,
+}
+
+impl<'frame> MonitorInjectionRequest<'frame> {
+    pub const fn new(
+        binding: MonitorInjectionChannelBinding,
+        rate: MonitorInjectionRate,
+        mpdu: MonitorInjectionMpdu<'frame>,
+    ) -> Self {
+        Self {
+            binding,
+            rate,
+            mpdu,
+        }
+    }
+
+    pub const fn binding(self) -> MonitorInjectionChannelBinding {
+        self.binding
+    }
+
+    pub const fn rate(self) -> MonitorInjectionRate {
+        self.rate
+    }
+
+    pub const fn mpdu(self) -> MonitorInjectionMpdu<'frame> {
+        self.mpdu
+    }
 }
 
 impl MonitorChannelPolicy {
@@ -341,6 +649,18 @@ pub trait MonitorSink<Rate> {
     /// metadata. Queue-backed product sinks override this edge and stamp the
     /// exact channel into every independently retained frame.
     fn begin_channel_epoch(&mut self, _channel: WifiChannel) {}
+
+    /// Revoke dwell-bound injection authority before stop or retune begins.
+    fn end_channel_epoch(&mut self) {}
+
+    /// Exact authority for injection during the currently live dwell.
+    ///
+    /// Legacy and observation-only sinks return `None`. A production sink
+    /// overrides this only after its task owner has bound the supervisor
+    /// generation, tuned channel and monotonically increasing capture epoch.
+    fn injection_channel_binding(&self) -> Option<MonitorInjectionChannelBinding> {
+        None
+    }
 
     fn try_publish(&mut self, frame: MonitorFrame<'_, Rate>) -> MonitorPublishOutcome;
 }

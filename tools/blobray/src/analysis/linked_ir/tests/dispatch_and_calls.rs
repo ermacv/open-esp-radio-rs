@@ -2,9 +2,43 @@
 
 use super::*;
 
+use std::cell::RefCell;
+
 use open_radio_vendor_analysis_model::{
     ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel,
 };
+
+#[derive(Default)]
+struct CountingFunctionFactStore {
+    facts: BTreeMap<String, Vec<u8>>,
+    load_batches: RefCell<Vec<Vec<String>>>,
+    store_batches: Vec<Vec<String>>,
+}
+
+impl FunctionFactStore for CountingFunctionFactStore {
+    fn load_function_facts(&self, keys: &[String]) -> crate::Result<Vec<(String, Vec<u8>)>> {
+        self.load_batches.borrow_mut().push(keys.to_vec());
+        Ok(keys
+            .iter()
+            .filter_map(|key| {
+                self.facts
+                    .get(key)
+                    .map(|value| (key.clone(), value.clone()))
+            })
+            .collect())
+    }
+
+    fn store_function_facts(&mut self, facts: &[(String, Vec<u8>)]) -> crate::Result<()> {
+        self.store_batches
+            .push(facts.iter().map(|(key, _)| key.clone()).collect());
+        for (key, value) in facts {
+            if let Some(previous) = self.facts.insert(key.clone(), value.clone()) {
+                assert_eq!(previous, *value, "an immutable function fact changed");
+            }
+        }
+        Ok(())
+    }
+}
 
 static LINK_UNIT_DELAY_ARGUMENTS: [crate::ExternalArgumentSpec; 1] =
     [crate::ExternalArgumentSpec {
@@ -525,6 +559,99 @@ fn direct_call_graph_survives_reference_summary_inlining() {
             ("vendor_child", "reachable-internal"),
             ("vendor_parent", "symbol-prefix-root"),
         ]
+    );
+}
+
+#[test]
+fn reachable_callees_are_loaded_as_one_late_cache_batch() {
+    let parent = symbol(
+        "vendor_parent",
+        0x1000,
+        vec![
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+    );
+    let first = symbol("vendor_child_a", 0x2000, vec![0x67, 0x80, 0x00, 0x00]);
+    let second = symbol("vendor_child_b", 0x3000, vec![0x67, 0x80, 0x00, 0x00]);
+    let first_id = 0x8000_0000;
+    let second_id = 0x8000_0001;
+    let resolver = ReferenceResolver {
+        symbols: vec![parent.clone(), first.clone(), second.clone()],
+        symbols_by_address: BTreeMap::from([
+            (first_id, first.clone()),
+            (second_id, second.clone()),
+        ]),
+        symbol_ids: BTreeMap::from([
+            (
+                (parent.member.clone(), parent.name.clone(), parent.address),
+                0x8000_0002,
+            ),
+            (
+                (first.member.clone(), first.name.clone(), first.address),
+                first_id,
+            ),
+            (
+                (second.member.clone(), second.name.clone(), second.address),
+                second_id,
+            ),
+        ]),
+        exported_symbol_keys: BTreeSet::new(),
+        relocated_calls: direct::StructuralRelocatedCalls::from([
+            (
+                direct::StructuralCallSite::new(&parent, 0x1000),
+                (first.name.clone(), Some(first_id)),
+            ),
+            (
+                direct::StructuralCallSite::new(&parent, 0x1008),
+                (second.name.clone(), Some(second_id)),
+            ),
+        ]),
+        pointer_context: direct::StructuralPointerContext::default(),
+        data_symbols: Vec::new(),
+        data_objects: Vec::new(),
+        projected_direct_semantics: BTreeMap::new(),
+        projected_origins: BTreeMap::new(),
+    };
+    let map = MmioMap {
+        registers: Vec::new(),
+        regions: Vec::new(),
+    };
+    let options = LinkedIrSourceOptions {
+        symbol_prefix: "vendor_parent",
+        source: "primary",
+        namespace_identities: false,
+        include_reachable: true,
+        jobs: 1,
+        compact_projected_actions: false,
+    };
+    let mut store = CountingFunctionFactStore::default();
+
+    let cold = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
+    assert_eq!(cold.functions.len(), 3);
+    assert_eq!(store.facts.len(), 3);
+
+    store.load_batches.get_mut().clear();
+    store.store_batches.clear();
+    let warm = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
+
+    assert_eq!(warm, cold, "cache reuse changed linked-IR completeness");
+    assert_eq!(
+        store
+            .load_batches
+            .borrow()
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        [1, 2],
+        "the root should load eagerly and both discovered callees in one late batch"
+    );
+    assert!(
+        store.store_batches.is_empty(),
+        "a cache hit unexpectedly reran direct decode/analysis and produced new facts"
     );
 }
 

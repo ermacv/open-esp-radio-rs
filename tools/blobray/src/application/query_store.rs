@@ -21,6 +21,10 @@ use crate::Result;
 
 const STORE_SCHEMA: i64 = 7;
 const INLINE_VALUE_LIMIT: usize = 64 * 1024;
+// Stay comfortably below SQLite's host-parameter limit while amortizing one
+// lookup across many function keys. This also bounds the dynamically prepared
+// statement and the number of result rows held at once.
+const FUNCTION_FACT_LOOKUP_BATCH: usize = 256;
 const PACK_RECORD_MAGIC: &[u8; 8] = b"BLBRCAS1";
 const PACK_HEADER_BYTES: u64 = 8 + 32 + 8;
 const COMPACT_MIN_PACK_BYTES: u64 = 256 * 1024 * 1024;
@@ -921,32 +925,71 @@ impl QueryStore {
         }
         Ok(())
     }
-}
 
-impl crate::analysis::FunctionFactStore for QueryStore {
-    fn load_function_facts(&self, keys: &[String]) -> Result<Vec<(String, Vec<u8>)>> {
-        let mut statement = self
-            .connection
-            .prepare(
-                "SELECT result_digest, inline_value, object_digest FROM query_results
-                 WHERE query_key = ?1 AND kind = 'function-direct-fact'",
-            )
-            .map_err(|error| store_error("prepare function-fact lookup", error))?;
+    fn load_function_facts_batched(
+        &self,
+        keys: &[String],
+        mut observe_statement: impl FnMut(usize),
+    ) -> Result<Vec<(String, Vec<u8>)>> {
+        let full_key_count = keys.len() / FUNCTION_FACT_LOOKUP_BATCH * FUNCTION_FACT_LOOKUP_BATCH;
+        let (full_batches, tail) = keys.split_at(full_key_count);
         let mut output = Vec::new();
-        for key in keys {
-            let row = statement
-                .query_row([key], |row| {
+
+        if !full_batches.is_empty() {
+            let sql = function_fact_lookup_sql(FUNCTION_FACT_LOOKUP_BATCH);
+            let mut statement = self
+                .connection
+                .prepare(&sql)
+                .map_err(|error| store_error("prepare batched function-fact lookup", error))?;
+            for batch in full_batches.chunks_exact(FUNCTION_FACT_LOOKUP_BATCH) {
+                observe_statement(batch.len());
+                self.append_function_fact_batch(&mut statement, batch, &mut output)?;
+            }
+        }
+        if !tail.is_empty() {
+            let sql = function_fact_lookup_sql(tail.len());
+            let mut statement = self
+                .connection
+                .prepare(&sql)
+                .map_err(|error| store_error("prepare final function-fact lookup", error))?;
+            observe_statement(tail.len());
+            self.append_function_fact_batch(&mut statement, tail, &mut output)?;
+        }
+        Ok(output)
+    }
+
+    fn append_function_fact_batch(
+        &self,
+        statement: &mut rusqlite::Statement<'_>,
+        keys: &[String],
+        output: &mut Vec<(String, Vec<u8>)>,
+    ) -> Result<()> {
+        // Drop the active SQLite rows before resolving any pack-backed values:
+        // read_object performs a second lookup on the same connection. The
+        // temporary payload set remains bounded by FUNCTION_FACT_LOOKUP_BATCH.
+        let locations = {
+            let mut rows = statement
+                .query(rusqlite::params_from_iter(keys))
+                .map_err(|error| store_error("read function-fact batch", error))?;
+            let mut locations = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .map_err(|error| store_error("advance function-fact batch", error))?
+            {
+                let location = (|| -> rusqlite::Result<_> {
                     Ok((
                         row.get::<_, String>(0)?,
-                        row.get::<_, Option<Vec<u8>>>(1)?,
-                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<Vec<u8>>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
                     ))
-                })
-                .optional()
-                .map_err(|error| store_error("read function fact", error))?;
-            let Some((expected_digest, inline, object_digest)) = row else {
-                continue;
-            };
+                })()
+                .map_err(|error| store_error("decode function-fact batch", error))?;
+                locations.push(location);
+            }
+            locations
+        };
+        for (key, expected_digest, inline, object_digest) in locations {
             let value = match (inline, object_digest) {
                 (Some(value), None) => value,
                 (None, Some(object_digest)) => self.read_object(&object_digest)?,
@@ -961,14 +1004,39 @@ impl crate::analysis::FunctionFactStore for QueryStore {
                     "function fact {key:?} failed its content digest"
                 )));
             }
-            output.push((key.clone(), value));
+            output.push((key, value));
         }
-        Ok(output)
+        Ok(())
+    }
+}
+
+impl crate::analysis::FunctionFactStore for QueryStore {
+    fn load_function_facts(&self, keys: &[String]) -> Result<Vec<(String, Vec<u8>)>> {
+        self.load_function_facts_batched(keys, |_| {})
     }
 
     fn store_function_facts(&mut self, facts: &[(String, Vec<u8>)]) -> Result<()> {
         self.put_function_fact_batch(facts)
     }
+}
+
+fn function_fact_lookup_sql(parameter_count: usize) -> String {
+    debug_assert!((1..=FUNCTION_FACT_LOOKUP_BATCH).contains(&parameter_count));
+    let mut sql = String::from("WITH requested(ordinal, query_key) AS (VALUES ");
+    for ordinal in 0..parameter_count {
+        if ordinal != 0 {
+            sql.push_str(", ");
+        }
+        std::fmt::Write::write_fmt(&mut sql, format_args!("({ordinal}, ?)"))
+            .expect("writing SQL into a String cannot fail");
+    }
+    sql.push_str(
+        ") SELECT requested.query_key, result.result_digest, result.inline_value, \
+         result.object_digest FROM requested JOIN query_results AS result \
+         ON result.query_key = requested.query_key \
+         AND result.kind = 'function-direct-fact' ORDER BY requested.ordinal",
+    );
+    sql
 }
 
 fn pack_files(root: &Path) -> Result<Vec<PathBuf>> {
@@ -1169,6 +1237,111 @@ mod tests {
                 vec![0x5a; INLINE_VALUE_LIMIT + 1]
             )]
         );
+    }
+
+    #[test]
+    fn function_fact_loading_preserves_order_and_uses_bounded_statements() {
+        let manifest = manifest("function-fact-batched-load");
+        let mut store = QueryStore::open(&manifest).unwrap();
+        let fact_count = FUNCTION_FACT_LOOKUP_BATCH * 2 + 3;
+        let facts = (0..fact_count)
+            .map(|index| {
+                (
+                    format!("function-direct:{index:04}"),
+                    format!("fact-{index:04}").into_bytes(),
+                )
+            })
+            .collect::<Vec<_>>();
+        store.put_function_fact_batch(&facts).unwrap();
+        store
+            .put(
+                "function-direct:wrong-kind",
+                "project-stage",
+                "inputs",
+                &[],
+                b"not-a-function-fact",
+            )
+            .unwrap();
+
+        let mut keys = facts
+            .iter()
+            .rev()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        keys.insert(17, "function-direct:missing".to_owned());
+        keys.push(facts[7].0.clone());
+        keys.push("function-direct:wrong-kind".to_owned());
+        let expected_by_key = facts
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let expected = keys
+            .iter()
+            .filter_map(|key| {
+                expected_by_key
+                    .get(key)
+                    .map(|value| (key.clone(), value.clone()))
+            })
+            .collect::<Vec<_>>();
+        let mut statement_sizes = Vec::new();
+
+        let loaded = store
+            .load_function_facts_batched(&keys, |size| statement_sizes.push(size))
+            .unwrap();
+
+        assert_eq!(loaded, expected);
+        assert_eq!(
+            statement_sizes.len(),
+            keys.len().div_ceil(FUNCTION_FACT_LOOKUP_BATCH)
+        );
+        assert_eq!(
+            statement_sizes,
+            vec![
+                FUNCTION_FACT_LOOKUP_BATCH,
+                FUNCTION_FACT_LOOKUP_BATCH,
+                keys.len() - FUNCTION_FACT_LOOKUP_BATCH * 2,
+            ]
+        );
+        assert!(
+            statement_sizes
+                .iter()
+                .all(|size| *size <= FUNCTION_FACT_LOOKUP_BATCH)
+        );
+
+        let mut empty_statement_sizes = Vec::new();
+        assert!(
+            store
+                .load_function_facts_batched(&[], |size| empty_statement_sizes.push(size))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(empty_statement_sizes.is_empty());
+    }
+
+    #[test]
+    fn batched_function_fact_loading_rejects_digest_corruption() {
+        let manifest = manifest("function-fact-batched-digest");
+        let mut store = QueryStore::open(&manifest).unwrap();
+        let key = "function-direct:corrupt".to_owned();
+        store
+            .put_function_fact_batch(&[(key.clone(), b"original-fact".to_vec())])
+            .unwrap();
+        store
+            .connection
+            .execute(
+                "UPDATE query_results SET inline_value = ?2 WHERE query_key = ?1",
+                params![&key, b"corrupt-fact"],
+            )
+            .unwrap();
+
+        let error = <QueryStore as crate::analysis::FunctionFactStore>::load_function_facts(
+            &store,
+            std::slice::from_ref(&key),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains(&format!("{key:?}")));
+        assert!(error.to_string().contains("failed its content digest"));
     }
 
     #[test]

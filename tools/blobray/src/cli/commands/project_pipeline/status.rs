@@ -2,6 +2,8 @@
 
 use crate::application::project_analysis::{ProjectAnalysisReport, ProjectAnalysisStatus};
 
+use super::human_duration;
+
 pub(super) fn render(document: &ProjectAnalysisReport) {
     crate::cli::output::render_report(document, || print_human(document));
 }
@@ -25,6 +27,7 @@ fn print_human(document: &ProjectAnalysisReport) {
         )),
     };
     outputln!("\n{outcome}");
+    outputln!("Duration: {}", human_duration(document.duration_ms));
 
     let problems = document
         .stages
@@ -47,12 +50,15 @@ fn print_human(document: &ProjectAnalysisReport) {
     outputln!(
         "{}",
         table::render(
-            ["Stage", "Status", "Details"],
-            document.stages.iter().map(|stage| [
-                stage.name.clone(),
-                stage.status.to_owned(),
-                stage.reason.clone().unwrap_or_default(),
-            ])
+            ["Stage", "Status", "Duration", "Details"],
+            document.stages.iter().map(|stage| {
+                [
+                    stage.name.clone(),
+                    stage.status.to_owned(),
+                    human_duration(stage.duration_ms),
+                    stage.reason.clone().unwrap_or_default(),
+                ]
+            })
         )
     );
     let missing_function_pack = document.stages.iter().any(|stage| {
@@ -92,13 +98,14 @@ mod tests {
     #[test]
     fn analysis_document_keeps_stage_states_and_counts_typed() {
         let document = ProjectAnalysisReport {
-            schema: 3,
+            schema: 4,
             command: "project analyze",
             mode: "check",
             status: ProjectAnalysisStatus::Failed,
             stages: vec![StageReport {
                 name: "linked-ir".to_owned(),
                 status: "blocked",
+                duration_ms: None,
                 reason: Some("missing input".to_owned()),
             }],
             written: 0,
@@ -107,9 +114,19 @@ mod tests {
             failed: 0,
             blocked: 1,
             not_configured: 0,
+            duration_ms: None,
         };
         let value = serde_json::to_value(document).unwrap();
         assert_eq!(value["blocked"], 1);
         assert_eq!(value["stages"][0]["status"], "blocked");
+        assert!(value["stages"][0].get("duration_ms").is_none());
+        assert!(value.get("duration_ms").is_none());
+    }
+
+    #[test]
+    fn duration_rendering_distinguishes_fast_and_unmeasured_stages() {
+        assert_eq!(human_duration(Some(0)), "<1 ms");
+        assert_eq!(human_duration(Some(12)), "12 ms");
+        assert_eq!(human_duration(None), "not measured");
     }
 }

@@ -1105,10 +1105,18 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     assert_eq!(output.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 3);
+    assert_eq!(document["schema"], 4);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["mode"], "check");
     assert_eq!(document["status"], "failed");
+    assert!(document.get("duration_ms").is_none());
+    assert!(
+        document["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|stage| stage.get("duration_ms").is_none())
+    );
     assert!(document["blocked"].as_u64().unwrap() > 0);
     assert!(document["stages"].is_array());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1156,6 +1164,11 @@ fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
     let stdout = String::from_utf8_lossy(&human.stdout);
     assert!(stdout.contains("NOTHING CONFIGURED"), "stdout: {stdout}");
     assert!(!stdout.contains("READY"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("Duration: not measured"),
+        "stdout: {stdout}"
+    );
+    assert!(stdout.contains("Duration"), "stdout: {stdout}");
 
     let json = blobray()
         .current_dir(repository_root())
@@ -1167,13 +1180,14 @@ fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
     assert_eq!(json.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&json.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 3);
+    assert_eq!(document["schema"], 4);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["status"], "nothing-configured");
     assert_eq!(document["not-configured"], 14);
     assert_eq!(document["written"], 0);
     assert_eq!(document["verified"], 0);
     assert_eq!(document["up-to-date"], 0);
+    assert!(document.get("duration_ms").is_none());
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1381,9 +1395,16 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         );
         let document: serde_json::Value = serde_json::from_slice(&output.stdout)
             .expect("project analysis stdout must be valid JSON");
-        assert_eq!(document["schema"], 3);
+        assert_eq!(document["schema"], 4);
         assert_eq!(document["command"], "project analyze");
         assert_eq!(document["status"], "ok");
+        let measured_total = document["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|stage| stage.get("duration_ms").and_then(serde_json::Value::as_u64))
+            .sum::<u64>();
+        assert_eq!(document["duration_ms"], measured_total);
         if expected_stage_status == "up-to-date" {
             assert_eq!(document["written"], 0);
             assert_eq!(document["verified"], 0);
@@ -1723,16 +1744,35 @@ fn project_publication_json_is_one_typed_report() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("publication stdout must be valid JSON");
+    assert_eq!(document["schema"], 2);
     assert_eq!(document["command"], "project publish");
     assert_eq!(document["mode"], "check");
     assert_eq!(document["status"], "ok");
+    let measured_total = document["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|stage| stage.get("duration_ms").and_then(serde_json::Value::as_u64))
+        .sum::<u64>();
+    assert_eq!(document["duration_ms"], measured_total);
     let stages = document["stages"].as_array().unwrap();
     assert_eq!(stages.len(), 5);
-    assert!(
-        stages.iter().any(|stage| {
-            stage["name"] == "pac-api-publication" && stage["status"] == "verified"
-        })
-    );
+    assert!(stages.iter().any(|stage| {
+        stage["name"] == "pac-api-publication"
+            && stage["status"] == "verified"
+            && stage["duration_ms"].is_number()
+    }));
+    let human = blobray()
+        .current_dir(repository_root())
+        .args(["project", "publish", "--check", "--project"])
+        .arg(&manifest)
+        .args(["--color", "never"])
+        .output()
+        .expect("render publication timing for humans");
+    assert!(human.status.success());
+    let human = String::from_utf8_lossy(&human.stdout);
+    assert!(human.contains("Duration:"), "stdout: {human}");
+    assert!(human.contains(" ms"), "stdout: {human}");
     std::fs::remove_dir_all(directory).unwrap();
 }
 

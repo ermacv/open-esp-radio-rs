@@ -10,7 +10,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::pipeline::{
-    PipelineSummary, StageOutcome, StageRun, StageSuccess, WorkflowMode, execute,
+    PipelineSummary, StageExecution, StageRun, StageSuccess, WorkflowMode, execute,
 };
 use crate::{Result, project::ProjectSpec};
 
@@ -73,6 +73,8 @@ pub(crate) struct ProjectAnalysisReport {
     pub(crate) blocked: usize,
     #[serde(rename = "not-configured")]
     pub(crate) not_configured: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) duration_ms: Option<u64>,
 }
 
 impl ProjectAnalysisReport {
@@ -92,10 +94,8 @@ pub(crate) fn run(
     let mut summary = PipelineSummary::default();
 
     let symbols = match project.symbol_inventory.as_ref() {
-        None => StageOutcome::NotConfigured("[analysis.symbols] is absent".to_owned()),
-        Some(_) if !inputs.run_spec => {
-            StageOutcome::Blocked("run-spec is not configured".to_owned())
-        }
+        None => StageExecution::not_configured("[analysis.symbols] is absent"),
+        Some(_) if !inputs.run_spec => StageExecution::blocked("run-spec is not configured"),
         Some(_) => execute("symbol-inventory", generated, || {
             operations.symbol_inventory(mode.is_check())
         }),
@@ -103,13 +103,9 @@ pub(crate) fn run(
     summary.record("symbol-inventory", &symbols);
 
     let mmio = match project.registers.as_ref() {
-        None => StageOutcome::NotConfigured("[registers] is absent".to_owned()),
-        Some(_) if !inputs.run_spec => {
-            StageOutcome::Blocked("run-spec is not configured".to_owned())
-        }
-        Some(_) if !inputs.memory_map => {
-            StageOutcome::Blocked("memory-map is not configured".to_owned())
-        }
+        None => StageExecution::not_configured("[registers] is absent"),
+        Some(_) if !inputs.run_spec => StageExecution::blocked("run-spec is not configured"),
+        Some(_) if !inputs.memory_map => StageExecution::blocked("memory-map is not configured"),
         Some(_) => execute("mmio-discovery", generated, || {
             operations.discover_mmio(mode.is_check(), request.jobs)
         }),
@@ -117,10 +113,8 @@ pub(crate) fn run(
     summary.record("mmio-discovery", &mmio);
 
     let interfaces = match project.interfaces.as_ref() {
-        None => StageOutcome::NotConfigured("[interfaces] is absent".to_owned()),
-        Some(_) if !inputs.run_spec => {
-            StageOutcome::Blocked("run-spec is not configured".to_owned())
-        }
+        None => StageExecution::not_configured("[interfaces] is absent"),
+        Some(_) if !inputs.run_spec => StageExecution::blocked("run-spec is not configured"),
         Some(_) => execute("interface-discovery", generated, || {
             operations.discover_interfaces(mode.is_check())
         }),
@@ -128,9 +122,9 @@ pub(crate) fn run(
     summary.record("interface-discovery", &interfaces);
 
     let ir = if project.ir_profiles.is_empty() {
-        StageOutcome::NotConfigured("[[analysis.ir]] is absent".to_owned())
+        StageExecution::not_configured("[[analysis.ir]] is absent")
     } else if !inputs.run_spec {
-        StageOutcome::Blocked("run-spec is not configured".to_owned())
+        StageExecution::blocked("run-spec is not configured")
     } else {
         execute("linked-ir", generated, || {
             operations.build_linked_ir(mode.is_check(), request.jobs)
@@ -139,13 +133,13 @@ pub(crate) fn run(
     summary.record("linked-ir", &ir);
 
     let event_replays = if !inputs.event_replays {
-        StageOutcome::NotConfigured("no reviewed event replay is configured".to_owned())
+        StageExecution::not_configured("no reviewed event replay is configured")
     } else if !inputs.run_spec {
-        StageOutcome::Blocked("run-spec is not configured".to_owned())
+        StageExecution::blocked("run-spec is not configured")
     } else if project.interfaces.is_some() && interfaces.blocks_dependants() {
-        StageOutcome::Blocked("interface-discovery did not complete".to_owned())
+        StageExecution::blocked("interface-discovery did not complete")
     } else if !project.ir_profiles.is_empty() && ir.blocks_dependants() {
-        StageOutcome::Blocked("linked-ir did not complete".to_owned())
+        StageExecution::blocked("linked-ir did not complete")
     } else {
         execute("event-replays", generated, || {
             operations.build_event_replays(mode.is_check())
@@ -154,12 +148,10 @@ pub(crate) fn run(
     summary.record("event-replays", &event_replays);
 
     let review_scopes = match project.review.as_ref() {
-        None => StageOutcome::NotConfigured("[review] is absent".to_owned()),
-        Some(_) if ir.blocks_dependants() => {
-            StageOutcome::Blocked("linked-ir did not complete".to_owned())
-        }
+        None => StageExecution::not_configured("[review] is absent"),
+        Some(_) if ir.blocks_dependants() => StageExecution::blocked("linked-ir did not complete"),
         Some(_) if project.registers.is_some() && mmio.blocks_dependants() => {
-            StageOutcome::Blocked("mmio-discovery did not complete".to_owned())
+            StageExecution::blocked("mmio-discovery did not complete")
         }
         Some(_) => execute("review-scopes", generated, || {
             operations.build_review_scopes(mode.is_check())
@@ -168,15 +160,15 @@ pub(crate) fn run(
     summary.record("review-scopes", &review_scopes);
 
     let navigation = match project.navigation_index.as_ref() {
-        None => StageOutcome::NotConfigured("[analysis.navigation] is absent".to_owned()),
+        None => StageExecution::not_configured("[analysis.navigation] is absent"),
         Some(_) if symbols.blocks_dependants() => {
-            StageOutcome::Blocked("symbol-inventory did not complete".to_owned())
+            StageExecution::blocked("symbol-inventory did not complete")
         }
         Some(_) if !project.ir_profiles.is_empty() && ir.blocks_dependants() => {
-            StageOutcome::Blocked("linked-ir did not complete".to_owned())
+            StageExecution::blocked("linked-ir did not complete")
         }
         Some(_) if project.interfaces.is_some() && interfaces.blocks_dependants() => {
-            StageOutcome::Blocked("interface-discovery did not complete".to_owned())
+            StageExecution::blocked("interface-discovery did not complete")
         }
         Some(_) => execute("navigation-index", generated, || {
             operations.build_navigation(mode.is_check())
@@ -185,9 +177,9 @@ pub(crate) fn run(
     summary.record("navigation-index", &navigation);
 
     let code_validation = match project.code.as_ref() {
-        None => StageOutcome::NotConfigured("[code] is absent".to_owned()),
+        None => StageExecution::not_configured("[code] is absent"),
         Some(_) if symbols.blocks_dependants() => {
-            StageOutcome::Blocked("symbol-inventory did not complete".to_owned())
+            StageExecution::blocked("symbol-inventory did not complete")
         }
         Some(_) => execute("code-boundary-validation", StageSuccess::Verified, || {
             operations.validate_code(request.deny_unreviewed)
@@ -196,12 +188,12 @@ pub(crate) fn run(
     summary.record("code-boundary-validation", &code_validation);
 
     let code_review = match project.code.as_ref() {
-        None => StageOutcome::NotConfigured("[code] is absent".to_owned()),
+        None => StageExecution::not_configured("[code] is absent"),
         Some(paths) if paths.review_output.is_none() => {
-            StageOutcome::NotConfigured("[code.review] is absent".to_owned())
+            StageExecution::not_configured("[code.review] is absent")
         }
         Some(_) if symbols.blocks_dependants() => {
-            StageOutcome::Blocked("symbol-inventory did not complete".to_owned())
+            StageExecution::blocked("symbol-inventory did not complete")
         }
         Some(_) => execute("code-boundary-review", generated, || {
             operations.review_code(mode.is_check())
@@ -210,9 +202,9 @@ pub(crate) fn run(
     summary.record("code-boundary-review", &code_review);
 
     let register_validation = match project.registers.as_ref() {
-        None => StageOutcome::NotConfigured("[registers] is absent".to_owned()),
+        None => StageExecution::not_configured("[registers] is absent"),
         Some(_) if mmio.blocks_dependants() => {
-            StageOutcome::Blocked("mmio-discovery did not complete".to_owned())
+            StageExecution::blocked("mmio-discovery did not complete")
         }
         Some(_) => execute("register-validation", StageSuccess::Verified, || {
             operations.validate_registers(request.deny_unreviewed)
@@ -221,18 +213,18 @@ pub(crate) fn run(
     summary.record("register-validation", &register_validation);
 
     let register_review = match project.registers.as_ref() {
-        None => StageOutcome::NotConfigured("[registers] is absent".to_owned()),
+        None => StageExecution::not_configured("[registers] is absent"),
         Some(paths) if paths.review_output.is_none() => {
-            StageOutcome::NotConfigured("[registers.review] is absent".to_owned())
+            StageExecution::not_configured("[registers.review] is absent")
         }
         Some(_) if mmio.blocks_dependants() => {
-            StageOutcome::Blocked("mmio-discovery did not complete".to_owned())
+            StageExecution::blocked("mmio-discovery did not complete")
         }
         Some(paths)
             if review_depends_on_project_ir(project, &paths.review_ir_reports)
                 && ir.blocks_dependants() =>
         {
-            StageOutcome::Blocked("linked-ir did not complete".to_owned())
+            StageExecution::blocked("linked-ir did not complete")
         }
         Some(_) => execute("register-review", generated, || {
             operations.review_registers(mode.is_check())
@@ -241,10 +233,8 @@ pub(crate) fn run(
     summary.record("register-review", &register_review);
 
     let function_validation = match project.functions.as_ref() {
-        None => StageOutcome::NotConfigured("[functions] is absent".to_owned()),
-        Some(_) if ir.blocks_dependants() => {
-            StageOutcome::Blocked("linked-ir did not complete".to_owned())
-        }
+        None => StageExecution::not_configured("[functions] is absent"),
+        Some(_) if ir.blocks_dependants() => StageExecution::blocked("linked-ir did not complete"),
         Some(_) => execute("function-validation", StageSuccess::Verified, || {
             operations.validate_functions(request.deny_unreviewed)
         }),
@@ -252,13 +242,11 @@ pub(crate) fn run(
     summary.record("function-validation", &function_validation);
 
     let function_review = match project.functions.as_ref() {
-        None => StageOutcome::NotConfigured("[functions] is absent".to_owned()),
+        None => StageExecution::not_configured("[functions] is absent"),
         Some(paths) if paths.review_output.is_none() => {
-            StageOutcome::NotConfigured("[functions.review] is absent".to_owned())
+            StageExecution::not_configured("[functions.review] is absent")
         }
-        Some(_) if ir.blocks_dependants() => {
-            StageOutcome::Blocked("linked-ir did not complete".to_owned())
-        }
+        Some(_) if ir.blocks_dependants() => StageExecution::blocked("linked-ir did not complete"),
         Some(_)
             if project
                 .interfaces
@@ -267,7 +255,7 @@ pub(crate) fn run(
                 .is_some_and(Path::is_file)
                 && interfaces.blocks_dependants() =>
         {
-            StageOutcome::Blocked("interface-discovery did not complete".to_owned())
+            StageExecution::blocked("interface-discovery did not complete")
         }
         Some(_) => execute("function-review", generated, || {
             operations.review_functions(mode.is_check())
@@ -276,12 +264,12 @@ pub(crate) fn run(
     summary.record("function-review", &function_review);
 
     let interface_validation = match project.interfaces.as_ref() {
-        None => StageOutcome::NotConfigured("[interfaces] is absent".to_owned()),
+        None => StageExecution::not_configured("[interfaces] is absent"),
         Some(paths) if paths.pack.is_none() => {
-            StageOutcome::NotConfigured("[interfaces].pack is absent".to_owned())
+            StageExecution::not_configured("[interfaces].pack is absent")
         }
         Some(_) if interfaces.blocks_dependants() => {
-            StageOutcome::Blocked("interface-discovery did not complete".to_owned())
+            StageExecution::blocked("interface-discovery did not complete")
         }
         Some(_) => execute("interface-validation", StageSuccess::Verified, || {
             operations.validate_interfaces(request.deny_unreviewed)
@@ -297,7 +285,7 @@ pub(crate) fn run(
         ProjectAnalysisStatus::Complete
     };
     ProjectAnalysisReport {
-        schema: 3,
+        schema: 4,
         command: "project analyze",
         mode: mode.label(),
         status,
@@ -308,6 +296,7 @@ pub(crate) fn run(
         failed: summary.failed,
         blocked: summary.blocked,
         not_configured: summary.not_configured,
+        duration_ms: summary.duration_ms,
     }
 }
 
@@ -432,6 +421,13 @@ mod tests {
         assert_eq!(report.status, ProjectAnalysisStatus::NothingConfigured);
         assert!(!report.succeeded());
         assert_eq!(report.not_configured, 14);
+        assert_eq!(report.duration_ms, None);
+        assert!(
+            report
+                .stages
+                .iter()
+                .all(|stage| stage.duration_ms.is_none())
+        );
         assert_eq!(
             serde_json::to_value(&report).unwrap()["status"],
             "nothing-configured"
@@ -455,6 +451,7 @@ mod tests {
         assert!(!report.succeeded());
         assert_eq!(report.blocked, 1);
         assert_eq!(report.stages[0].status, "blocked");
+        assert_eq!(report.stages[0].duration_ms, None);
     }
 
     #[test]
@@ -482,5 +479,16 @@ mod tests {
         assert_eq!(report.written, 0);
         assert_eq!(report.current, 1);
         assert_eq!(report.stages[0].status, "up-to-date");
+        assert!(report.stages[0].duration_ms.is_some());
+        assert_eq!(
+            report.duration_ms,
+            Some(
+                report
+                    .stages
+                    .iter()
+                    .filter_map(|stage| stage.duration_ms)
+                    .sum::<u64>()
+            )
+        );
     }
 }

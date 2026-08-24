@@ -279,6 +279,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
                 progress_label: "primary",
                 namespace_identities: false,
                 include_reachable: false,
+                fact_store: None,
             },
             resolver.symbols.iter().collect(),
             &function_cache,

@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use super::pipeline::{
-    PipelineSummary, StageOutcome, StageSuccess, WorkflowMode, execute as execute_stage,
+    PipelineSummary, StageExecution, StageSuccess, WorkflowMode, execute as execute_stage,
 };
 use crate::{
     MemoryMap, Result,
@@ -44,6 +44,8 @@ pub(crate) struct ProjectPublicationReport {
     pub(crate) blocked: usize,
     #[serde(rename = "not-configured")]
     pub(crate) not_configured: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) duration_ms: Option<u64>,
 }
 
 impl ProjectPublicationReport {
@@ -134,15 +136,15 @@ fn run_with_operations<O: ProjectPublicationOperations>(
     for stage in stages {
         let outcome = match stage.preparation {
             Preparation::Ready(_) if preflight_failed => {
-                StageOutcome::Blocked("publication preflight did not complete".to_owned())
+                StageExecution::blocked("publication preflight did not complete")
             }
             Preparation::Ready(publication) => {
                 execute_stage(stage.name, mode.generated_success(), || {
                     operations.publish(&publication, mode.is_check())
                 })
             }
-            Preparation::Failed(reason) => StageOutcome::Failed(reason),
-            Preparation::NotConfigured(reason) => StageOutcome::NotConfigured(reason),
+            Preparation::Failed(reason) => StageExecution::failed(reason),
+            Preparation::NotConfigured(reason) => StageExecution::not_configured(reason),
         };
         summary.record(stage.name, &outcome);
     }
@@ -210,7 +212,7 @@ impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
 
 fn report(mode: WorkflowMode, summary: PipelineSummary) -> ProjectPublicationReport {
     ProjectPublicationReport {
-        schema: 1,
+        schema: 2,
         command: "project publish",
         mode: mode.label(),
         status: if summary.succeeded() { "ok" } else { "failed" },
@@ -220,6 +222,7 @@ fn report(mode: WorkflowMode, summary: PipelineSummary) -> ProjectPublicationRep
         failed: summary.failed,
         blocked: summary.blocked,
         not_configured: summary.not_configured,
+        duration_ms: summary.duration_ms,
     }
 }
 
@@ -264,9 +267,9 @@ fn report_blocked_publications(paths: &RegisterWorkspacePaths, summary: &mut Pip
         ),
     ] {
         let outcome = if configured {
-            StageOutcome::Blocked("register-validation did not complete".to_owned())
+            StageExecution::blocked("register-validation did not complete")
         } else {
-            StageOutcome::NotConfigured(absent_reason.to_owned())
+            StageExecution::not_configured(absent_reason)
         };
         summary.record(name, &outcome);
     }

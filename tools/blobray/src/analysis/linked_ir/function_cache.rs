@@ -24,7 +24,8 @@ const MAX_COMPRESSED_FACT_BYTES: usize = 4 * 1024 * 1024;
 
 pub(super) struct FunctionCacheRun {
     hits: Mutex<BTreeMap<String, Vec<u8>>>,
-    loaded: usize,
+    loaded: AtomicUsize,
+    looked_up: Mutex<BTreeSet<String>>,
     pending: Mutex<BTreeMap<String, Vec<u8>>>,
     mmio_fingerprint: [u8; 32],
     resolver_fingerprint: [u8; 32],
@@ -42,31 +43,64 @@ impl FunctionCacheRun {
     ) -> Self {
         let mmio_fingerprint = mmio_fingerprint(svd);
         let resolver_fingerprint = resolver_fingerprint(resolver);
-        let mut hits = BTreeMap::new();
-        if let Some(store) = store {
-            let mut keys = BTreeSet::new();
-            for symbol in symbols {
-                keys.insert(function_fact_key(
-                    symbol,
-                    &mmio_fingerprint,
-                    &resolver_fingerprint,
-                ));
-            }
-            let keys = keys.into_iter().collect::<Vec<_>>();
-            match store.load_function_facts(&keys) {
-                Ok(values) => hits.extend(values),
-                Err(error) => tracing::warn!(%error, "function-fact cache lookup failed"),
-            }
-        }
-        let loaded = hits.len();
-        Self {
-            hits: Mutex::new(hits),
-            loaded,
+        let cache = Self {
+            hits: Mutex::new(BTreeMap::new()),
+            loaded: AtomicUsize::new(0),
+            looked_up: Mutex::new(BTreeSet::new()),
             pending: Mutex::new(BTreeMap::new()),
             mmio_fingerprint,
             resolver_fingerprint,
             namespace: namespace.to_owned(),
             reused: AtomicUsize::new(0),
+        };
+        cache.load_symbols(symbols, store);
+        cache
+    }
+
+    /// Load facts for symbols discovered after the initial root selection.
+    ///
+    /// Reachability is demand-driven, so these keys are not known during
+    /// [`Self::prepare`]. Reserve and sort every new key before touching the
+    /// store: one caller's newly discovered callees become one deterministic
+    /// lookup, while converging call paths never issue duplicate reads.
+    pub(super) fn load_symbols<'a>(
+        &self,
+        symbols: impl IntoIterator<Item = &'a artifact::ArtifactSymbolDefinition>,
+        store: Option<&dyn FunctionFactStore>,
+    ) {
+        let Some(store) = store else {
+            return;
+        };
+        let keys = symbols
+            .into_iter()
+            .map(|symbol| {
+                function_fact_key(symbol, &self.mmio_fingerprint, &self.resolver_fingerprint)
+            })
+            .collect::<BTreeSet<_>>();
+        let keys = {
+            let mut looked_up = self.looked_up.lock().expect("function cache lookup lock");
+            keys.into_iter()
+                .filter(|key| looked_up.insert(key.clone()))
+                .collect::<Vec<_>>()
+        };
+        if keys.is_empty() {
+            return;
+        }
+        match store.load_function_facts(&keys) {
+            Ok(values) => {
+                let mut hits = self.hits.lock().expect("function cache hit lock");
+                let before = hits.len();
+                for (key, value) in values {
+                    if keys.binary_search(&key).is_ok() {
+                        hits.entry(key).or_insert(value);
+                    }
+                }
+                self.loaded
+                    .fetch_add(hits.len().saturating_sub(before), Ordering::Relaxed);
+            }
+            Err(error) => {
+                tracing::warn!(%error, keys = keys.len(), "function-fact cache lookup failed")
+            }
         }
     }
 
@@ -145,7 +179,7 @@ impl FunctionCacheRun {
             tracing::warn!(%error, facts = facts.len(), "function-fact cache write failed");
         }
         tracing::debug!(
-            loaded = self.loaded,
+            loaded = self.loaded.load(Ordering::Relaxed),
             reused = self.reused.load(Ordering::Relaxed),
             stored = facts.len(),
             "completed persistent function-fact cache session"

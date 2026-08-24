@@ -1,6 +1,6 @@
 //! CLI presentation for application-owned project publication.
 
-use super::Result;
+use super::{Result, project_pipeline::human_duration};
 use crate::{
     MemoryMap,
     application::project_publication::{ProjectPublicationReport, ProjectPublicationRequest},
@@ -45,6 +45,7 @@ fn print_human(document: &ProjectPublicationReport) {
         ))
     };
     outputln!("\n{outcome}");
+    outputln!("Duration: {}", human_duration(document.duration_ms));
 
     let problems = document
         .stages
@@ -67,12 +68,15 @@ fn print_human(document: &ProjectPublicationReport) {
     outputln!(
         "{}",
         table::render(
-            ["Stage", "Status", "Details"],
-            document.stages.iter().map(|stage| [
-                stage.name.clone(),
-                stage.status.to_owned(),
-                stage.reason.clone().unwrap_or_default(),
-            ])
+            ["Stage", "Status", "Duration", "Details"],
+            document.stages.iter().map(|stage| {
+                [
+                    stage.name.clone(),
+                    stage.status.to_owned(),
+                    human_duration(stage.duration_ms),
+                    stage.reason.clone().unwrap_or_default(),
+                ]
+            })
         )
     );
     if document.not_configured != 0 {

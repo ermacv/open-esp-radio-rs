@@ -6,6 +6,14 @@ use crate::cli::ProjectAnalyzeArgs;
 
 pub(crate) mod status;
 
+pub(super) fn human_duration(duration_ms: Option<u64>) -> String {
+    match duration_ms {
+        Some(0) => "<1 ms".to_owned(),
+        Some(duration_ms) => format!("{duration_ms} ms"),
+        None => "not measured".to_owned(),
+    }
+}
+
 pub(super) fn run(arguments: ProjectAnalyzeArgs, session: &ProjectSession) -> Result<bool> {
     if !(1..=8).contains(&arguments.jobs) {
         return Err(crate::Error::invalid(

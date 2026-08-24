@@ -439,16 +439,19 @@ mod tests {
             StageReport {
                 name: "linked-ir".to_owned(),
                 status: "failed",
+                duration_ms: Some(17),
                 reason: Some("stale output /tmp/linked.ir".to_owned()),
             },
             StageReport {
                 name: "function-review".to_owned(),
                 status: "blocked",
+                duration_ms: None,
                 reason: Some("linked-ir did not complete".to_owned()),
             },
             StageReport {
                 name: "register-validation".to_owned(),
                 status: "verified",
+                duration_ms: Some(0),
                 reason: None,
             },
         ]);

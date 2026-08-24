@@ -8,9 +8,28 @@ use crate::{
     cli::{output, table},
 };
 
+#[derive(serde::Serialize)]
+struct ProjectFilesDocument<'a> {
+    #[serde(flatten)]
+    report: &'a project_files::ProjectFilesReport,
+    workflow_state: project_files::ProjectFilesWorkflowState,
+    required_missing: usize,
+    next_actions: Vec<String>,
+}
+
 pub(super) fn run(context: ProjectContext<'_>) -> Result<bool> {
     let report = project_files::collect(context)?;
-    output::render_report(&report, || render_human(&report));
+    let document = ProjectFilesDocument {
+        report: &report,
+        workflow_state: report.workflow_state(),
+        required_missing: report.required_missing(),
+        next_actions: report
+            .next_actions()
+            .iter()
+            .map(|action| with_project(action, &report.manifest))
+            .collect(),
+    };
+    output::render_report(&document, || render_human(&report));
     Ok(true)
 }
 
@@ -18,18 +37,32 @@ fn render_human(report: &project_files::ProjectFilesReport) {
     outputln!("{}", output::heading("Project files"));
     outputln!("Project:  {}", report.project_id);
     outputln!("Manifest: {}", report.manifest.display());
-    let outcome = if report.missing != 0 {
-        output::failure(format!(
-            "BLOCKED — {} required file(s) missing",
-            report.missing
-        ))
-    } else if report.pending != 0 {
-        output::warning(format!(
-            "READY TO ANALYZE — {} generated output(s) pending",
-            report.pending
-        ))
-    } else {
-        output::success("READY — all configured files are present")
+    let outcome = match report.workflow_state() {
+        project_files::ProjectFilesWorkflowState::Blocked => output::failure(format!(
+            "BOOTSTRAP BLOCKED — {} required file(s) missing",
+            report.required_missing()
+        )),
+        project_files::ProjectFilesWorkflowState::AnalysisPending => output::warning(format!(
+            "READY TO ANALYZE — {} analysis output(s) pending",
+            report.pending_analysis_outputs()
+        )),
+        project_files::ProjectFilesWorkflowState::ReviewOutputsPending => output::warning(format!(
+            "ANALYSIS OUTPUTS PRESENT — {} review output(s) pending; freshness not validated",
+            report.pending_review_outputs()
+        )),
+        project_files::ProjectFilesWorkflowState::ReviewConfigurationRequired => output::warning(
+            "ANALYSIS OUTPUTS PRESENT — publication review is not configured; freshness not validated",
+        ),
+        project_files::ProjectFilesWorkflowState::PublicationPreflightRequired => output::warning(
+            "ANALYSIS OUTPUTS PRESENT — publication preflight is required; freshness not validated",
+        ),
+        project_files::ProjectFilesWorkflowState::VerificationPending => output::warning(format!(
+            "ANALYSIS OUTPUTS PRESENT — {} verification output(s) pending; freshness not validated",
+            report.pending_verification_outputs()
+        )),
+        project_files::ProjectFilesWorkflowState::FilesPresent => {
+            output::success("FILES PRESENT — verify current readiness with project status")
+        }
     };
     outputln!("\n{outcome}");
 
@@ -59,17 +92,13 @@ fn render_human(report: &project_files::ProjectFilesReport) {
                 attention.len() - 12
             );
         }
-        let mut actions = attention
-            .iter()
-            .filter_map(|file| file.next_action.as_deref())
-            .collect::<Vec<_>>();
-        actions.sort_unstable();
-        actions.dedup();
-        if !actions.is_empty() {
-            outputln!("\n{}", output::heading("Next"));
-            for (index, action) in actions.into_iter().enumerate() {
-                outputln!("{}. {}", index + 1, with_project(action, &report.manifest));
-            }
+    }
+
+    let actions = report.next_actions();
+    if !actions.is_empty() {
+        outputln!("\n{}", output::heading("Next"));
+        for (index, action) in actions.iter().enumerate() {
+            outputln!("{}. {}", index + 1, with_project(action, &report.manifest));
         }
     }
 
@@ -114,9 +143,13 @@ fn display_path(path: &std::path::Path) -> String {
 }
 
 fn with_project(action: &str, manifest: &std::path::Path) -> String {
-    if action.contains("--project") {
+    if action.contains("--project")
+        || (!action.starts_with("blobray ") && !action.starts_with("cargo blobray "))
+    {
         action.to_owned()
+    } else if let Some(command) = action.strip_suffix(" --help") {
+        format!("{command} --project {} --help", output::shell_arg(manifest))
     } else {
-        format!("{action} --project {}", manifest.display())
+        format!("{action} --project {}", output::shell_arg(manifest))
     }
 }

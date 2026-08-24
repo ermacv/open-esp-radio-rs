@@ -47,7 +47,7 @@ pub(crate) fn analyze_project(
         cache: if request.check {
             ProjectAnalysisCache::disabled()
         } else {
-            ProjectAnalysisCache::load(&session.manifest)
+            ProjectAnalysisCache::deferred(&session.manifest)
         },
         check: request.check,
         functions: None,

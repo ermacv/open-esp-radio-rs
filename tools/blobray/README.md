@@ -81,14 +81,18 @@ launcher below skips Cargo entirely.
      --bind source-artifact:vendor=/opt/vendor/libvendor.a
    ```
 
-3. Validate the resolved workspace and inspect its file map:
+3. Inspect the file map and follow its prerequisite-ordered `Next` actions.
+   A fresh generic project uses these actions to create the reviewed code,
+   interface, and function packs before whole-project analysis. Run `doctor`
+   whenever you want a deep validity check of the inputs created so far:
 
    ```console
    cargo blobray project doctor --project radio-project/vendor-project.toml
    cargo blobray project files --project radio-project/vendor-project.toml
    ```
 
-4. Generate symbol, MMIO, interface, linked-IR, navigation, and review evidence:
+4. When `project files` reports `READY TO ANALYZE`, generate symbol, MMIO,
+   interface, linked-IR, navigation, and review evidence:
 
    ```console
    tools/blobray/scripts/run-limited \

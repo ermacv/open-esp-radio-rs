@@ -15,9 +15,15 @@ use sha2::{Digest, Sha256};
 use crate::Result;
 
 pub(super) struct ProjectAnalysisCache {
-    store: Option<crate::application::query_store::QueryStore>,
-    store_error: Option<String>,
+    store: PersistentStore,
     digests: BTreeMap<PathBuf, DigestMemo>,
+}
+
+enum PersistentStore {
+    Disabled,
+    Deferred(PathBuf),
+    Ready(crate::application::query_store::QueryStore),
+    Failed(String),
 }
 
 struct DigestMemo {
@@ -34,21 +40,20 @@ impl ProjectAnalysisCache {
     /// instead of silently opening SQLite or creating a cache directory.
     pub(super) fn disabled() -> Self {
         Self {
-            store: None,
-            store_error: Some("disabled for read-only analysis".to_owned()),
+            store: PersistentStore::Disabled,
             digests: BTreeMap::new(),
         }
     }
 
-    pub(super) fn load(project_manifest: &Path) -> Self {
-        let (store, store_error) =
-            match crate::application::query_store::QueryStore::open(project_manifest) {
-                Ok(store) => (Some(store), None),
-                Err(error) => (None, Some(error.to_string())),
-            };
+    /// Construct a write-mode cache without touching persistent state.
+    ///
+    /// Project orchestration performs dependency preflight before invoking a
+    /// stage. Deferring the SQLite open until the first actual lookup keeps a
+    /// fully blocked analysis byte-for-byte read-only while preserving cache
+    /// reuse for every stage that is allowed to run.
+    pub(super) fn deferred(project_manifest: &Path) -> Self {
         Self {
-            store,
-            store_error,
+            store: PersistentStore::Deferred(project_manifest.to_owned()),
             digests: BTreeMap::new(),
         }
     }
@@ -61,7 +66,7 @@ impl ProjectAnalysisCache {
         outputs: &[PathBuf],
     ) -> Result<bool> {
         let signature = self.signature(stage, configuration, inputs)?;
-        let Some(cached) = self.store()?.stage_output_digests(&signature)? else {
+        let Some(cached) = self.store_mut()?.stage_output_digests(&signature)? else {
             return Ok(false);
         };
         if cached.len() != outputs.len() {
@@ -75,7 +80,7 @@ impl ProjectAnalysisCache {
                 .transpose()?
                 .is_some_and(|actual| &actual == expected);
             if !current {
-                self.store()?.restore_output(expected, path)?;
+                self.store_mut()?.restore_output(expected, path)?;
                 self.digests.remove(path);
                 if self.digest(path)? != *expected {
                     return Err(crate::Error::invalid(format!(
@@ -116,22 +121,27 @@ impl ProjectAnalysisCache {
         Ok(())
     }
 
-    fn store(&self) -> Result<&crate::application::query_store::QueryStore> {
-        self.store.as_ref().ok_or_else(|| {
-            crate::Error::invalid(format!(
-                "persistent query store is unavailable: {}",
-                self.store_error.as_deref().unwrap_or("unknown error")
-            ))
-        })
-    }
-
     fn store_mut(&mut self) -> Result<&mut crate::application::query_store::QueryStore> {
-        self.store.as_mut().ok_or_else(|| {
-            crate::Error::invalid(format!(
-                "persistent query store is unavailable: {}",
-                self.store_error.as_deref().unwrap_or("unknown error")
-            ))
-        })
+        let manifest = match &self.store {
+            PersistentStore::Deferred(manifest) => Some(manifest.clone()),
+            _ => None,
+        };
+        if let Some(manifest) = manifest {
+            self.store = match crate::application::query_store::QueryStore::open(&manifest) {
+                Ok(store) => PersistentStore::Ready(store),
+                Err(error) => PersistentStore::Failed(error.to_string()),
+            };
+        }
+        match &mut self.store {
+            PersistentStore::Ready(store) => Ok(store),
+            PersistentStore::Disabled => Err(crate::Error::invalid(
+                "persistent query store is unavailable: disabled for read-only analysis",
+            )),
+            PersistentStore::Failed(error) => Err(crate::Error::invalid(format!(
+                "persistent query store is unavailable: {error}"
+            ))),
+            PersistentStore::Deferred(_) => unreachable!("deferred query store was not opened"),
+        }
     }
 
     fn signature(
@@ -276,6 +286,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn deferred_cache_construction_does_not_touch_persistent_state() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-deferred-analysis-cache-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("vendor-project.toml");
+        fs::write(&manifest, "schema = 3\n").unwrap();
+
+        let cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(!directory.join("generated/.blobray-cache").exists());
+
+        drop(cache);
+        assert!(!directory.join("generated").exists());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn cache_restores_outputs_but_never_reuses_changed_inputs() {
         let directory =
             std::env::temp_dir().join(format!("blobray-analysis-cache-{}", std::process::id()));
@@ -287,7 +318,7 @@ mod tests {
         fs::write(&input, "input-a").unwrap();
         fs::write(&output, "output-a").unwrap();
 
-        let mut cache = ProjectAnalysisCache::load(&manifest);
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
         assert!(
             !cache
                 .is_current(
@@ -388,7 +419,7 @@ mod tests {
         fs::write(&nested_input, "facts-a").unwrap();
         fs::write(&output, "review-a").unwrap();
 
-        let mut cache = ProjectAnalysisCache::load(&manifest);
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
         cache
             .record(
                 "function-review",
@@ -438,7 +469,7 @@ mod tests {
         fs::write(&input, "artifact-bytes").unwrap();
         fs::write(&focused, "recovered-function").unwrap();
 
-        let mut cache = ProjectAnalysisCache::load(&manifest);
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
         cache
             .record(
                 "linked-ir:focused",
@@ -500,7 +531,7 @@ mod tests {
         let manifest = directory.join("vendor-project.toml");
         let input = directory.join("artifact.elf");
         fs::write(&input, "same-artifact").unwrap();
-        let mut cache = ProjectAnalysisCache::load(&manifest);
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
 
         let focused = cache
             .signature(

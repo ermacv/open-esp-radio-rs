@@ -16,7 +16,7 @@ pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 11;
 
 mod model;
 pub(crate) use model::{
-    ReplacementCoverage, ReviewScopeEffect, ReviewScopeMmio, ReviewScopeReport,
+    ReplacementCoverage, ReviewQueueItem, ReviewScopeEffect, ReviewScopeMmio, ReviewScopeReport,
     ReviewScopeTransaction, ReviewScopesDocument,
 };
 use model::{StoredReplacement, VerificationDocument};

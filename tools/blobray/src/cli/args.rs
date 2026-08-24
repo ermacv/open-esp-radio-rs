@@ -144,7 +144,7 @@ struct Cli {
 enum Workflow {
     /// Create, inspect and execute project-owned workflows.
     #[command(
-        after_long_help = "EXISTING PROJECT:\n  project status  → current readiness and exact next actions\n  project files   → ownership and purpose of every configured file\n  project browse  → read-only TUI over generated evidence\n\nNEW PROJECT:\n  project init → project inputs init → project doctor → project analyze\n  registers review/validate → project publish → project verify/check"
+        after_long_help = "EXISTING PROJECT:\n  project status  → current readiness and exact next actions\n  project files   → ownership and purpose of every configured file\n  project browse  → read-only TUI over generated evidence\n\nNEW PROJECT:\n  project init → project inputs init → project files\n  follow each reported Next action until project analyze is ready\n  registers review/validate → project publish → project verify/check"
     )]
     Project {
         #[command(subcommand)]
@@ -281,7 +281,7 @@ leaf_commands!(ToolingCommand {
 enum ProjectCommand {
     /// Create a new project workspace and neutral target specification.
     #[command(
-        after_long_help = "Next: run `blobray project doctor --project PATH/vendor-project.toml`.\nThen add caller-owned binaries with `project inputs init`."
+        after_long_help = "Next: add caller-owned binaries with `blobray project inputs init --project PATH/vendor-project.toml`.\nThen run `blobray project files --project PATH/vendor-project.toml` and follow its prerequisite-ordered Next actions."
     )]
     Init(ProjectInitArgs),
     /// Attach or remove a reusable ecosystem knowledge pack.

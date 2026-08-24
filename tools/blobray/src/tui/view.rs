@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::state::{BrowserState, Section};
-use crate::{DiagnosticSeverity, Readiness};
+use crate::{DiagnosticSeverity, EvidenceFreshness, Readiness, StatusValidation, ValidationDepth};
 
 mod blockers;
 mod code;
@@ -71,6 +71,7 @@ fn render_header(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         Span::raw(&project.project_id),
         Span::raw("  "),
         Span::styled(readiness.0, Style::new().fg(readiness.1)),
+        Span::raw(format!("  {}", validation(project.validation))),
     ];
     if area.width >= 100 {
         spans.extend([
@@ -84,6 +85,19 @@ fn render_header(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         Paragraph::new(line).block(Block::default().borders(Borders::ALL)),
         area,
     );
+}
+
+fn validation(validation: StatusValidation) -> String {
+    let depth = match validation.depth {
+        ValidationDepth::Shallow => "shallow",
+        ValidationDepth::Deep => "deep",
+    };
+    let freshness = match validation.freshness {
+        EvidenceFreshness::Unknown => "unknown",
+        EvidenceFreshness::Current => "current",
+        EvidenceFreshness::Stale => "stale",
+    };
+    format!("{depth}/{freshness}")
 }
 
 fn render_tabs(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
@@ -534,6 +548,7 @@ mod tests {
             .collect::<String>();
         assert!(rendered.contains("Blobray"));
         assert!(rendered.contains("fixture-project"));
+        assert!(rendered.contains("shallow/unknown"));
         assert!(rendered.contains("analysis"));
         assert!(rendered.contains("generation=7"));
 

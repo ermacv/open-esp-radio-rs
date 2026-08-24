@@ -62,11 +62,10 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
     );
     outputln!("Validation: shallow project-status inspection");
     outputln!("Freshness:  unknown unless a component states otherwise");
-    outputln!(
-        "Deep check: blobray project doctor --project {} / blobray project check --project {}",
-        report.manifest,
-        report.manifest
-    );
+    outputln!("Deep validation:");
+    let manifest = output::shell_arg(&report.manifest);
+    outputln!("  blobray project doctor --project {manifest}");
+    outputln!("  blobray project check --project {manifest}");
     let outcome = match report.overall {
         Readiness::Ready => output::success(
             "SHALLOW OVERVIEW — configured outputs are present; freshness not validated",
@@ -167,14 +166,7 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
             report.phases.iter().map(|phase| [
                 phase.name.clone(),
                 phase.status.label().to_owned(),
-                phase
-                    .components
-                    .iter()
-                    .filter(|component| {
-                        matches!(component.status, Readiness::Invalid | Readiness::Incomplete)
-                    })
-                    .count()
-                    .to_string(),
+                phase_problem_count(phase).to_string(),
             ]),
         )
     );
@@ -301,13 +293,15 @@ pub(super) fn json_document(document: &StatusDocument<'_>) -> Result<String> {
 }
 
 fn sanitize(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| match character {
-            '\t' | '\r' | '\n' => ' ',
-            character => character,
-        })
-        .collect()
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn phase_problem_count(phase: &crate::application::status::model::Phase) -> usize {
+    phase
+        .components
+        .iter()
+        .filter(|component| component.diagnostic.is_some())
+        .count()
 }
 
 #[cfg(test)]
@@ -390,6 +384,30 @@ mod tests {
         assert_eq!(
             human_detail_value(&DetailValue::ReviewScopes(Vec::new())),
             "0 review scopes (use --format json for structured values)"
+        );
+    }
+
+    #[test]
+    fn workflow_problem_count_matches_rendered_diagnostics() {
+        let phase = Phase::collect(
+            "inputs",
+            vec![
+                Component::new("ready-with-warning", Readiness::Ready)
+                    .diagnostic("configured fallback is in use"),
+                Component::new("incomplete-without-diagnostic", Readiness::Incomplete),
+                Component::new("invalid-with-diagnostic", Readiness::Invalid)
+                    .diagnostic("invalid input"),
+            ],
+        );
+
+        assert_eq!(phase_problem_count(&phase), 2);
+    }
+
+    #[test]
+    fn diagnostics_are_compacted_to_one_readable_line() {
+        assert_eq!(
+            sanitize("parse error\n  at line 3\tunknown value\r\n"),
+            "parse error at line 3 unknown value"
         );
     }
 }

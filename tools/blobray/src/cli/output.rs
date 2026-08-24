@@ -1,6 +1,7 @@
 //! Process output boundary: command results on stdout, diagnostics elsewhere.
 
 use std::{
+    ffi::OsStr,
     fmt,
     io::{self, Write as _},
     path::Path,
@@ -92,6 +93,21 @@ pub(super) fn warning(value: impl AsRef<str>) -> String {
 
 pub(super) fn failure(value: impl AsRef<str>) -> String {
     styled("1;31", value.as_ref())
+}
+
+/// Render one argument for the POSIX-style copy/paste commands emitted by the
+/// human CLI. Keep ordinary repository paths readable while protecting spaces
+/// and shell metacharacters.
+pub(super) fn shell_arg(value: impl AsRef<OsStr>) -> String {
+    let value = value.as_ref().to_string_lossy();
+    if !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_+-./:=,@%".contains(&byte))
+    {
+        return value.into_owned();
+    }
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
 pub(super) fn line(arguments: fmt::Arguments<'_>) {
@@ -207,4 +223,26 @@ fn with_progress_suspended<T>(action: impl FnOnce() -> T) -> T {
     PROGRESS_SUSPENSION_DEPTH.with(|depth| depth.set(depth.get() + 1));
     let _guard = Guard;
     tracing_indicatif::suspend_tracing_indicatif(action)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shell_arg;
+
+    #[test]
+    fn shell_arguments_are_readable_and_safe_for_copy_paste() {
+        assert_eq!(
+            shell_arg("project/vendor-project.toml"),
+            "project/vendor-project.toml"
+        );
+        assert_eq!(
+            shell_arg("project with spaces/vendor-project.toml"),
+            "'project with spaces/vendor-project.toml'"
+        );
+        assert_eq!(
+            shell_arg("owner's/project.toml"),
+            "'owner'\"'\"'s/project.toml'"
+        );
+        assert_eq!(shell_arg(""), "''");
+    }
 }

@@ -64,6 +64,29 @@ fn init_temporary_project(label: &str) -> (PathBuf, PathBuf) {
     (directory, manifest)
 }
 
+fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+    fn collect(root: &Path, directory: &Path, snapshot: &mut Vec<(PathBuf, Option<Vec<u8>>)>) {
+        let mut entries = std::fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        for path in entries {
+            let relative = path.strip_prefix(root).unwrap().to_owned();
+            if path.is_dir() {
+                snapshot.push((relative, None));
+                collect(root, &path, snapshot);
+            } else {
+                snapshot.push((relative, Some(std::fs::read(path).unwrap())));
+            }
+        }
+    }
+
+    let mut snapshot = Vec::new();
+    collect(root, root, &mut snapshot);
+    snapshot
+}
+
 fn write_rv32_symbol_fixture(path: &Path) {
     let bytes = include_str!("fixtures/symbols-rv32.hex")
         .split_ascii_whitespace()
@@ -172,7 +195,7 @@ fn project_status_human_details_explain_shallow_validation_and_render_fields() {
     for expected in [
         "Validation: shallow project-status inspection",
         "Freshness:  unknown unless a component states otherwise",
-        "Deep check:",
+        "Deep validation:",
         "Component details",
         "Field",
         "Value",
@@ -266,13 +289,49 @@ fn root_help_is_project_first_and_project_files_is_typed() {
     ]);
     assert!(files.status.success());
     let report: serde_json::Value = serde_json::from_slice(&files.stdout).unwrap();
-    assert_eq!(report["schema"], 1);
+    assert_eq!(report["schema"], 2);
     assert_eq!(report["project_id"], "generic-rv32-fixture");
+    assert_eq!(report["workflow_state"], "blocked");
+    assert!(report["required_missing"].is_u64());
+    assert!(report["next_actions"].is_array());
     assert!(
         report["files"].as_array().unwrap().iter().any(|file| {
             file["role"] == "project-manifest" && file["ownership"] == "entrypoint"
         })
     );
+}
+
+#[test]
+fn fresh_project_files_exposes_only_the_executable_bootstrap_frontier() {
+    let (directory, manifest) = init_temporary_project("files-frontier");
+
+    let machine = run_project_command(&manifest, &["project", "files"]);
+    assert!(machine.status.success());
+    let document: serde_json::Value = serde_json::from_slice(&machine.stdout).unwrap();
+    assert_eq!(document["schema"], 2);
+    assert_eq!(document["workflow_state"], "blocked");
+    assert!(document["required_missing"].as_u64().unwrap() > 0);
+    let actions = document["next_actions"].as_array().unwrap();
+    assert_eq!(actions.len(), 1);
+    let action = actions[0].as_str().unwrap();
+    assert!(action.contains("project inputs init"));
+    assert!(action.ends_with("--help"));
+    assert!(!action.contains("project publish"));
+
+    let human = blobray()
+        .current_dir(repository_root())
+        .args(["project", "files", "--project"])
+        .arg(&manifest)
+        .args(["--color", "never"])
+        .output()
+        .expect("render fresh project files");
+    assert!(human.status.success());
+    let stdout = String::from_utf8_lossy(&human.stdout);
+    assert!(stdout.contains("BOOTSTRAP BLOCKED"), "stdout: {stdout}");
+    assert!(stdout.contains("project inputs init"), "stdout: {stdout}");
+    assert!(!stdout.contains("project publish"), "stdout: {stdout}");
+
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -1129,6 +1188,34 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
             .iter()
             .any(|stage| { stage["name"] == "symbol-inventory" && stage["status"] == "blocked" })
     );
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn project_analysis_blocked_by_preflight_does_not_create_persistent_state() {
+    let (directory, manifest) = init_temporary_project("blocked-write-analysis");
+    let before = snapshot_tree(&directory);
+
+    let output = run_project_command(&manifest, &["project", "analyze"]);
+    assert_eq!(output.status.code(), Some(2));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
+    assert_eq!(document["mode"], "write");
+    assert_eq!(document["status"], "failed");
+    assert_eq!(document["written"], 0);
+    assert_eq!(document["verified"], 0);
+    assert_eq!(document["up-to-date"], 0);
+    assert!(document["blocked"].as_u64().unwrap() > 0);
+    assert!(
+        document["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|stage| stage.get("duration_ms").is_none())
+    );
+    assert_eq!(snapshot_tree(&directory), before);
+    assert!(!directory.join("generated/.blobray-cache").exists());
+
     std::fs::remove_dir_all(directory).unwrap();
 }
 

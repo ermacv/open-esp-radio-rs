@@ -54,9 +54,8 @@ pub(super) fn run(arguments: ProjectInitArgs) -> Result<bool> {
         imported_svd: options.import_svd.is_some(),
         path: options.directory.display().to_string(),
         next_command: format!(
-            "cargo blobray project doctor --project {}/{}",
-            options.directory.display(),
-            DEFAULT_PROJECT_MANIFEST
+            "blobray project inputs init --project {} --help",
+            crate::cli::output::shell_arg(options.directory.join(DEFAULT_PROJECT_MANIFEST))
         ),
     };
     crate::cli::output::render_report(&report, || {
@@ -70,7 +69,10 @@ pub(super) fn run(arguments: ProjectInitArgs) -> Result<bool> {
         outputln!("Imported SVD: {}", report.imported_svd);
         outputln!("\n{}", crate::cli::output::heading("Next"));
         outputln!("1. {}", report.next_command);
-        outputln!("2. blobray project inputs init --help");
+        outputln!(
+            "2. blobray project files --project {}",
+            crate::cli::output::shell_arg(options.directory.join(DEFAULT_PROJECT_MANIFEST))
+        );
     });
     Ok(true)
 }

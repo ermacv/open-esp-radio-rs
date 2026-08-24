@@ -226,6 +226,12 @@ enum OffChannelRequestOutcome {
     Stop,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TxCompletionPublication {
+    Immediate,
+    AfterHomeRestore,
+}
+
 /// Complete standalone radio owner.
 ///
 /// `RX` is a normal station RX frontier. The sole application TX endpoint is
@@ -853,7 +859,11 @@ where
             ));
         }
 
-        if let Err(error) = self.start_queued_transmit(queued, peer_channel) {
+        if let Err(error) = self.start_queued_transmit_with_publication(
+            queued,
+            peer_channel,
+            TxCompletionPublication::AfterHomeRestore,
+        ) {
             if self.interrupts().is_active()
                 && let Err(quiesce) = self.quiesce_interrupts()
             {
@@ -888,7 +898,10 @@ where
                     Either3::Third(()) => WifiTxWake::Deadline,
                 }
             };
-            if let Err(error) = self.service_transmit(wake).await {
+            if let Err(error) = self
+                .service_transmit_with_publication(wake, TxCompletionPublication::AfterHomeRestore)
+                .await
+            {
                 if let Some(active) = self.active.take() {
                     let terminal = match error {
                         Esp32s31StandaloneEspNowRunError::Tx(error) => {
@@ -908,45 +921,62 @@ where
         }
 
         if let Err(error) = self.quiesce_interrupts() {
+            self.publish_active_off_channel_failure(
+                EspNowOffChannelFailureStage::QuiesceTransmitInterrupts,
+            )?;
             return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
                 Esp32s31StandaloneEspNowRunError::Stop(
                     Esp32s31StandaloneEspNowStopError::Interrupt(error),
                 ),
             ));
         }
-        self.restore_home(channel, peer_channel).await?;
-
-        if stop_pending {
-            self.leave_quarantine_at_home();
-            return Ok(OffChannelRequestOutcome::Stop);
+        if let Err(error) = self.restore_home(channel, peer_channel).await {
+            self.publish_active_off_channel_failure(EspNowOffChannelFailureStage::SwitchHome)?;
+            return Err(error);
         }
 
-        {
+        let prepare = {
             let receive = self.receive.as_mut().expect("ESP-NOW RX owner exists");
             let hardware = self
                 .hardware
                 .as_mut()
                 .expect("ESP-NOW hardware owner exists");
-            receive.prepare_next(hardware).map_err(|error| {
-                Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
-                    Esp32s31StandaloneEspNowRunError::ReceivePrepare(error),
-                )
-            })?;
+            receive.prepare_next(hardware)
+        };
+        if let Err(error) = prepare {
+            self.publish_active_off_channel_failure(
+                EspNowOffChannelFailureStage::PrepareHomeReceive,
+            )?;
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+                Esp32s31StandaloneEspNowRunError::ReceivePrepare(error),
+            ));
         }
-        self.start_receive().map_err(|error| {
-            Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
+        if let Err(error) = self.start_receive() {
+            self.publish_active_off_channel_failure(
+                EspNowOffChannelFailureStage::StartHomeReceive,
+            )?;
+            return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
                 Esp32s31StandaloneEspNowRunError::ReceiveStart(error),
-            )
-        })?;
+            ));
+        }
         if let Err(activation) = self.activate_interrupts() {
             let _ = self.stop_receive().await;
+            self.publish_active_off_channel_failure(
+                EspNowOffChannelFailureStage::ActivateHomeInterrupts,
+            )?;
             return Err(Esp32s31StandaloneEspNowOffChannelRunError::Runtime(
                 Esp32s31StandaloneEspNowRunError::Activate(activation),
             ));
         }
-        self.leave_quarantine_at_home();
         self.interrupts().mac_runtime().notify_rx_handoff();
-        Ok(OffChannelRequestOutcome::Continue)
+        self.finish_active()
+            .map_err(|error| Esp32s31StandaloneEspNowOffChannelRunError::Runtime(error))?;
+        self.leave_quarantine_at_home();
+        if stop_pending {
+            Ok(OffChannelRequestOutcome::Stop)
+        } else {
+            Ok(OffChannelRequestOutcome::Continue)
+        }
     }
 
     async fn switch_channel<C>(
@@ -1044,6 +1074,17 @@ where
                     Esp32s31StandaloneEspNowRunError::Mailbox(error),
                 )
             })
+    }
+
+    fn publish_active_off_channel_failure<C>(
+        &mut self,
+        stage: EspNowOffChannelFailureStage,
+    ) -> Result<(), Esp32s31StandaloneEspNowOffChannelRunError<R::Error, RX::Error, C>> {
+        let Some(queued) = self.active.take() else {
+            return Ok(());
+        };
+        let _ = self.tx_mut().take_last_outcome();
+        self.publish_off_channel_failure(queued, stage)
     }
 
     fn enter_quarantine(&mut self) {
@@ -1231,6 +1272,19 @@ where
         queued: EspNowQueuedTx,
         active_channel: WifiChannel,
     ) -> Result<(), Esp32s31StandaloneEspNowRunError<R::Error, RX::Error>> {
+        self.start_queued_transmit_with_publication(
+            queued,
+            active_channel,
+            TxCompletionPublication::Immediate,
+        )
+    }
+
+    fn start_queued_transmit_with_publication(
+        &mut self,
+        queued: EspNowQueuedTx,
+        active_channel: WifiChannel,
+        publication: TxCompletionPublication,
+    ) -> Result<(), Esp32s31StandaloneEspNowRunError<R::Error, RX::Error>> {
         // No ordinary transaction is live, so any coalesced TX signal belongs
         // to an earlier role/transaction and must not complete this request.
         let _ = self.interrupts().mac_runtime().try_take_tx();
@@ -1305,7 +1359,9 @@ where
             Ok(WifiTxProgress::Complete) => {
                 self.active = Some(queued);
                 self.report.tx_started = self.report.tx_started.saturating_add(1);
-                self.finish_active()?;
+                if publication == TxCompletionPublication::Immediate {
+                    self.finish_active()?;
+                }
             }
             Err(error) => {
                 self.report.tx_rejected = self.report.tx_rejected.saturating_add(1);
@@ -1321,6 +1377,15 @@ where
         &mut self,
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, Esp32s31StandaloneEspNowRunError<R::Error, RX::Error>> {
+        self.service_transmit_with_publication(wake, TxCompletionPublication::Immediate)
+            .await
+    }
+
+    async fn service_transmit_with_publication(
+        &mut self,
+        wake: WifiTxWake,
+        publication: TxCompletionPublication,
+    ) -> Result<WifiTxProgress, Esp32s31StandaloneEspNowRunError<R::Error, RX::Error>> {
         let progress = {
             let hardware = self
                 .hardware
@@ -1331,7 +1396,8 @@ where
                 .await
                 .map_err(Esp32s31StandaloneEspNowRunError::Tx)?
         };
-        if progress == WifiTxProgress::Complete {
+        if progress == WifiTxProgress::Complete && publication == TxCompletionPublication::Immediate
+        {
             self.finish_active()?;
         }
         Ok(progress)

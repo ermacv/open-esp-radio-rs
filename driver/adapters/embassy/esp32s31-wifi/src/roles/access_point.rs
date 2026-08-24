@@ -45,7 +45,9 @@ use open_esp_radio_esp32s31_wifi_ap::{
     },
 };
 #[cfg(any(feature = "diagnostics", test))]
-use open_esp_radio_esp32s31_wifi_mac::rx::RxDescriptorSnapshot;
+use open_esp_radio_esp32s31_wifi_mac::rx::{
+    HtDuplicateRxClassification, HtSignal, RxDescriptorSnapshot,
+};
 #[cfg(any(feature = "diagnostics", test))]
 use open_esp_radio_esp32s31_wifi_mac::tx::HtMcs;
 #[cfg(any(feature = "diagnostics", test))]

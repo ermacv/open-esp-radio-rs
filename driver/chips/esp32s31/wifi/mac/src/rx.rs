@@ -143,13 +143,38 @@ pub struct HtSignal {
     pub short_guard_interval: bool,
 }
 
+/// Geometry-aware classification of an HT-SIG MCS32 observation.
+///
+/// This is metadata normalization, not a claim that the local PHY has been
+/// qualified to receive MCS32 on air. The invalid-width case remains visible
+/// because collapsing it into `None` would make a malformed HT20/MCS32 vector
+/// indistinguishable from every ordinary MCS.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HtDuplicateRxClassification {
+    NotMcs32,
+    Mismatch { channel_width_mhz: u8 },
+    Ht40(HtDuplicateMcs32),
+}
+
 impl HtSignal {
+    pub const fn ht_duplicate_mcs32_classification(self) -> HtDuplicateRxClassification {
+        if self.mcs != HtDuplicateMcs32::INDEX {
+            HtDuplicateRxClassification::NotMcs32
+        } else if self.channel_width_mhz == 40 {
+            HtDuplicateRxClassification::Ht40(HtDuplicateMcs32::new())
+        } else {
+            HtDuplicateRxClassification::Mismatch {
+                channel_width_mhz: self.channel_width_mhz,
+            }
+        }
+    }
+
     /// Decode the special MCS32 selector only with its required HT40 geometry.
     pub const fn ht_duplicate_mcs32(self) -> Option<HtDuplicateMcs32> {
-        if self.mcs == HtDuplicateMcs32::INDEX && self.channel_width_mhz == 40 {
-            Some(HtDuplicateMcs32::new())
-        } else {
-            None
+        match self.ht_duplicate_mcs32_classification() {
+            HtDuplicateRxClassification::Ht40(mcs) => Some(mcs),
+            HtDuplicateRxClassification::NotMcs32
+            | HtDuplicateRxClassification::Mismatch { .. } => None,
         }
     }
 }

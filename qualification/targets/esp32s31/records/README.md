@@ -7,6 +7,7 @@ record are therefore evidence, not current usage instructions.
 
 Current records:
 
+- [ESP32-S31 HT Duplicate MCS32 source frontier](2026-08-24-esp32s31-ht-duplicate-mcs32-frontier.md);
 - [ESP32-S31 AP TX BA16 datapath cutover](2026-08-23-esp32s31-ap-tx-ba16-cutover.md);
 - [ESP32-S31 AP TX ceiling analysis](2026-08-23-esp32s31-ap-tx-ceiling-analysis.md);
 - [ESP32-S31 AP PSRAM-stack load characterization](2026-08-17-esp32s31-ap-psram-stack-load.md);

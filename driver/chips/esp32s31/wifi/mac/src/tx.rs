@@ -2,7 +2,10 @@
 
 #![forbid(unsafe_code)]
 
-use core::{num::NonZeroU64, pin::Pin};
+use core::{
+    num::{NonZeroU32, NonZeroU64},
+    pin::Pin,
+};
 
 #[cfg(not(target_pointer_width = "32"))]
 extern crate alloc;
@@ -38,7 +41,7 @@ use crate::{
     tx_plcp::{
         apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
         basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, he_ampdu_plcp0_word,
-        he_plcp1_word, ht_htsig_word,
+        he_plcp1_word, ht_htsig_word, ht_plcp1_word,
     },
 };
 
@@ -1115,11 +1118,127 @@ impl HtDuplicateRate {
     }
 }
 
+/// One independently reviewable field required by the S31 MCS32 formatter.
+///
+/// The ordinary HT formatter cannot supply any of these fields by analogy:
+/// its reviewed rate domain is exactly 16..=35 and its MCS reconstruction
+/// yields only the ordinary MCS0..MCS9 numeric range. Keeping the gaps finite
+/// lets diagnostics state the minimum missing oracle without publishing a
+/// guessed raw rate code.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum HtDuplicateTxOracleField {
+    /// Descriptor byte/flag which selects duplicate-mode MCS32.
+    DescriptorSelector = 1 << 0,
+    /// Complete PLCP0, PLCP1 and HT-SIG image for a known PSDU.
+    PlcpAndHtSig = 1 << 1,
+    /// DATA_LENGTH/LENGTH_CONTROL mapping and PPDU-duration enforcement.
+    Length = 1 << 2,
+    /// RTS/basic-rate selection and queue protection image.
+    Protection = 1 << 3,
+    /// Calibrated power-table lookup index and resulting queue power pair.
+    Power = 1 << 4,
+    /// Retry transition which preserves duplicate mode on every attempt.
+    Retry = 1 << 5,
+}
+
+/// Set of reviewed formatter facts which are still absent for S31 MCS32.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateTxOracleGaps(u8);
+
+impl HtDuplicateTxOracleGaps {
+    /// Exact frontier at the current reviewed-source boundary.
+    pub const ESP32S31: Self = Self(
+        HtDuplicateTxOracleField::DescriptorSelector as u8
+            | HtDuplicateTxOracleField::PlcpAndHtSig as u8
+            | HtDuplicateTxOracleField::Length as u8
+            | HtDuplicateTxOracleField::Protection as u8
+            | HtDuplicateTxOracleField::Power as u8
+            | HtDuplicateTxOracleField::Retry as u8,
+    );
+
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
+    pub const fn contains(self, field: HtDuplicateTxOracleField) -> bool {
+        self.0 & field as u8 != 0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+/// Runtime/HIL evidence gate kept separate from source formatter fields.
+///
+/// A complete source reconstruction can build a candidate queue plan, while
+/// this independent gate decides whether production may publish that plan.
+/// Keeping both facts separate avoids describing an on-air observation as a
+/// register field required to construct the image.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum HtDuplicateTxQualificationField {
+    /// A controlled peer decodes MCS32 and returns the expected terminal ACK
+    /// or BlockAck for the exact source-reconstructed queue image.
+    OnAirAck = 1 << 0,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateTxQualificationGaps(u8);
+
+impl HtDuplicateTxQualificationGaps {
+    pub const ESP32S31: Self = Self(HtDuplicateTxQualificationField::OnAirAck as u8);
+
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
+    pub const fn contains(self, field: HtDuplicateTxQualificationField) -> bool {
+        self.0 & field as u8 != 0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+/// Complete evidence frontier reported by the fail-closed S31 boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateTxEvidenceGaps {
+    formatter: HtDuplicateTxOracleGaps,
+    qualification: HtDuplicateTxQualificationGaps,
+}
+
+impl HtDuplicateTxEvidenceGaps {
+    pub const ESP32S31: Self = Self {
+        formatter: HtDuplicateTxOracleGaps::ESP32S31,
+        qualification: HtDuplicateTxQualificationGaps::ESP32S31,
+    };
+
+    pub const fn formatter(self) -> HtDuplicateTxOracleGaps {
+        self.formatter
+    }
+
+    pub const fn qualification(self) -> HtDuplicateTxQualificationGaps {
+        self.qualification
+    }
+}
+
 /// Explicit fail-closed boundary between protocol MCS32 and S31 TX hardware.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HtDuplicateTxUnavailable {
-    /// No reviewed vendor trace identifies the S31 queue, rate or power image.
-    Esp32s31EncodingUnverified,
+    /// Reviewed formatter fields and/or the independent qualification gate
+    /// remain incomplete.
+    Esp32s31EvidenceIncomplete(HtDuplicateTxEvidenceGaps),
+}
+
+impl HtDuplicateTxUnavailable {
+    pub const fn evidence_gaps(self) -> HtDuplicateTxEvidenceGaps {
+        match self {
+            Self::Esp32s31EvidenceIncomplete(gaps) => gaps,
+        }
+    }
 }
 
 /// Explicit, finite request for the HT Duplicate certification path.
@@ -1134,6 +1253,29 @@ pub struct HtDuplicateCertificationRequest {
     channel_width: HtChannelWidth,
     guard_interval: HtGuardInterval,
     maximum_ppdu_duration_micros: u32,
+}
+
+/// Hardware-admitted MCS32 plan kept outside the ordinary PHY-rate domain.
+///
+/// This value can only be created by the private reviewed-hardware boundary.
+/// In particular, it is not convertible to [`TxPhyRate`]: that enum selects
+/// the ordinary legacy/HT/HE formatters and cannot represent duplicate mode.
+/// The private fields also prevent an upper layer from manufacturing a plan
+/// after performing only protocol capability checks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateTxPlan {
+    rate: HtDuplicateRate,
+    maximum_ppdu_duration_micros: NonZeroU32,
+}
+
+impl HtDuplicateTxPlan {
+    pub const fn rate(self) -> HtDuplicateRate {
+        self.rate
+    }
+
+    pub const fn maximum_ppdu_duration_micros(self) -> NonZeroU32 {
+        self.maximum_ppdu_duration_micros
+    }
 }
 
 impl HtDuplicateCertificationRequest {
@@ -1190,6 +1332,14 @@ impl HtDuplicateTxLinkCapabilities {
     pub const fn channel_width(self) -> Option<HtChannelWidth> {
         self.channel_width
     }
+
+    pub const fn peer_supports_mcs32(self) -> bool {
+        self.peer_supports_mcs32
+    }
+
+    pub const fn peer_supports_short_guard_interval(self) -> bool {
+        self.peer_supports_short_guard_interval
+    }
 }
 
 /// Exact reason an explicit MCS32 request was not selected.
@@ -1218,7 +1368,7 @@ pub enum HtDuplicateTxSelection {
     },
     Selected {
         request: HtDuplicateCertificationRequest,
-        rate: TxPhyRate,
+        plan: HtDuplicateTxPlan,
     },
 }
 
@@ -1234,6 +1384,13 @@ impl HtDuplicateTxSelection {
         match self {
             Self::Rejected { reason, .. } => Some(reason),
             Self::NotRequested | Self::Selected { .. } => None,
+        }
+    }
+
+    pub const fn plan(self) -> Option<HtDuplicateTxPlan> {
+        match self {
+            Self::Selected { plan, .. } => Some(plan),
+            Self::NotRequested | Self::Rejected { .. } => None,
         }
     }
 }
@@ -1271,11 +1428,19 @@ pub fn select_esp32s31_ht_duplicate_tx(
         return HtDuplicateTxSelection::Rejected { request, reason };
     }
 
+    let Some(maximum_ppdu_duration_micros) =
+        NonZeroU32::new(request.maximum_ppdu_duration_micros())
+    else {
+        return HtDuplicateTxSelection::Rejected {
+            request,
+            reason: HtDuplicateTxRejection::ZeroMaximumPpduDuration,
+        };
+    };
     match esp32s31_ht_duplicate_hardware_boundary(
         HtDuplicateRate::new(request.guard_interval()),
-        Some(request.maximum_ppdu_duration_micros()),
+        maximum_ppdu_duration_micros,
     ) {
-        Ok(rate) => HtDuplicateTxSelection::Selected { request, rate },
+        Ok(plan) => HtDuplicateTxSelection::Selected { request, plan },
         Err(error) => HtDuplicateTxSelection::Rejected {
             request,
             reason: HtDuplicateTxRejection::Hardware(error),
@@ -1288,9 +1453,11 @@ pub fn select_esp32s31_ht_duplicate_tx(
 /// input, a protocol-valid certification request remains unpublishable.
 fn esp32s31_ht_duplicate_hardware_boundary(
     _rate: HtDuplicateRate,
-    _maximum_ppdu_duration_micros: Option<u32>,
-) -> Result<TxPhyRate, HtDuplicateTxUnavailable> {
-    Err(HtDuplicateTxUnavailable::Esp32s31EncodingUnverified)
+    _maximum_ppdu_duration_micros: NonZeroU32,
+) -> Result<HtDuplicateTxPlan, HtDuplicateTxUnavailable> {
+    Err(HtDuplicateTxUnavailable::Esp32s31EvidenceIncomplete(
+        HtDuplicateTxEvidenceGaps::ESP32S31,
+    ))
 }
 
 /// One-spatial-stream 802.11ax modulation and coding scheme.
@@ -2155,16 +2322,6 @@ pub enum TxPhyRate {
     He(HeRate),
 }
 
-/// A rate-only conversion cannot bypass the certification request's duration
-/// and peer gates. It reaches the same hardware boundary and fails closed.
-impl TryFrom<HtDuplicateRate> for TxPhyRate {
-    type Error = HtDuplicateTxUnavailable;
-
-    fn try_from(rate: HtDuplicateRate) -> Result<Self, Self::Error> {
-        esp32s31_ht_duplicate_hardware_boundary(rate, None)
-    }
-}
-
 impl TxPhyRate {
     pub const fn from_code(code: u8, ht_width: HtChannelWidth) -> Option<Self> {
         if let Some(rate) = LegacyRate::from_code(code) {
@@ -2982,32 +3139,24 @@ pub const fn ht_q0_image(descriptor_address: u32, config: HtTxConfig) -> Option<
     if !descriptor_address_valid(descriptor_address) || !config.valid() {
         return None;
     }
-    let rate = config.rate.code();
     let rts_rate = config.rate.vendor_rts_rate();
-    let channel_width_40 = match config.rate.channel_width {
-        HtChannelWidth::Mhz20 => false,
-        HtChannelWidth::Mhz40 => true,
-    };
-    // Complete mac_tx_set_htsig and mac_tx_set_plcp1 both consume descriptor
-    // word1 bit 15 as the HT40 selector. The direct Rust-owned descriptor does
-    // not carry the vendor metadata word, so construct its exact finite image
-    // from the typed channel width.
-    let descriptor_word1 = if channel_width_40 { 0x0000_8000 } else { 0 };
     Some(HtQ0Image {
         // SOURCE: HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29. The exact
         // synchronous formatter result retains bit 22 in PLCP0. The separate
         // mac_tx_set_txop_q policy edge is not reached between lmacSetTxFrame
         // and queue publication for this vendor single-MPDU path.
         plcp0: basic_plcp0_word(descriptor_address as usize, HT_SINGLE_DESCRIPTOR_FLAGS),
-        plcp1: basic_non_he_plcp1_word(
-            rate,
+        plcp1: ht_plcp1_word(
+            config.rate,
             HT_SINGLE_DESCRIPTOR_FLAGS,
             plcp1_descriptor_control(config.hardware_key_selector, config.interface),
-            descriptor_word1,
-            0,
         ),
-        ht_signal: basic_htsig_word(rate, channel_width_40, config.length as u32),
-        data_length: basic_data_length_word(rate, config.length as u32, HT_SINGLE_ENTRY_FLAGS),
+        ht_signal: basic_htsig_word(config.rate, config.length as u32),
+        data_length: basic_data_length_word(
+            config.rate,
+            config.length as u32,
+            HT_SINGLE_ENTRY_FLAGS,
+        ),
         power: config.data_power_primary as u32
             | ((config.data_power_alternate as u32) << 8)
             | ((config.rts_power_primary as u32) << 16)
@@ -3038,13 +3187,7 @@ pub const fn ht_ampdu_q0_image(
     if !descriptor_address_valid(dma_head_address) || !config.valid() {
         return None;
     }
-    let rate = config.rate.code();
     let rts_rate = config.rate.vendor_rts_rate();
-    let channel_width_40 = match config.rate.channel_width {
-        HtChannelWidth::Mhz20 => false,
-        HtChannelWidth::Mhz40 => true,
-    };
-    let descriptor_word1 = if channel_width_40 { 0x0000_8000 } else { 0 };
     Some(HtQ0Image {
         // SOURCE: complete `libpp.a[hal_mac_tx.o]::
         // mac_tx_set_plcp0` as reached from the A-MPDU submit branch. Its
@@ -3052,16 +3195,14 @@ pub const fn ht_ampdu_q0_image(
         // descriptor. The PP descriptor at `frame+0x34` supplies flags and
         // rate metadata but is not the hardware walker head.
         plcp0: basic_plcp0_word(dma_head_address as usize, HT_AMPDU_DESCRIPTOR_FLAGS),
-        plcp1: basic_non_he_plcp1_word(
-            rate,
+        plcp1: ht_plcp1_word(
+            config.rate,
             HT_AMPDU_DESCRIPTOR_FLAGS,
             plcp1_descriptor_control(config.hardware_key_selector, config.interface),
-            descriptor_word1,
-            0,
         ),
-        ht_signal: ht_htsig_word(rate, channel_width_40, config.aggregate_length as u32, true),
+        ht_signal: ht_htsig_word(config.rate, config.aggregate_length as u32, true),
         data_length: basic_data_length_word(
-            rate,
+            config.rate,
             config.aggregate_length as u32,
             HT_AMPDU_ENTRY_FLAGS,
         ),

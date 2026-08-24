@@ -258,7 +258,11 @@ mod tests {
         MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
     };
     use open_esp_radio_esp32s31_wifi_mac::rate_schedule::RateScheduleKind;
-    use open_esp_radio_ieee80211::wmm::parse_wmm_parameter_element;
+    use open_esp_radio_ieee80211::{
+        channel::{WifiChannel, WifiChannelWidth},
+        ht::{HtDuplicateMcs32, ht_capability_ie, ht_operation_ie},
+        wmm::parse_wmm_parameter_element,
+    };
 
     const HE20_MCS9_CAPABILITY: [u8; 24] = [
         255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d, 0xc0, 0x1f,
@@ -396,6 +400,24 @@ mod tests {
         access_point
     }
 
+    fn ht40_mcs32_access_point() -> ScanRecord {
+        let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
+        let mut capability = ht_capability_ie(channel);
+        HtDuplicateMcs32::new().advertise_receive_only(&mut capability);
+        let operation = ht_operation_ie(channel);
+
+        let mut access_point = ScanRecord::EMPTY;
+        access_point.bssid = [2, 3, 4, 5, 6, 7];
+        access_point.channel = channel.primary();
+        access_point.beacon_interval_tu = 100;
+        access_point.rssi = -45;
+        access_point.ht_capability_ie = capability;
+        access_point.ht_capability_ie_present = true;
+        access_point.ht_operation_ie = operation;
+        access_point.ht_operation_ie_present = true;
+        access_point
+    }
+
     #[test]
     fn port_owns_scan_and_association_peer_programming() {
         let access_point = he20_access_point();
@@ -452,6 +474,56 @@ mod tests {
                 Some(Event::Beamforming),
                 Some(Event::ErSuAck),
             ]
+        );
+    }
+
+    #[test]
+    fn scan_mcs32_capability_reaches_the_connected_ht40_owner_without_tx_admission() {
+        let access_point = ht40_mcs32_access_point();
+        assert!(access_point.supports_ht_duplicate_mcs32());
+        let mut transmit = MockTransmit::new();
+        let prepared = Esp32s31StaPeerPort::prepare(&mut transmit, &access_point).unwrap();
+        assert!(
+            prepared
+                .policy
+                .ht_capabilities
+                .is_some_and(HtPeerCapabilities::supports_ht_duplicate_mcs32)
+        );
+
+        let response = AssociationResponse {
+            capability_info: 0,
+            status_code: 0,
+            association_id: 7,
+            ht_capability: true,
+            he_capability: false,
+            he_operation: false,
+            wmm: false,
+            wmm_parameters: None,
+        };
+        let mut hardware = MockRadio::new(-95);
+        let programmed = Esp32s31StaPeerPort::program(
+            Esp32s31StaPeerRadio::new(&mut hardware, &mut transmit),
+            Esp32s31StaPeerStation::new([8, 9, 10, 11, 12, 13], StaAssociationPhy::Ht40),
+            &response,
+            prepared,
+        )
+        .unwrap();
+
+        assert_eq!(
+            programmed.peer.link.association_phy,
+            StaAssociationPhy::Ht40
+        );
+        assert!(programmed.peer.link.peer_supports_ht_short_guard_interval);
+        assert!(programmed.peer.link.peer_supports_ht_duplicate_mcs32);
+        assert!(
+            programmed
+                .report
+                .ht_capabilities
+                .is_some_and(HtPeerCapabilities::supports_ht_duplicate_mcs32)
+        );
+        assert_eq!(
+            programmed.peer.rate_control.current_schedule().kind,
+            RateScheduleKind::Dot11N
         );
     }
 }

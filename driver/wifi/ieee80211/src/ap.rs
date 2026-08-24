@@ -1032,6 +1032,18 @@ mod tests {
         write_ht_association_response(&mut body, 0, 1, ht40, None).unwrap();
         assert!(body.windows(4).any(|window| window == [45, 26, 0x6e, 0x10]));
         assert!(body.windows(4).any(|window| window == [61, 22, 6, 0x07]));
+        let ht_capability = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN;
+        assert_eq!(
+            body[ht_capability + crate::ht::HtDuplicateMcs32::CAPABILITY_IE_BYTE]
+                & crate::ht::HtDuplicateMcs32::CAPABILITY_IE_MASK,
+            0,
+            "the AP response must not advertise unqualified local MCS32 reception"
+        );
+        assert_eq!(
+            body[ht_capability + 17],
+            0x01,
+            "the AP response must keep the implemented TX/RX MCS0..MCS7 sets equal"
+        );
     }
 
     #[test]

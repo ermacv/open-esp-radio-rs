@@ -443,6 +443,7 @@ mod tests {
     };
     use crate::{
         channel::{WifiChannel, WifiChannelWidth},
+        ht::HtDuplicateMcs32,
         ssid::WifiSsid,
     };
 
@@ -523,6 +524,21 @@ mod tests {
             bytes[..len]
                 .windows(4)
                 .any(|window| window == [61, 22, 6, 0x05])
+        );
+        let ht_capability = bytes[..len]
+            .windows(2)
+            .position(|window| window == [45, 26])
+            .expect("the HT40 beacon includes HT Capabilities");
+        assert_eq!(
+            bytes[ht_capability + HtDuplicateMcs32::CAPABILITY_IE_BYTE]
+                & HtDuplicateMcs32::CAPABILITY_IE_MASK,
+            0,
+            "the AP must not advertise unqualified local MCS32 reception"
+        );
+        assert_eq!(
+            bytes[ht_capability + 17],
+            0x01,
+            "the AP must advertise only the implemented equal MCS0..MCS7 sets"
         );
     }
 

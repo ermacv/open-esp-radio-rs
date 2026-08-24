@@ -306,6 +306,7 @@ pub struct Esp32s31AccessPointObservation {
     pub rx_rssi_max_dbm: i8,
     pub rx_ht40_mcs_frames: [u32; 8],
     pub rx_ht40_mcs32_frames: u32,
+    pub rx_ht_mcs32_width_mismatches: u32,
     pub tx_ht_aggregates: u32,
     pub tx_ht40_mcs7_aggregates: u32,
     pub data_frames_transmitted: u32,

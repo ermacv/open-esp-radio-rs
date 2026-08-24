@@ -9,6 +9,9 @@ use open_esp_radio_esp32s31_wifi_mac::rate_control::{
     HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
     StaRateControlAssociationInput, StaRateControlPhy,
 };
+use open_esp_radio_esp32s31_wifi_mac::tx::{
+    HtDuplicateTxEvidenceGaps, HtDuplicateTxRejection, HtDuplicateTxUnavailable,
+};
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
     ConnectedRxEvent, ConnectedRxSink, StaCcmpRxReplayEpoch, StaCcmpRxReplayResource,
 };
@@ -55,6 +58,26 @@ fn peer() -> Esp32s31ConnectedStaPeer {
             he_low_metric_report: HeLowMetricReportFeatures::default(),
         }),
     }
+}
+
+fn ht40_mcs32_peer() -> Esp32s31ConnectedStaPeer {
+    let link_metric = StaLinkMetric::from_rssi_and_noise_floor(-45, -95);
+    let mut peer = peer();
+    peer.link.association_phy = StaAssociationPhy::Ht40;
+    peer.link.peer_supports_ht_short_guard_interval = true;
+    peer.link.peer_supports_ht_duplicate_mcs32 = true;
+    peer.link.peer_supports_one_ltf_800ns_gi = false;
+    peer.link.peer_supports_ldpc = false;
+    peer.link.peer_dcm_receive = HeDcmConstellation::NotSupported;
+    peer.rate_control = StaRateControlAssociation::new(StaRateControlAssociationInput {
+        phy: StaRateControlPhy::Ht,
+        link_metric,
+        p2p: false,
+        peer_highest_rate: None,
+        long_range_rates_present: false,
+        he_low_metric_report: HeLowMetricReportFeatures::default(),
+    });
+    peer
 }
 
 fn config() -> Esp32s31ConnectedStaConfig {
@@ -131,7 +154,41 @@ fn plan_owns_rate_rx_tx_block_ack_and_beacon_policy() {
         23
     );
     assert!(matches!(plan.aggregate_tx_rate(), TxPhyRate::He(_)));
+    assert_eq!(
+        plan.ht_duplicate_tx_selection(),
+        HtDuplicateTxSelection::NotRequested
+    );
     assert_eq!(plan.beacon_loss().window_micros(), 1_024_000);
+}
+
+#[test]
+fn sta_mcs32_request_reaches_hardware_frontier_without_replacing_ordinary_rates() {
+    let peer = ht40_mcs32_peer();
+    let interface = station_interface(&peer);
+    let request = HtDuplicateCertificationRequest::new(
+        HtChannelWidth::Mhz40,
+        HtGuardInterval::Short400Ns,
+        5_484,
+    );
+    let plan = Esp32s31ConnectedStaPort::prepare_for_interface_with_storage_and_ht_duplicate_certification::<
+        32,
+        32,
+    >(peer, config(), interface, Some(request))
+    .unwrap();
+
+    assert!(matches!(plan.data_tx_rate(), TxPhyRate::Ht(_)));
+    assert!(matches!(plan.aggregate_tx_rate(), TxPhyRate::Ht(_)));
+    let selection = plan.ht_duplicate_tx_selection();
+    assert_eq!(selection.request(), Some(request));
+    assert_eq!(selection.plan(), None);
+    assert_eq!(
+        selection.rejection(),
+        Some(HtDuplicateTxRejection::Hardware(
+            HtDuplicateTxUnavailable::Esp32s31EvidenceIncomplete(
+                HtDuplicateTxEvidenceGaps::ESP32S31,
+            )
+        ))
+    );
 }
 
 #[test]

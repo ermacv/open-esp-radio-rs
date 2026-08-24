@@ -116,11 +116,14 @@ support exists.
 Ordinary station HE20 SU S-MPDU publication is live. Trigger and NDPA events
 reach typed bounded handoffs but reject the unreviewed HE-TB vector and
 feedback formatter before physical publication. MCS32 is modeled separately
-as HT duplicate mode and flows through STA/AP selection diagnostics; S31
-hardware encoding remains fail-closed instead of assigning an unevidenced
-selector. All capabilities in this section describe source behavior only;
-they are not qualification-ledger or HIL claims without the required dated
-evidence.
+as HT duplicate mode and flows through peer parsing, STA/AP selection and
+geometry-aware RX diagnostics. It cannot masquerade as an ordinary HT rate or
+enter that formatter. S31 hardware encoding remains fail-closed with separate
+diagnostics for missing formatter fields and on-air qualification; local STA
+and AP HT capability elements keep the MCS32 receive bit clear until controlled
+RX evidence exists. All capabilities in this section describe source behavior
+only; they are not qualification-ledger or HIL claims without the required
+dated evidence.
 
 BLE, Bluetooth, IEEE 802.15.4 and coexistence are not public runtime features
 and have no placeholder public owner types. Internal typed PAC/HAL/LMAC

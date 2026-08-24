@@ -266,6 +266,12 @@ mod tests {
         let peer = ht_peer_capabilities(&peer_record).unwrap();
         assert!(peer.supports_ht_duplicate_mcs32());
         assert_eq!(peer.ht_duplicate_mcs32(), Some(HtDuplicateMcs32::new()));
+
+        let mut malformed_ht20 = ht_capability_ie(WifiChannel::mhz20(6).unwrap());
+        HtDuplicateMcs32::new().advertise_receive_only(&mut malformed_ht20);
+        let malformed_peer = ht_peer_capabilities(&malformed_ht20).unwrap();
+        assert!(!malformed_peer.supports_ht_duplicate_mcs32());
+        assert_eq!(malformed_peer.ht_duplicate_mcs32(), None);
     }
 
     #[test]

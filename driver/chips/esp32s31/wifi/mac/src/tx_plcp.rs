@@ -1,3 +1,5 @@
+use crate::tx::{HtChannelWidth, HtGuardInterval, HtRate};
+
 /// Build the queue PLCP0 word for the guarded non-HE submission branch.
 pub const fn basic_plcp0_word(metadata_address: usize, flags: u32) -> u32 {
     let mut word = (metadata_address as u32 & 0x000f_ffff) | 0x0060_0000;
@@ -82,21 +84,35 @@ pub const fn basic_non_he_plcp1_word(
     word
 }
 
+/// Build the ordinary HT PLCP1 word from one typed MCS0..MCS7 rate.
+///
+/// The raw descriptor rate and CBW metadata stay behind this boundary so a
+/// caller cannot feed a guessed MCS32 selector into the reviewed ordinary
+/// formatter or publish contradictory rate/width inputs.
+pub const fn ht_plcp1_word(rate: HtRate, flags: u32, queue_word_low: u8) -> u32 {
+    let descriptor_word1 = match rate.channel_width {
+        HtChannelWidth::Mhz20 => 0,
+        HtChannelWidth::Mhz40 => 0x0000_8000,
+    };
+    basic_non_he_plcp1_word(rate.code(), flags, queue_word_low, descriptor_word1, 0)
+}
+
 /// Build the packed HT-SIG word for one S31 non-HE queue vector.
 ///
-/// `channel_width_40` becomes HT-SIG1 bit 7. Complete
+/// The typed rate's channel width becomes HT-SIG1 bit 7. Complete
 /// `libpp.a[hal_mac_tx.o]::mac_tx_set_htsig` copies descriptor word1
 /// bit 15 to this exact bit; its standard 802.11n meaning is CBW (zero for
 /// 20 MHz, one for 40 MHz).
-pub const fn ht_htsig_word(rate: u8, channel_width_40: bool, length: u32, aggregate: bool) -> u32 {
-    let mcs = if rate <= 25 { rate - 16 } else { rate - 26 };
-    let low = mcs | ((channel_width_40 as u8) << 7);
-    let high = 0x07 | ((aggregate as u8) << 3) | (((rate >= 26) as u8) << 7);
+pub const fn ht_htsig_word(rate: HtRate, length: u32, aggregate: bool) -> u32 {
+    let low = rate.mcs.index() | ((matches!(rate.channel_width, HtChannelWidth::Mhz40) as u8) << 7);
+    let high = 0x07
+        | ((aggregate as u8) << 3)
+        | ((matches!(rate.guard_interval, HtGuardInterval::Short400Ns) as u8) << 7);
     u32::from_le_bytes([low, length as u8, (length >> 8) as u8, high])
 }
 
-pub const fn basic_htsig_word(rate: u8, channel_width_40: bool, length: u32) -> u32 {
-    ht_htsig_word(rate, channel_width_40, length, false)
+pub const fn basic_htsig_word(rate: HtRate, length: u32) -> u32 {
+    ht_htsig_word(rate, length, false)
 }
 
 pub const fn basic_length_control_word(rts_rate: u8, entry_flags: u8, queue_word: u32) -> u32 {
@@ -107,9 +123,10 @@ pub const fn basic_length_control_word(rts_rate: u8, entry_flags: u8, queue_word
         | 0x04
 }
 
-pub const fn basic_data_length_word(rate: u8, length: u32, entry_flags: u8) -> u32 {
-    let rate = if rate <= 25 { rate - 16 } else { rate - 26 };
-    (((entry_flags & 0x03) as u32) << 22) | (length & 0x003f_ffff) | ((rate as u32) << 28)
+pub const fn basic_data_length_word(rate: HtRate, length: u32, entry_flags: u8) -> u32 {
+    (((entry_flags & 0x03) as u32) << 22)
+        | (length & 0x003f_ffff)
+        | ((rate.mcs.index() as u32) << 28)
 }
 
 #[cfg(test)]
@@ -117,11 +134,20 @@ mod tests {
     use super::{
         apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
         basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, he_ampdu_plcp0_word,
-        he_plcp1_word, ht_htsig_word,
+        he_plcp1_word, ht_htsig_word, ht_plcp1_word,
     };
+    use crate::tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate};
 
     const ADDRESS: usize = 0x2f12_3456;
     const BASE: u32 = 0x0062_3456;
+
+    const fn ht_rate(
+        mcs: HtMcs,
+        guard_interval: HtGuardInterval,
+        channel_width: HtChannelWidth,
+    ) -> HtRate {
+        HtRate::new(mcs, guard_interval, channel_width)
+    }
 
     #[test]
     fn masks_the_metadata_address_and_preserves_the_base_format() {
@@ -207,17 +233,47 @@ mod tests {
 
     #[test]
     fn reproduces_htsig_rate_class_cbw_and_length() {
-        assert_eq!(basic_htsig_word(16, false, 0x1234), 0x0712_3400);
-        assert_eq!(basic_htsig_word(25, true, 0x3fff), 0x073f_ff89);
-        assert_eq!(basic_htsig_word(26, false, 0x0201), 0x8702_0100);
-        assert_eq!(basic_htsig_word(35, true, 0x0001), 0x8700_0189);
+        let mcs0_lgi_ht20 = ht_rate(
+            HtMcs::Mcs0,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz20,
+        );
+        let mcs7_lgi_ht40 = ht_rate(
+            HtMcs::Mcs7,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz40,
+        );
+        let mcs0_sgi_ht20 = ht_rate(
+            HtMcs::Mcs0,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz20,
+        );
+        let mcs7_sgi_ht40 = ht_rate(
+            HtMcs::Mcs7,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz40,
+        );
+        assert_eq!(basic_htsig_word(mcs0_lgi_ht20, 0x1234), 0x0712_3400);
+        assert_eq!(basic_htsig_word(mcs7_lgi_ht40, 0x3fff), 0x073f_ff87);
+        assert_eq!(basic_htsig_word(mcs0_sgi_ht20, 0x0201), 0x8702_0100);
+        assert_eq!(basic_htsig_word(mcs7_sgi_ht40, 0x0001), 0x8700_0187);
     }
 
     #[test]
     fn sets_the_recovered_ht_ampdu_bit_independently_of_length() {
-        assert_eq!(ht_htsig_word(16, false, 0x248e, true), 0x0f24_8e00);
-        assert_eq!(ht_htsig_word(35, true, 0x248e, true), 0x8f24_8e89);
-        assert_eq!(ht_htsig_word(16, false, 0x248e, false), 0x0724_8e00);
+        let mcs0_lgi_ht20 = ht_rate(
+            HtMcs::Mcs0,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz20,
+        );
+        let mcs7_sgi_ht40 = ht_rate(
+            HtMcs::Mcs7,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz40,
+        );
+        assert_eq!(ht_htsig_word(mcs0_lgi_ht20, 0x248e, true), 0x0f24_8e00);
+        assert_eq!(ht_htsig_word(mcs7_sgi_ht40, 0x248e, true), 0x8f24_8e87);
+        assert_eq!(ht_htsig_word(mcs0_lgi_ht20, 0x248e, false), 0x0724_8e00);
     }
 
     #[test]
@@ -228,8 +284,90 @@ mod tests {
 
     #[test]
     fn reproduces_data_length_fields() {
-        assert_eq!(basic_data_length_word(16, 0x1234, 0), 0x0000_1234);
-        assert_eq!(basic_data_length_word(25, 0x3fff, 3), 0x90c0_3fff);
-        assert_eq!(basic_data_length_word(35, 0x0201, 1), 0x9040_0201);
+        let mcs0_lgi_ht20 = ht_rate(
+            HtMcs::Mcs0,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz20,
+        );
+        let mcs7_sgi_ht40 = ht_rate(
+            HtMcs::Mcs7,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz40,
+        );
+        assert_eq!(
+            basic_data_length_word(mcs0_lgi_ht20, 0x1234, 0),
+            0x0000_1234
+        );
+        assert_eq!(
+            basic_data_length_word(mcs7_sgi_ht40, 0x0201, 1),
+            0x7040_0201
+        );
+    }
+
+    #[test]
+    fn typed_ht_plcp1_keeps_width_and_rate_in_one_owner() {
+        let ht20 = ht_rate(
+            HtMcs::Mcs0,
+            HtGuardInterval::Long800Ns,
+            HtChannelWidth::Mhz20,
+        );
+        let ht40 = ht_rate(
+            HtMcs::Mcs7,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz40,
+        );
+        assert_eq!(ht_plcp1_word(ht20, 0, 0x12), 0x0225_0000);
+        assert_eq!(ht_plcp1_word(ht40, 0x0000_4000, 0x12), 0x2224_1000);
+    }
+
+    #[test]
+    fn typed_ordinary_ht_formatter_covers_every_mcs_gi_and_width() {
+        let mcs_values = [
+            HtMcs::Mcs0,
+            HtMcs::Mcs1,
+            HtMcs::Mcs2,
+            HtMcs::Mcs3,
+            HtMcs::Mcs4,
+            HtMcs::Mcs5,
+            HtMcs::Mcs6,
+            HtMcs::Mcs7,
+        ];
+        let guard_intervals = [HtGuardInterval::Long800Ns, HtGuardInterval::Short400Ns];
+        let channel_widths = [HtChannelWidth::Mhz20, HtChannelWidth::Mhz40];
+
+        for mcs in mcs_values {
+            for guard_interval in guard_intervals {
+                for channel_width in channel_widths {
+                    let rate = ht_rate(mcs, guard_interval, channel_width);
+                    let descriptor_word1 = if channel_width == HtChannelWidth::Mhz40 {
+                        0x0000_8000
+                    } else {
+                        0
+                    };
+                    assert_eq!(
+                        ht_plcp1_word(rate, 0x0000_4000, 0x12),
+                        basic_non_he_plcp1_word(
+                            rate.code(),
+                            0x0000_4000,
+                            0x12,
+                            descriptor_word1,
+                            0,
+                        )
+                    );
+
+                    let expected_htsig = u32::from_le_bytes([
+                        mcs.index() | ((channel_width == HtChannelWidth::Mhz40) as u8) << 7,
+                        0x34,
+                        0x12,
+                        0x0f | ((guard_interval == HtGuardInterval::Short400Ns) as u8) << 7,
+                    ]);
+                    assert_eq!(ht_htsig_word(rate, 0x1234, true), expected_htsig);
+                    assert_eq!(
+                        basic_data_length_word(rate, 0x1234, 1),
+                        0x0040_1234 | (u32::from(mcs.index()) << 28)
+                    );
+                }
+            }
+        }
     }
 }

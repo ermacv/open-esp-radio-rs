@@ -687,9 +687,53 @@ mod tests {
     }
 
     #[test]
+    fn ap_mcs32_request_reaches_the_shared_frontier_without_replacing_fallback() {
+        use open_esp_radio_esp32s31_wifi_mac::tx::{
+            HtDuplicateTxEvidenceGaps, HtDuplicateTxRejection, HtDuplicateTxUnavailable,
+        };
+        use open_esp_radio_ieee80211::ht::{
+            HtDuplicateMcs32, ht_capability_ie, ht_peer_capabilities,
+        };
+
+        let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
+        let mut capability = ht_capability_ie(channel);
+        HtDuplicateMcs32::new().advertise_receive_only(&mut capability);
+        let peer = ht_peer_capabilities(&capability).unwrap();
+        let fallback = peer_ht_rate(channel, peer).unwrap();
+        assert_eq!(fallback.mcs, HtMcs::Mcs7);
+        assert_eq!(fallback.channel_width, HtChannelWidth::Mhz40);
+        assert_eq!(
+            peer_ht_duplicate_rate(channel, peer),
+            Some(HtDuplicateRate::new(HtGuardInterval::Short400Ns))
+        );
+
+        let request = HtDuplicateCertificationRequest::new(
+            HtChannelWidth::Mhz40,
+            HtGuardInterval::Short400Ns,
+            5_484,
+        );
+        let selection = peer_ht_duplicate_tx_selection(channel, Some(peer), Some(request));
+        assert_eq!(selection.plan(), None);
+        assert_eq!(
+            selection.rejection(),
+            Some(HtDuplicateTxRejection::Hardware(
+                HtDuplicateTxUnavailable::Esp32s31EvidenceIncomplete(
+                    HtDuplicateTxEvidenceGaps::ESP32S31,
+                )
+            ))
+        );
+        assert_eq!(peer_ht_rate(channel, peer), Some(fallback));
+    }
+
+    #[test]
     fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
         let mut slot = pin!(TxSlot::<256>::new_model());
-        let tx = Esp32s31ApTx::new(
+        let request = HtDuplicateCertificationRequest::new(
+            HtChannelWidth::Mhz40,
+            HtGuardInterval::Long800Ns,
+            5_484,
+        );
+        let mut tx = Esp32s31ApTx::new(
             WifiTxResources {
                 slot: slot.as_mut(),
                 policy: WifiTxRuntimePolicy::vendor_defaults(),
@@ -701,6 +745,7 @@ mod tests {
                 publication_timeout_micros: 7_500,
             },
         );
+        tx.set_ht_duplicate_certification_request(Some(request));
 
         let (resources, parked) = tx
             .try_park()
@@ -709,6 +754,7 @@ mod tests {
 
         let tx = Esp32s31ApTx::resume(resources, parked);
         assert_eq!(tx.publication_timeout_micros(), 7_500);
+        assert_eq!(tx.ht_duplicate_certification_request(), Some(request));
         assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
         assert!(tx.try_into_resources().is_ok());
     }

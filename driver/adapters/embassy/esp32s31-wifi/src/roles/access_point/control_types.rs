@@ -51,6 +51,8 @@ pub struct Esp32s31AccessPointControlObservation {
     pub rx_ht40_mcs_frames: [u32; 8],
     /// Protected HT40 data MPDUs carrying the independent MCS32 selector.
     pub rx_ht40_mcs32_frames: u32,
+    /// Protected HT data MPDUs carrying MCS32 without its required HT40 CBW.
+    pub rx_ht_mcs32_width_mismatches: u32,
     /// Network A-MPDU transactions started with a typed HT rate.
     pub tx_ht_aggregates: u32,
     /// Network A-MPDU transactions started specifically at HT40 MCS7.

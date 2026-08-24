@@ -1,4 +1,77 @@
 
+#[cfg(any(feature = "diagnostics", test))]
+fn observe_ht_rx_data_frame(
+    observation: &mut Esp32s31AccessPointControlObservation,
+    signal: HtSignal,
+) {
+    observation.rx_ht_data_frames = observation.rx_ht_data_frames.saturating_add(1);
+    if signal.aggregation {
+        observation.rx_ht_mpdus_with_aggregation_bit = observation
+            .rx_ht_mpdus_with_aggregation_bit
+            .saturating_add(1);
+    }
+    match signal.ht_duplicate_mcs32_classification() {
+        HtDuplicateRxClassification::Ht40(_) => {
+            observation.rx_ht40_mcs32_frames =
+                observation.rx_ht40_mcs32_frames.saturating_add(1);
+        }
+        HtDuplicateRxClassification::Mismatch { .. } => {
+            observation.rx_ht_mcs32_width_mismatches = observation
+                .rx_ht_mcs32_width_mismatches
+                .saturating_add(1);
+        }
+        HtDuplicateRxClassification::NotMcs32 => {}
+    }
+    if signal.channel_width_mhz == 40
+        && let Some(count) = observation.rx_ht40_mcs_frames.get_mut(signal.mcs as usize)
+    {
+        *count = count.saturating_add(1);
+    }
+}
+
+#[cfg(test)]
+mod ht_rx_observation_tests {
+    use super::*;
+
+    #[test]
+    fn ap_observation_separates_valid_ht40_mcs32_from_width_mismatch() {
+        let mut observation = Esp32s31AccessPointControlObservation::default();
+        observe_ht_rx_data_frame(
+            &mut observation,
+            HtSignal {
+                mcs: 32,
+                channel_width_mhz: 40,
+                aggregation: false,
+                short_guard_interval: false,
+            },
+        );
+        observe_ht_rx_data_frame(
+            &mut observation,
+            HtSignal {
+                mcs: 32,
+                channel_width_mhz: 20,
+                aggregation: true,
+                short_guard_interval: false,
+            },
+        );
+        observe_ht_rx_data_frame(
+            &mut observation,
+            HtSignal {
+                mcs: 7,
+                channel_width_mhz: 40,
+                aggregation: true,
+                short_guard_interval: true,
+            },
+        );
+
+        assert_eq!(observation.rx_ht_data_frames, 3);
+        assert_eq!(observation.rx_ht_mpdus_with_aggregation_bit, 2);
+        assert_eq!(observation.rx_ht40_mcs32_frames, 1);
+        assert_eq!(observation.rx_ht_mcs32_width_mismatches, 1);
+        assert_eq!(observation.rx_ht40_mcs_frames[7], 1);
+    }
+}
+
 impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
     Esp32s31AccessPointProtocolProcessor<
         'storage,
@@ -588,23 +661,7 @@ where
                 if let MacRxEvidence::HardwareObserved(phy) = frame.metadata.rate
                     && let Some(signal) = phy.ht_signal()
                 {
-                    observation.rx_ht_data_frames = observation.rx_ht_data_frames.saturating_add(1);
-                    if signal.aggregation {
-                        observation.rx_ht_mpdus_with_aggregation_bit = observation
-                            .rx_ht_mpdus_with_aggregation_bit
-                            .saturating_add(1);
-                    }
-                    if signal.channel_width_mhz == 40 {
-                        if signal.ht_duplicate_mcs32().is_some() {
-                            observation.rx_ht40_mcs32_frames =
-                                observation.rx_ht40_mcs32_frames.saturating_add(1);
-                        }
-                        if let Some(count) =
-                            observation.rx_ht40_mcs_frames.get_mut(signal.mcs as usize)
-                        {
-                            *count = count.saturating_add(1);
-                        }
-                    }
+                    observe_ht_rx_data_frame(observation, signal);
                 }
             });
             let (

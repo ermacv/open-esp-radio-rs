@@ -304,6 +304,11 @@ enum ProjectCommand {
         after_long_help = "Use this before editing a project to distinguish local bindings, reviewed knowledge, generated evidence and external artifacts."
     )]
     Files(EmptyArgs),
+    /// Inspect the project-owned incremental cache.
+    Cache {
+        #[command(subcommand)]
+        command: ProjectCacheCommand,
+    },
     /// Audit the trust boundary between vendor evidence, probes and production Rust.
     Audit {
         #[command(subcommand)]
@@ -346,6 +351,7 @@ impl ProjectCommand {
             Self::Inputs { command } => command.into_command(),
             Self::Doctor(arguments) => Command::ProjectDoctor(arguments),
             Self::Files(arguments) => Command::ProjectFiles(arguments),
+            Self::Cache { command } => command.into_command(),
             Self::Audit { command } => command.into_command(),
             Self::Status(arguments) => Command::ProjectStatus(arguments),
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
@@ -356,6 +362,11 @@ impl ProjectCommand {
         }
     }
 }
+
+leaf_commands!(ProjectCacheCommand {
+    /// Report cache size, query inventory, dependencies and reclaimable data.
+    Stats(EmptyArgs) => Command::ProjectCacheStats, Empty,
+});
 
 leaf_commands!(ProjectAuditCommand {
     /// Classify every executable binding and show its maximum admissible claim.
@@ -531,6 +542,7 @@ pub(crate) enum Command {
     ProjectInputsInit(ProjectInputsInitArgs),
     ProjectDoctor(EmptyArgs),
     ProjectFiles(EmptyArgs),
+    ProjectCacheStats(EmptyArgs),
     ProjectAuditBindings(EmptyArgs),
     ProjectStatus(ProjectStatusArgs),
     ProjectBrowse(EmptyArgs),
@@ -654,6 +666,23 @@ mod tests {
         ])
         .unwrap_err();
         assert!(error.to_string().contains("unexpected argument"));
+    }
+
+    #[test]
+    fn parses_project_cache_stats_as_a_typed_leaf() {
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "cache".to_owned(),
+            "stats".to_owned(),
+            "--project".to_owned(),
+            "vendor-project.toml".to_owned(),
+        ])
+        .unwrap();
+        assert!(matches!(invocation.command, Command::ProjectCacheStats(_)));
+        assert_eq!(
+            invocation.project,
+            Some(PathBuf::from("vendor-project.toml"))
+        );
     }
 
     #[test]

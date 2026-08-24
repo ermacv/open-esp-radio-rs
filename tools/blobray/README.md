@@ -54,6 +54,19 @@ Use `--details` only when you need the complete component or file inventory.
 Use `--format json` for automation. Human results go to stdout; diagnostics,
 tracing, and progress go to stderr.
 
+Inspect the project-owned incremental cache without changing it:
+
+```console
+cargo blobray project cache stats \
+  --project /path/to/vendor-project.toml
+```
+
+`cache stats` is a read-only inventory command. JSON reports an absent cache as
+`present: false`; the command does not initialize, migrate, compact, prune, or
+delete cache data. In particular, it is not a garbage-collection command.
+Use `--details` for paths and the per-kind query breakdown; cache writes and
+automatic compaction remain part of analysis execution.
+
 The `cargo blobray` alias intentionally keeps Cargo output
 visible. A cold invocation may first compile the optimized host binary or wait
 for another Cargo process to release its build lock; those messages describe

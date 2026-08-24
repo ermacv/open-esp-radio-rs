@@ -1,7 +1,7 @@
 //! Loading and merging project, target, run-spec, memory and register inputs.
 
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
 };
 
@@ -107,6 +107,20 @@ pub(super) fn resolve_from(
                 project_path: required_project_path(
                     project_path,
                     "project inputs init requires --project or a discovered manifest",
+                )?,
+            });
+        }
+        Command::ProjectCacheStats(_) => {
+            reject_target_overrides(
+                requested_target.as_ref(),
+                requested_run_spec.as_ref(),
+                &svd_paths,
+                "project cache stats accepts a project manifest, not --target-spec, --run-spec or --svd",
+            )?;
+            return Ok(ResolvedInvocation::ProjectCacheStats {
+                project_path: required_regular_project_path(
+                    project_path,
+                    "project cache stats requires --project or a discovered manifest",
                 )?,
             });
         }
@@ -251,6 +265,23 @@ fn reject_target_overrides(
 
 fn required_project_path(path: Option<PathBuf>, message: &str) -> Result<PathBuf> {
     path.ok_or_else(|| crate::Error::invalid(message))
+}
+
+fn required_regular_project_path(path: Option<PathBuf>, message: &str) -> Result<PathBuf> {
+    let path = required_project_path(path, message)?;
+    let metadata = fs::metadata(&path).map_err(|error| {
+        crate::Error::invalid(format!(
+            "project manifest {} is unavailable: {error}",
+            path.display()
+        ))
+    })?;
+    if !metadata.is_file() {
+        return Err(crate::Error::invalid(format!(
+            "project manifest {} is not a regular file",
+            path.display()
+        )));
+    }
+    Ok(path)
 }
 
 fn require_project(needs: ResolutionNeeds, project: Option<&PathBuf>) -> Result<()> {

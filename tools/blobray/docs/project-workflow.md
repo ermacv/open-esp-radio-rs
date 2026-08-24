@@ -59,6 +59,19 @@ revision or a semantic input read by the current stage creates a new key. Once
 function-granular persistence is enabled, that invalidation narrows to the
 affected query dependency closure.
 
+Inspect the store before deciding whether cache growth needs investigation:
+
+```console
+cargo blobray project cache stats --project path/to/vendor-project.toml
+```
+
+The command reports cache-file, database and pack sizes, query kinds, dependency
+and object counts, live records, and currently reclaimable pack bytes. It opens
+an existing cache read-only. If the store has not been created, that state is
+reported without creating `generated/.blobray-cache/` or any SQLite sidecar.
+`cache stats` does not perform garbage collection, compaction, pruning, schema
+migration, or quota enforcement; it only describes the state already on disk.
+
 For performance measurements, set `BLOBRAY_REPORT_USAGE=1` when
 calling `scripts/run-limited`. This selects its process-session watchdog and
 prints elapsed time plus peak RSS for the complete Blobray process tree.

@@ -388,6 +388,7 @@ pub(super) fn resolve_command(
         | Command::ProjectInit(_)
         | Command::ProjectConfigure(_)
         | Command::ProjectInputsInit(_)
+        | Command::ProjectCacheStats(_)
         | Command::ProjectBrowse(_) => {
             return Err(crate::Error::invalid(
                 "setup command reached target command resolution",

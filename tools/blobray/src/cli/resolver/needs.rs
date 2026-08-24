@@ -63,7 +63,9 @@ impl ResolutionNeeds {
             }
 
             Command::ProjectDoctor(_) => Self::new(true, false, false, false, true, true, true),
-            Command::ProjectFiles(_) => Self::new(true, false, false, false, false, false, false),
+            Command::ProjectFiles(_) | Command::ProjectCacheStats(_) => {
+                Self::new(true, false, false, false, false, false, false)
+            }
             Command::ProjectAuditBindings(_) => {
                 Self::new(true, false, true, false, false, false, false)
             }
@@ -128,5 +130,18 @@ impl ResolutionNeeds {
                     .with_configured_knowledge_provider()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_stats_needs_only_a_project_manifest() {
+        assert_eq!(
+            ResolutionNeeds::for_command(&Command::ProjectCacheStats(Default::default())),
+            ResolutionNeeds::new(true, false, false, false, false, false, false)
+        );
     }
 }

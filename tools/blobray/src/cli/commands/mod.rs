@@ -23,6 +23,7 @@ mod interface_discovery_options;
 mod interface_pack;
 mod ir_build;
 mod project_audit_bindings;
+mod project_cache;
 mod project_check;
 mod project_configure;
 mod project_doctor;
@@ -85,6 +86,10 @@ pub(super) fn run_project_doctor(context: ProjectContext<'_>) -> Result<bool> {
 
 pub(super) fn run_project_files(context: ProjectContext<'_>) -> Result<bool> {
     project_files::run(context)
+}
+
+pub(super) fn run_project_cache_stats(manifest: &std::path::Path) -> Result<bool> {
+    project_cache::stats(manifest)
 }
 
 pub(super) fn run_project_audit_bindings(

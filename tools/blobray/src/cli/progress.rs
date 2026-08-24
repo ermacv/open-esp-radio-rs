@@ -18,6 +18,7 @@ fn command_message(command: &Command) -> Option<&'static str> {
         | Command::ProjectInputsInit(_)
         | Command::ProjectDoctor(_)
         | Command::ProjectFiles(_)
+        | Command::ProjectCacheStats(_)
         | Command::ProjectAuditBindings(_)
         | Command::ProjectStatus(_)
         | Command::ProjectBrowse(_)
@@ -144,6 +145,7 @@ mod tests {
             Some("Loading register evidence")
         );
         assert!(command_span(&Command::ProjectStatus(Default::default())).is_none());
+        assert!(command_span(&Command::ProjectCacheStats(Default::default())).is_none());
         assert!(
             command_span(&Command::GenerateCompletions(CompletionArgs {
                 shell: CompletionShell::Bash,

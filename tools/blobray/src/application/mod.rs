@@ -21,6 +21,7 @@ use std::{collections::BTreeMap, path::Path};
 
 pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
+pub(crate) use query_store::QueryStoreStatistics as ProjectCacheStatistics;
 pub(crate) use resolve::{ProjectContext, ProjectSession, ProjectSessionOptions};
 pub use status::model::{
     ArtifactDetail, Component as ProjectStatusComponent, DetailValue, EvidenceFreshness,
@@ -112,4 +113,9 @@ pub(crate) fn register_detail_for_project(
     address: u32,
 ) -> crate::Result<Option<RegisterDetailSummary>> {
     snapshot::registers::detail(project, catalog, address)
+}
+
+/// Inspect the project-owned persistent cache without creating or repairing it.
+pub(crate) fn project_cache_statistics(manifest: &Path) -> crate::Result<ProjectCacheStatistics> {
+    query_store::QueryStore::statistics(manifest)
 }

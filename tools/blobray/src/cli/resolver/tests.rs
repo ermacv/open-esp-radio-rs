@@ -257,6 +257,51 @@ fn project_browser_resolves_only_the_manifest_for_the_application_frontend() {
 }
 
 #[test]
+fn project_cache_stats_resolves_only_the_manifest() {
+    let directory = fixture_directory("cache-stats");
+    write_project(
+        &directory.join(DEFAULT_PROJECT_MANIFEST),
+        "run-spec = \"missing-local.toml\"\n",
+    );
+
+    let resolved = resolve_from(parse(&["project", "cache", "stats"]), &directory).unwrap();
+    let ResolvedInvocation::ProjectCacheStats { project_path } = resolved else {
+        panic!("expected a project-cache stats invocation")
+    };
+    assert_eq!(project_path, directory.join(DEFAULT_PROJECT_MANIFEST));
+
+    let error = resolve_from(
+        parse(&["project", "cache", "stats", "--run-spec", "override.toml"]),
+        &directory,
+    )
+    .err()
+    .expect("cache stats must reject run-spec overrides");
+    assert!(
+        error
+            .to_string()
+            .contains("accepts a project manifest, not --target-spec, --run-spec or --svd")
+    );
+
+    let missing = directory.join("missing-vendor-project.toml");
+    let error = resolve_from(
+        parse(&[
+            "project",
+            "cache",
+            "stats",
+            "--project",
+            missing.to_str().unwrap(),
+        ]),
+        &directory,
+    )
+    .err()
+    .expect("cache stats must reject a missing manifest");
+    assert!(error.to_string().contains("project manifest"));
+    assert!(error.to_string().contains("is unavailable"));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
     let directory = fixture_directory("local-run-discovery");
     write_target(&directory.join("target.toml"));

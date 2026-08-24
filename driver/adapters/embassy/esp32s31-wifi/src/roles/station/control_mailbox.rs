@@ -421,6 +421,16 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
         self.len() == 0
     }
 
+    /// Whether work other than the delivery reserved by an active PS-Poll is
+    /// queued. A PS-Poll TX completion must not treat its own already-arrived
+    /// response as unrelated traffic and force an AP-visible PM=0 transition.
+    pub fn non_power_save_delivery_pending(&self) -> bool {
+        self.terminal.len() != 0
+            || self.security.len() != 0
+            || self.receiver.len() != 0
+            || self.he_observation.len() != 0
+    }
+
     pub fn security_pending(&self) -> bool {
         self.security.len() != 0
     }

@@ -728,6 +728,12 @@ impl Esp32s31ConnectedControlCore {
         self.in_flight.is_some()
     }
 
+    /// Whether the shared ordinary TX owner is completing the exact PS-Poll
+    /// whose response may already be waiting in the dedicated delivery lane.
+    pub const fn ps_poll_tx_in_flight(&self) -> bool {
+        matches!(self.in_flight, Some(ControlInFlight::PsPoll))
+    }
+
     pub fn has_immediate_work(&self, control_event_pending: bool) -> bool {
         self.in_flight.is_some()
             || control_event_pending

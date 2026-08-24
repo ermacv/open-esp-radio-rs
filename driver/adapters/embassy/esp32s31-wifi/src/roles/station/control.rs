@@ -794,13 +794,13 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         }
 
         if self.core.tx_in_flight() {
-            return self.service_core_step(
-                hardware,
-                tx,
-                None,
-                self.deferred_control_event.is_some() || !self.receiver.is_empty(),
-                context,
-            );
+            let queued_control_pending = self.deferred_control_event.is_some()
+                || if self.core.ps_poll_tx_in_flight() {
+                    self.receiver.non_power_save_delivery_pending()
+                } else {
+                    !self.receiver.is_empty()
+                };
+            return self.service_core_step(hardware, tx, None, queued_control_pending, context);
         }
 
         if self.receiver.overflowed() {

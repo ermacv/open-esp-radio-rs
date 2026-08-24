@@ -1035,7 +1035,11 @@ fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
     let manifest = fs::read_to_string(target.join("vendor-project.toml"))
         .expect("read ESP32-S31 project manifest");
     assert!(manifest.contains("chip-pack = \"../../chips/esp32s31/chip.toml\""));
+    assert!(manifest.contains("analysis-provider = \"esp32s31-radio-knowledge-v1\""));
     assert!(manifest.contains("packs = [\"reviewed/ieee802154.toml\"]"));
+
+    let chip_manifest = fs::read_to_string(chip.join("chip.toml")).unwrap();
+    assert!(!chip_manifest.contains("knowledge-provider"));
 
     let reviewed = fs::read_to_string(target.join("reviewed/ieee802154.toml"))
         .expect("read sparse reviewed facts");
@@ -1046,7 +1050,7 @@ fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
 }
 
 #[test]
-fn chip_knowledge_cannot_acquire_a_production_or_qualification_dependency() {
+fn investigation_provider_cannot_acquire_a_production_or_qualification_dependency() {
     let provider = repository_root().join("verification/vendor/targets/esp32s31/blobray-provider");
     let knowledge = fs::read_to_string(provider.join("knowledge/Cargo.toml")).unwrap();
     for forbidden in [

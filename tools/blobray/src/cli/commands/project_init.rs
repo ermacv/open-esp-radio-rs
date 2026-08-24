@@ -158,9 +158,7 @@ fn write_project(root: &Path, options: &Options) -> Result<()> {
 fn validate_project(root: &Path) -> Result<()> {
     let project = ProjectSpec::load(&root.join(DEFAULT_PROJECT_MANIFEST))?;
     let mut target = TargetSpec::load(&root.join("target.toml"))?;
-    if let Some(pack) = &project.chip_pack {
-        pack.apply_to_target(&mut target)?;
-    }
+    project.apply_to_target(&mut target)?;
     target.require_available_backend()?;
     let memory = MemoryMap::load(&root.join("memory.toml"))?;
     let model = RegisterModel::load(&project.registers.as_ref().unwrap().model)?;

@@ -174,6 +174,7 @@ bitWidth = 1
         target_spec: directory.join("target.toml"),
         ecosystem_packs: Vec::new(),
         chip_pack: None,
+        analysis_provider: None,
         run_spec: None,
         memory_map: None,
         svd_paths: Vec::new(),

@@ -60,11 +60,20 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
     let knowledge_provider = match &context.target.knowledge_provider {
         None => Component::new("knowledge_provider", Readiness::NotConfigured),
         Some(_) => match context.target.require_available_knowledge_provider() {
-            Ok(id) => Component::new("knowledge_provider", Readiness::Ready).detail("id", id),
+            Ok(id) => Component::new("knowledge_provider", Readiness::Ready)
+                .detail("id", id)
+                .detail(
+                    "selected_by",
+                    if context.project.analysis_provider.is_some() {
+                        "project"
+                    } else {
+                        "chip-pack"
+                    },
+                ),
             Err(error) => Component::new("knowledge_provider", Readiness::Invalid)
                 .diagnostic(error)
                 .next_action(format!(
-                    "rebuild the Blobray host with the add-on that registers this knowledge provider; the target is selected by {}",
+                    "rebuild the Blobray host with the add-on that registers this knowledge provider; selection is declared by {}",
                     context.project_path.display()
                 )),
         },

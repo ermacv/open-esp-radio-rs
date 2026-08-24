@@ -169,6 +169,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         target_spec: PathBuf::from("target.toml"),
         ecosystem_packs: Vec::new(),
         chip_pack: None,
+        analysis_provider: None,
         run_spec: None,
         memory_map: None,
         svd_paths: Vec::new(),

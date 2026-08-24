@@ -151,11 +151,9 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
 fn validate_project(manifest: &Path) -> Result<(ProjectSpec, TargetSpec)> {
     let project = ProjectSpec::load(manifest)?;
     let mut target = TargetSpec::load(&project.target_spec)?;
-    if let Some(pack) = &project.chip_pack {
-        pack.apply_to_target(&mut target)?;
-        if pack.knowledge_provider.is_some() {
-            target.require_available_knowledge_provider()?;
-        }
+    project.apply_to_target(&mut target)?;
+    if target.knowledge_provider.is_some() {
+        target.require_available_knowledge_provider()?;
     }
     Ok((project, target))
 }

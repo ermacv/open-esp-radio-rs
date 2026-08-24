@@ -232,6 +232,10 @@ pub(crate) struct ProjectSpec {
     pub(crate) target_spec: PathBuf,
     pub(crate) ecosystem_packs: Vec<EcosystemPack>,
     pub(crate) chip_pack: Option<ChipPack>,
+    /// Investigation-specific compiled analysis logic. Reusable providers may
+    /// instead be selected by the chip pack, but the two scopes never merge
+    /// implicitly.
+    pub(crate) analysis_provider: Option<String>,
     pub(crate) run_spec: Option<PathBuf>,
     pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
@@ -250,6 +254,22 @@ pub(crate) struct ProjectSpec {
 }
 
 impl ProjectSpec {
+    pub(crate) fn apply_to_target(&self, target: &mut crate::TargetSpec) -> Result<()> {
+        if let Some(pack) = &self.chip_pack {
+            pack.apply_to_target(target)?;
+        }
+        if let Some(provider) = &self.analysis_provider {
+            if let Some(existing) = &target.knowledge_provider {
+                return Err(crate::Error::invalid(format!(
+                    "project {:?} selects analysis-provider {provider:?}, but its chip pack already selects knowledge-provider {existing:?}",
+                    self.id
+                )));
+            }
+            target.knowledge_provider = Some(provider.clone());
+        }
+        Ok(())
+    }
+
     pub(crate) fn discover_from(start: &Path) -> Result<Option<PathBuf>> {
         for directory in start.ancestors() {
             let current = directory.join(DEFAULT_PROJECT_MANIFEST);

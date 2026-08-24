@@ -49,6 +49,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             "target-spec",
             "ecosystem-packs",
             "chip-pack",
+            "analysis-provider",
             "reviewed-knowledge",
             "run-spec",
             "analysis",
@@ -110,6 +111,16 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     let chip_pack = optional_string(&document, "chip-pack", source)?
         .map(|path| ChipPack::load(&resolve_path(base, &path)))
         .transpose()?;
+    let analysis_provider = optional_string(&document, "analysis-provider", source)?;
+    if analysis_provider
+        .as_ref()
+        .is_some_and(|provider| provider.is_empty() || provider.chars().any(char::is_whitespace))
+    {
+        return Err(source.item(
+            document.get("analysis-provider"),
+            "project analysis-provider must be one non-empty token",
+        ));
+    }
     let run_spec =
         optional_string(&document, "run-spec", source)?.map(|path| resolve_path(base, &path));
     let memory_map = chip_pack.as_ref().and_then(|pack| pack.memory_map.clone());
@@ -553,6 +564,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         target_spec,
         ecosystem_packs,
         chip_pack,
+        analysis_provider,
         run_spec,
         memory_map,
         svd_paths,

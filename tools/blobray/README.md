@@ -12,7 +12,7 @@ low-level analysis commands before using a project.
 ## Start here
 
 The standalone Blobray build is target-neutral. A product repository may
-link one reviewed chip-knowledge descriptor in a thin host. In this repository,
+link one reviewed compiled-analysis descriptor in a thin host. In this repository,
 `cargo blobray` selects the ESP32-S31 host under
 `verification/vendor/targets/esp32s31/blobray-host`; invoking the generic
 package directly installs no chip knowledge. Production comparison remains in

@@ -5,6 +5,9 @@ id = "esp32s31-radio-rev0"
 target-spec = "target.toml"
 ecosystem-packs = ["../../knowledge/espressif/radio.toml"]
 chip-pack = "../../chips/esp32s31/chip.toml"
+# Exact ABI contracts and body-guarded summaries are investigation-local;
+# generic C/ESP-IDF behavior is composed inside this compiled provider.
+analysis-provider = "esp32s31-radio-knowledge-v1"
 verification-addon = "verification-addon.toml"
 
 [reviewed-knowledge]

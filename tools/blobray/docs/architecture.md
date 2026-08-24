@@ -55,8 +55,9 @@ The schema-3 composition is deliberately layered:
 1. `target.toml` owns only architecture and ABI facts;
 2. `ecosystem.toml` owns reusable vendor/RTOS semantic catalogs;
 3. `chip.toml` owns reusable memory-map, base register geometry, SVD, ROM, and
-   compiled knowledge selection;
-4. `vendor-project.toml` references these inputs and owns only composition;
+   only compiled knowledge that is valid across investigations of that chip;
+4. `vendor-project.toml` references these inputs and owns composition plus an
+   optional investigation-local `analysis-provider`;
 5. sparse reviewed-knowledge packs own investigation-specific assertions and
    vendor bugs with stable IDs, evidence and bounded applicability;
 6. reviewed project workspaces own the remaining investigation-specific
@@ -68,8 +69,10 @@ Likewise, projects for different chips may reference one ecosystem pack. A
 generic algorithm or schema belongs in Blobray source; generic is not a dump
 for reusable vendor data. ESP-IDF vocabulary, for example, is a data-only
 ecosystem add-on, while ESP32-S31 addresses and compiled summary hooks remain
-chip knowledge. Wi-Fi/BLE/802.15.4 artifact profiles and review scope roots
-remain investigation-local because they describe the exact supplied blob.
+chip knowledge only when they are revision-stable. Exact ABI layouts,
+body-identity guards, and Wi-Fi/BLE/802.15.4 artifact profiles remain
+investigation-local because they describe the supplied blob lineage. A project
+provider and a chip provider conflict rather than compose implicitly.
 
 ## Demand-driven analysis and persistent ownership
 

@@ -659,7 +659,7 @@ fn frames_reach_component(component: &str, frames: &[artifact::ArtifactDebugFram
 fn require_knowledge_provider<'a>(provider: Option<&'a str>, capability: &str) -> Result<&'a str> {
     provider.ok_or_else(|| {
         crate::Error::invalid(format!(
-            "{capability} requires a project chip pack with an executable knowledge provider"
+            "{capability} requires a project or chip pack with an executable knowledge provider"
         ))
     })
 }

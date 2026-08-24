@@ -13,7 +13,8 @@ unknown fields.
 - `chip.toml`: reusable memory map, base register model, SVD inputs, chip
   semantic catalogs, and an optional compiled knowledge-provider ID;
 - `vendor-project.toml`: composition, reviewed workspaces, and generated
-  output selection; it does not own reusable chip facts;
+  output selection; its optional `analysis-provider` selects compiled logic
+  that is valid only for this investigation, never reusable chip facts;
 - `[reviewed-knowledge].packs`: sparse accepted assertions and vendor-bug
   records with stable IDs, evidence, provenance and applicability;
 - local run specification: ignored bindings to caller-owned private artifacts.
@@ -25,6 +26,9 @@ ecosystem/chip knowledge or as investigation-local review.
 The schema-3 project, target, ecosystem, and chip formats are a clean break.
 Old inline `memory-map`, `svd`, `platform-pack`, `harness`, and
 `semantic-catalogs` keys fail closed; no compatibility shim reinterprets them.
+At most one compiled provider may be selected: a project-local
+`analysis-provider` conflicts with a chip pack `knowledge-provider` instead of
+silently layering executable assumptions from different ownership scopes.
 
 ## Other reviewed inputs
 

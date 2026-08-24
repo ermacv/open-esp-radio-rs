@@ -704,3 +704,63 @@ fn one_chip_pack_is_reused_by_multiple_project_compositions() {
     assert_eq!(first.chip_pack.unwrap().id, "shared-chip");
     assert_eq!(second.chip_pack.unwrap().id, "shared-chip");
 }
+
+#[test]
+fn project_local_analysis_provider_is_explicit_and_conflicts_fail_closed() {
+    let directory = std::env::temp_dir().join(format!(
+        "open-radio-blobray-project-provider-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"shared-chip\"\n",
+    )
+    .unwrap();
+    let manifest = directory.join(DEFAULT_PROJECT_MANIFEST);
+    std::fs::write(
+        &manifest,
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\nanalysis-provider = \"investigation-v1\"\n",
+    )
+    .unwrap();
+    let project = ProjectSpec::load(&manifest).unwrap();
+    let mut target = crate::TargetSpec {
+        id: "fixture-target".to_owned(),
+        knowledge_provider: None,
+        architecture: crate::target::Architecture::Riscv32,
+        calling_convention: crate::target::CallingConvention::RiscvIlp32,
+        endianness: crate::target::Endianness::Little,
+        pointer_width: 32,
+        rust_target: "riscv32imc-unknown-none-elf".to_owned(),
+    };
+    project.apply_to_target(&mut target).unwrap();
+    assert_eq!(
+        target.knowledge_provider.as_deref(),
+        Some("investigation-v1")
+    );
+
+    std::fs::write(
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"shared-chip\"\nknowledge-provider = \"chip-v1\"\n",
+    )
+    .unwrap();
+    let conflicting = ProjectSpec::load(&manifest).unwrap();
+    target.knowledge_provider = None;
+    let error = conflicting.apply_to_target(&mut target).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("already selects knowledge-provider")
+    );
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn project_analysis_provider_must_be_one_token() {
+    let (_, _, error) = invalid_project_span(
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nanalysis-provider = \"two tokens\"\n",
+        "invalid-analysis-provider.toml",
+    );
+    assert!(error.contains("analysis-provider must be one non-empty token"));
+}

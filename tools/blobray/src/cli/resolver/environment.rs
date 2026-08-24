@@ -292,7 +292,7 @@ fn required_regular_project_path(path: Option<PathBuf>, message: &str) -> Result
 fn require_project(needs: ResolutionNeeds, project: Option<&PathBuf>) -> Result<()> {
     if needs.project && project.is_none() {
         let message = if needs.knowledge_provider {
-            "knowledge-provider commands require a project manifest and chip pack"
+            "knowledge-provider commands require a project manifest and a compatible provider selection"
         } else {
             "project/workspace commands require a project manifest"
         };

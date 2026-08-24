@@ -7,7 +7,8 @@ mod neutral;
 /// Architecture/ABI knowledge used while lifting vendor code.
 ///
 /// This provider cannot run production comparisons or inspect qualification
-/// state. A data-only chip pack selects it by `id`.
+/// state. A data-only chip pack or an investigation project selects it by
+/// `id`, according to the provider's reuse scope.
 pub struct KnowledgeProviderDescriptor {
     pub id: &'static str,
     /// Semantic revision of the compiled provider used by persistent

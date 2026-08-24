@@ -499,6 +499,7 @@ mod tests {
             target_spec: "target.toml".into(),
             ecosystem_packs: Vec::new(),
             chip_pack: None,
+            analysis_provider: None,
             run_spec: None,
             memory_map: None,
             svd_paths: Vec::new(),

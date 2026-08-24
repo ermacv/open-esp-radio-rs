@@ -71,9 +71,16 @@ fn collect_knowledge_provider(context: &ProjectContext<'_>, report: &mut DoctorR
         None => CapabilityReport::new("knowledge-provider", "not-configured")
             .field("reason", "generic-analysis-only"),
         Some(_) => match context.target.require_available_knowledge_provider() {
-            Ok(provider) => {
-                CapabilityReport::new("knowledge-provider", "available").field("id", provider)
-            }
+            Ok(provider) => CapabilityReport::new("knowledge-provider", "available")
+                .field("id", provider)
+                .field(
+                    "selected-by",
+                    if context.project.analysis_provider.is_some() {
+                        "project"
+                    } else {
+                        "chip-pack"
+                    },
+                ),
             Err(error) => {
                 report.absorb(0, 1);
                 CapabilityReport::new("knowledge-provider", "unavailable")

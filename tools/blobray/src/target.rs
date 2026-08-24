@@ -39,7 +39,7 @@ pub(crate) enum TargetError {
     #[error("target {id} has no knowledge provider")]
     #[diagnostic(
         code(blobray::target::missing_harness),
-        help("attach a compatible chip pack to the project")
+        help("attach a compatible chip pack or select analysis-provider in the project")
     )]
     MissingKnowledgeProvider { id: String },
     #[error("target {id} selects unavailable knowledge provider {provider:?}")]
@@ -194,7 +194,9 @@ impl TargetSpec {
         Ok(())
     }
 
-    /// Executable chip knowledge is selected by a reviewed chip pack.
+    /// Executable analysis knowledge is selected by a reviewed chip pack or
+    /// by an investigation project, with the two ownership scopes kept
+    /// mutually exclusive.
     pub(crate) fn require_available_knowledge_provider(&self) -> Result<&str> {
         let provider = self.knowledge_provider.as_deref().ok_or_else(|| {
             TargetError::MissingKnowledgeProvider {

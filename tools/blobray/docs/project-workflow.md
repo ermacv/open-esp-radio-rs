@@ -42,6 +42,27 @@ register geometry to a chip add-on, not into the generic crate. Keep binary
 profiles, review scopes, dispositions, verification policy and sparse
 artifact-bounded conclusions in the investigation.
 
+Use this ownership rule when Wi-Fi, BT, or 802.15.4 analysis produces new
+knowledge:
+
+| Finding | Durable owner | Hand-edit? |
+|---|---|---|
+| Generic lifting/query algorithm | Blobray source | yes, with tests |
+| ESP-IDF/NimBLE symbol or platform ABI independent of one chip/blob | ecosystem add-on | yes, reviewed reusable fact |
+| Chip/revision MMIO geometry, ROM address, base SVD | chip pack | yes, reviewed reusable fact |
+| Exact blob ABI layout, body-identity summary, scope/profile, disposition | investigation project | yes, reviewed and applicability-bounded |
+| Register name, W1C/self-clear semantics, vendor access bug | sparse `[reviewed-knowledge]` pack | yes, one record per accepted fact |
+| Symbols, MMIO candidates, linked IR, review pages, SVD/PAC/reference code | `generated/` | no; reproduce it |
+| Vendor binaries and paths | ignored local run spec / `_oracles` | no publication |
+
+Consequently, identifying one register should normally add one sparse reviewed
+assertion (plus its evidence), not copy or edit a complete generated register
+catalog. The generated SVD/PAC and review output may change broadly without
+inflating the reviewed diff. A compiled provider is selected by `chip.toml`
+only when all of its assumptions are reusable for that chip; use the project's
+`analysis-provider` for exact blob-lineage ABI contracts and body guards. The
+two selections conflict fail-closed.
+
 `research next` combines root-cause blockers, the reverse call graph,
 unreviewed MMIO and interface observations, sparse unknown hardware semantics,
 publication scopes and verification surfaces. Its `G/O/M` metrics mean

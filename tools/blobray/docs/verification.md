@@ -33,11 +33,12 @@ projection.
 
 Suites and comparison inputs live in `verification-addon.toml`, outside the
 neutral project manifest. A generic project can therefore analyze and publish
-register evidence without configuring production comparison. The chip pack's
-optional knowledge provider may enrich lifting, generated references, and the
-reviewed ABI inventory of opaque diagnostic calls, but it cannot execute a
-production comparison or return a verdict. The generic verification engine
-alone compares compiled artifacts and observations.
+register evidence without configuring production comparison. An optional
+compiled provider selected by the chip pack or investigation project may
+enrich lifting, generated references, and the reviewed ABI inventory of opaque
+diagnostic calls, but it cannot execute a production comparison or return a
+verdict. The generic verification engine alone compares compiled artifacts and
+observations.
 
 Effect contracts define the ordered observable reads, writes, calls, state
 changes and allowed normalizations. Unlisted effects fail closed. Concrete

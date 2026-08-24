@@ -173,9 +173,7 @@ impl ProjectSession {
             .target_spec
             .unwrap_or_else(|| project.target_spec.clone());
         let mut target = TargetSpec::load(&target_path)?;
-        if let Some(pack) = project.chip_pack.as_ref() {
-            pack.apply_to_target(&mut target)?;
-        }
+        project.apply_to_target(&mut target)?;
 
         let run_spec_path = options
             .load_run_spec

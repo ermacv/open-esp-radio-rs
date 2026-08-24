@@ -144,6 +144,7 @@ pub enum Esp32s31StaApAccessPointTxError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31StaApAccessPointPairedRxError {
     Role(Esp32s31StaApAccessPointRxError),
+    PowerSave(Esp32s31AccessPointDatapathError),
     Ownership(Esp32s31StaApAccessPointTxOwnershipError),
 }
 
@@ -1055,7 +1056,7 @@ where
                     Esp32s31StaApAccessPointTxOwnershipError::AlreadyParked,
                 ))?;
         self.network_tx
-            .cancel_prepared(&mut active.aggregate)
+            .cancel_prepared(&mut active.aggregate, &mut active.processor)
             .map_err(Esp32s31StaApAccessPointTxError::Operation)?;
         self.park_tx(physical)
             .map_err(Esp32s31StaApAccessPointTxError::Ownership)
@@ -1196,6 +1197,7 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
     B: StableDmaBacking + 'ampdu,
+    NetworkTx: network_tx::AccessPointPowerSaveNetworkTx<P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>,
     Security: FnMut() -> ([u8; 32], u64),
     SharedRx: FnMut(u8),
 {
@@ -1375,10 +1377,22 @@ where
                     Esp32s31StaApAccessPointRxError::Control(error),
                 )
             });
+        if result.is_ok() {
+            let active = self
+                .protocol
+                .active_mut()
+                .expect("AP RX retains the activated protocol owner");
+            if !active.processor.tx_pending() {
+                self.network_tx
+                    .stage_awake_release(&mut active.processor)
+                    .map_err(Esp32s31StaApAccessPointPairedRxError::PowerSave)?;
+            }
+        }
         let may_park = self
             .protocol
             .active()
-            .is_some_and(|active| !active.processor.tx_pending());
+            .is_some_and(|active| !active.processor.tx_pending())
+            && !self.network_tx.has_power_save_release();
         if may_park
             && let Err(error) = self.park_tx(physical_tx)
             && result.is_ok()

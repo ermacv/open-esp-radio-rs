@@ -803,6 +803,21 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         ethernet: &[u8],
         output: &mut [u8],
     ) -> Result<Esp32s31ApProtectedFrame, Esp32s31ApEngineError> {
+        self.encode_protected_ethernet_with_more_data(destination, ethernet, output, false)
+    }
+
+    /// Encode one protected downlink and explicitly own the More Data bit.
+    ///
+    /// Ordinary network traffic uses [`Self::encode_protected_ethernet`].
+    /// AP power-save dequeue is the only production caller that may set this
+    /// bit, after reserving the corresponding buffered-frame count.
+    pub fn encode_protected_ethernet_with_more_data(
+        &mut self,
+        destination: [u8; 6],
+        ethernet: &[u8],
+        output: &mut [u8],
+        more_data: bool,
+    ) -> Result<Esp32s31ApProtectedFrame, Esp32s31ApEngineError> {
         let group = destination[0] & 1 != 0;
         let (hardware_key_selector, ccmp_header, peer_qos) = if group {
             if self.service.authorized_count() == 0 {
@@ -843,6 +858,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             sequence_number,
             user_priority: 0,
             peer_qos,
+            more_data,
             ccmp_header,
             ethernet,
         }
@@ -908,6 +924,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             sequence_number,
             user_priority: open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID,
             peer_qos: true,
+            more_data: false,
             ccmp_header,
             ethernet: &[],
         }

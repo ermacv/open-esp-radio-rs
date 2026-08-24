@@ -14,7 +14,7 @@ use open_esp_radio_esp32s31_wifi::{
 use open_esp_radio_esp32s31_wifi_mac::tx::{HtRate, LegacyRate, TxHardware};
 use open_esp_radio_ieee80211::ap::ApPeerDisconnectKind;
 use open_esp_radio_ieee80211::block_ack::TxBlockAckAlarm;
-use open_esp_radio_wifi_ap::{ApPeerClose, ApServiceError};
+use open_esp_radio_wifi_ap::{ApPeerClose, ApPeerPowerState, ApServiceError};
 use open_esp_radio_wpa2::frames::Wpa2TxFrame;
 
 use crate::{
@@ -456,6 +456,9 @@ where
             return None;
         }
         let (binding, status) = self.engine.bind_aggregate_peer(peer).ok()?;
+        if status.power_state != ApPeerPowerState::Active {
+            return None;
+        }
         let agreement = status.tx_block_ack?;
         let rate = peer_ht_rate(self.engine.channel(), status.ht?)?;
         Some(Esp32s31ApAggregateAdmission::new(
@@ -490,10 +493,25 @@ where
     where
         H: TxHardware,
     {
+        self.publish_ethernet_with_more_data(hardware, peer, ethernet, scratch, false)
+    }
+
+    /// Publish one protected network frame with an explicit AP More Data bit.
+    pub fn publish_ethernet_with_more_data<H>(
+        &mut self,
+        hardware: &mut H,
+        peer: [u8; 6],
+        ethernet: &[u8],
+        scratch: &mut [u8],
+        more_data: bool,
+    ) -> Result<(), Esp32s31ApMacError>
+    where
+        H: TxHardware,
+    {
         self.require_idle()?;
         let encoded = self
             .engine
-            .encode_protected_ethernet(peer, ethernet, scratch)?;
+            .encode_protected_ethernet_with_more_data(peer, ethernet, scratch, more_data)?;
         let rate = if peer[0] & 1 != 0 {
             // Group traffic must be decodable by every associated peer. The
             // initial B/G ERP AP advertises 1 Mbit/s as a basic rate; unlike

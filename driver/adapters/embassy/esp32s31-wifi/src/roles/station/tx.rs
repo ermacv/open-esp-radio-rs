@@ -64,7 +64,10 @@ use crate::{
     datapath::tx::resources::{AggregateTxArenaPair, AggregateTxResources},
     datapath::{DatapathControlProgress, WifiTxProgress, WifiTxWake},
     diagnostics::aggregate_tx::{AggregateBuildStop, NetworkSingleMpduReason},
-    roles::station::control::{ConnectedControlTimer, ConnectedControlTx},
+    roles::station::control::{
+        ConnectedControlTimer, ConnectedControlTx, ConnectedHeControlRuntimeRejection,
+        HeNdpaRuntimeRequest, HeTriggerRuntimeRequest,
+    },
 };
 use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 

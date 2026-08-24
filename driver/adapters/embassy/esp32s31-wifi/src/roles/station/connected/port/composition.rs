@@ -307,6 +307,7 @@ impl Esp32s31ConnectedStaPort {
             tx_block_ack,
             resources.rx_block_ack,
         )
+        .with_he_trigger_based(plan.config.tx.he_trigger_based)
         .with_rx_block_ack_maximum_window(plan.config.block_ack.rx_block_ack_maximum_window)
         .expect("connected STA plan validated RX BlockAck policy")
         .with_rx_reorder_commands(resources.reorder_commands);

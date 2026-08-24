@@ -32,6 +32,8 @@ pub struct Esp32s31ConnectedStaTxPolicy {
     pub aggregate_frame_limit: u8,
     pub aggregate_he_txop_limit: HeEdcaTxopLimit,
     /// Optional recovered queue/MPLEN/BSR preparation for AP Trigger frames.
+    /// A runtime handoff additionally requires the config's explicit software
+    /// window; the final HE-TB PHY publication remains fail-closed.
     /// `None` leaves HE-SU behavior unchanged.
     pub he_trigger_based: Option<HeTriggerBasedTxConfig>,
 }
@@ -71,6 +73,10 @@ pub enum Esp32s31ConnectedStaConfigError {
     },
     ZeroUnicastAttemptLimit,
     ZeroTxBlockAckNegotiationAttemptLimit,
+    HeTriggerTidMismatch {
+        configured: u8,
+        data_tid: u8,
+    },
     PeerDoesNotSupportQos,
     TxBlockAck(TxBlockAckError),
     RxBlockAck(RxBlockAckSessionsError),
@@ -336,6 +342,17 @@ impl Esp32s31ConnectedStaPort {
         if config.block_ack.tx_block_ack_negotiation_attempt_limit == 0 {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::ZeroTxBlockAckNegotiationAttemptLimit,
+                peer,
+            });
+        }
+        if let Some(trigger) = config.tx.he_trigger_based
+            && trigger.tid().value() != 0
+        {
+            return Err(Esp32s31ConnectedStaPrepareFailure {
+                error: Esp32s31ConnectedStaConfigError::HeTriggerTidMismatch {
+                    configured: trigger.tid().value(),
+                    data_tid: 0,
+                },
                 peer,
             });
         }

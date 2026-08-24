@@ -7,7 +7,7 @@
 //! reorder-command sink and the shared TX owner.  No mailbox, executor timer
 //! or task wakeup is part of this state machine.
 
-use crate::connected_rx::ConnectedRxControlEvent;
+use crate::connected_rx::{AssociatedHeControlIdentity, ConnectedRxControlEvent};
 use open_esp_radio_esp32s31_wifi::datapath::{DatapathControlContext, DatapathControlProgress};
 use open_esp_radio_esp32s31_wifi_mac::{
     MacInterface,
@@ -16,15 +16,18 @@ use open_esp_radio_esp32s31_wifi_mac::{
         RxReorderCommand, RxReorderCommandError,
     },
     rx_ampdu_hw::S31RxBlockAckAgreementError,
-    tx::TxHardware,
+    tx::{HeTriggerBasedTxConfig, HeTriggerScheduledRate, HeTriggerScheduledRateError, TxHardware},
     tx_ampdu::{
         BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckResponse,
         StaTxBlockAckResponseDisposition, StaTxBlockAckSessions, StaTxBlockAckSessionsError,
         TxBlockAckResponse,
     },
 };
-use open_esp_radio_ieee80211::station::{StaDisconnect, StaDisconnectKind};
 use open_esp_radio_ieee80211::station_power_save::StaPowerManagement;
+use open_esp_radio_ieee80211::{
+    station::{StaDisconnect, StaDisconnectKind},
+    trigger::TriggerCommonInfo,
+};
 use open_esp_radio_wifi_sta::{
     link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError, StaBeaconMonitor},
     power_save::{
@@ -97,6 +100,89 @@ pub enum ConnectedControlTxKind {
     TxAddbaRequest { tid: u8 },
     BeaconProbe,
     PowerManagement(StaPowerManagement),
+}
+
+/// Validated Basic-Trigger request crossing from connected control into the
+/// unique aggregate/network TX owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeTriggerRuntimeRequest {
+    pub identity: AssociatedHeControlIdentity,
+    pub common: TriggerCommonInfo,
+    pub schedule: HeTriggerScheduledRate,
+    pub first_user: Option<[u8; 5]>,
+    pub runtime_received_at_micros: u64,
+    pub response_deadline_micros: u64,
+    pub queue_policy: HeTriggerBasedTxConfig,
+}
+
+/// Validated addressed HE-NDPA request crossing into the shared TX owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeNdpaRuntimeRequest {
+    pub identity: AssociatedHeControlIdentity,
+    pub dialog_token: u8,
+    pub runtime_received_at_micros: u64,
+    pub response_deadline_micros: u64,
+}
+
+/// Fail-closed reason why one HE control event did not become an owned TX
+/// publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectedHeControlRuntimeRejection {
+    HeAssociationUnavailable,
+    RuntimeDisabled,
+    RuntimeHandoffWindowUnavailable,
+    RuntimeTimestampUnavailable,
+    ResponseDeadlineOverflow,
+    MissedResponseWindow,
+    PowerSaveWakeRequired,
+    TriggerSchedule(HeTriggerScheduledRateError),
+    NdpaNotAddressed,
+    QueueOwnerUnavailable,
+    QueuePolicyMismatch,
+    QueueTidMismatch,
+    TxOwnerBusy,
+    PreparedQueueUnavailable,
+    PreparedQueueFaulted,
+    UnsupportedQueueFormat,
+    UnsupportedQueueGeometry,
+    /// Queue/MPLEN/BSR programming is reviewed, but no reviewed input proves
+    /// the S31 HE-TB PHY vector/doorbell publication contract.
+    TbPhyPublicationUnverified,
+    /// RX detection is reviewed, but no software HE beamforming feedback
+    /// formatter/publication contract is available.
+    NdpaFeedbackPublicationUnverified,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectedHeControlRuntimeOutcome {
+    TriggerPublished {
+        identity: AssociatedHeControlIdentity,
+        schedule: HeTriggerScheduledRate,
+    },
+    TriggerRejected {
+        identity: AssociatedHeControlIdentity,
+        reason: ConnectedHeControlRuntimeRejection,
+    },
+    NdpaPublished {
+        identity: AssociatedHeControlIdentity,
+        dialog_token: u8,
+    },
+    NdpaRejected {
+        identity: AssociatedHeControlIdentity,
+        dialog_token: u8,
+        reason: ConnectedHeControlRuntimeRejection,
+    },
+}
+
+/// Association-scoped bounded HE-control handoff telemetry.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConnectedHeControlRuntimeEvidence {
+    pub triggers_observed: u32,
+    pub ndpa_observed: u32,
+    pub tx_handoffs: u32,
+    pub tx_publications: u32,
+    pub rejected: u32,
+    pub last_outcome: Option<ConnectedHeControlRuntimeOutcome>,
 }
 
 enum ControlInFlight {
@@ -172,6 +258,26 @@ pub trait ConnectedControlTx {
     /// essential: an operational boolean cannot prevent the data path from
     /// publishing more MPDUs than the peer's reorder window can retain.
     fn set_tx_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>);
+
+    /// Hand one validated Trigger response to the unique aggregate/network
+    /// owner. A successful return means physical TX ownership was published;
+    /// implementations without that exact contract must return a typed reason.
+    fn publish_he_trigger_response<H: TxHardware>(
+        &mut self,
+        _hardware: &mut H,
+        _request: HeTriggerRuntimeRequest,
+    ) -> Result<(), ConnectedHeControlRuntimeRejection> {
+        Err(ConnectedHeControlRuntimeRejection::QueueOwnerUnavailable)
+    }
+
+    /// Hand one validated NDPA feedback request to the unique TX owner.
+    fn publish_he_ndpa_feedback<H: TxHardware>(
+        &mut self,
+        _hardware: &mut H,
+        _request: HeNdpaRuntimeRequest,
+    ) -> Result<(), ConnectedHeControlRuntimeRejection> {
+        Err(ConnectedHeControlRuntimeRejection::QueueOwnerUnavailable)
+    }
 }
 
 impl<P, E, T, const BUFFER_SIZE: usize> ConnectedControlTx
@@ -317,12 +423,14 @@ struct ConnectedControlObservations {
     last_expired_tid: Option<u8>,
     stale_tx_block_ack_responses: u32,
     last_stale_tx_block_ack_token: Option<u8>,
+    he_control: ConnectedHeControlRuntimeEvidence,
 }
 
 /// Complete protocol state for one ESP32-S31 station association.
 pub struct Esp32s31ConnectedControlCore {
     peer: [u8; 6],
     he_enabled: bool,
+    he_trigger_based: Option<HeTriggerBasedTxConfig>,
     tx_block_ack: StaTxBlockAckSessions,
     initial_tx_block_ack: [bool; 3],
     tx_block_ack_attempts_remaining: [u8; 3],
@@ -341,6 +449,7 @@ impl Esp32s31ConnectedControlCore {
         Self {
             peer,
             he_enabled,
+            he_trigger_based: None,
             tx_block_ack,
             initial_tx_block_ack: [false; 3],
             tx_block_ack_attempts_remaining: [0; 3],
@@ -353,6 +462,11 @@ impl Esp32s31ConnectedControlCore {
             power_save_wake_deadline_micros: None,
             observations: ConnectedControlObservations::default(),
         }
+    }
+
+    pub fn with_he_trigger_based(mut self, config: Option<HeTriggerBasedTxConfig>) -> Self {
+        self.he_trigger_based = config;
+        self
     }
 
     pub fn enable_beacon_loss(&mut self, config: StaBeaconLossConfig) {
@@ -398,6 +512,20 @@ impl Esp32s31ConnectedControlCore {
 
     pub const fn last_stale_tx_block_ack_token(&self) -> Option<u8> {
         self.observations.last_stale_tx_block_ack_token
+    }
+
+    pub const fn he_control_runtime_evidence(&self) -> ConnectedHeControlRuntimeEvidence {
+        self.observations.he_control
+    }
+
+    pub const fn he_trigger_runtime_enabled(&self) -> bool {
+        if !self.he_enabled {
+            return false;
+        }
+        match self.he_trigger_based {
+            Some(config) => config.runtime_handoff_window_micros().is_some(),
+            None => false,
+        }
     }
 
     pub const fn beacon_monitor(&self) -> Option<&StaBeaconMonitor> {
@@ -757,6 +885,12 @@ impl Esp32s31ConnectedControlCore {
             }
             return Ok(DatapathControlProgress::More);
         }
+        if matches!(
+            event,
+            ConnectedRxControlEvent::Trigger { .. } | ConnectedRxControlEvent::Ndpa { .. }
+        ) {
+            return Ok(self.apply_he_control_event(hardware, tx, event));
+        }
         let ConnectedRxControlEvent::BlockAck(action) = event else {
             return Ok(DatapathControlProgress::More);
         };
@@ -839,6 +973,247 @@ impl Esp32s31ConnectedControlCore {
                 Ok(DatapathControlProgress::More)
             }
         }
+    }
+
+    fn apply_he_control_event<H, X>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        event: ConnectedRxControlEvent,
+    ) -> DatapathControlProgress<ConnectedDisconnectReason>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+    {
+        match event {
+            ConnectedRxControlEvent::Trigger {
+                identity,
+                common,
+                schedule,
+                first_user,
+                runtime_received_at_micros,
+            } => {
+                self.observations.he_control.triggers_observed = self
+                    .observations
+                    .he_control
+                    .triggers_observed
+                    .saturating_add(1);
+                if !self.he_enabled {
+                    return self.reject_he_trigger(
+                        identity,
+                        ConnectedHeControlRuntimeRejection::HeAssociationUnavailable,
+                    );
+                }
+                let Some(queue_policy) = self.he_trigger_based else {
+                    return self.reject_he_trigger(
+                        identity,
+                        ConnectedHeControlRuntimeRejection::RuntimeDisabled,
+                    );
+                };
+                let Some(window) = queue_policy.runtime_handoff_window_micros() else {
+                    return self.reject_he_trigger(
+                        identity,
+                        ConnectedHeControlRuntimeRejection::RuntimeHandoffWindowUnavailable,
+                    );
+                };
+                let schedule = match schedule {
+                    Ok(schedule) => schedule,
+                    Err(error) => {
+                        return self.reject_he_trigger(
+                            identity,
+                            ConnectedHeControlRuntimeRejection::TriggerSchedule(error),
+                        );
+                    }
+                };
+                let Some(runtime_received_at_micros) = runtime_received_at_micros else {
+                    return self.reject_he_trigger(
+                        identity,
+                        ConnectedHeControlRuntimeRejection::RuntimeTimestampUnavailable,
+                    );
+                };
+                let Some(response_deadline_micros) =
+                    runtime_received_at_micros.checked_add(window.get())
+                else {
+                    return self.reject_he_trigger(
+                        identity,
+                        ConnectedHeControlRuntimeRejection::ResponseDeadlineOverflow,
+                    );
+                };
+                if tx.now_micros() >= response_deadline_micros {
+                    return self.reject_he_trigger(
+                        identity,
+                        ConnectedHeControlRuntimeRejection::MissedResponseWindow,
+                    );
+                }
+                if self
+                    .power_save
+                    .as_ref()
+                    .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
+                {
+                    return self.reject_he_trigger(
+                        identity,
+                        ConnectedHeControlRuntimeRejection::PowerSaveWakeRequired,
+                    );
+                }
+                let request = HeTriggerRuntimeRequest {
+                    identity,
+                    common,
+                    schedule,
+                    first_user,
+                    runtime_received_at_micros,
+                    response_deadline_micros,
+                    queue_policy,
+                };
+                self.observations.he_control.tx_handoffs =
+                    self.observations.he_control.tx_handoffs.saturating_add(1);
+                match tx.publish_he_trigger_response(hardware, request) {
+                    Ok(()) => {
+                        self.observations.he_control.tx_publications = self
+                            .observations
+                            .he_control
+                            .tx_publications
+                            .saturating_add(1);
+                        self.observations.he_control.last_outcome =
+                            Some(ConnectedHeControlRuntimeOutcome::TriggerPublished {
+                                identity,
+                                schedule,
+                            });
+                        DatapathControlProgress::TxPending
+                    }
+                    Err(reason) => self.reject_he_trigger(identity, reason),
+                }
+            }
+            ConnectedRxControlEvent::Ndpa {
+                identity,
+                dialog_token,
+                addressed_to_station,
+                runtime_received_at_micros,
+            } => {
+                self.observations.he_control.ndpa_observed =
+                    self.observations.he_control.ndpa_observed.saturating_add(1);
+                if !addressed_to_station {
+                    return self.reject_he_ndpa(
+                        identity,
+                        dialog_token,
+                        ConnectedHeControlRuntimeRejection::NdpaNotAddressed,
+                    );
+                }
+                if !self.he_enabled {
+                    return self.reject_he_ndpa(
+                        identity,
+                        dialog_token,
+                        ConnectedHeControlRuntimeRejection::HeAssociationUnavailable,
+                    );
+                }
+                let Some(queue_policy) = self.he_trigger_based else {
+                    return self.reject_he_ndpa(
+                        identity,
+                        dialog_token,
+                        ConnectedHeControlRuntimeRejection::RuntimeDisabled,
+                    );
+                };
+                let Some(window) = queue_policy.runtime_handoff_window_micros() else {
+                    return self.reject_he_ndpa(
+                        identity,
+                        dialog_token,
+                        ConnectedHeControlRuntimeRejection::RuntimeHandoffWindowUnavailable,
+                    );
+                };
+                let Some(runtime_received_at_micros) = runtime_received_at_micros else {
+                    return self.reject_he_ndpa(
+                        identity,
+                        dialog_token,
+                        ConnectedHeControlRuntimeRejection::RuntimeTimestampUnavailable,
+                    );
+                };
+                let Some(response_deadline_micros) =
+                    runtime_received_at_micros.checked_add(window.get())
+                else {
+                    return self.reject_he_ndpa(
+                        identity,
+                        dialog_token,
+                        ConnectedHeControlRuntimeRejection::ResponseDeadlineOverflow,
+                    );
+                };
+                if tx.now_micros() >= response_deadline_micros {
+                    return self.reject_he_ndpa(
+                        identity,
+                        dialog_token,
+                        ConnectedHeControlRuntimeRejection::MissedResponseWindow,
+                    );
+                }
+                if self
+                    .power_save
+                    .as_ref()
+                    .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
+                {
+                    return self.reject_he_ndpa(
+                        identity,
+                        dialog_token,
+                        ConnectedHeControlRuntimeRejection::PowerSaveWakeRequired,
+                    );
+                }
+                let request = HeNdpaRuntimeRequest {
+                    identity,
+                    dialog_token,
+                    runtime_received_at_micros,
+                    response_deadline_micros,
+                };
+                self.observations.he_control.tx_handoffs =
+                    self.observations.he_control.tx_handoffs.saturating_add(1);
+                match tx.publish_he_ndpa_feedback(hardware, request) {
+                    Ok(()) => {
+                        self.observations.he_control.tx_publications = self
+                            .observations
+                            .he_control
+                            .tx_publications
+                            .saturating_add(1);
+                        self.observations.he_control.last_outcome =
+                            Some(ConnectedHeControlRuntimeOutcome::NdpaPublished {
+                                identity,
+                                dialog_token,
+                            });
+                        DatapathControlProgress::TxPending
+                    }
+                    Err(reason) => self.reject_he_ndpa(identity, dialog_token, reason),
+                }
+            }
+            ConnectedRxControlEvent::Beacon(_)
+            | ConnectedRxControlEvent::ProbeResponse
+            | ConnectedRxControlEvent::BlockAck(_)
+            | ConnectedRxControlEvent::PeerDisconnect(_) => DatapathControlProgress::Idle,
+        }
+    }
+
+    fn reject_he_trigger(
+        &mut self,
+        identity: AssociatedHeControlIdentity,
+        reason: ConnectedHeControlRuntimeRejection,
+    ) -> DatapathControlProgress<ConnectedDisconnectReason> {
+        self.observations.he_control.rejected =
+            self.observations.he_control.rejected.saturating_add(1);
+        self.observations.he_control.last_outcome =
+            Some(ConnectedHeControlRuntimeOutcome::TriggerRejected { identity, reason });
+        // A diagnostic/coalescing HE lane consumes at most one scheduler turn.
+        // Returning Idle yields immediately to an already queued network frame.
+        DatapathControlProgress::Idle
+    }
+
+    fn reject_he_ndpa(
+        &mut self,
+        identity: AssociatedHeControlIdentity,
+        dialog_token: u8,
+        reason: ConnectedHeControlRuntimeRejection,
+    ) -> DatapathControlProgress<ConnectedDisconnectReason> {
+        self.observations.he_control.rejected =
+            self.observations.he_control.rejected.saturating_add(1);
+        self.observations.he_control.last_outcome =
+            Some(ConnectedHeControlRuntimeOutcome::NdpaRejected {
+                identity,
+                dialog_token,
+                reason,
+            });
+        DatapathControlProgress::Idle
     }
 
     fn has_pending_traffic(

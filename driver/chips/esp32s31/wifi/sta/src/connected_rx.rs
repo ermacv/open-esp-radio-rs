@@ -64,6 +64,32 @@ pub enum ConnectedRxProtection {
     Other,
 }
 
+/// MAC identity admitted for an associated HE control exchange.
+///
+/// Construction remains private to [`ConnectedRxDispatcher`]: a published
+/// value proves that the transmitter was the associated BSSID and that the
+/// receiver was either this station or an IEEE group address.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AssociatedHeControlIdentity {
+    duration: u16,
+    receiver_address: [u8; 6],
+    transmitter_address: [u8; 6],
+}
+
+impl AssociatedHeControlIdentity {
+    pub const fn duration(self) -> u16 {
+        self.duration
+    }
+
+    pub const fn receiver_address(self) -> [u8; 6] {
+        self.receiver_address
+    }
+
+    pub const fn transmitter_address(self) -> [u8; 6] {
+        self.transmitter_address
+    }
+}
+
 /// One semantic event emitted by the connected frame dispatcher.
 ///
 /// Borrowed frame slices remain valid only for the duration of
@@ -77,13 +103,17 @@ pub enum ConnectedRxEvent<'frame> {
     },
     ProbeResponse,
     Trigger {
+        identity: AssociatedHeControlIdentity,
         common: TriggerCommonInfo,
         schedule: Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
         first_user: Option<[u8; 5]>,
+        runtime_received_at_micros: Option<u64>,
     },
     Ndpa {
+        identity: AssociatedHeControlIdentity,
         dialog_token: u8,
         addressed_to_station: bool,
+        runtime_received_at_micros: Option<u64>,
     },
     BlockAck {
         action: BlockAckAction,
@@ -118,13 +148,17 @@ pub enum ConnectedRxControlEvent {
     Beacon(StaBeaconObservation),
     ProbeResponse,
     Trigger {
+        identity: AssociatedHeControlIdentity,
         common: TriggerCommonInfo,
         schedule: Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
         first_user: Option<[u8; 5]>,
+        runtime_received_at_micros: Option<u64>,
     },
     Ndpa {
+        identity: AssociatedHeControlIdentity,
         dialog_token: u8,
         addressed_to_station: bool,
+        runtime_received_at_micros: Option<u64>,
     },
     BlockAck(BlockAckAction),
     PeerDisconnect(StaDisconnect),
@@ -138,20 +172,28 @@ impl ConnectedRxEvent<'_> {
             Self::Beacon { observation, .. } => Some(ConnectedRxControlEvent::Beacon(observation)),
             Self::ProbeResponse => Some(ConnectedRxControlEvent::ProbeResponse),
             Self::Trigger {
+                identity,
                 common,
                 schedule,
                 first_user,
+                runtime_received_at_micros,
             } => Some(ConnectedRxControlEvent::Trigger {
+                identity,
                 common,
                 schedule,
                 first_user,
+                runtime_received_at_micros,
             }),
             Self::Ndpa {
+                identity,
                 dialog_token,
                 addressed_to_station,
+                runtime_received_at_micros,
             } => Some(ConnectedRxControlEvent::Ndpa {
+                identity,
                 dialog_token,
                 addressed_to_station,
+                runtime_received_at_micros,
             }),
             Self::BlockAck { action, .. } => Some(ConnectedRxControlEvent::BlockAck(action)),
             Self::EspNow { .. } => None,
@@ -314,6 +356,23 @@ impl ConnectedRxDispatcher {
         _ethernet: &mut [u8],
         sink: &mut S,
     ) -> ConnectedRxDispatch {
+        self.dispatch_with_runtime_received_at(segment, mpdu, _ethernet, None, sink)
+    }
+
+    /// Dispatch with the executor-clock sample attached by the physical RX
+    /// producer at its first completed-frame handoff.
+    ///
+    /// The timestamp is optional because executor-neutral and synthetic users
+    /// cannot manufacture it. Runtime Trigger/NDPA response policy rejects a
+    /// missing sample rather than starting a fresh window at mailbox dequeue.
+    pub fn dispatch_with_runtime_received_at<S: ConnectedRxSink>(
+        &mut self,
+        segment: RxSegment<'_>,
+        mpdu: &mut [u8],
+        _ethernet: &mut [u8],
+        runtime_received_at_micros: Option<u64>,
+        sink: &mut S,
+    ) -> ConnectedRxDispatch {
         let raw = segment.buffer;
         let Some(frame_control) = public_frame_control(raw) else {
             return rejected(ConnectedRxProtection::Other, ConnectedRxError::PublicHeader);
@@ -380,18 +439,27 @@ impl ConnectedRxDispatcher {
                     Ok(trigger) => trigger,
                     Err(error) => return rejected(protection, ConnectedRxError::Trigger(error)),
                 };
+                let Some(identity) = self.associated_he_control_identity(
+                    trigger.duration,
+                    trigger.receiver_address,
+                    trigger.transmitter_address,
+                ) else {
+                    return ConnectedRxDispatch::Ignored;
+                };
                 let first_user = trigger.user_info_and_padding.get(..5).map(|bytes| {
                     let mut first_user = [0_u8; 5];
                     first_user.copy_from_slice(bytes);
                     first_user
                 });
                 sink.publish(ConnectedRxEvent::Trigger {
+                    identity,
                     common: trigger.common,
                     schedule: HeTriggerScheduledRate::from_trigger_frame(
                         &trigger,
                         self.config.association_id,
                     ),
                     first_user,
+                    runtime_received_at_micros,
                 });
                 ConnectedRxDispatch::Trigger
             }
@@ -408,9 +476,22 @@ impl ConnectedRxDispatcher {
                     Ok(ndpa) => ndpa,
                     Err(error) => return rejected(protection, ConnectedRxError::Ndpa(error)),
                 };
+                let mut receiver_address = [0_u8; 6];
+                receiver_address.copy_from_slice(ndpa.receiver_address());
+                let mut transmitter_address = [0_u8; 6];
+                transmitter_address.copy_from_slice(ndpa.transmitter_address());
+                let Some(identity) = self.associated_he_control_identity(
+                    ndpa.duration(),
+                    receiver_address,
+                    transmitter_address,
+                ) else {
+                    return ConnectedRxDispatch::Ignored;
+                };
                 sink.publish(ConnectedRxEvent::Ndpa {
+                    identity,
                     dialog_token: ndpa.dialog_token(),
                     addressed_to_station: ndpa.contains_association_id(self.config.association_id),
+                    runtime_received_at_micros,
                 });
                 ConnectedRxDispatch::Ndpa
             }
@@ -487,6 +568,24 @@ impl ConnectedRxDispatcher {
             }
             _ => self.dispatch_data(segment, frame_control, protection, sink),
         }
+    }
+
+    fn associated_he_control_identity(
+        &self,
+        duration: u16,
+        receiver_address: [u8; 6],
+        transmitter_address: [u8; 6],
+    ) -> Option<AssociatedHeControlIdentity> {
+        if transmitter_address != self.config.bssid
+            || (receiver_address != self.config.station_address && receiver_address[0] & 1 == 0)
+        {
+            return None;
+        }
+        Some(AssociatedHeControlIdentity {
+            duration,
+            receiver_address,
+            transmitter_address,
+        })
     }
 
     fn dispatch_data<S: ConnectedRxSink>(

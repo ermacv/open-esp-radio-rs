@@ -25,7 +25,9 @@ pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::{
         ConnectedControlError, ConnectedControlPorts, ConnectedControlReorder, ConnectedControlTx,
         ConnectedControlTxFailure, ConnectedControlTxKind, ConnectedDisconnectReason,
-        Esp32s31ConnectedControlCore,
+        ConnectedHeControlRuntimeEvidence, ConnectedHeControlRuntimeOutcome,
+        ConnectedHeControlRuntimeRejection, Esp32s31ConnectedControlCore, HeNdpaRuntimeRequest,
+        HeTriggerRuntimeRequest,
     },
     connected_control_hardware::{ConnectedControlHardware, StationDozeHardwareError},
 };
@@ -268,7 +270,18 @@ pub enum StationDozeBoundaryFailure {
 }
 
 const fn control_event_requires_active(event: ConnectedRxControlEvent) -> bool {
-    matches!(event, ConnectedRxControlEvent::BlockAck(_))
+    matches!(
+        event,
+        ConnectedRxControlEvent::BlockAck(_)
+            | ConnectedRxControlEvent::Trigger {
+                schedule: Ok(_),
+                ..
+            }
+            | ConnectedRxControlEvent::Ndpa {
+                addressed_to_station: true,
+                ..
+            }
+    )
 }
 
 enum Esp32s31ConnectedRxBlockAck<'resources> {
@@ -379,6 +392,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.enable_power_save(policy);
     }
 
+    pub fn with_he_trigger_based(
+        mut self,
+        config: Option<open_esp_radio_esp32s31_wifi_mac::tx::HeTriggerBasedTxConfig>,
+    ) -> Self {
+        self.core = self.core.with_he_trigger_based(config);
+        self
+    }
+
     /// Drive the affine hardware-doze boundary after each logical permit.
     /// ESP32-S31 production currently reaches this boundary and records
     /// `Unsupported`; it does not claim that RF or PHY entered sleep.
@@ -428,6 +449,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
 
     pub const fn last_stale_tx_block_ack_token(&self) -> Option<u8> {
         self.core.last_stale_tx_block_ack_token()
+    }
+
+    pub const fn he_control_runtime_evidence(&self) -> ConnectedHeControlRuntimeEvidence {
+        self.core.he_control_runtime_evidence()
     }
 
     pub fn dropped_he_observations(&self) -> u32 {
@@ -753,6 +778,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             .or_else(|| self.receiver.try_receive_control())
             .or_else(|| self.receiver.try_receive_he_observation());
         if event.is_some_and(control_event_requires_active)
+            && self.core.he_trigger_runtime_enabled()
             && self
                 .core
                 .power_save()

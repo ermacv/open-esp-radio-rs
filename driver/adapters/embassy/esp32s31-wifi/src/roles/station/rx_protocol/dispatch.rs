@@ -46,15 +46,16 @@ where
                     &mut self.sink,
                     self.mpdu,
                     segment,
+                    None,
                     #[cfg(any(feature = "diagnostics", test))]
                     self.pipeline_observer,
                 )
                 .await
             } else {
-                self.dispatch_segment(source).await
+                self.dispatch_segment(source, None).await
             }
         } else {
-            self.dispatch_segment(source).await
+            self.dispatch_segment(source, None).await
         };
         drop(locked);
         drop(frame);
@@ -65,10 +66,13 @@ where
         &mut self,
         frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
     ) -> ConnectedRxDispatch {
+        let runtime_received_at_micros = frame.runtime_received_at_micros();
         if self.dispatcher.may_publish_amsdu(frame.segment())
             || !self.dispatcher.may_publish_ethernet(frame.segment())
         {
-            let result = self.dispatch_segment(frame.segment()).await;
+            let result = self
+                .dispatch_segment(frame.segment(), runtime_received_at_micros)
+                .await;
             drop(frame);
             self.irq.notify_rx_capacity();
             return result;
@@ -89,9 +93,13 @@ where
         let segment = frame.segment();
         let (result, ethernet) = {
             let mut capture = StagedEthernetCapture::new(&mut self.sink, segment.buffer);
-            let result = self
-                .dispatcher
-                .dispatch(segment, self.mpdu, &mut [], &mut capture);
+            let result = self.dispatcher.dispatch_with_runtime_received_at(
+                segment,
+                self.mpdu,
+                &mut [],
+                runtime_received_at_micros,
+                &mut capture,
+            );
             (result, capture.captured)
         };
         #[cfg(any(feature = "diagnostics", test))]
@@ -127,6 +135,7 @@ where
     async fn dispatch_segment(
         &mut self,
         segment: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
+        runtime_received_at_micros: Option<u64>,
     ) -> ConnectedRxDispatch {
         if self.dispatcher.may_publish_amsdu(segment) {
             return self.dispatch_amsdu(segment).await;
@@ -136,6 +145,7 @@ where
             &mut self.sink,
             self.mpdu,
             segment,
+            runtime_received_at_micros,
             #[cfg(any(feature = "diagnostics", test))]
             self.pipeline_observer,
         )
@@ -263,6 +273,7 @@ async fn dispatch_non_amsdu_segment<
     sink: &mut S,
     mpdu: &mut [u8],
     segment: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
+    runtime_received_at_micros: Option<u64>,
     #[cfg(any(feature = "diagnostics", test))] pipeline_observer: Option<&dyn RxPipelineObserver>,
 ) -> ConnectedRxDispatch {
     if dispatcher.may_publish_ethernet(segment) {
@@ -281,7 +292,13 @@ async fn dispatch_non_amsdu_segment<
     }
     #[cfg(any(feature = "diagnostics", test))]
     let dispatch_started = pipeline_observer.map(|observer| observer.now_micros());
-    let result = dispatcher.dispatch(segment, mpdu, &mut [], sink);
+    let result = dispatcher.dispatch_with_runtime_received_at(
+        segment,
+        mpdu,
+        &mut [],
+        runtime_received_at_micros,
+        sink,
+    );
     #[cfg(any(feature = "diagnostics", test))]
     if let (Some(observer), Some(started)) = (pipeline_observer, dispatch_started) {
         let (data, amsdu, amsdu_subframes) = match result {

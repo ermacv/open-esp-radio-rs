@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use core::pin::Pin;
+use core::{num::NonZeroU64, pin::Pin};
 
 #[cfg(not(target_pointer_width = "32"))]
 extern crate alloc;
@@ -118,6 +118,14 @@ pub enum LegacyTxQueue {
 
 impl LegacyTxQueue {
     pub(crate) const fn index(self) -> u8 {
+        self.hardware_index()
+    }
+
+    /// Return the queue number used by the ESP32-S31 MAC transaction.
+    ///
+    /// This is intentionally chip-specific: callers must not infer it from
+    /// portable WMM access-category numbering.
+    pub const fn hardware_index(self) -> u8 {
         self as u8
     }
 
@@ -2487,6 +2495,7 @@ impl HtAmpduTxConfig {
 pub struct HeTriggerBasedTxConfig {
     tid_limit: MacHeTbTidLimit,
     tid: MacHeTid,
+    runtime_handoff_window_micros: Option<NonZeroU64>,
 }
 
 impl HeTriggerBasedTxConfig {
@@ -2498,10 +2507,26 @@ impl HeTriggerBasedTxConfig {
     /// TID, as the complete `mac_tx_set_tb` body does.
     pub const fn new(tid_limit: MacHeTbTidLimit, tid: MacHeTid) -> Option<Self> {
         if tid_limit.contains(tid) {
-            Some(Self { tid_limit, tid })
+            Some(Self {
+                tid_limit,
+                tid,
+                runtime_handoff_window_micros: None,
+            })
         } else {
             None
         }
+    }
+
+    /// Enable the bounded software handoff from an RX Trigger/NDPA event to
+    /// the unique connected TX owner.
+    ///
+    /// This caller-supplied duration is measured from the first executor-side
+    /// completed-RX handoff. It is intentionally not a fabricated IEEE SIFS or
+    /// HE-TB air-timing constant. The final TX boundary still fails closed
+    /// until a reviewed HE-TB PHY publication contract exists.
+    pub const fn with_runtime_handoff_window_micros(mut self, window: NonZeroU64) -> Self {
+        self.runtime_handoff_window_micros = Some(window);
+        self
     }
 
     pub const fn tid_limit(self) -> MacHeTbTidLimit {
@@ -2510,6 +2535,10 @@ impl HeTriggerBasedTxConfig {
 
     pub const fn tid(self) -> MacHeTid {
         self.tid
+    }
+
+    pub const fn runtime_handoff_window_micros(self) -> Option<NonZeroU64> {
+        self.runtime_handoff_window_micros
     }
 }
 

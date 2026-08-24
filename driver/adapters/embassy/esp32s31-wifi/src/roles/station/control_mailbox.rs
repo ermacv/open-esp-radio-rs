@@ -38,10 +38,9 @@ pub struct ConnectedControlQueue<const CAPACITY: usize> {
 
 fn scheduled_connected_control(event: ConnectedRxEvent<'_>) -> Option<ConnectedRxControlEvent> {
     match event.control()? {
-        // These are the only event classes consumed by
-        // `Esp32s31ConnectedControl` today. Diagnostic Trigger/NDPA events
-        // must not starve a beacon or ADDBA/DELBA transition in the bounded
-        // mailbox.
+        // `Esp32s31ConnectedControl` consumes these as semantic state. HE
+        // Trigger/NDPA uses its own single-slot lane so it cannot starve a
+        // beacon or ADDBA/DELBA transition in this bounded mailbox.
         event @ (ConnectedRxControlEvent::Beacon(_)
         | ConnectedRxControlEvent::ProbeResponse
         | ConnectedRxControlEvent::BlockAck(_)) => Some(event),
@@ -301,8 +300,10 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
         self.overflowed.load(Ordering::Acquire)
     }
 
-    /// Number of non-semantic HE observations coalesced by the single-slot
-    /// lane. Losing one does not invalidate Association/BlockAck state.
+    /// Number of HE control events coalesced by the single-slot runtime lane.
+    /// Losing one does not invalidate Association/BlockAck state; the lane is
+    /// intentionally best-effort because a later dequeue could not recover an
+    /// already missed response window.
     pub fn dropped_he_observations(&self) -> u32 {
         self.dropped_he_observations.load(Ordering::Acquire)
     }

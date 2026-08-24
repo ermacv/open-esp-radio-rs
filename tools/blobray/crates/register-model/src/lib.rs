@@ -411,6 +411,11 @@ impl RegisterModel {
         &self.review
     }
 
+    /// Stable address-space identifier used by sparse reviewed assertions.
+    pub fn address_space(&self) -> &str {
+        &self.address_space
+    }
+
     /// Apply sparse reviewed register facts in deterministic dependency order.
     ///
     /// Assertions for other domains/address spaces are ignored. A known

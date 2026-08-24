@@ -34,10 +34,21 @@ normal unit of a human change.
 ## Normal workflow
 
 ```console
+cargo blobray project research next --project path/to/vendor-project.toml
+cargo blobray inspect register 0x20000000 --project path/to/vendor-project.toml
 cargo blobray registers review --project path/to/vendor-project.toml
 cargo blobray registers validate --project path/to/vendor-project.toml
 cargo blobray project publish --project path/to/vendor-project.toml
 ```
+
+`research next` ranks blockers by transitive benefit and co-blocking structure.
+`inspect register` prints the stable sparse-fact subject, configured review
+pack and supported assertion kinds. A reviewer then adds only the proven fact
+and its durable evidence to a project pack. The generated review report and
+MMIO inventory are regenerated; they are not committed as hand-authored
+knowledge. Promote a conclusion from a project pack into the chip model only
+when its applicability and evidence support reuse by other blob revisions or
+projects.
 
 Publication produces the configured clean SVD, raw PAC/register
 representation and restricted capability API. Outputs are reproducible from

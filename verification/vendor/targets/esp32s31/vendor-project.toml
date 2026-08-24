@@ -4,7 +4,7 @@ schema = 3
 id = "esp32s31-radio-rev0"
 target-spec = "target.toml"
 ecosystem-packs = ["../../knowledge/espressif/radio.toml"]
-chip-pack = "chip.toml"
+chip-pack = "../../chips/esp32s31/chip.toml"
 verification-addon = "verification-addon.toml"
 
 [reviewed-knowledge]

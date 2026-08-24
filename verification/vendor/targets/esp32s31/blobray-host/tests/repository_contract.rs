@@ -79,6 +79,7 @@ fn rust_struct_body<'source>(source: &'source str, name: &str) -> &'source str {
 fn target_declares_exhaustive_raw_pac_ownership_partitions() {
     let repository = repository_root();
     let target = repository.join("verification/vendor/targets/esp32s31");
+    let chip = repository.join("verification/vendor/chips/esp32s31");
     let api_path = target.join("registers/api.toml");
     let api_source = fs::read_to_string(&api_path).expect("read target PAC API pack");
     let api = toml_document(&api_path);
@@ -119,7 +120,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
         .collect::<Vec<_>>();
     assert_eq!(actual, expected);
 
-    let model_path = target.join("registers/device.toml");
+    let model_path = chip.join("registers/device.toml");
     let model = toml_document(&model_path);
     let fragments = model["fragments"]
         .as_array()
@@ -127,7 +128,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
     let mut model_peripherals = BTreeSet::new();
     for fragment in fragments {
         let relative = fragment.as_str().expect("register model fragment path");
-        let document = toml_document(&target.join("registers").join(relative));
+        let document = toml_document(&chip.join("registers").join(relative));
         for peripheral in document["peripherals"]
             .as_array_of_tables()
             .expect("register model peripheral declarations")
@@ -1010,6 +1011,38 @@ fn ecosystem_pack_composes_the_shared_espressif_family_knowledge() {
     assert!(vendor.join("knowledge/espressif/esp-idf.toml").is_file());
     assert!(!target.join("ecosystem.toml").exists());
     assert!(!target.join("semantics/embedded-platform.toml").exists());
+}
+
+#[test]
+fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
+    let vendor = repository_root().join("verification/vendor");
+    let target = vendor.join("targets/esp32s31");
+    let chip = vendor.join("chips/esp32s31");
+
+    for relative in ["chip.toml", "memory.toml", "registers/device.toml"] {
+        assert!(
+            chip.join(relative).is_file(),
+            "shared chip pack lacks {relative}"
+        );
+        assert!(
+            !target.join(relative).exists(),
+            "investigation target duplicates reusable chip input {relative}"
+        );
+    }
+    assert!(chip.join("registers/peripherals").is_dir());
+    assert!(!target.join("registers/peripherals").exists());
+
+    let manifest = fs::read_to_string(target.join("vendor-project.toml"))
+        .expect("read ESP32-S31 project manifest");
+    assert!(manifest.contains("chip-pack = \"../../chips/esp32s31/chip.toml\""));
+    assert!(manifest.contains("packs = [\"reviewed/ieee802154.toml\"]"));
+
+    let reviewed = fs::read_to_string(target.join("reviewed/ieee802154.toml"))
+        .expect("read sparse reviewed facts");
+    assert!(reviewed.contains("subject = \"mmio:cpu:0x20103064/32\""));
+    assert!(reviewed.contains("kind = \"register-name\""));
+    assert!(reviewed.contains("kind = \"hardware-write-semantics\""));
+    assert!(!reviewed.contains("[[peripherals]]"));
 }
 
 #[test]

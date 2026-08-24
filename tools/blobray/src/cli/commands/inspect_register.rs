@@ -12,6 +12,7 @@ struct RegisterInvestigationReport {
     command: &'static str,
     register: crate::RegisterDetailSummary,
     neighbors: Vec<RegisterNeighbor>,
+    recording: Option<RegisterRecordingGuide>,
     conclusion: String,
 }
 
@@ -21,6 +22,17 @@ struct RegisterNeighbor {
     width: u8,
     name: String,
     reviewed: bool,
+}
+
+#[derive(Serialize)]
+struct RegisterRecordingGuide {
+    subject: String,
+    reviewed_knowledge_packs: Vec<String>,
+    supported_register_facts: Vec<&'static str>,
+    supported_field_facts: Vec<&'static str>,
+    field_subject_suffix: &'static str,
+    evidence_rule: &'static str,
+    reuse_rule: &'static str,
 }
 
 pub(super) fn run(
@@ -37,13 +49,54 @@ pub(super) fn run(
         })?;
     let report = RegisterInvestigationReport {
         neighbors: neighbors(project, &detail)?,
+        recording: recording_guide(project, &detail)?,
         conclusion: conclusion(&detail),
-        schema_version: 1,
+        schema_version: 2,
         command: "inspect register",
         register: detail,
     };
     crate::cli::output::render_report(&report, || render_human(&report));
     Ok(true)
+}
+
+fn recording_guide(
+    project: &ProjectSpec,
+    detail: &crate::RegisterDetailSummary,
+) -> Result<Option<RegisterRecordingGuide>> {
+    let Some(paths) = project.registers.as_ref() else {
+        return Ok(None);
+    };
+    let Some(width) = detail.width else {
+        return Ok(None);
+    };
+    let model = crate::registers::load_effective_register_model(paths)?;
+    Ok(Some(RegisterRecordingGuide {
+        subject: format!(
+            "mmio:{}:{:#010x}/{width}",
+            model.address_space(),
+            detail.address
+        ),
+        reviewed_knowledge_packs: project
+            .reviewed_knowledge
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect(),
+        supported_register_facts: vec![
+            "register-name",
+            "register-description",
+            "register-access",
+            "hardware-write-semantics",
+        ],
+        supported_field_facts: vec![
+            "field-name",
+            "field-description",
+            "field-access",
+            "field-write-semantics",
+        ],
+        field_subject_suffix: "#bits:<offset>/<width>",
+        evidence_rule: "Add an assertion only after manual review and link it to durable evidence; generated reads, writes, masks, names and neighboring addresses are candidates, not hardware truth.",
+        reuse_rule: "Keep a blob-specific conclusion in a project reviewed-knowledge pack; promote it to the chip baseline only when independently reviewed and reusable across investigations.",
+    }))
 }
 
 fn parse_address(value: &str) -> Result<u32> {
@@ -167,6 +220,33 @@ fn render_human(report: &RegisterInvestigationReport) {
     );
     outputln!("\n{}", crate::cli::output::heading("Conclusion"));
     outputln!("{}", report.conclusion);
+
+    if let Some(recording) = &report.recording {
+        outputln!(
+            "\n{}",
+            crate::cli::output::heading("Record accepted progress")
+        );
+        outputln!("Subject:      {}", recording.subject);
+        if recording.reviewed_knowledge_packs.is_empty() {
+            outputln!("Pack:         configure [reviewed-knowledge].packs before recording facts");
+        } else {
+            outputln!(
+                "Pack:         {}",
+                recording.reviewed_knowledge_packs.join(", ")
+            );
+        }
+        outputln!(
+            "Register facts: {}",
+            recording.supported_register_facts.join(", ")
+        );
+        outputln!(
+            "Field facts:    {} (append {})",
+            recording.supported_field_facts.join(", "),
+            recording.field_subject_suffix
+        );
+        outputln!("Evidence:     {}", recording.evidence_rule);
+        outputln!("Reuse:        {}", recording.reuse_rule);
+    }
 
     if !detail.operational_functions.is_empty()
         || !detail.non_operational_functions.is_empty()

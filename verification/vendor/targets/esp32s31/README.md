@@ -6,6 +6,14 @@ generic Blobray with ESP32-S31 knowledge contracts. Target addresses and
 driver dependencies do not enter the generic package, and target code cannot
 return a comparison verdict.
 
+Reusable address/register geometry is composed from
+`verification/vendor/chips/esp32s31/`; reusable ESP-IDF vocabulary comes from
+`verification/vendor/knowledge/espressif/`. This investigation directory owns
+only blob-specific profiles and scopes, sparse reviewed conclusions, API and
+evidence policy, dispositions and verification inputs. Adding one newly
+accepted register name or W1C fact should normally change one sparse reviewed
+pack, not copy the generated MMIO inventory or the chip baseline.
+
 ## Local inputs
 
 `local.toml` is ignored and contains machine-local paths to authenticated

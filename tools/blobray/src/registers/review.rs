@@ -194,7 +194,7 @@ fn render_report(
         .expect("writing to String cannot fail");
     }
     output.push_str(
-        "This file is derived evidence, not the register database. Edit the model fragments, then regenerate this report. Candidate names, access modes and bit ranges are mechanical starting points; linked semantic operations are navigation links only. None of them assert hardware semantics, reset values, W1C behavior or completeness.\n\n",
+        "This file is derived evidence, not the register database. Record newly accepted, investigation-specific facts in a sparse reviewed-knowledge pack, then regenerate this report. Promote a fact into the reusable chip model only when it is independently reviewed and applies beyond this blob investigation. Candidate names, access modes and bit ranges are mechanical starting points; linked semantic operations are navigation links only. None of them assert hardware semantics, reset values, W1C behavior or completeness.\n\n",
     );
     output.push_str("## Summary\n\n");
     writeln!(output, "- Observed register widths: {}", summary.observed)

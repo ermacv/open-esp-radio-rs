@@ -8,7 +8,7 @@
 use core::future::Future;
 
 use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::StaPairwiseCcmpSlot,
+    crypto::{CcmpTxPacketNumberError, StaPairwiseCcmpSlot},
     tx::{LegacyTxQueue, TxError, TxHardware, TxPhyRate},
     tx_runtime::{OrdinaryRetryError, WifiTxRuntimePolicy},
 };
@@ -133,6 +133,7 @@ pub enum SingleMpduTxError {
     PsPollUnsupported,
     EthernetFrameTooShort,
     SecurityModeMismatch,
+    PacketNumber(CcmpTxPacketNumberError),
     BufferSizeOverflow,
     DeadlineOverflow,
     ProbeEncode,
@@ -179,6 +180,12 @@ impl From<TxError> for SingleMpduTxError {
 impl From<OrdinaryRetryError> for SingleMpduTxError {
     fn from(error: OrdinaryRetryError) -> Self {
         Self::Retry(error)
+    }
+}
+
+impl From<CcmpTxPacketNumberError> for SingleMpduTxError {
+    fn from(error: CcmpTxPacketNumberError) -> Self {
+        Self::PacketNumber(error)
     }
 }
 
@@ -415,17 +422,28 @@ where
         self.sequences.peek_qos(tid)
     }
 
-    pub fn take_protected_metadata(&mut self, tid: u8) -> Option<StaProtectedEthernetFrame> {
+    pub fn take_protected_metadata(
+        &mut self,
+        tid: u8,
+    ) -> Result<Option<StaProtectedEthernetFrame>, CcmpTxPacketNumberError> {
         let ConnectedTxSecurity::Wpa2Personal(key) = &mut self.security else {
-            return None;
+            return Ok(None);
         };
-        Some(StaProtectedEthernetFrame {
+        if self.sequences.peek_qos(tid).is_none() {
+            return Ok(None);
+        }
+        let ccmp_header = key.next_tx_ccmp_header()?;
+        let sequence_number = self
+            .sequences
+            .take_data(Some(tid))
+            .expect("validated QoS sequence space remains owned");
+        Ok(Some(StaProtectedEthernetFrame {
             bssid: self.config.bssid,
-            sequence_number: self.sequences.take_data(Some(tid))?,
+            sequence_number,
             user_priority: tid,
             peer_qos: self.config.peer_qos,
-            ccmp_header: key.next_tx_ccmp_header(),
-        })
+            ccmp_header,
+        }))
     }
 
     pub const fn hardware_key_selector(&self) -> u8 {
@@ -556,7 +574,7 @@ where
                         sequence_number,
                         user_priority: 0,
                         peer_qos: self.config.peer_qos,
-                        ccmp_header: key.next_tx_ccmp_header(),
+                        ccmp_header: key.next_tx_ccmp_header()?,
                         ether_type,
                         payload: &ethernet[14..],
                     }
@@ -603,7 +621,7 @@ where
             .sequences
             .take_data(self.config.peer_qos.then_some(0))
             .expect("selected EAPOL sequence-number owner exists");
-        let ccmp_header = key.next_tx_ccmp_header();
+        let ccmp_header = key.next_tx_ccmp_header()?;
         let frame_length = {
             let buffer = self.ordinary.buffer_mut()?;
             StaProtectedDataFrame {
@@ -988,7 +1006,11 @@ mod tests {
     }
 
     impl CcmpKeyHardware for Hardware {
-        fn install_sta_ccmp_entry(&mut self, _index: u8, _words: [u32; 6]) -> MacKeyInstallOutcome {
+        fn install_sta_ccmp_entry(
+            &mut self,
+            _index: u8,
+            _words: &[u32; 6],
+        ) -> MacKeyInstallOutcome {
             MacKeyInstallOutcome::Installed
         }
 

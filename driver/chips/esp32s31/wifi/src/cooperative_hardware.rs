@@ -129,14 +129,14 @@ impl<'arena> CooperativeRadioHardware<'arena> {
 }
 
 impl CcmpKeyHardware for CooperativeRadioHardware<'_> {
-    fn install_sta_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
+    fn install_sta_ccmp_entry(&mut self, index: u8, words: &[u32; 6]) -> MacKeyInstallOutcome {
         self.registers
             .access()
             .try_install_station_ccmp_entry(index, words)
             .expect("CCMP installation must not overlap another MMIO transaction")
     }
 
-    fn install_ap_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
+    fn install_ap_ccmp_entry(&mut self, index: u8, words: &[u32; 6]) -> MacKeyInstallOutcome {
         self.registers
             .access()
             .try_install_access_point_ccmp_entry(index, words)

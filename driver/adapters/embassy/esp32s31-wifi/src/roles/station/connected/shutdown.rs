@@ -357,7 +357,11 @@ mod tests {
     }
 
     impl CcmpKeyHardware for TeardownHardware {
-        fn install_sta_ccmp_entry(&mut self, _index: u8, _words: [u32; 6]) -> MacKeyInstallOutcome {
+        fn install_sta_ccmp_entry(
+            &mut self,
+            _index: u8,
+            _words: &[u32; 6],
+        ) -> MacKeyInstallOutcome {
             MacKeyInstallOutcome::Installed
         }
 

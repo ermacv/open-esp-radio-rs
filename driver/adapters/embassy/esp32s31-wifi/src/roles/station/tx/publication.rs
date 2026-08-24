@@ -659,6 +659,7 @@ where
         let metadata = self
             .ordinary
             .take_protected_metadata(DATA_TID)
+            .map_err(SingleMpduTxError::from)?
             .ok_or(AggregateTxError::MissingQosSequence(DATA_TID))?;
         let ethernet_offset = first.ethernet_offset();
         let ethernet_length = first.ethernet_length();
@@ -725,6 +726,7 @@ where
         let metadata = self
             .ordinary
             .take_protected_metadata(DATA_TID)
+            .map_err(SingleMpduTxError::from)?
             .ok_or(AggregateTxError::MissingQosSequence(DATA_TID))?;
         let ethernet_offset = frame.ethernet_offset();
         let ethernet_length = frame.ethernet_length();

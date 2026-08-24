@@ -8,6 +8,7 @@
 use open_esp_radio_esp32s31_hal::types::MacKeyInstallOutcome;
 use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 use open_esp_radio_ieee80211::ccmp::ccmp_header;
+use zeroize::Zeroize;
 
 const STA_PAIRWISE_HARDWARE_INDEX: u8 = 4;
 const STA_GROUP_HARDWARE_INDEX: u8 = 1;
@@ -23,10 +24,72 @@ const CCMP_ALGORITHM: u32 = 3;
 const CCMP_KEY_BYTES: usize = 16;
 const CCMP_ENTRY_WORDS: usize = 6;
 
-const fn advance_esp32s31_tx_pn(low: u32, high: u32) -> (u32, u32) {
+const fn advance_esp32s31_tx_pn(low: u32, high: u16) -> Option<(u32, u16)> {
     let next_low = low.wrapping_add(3);
-    let carry = (next_low < low) as u32;
-    (next_low, high.wrapping_add(carry))
+    if next_low < low {
+        if high == u16::MAX {
+            None
+        } else {
+            Some((next_low, high + 1))
+        }
+    } else {
+        Some((next_low, high))
+    }
+}
+
+/// Exhaustion of one key's finite 48-bit CCMP transmit packet-number space.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CcmpTxPacketNumberError {
+    Exhausted,
+}
+
+/// Unique software owner of one installed key's transmit packet number.
+struct CcmpTxPacketNumber {
+    low: u32,
+    high: u16,
+}
+
+impl CcmpTxPacketNumber {
+    const fn new() -> Self {
+        Self { low: 0, high: 0 }
+    }
+
+    fn next_header(&mut self, key_id_bits: u8) -> Result<[u8; 8], CcmpTxPacketNumberError> {
+        let Some((low, high)) = advance_esp32s31_tx_pn(self.low, self.high) else {
+            return Err(CcmpTxPacketNumberError::Exhausted);
+        };
+        self.low = low;
+        self.high = high;
+        Ok(ccmp_header(low, u32::from(high), key_id_bits))
+    }
+}
+
+/// One non-copyable key-table image, scrubbed immediately after MMIO use and
+/// again on every drop path.
+struct CcmpKeyTableImage([u32; CCMP_ENTRY_WORDS]);
+
+impl CcmpKeyTableImage {
+    const fn zeroed() -> Self {
+        Self([0; CCMP_ENTRY_WORDS])
+    }
+
+    const fn words(&self) -> &[u32; CCMP_ENTRY_WORDS] {
+        &self.0
+    }
+
+    fn words_mut(&mut self) -> &mut [u32; CCMP_ENTRY_WORDS] {
+        &mut self.0
+    }
+
+    fn scrub(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl Drop for CcmpKeyTableImage {
+    fn drop(&mut self) {
+        self.scrub();
+    }
 }
 
 /// Finite hardware authority for the two open STA CCMP slots.
@@ -34,12 +97,12 @@ pub trait CcmpKeyHardware {
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome;
     fn install_ap_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_sta_ccmp_entry(index, words)
     }
@@ -55,7 +118,7 @@ impl CcmpKeyHardware for WifiMacHal<'_> {
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_station_ccmp_entry(index, words)
     }
@@ -63,7 +126,7 @@ impl CcmpKeyHardware for WifiMacHal<'_> {
     fn install_ap_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_access_point_ccmp_entry(index, words)
     }
@@ -81,7 +144,7 @@ impl CcmpKeyHardware for RadioRuntimeOwner {
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         CcmpKeyHardware::install_sta_ccmp_entry(&mut self.wifi_mac_hal(), index, words)
     }
@@ -89,7 +152,7 @@ impl CcmpKeyHardware for RadioRuntimeOwner {
     fn install_ap_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; CCMP_ENTRY_WORDS],
+        words: &[u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         CcmpKeyHardware::install_ap_ccmp_entry(&mut self.wifi_mac_hal(), index, words)
     }
@@ -136,8 +199,7 @@ impl KeyConnectionContext {
 #[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
 pub struct StaPairwiseCcmpSlot {
     peer: [u8; 6],
-    tx_pn_low: u32,
-    tx_pn_high: u32,
+    tx_packet_number: CcmpTxPacketNumber,
 }
 
 /// Authority for the one active STA group CCMP slot recovered from the
@@ -154,8 +216,7 @@ pub struct ApPairwiseCcmpSlot {
     peer: [u8; 6],
     association_id: u16,
     hardware_index: u8,
-    tx_pn_low: u32,
-    tx_pn_high: u32,
+    tx_packet_number: CcmpTxPacketNumber,
 }
 
 /// Authority for the one group key exposed by an AP service epoch.
@@ -163,8 +224,7 @@ pub struct ApPairwiseCcmpSlot {
 pub struct ApGroupCcmpSlot {
     key_id: u8,
     hardware_index: u8,
-    tx_pn_low: u32,
-    tx_pn_high: u32,
+    tx_packet_number: CcmpTxPacketNumber,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -210,10 +270,10 @@ impl StaPairwiseCcmpSlot {
     ///
     /// The pinned S31 net80211 implementation advances by three. A newly
     /// installed key therefore emits PN 3 first. Pairwise traffic uses key ID
-    /// zero, so only the ExtIV bit is present in byte three.
-    pub fn next_tx_ccmp_header(&mut self) -> [u8; 8] {
-        (self.tx_pn_low, self.tx_pn_high) = advance_esp32s31_tx_pn(self.tx_pn_low, self.tx_pn_high);
-        ccmp_header(self.tx_pn_low, self.tx_pn_high, 0)
+    /// zero, so only the ExtIV bit is present in byte three. Once PN 2^48 - 1
+    /// has been emitted, later calls fail without wrapping or mutating state.
+    pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
+        self.tx_packet_number.next_header(0)
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -234,9 +294,8 @@ impl ApPairwiseCcmpSlot {
         self.association_id
     }
 
-    pub fn next_tx_ccmp_header(&mut self) -> [u8; 8] {
-        (self.tx_pn_low, self.tx_pn_high) = advance_esp32s31_tx_pn(self.tx_pn_low, self.tx_pn_high);
-        ccmp_header(self.tx_pn_low, self.tx_pn_high, 0)
+    pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
+        self.tx_packet_number.next_header(0)
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -253,9 +312,8 @@ impl ApGroupCcmpSlot {
         self.key_id
     }
 
-    pub fn next_tx_ccmp_header(&mut self) -> [u8; 8] {
-        (self.tx_pn_low, self.tx_pn_high) = advance_esp32s31_tx_pn(self.tx_pn_low, self.tx_pn_high);
-        ccmp_header(self.tx_pn_low, self.tx_pn_high, self.key_id << 6)
+    pub fn next_tx_ccmp_header(&mut self) -> Result<[u8; 8], CcmpTxPacketNumberError> {
+        self.tx_packet_number.next_header(self.key_id << 6)
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
@@ -296,6 +354,26 @@ pub fn clear_sta_ccmp_slots<H: CcmpKeyHardware>(
     report
 }
 
+fn install_sta_key_table_image<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    index: u8,
+    image: &mut CcmpKeyTableImage,
+) -> MacKeyInstallOutcome {
+    let outcome = hardware.install_sta_ccmp_entry(index, image.words());
+    image.scrub();
+    outcome
+}
+
+fn install_ap_key_table_image<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    index: u8,
+    image: &mut CcmpKeyTableImage,
+) -> MacKeyInstallOutcome {
+    let outcome = hardware.install_ap_ccmp_entry(index, image.words());
+    image.scrub();
+    outcome
+}
+
 /// Installs the WPA2 temporal key into the recovered STA pairwise slot.
 ///
 /// The slot must be invalid on entry. This fail-closed rule prevents an open
@@ -319,22 +397,22 @@ pub fn install_sta_pairwise_ccmp<H: CcmpKeyHardware>(
         | (PAIRWISE_LOGICAL_KEY_INDEX << 14)
         | ((cipher >> 16) & 0x341f);
 
-    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    let mut image = CcmpKeyTableImage::zeroed();
+    let words = image.words_mut();
     words[0] = peer_low;
     words[1] = u32::from(peer_high) | (control << 16);
     for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
         words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte TK word"));
     }
 
-    match hardware.install_sta_ccmp_entry(STA_PAIRWISE_HARDWARE_INDEX, words) {
+    match install_sta_key_table_image(hardware, STA_PAIRWISE_HARDWARE_INDEX, &mut image) {
         MacKeyInstallOutcome::Installed => {}
         MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
         MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
     }
     Ok(StaPairwiseCcmpSlot {
         peer,
-        tx_pn_low: 0,
-        tx_pn_high: 0,
+        tx_packet_number: CcmpTxPacketNumber::new(),
     })
 }
 
@@ -360,14 +438,15 @@ pub fn install_sta_group_ccmp<H: CcmpKeyHardware>(
         | (logical_key_index << 14)
         | ((cipher >> 16) & 0x341f);
 
-    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    let mut image = CcmpKeyTableImage::zeroed();
+    let words = image.words_mut();
     words[0] = u32::MAX;
     words[1] = u32::from(u16::MAX) | (control << 16);
     for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
         words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte GTK word"));
     }
 
-    match hardware.install_sta_ccmp_entry(STA_GROUP_HARDWARE_INDEX, words) {
+    match install_sta_key_table_image(hardware, STA_GROUP_HARDWARE_INDEX, &mut image) {
         MacKeyInstallOutcome::Installed => {}
         MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
         MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
@@ -409,14 +488,15 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
         | (PAIRWISE_LOGICAL_KEY_INDEX << 14)
         | ((cipher >> 16) & 0x341f);
 
-    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    let mut image = CcmpKeyTableImage::zeroed();
+    let words = image.words_mut();
     words[0] = peer_low;
     words[1] = u32::from(peer_high) | (control << 16);
     for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
         words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte TK word"));
     }
 
-    match hardware.install_ap_ccmp_entry(hardware_index, words) {
+    match install_ap_key_table_image(hardware, hardware_index, &mut image) {
         MacKeyInstallOutcome::Installed => {}
         MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
         MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
@@ -425,8 +505,7 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
         peer,
         association_id,
         hardware_index,
-        tx_pn_low: 0,
-        tx_pn_high: 0,
+        tx_packet_number: CcmpTxPacketNumber::new(),
     })
 }
 
@@ -450,14 +529,15 @@ pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
         | (logical_key_index << 14)
         | ((cipher >> 16) & 0x341f);
 
-    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    let mut image = CcmpKeyTableImage::zeroed();
+    let words = image.words_mut();
     words[0] = u32::MAX;
     words[1] = u32::from(u16::MAX) | (control << 16);
     for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
         words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte GTK word"));
     }
 
-    match hardware.install_ap_ccmp_entry(hardware_index, words) {
+    match install_ap_key_table_image(hardware, hardware_index, &mut image) {
         MacKeyInstallOutcome::Installed => {}
         MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
         MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
@@ -465,8 +545,7 @@ pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
     Ok(ApGroupCcmpSlot {
         key_id,
         hardware_index,
-        tx_pn_low: 0,
-        tx_pn_high: 0,
+        tx_packet_number: CcmpTxPacketNumber::new(),
     })
 }
 
@@ -516,7 +595,7 @@ mod tests {
         fn install_sta_ccmp_entry(
             &mut self,
             index: u8,
-            _words: [u32; CCMP_ENTRY_WORDS],
+            _words: &[u32; CCMP_ENTRY_WORDS],
         ) -> MacKeyInstallOutcome {
             if self.reject_next {
                 self.reject_next = false;
@@ -535,6 +614,110 @@ mod tests {
             self.occupied = false;
             self.clears += 1;
         }
+    }
+
+    #[test]
+    fn key_table_scratch_is_scrubbed_after_every_install_outcome() {
+        let sensitive = [0xa5a5_5a5a; CCMP_ENTRY_WORDS];
+
+        let mut installed_hardware = Hardware::default();
+        let mut installed = CcmpKeyTableImage(sensitive);
+        assert_eq!(
+            install_sta_key_table_image(&mut installed_hardware, 4, &mut installed),
+            MacKeyInstallOutcome::Installed
+        );
+        assert_eq!(installed.words(), &[0; CCMP_ENTRY_WORDS]);
+
+        let mut occupied_hardware = Hardware {
+            occupied: true,
+            ..Hardware::default()
+        };
+        let mut occupied = CcmpKeyTableImage(sensitive);
+        assert_eq!(
+            install_ap_key_table_image(&mut occupied_hardware, 8, &mut occupied),
+            MacKeyInstallOutcome::Occupied
+        );
+        assert_eq!(occupied.words(), &[0; CCMP_ENTRY_WORDS]);
+
+        let mut rejected_hardware = Hardware {
+            reject_next: true,
+            ..Hardware::default()
+        };
+        let mut rejected = CcmpKeyTableImage(sensitive);
+        assert_eq!(
+            install_sta_key_table_image(&mut rejected_hardware, 1, &mut rejected),
+            MacKeyInstallOutcome::Rejected
+        );
+        assert_eq!(rejected.words(), &[0; CCMP_ENTRY_WORDS]);
+    }
+
+    #[test]
+    fn tx_packet_number_emits_the_48_bit_maximum_once_then_fails_closed() {
+        let mut packet_number = CcmpTxPacketNumber {
+            low: u32::MAX - 3,
+            high: u16::MAX,
+        };
+        assert_eq!(
+            packet_number.next_header(0x40),
+            Ok([0xff, 0xff, 0, 0x60, 0xff, 0xff, 0xff, 0xff])
+        );
+        assert_eq!(
+            packet_number.next_header(0x40),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
+        assert_eq!(
+            packet_number.next_header(0x40),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
+    }
+
+    #[test]
+    fn exhausted_pairwise_slot_retains_hardware_clear_authority() {
+        let mut hardware = Hardware {
+            occupied: true,
+            ..Hardware::default()
+        };
+        let mut slot = StaPairwiseCcmpSlot {
+            peer: [1, 2, 3, 4, 5, 6],
+            tx_packet_number: CcmpTxPacketNumber {
+                low: u32::MAX,
+                high: u16::MAX,
+            },
+        };
+        assert_eq!(
+            slot.next_tx_ccmp_header(),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
+        slot.clear(&mut hardware);
+        assert_eq!(hardware.clears, 1);
+        assert!(!hardware.occupied);
+    }
+
+    #[test]
+    fn ap_pairwise_and_group_slots_share_the_fail_closed_pn_boundary() {
+        let exhausted = || CcmpTxPacketNumber {
+            low: u32::MAX,
+            high: u16::MAX,
+        };
+        let mut pairwise = ApPairwiseCcmpSlot {
+            peer: [1, 2, 3, 4, 5, 6],
+            association_id: 1,
+            hardware_index: AP_PAIRWISE_HARDWARE_INDEX_BASE,
+            tx_packet_number: exhausted(),
+        };
+        let mut group = ApGroupCcmpSlot {
+            key_id: 1,
+            hardware_index: AP_GROUP_HARDWARE_INDEX_BASE + 1,
+            tx_packet_number: exhausted(),
+        };
+        assert_eq!(
+            pairwise.next_tx_ccmp_header(),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
+        assert_eq!(
+            group.next_tx_ccmp_header(),
+            Err(CcmpTxPacketNumberError::Exhausted)
+        );
     }
 
     #[test]

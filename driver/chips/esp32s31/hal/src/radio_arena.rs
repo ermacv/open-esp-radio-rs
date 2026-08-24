@@ -301,7 +301,7 @@ impl Esp32s31RadioOwnerArena {
     pub fn try_install_station_ccmp_entry(
         &self,
         index: u8,
-        words: [u32; 6],
+        words: &[u32; 6],
     ) -> Result<crate::wifi_mac::MacKeyInstallOutcome, Esp32s31RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
             crate::wifi_mac::WifiMacHal::from_owned(registers)
@@ -318,7 +318,7 @@ impl Esp32s31RadioOwnerArena {
     pub fn try_install_access_point_ccmp_entry(
         &self,
         index: u8,
-        words: [u32; 6],
+        words: &[u32; 6],
     ) -> Result<crate::wifi_mac::MacKeyInstallOutcome, Esp32s31RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
             crate::wifi_mac::WifiMacHal::from_owned(registers)
@@ -521,7 +521,7 @@ impl<'arena> Esp32s31RadioAccess<'arena> {
     pub fn try_install_station_ccmp_entry(
         &self,
         index: u8,
-        words: [u32; 6],
+        words: &[u32; 6],
     ) -> Result<crate::wifi_mac::MacKeyInstallOutcome, Esp32s31RadioOwnerArenaError> {
         self.arena.try_install_station_ccmp_entry(index, words)
     }
@@ -531,7 +531,7 @@ impl<'arena> Esp32s31RadioAccess<'arena> {
     pub fn try_install_access_point_ccmp_entry(
         &self,
         index: u8,
-        words: [u32; 6],
+        words: &[u32; 6],
     ) -> Result<crate::wifi_mac::MacKeyInstallOutcome, Esp32s31RadioOwnerArenaError> {
         self.arena.try_install_access_point_ccmp_entry(index, words)
     }

@@ -59,7 +59,7 @@ impl RadioRegisters {
     pub fn install_sta_ccmp_key_entry(
         &mut self,
         index: MacKeyEntryIndex,
-        words: [u32; PROGRAMMED_CCMP_WORDS],
+        words: &[u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_ccmp_key_entry(MacInterface::Station, index, words)
     }
@@ -72,7 +72,7 @@ impl RadioRegisters {
     pub fn install_ap_ccmp_key_entry(
         &mut self,
         index: MacKeyEntryIndex,
-        words: [u32; PROGRAMMED_CCMP_WORDS],
+        words: &[u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_ccmp_key_entry(MacInterface::AccessPoint, index, words)
     }
@@ -81,7 +81,7 @@ impl RadioRegisters {
         &mut self,
         interface: MacInterface,
         index: MacKeyEntryIndex,
-        words: [u32; PROGRAMMED_CCMP_WORDS],
+        words: &[u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
         let index = index.get();
         let interface = interface.bits() as usize;
@@ -99,7 +99,7 @@ impl RadioRegisters {
 
         self.clear_mac_key_entry_words(index);
         let table = &self.peripherals.wifi_mac_key_table;
-        for (word, value) in words.into_iter().enumerate() {
+        for (word, value) in words.iter().copied().enumerate() {
             super::svd::zero_based_field_write::mac_key_table_entry_word(
                 table,
                 index as usize * KEY_ENTRY_WORDS + word,

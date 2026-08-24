@@ -379,7 +379,7 @@ impl<'registers> WifiMacHal<'registers> {
     pub fn install_station_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; 6],
+        words: &[u32; 6],
     ) -> MacKeyInstallOutcome {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;
@@ -394,7 +394,7 @@ impl<'registers> WifiMacHal<'registers> {
     pub fn install_access_point_ccmp_entry(
         &mut self,
         index: u8,
-        words: [u32; 6],
+        words: &[u32; 6],
     ) -> MacKeyInstallOutcome {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;

@@ -20,6 +20,7 @@ open-esp-radio-esp32s31-wifi-dma = { path = "../dma" }
 open-esp-radio-ieee80211 = { path = "../../../../wifi/ieee80211" }
 open-esp-radio-wifi-softmac = { path = "../../../../wifi/softmac" }
 pin-project = "1.1.13"
+zeroize = { version = "1.9.0", default-features = false }
 
 [lints]
 workspace = true

@@ -2335,6 +2335,7 @@ dependencies = [
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
  "pin-project",
+ "zeroize",
 ]
 
 [[package]]

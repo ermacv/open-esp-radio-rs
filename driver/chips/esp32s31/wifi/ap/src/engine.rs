@@ -1361,7 +1361,7 @@ mod tests {
     }
 
     impl CcmpKeyHardware for Hardware {
-        fn install_sta_ccmp_entry(&mut self, index: u8, _words: [u32; 6]) -> MacKeyInstallOutcome {
+        fn install_sta_ccmp_entry(&mut self, index: u8, _words: &[u32; 6]) -> MacKeyInstallOutcome {
             self.installed.push(index);
             MacKeyInstallOutcome::Installed
         }

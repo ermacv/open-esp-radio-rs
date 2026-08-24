@@ -461,7 +461,7 @@ impl MacInterrupt for MockMmio {
 }
 
 impl CcmpKeyHardware for MockMmio {
-    fn install_sta_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
+    fn install_sta_ccmp_entry(&mut self, index: u8, words: &[u32; 6]) -> MacKeyInstallOutcome {
         let validity = self.read32(mac::CRYPTO_KEY_VALID_BITMAP);
         let valid_bit = 1_u32 << index;
         if validity & valid_bit != 0 {
@@ -470,7 +470,7 @@ impl CcmpKeyHardware for MockMmio {
         for word in 0..mac::CRYPTO_KEY_ENTRY_WORDS {
             self.write32(mac::crypto_key_entry_word(index, word).unwrap(), 0);
         }
-        for (word, value) in words.into_iter().enumerate() {
+        for (word, value) in words.iter().copied().enumerate() {
             self.write32(
                 mac::crypto_key_entry_word(index, word as u8).unwrap(),
                 value,
@@ -2830,8 +2830,8 @@ fn sta_pairwise_ccmp_install_owns_one_bounded_hardware_slot() {
         mmio.words.get(&mac::CRYPTO_POLICY_CONTROL),
         Some(&0xffc0_003f)
     );
-    assert_eq!(slot.next_tx_ccmp_header(), [3, 0, 0, 0x20, 0, 0, 0, 0]);
-    assert_eq!(slot.next_tx_ccmp_header(), [6, 0, 0, 0x20, 0, 0, 0, 0]);
+    assert_eq!(slot.next_tx_ccmp_header(), Ok([3, 0, 0, 0x20, 0, 0, 0, 0]));
+    assert_eq!(slot.next_tx_ccmp_header(), Ok([6, 0, 0, 0x20, 0, 0, 0, 0]));
 
     slot.clear(&mut mmio);
     assert_eq!(mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP), Some(&0));

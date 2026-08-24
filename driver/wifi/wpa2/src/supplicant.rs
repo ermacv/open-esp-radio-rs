@@ -253,6 +253,14 @@ impl Wpa2ConnectedSupplicant {
                 Wpa2ConnectedSupplicantError::StaleReplayCounter,
             ));
         }
+        // A cached Group Message 2 is still an authenticated response. Verify
+        // every repeated Group Message 1 before admitting the idempotent path,
+        // otherwise a forged frame can elicit a valid MIC-bearing response.
+        if !key.verify_mic(&self.ptk) {
+            return Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::InvalidMic,
+            ));
+        }
         if self.last_group_replay == Some(replay_counter) {
             let response = Wpa2TxFrame::group_message2(self.authenticator, replay_counter)
                 .map_err(|error| {
@@ -262,11 +270,6 @@ impl Wpa2ConnectedSupplicant {
                 })?
                 .authenticate(&self.ptk);
             return Ok(Wpa2ConnectedAction::Retransmit(response));
-        }
-        if !key.verify_mic(&self.ptk) {
-            return Err(Wpa2ConnectedProcessError::Supplicant(
-                Wpa2ConnectedSupplicantError::InvalidMic,
-            ));
         }
         if !key.key_info().encrypted_key_data() || key.key_data().is_empty() {
             return Err(Wpa2ConnectedProcessError::Supplicant(
@@ -776,6 +779,39 @@ mod tests {
             panic!("repeated Group Message 1 must not reinstall GTK")
         };
         assert!(repeated.key_frame().verify_mic(&ptk));
+    }
+
+    #[test]
+    fn connected_group_rekey_authenticates_duplicate_before_cached_response() {
+        let pmk = Pmk::derive(b"password", b"ssid").unwrap();
+        let ptk = pmk.derive_ptk(context());
+        let frame = Wpa2TxFrame::<512>::group_message1(LOCAL, 3, [9; 8], &[0x55; 24])
+            .unwrap()
+            .authenticate(&ptk);
+        let mut connected = connected(pmk.derive_ptk(context()));
+        let mut unwrap = GroupKeyUnwrap {
+            plain: group_kde(1, 0x6a),
+        };
+        let Wpa2ConnectedAction::InstallGroupKey(request) =
+            block_on(connected.on_group_message1(owned(&frame), &mut unwrap)).unwrap()
+        else {
+            panic!("new Group Message 1 must request one GTK replacement")
+        };
+        connected.complete_group_key_install(request, true).unwrap();
+
+        let mut bytes = [0; 512];
+        let length = frame.as_bytes().len();
+        bytes[..length].copy_from_slice(frame.as_bytes());
+        bytes[81] ^= 1;
+        let forged_duplicate =
+            crate::OwnedEapolFrame::<512>::try_copy(Wpa2Interface::Station, AP, &bytes[..length])
+                .unwrap();
+        assert!(matches!(
+            block_on(connected.on_group_message1(forged_duplicate, &mut unwrap)),
+            Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::InvalidMic
+            ))
+        ));
     }
 
     #[test]

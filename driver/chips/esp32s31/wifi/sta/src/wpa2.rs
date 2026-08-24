@@ -9,8 +9,8 @@ use core::future::Future;
 
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{
-        CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
-        install_sta_group_ccmp, install_sta_pairwise_ccmp,
+        CcmpKeyHardware, CcmpTxPacketNumberError, CryptoKeyError, StaGroupCcmpSlot,
+        StaPairwiseCcmpSlot, install_sta_group_ccmp, install_sta_pairwise_ccmp,
     },
     tx::{LegacyRate, LegacyTxQueue, TxCompletion, TxPhyRate},
 };
@@ -260,6 +260,7 @@ pub enum Esp32s31Wpa2KeyPortError<T> {
     InvalidGroupKind,
     InvalidReceiveSequence(StaCcmpRxReplayError),
     Install(CryptoKeyError),
+    PacketNumber(CcmpTxPacketNumberError),
     Transmit(T),
     TxStatus(u8),
 }
@@ -416,7 +417,10 @@ where
                     .await
             }
             Esp32s31Wpa2Message4Protection::PairwiseCcmp => {
-                let ccmp_header = keys.pairwise.next_tx_ccmp_header();
+                let ccmp_header = keys
+                    .pairwise
+                    .next_tx_ccmp_header()
+                    .map_err(Esp32s31Wpa2KeyPortError::PacketNumber)?;
                 self.radio
                     .transmit
                     .transmit_protected(

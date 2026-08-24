@@ -1,14 +1,15 @@
 //! Typed ownership of one AP GTK and the bounded pairwise CCMP slot table.
 
 use open_esp_radio_esp32s31_wifi_mac::crypto::{
-    AP_PAIRWISE_SLOT_COUNT, ApGroupCcmpSlot, ApPairwiseCcmpSlot, CryptoKeyError,
-    install_ap_group_ccmp, install_ap_pairwise_ccmp,
+    AP_PAIRWISE_SLOT_COUNT, ApGroupCcmpSlot, ApPairwiseCcmpSlot, CcmpTxPacketNumberError,
+    CryptoKeyError, install_ap_group_ccmp, install_ap_pairwise_ccmp,
 };
 use open_esp_radio_wpa2::{Ptk, frames::Wpa2Gtk};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApSecurityError {
     Crypto(CryptoKeyError),
+    PacketNumber(CcmpTxPacketNumberError),
     SecurityModeMismatch,
     PairwiseStorageNotEmpty,
     PairwiseAlreadyInstalled,
@@ -19,6 +20,12 @@ pub enum Esp32s31ApSecurityError {
 impl From<CryptoKeyError> for Esp32s31ApSecurityError {
     fn from(error: CryptoKeyError) -> Self {
         Self::Crypto(error)
+    }
+}
+
+impl From<CcmpTxPacketNumberError> for Esp32s31ApSecurityError {
+    fn from(error: CcmpTxPacketNumberError) -> Self {
+        Self::PacketNumber(error)
     }
 }
 
@@ -217,7 +224,7 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
             .flatten()
             .find(|slot| slot.peer() == &peer)
             .ok_or(Esp32s31ApSecurityError::WrongPeer)?;
-        Ok(slot.next_tx_ccmp_header())
+        Ok(slot.next_tx_ccmp_header()?)
     }
 
     pub fn bind_pairwise(
@@ -265,7 +272,7 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
                 slot.peer() == &binding.peer && slot.hardware_index() == binding.hardware_index
             })
             .ok_or(Esp32s31ApSecurityError::WrongPeer)?;
-        Ok(slot.next_tx_ccmp_header())
+        Ok(slot.next_tx_ccmp_header()?)
     }
 
     pub fn pairwise_hardware_index(&self, peer: [u8; 6]) -> Result<u8, Esp32s31ApSecurityError> {
@@ -284,7 +291,7 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
     pub fn next_group_tx_ccmp_header(&mut self) -> Result<[u8; 8], Esp32s31ApSecurityError> {
         match self {
             Self::Open { .. } => Err(Esp32s31ApSecurityError::SecurityModeMismatch),
-            Self::Wpa2Personal { group, .. } => Ok(group.next_tx_ccmp_header()),
+            Self::Wpa2Personal { group, .. } => Ok(group.next_tx_ccmp_header()?),
         }
     }
 
@@ -372,7 +379,7 @@ mod tests {
     }
 
     impl CcmpKeyHardware for Hardware {
-        fn install_sta_ccmp_entry(&mut self, index: u8, _words: [u32; 6]) -> MacKeyInstallOutcome {
+        fn install_sta_ccmp_entry(&mut self, index: u8, _words: &[u32; 6]) -> MacKeyInstallOutcome {
             self.installs.push(index);
             MacKeyInstallOutcome::Installed
         }

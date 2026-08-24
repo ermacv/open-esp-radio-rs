@@ -272,6 +272,18 @@ bitOffset = 0
 bitWidth = 20
 [[peripherals.registers]]
 [peripherals.registers.register]
+name = "PHY_INIT_VALUE_01F0"
+description = "Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown."
+addressOffset = 0x1F0
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
 name = "ISO_COEX_ENABLE"
 description = "ISO coexistence initialization sets bit 0; deinitialization clears it."
 addressOffset = 0x1F4
@@ -370,6 +382,42 @@ bitWidth = 20
 name = "ENABLE"
 bitOffset = 31
 bitWidth = 1
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "PHY_INIT_ZERO_0244"
+description = "Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown."
+addressOffset = 0x244
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "PHY_INIT_VALUE_0248"
+description = "Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown."
+addressOffset = 0x248
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "PHY_INIT_DYNAMIC_IMAGE_024C"
+description = "Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown."
+addressOffset = 0x24C
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "HAL_INIT_SCHEDULER_CONTROL"
@@ -717,10 +765,63 @@ sources = [
     "BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS",
     "BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS",
     "BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL",
+    "BLOB_LIBBLE_PHY_INIT_REGISTERS",
 ]
 provenance = "derived"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_01F0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_01F0.IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_ZERO_0244"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_ZERO_0244.IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_0248"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_0248.IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_DYNAMIC_IMAGE_024C"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_DYNAMIC_IMAGE_024C.IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_CONTROL"

@@ -33374,24 +33374,28 @@ pub mod btmac_ble_phy_init {
         _reserved1: [u8; 0x3c],
         init_preserve_bit_17: InitPreserveBit17,
         init_ones_00b8: InitOnes00b8,
-        _reserved3: [u8; 0x7c],
+        _reserved3: [u8; 0x08],
+        init_control_00c4: InitControl00c4,
+        _reserved4: [u8; 0x70],
         init_value_0138: InitValue0138,
-        _reserved4: [u8; 0x0114],
+        _reserved5: [u8; 0x0114],
         lc_tx_on_delay_config: LcTxOnDelayConfig,
         init_bytes_0254: InitBytes0254,
-        _reserved6: [u8; 0x01a8],
+        _reserved7: [u8; 0x01a8],
         init_control_0400: InitControl0400,
-        _reserved7: [u8; 0x54],
+        _reserved8: [u8; 0x54],
         init_high_half_0458: InitHighHalf0458,
         init_value_045c: InitValue045c,
-        _reserved9: [u8; 0x40],
+        _reserved10: [u8; 0x10],
+        init_branch_control_0470: InitBranchControl0470,
+        _reserved11: [u8; 0x2c],
         init_dynamic_image_04a0: InitDynamicImage04a0,
         init_bytes_04a4: InitBytes04a4,
         init_bytes_04a8: InitBytes04a8,
         init_value_04ac: InitValue04ac,
-        _reserved13: [u8; 0x90],
+        _reserved15: [u8; 0x90],
         init_value_0540: InitValue0540,
-        _reserved14: [u8; 0x08],
+        _reserved16: [u8; 0x08],
         init_low_5_054c: InitLow5_054c,
         init_bytes_0550: InitBytes0550,
         init_bytes_0554: InitBytes0554,
@@ -33413,6 +33417,11 @@ pub mod btmac_ble_phy_init {
         #[inline(always)]
         pub const fn init_ones_00b8(&self) -> &InitOnes00b8 {
             &self.init_ones_00b8
+        }
+        #[doc = "0xc4 - The conditional tail of complete BLE PHY register initialization sets bit 9 through a fresh-read RMW. All other bits are preserved and their meanings remain unknown."]
+        #[inline(always)]
+        pub const fn init_control_00c4(&self) -> &InitControl00c4 {
+            &self.init_control_00c4
         }
         #[doc = "0x138 - BLE PHY register initialization writes the finite complete image 0x0000065B."]
         #[inline(always)]
@@ -33443,6 +33452,11 @@ pub mod btmac_ble_phy_init {
         #[inline(always)]
         pub const fn init_value_045c(&self) -> &InitValue045c {
             &self.init_value_045c
+        }
+        #[doc = "0x470 - One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown."]
+        #[inline(always)]
+        pub const fn init_branch_control_0470(&self) -> &InitBranchControl0470 {
+            &self.init_branch_control_0470
         }
         #[doc = "0x4a0 - BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown."]
         #[inline(always)]
@@ -33623,6 +33637,45 @@ pub mod btmac_ble_phy_init {
         impl crate::Readable for InitOnes00b8Spec {}
         #[doc = "`write(|w| ..)` method takes [`init_ones_00b8::W`](W) writer structure"]
         impl crate::Writable for InitOnes00b8Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "INIT_CONTROL_00C4 (rw) register accessor: The conditional tail of complete BLE PHY register initialization sets bit 9 through a fresh-read RMW. All other bits are preserved and their meanings remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_control_00c4::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_control_00c4::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_control_00c4`] module"]
+    #[doc(alias = "INIT_CONTROL_00C4")]
+    pub type InitControl00c4 = crate::Reg<init_control_00c4::InitControl00c4Spec>;
+    #[doc = "The conditional tail of complete BLE PHY register initialization sets bit 9 through a fresh-read RMW. All other bits are preserved and their meanings remain unknown."]
+    pub mod init_control_00c4 {
+        #[doc = "Register `INIT_CONTROL_00C4` reader"]
+        pub type R = crate::R<InitControl00c4Spec>;
+        #[doc = "Register `INIT_CONTROL_00C4` writer"]
+        pub type W = crate::W<InitControl00c4Spec>;
+        #[doc = "Field `INIT_ENABLE_9` reader - "]
+        pub type InitEnable9R = crate::BitReader;
+        #[doc = "Field `INIT_ENABLE_9` writer - "]
+        pub type InitEnable9W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn init_enable_9(&self) -> InitEnable9R {
+                InitEnable9R::new(((self.bits >> 9) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn init_enable_9(&mut self) -> InitEnable9W<'_, InitControl00c4Spec> {
+                InitEnable9W::new(self, 9)
+            }
+        }
+        #[doc = "The conditional tail of complete BLE PHY register initialization sets bit 9 through a fresh-read RMW. All other bits are preserved and their meanings remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_control_00c4::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_control_00c4::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct InitControl00c4Spec;
+        impl crate::RegisterSpec for InitControl00c4Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`init_control_00c4::R`](R) reader structure"]
+        impl crate::Readable for InitControl00c4Spec {}
+        #[doc = "`write(|w| ..)` method takes [`init_control_00c4::W`](W) writer structure"]
+        impl crate::Writable for InitControl00c4Spec {
             type Safety = crate::Unsafe;
         }
     }
@@ -33913,6 +33966,46 @@ pub mod btmac_ble_phy_init {
         impl crate::Readable for InitValue045cSpec {}
         #[doc = "`write(|w| ..)` method takes [`init_value_045c::W`](W) writer structure"]
         impl crate::Writable for InitValue045cSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "INIT_BRANCH_CONTROL_0470 (rw) register accessor: One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_branch_control_0470::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_branch_control_0470::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_branch_control_0470`] module"]
+    #[doc(alias = "INIT_BRANCH_CONTROL_0470")]
+    pub type InitBranchControl0470 =
+        crate::Reg<init_branch_control_0470::InitBranchControl0470Spec>;
+    #[doc = "One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown."]
+    pub mod init_branch_control_0470 {
+        #[doc = "Register `INIT_BRANCH_CONTROL_0470` reader"]
+        pub type R = crate::R<InitBranchControl0470Spec>;
+        #[doc = "Register `INIT_BRANCH_CONTROL_0470` writer"]
+        pub type W = crate::W<InitBranchControl0470Spec>;
+        #[doc = "Field `INIT_ENABLE_18` reader - "]
+        pub type InitEnable18R = crate::BitReader;
+        #[doc = "Field `INIT_ENABLE_18` writer - "]
+        pub type InitEnable18W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn init_enable_18(&self) -> InitEnable18R {
+                InitEnable18R::new(((self.bits >> 18) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn init_enable_18(&mut self) -> InitEnable18W<'_, InitBranchControl0470Spec> {
+                InitEnable18W::new(self, 18)
+            }
+        }
+        #[doc = "One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_branch_control_0470::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_branch_control_0470::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct InitBranchControl0470Spec;
+        impl crate::RegisterSpec for InitBranchControl0470Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`init_branch_control_0470::R`](R) reader structure"]
+        impl crate::Readable for InitBranchControl0470Spec {}
+        #[doc = "`write(|w| ..)` method takes [`init_branch_control_0470::W`](W) writer structure"]
+        impl crate::Writable for InitBranchControl0470Spec {
             type Safety = crate::Unsafe;
         }
     }
@@ -34587,7 +34680,8 @@ pub mod bluetooth_controller_core {
         _reserved18: [u8; 0xd0],
         hal_init_latch: HalInitLatch,
         hal_init_low_20: HalInitLow20,
-        _reserved20: [u8; 0x2c],
+        _reserved20: [u8; 0x28],
+        phy_init_value_01f0: PhyInitValue01f0,
         iso_coex_enable: IsoCoexEnable,
         iso_coex_control_0: IsoCoexControl0,
         iso_coex_threshold: IsoCoexThreshold,
@@ -34598,15 +34692,18 @@ pub mod bluetooth_controller_core {
         iso_coex_state_1: IsoCoexState1,
         iso_coex_timing_0: IsoCoexTiming0,
         operational_value_0218: OperationalValue0218,
-        _reserved30: [u8; 0x18],
-        iso_coex_timing_1: IsoCoexTiming1,
         _reserved31: [u8; 0x18],
+        iso_coex_timing_1: IsoCoexTiming1,
+        _reserved32: [u8; 0x0c],
+        phy_init_zero_0244: PhyInitZero0244,
+        phy_init_value_0248: PhyInitValue0248,
+        phy_init_dynamic_image_024c: PhyInitDynamicImage024c,
         hal_init_scheduler_control: HalInitSchedulerControl,
         scheduler_command_0: SchedulerCommand0,
         scheduler_command_1: SchedulerCommand1,
         scheduler_diagnostic_source: SchedulerDiagnosticSource,
         scheduler_diagnostic_latch: SchedulerDiagnosticLatch,
-        _reserved36: [u8; 0x18],
+        _reserved40: [u8; 0x18],
         hal_init_low_half: HalInitLowHalf,
         mmgmt_list_1_pointer_a: MmgmtList1PointerA,
         mmgmt_list_1_pointer_b: MmgmtList1PointerB,
@@ -34614,13 +34711,13 @@ pub mod bluetooth_controller_core {
         mmgmt_list_2_pointer_b: MmgmtList2PointerB,
         mmgmt_list_3_pointer_a: MmgmtList3PointerA,
         mmgmt_list_3_pointer_b: MmgmtList3PointerB,
-        _reserved43: [u8; 0x08],
+        _reserved47: [u8; 0x08],
         scan_hw_snapshot: ScanHwSnapshot,
-        _reserved44: [u8; 0x80],
+        _reserved48: [u8; 0x80],
         operational_status_0324: OperationalStatus0324,
-        _reserved45: [u8; 0x24],
+        _reserved49: [u8; 0x24],
         hal_init_slot_map: [HalInitSlotMap; 2],
-        _reserved46: [u8; 0x18],
+        _reserved50: [u8; 0x18],
         operational_word_036c: OperationalWord036c,
     }
     impl RegisterBlock {
@@ -34724,6 +34821,11 @@ pub mod bluetooth_controller_core {
         pub const fn hal_init_low_20(&self) -> &HalInitLow20 {
             &self.hal_init_low_20
         }
+        #[doc = "0x1f0 - Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown."]
+        #[inline(always)]
+        pub const fn phy_init_value_01f0(&self) -> &PhyInitValue01f0 {
+            &self.phy_init_value_01f0
+        }
         #[doc = "0x1f4 - ISO coexistence initialization sets bit 0; deinitialization clears it."]
         #[inline(always)]
         pub const fn iso_coex_enable(&self) -> &IsoCoexEnable {
@@ -34778,6 +34880,21 @@ pub mod bluetooth_controller_core {
         #[inline(always)]
         pub const fn iso_coex_timing_1(&self) -> &IsoCoexTiming1 {
             &self.iso_coex_timing_1
+        }
+        #[doc = "0x244 - Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown."]
+        #[inline(always)]
+        pub const fn phy_init_zero_0244(&self) -> &PhyInitZero0244 {
+            &self.phy_init_zero_0244
+        }
+        #[doc = "0x248 - Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown."]
+        #[inline(always)]
+        pub const fn phy_init_value_0248(&self) -> &PhyInitValue0248 {
+            &self.phy_init_value_0248
+        }
+        #[doc = "0x24c - Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown."]
+        #[inline(always)]
+        pub const fn phy_init_dynamic_image_024c(&self) -> &PhyInitDynamicImage024c {
+            &self.phy_init_dynamic_image_024c
         }
         #[doc = "0x250 - BTDM HAL initialization configures byte one to 0x20, bits 16..20 to 0x10 and sets bit 31. Names remain positional because the controller meaning is not recovered."]
         #[inline(always)]
@@ -35736,6 +35853,32 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "PHY_INIT_VALUE_01F0 (w) register accessor: Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_value_01f0::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_value_01f0`] module"]
+    #[doc(alias = "PHY_INIT_VALUE_01F0")]
+    pub type PhyInitValue01f0 = crate::Reg<phy_init_value_01f0::PhyInitValue01f0Spec>;
+    #[doc = "Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown."]
+    pub mod phy_init_value_01f0 {
+        #[doc = "Register `PHY_INIT_VALUE_01F0` writer"]
+        pub type W = crate::W<PhyInitValue01f0Spec>;
+        #[doc = "Field `IMAGE` writer - "]
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image(&mut self) -> ImageW<'_, PhyInitValue01f0Spec> {
+                ImageW::new(self, 0)
+            }
+        }
+        #[doc = "Complete BLE PHY initialization writes the finite whole-word image 0x55. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_value_01f0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PhyInitValue01f0Spec;
+        impl crate::RegisterSpec for PhyInitValue01f0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`phy_init_value_01f0::W`](W) writer structure"]
+        impl crate::Writable for PhyInitValue01f0Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
     #[doc = "ISO_COEX_ENABLE (rw) register accessor: ISO coexistence initialization sets bit 0; deinitialization clears it.\n\nYou can [`read`](crate::Reg::read) this register and get [`iso_coex_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iso_coex_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iso_coex_enable`] module"]
     #[doc(alias = "ISO_COEX_ENABLE")]
     pub type IsoCoexEnable = crate::Reg<iso_coex_enable::IsoCoexEnableSpec>;
@@ -36087,6 +36230,85 @@ pub mod bluetooth_controller_core {
         impl crate::Readable for IsoCoexTiming1Spec {}
         #[doc = "`write(|w| ..)` method takes [`iso_coex_timing_1::W`](W) writer structure"]
         impl crate::Writable for IsoCoexTiming1Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PHY_INIT_ZERO_0244 (w) register accessor: Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_zero_0244::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_zero_0244`] module"]
+    #[doc(alias = "PHY_INIT_ZERO_0244")]
+    pub type PhyInitZero0244 = crate::Reg<phy_init_zero_0244::PhyInitZero0244Spec>;
+    #[doc = "Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown."]
+    pub mod phy_init_zero_0244 {
+        #[doc = "Register `PHY_INIT_ZERO_0244` writer"]
+        pub type W = crate::W<PhyInitZero0244Spec>;
+        #[doc = "Field `IMAGE` writer - "]
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image(&mut self) -> ImageW<'_, PhyInitZero0244Spec> {
+                ImageW::new(self, 0)
+            }
+        }
+        #[doc = "Complete BLE PHY initialization writes the finite whole-word zero image. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_zero_0244::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PhyInitZero0244Spec;
+        impl crate::RegisterSpec for PhyInitZero0244Spec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`phy_init_zero_0244::W`](W) writer structure"]
+        impl crate::Writable for PhyInitZero0244Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PHY_INIT_VALUE_0248 (w) register accessor: Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_value_0248::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_value_0248`] module"]
+    #[doc(alias = "PHY_INIT_VALUE_0248")]
+    pub type PhyInitValue0248 = crate::Reg<phy_init_value_0248::PhyInitValue0248Spec>;
+    #[doc = "Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown."]
+    pub mod phy_init_value_0248 {
+        #[doc = "Register `PHY_INIT_VALUE_0248` writer"]
+        pub type W = crate::W<PhyInitValue0248Spec>;
+        #[doc = "Field `IMAGE` writer - "]
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image(&mut self) -> ImageW<'_, PhyInitValue0248Spec> {
+                ImageW::new(self, 0)
+            }
+        }
+        #[doc = "Complete BLE PHY initialization writes the finite whole-word image 0x00000FFF. Inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_value_0248::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PhyInitValue0248Spec;
+        impl crate::RegisterSpec for PhyInitValue0248Spec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`phy_init_value_0248::W`](W) writer structure"]
+        impl crate::Writable for PhyInitValue0248Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PHY_INIT_DYNAMIC_IMAGE_024C (w) register accessor: Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_dynamic_image_024c::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_dynamic_image_024c`] module"]
+    #[doc(alias = "PHY_INIT_DYNAMIC_IMAGE_024C")]
+    pub type PhyInitDynamicImage024c =
+        crate::Reg<phy_init_dynamic_image_024c::PhyInitDynamicImage024cSpec>;
+    #[doc = "Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown."]
+    pub mod phy_init_dynamic_image_024c {
+        #[doc = "Register `PHY_INIT_DYNAMIC_IMAGE_024C` writer"]
+        pub type W = crate::W<PhyInitDynamicImage024cSpec>;
+        #[doc = "Field `IMAGE` writer - "]
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image(&mut self) -> ImageW<'_, PhyInitDynamicImage024cSpec> {
+                ImageW::new(self, 0)
+            }
+        }
+        #[doc = "Complete BLE PHY initialization writes a runtime-derived complete image formed from a linked global address plus 0x40. The destination's inner hardware meaning remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_dynamic_image_024c::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PhyInitDynamicImage024cSpec;
+        impl crate::RegisterSpec for PhyInitDynamicImage024cSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`phy_init_dynamic_image_024c::W`](W) writer structure"]
+        impl crate::Writable for PhyInitDynamicImage024cSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -39988,9 +40210,12 @@ pub mod ble_hw_runtime_control {
         _reserved0: [u8; 0x30],
         status: [Status; 8],
         clear: [Clear; 8],
-        _reserved2: [u8; 0x18],
+        _reserved2: [u8; 0x04],
+        phy_init_configuration: PhyInitConfiguration,
+        phy_init_configuration_latch: PhyInitConfigurationLatch,
+        _reserved4: [u8; 0x0c],
         config_0088: Config0088,
-        _reserved3: [u8; 0x04],
+        _reserved5: [u8; 0x04],
         config_0090: Config0090,
         config_0094: Config0094,
     }
@@ -40016,6 +40241,16 @@ pub mod ble_hw_runtime_control {
         #[inline(always)]
         pub fn clear_iter(&self) -> impl Iterator<Item = &Clear> {
             self.clear.iter()
+        }
+        #[doc = "0x74 - Complete BLE PHY initialization publishes one runtime-derived low byte together with finite bit 8 as a whole-word image. The byte encoding remains unknown."]
+        #[inline(always)]
+        pub const fn phy_init_configuration(&self) -> &PhyInitConfiguration {
+            &self.phy_init_configuration
+        }
+        #[doc = "0x78 - Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown."]
+        #[inline(always)]
+        pub const fn phy_init_configuration_latch(&self) -> &PhyInitConfigurationLatch {
+            &self.phy_init_configuration_latch
         }
         #[doc = "0x88 - Complete image formed from the low five bits of one controller configuration byte."]
         #[inline(always)]
@@ -40080,6 +40315,66 @@ pub mod ble_hw_runtime_control {
         }
         #[doc = "`write(|w| ..)` method takes [`clear::W`](W) writer structure"]
         impl crate::Writable for ClearSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PHY_INIT_CONFIGURATION (w) register accessor: Complete BLE PHY initialization publishes one runtime-derived low byte together with finite bit 8 as a whole-word image. The byte encoding remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_configuration`] module"]
+    #[doc(alias = "PHY_INIT_CONFIGURATION")]
+    pub type PhyInitConfiguration = crate::Reg<phy_init_configuration::PhyInitConfigurationSpec>;
+    #[doc = "Complete BLE PHY initialization publishes one runtime-derived low byte together with finite bit 8 as a whole-word image. The byte encoding remains unknown."]
+    pub mod phy_init_configuration {
+        #[doc = "Register `PHY_INIT_CONFIGURATION` writer"]
+        pub type W = crate::W<PhyInitConfigurationSpec>;
+        #[doc = "Field `VALUE_LOW_8` writer - "]
+        pub type ValueLow8W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `CONFIG_8` writer - "]
+        pub type Config8W<'a, REG> = crate::BitWriter<'a, REG>;
+        impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn value_low_8(&mut self) -> ValueLow8W<'_, PhyInitConfigurationSpec> {
+                ValueLow8W::new(self, 0)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn config_8(&mut self) -> Config8W<'_, PhyInitConfigurationSpec> {
+                Config8W::new(self, 8)
+            }
+        }
+        #[doc = "Complete BLE PHY initialization publishes one runtime-derived low byte together with finite bit 8 as a whole-word image. The byte encoding remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PhyInitConfigurationSpec;
+        impl crate::RegisterSpec for PhyInitConfigurationSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`phy_init_configuration::W`](W) writer structure"]
+        impl crate::Writable for PhyInitConfigurationSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "PHY_INIT_CONFIGURATION_LATCH (w) register accessor: Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_latch::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@phy_init_configuration_latch`] module"]
+    #[doc(alias = "PHY_INIT_CONFIGURATION_LATCH")]
+    pub type PhyInitConfigurationLatch =
+        crate::Reg<phy_init_configuration_latch::PhyInitConfigurationLatchSpec>;
+    #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown."]
+    pub mod phy_init_configuration_latch {
+        #[doc = "Register `PHY_INIT_CONFIGURATION_LATCH` writer"]
+        pub type W = crate::W<PhyInitConfigurationLatchSpec>;
+        #[doc = "Field `IMAGE` writer - "]
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn image(&mut self) -> ImageW<'_, PhyInitConfigurationLatchSpec> {
+                ImageW::new(self, 0)
+            }
+        }
+        #[doc = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`phy_init_configuration_latch::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PhyInitConfigurationLatchSpec;
+        impl crate::RegisterSpec for PhyInitConfigurationLatchSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`phy_init_configuration_latch::W`](W) writer structure"]
+        impl crate::Writable for PhyInitConfigurationLatchSpec {
             type Safety = crate::Unsafe;
         }
     }

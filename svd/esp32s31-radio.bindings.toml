@@ -3016,6 +3016,24 @@ bit-width = 32
 access = "read-only"
 
 [[registers]]
+address = 537924080
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_01F0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "phy_init_value_01f0"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
 address = 537924084
 width = 32
 access = "read-write"
@@ -3247,6 +3265,60 @@ method = "enable"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
+
+[[registers]]
+address = 537924164
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_ZERO_0244"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "phy_init_zero_0244"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537924168
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_VALUE_0248"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "phy_init_value_0248"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537924172
+width = 32
+access = "write-only"
+identity = "BLUETOOTH_CONTROLLER_CORE.PHY_INIT_DYNAMIC_IMAGE_024C"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+peripheral-type = "BluetoothControllerCore"
+peripheral-module = "bluetooth_controller_core"
+scope = []
+register-method = "phy_init_dynamic_image_024c"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
 
 [[registers]]
 address = 537924176
@@ -3869,6 +3941,24 @@ bit-width = 32
 access = "read-write"
 
 [[registers]]
+address = 537924804
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00C4"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_control_00c4"
+
+[[registers.fields]]
+svd-name = "INIT_ENABLE_9"
+method = "init_enable_9"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 537924920
 width = 32
 access = "read-write"
@@ -4020,6 +4110,24 @@ svd-name = "INIT_IMAGE"
 method = "init_image"
 bit-offset = 0
 bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537925744
+width = 32
+access = "read-write"
+identity = "BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
+scope = []
+register-method = "init_branch_control_0470"
+
+[[registers.fields]]
+svd-name = "INIT_ENABLE_18"
+method = "init_enable_18"
+bit-offset = 18
+bit-width = 1
 access = "read-write"
 
 [[registers]]
@@ -4892,6 +5000,49 @@ register-index = 7
 [[registers.fields]]
 svd-name = "PENDING_BITS"
 method = "pending_bits"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537926516
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "phy_init_configuration"
+
+[[registers.fields]]
+svd-name = "VALUE_LOW_8"
+method = "value_low_8"
+bit-offset = 0
+bit-width = 8
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "CONFIG_8"
+method = "config_8"
+bit-offset = 8
+bit-width = 1
+access = "write-only"
+
+[[registers]]
+address = 537926520
+width = 32
+access = "write-only"
+identity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_LATCH"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+peripheral-type = "BleHwRuntimeControl"
+peripheral-module = "ble_hw_runtime_control"
+scope = []
+register-method = "phy_init_configuration_latch"
+
+[[registers.fields]]
+svd-name = "IMAGE"
+method = "image"
 bit-offset = 0
 bit-width = 32
 access = "write-only"

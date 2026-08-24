@@ -42,6 +42,34 @@ bitWidth = 32
 
 [[peripherals.registers]]
 [peripherals.registers.register]
+name = "PHY_INIT_CONFIGURATION"
+description = "Complete BLE PHY initialization publishes one runtime-derived low byte together with finite bit 8 as a whole-word image. The byte encoding remains unknown."
+addressOffset = 0x74
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "VALUE_LOW_8"
+bitOffset = 0
+bitWidth = 8
+[[peripherals.registers.register.fields]]
+name = "CONFIG_8"
+bitOffset = 8
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "PHY_INIT_CONFIGURATION_LATCH"
+description = "Complete BLE PHY initialization writes the finite complete image one immediately after PHY_INIT_CONFIGURATION. Inner command or latch semantics remain unknown."
+addressOffset = 0x78
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
 name = "CONFIG_0088"
 description = "Complete image formed from the low five bits of one controller configuration byte."
 addressOffset = 0x88
@@ -90,10 +118,49 @@ bitWidth = 8
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL"
-sources = ["BLOB_LIBBLE_HW_STATUS_CLEAR", "BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
+sources = [
+    "BLOB_LIBBLE_HW_STATUS_CLEAR",
+    "BLOB_LIBBLE_HW_RUNTIME_CONFIG",
+    "BLOB_LIBBLE_PHY_INIT_REGISTERS",
+]
 provenance = "derived"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION.VALUE_LOW_8"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION.CONFIG_8"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_LATCH"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_LATCH.IMAGE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.STATUS%s"

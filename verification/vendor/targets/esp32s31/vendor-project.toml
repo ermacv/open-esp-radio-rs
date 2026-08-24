@@ -574,6 +574,10 @@ roots = [
     # btdm_lp_reset(true) -> esp_phy_enable/esp_btbb_enable. The wrapper source
     # proves reachability; this linked vendor body remains the effect authority.
     "ble-controller:bt_bb_v2_init_cmplx",
+    # Complete S31 body corresponding to the ecosystem BLE PHY register-init
+    # role. Keep it explicit until the reviewed indirect interface edge from
+    # the public lifecycle is resolved by the canonical linked image.
+    "ble-controller:r_sym_ble_3472b6bNiQdnWkYo6Ggv",
     "ble-controller:r_ble_controller_init",
     "ble-controller:r_ble_controller_deinit",
     "ble-controller:r_base_stack_initEnv",

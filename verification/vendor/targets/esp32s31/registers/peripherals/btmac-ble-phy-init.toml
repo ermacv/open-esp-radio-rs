@@ -60,6 +60,20 @@ bitWidth = 32
 [[peripherals.registers]]
 
 [peripherals.registers.register]
+name = "INIT_CONTROL_00C4"
+description = "The conditional tail of complete BLE PHY register initialization sets bit 9 through a fresh-read RMW. All other bits are preserved and their meanings remain unknown."
+addressOffset = 0xC4
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_ENABLE_9"
+bitOffset = 9
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
 name = "INIT_VALUE_0138"
 description = "BLE PHY register initialization writes the finite complete image 0x0000065B."
 addressOffset = 0x138
@@ -162,6 +176,20 @@ access = "read-write"
 name = "INIT_IMAGE"
 bitOffset = 0
 bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_BRANCH_CONTROL_0470"
+description = "One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown."
+addressOffset = 0x470
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_ENABLE_18"
+bitOffset = 18
+bitWidth = 1
 
 [[peripherals.registers]]
 
@@ -394,6 +422,34 @@ sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "derived"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00C4"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00C4.INIT_ENABLE_9"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470.INIT_ENABLE_18"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_ZERO_0074"

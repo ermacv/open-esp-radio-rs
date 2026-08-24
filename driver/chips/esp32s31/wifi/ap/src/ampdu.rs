@@ -31,6 +31,7 @@ pub struct Esp32s31ApAggregateAdmission {
     binding: Esp32s31ApAggregateBinding,
     rate: HtRate,
     block_ack_window: u16,
+    amsdu: bool,
 }
 
 impl Esp32s31ApAggregateAdmission {
@@ -38,11 +39,13 @@ impl Esp32s31ApAggregateAdmission {
         binding: Esp32s31ApAggregateBinding,
         rate: HtRate,
         block_ack_window: u16,
+        amsdu: bool,
     ) -> Self {
         Self {
             binding,
             rate,
             block_ack_window,
+            amsdu,
         }
     }
 
@@ -52,6 +55,11 @@ impl Esp32s31ApAggregateAdmission {
 
     pub const fn binding(self) -> Esp32s31ApAggregateBinding {
         self.binding
+    }
+
+    /// Whether the exact operational TID-0 agreement echoed A-MSDU support.
+    pub const fn amsdu(self) -> bool {
+        self.amsdu
     }
 
     pub fn accepts_ethernet(self, ethernet: &[u8]) -> bool {

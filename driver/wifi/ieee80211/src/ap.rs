@@ -8,7 +8,7 @@ use crate::{
     block_ack::{BlockAckAction, parse_block_ack_action},
     ccmp::CCMP_HEADER_LEN,
     channel::WifiChannel,
-    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
+    data::{DataInterfaceRole, ETHERNET_HEADER_LEN, LLC_SNAP_HEADER_LEN, plan_data_encapsulation},
     ht::{
         HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
         ht_operation_ie, ht_peer_capabilities,
@@ -54,8 +54,15 @@ pub enum ApDataFrameError {
     InvalidSequenceNumber,
     InvalidUserPriority,
     EthernetFrameTooShort,
+    NoAmsduFrames,
+    AmsduTooLong { length: usize, maximum: usize },
     OutputTooSmall { required: usize },
 }
+
+const AMSDU_SUBFRAME_HEADER_LEN: usize = 14;
+/// Baseline HT Max A-MSDU Length selected while HT Capabilities bit 11 is
+/// clear. Every AP frame codec below is fenced to the advertised class.
+pub const AP_AMSDU_BASELINE_MAX_LEN: usize = 3_839;
 
 /// One unprotected 802.11 data MPDU sent by an AP to its client.
 ///
@@ -259,6 +266,182 @@ impl ApProtectedDataFrame<'_> {
         let llc_end = ccmp_end + plan.llc_snap.len();
         frame[ccmp_end..llc_end].copy_from_slice(&plan.llc_snap);
         frame[llc_end..required].copy_from_slice(&self.ethernet[ETHERNET_HEADER_LEN..]);
+        Ok(required)
+    }
+}
+
+/// One AP-originated QoS A-MSDU backed by a finite slice of Ethernet frames.
+///
+/// `ccmp_header = None` selects an Open MPDU. `Some` selects the plaintext
+/// CCMP DMA image; hardware encrypts the A-MSDU body and appends its MIC. All
+/// subframes must target the exact unicast receiver carried by the outer
+/// From-DS header. This stricter production contract prevents a scheduler
+/// from coalescing traffic from different AP peer queues.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApAmsduFrame<'a> {
+    pub access_point: [u8; 6],
+    pub peer: [u8; 6],
+    pub sequence_number: u16,
+    pub user_priority: u8,
+    pub more_data: bool,
+    pub ccmp_header: Option<[u8; CCMP_HEADER_LEN]>,
+    pub ethernet_frames: &'a [&'a [u8]],
+}
+
+/// Return the complete DMA-resident MPDU length for a bounded AP A-MSDU.
+///
+/// The result excludes the hardware-owned CCMP MIC and FCS. `protected`
+/// controls only the retained eight-byte CCMP header; the A-MSDU body has the
+/// same IEEE 802.11 representation for Open and CCMP epochs.
+pub fn ap_amsdu_frame_length(
+    ethernet_frames: &[&[u8]],
+    protected: bool,
+) -> Result<usize, ApDataFrameError> {
+    if ethernet_frames.is_empty() {
+        return Err(ApDataFrameError::NoAmsduFrames);
+    }
+    let mut amsdu_length = 0_usize;
+    for (index, ethernet) in ethernet_frames.iter().copied().enumerate() {
+        if ethernet.len() < ETHERNET_HEADER_LEN {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
+        }
+        let msdu_length = LLC_SNAP_HEADER_LEN
+            .checked_add(ethernet.len() - ETHERNET_HEADER_LEN)
+            .ok_or(ApDataFrameError::AmsduTooLong {
+                length: usize::MAX,
+                maximum: AP_AMSDU_BASELINE_MAX_LEN,
+            })?;
+        if msdu_length > usize::from(u16::MAX) {
+            return Err(ApDataFrameError::AmsduTooLong {
+                length: msdu_length,
+                maximum: AP_AMSDU_BASELINE_MAX_LEN,
+            });
+        }
+        let subframe_length = AMSDU_SUBFRAME_HEADER_LEN.checked_add(msdu_length).ok_or(
+            ApDataFrameError::AmsduTooLong {
+                length: usize::MAX,
+                maximum: AP_AMSDU_BASELINE_MAX_LEN,
+            },
+        )?;
+        amsdu_length =
+            amsdu_length
+                .checked_add(subframe_length)
+                .ok_or(ApDataFrameError::AmsduTooLong {
+                    length: usize::MAX,
+                    maximum: AP_AMSDU_BASELINE_MAX_LEN,
+                })?;
+        if index + 1 != ethernet_frames.len() {
+            amsdu_length = amsdu_length
+                .checked_add((4 - (subframe_length & 3)) & 3)
+                .ok_or(ApDataFrameError::AmsduTooLong {
+                    length: usize::MAX,
+                    maximum: AP_AMSDU_BASELINE_MAX_LEN,
+                })?;
+        }
+    }
+    if amsdu_length > AP_AMSDU_BASELINE_MAX_LEN {
+        return Err(ApDataFrameError::AmsduTooLong {
+            length: amsdu_length,
+            maximum: AP_AMSDU_BASELINE_MAX_LEN,
+        });
+    }
+    crate::data::IEEE80211_QOS_DATA_HEADER_LEN
+        .checked_add(if protected { CCMP_HEADER_LEN } else { 0 })
+        .and_then(|length| length.checked_add(amsdu_length))
+        .ok_or(ApDataFrameError::AmsduTooLong {
+            length: usize::MAX,
+            maximum: AP_AMSDU_BASELINE_MAX_LEN,
+        })
+}
+
+impl ApAmsduFrame<'_> {
+    /// Encode every Ethernet input into one From-DS QoS A-MSDU.
+    ///
+    /// Validation and capacity checks complete before the output is mutated.
+    /// This lets a packet-number owner first encode with a placeholder CCMP
+    /// header, then consume and patch the real PN only after full admission.
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, ApDataFrameError> {
+        if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
+            return Err(ApDataFrameError::InvalidAccessPoint);
+        }
+        if self.peer[0] & 1 != 0 || self.peer == [0; 6] {
+            return Err(ApDataFrameError::InvalidPeer);
+        }
+        if self.sequence_number > 0x0fff {
+            return Err(ApDataFrameError::InvalidSequenceNumber);
+        }
+        if self.user_priority > 7 {
+            return Err(ApDataFrameError::InvalidUserPriority);
+        }
+        let Some(first) = self.ethernet_frames.first().copied() else {
+            return Err(ApDataFrameError::NoAmsduFrames);
+        };
+        for ethernet in self.ethernet_frames.iter().copied() {
+            if ethernet.len() < ETHERNET_HEADER_LEN {
+                return Err(ApDataFrameError::EthernetFrameTooShort);
+            }
+            if ethernet[..6] != self.peer {
+                return Err(ApDataFrameError::InvalidPeer);
+            }
+        }
+        let required = ap_amsdu_frame_length(self.ethernet_frames, self.ccmp_header.is_some())?;
+        if output.len() < required {
+            return Err(ApDataFrameError::OutputTooSmall { required });
+        }
+
+        let first_header: [u8; ETHERNET_HEADER_LEN] = first[..ETHERNET_HEADER_LEN]
+            .try_into()
+            .expect("A-MSDU Ethernet length validated above");
+        let mut plan = plan_data_encapsulation(
+            DataInterfaceRole::AccessPoint,
+            self.access_point,
+            self.access_point,
+            first_header,
+            self.user_priority,
+            true,
+            false,
+        )
+        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        if plan.header[4..10] != self.peer {
+            return Err(ApDataFrameError::InvalidPeer);
+        }
+        if self.ccmp_header.is_some() {
+            plan.header[1] |= 0x40;
+        }
+        if self.more_data {
+            plan.header[1] |= 0x20;
+        }
+        plan.header[24] |= 0x80;
+
+        let frame = &mut output[..required];
+        frame[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]
+            .copy_from_slice(&plan.header[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]);
+        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let mut offset = crate::data::IEEE80211_QOS_DATA_HEADER_LEN;
+        if let Some(ccmp_header) = self.ccmp_header {
+            frame[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&ccmp_header);
+            offset += CCMP_HEADER_LEN;
+        }
+        for (index, ethernet) in self.ethernet_frames.iter().copied().enumerate() {
+            let payload = &ethernet[ETHERNET_HEADER_LEN..];
+            let msdu_length = LLC_SNAP_HEADER_LEN + payload.len();
+            frame[offset..offset + 12].copy_from_slice(&ethernet[..12]);
+            frame[offset + 12..offset + 14].copy_from_slice(&(msdu_length as u16).to_be_bytes());
+            offset += AMSDU_SUBFRAME_HEADER_LEN;
+            frame[offset..offset + 6].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0]);
+            frame[offset + 6..offset + 8].copy_from_slice(&ethernet[12..14]);
+            offset += LLC_SNAP_HEADER_LEN;
+            frame[offset..offset + payload.len()].copy_from_slice(payload);
+            offset += payload.len();
+            if index + 1 != self.ethernet_frames.len() {
+                let subframe_length =
+                    AMSDU_SUBFRAME_HEADER_LEN + LLC_SNAP_HEADER_LEN + payload.len();
+                let padding = (4 - (subframe_length & 3)) & 3;
+                frame[offset..offset + padding].fill(0);
+                offset += padding;
+            }
+        }
+        debug_assert_eq!(offset, required);
         Ok(required)
     }
 }
@@ -905,6 +1088,119 @@ mod tests {
         assert_eq!(&output[26..34], &ccmp);
         assert_eq!(&output[34..42], &[0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0]);
         assert_eq!(&output[42..46], &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn ap_amsdu_encodes_multiple_open_and_ccmp_subframes_in_order() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut first = [0_u8; 17];
+        first[..6].copy_from_slice(&peer);
+        first[6..12].copy_from_slice(&[2, 0, 0, 0, 0, 3]);
+        first[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+        first[14..].copy_from_slice(&[1, 2, 3]);
+        let mut second = [0_u8; 18];
+        second[..6].copy_from_slice(&peer);
+        second[6..12].copy_from_slice(&[2, 0, 0, 0, 0, 4]);
+        second[12..14].copy_from_slice(&0x0806_u16.to_be_bytes());
+        second[14..].copy_from_slice(&[4, 5, 6, 7]);
+        let mut third = [0_u8; 16];
+        third[..6].copy_from_slice(&peer);
+        third[6..12].copy_from_slice(&[2, 0, 0, 0, 0, 5]);
+        third[12..14].copy_from_slice(&0x86dd_u16.to_be_bytes());
+        third[14..].copy_from_slice(&[8, 9]);
+        let frames: [&[u8]; 3] = [&first, &second, &third];
+        let ccmp = [9, 0, 0, 0x20, 0, 0, 0, 0];
+        let mut protected = [0xa5; 192];
+        let protected_len = ApAmsduFrame {
+            access_point,
+            peer,
+            sequence_number: 11,
+            user_priority: 5,
+            more_data: true,
+            ccmp_header: Some(ccmp),
+            ethernet_frames: &frames,
+        }
+        .encode(&mut protected)
+        .unwrap();
+        assert_eq!(protected_len, ap_amsdu_frame_length(&frames, true).unwrap());
+        assert_eq!(&protected[..2], &0x6288_u16.to_le_bytes());
+        assert_eq!(&protected[4..10], &peer);
+        assert_eq!(&protected[22..24], &0x00b0_u16.to_le_bytes());
+        assert_eq!(protected[24], 0x85);
+        assert_eq!(&protected[26..34], &ccmp);
+        let mut decoded = crate::data::amsdu_subframes(
+            DataInterfaceRole::Station,
+            &protected[..protected_len],
+            crate::data::IEEE80211_QOS_DATA_HEADER_LEN + CCMP_HEADER_LEN,
+            protected_len - crate::data::IEEE80211_QOS_DATA_HEADER_LEN - CCMP_HEADER_LEN,
+        )
+        .unwrap();
+        assert_eq!(decoded.next().unwrap().unwrap().payload, &[1, 2, 3]);
+        assert_eq!(decoded.next().unwrap().unwrap().payload, &[4, 5, 6, 7]);
+        assert_eq!(decoded.next().unwrap().unwrap().payload, &[8, 9]);
+        assert!(decoded.next().is_none());
+
+        let mut open = [0; 192];
+        let open_len = ApAmsduFrame {
+            access_point,
+            peer,
+            sequence_number: 12,
+            user_priority: 0,
+            more_data: false,
+            ccmp_header: None,
+            ethernet_frames: &frames,
+        }
+        .encode(&mut open)
+        .unwrap();
+        assert_eq!(open_len, protected_len - CCMP_HEADER_LEN);
+        assert_eq!(&open[..2], &0x0288_u16.to_le_bytes());
+        assert_eq!(open[24], 0x80);
+    }
+
+    #[test]
+    fn ap_amsdu_fails_before_mutating_output_on_peer_or_capacity_miss() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut first = [0_u8; 14];
+        first[..6].copy_from_slice(&peer);
+        let mut wrong_peer = [0_u8; 14];
+        wrong_peer[..6].copy_from_slice(&[2, 0, 0, 0, 0, 9]);
+        let frames: [&[u8]; 2] = [&first, &wrong_peer];
+        let mut output = [0xa5; 80];
+        assert_eq!(
+            ApAmsduFrame {
+                access_point,
+                peer,
+                sequence_number: 0,
+                user_priority: 0,
+                more_data: false,
+                ccmp_header: Some([0; 8]),
+                ethernet_frames: &frames,
+            }
+            .encode(&mut output),
+            Err(ApDataFrameError::InvalidPeer)
+        );
+        assert_eq!(output, [0xa5; 80]);
+
+        let frames: [&[u8]; 2] = [&first, &first];
+        let required = ap_amsdu_frame_length(&frames, true).unwrap();
+        let mut short = [0x5a; 64];
+        assert!(short.len() < required);
+        assert_eq!(
+            ApAmsduFrame {
+                access_point,
+                peer,
+                sequence_number: 0,
+                user_priority: 0,
+                more_data: false,
+                ccmp_header: Some([0; 8]),
+                ethernet_frames: &frames,
+            }
+            .encode(&mut short),
+            Err(ApDataFrameError::OutputTooSmall { required })
+        );
+        assert_eq!(short, [0x5a; 64]);
     }
 
     #[test]

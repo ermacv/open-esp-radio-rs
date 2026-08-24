@@ -471,7 +471,10 @@ const fn new_ap_tx_block_ack() -> TxBlockAckSession {
         window: AP_TX_BLOCK_ACK_WINDOW,
         timeout_tu: 0,
         negotiation_timeout_us: AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT_MICROS,
-        amsdu: false,
+        // Baseline 3,839-byte A-MSDU construction and AP RX decapsulation are
+        // both source-owned. The operational agreement still keeps this bit
+        // false unless the peer echoes support in its ADDBA response.
+        amsdu: true,
     }) {
         Ok(session) => session,
         Err(_) => panic!("valid AP TX BlockAck policy"),
@@ -1164,20 +1167,17 @@ impl<'peers> AccessPointService<'peers> {
         self.next_data_sequence
     }
 
+    /// Consume one per-TID sequence for protected data or the bounded Open
+    /// QoS A-MSDU path. Security mode does not partition IEEE sequence space.
     pub fn next_qos_sequence(&mut self, tid: u8) -> Option<u16> {
-        if self.security_mode() == WifiSecurityMode::Open {
-            return None;
-        }
         let sequence = self.next_qos_sequences.get_mut(usize::from(tid))?;
         let current = *sequence;
         *sequence = (current + 1) & 0x0fff;
         Some(current)
     }
 
+    /// Inspect a per-TID sequence without consuming it during frame preflight.
     pub fn current_qos_sequence(&self, tid: u8) -> Option<u16> {
-        if self.security_mode() == WifiSecurityMode::Open {
-            return None;
-        }
         self.next_qos_sequences.get(usize::from(tid)).copied()
     }
 
@@ -1329,8 +1329,9 @@ impl<'peers> AccessPointService<'peers> {
         existing.pending_ptk = None;
         existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
         existing.ht = capabilities.ht;
-        // The Open datapath deliberately uses the single non-QoS sequence
-        // space until a separately proven plaintext QoS encoder exists.
+        // Ordinary Open MSDUs retain the non-QoS sequence space. The bounded
+        // A-MSDU owner uses this peer's independent QoS/TID-0 counter only
+        // after validating HT and QoS support for both coalesced leases.
         existing.qos_supported = capabilities.qos_supported;
         existing.tx_block_ack.stop();
         existing.last_activity_micros = now_micros;
@@ -2778,6 +2779,11 @@ mod tests {
         service.checked_peer_mut(OTHER).unwrap().phase = ApPeerPhase::Authorized;
 
         let request = service.begin_tx_block_ack(PEER, 100).unwrap().unwrap();
+        assert_eq!(
+            u16::from_le_bytes([request.body[3], request.body[4]]) & 1,
+            1,
+            "AP requests only the source-owned baseline A-MSDU class"
+        );
         assert_eq!(service.smallest_operational_tx_block_ack_window(), None);
         assert!(service.begin_tx_block_ack(PEER, 101).unwrap().is_none());
         assert!(service.begin_tx_block_ack(OTHER, 101).unwrap().is_none());
@@ -2801,6 +2807,14 @@ mod tests {
             )))
         ));
         assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_some());
+        assert!(
+            !service
+                .peer_status(PEER)
+                .unwrap()
+                .tx_block_ack
+                .unwrap()
+                .amsdu
+        );
         assert!(service.peer_status(OTHER).unwrap().tx_block_ack.is_none());
         assert_eq!(
             service.smallest_operational_tx_block_ack_window(),
@@ -2838,5 +2852,25 @@ mod tests {
             .unwrap();
         assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_none());
         assert_eq!(service.smallest_operational_tx_block_ack_window(), None);
+
+        let request = service.begin_tx_block_ack(PEER, 200).unwrap().unwrap();
+        let response = BlockAckAction::AddbaResponse {
+            dialog_token: request.dialog_token,
+            status: 0,
+            tid: AP_TX_BLOCK_ACK_TID,
+            immediate: true,
+            amsdu: true,
+            window: AP_TX_BLOCK_ACK_WINDOW,
+            timeout_tu: 0,
+        };
+        service.on_tx_block_ack_action(PEER, response).unwrap();
+        assert!(
+            service
+                .peer_status(PEER)
+                .unwrap()
+                .tx_block_ack
+                .unwrap()
+                .amsdu
+        );
     }
 }

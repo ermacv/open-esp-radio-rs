@@ -342,6 +342,33 @@ where
         self.start_network_tx_with_more_data(hardware, ethernet, false)
     }
 
+    /// Try to publish two ordered network frames as one AP QoS A-MSDU.
+    ///
+    /// `Ok(None)` is an exact non-consuming miss; the network owner keeps the
+    /// second lease ahead of every frame still in the channel and transmits
+    /// the first through the ordinary path.
+    fn start_network_amsdu_pair<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        first: &[u8],
+        second: &[u8],
+    ) -> Result<Option<WifiTxProgress>, Esp32s31AccessPointControlError> {
+        let processor = &mut *self;
+        if !processor.mac.publish_amsdu_pair(
+            hardware,
+            first,
+            second,
+            processor.tx_frame,
+        )? {
+            return Ok(None);
+        }
+        observe_access_point!(self, observation, {
+            observation.network_tx_frames_observed =
+                observation.network_tx_frames_observed.saturating_add(2);
+        });
+        Ok(Some(WifiTxProgress::Pending))
+    }
+
     fn start_network_tx_with_more_data<H: TxHardware>(
         &mut self,
         hardware: &mut H,

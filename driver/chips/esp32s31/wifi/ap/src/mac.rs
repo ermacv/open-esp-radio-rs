@@ -7,7 +7,8 @@
 
 use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{
-        OrdinaryTxOutcome, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
+        OrdinaryTxOutcome, TX_CCMP_MIC_SIZE, TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy,
+        WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
@@ -16,6 +17,7 @@ use open_esp_radio_esp32s31_wifi_mac::tx::{
 };
 use open_esp_radio_ieee80211::ap::ApPeerDisconnectKind;
 use open_esp_radio_ieee80211::block_ack::TxBlockAckAlarm;
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_wifi_ap::{ApPeerClose, ApPeerPowerState, ApServiceError};
 use open_esp_radio_wpa2::frames::Wpa2TxFrame;
 
@@ -516,6 +518,7 @@ where
             binding,
             rate,
             agreement.window,
+            agreement.amsdu,
         ))
     }
 
@@ -560,9 +563,23 @@ where
         H: TxHardware,
     {
         self.require_idle()?;
-        let encoded = self
-            .engine
-            .encode_protected_ethernet_with_more_data(peer, ethernet, scratch, more_data)?;
+        let hardware_mic_length = if self.engine.security_mode() == WifiSecurityMode::Open {
+            0
+        } else {
+            TX_CCMP_MIC_SIZE
+        };
+        // Ordinary TX aligns metadata + MPDU + hardware MIC + FCS to four
+        // bytes. Bound the encoder first so the retained descriptor copy and
+        // publication cannot reject after sequence/PN admission.
+        let payload_capacity =
+            (BUFFER_SIZE & !3).saturating_sub(TX_METADATA_SIZE + hardware_mic_length + TX_FCS_SIZE);
+        let scratch_capacity = scratch.len().min(payload_capacity);
+        let encoded = self.engine.encode_protected_ethernet_with_more_data(
+            peer,
+            ethernet,
+            &mut scratch[..scratch_capacity],
+            more_data,
+        )?;
         let rate = if peer[0] & 1 != 0 {
             // Group traffic must be decodable by every associated peer. The
             // initial B/G ERP AP advertises 1 Mbit/s as a basic rate; unlike
@@ -603,6 +620,66 @@ where
         }
         self.pending = Some(PendingPublication::Data { peer });
         Ok(())
+    }
+
+    /// Publish two ordered unicast Ethernet leases as one QoS A-MSDU when
+    /// the peer/security/buffer frontier admits it.
+    ///
+    /// `Ok(false)` consumes neither sequence nor CCMP PN and leaves both
+    /// caller leases untouched, allowing exact ordinary-TX fallback.
+    pub fn publish_amsdu_pair<H>(
+        &mut self,
+        hardware: &mut H,
+        first: &[u8],
+        second: &[u8],
+        scratch: &mut [u8],
+    ) -> Result<bool, Esp32s31ApMacError>
+    where
+        H: TxHardware,
+    {
+        self.require_idle()?;
+        let hardware_mic_length = if self.engine.security_mode() == WifiSecurityMode::Open {
+            0
+        } else {
+            TX_CCMP_MIC_SIZE
+        };
+        let payload_capacity =
+            (BUFFER_SIZE & !3).saturating_sub(TX_METADATA_SIZE + hardware_mic_length + TX_FCS_SIZE);
+        let scratch_capacity = scratch.len().min(payload_capacity);
+        let Some(encoded) = self.engine.encode_amsdu_ethernet_pair(
+            first,
+            second,
+            &mut scratch[..scratch_capacity],
+        )?
+        else {
+            return Ok(false);
+        };
+        let peer: [u8; 6] = first[..6]
+            .try_into()
+            .expect("A-MSDU admission validated the Ethernet destination");
+        let rate = self
+            .engine
+            .peer_status(peer)
+            .map(|status| peer_legacy_rate(status.maximum_legacy_rate_500kbps))
+            .ok_or(Esp32s31ApMacError::Engine(Esp32s31ApEngineError::Service(
+                ApServiceError::UnknownPeer,
+            )))?;
+        match encoded.hardware_key_selector {
+            None => self.transmit.start_unprotected_data_encoded(
+                hardware,
+                &scratch[..encoded.length],
+                false,
+                rate,
+            )?,
+            Some(hardware_key_selector) => self.transmit.start_protected_encoded(
+                hardware,
+                &scratch[..encoded.length],
+                hardware_key_selector,
+                rate,
+            )?,
+        };
+        self.pending = Some(PendingPublication::Data { peer });
+        Ok(true)
     }
 
     pub fn publish_peer_disconnect<H>(

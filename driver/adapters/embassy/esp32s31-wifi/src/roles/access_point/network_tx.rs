@@ -1067,19 +1067,74 @@ where
             return Ok(WifiTxProgress::Complete);
         };
         let admission = control.mac.aggregate_admission(frame.as_slice());
+        let mut retained_aggregate_second = None;
 
-        if let Some(admission) = admission
-            && network.queue_len() != 0
+        // Open APs have no BlockAck owner, so they use bounded ordinary
+        // A-MSDUs whenever an ordered partner is available. For WPA2+BA keep
+        // saturated bursts on A-MPDU; coalesce the exact two-frame tail only
+        // when the negotiated agreement echoed A-MSDU support.
+        if network.queue_len() != 0
+            && (admission.is_none()
+                || (network.queue_len() == 1
+                    && admission.is_some_and(Esp32s31ApAggregateAdmission::amsdu)))
             && let Some(second) = network.try_receive()
         {
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe_access_point_network_claim(second.as_slice());
             }
-            let Some(mut second) = self.retain_power_save(control.mac.engine_mut(), second)? else {
-                return control
-                    .start_network_tx(hardware, frame.as_slice())
-                    .map_err(Esp32s31AccessPointDatapathError::Control);
+            if let Some(second) = self.retain_power_save(control.mac.engine_mut(), second)? {
+                match control.start_network_amsdu_pair(
+                    hardware,
+                    frame.as_slice(),
+                    second.as_slice(),
+                ) {
+                    Ok(Some(progress)) => {
+                        self.last_started_frames = 2;
+                        return Ok(progress);
+                    }
+                    Ok(None) => {
+                        if admission.is_some() {
+                            // The pair may be too large for the ordinary AP
+                            // scratch while both individual MPDUs still fit
+                            // the retained A-MPDU arena. Preserve the already
+                            // claimed second lease for that exact fallback.
+                            retained_aggregate_second = Some(second);
+                        } else {
+                            debug_assert!(self.prepared_first.is_none());
+                            self.prepared_first = Some(second);
+                        }
+                    }
+                    Err(error) => {
+                        debug_assert!(self.prepared_first.is_none());
+                        debug_assert!(self.prepared_second.is_none());
+                        self.prepared_first = Some(frame);
+                        self.prepared_second = Some(second);
+                        return Err(Esp32s31AccessPointDatapathError::Control(error));
+                    }
+                }
+            }
+        }
+
+        if let Some(admission) = admission
+            && (retained_aggregate_second.is_some() || network.queue_len() != 0)
+        {
+            let mut second = if let Some(second) = retained_aggregate_second.take() {
+                second
+            } else {
+                let Some(second) = network.try_receive() else {
+                    unreachable!("nonempty AP network queue lost its sole consumer");
+                };
+                #[cfg(any(feature = "diagnostics", test))]
+                if let Some(observer) = self.observer {
+                    observer.observe_access_point_network_claim(second.as_slice());
+                }
+                let Some(second) = self.retain_power_save(control.mac.engine_mut(), second)? else {
+                    return control
+                        .start_network_tx(hardware, frame.as_slice())
+                        .map_err(Esp32s31AccessPointDatapathError::Control);
+                };
+                second
             };
             #[cfg(any(feature = "diagnostics", test))]
             let preparation_started = self.observer.map(AggregateTxObserver::now_micros);

@@ -30,6 +30,9 @@ pub struct Esp32s31ConnectedStaTxPolicy {
     pub completion_timeout_us: u64,
     pub aggregate_frame_limit: u8,
     pub aggregate_he_txop_limit: HeEdcaTxopLimit,
+    /// Optional recovered queue/MPLEN/BSR preparation for AP Trigger frames.
+    /// `None` leaves HE-SU behavior unchanged.
+    pub he_trigger_based: Option<HeTriggerBasedTxConfig>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

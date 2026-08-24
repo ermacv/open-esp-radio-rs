@@ -393,6 +393,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.last_stale_tx_block_ack_token()
     }
 
+    pub fn dropped_he_observations(&self) -> u32 {
+        self.receiver.dropped_he_observations()
+    }
+
     pub const fn beacon_monitor(&self) -> Option<&StaBeaconMonitor> {
         self.core.beacon_monitor()
     }

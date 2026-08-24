@@ -32,8 +32,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     crypto::StaPairwiseCcmpSlot,
     rate_control::{AmpduRateObservationError, StaRateControlAssociation, StaTxRatePolicy},
     tx::{
-        AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, LegacyTxQueue, TxCookie, TxPhyRate,
-        TxSlotState,
+        AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, HeTriggerBasedTxConfig, LegacyTxQueue,
+        TxCookie, TxPhyRate, TxSlotState,
     },
     tx_ampdu::{
         AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy, HtAmpduFrameRequest,
@@ -99,6 +99,7 @@ pub struct Esp32s31ConnectedTxParked<'observer, const SLOTS: usize> {
     config: AggregateTxConfig,
     rate_control: StaRateControlAssociation,
     aggregate_rate_policy: StaTxRatePolicy,
+    he_trigger_based: Option<HeTriggerBasedTxConfig>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
     pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
     #[cfg(any(feature = "diagnostics", test))]
@@ -314,6 +315,7 @@ pub struct Esp32s31ConnectedTx<
     config: AggregateTxConfig,
     rate_control: TeardownResource<StaRateControlAssociation>,
     aggregate_rate_policy: StaTxRatePolicy,
+    he_trigger_based: Option<HeTriggerBasedTxConfig>,
     active: ConnectedTxActive<SLOTS>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
     pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,

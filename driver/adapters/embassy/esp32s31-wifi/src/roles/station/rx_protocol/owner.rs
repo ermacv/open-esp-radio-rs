@@ -127,6 +127,7 @@ where
     /// Discard reorder/mailbox ownership retained by the protocol processor.
     pub fn shutdown_discard(&mut self) -> ConnectedRxProtocolShutdown {
         let mut shutdown = ConnectedRxProtocolShutdown::default();
+        shutdown.esp_now_duplicate_entries = self.dispatcher.stop_esp_now_rx_epoch();
         if let Some(commands) = &self.reorder_commands {
             while try_receive_rx_reorder_command(commands).is_some() {
                 shutdown.reorder_commands = shutdown.reorder_commands.saturating_add(1);
@@ -413,6 +414,7 @@ where
         shutdown.retained_frames = retained.retained_frames;
         shutdown.reorder_commands = retained.reorder_commands;
         shutdown.active_reorders = retained.active_reorders;
+        shutdown.esp_now_duplicate_entries = retained.esp_now_duplicate_entries;
         if shutdown.queued_frames != 0 {
             self.processor.irq.notify_rx_capacity();
         }

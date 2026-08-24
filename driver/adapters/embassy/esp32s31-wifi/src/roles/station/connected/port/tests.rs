@@ -134,7 +134,7 @@ fn plan_owns_rate_rx_tx_block_ack_and_beacon_policy() {
 
 #[test]
 fn port_binds_rx_and_control_to_one_validated_peer_plan() {
-    let plan = prepare::<32, 32>(peer(), config()).unwrap();
+    let mut plan = prepare::<32, 32>(peer(), config()).unwrap();
     let reorder_storage = RxReorderFrameStorage::<128>::new();
     let queue: Esp32s31StagedRxQueue<'_, NoopRawMutex, 2, 128, 2> = Esp32s31StagedRxQueue::new();
     let (_, frames) = queue.split();
@@ -145,7 +145,7 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
     let mut ethernet = [0_u8; 128];
     let protocol_runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
     let protocol = Esp32s31ConnectedStaPort::build_rx_protocol(
-        &plan,
+        &mut plan,
         Esp32s31ConnectedStaRxProtocolResources {
             frames,
             irq: &irq,

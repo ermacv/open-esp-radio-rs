@@ -20,6 +20,29 @@ use crate::interface::{BoundVirtualInterface, ChannelContextId, VifRole};
 /// Default source-owned peer storage. The const-generic table remains usable
 /// with a smaller application-selected capacity.
 pub const ESP_NOW_DEFAULT_PEER_CAPACITY: usize = 20;
+/// Recent exact fingerprints retained independently for each RX peer.
+pub const ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY: usize = 4;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct EspNowRxFingerprint {
+    random_value: EspNowRandomValue,
+    sequence_number: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct EspNowRxPeerSlot {
+    peer: Option<(EspNowPeerId, EspNowUnicastAddress)>,
+    history: [Option<EspNowRxFingerprint>; ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY],
+    next_history: usize,
+}
+
+impl EspNowRxPeerSlot {
+    const EMPTY: Self = Self {
+        peer: None,
+        history: [None; ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY],
+        next_history: 0,
+    };
+}
 
 /// PHY policy requested for one peer.
 ///
@@ -404,6 +427,41 @@ impl<const N: usize> EspNowProtocol<N> {
         self.peers.remove(peer)
     }
 
+    /// Snapshot the configured individual peers into one exclusive normal-RX
+    /// epoch.
+    ///
+    /// The caller must supply the station/channel owners which are live at
+    /// this transition. This keeps a monitor observation or a stale peer
+    /// table from manufacturing receive authority. Duplicate history belongs
+    /// to the returned value and therefore cannot leak across stop/restart.
+    pub fn begin_rx_epoch(
+        &self,
+        active_station: BoundVirtualInterface,
+        active_channel: WifiChannel,
+    ) -> Result<EspNowRxEpoch<N>, EspNowReceiveError> {
+        validate_active_binding(self.config, active_station, active_channel)?;
+
+        let mut slots = [EspNowRxPeerSlot::EMPTY; N];
+        let mut peer_count = 0;
+        for (peer, config) in self.peers.iter() {
+            let EspNowDestination::Unicast(address) = config.destination else {
+                // A broadcast entry grants only broadcast TX authority.
+                continue;
+            };
+            slots[peer.index] = EspNowRxPeerSlot {
+                peer: Some((peer, address)),
+                history: [None; ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY],
+                next_history: 0,
+            };
+            peer_count += 1;
+        }
+        Ok(EspNowRxEpoch {
+            config: self.config,
+            slots,
+            peer_count,
+        })
+    }
+
     /// Resolve a peer, validate the payload, then consume one shared station
     /// management/non-QoS sequence number and return a backend handoff.
     pub fn prepare_v1_tx<'payload>(
@@ -444,18 +502,7 @@ impl<const N: usize> EspNowProtocol<N> {
         active_channel: WifiChannel,
         bytes: &'frame [u8],
     ) -> Result<EspNowReceivedV1<'frame>, EspNowReceiveError> {
-        if active_station != self.config.station {
-            return Err(EspNowReceiveError::StationBindingMismatch {
-                configured: self.config.station,
-                active: active_station,
-            });
-        }
-        if active_channel != self.config.home_channel {
-            return Err(EspNowReceiveError::ChannelMismatch {
-                configured: self.config.home_channel,
-                active: active_channel,
-            });
-        }
+        validate_active_binding(self.config, active_station, active_channel)?;
         let frame = EspNowV1Frame::parse(bytes).map_err(EspNowReceiveError::Wire)?;
         if !matches!(frame.destination(), EspNowDestination::Broadcast)
             && frame.destination() != EspNowDestination::Unicast(self.config.local_address)
@@ -468,6 +515,109 @@ impl<const N: usize> EspNowProtocol<N> {
         };
         Ok(EspNowReceivedV1 { peer, frame })
     }
+}
+
+fn validate_active_binding(
+    config: EspNowConfig,
+    active_station: BoundVirtualInterface,
+    active_channel: WifiChannel,
+) -> Result<(), EspNowReceiveError> {
+    if active_station != config.station {
+        return Err(EspNowReceiveError::StationBindingMismatch {
+            configured: config.station,
+            active: active_station,
+        });
+    }
+    if active_channel != config.home_channel {
+        return Err(EspNowReceiveError::ChannelMismatch {
+            configured: config.home_channel,
+            active: active_channel,
+        });
+    }
+    Ok(())
+}
+
+/// Peer snapshot and duplicate history owned by one normal receive epoch.
+///
+/// Dropping this value ends all receive authority. A later epoch must be
+/// created again from [`EspNowProtocol::begin_rx_epoch`], which starts with
+/// empty duplicate history and the then-current peer generation values.
+#[derive(Debug, Eq, PartialEq)]
+pub struct EspNowRxEpoch<const N: usize = ESP_NOW_DEFAULT_PEER_CAPACITY> {
+    config: EspNowConfig,
+    slots: [EspNowRxPeerSlot; N],
+    peer_count: usize,
+}
+
+impl<const N: usize> EspNowRxEpoch<N> {
+    pub const fn config(&self) -> EspNowConfig {
+        self.config
+    }
+
+    pub const fn peer_count(&self) -> usize {
+        self.peer_count
+    }
+
+    /// Parse, address-check and admit one complete plaintext v1 MPDU.
+    ///
+    /// Duplicate identity intentionally combines the configured source with
+    /// both on-air collision domains: the opaque random value and the
+    /// management sequence number. Suppression happens before any borrowed
+    /// payload is published to an integration callback.
+    pub fn receive_v1<'frame>(
+        &mut self,
+        bytes: &'frame [u8],
+    ) -> Result<EspNowRxOutcome<'frame>, EspNowReceiveError> {
+        let frame = EspNowV1Frame::parse(bytes).map_err(EspNowReceiveError::Wire)?;
+        if !matches!(frame.destination(), EspNowDestination::Broadcast)
+            && frame.destination() != EspNowDestination::Unicast(self.config.local_address)
+        {
+            return Err(EspNowReceiveError::ForeignDestination(frame.destination()));
+        }
+
+        let source = frame.source();
+        let Some(slot) = self.slots.iter_mut().find(|slot| {
+            slot.peer
+                .is_some_and(|(_, configured_source)| configured_source == source)
+        }) else {
+            return Err(EspNowReceiveError::UnknownPeer(source));
+        };
+        let (peer, _) = slot
+            .peer
+            .expect("an ESP-NOW RX slot selected by source is occupied");
+        let fingerprint = EspNowRxFingerprint {
+            random_value: frame.action().random_value(),
+            sequence_number: frame.sequence_number(),
+        };
+        if slot.history.contains(&Some(fingerprint)) {
+            return Ok(EspNowRxOutcome::Duplicate { peer });
+        }
+        slot.history[slot.next_history] = Some(fingerprint);
+        slot.next_history = (slot.next_history + 1) % ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY;
+        Ok(EspNowRxOutcome::Received(EspNowReceivedV1 { peer, frame }))
+    }
+
+    /// Clear duplicate state before the surrounding normal-RX owner is
+    /// returned to a lifecycle composition root.
+    pub fn reset_duplicate_history(&mut self) -> usize {
+        let mut cleared = 0;
+        for slot in &mut self.slots {
+            for fingerprint in &mut slot.history {
+                if fingerprint.take().is_some() {
+                    cleared += 1;
+                }
+            }
+            slot.next_history = 0;
+        }
+        cleared
+    }
+}
+
+/// Result of ESP-NOW admission before integration publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowRxOutcome<'frame> {
+    Received(EspNowReceivedV1<'frame>),
+    Duplicate { peer: EspNowPeerId },
 }
 
 /// Fully validated plaintext MPDU handoff to one channel-bound backend.
@@ -532,6 +682,69 @@ impl<'frame> EspNowReceivedV1<'frame> {
 
     pub const fn frame(self) -> EspNowV1Frame<'frame> {
         self.frame
+    }
+}
+
+/// Owned v1 datagram safe to retain after the RX staging lease is released.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EspNowOwnedReceivedV1 {
+    peer: EspNowPeerId,
+    destination: EspNowDestination,
+    source: EspNowUnicastAddress,
+    random_value: EspNowRandomValue,
+    sequence_number: u16,
+    retry: bool,
+    payload_length: u8,
+    payload: [u8; open_esp_radio_ieee80211::esp_now::ESP_NOW_V1_MAX_PAYLOAD_LEN],
+}
+
+impl EspNowOwnedReceivedV1 {
+    /// Copy one already-admitted borrowed datagram into fixed-capacity owned
+    /// storage. The wire codec proves the payload length is at most 250.
+    pub fn copy_from(received: EspNowReceivedV1<'_>) -> Self {
+        let frame = received.frame();
+        let payload = frame.action().payload().bytes();
+        let mut owned_payload =
+            [0_u8; open_esp_radio_ieee80211::esp_now::ESP_NOW_V1_MAX_PAYLOAD_LEN];
+        owned_payload[..payload.len()].copy_from_slice(payload);
+        Self {
+            peer: received.peer(),
+            destination: frame.destination(),
+            source: frame.source(),
+            random_value: frame.action().random_value(),
+            sequence_number: frame.sequence_number(),
+            retry: frame.retry(),
+            payload_length: payload.len() as u8,
+            payload: owned_payload,
+        }
+    }
+
+    pub const fn peer(&self) -> EspNowPeerId {
+        self.peer
+    }
+
+    pub const fn destination(&self) -> EspNowDestination {
+        self.destination
+    }
+
+    pub const fn source(&self) -> EspNowUnicastAddress {
+        self.source
+    }
+
+    pub const fn random_value(&self) -> EspNowRandomValue {
+        self.random_value
+    }
+
+    pub const fn sequence_number(&self) -> u16 {
+        self.sequence_number
+    }
+
+    pub const fn retry(&self) -> bool {
+        self.retry
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        &self.payload[..usize::from(self.payload_length)]
     }
 }
 

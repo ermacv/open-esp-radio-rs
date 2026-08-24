@@ -16,7 +16,7 @@ impl Esp32s31ConnectedStaPort {
         const SLOTS: usize,
         const REORDER_SLOTS: usize,
     >(
-        plan: &Esp32s31ConnectedStaPlan,
+        plan: &mut Esp32s31ConnectedStaPlan,
         resources: Esp32s31ConnectedStaRxProtocolResources<
             'queue,
             'pool,
@@ -96,7 +96,7 @@ impl Esp32s31ConnectedStaPort {
         const SLOTS: usize,
         const REORDER_SLOTS: usize,
     >(
-        plan: &Esp32s31ConnectedStaPlan,
+        plan: &mut Esp32s31ConnectedStaPlan,
         resources: Esp32s31ConnectedStaRxProcessorResources<
             'queue,
             'pool,
@@ -123,10 +123,16 @@ impl Esp32s31ConnectedStaPort {
         M: RawMutex,
         S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
     {
+        let dispatcher = match plan.disable_esp_now_rx() {
+            Some(epoch) => {
+                ConnectedRxDispatcher::new(plan.rx_config()).with_esp_now_rx_epoch(epoch)
+            }
+            None => ConnectedRxDispatcher::new(plan.rx_config()),
+        };
         #[cfg(any(feature = "diagnostics", test))]
         let mut processor = Esp32s31ConnectedRxProcessor::new_with_reorder_slots(
             resources.irq,
-            ConnectedRxDispatcher::new(plan.rx_config()),
+            dispatcher,
             resources.sink,
             resources.mpdu,
             resources.ethernet,
@@ -137,7 +143,7 @@ impl Esp32s31ConnectedStaPort {
         #[cfg(not(any(feature = "diagnostics", test)))]
         let processor = Esp32s31ConnectedRxProcessor::new_with_reorder_slots(
             resources.irq,
-            ConnectedRxDispatcher::new(plan.rx_config()),
+            dispatcher,
             resources.sink,
             resources.mpdu,
             resources.ethernet,
@@ -360,7 +366,7 @@ impl Esp32s31ConnectedStaPort {
         const CONTROL_CAPACITY: usize,
     >(
         mut plan: Esp32s31ConnectedStaPlan,
-        hardware: H,
+        mut hardware: H,
         rx: R,
         protocol: Esp32s31ConnectedStaRxProtocolResources<
             'queue,
@@ -459,6 +465,7 @@ impl Esp32s31ConnectedStaPort {
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
         T: WifiTxTimer,
+        H: StaEspNowRxPolicyHardware,
     {
         let tx = match Self::build_tx(&mut plan, tx) {
             Ok(tx) => tx,
@@ -473,7 +480,10 @@ impl Esp32s31ConnectedStaPort {
                 });
             }
         };
-        let protocol = Self::build_rx_protocol(&plan, protocol);
+        if plan.esp_now_rx_enabled() {
+            configure_sta_esp_now_receive_policy(&mut hardware, plan.link.bssid);
+        }
+        let protocol = Self::build_rx_protocol(&mut plan, protocol);
         let control = Self::build_control(&plan, control);
         Ok(Self::assemble(
             plan,

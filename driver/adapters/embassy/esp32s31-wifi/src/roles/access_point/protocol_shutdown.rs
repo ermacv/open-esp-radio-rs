@@ -143,6 +143,11 @@ where
             .mac
             .service_tx(hardware, wake, Instant::now().as_micros())
             .await?;
+        if progress == WifiTxProgress::Complete {
+            self.last_terminal_tx_delivered = Some(
+                action != Esp32s31ApTxCompletionAction::PublicationFailed,
+            );
+        }
         if progress == WifiTxProgress::Complete
             && let Some(activation) = self.rx_addba_in_flight.take()
         {
@@ -303,10 +308,37 @@ where
         Ok(())
     }
 
+    fn publish_power_save_ethernet<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        peer: [u8; 6],
+        ethernet: &[u8],
+        more_data: bool,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        let processor = &mut *self;
+        processor.mac.publish_ethernet_with_more_data(
+            hardware,
+            peer,
+            ethernet,
+            processor.tx_frame,
+            more_data,
+        )?;
+        Ok(())
+    }
+
     fn start_network_tx<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         ethernet: &[u8],
+    ) -> Result<WifiTxProgress, Esp32s31AccessPointControlError> {
+        self.start_network_tx_with_more_data(hardware, ethernet, false)
+    }
+
+    fn start_network_tx_with_more_data<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        ethernet: &[u8],
+        more_data: bool,
     ) -> Result<WifiTxProgress, Esp32s31AccessPointControlError> {
         observe_access_point!(self, observation, {
             observation.network_tx_frames_observed =
@@ -355,8 +387,16 @@ where
             });
             return Ok(WifiTxProgress::Complete);
         }
-        self.publish_ethernet(hardware, destination, ethernet)?;
+        if more_data {
+            self.publish_power_save_ethernet(hardware, destination, ethernet, true)?;
+        } else {
+            self.publish_ethernet(hardware, destination, ethernet)?;
+        }
         Ok(WifiTxProgress::Pending)
+    }
+
+    fn take_last_terminal_tx_delivered(&mut self) -> Option<bool> {
+        self.last_terminal_tx_delivered.take()
     }
 
     fn role_status_revision(&self) -> u32 {
@@ -487,6 +527,7 @@ where
         if self.rx_batch_pending()
             || self.rx_addba_in_flight.is_some()
             || !self.protocol_actions.is_empty()
+            || !self.pending_buffered_releases.is_empty()
             || self.rx_reorder.has_pending_release()
             || self
                 .rx_block_ack
@@ -506,10 +547,12 @@ where
             rx_reorder_storage,
             rx_addba_in_flight: _,
             protocol_actions,
+            pending_buffered_releases,
             rx_batch_used: _,
             rx_batch_offset: _,
             serviced_rx_frames,
             serviced_rx_descriptors,
+            last_terminal_tx_delivered,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -534,10 +577,12 @@ where
                     rx_reorder_storage,
                     rx_addba_in_flight: None,
                     protocol_actions,
+                    pending_buffered_releases,
                     rx_batch_used: 0,
                     rx_batch_offset: 0,
                     serviced_rx_frames,
                     serviced_rx_descriptors,
+                    last_terminal_tx_delivered,
                     #[cfg(any(feature = "diagnostics", test))]
                     observer,
                     #[cfg(any(feature = "diagnostics", test))]

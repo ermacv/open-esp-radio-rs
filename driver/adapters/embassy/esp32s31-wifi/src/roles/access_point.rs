@@ -27,7 +27,8 @@ use open_esp_radio_esp32s31_wifi::{
 #[cfg(any(feature = "diagnostics", test))]
 use open_esp_radio_esp32s31_wifi_ap::mac::Esp32s31ApMacObservation;
 use open_esp_radio_esp32s31_wifi_ap::protocol::{
-    AccessPointServiceStatus, ApPeerClose, ApPeerPowerState, ApWpa2RetryProgress,
+    AccessPointServiceStatus, ApBufferedUnicastRelease, ApDownlinkDisposition, ApPeerClose,
+    ApPeerPhase, ApPeerPowerState, ApPowerSaveAction, ApWpa2RetryProgress,
 };
 use open_esp_radio_esp32s31_wifi_ap::{
     ampdu::{Esp32s31ApAggregateAdmission, Esp32s31ApAmpduError, Esp32s31ApAmpduProgress},

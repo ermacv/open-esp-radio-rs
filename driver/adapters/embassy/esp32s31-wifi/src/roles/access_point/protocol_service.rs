@@ -58,10 +58,12 @@ where
             rx_reorder_storage,
             rx_addba_in_flight: None,
             protocol_actions: Esp32s31AccessPointProtocolMailbox::new(),
+            pending_buffered_releases: PendingApBufferedReleases::new(),
             rx_batch_used: 0,
             rx_batch_offset: 0,
             serviced_rx_frames: 0,
             serviced_rx_descriptors: 0,
+            last_terminal_tx_delivered: None,
             #[cfg(feature = "diagnostics")]
             observer: observation_storage,
             #[cfg(all(test, not(feature = "diagnostics")))]
@@ -104,10 +106,12 @@ where
             rx_reorder_storage,
             rx_addba_in_flight,
             protocol_actions,
+            pending_buffered_releases,
             rx_batch_used,
             rx_batch_offset,
             serviced_rx_frames,
             serviced_rx_descriptors,
+            last_terminal_tx_delivered,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -126,10 +130,12 @@ where
                     rx_reorder_storage,
                     rx_addba_in_flight,
                     protocol_actions,
+                    pending_buffered_releases,
                     rx_batch_used,
                     rx_batch_offset,
                     serviced_rx_frames,
                     serviced_rx_descriptors,
+                    last_terminal_tx_delivered,
                     #[cfg(any(feature = "diagnostics", test))]
                     observer,
                     #[cfg(any(feature = "diagnostics", test))]
@@ -146,10 +152,12 @@ where
                 rx_reorder_storage,
                 rx_addba_in_flight,
                 protocol_actions,
+                pending_buffered_releases,
                 rx_batch_used,
                 rx_batch_offset,
                 serviced_rx_frames,
                 serviced_rx_descriptors,
+                last_terminal_tx_delivered,
                 #[cfg(any(feature = "diagnostics", test))]
                 observer,
                 #[cfg(any(feature = "diagnostics", test))]
@@ -174,10 +182,12 @@ where
             rx_reorder_storage,
             rx_addba_in_flight,
             protocol_actions,
+            pending_buffered_releases,
             rx_batch_used,
             rx_batch_offset,
             serviced_rx_frames,
             serviced_rx_descriptors,
+            last_terminal_tx_delivered,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -193,10 +203,12 @@ where
             rx_reorder_storage,
             rx_addba_in_flight,
             protocol_actions,
+            pending_buffered_releases,
             rx_batch_used,
             rx_batch_offset,
             serviced_rx_frames,
             serviced_rx_descriptors,
+            last_terminal_tx_delivered,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -342,6 +354,51 @@ where
         H: RxBlockAckHardware,
     {
         self.apply_protocol_actions(hardware)
+    }
+
+    fn retain_power_save_action(
+        &mut self,
+        action: ApPowerSaveAction,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        let release = match action {
+            ApPowerSaveAction::ReleaseOne(release) => Some(release),
+            ApPowerSaveAction::StateChanged {
+                peer,
+                state: ApPeerPowerState::Active,
+                buffered_frames,
+            } if buffered_frames != 0 => self
+                .mac
+                .engine_mut()
+                .begin_buffered_unicast_release(peer)?,
+            ApPowerSaveAction::None | ApPowerSaveAction::StateChanged { .. } => None,
+        };
+        let Some(release) = release else {
+            return Ok(());
+        };
+        if let Err(release) = self.pending_buffered_releases.push(release) {
+            self.mac
+                .engine_mut()
+                .complete_buffered_unicast_release(release, false)?;
+            return Err(Esp32s31AccessPointControlError::ProtocolActionCapacity);
+        }
+        Ok(())
+    }
+
+    pub(super) fn take_pending_buffered_release(
+        &mut self,
+    ) -> Option<ApBufferedUnicastRelease> {
+        self.pending_buffered_releases.pop()
+    }
+
+    pub(super) fn rollback_pending_buffered_releases(
+        &mut self,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        while let Some(release) = self.pending_buffered_releases.pop() {
+            self.mac
+                .engine_mut()
+                .complete_buffered_unicast_release(release, false)?;
+        }
+        Ok(())
     }
 
     #[cfg(feature = "diagnostics")]
@@ -741,6 +798,13 @@ where
                 self.apply_protocol_actions(hardware)?;
             }
         }
+        if let Some(observation @ ApPowerSaveObservation::PsPoll { .. }) = power_save_observation {
+            let action = self
+                .mac
+                .engine_mut()
+                .observe_power_save(observation, now_micros)?;
+            self.retain_power_save_action(action)?;
+        }
         Ok(protocol_class)
     }
 
@@ -774,16 +838,18 @@ where
                     },
                 ) => match power_state {
                     Some(ApPeerPowerState::Active) => {
-                        let _ = self.mac.engine_mut().observe_power_save(
+                        let action = self.mac.engine_mut().observe_power_save(
                             ApPowerSaveObservation::Active { peer },
                             at_micros,
                         )?;
+                        self.retain_power_save_action(action)?;
                     }
                     Some(ApPeerPowerState::Sleeping) => {
-                        let _ = self.mac.engine_mut().observe_power_save(
+                        let action = self.mac.engine_mut().observe_power_save(
                             ApPowerSaveObservation::Sleeping { peer },
                             at_micros,
                         )?;
+                        self.retain_power_save_action(action)?;
                     }
                     None => self
                         .mac

@@ -1,3 +1,50 @@
+const AP_PENDING_BUFFERED_RELEASE_CAPACITY: usize = 15;
+
+struct PendingApBufferedReleases {
+    slots: [Option<ApBufferedUnicastRelease>; AP_PENDING_BUFFERED_RELEASE_CAPACITY],
+    read: usize,
+    write: usize,
+    len: usize,
+}
+
+impl PendingApBufferedReleases {
+    const fn new() -> Self {
+        Self {
+            slots: [const { None }; AP_PENDING_BUFFERED_RELEASE_CAPACITY],
+            read: 0,
+            write: 0,
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, release: ApBufferedUnicastRelease) -> Result<(), ApBufferedUnicastRelease> {
+        if self.len == AP_PENDING_BUFFERED_RELEASE_CAPACITY {
+            return Err(release);
+        }
+        debug_assert!(self.slots[self.write].is_none());
+        self.slots[self.write] = Some(release);
+        self.write = (self.write + 1) % AP_PENDING_BUFFERED_RELEASE_CAPACITY;
+        self.len += 1;
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Option<ApBufferedUnicastRelease> {
+        if self.len == 0 {
+            return None;
+        }
+        let release = self.slots[self.read]
+            .take()
+            .expect("non-empty AP release queue owns its read slot");
+        self.read = (self.read + 1) % AP_PENDING_BUFFERED_RELEASE_CAPACITY;
+        self.len -= 1;
+        Some(release)
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
 /// Control-plane owner for one active AP role.
 pub struct Esp32s31AccessPointProtocolProcessor<
     'storage,
@@ -19,10 +66,15 @@ pub struct Esp32s31AccessPointProtocolProcessor<
         &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
     rx_addba_in_flight: Option<RxBlockAckActivation>,
     protocol_actions: Esp32s31AccessPointProtocolMailbox<AP_PROTOCOL_ACTION_CAPACITY>,
+    pending_buffered_releases: PendingApBufferedReleases,
     rx_batch_used: usize,
     rx_batch_offset: usize,
     serviced_rx_frames: u64,
     serviced_rx_descriptors: u64,
+    /// Terminal success bit for the most recently completed ordinary TX.
+    /// The network owner consumes it only while it owns a buffered-unicast
+    /// release transaction.
+    last_terminal_tx_delivered: Option<bool>,
     #[cfg(feature = "diagnostics")]
     observer: &'static mut AccessPointObservationStorage,
     #[cfg(all(test, not(feature = "diagnostics")))]
@@ -51,10 +103,12 @@ pub struct Esp32s31AccessPointProtocolProcessorParked<
         &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
     rx_addba_in_flight: Option<RxBlockAckActivation>,
     protocol_actions: Esp32s31AccessPointProtocolMailbox<AP_PROTOCOL_ACTION_CAPACITY>,
+    pending_buffered_releases: PendingApBufferedReleases,
     rx_batch_used: usize,
     rx_batch_offset: usize,
     serviced_rx_frames: u64,
     serviced_rx_descriptors: u64,
+    last_terminal_tx_delivered: Option<bool>,
     #[cfg(feature = "diagnostics")]
     observer: &'static mut AccessPointObservationStorage,
     #[cfg(all(test, not(feature = "diagnostics")))]

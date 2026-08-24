@@ -41,6 +41,7 @@ const DATA_TYPE_MASK: u16 = 0x000c;
 const PROTECTED: u16 = 0x4000;
 const QOS_SUBTYPE: u16 = 0x0080;
 const RETRY: u16 = 0x0800;
+const MORE_FRAGMENTS: u16 = 0x0400;
 const TO_FROM_DS: u16 = 0x0300;
 
 /// Public ordering identity of one protected QoS data MPDU.
@@ -72,6 +73,7 @@ pub fn rx_block_ack_mpdu_key(
     let frame_control = u16::from_le_bytes([*raw.get(frame_offset)?, *raw.get(frame_offset + 1)?]);
     if frame_control & (DATA_TYPE_MASK | PROTECTED | QOS_SUBTYPE)
         != DATA_TYPE | PROTECTED | QOS_SUBTYPE
+        || frame_control & MORE_FRAGMENTS != 0
         || raw.get(frame_offset + 4..frame_offset + 10)? != local_address
     {
         return None;
@@ -1199,6 +1201,10 @@ mod tests {
         assert_eq!(rx_block_ack_mpdu_key(&raw, local, Some([3; 6])), None);
 
         raw[PUBLIC_HEADER_SIZE + 22] |= 1;
+        assert_eq!(rx_block_ack_mpdu_key(&raw, local, None), None);
+
+        raw[PUBLIC_HEADER_SIZE + 22] &= !1;
+        raw[PUBLIC_HEADER_SIZE + 1] |= 0x04;
         assert_eq!(rx_block_ack_mpdu_key(&raw, local, None), None);
     }
 

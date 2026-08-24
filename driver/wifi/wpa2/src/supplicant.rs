@@ -185,6 +185,7 @@ pub enum Wpa2ConnectedSupplicantError {
     ReplayCounterMismatch,
     AuthenticatorNonceMismatch,
     RetainedMessage3Mismatch,
+    RetainedGroupMessage1Mismatch,
     MissingEncryptedKeyData,
     InvalidMic,
     StaleReplayCounter,
@@ -204,6 +205,7 @@ pub enum Wpa2ConnectedProcessError<E> {
 pub struct Wpa2GroupKeyInstallRequest<const N: usize> {
     ticket: u32,
     replay_counter: u64,
+    commitment: Wpa2CompletedGroupMessage1,
     group: Wpa2KeyInstall,
     response: Wpa2TxFrame<N>,
 }
@@ -280,6 +282,27 @@ impl Wpa2CompletedMessage3 {
     }
 }
 
+/// Authenticated commitment to the exact Group Message 1 whose GTK was
+/// successfully published.
+///
+/// The retained MIC commits to the complete EAPOL-Key packet with the MIC
+/// field cleared. Equality after candidate authentication therefore binds the
+/// RSC, encrypted GTK and every other packet byte without retaining key data.
+#[derive(Zeroize, ZeroizeOnDrop)]
+struct Wpa2CompletedGroupMessage1 {
+    mic: [u8; 16],
+}
+
+impl Wpa2CompletedGroupMessage1 {
+    fn capture(frame: EapolKeyFrame<'_>) -> Self {
+        Self { mic: *frame.mic() }
+    }
+
+    fn matches(&self, frame: EapolKeyFrame<'_>) -> bool {
+        self.mic == *frame.mic()
+    }
+}
+
 fn message3_nonce_tag(nonce: &[u8; 32]) -> u32 {
     nonce.iter().fold(0x811c_9dc5, |tag, byte| {
         (tag ^ u32::from(*byte)).wrapping_mul(0x0100_0193)
@@ -296,7 +319,7 @@ pub struct Wpa2ConnectedSupplicant {
     key_encryption: Wpa2KeyEncryptionKey,
     completed_message3: Wpa2CompletedMessage3,
     replay_counter: u64,
-    last_group_replay: Option<u64>,
+    completed_group_message1: Option<Wpa2CompletedGroupMessage1>,
     pending: Option<(u32, u64)>,
     next_ticket: u32,
 }
@@ -373,8 +396,7 @@ impl Wpa2ConnectedSupplicant {
         }
         let replay_counter = key.replay_counter();
         if replay_counter < self.replay_counter
-            || (replay_counter == self.replay_counter
-                && self.last_group_replay != Some(replay_counter))
+            || (replay_counter == self.replay_counter && self.completed_group_message1.is_none())
         {
             return Err(Wpa2ConnectedProcessError::Supplicant(
                 Wpa2ConnectedSupplicantError::StaleReplayCounter,
@@ -388,7 +410,16 @@ impl Wpa2ConnectedSupplicant {
                 Wpa2ConnectedSupplicantError::InvalidMic,
             ));
         }
-        if self.last_group_replay == Some(replay_counter) {
+        if let Some(completed) = self
+            .completed_group_message1
+            .as_ref()
+            .filter(|_| replay_counter == self.replay_counter)
+        {
+            if !completed.matches(key) {
+                return Err(Wpa2ConnectedProcessError::Supplicant(
+                    Wpa2ConnectedSupplicantError::RetainedGroupMessage1Mismatch,
+                ));
+            }
             let response = Wpa2TxFrame::group_message2(self.authenticator, replay_counter)
                 .map_err(|error| {
                     Wpa2ConnectedProcessError::Supplicant(Wpa2ConnectedSupplicantError::Frame(
@@ -424,6 +455,7 @@ impl Wpa2ConnectedSupplicant {
             Wpa2GroupKeyInstallRequest {
                 ticket,
                 replay_counter,
+                commitment: Wpa2CompletedGroupMessage1::capture(key),
                 group,
                 response,
             },
@@ -443,7 +475,7 @@ impl Wpa2ConnectedSupplicant {
             return Err(Wpa2ConnectedSupplicantError::InstallFailed);
         }
         self.replay_counter = request.replay_counter;
-        self.last_group_replay = Some(request.replay_counter);
+        self.completed_group_message1 = Some(request.commitment);
         Ok(request.response)
     }
 }
@@ -506,7 +538,7 @@ impl Wpa2StaSupplicant {
             key_encryption,
             completed_message3,
             replay_counter,
-            last_group_replay: None,
+            completed_group_message1: None,
             pending: None,
             next_ticket: 1,
         })
@@ -770,13 +802,13 @@ mod tests {
             key_encryption,
             completed_message3,
             replay_counter: 2,
-            last_group_replay: None,
+            completed_group_message1: None,
             pending: None,
             next_ticket: 1,
         }
     }
 
-    fn resign_message3_variant(
+    fn resign_eapol_key_variant(
         original: &crate::OwnedEapolFrame<512>,
         ptk: &Ptk,
         resign: bool,
@@ -969,7 +1001,7 @@ mod tests {
             Err(Wpa2ConnectedSupplicantError::WrongPeer)
         ));
 
-        let wrong_protocol = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+        let wrong_protocol = resign_eapol_key_variant(&duplicate, &ptk, true, |bytes| {
             bytes[0] ^= 1;
         });
         assert!(matches!(
@@ -977,7 +1009,7 @@ mod tests {
             Err(Wpa2ConnectedSupplicantError::ProtocolVersionMismatch)
         ));
 
-        let wrong_descriptor = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+        let wrong_descriptor = resign_eapol_key_variant(&duplicate, &ptk, true, |bytes| {
             let key_info = u16::from_be_bytes([bytes[5], bytes[6]]);
             bytes[5..7].copy_from_slice(&((key_info & !0x0007) | 1).to_be_bytes());
         });
@@ -986,7 +1018,7 @@ mod tests {
             Err(Wpa2ConnectedSupplicantError::UnsupportedDescriptorVersion)
         ));
 
-        let wrong_flags = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+        let wrong_flags = resign_eapol_key_variant(&duplicate, &ptk, true, |bytes| {
             let key_info = u16::from_be_bytes([bytes[5], bytes[6]]) ^ (1 << 9);
             bytes[5..7].copy_from_slice(&key_info.to_be_bytes());
         });
@@ -995,7 +1027,7 @@ mod tests {
             Err(Wpa2ConnectedSupplicantError::UnsupportedMessage)
         ));
 
-        let wrong_replay = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+        let wrong_replay = resign_eapol_key_variant(&duplicate, &ptk, true, |bytes| {
             bytes[9..17].copy_from_slice(&3_u64.to_be_bytes());
         });
         assert!(matches!(
@@ -1003,7 +1035,7 @@ mod tests {
             Err(Wpa2ConnectedSupplicantError::ReplayCounterMismatch)
         ));
 
-        let wrong_anonce = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+        let wrong_anonce = resign_eapol_key_variant(&duplicate, &ptk, true, |bytes| {
             bytes[17] ^= 1;
         });
         assert!(matches!(
@@ -1016,7 +1048,7 @@ mod tests {
     fn connected_duplicate_message3_rejects_bad_mic_and_changed_commitment() {
         let (mut connected, duplicate, ptk) = completed_connected();
 
-        let bad_mic = resign_message3_variant(&duplicate, &ptk, false, |bytes| {
+        let bad_mic = resign_eapol_key_variant(&duplicate, &ptk, false, |bytes| {
             bytes[81] ^= 1;
         });
         assert!(matches!(
@@ -1024,7 +1056,7 @@ mod tests {
             Err(Wpa2ConnectedSupplicantError::InvalidMic)
         ));
 
-        let changed_rsc = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+        let changed_rsc = resign_eapol_key_variant(&duplicate, &ptk, true, |bytes| {
             bytes[65] ^= 1;
         });
         assert!(matches!(
@@ -1032,7 +1064,7 @@ mod tests {
             Err(Wpa2ConnectedSupplicantError::RetainedMessage3Mismatch)
         ));
 
-        let changed_key_data = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+        let changed_key_data = resign_eapol_key_variant(&duplicate, &ptk, true, |bytes| {
             bytes[99] ^= 1;
         });
         assert!(matches!(
@@ -1112,6 +1144,79 @@ mod tests {
             Err(Wpa2ConnectedProcessError::Supplicant(
                 Wpa2ConnectedSupplicantError::InvalidMic
             ))
+        ));
+    }
+
+    #[test]
+    fn connected_group_rekey_rejects_authenticated_changed_same_replay() {
+        let pmk = Pmk::derive(b"password", b"ssid").unwrap();
+        let ptk = pmk.derive_ptk(context());
+        let frame = Wpa2TxFrame::<512>::group_message1(LOCAL, 3, [9; 8], &[0x55; 24])
+            .unwrap()
+            .authenticate(&ptk);
+        let original = owned(&frame);
+        let mut connected = connected(pmk.derive_ptk(context()));
+        let mut unwrap = GroupKeyUnwrap {
+            plain: group_kde(1, 0x6a),
+        };
+        let Wpa2ConnectedAction::InstallGroupKey(request) =
+            block_on(connected.on_group_message1(original.clone(), &mut unwrap)).unwrap()
+        else {
+            panic!("new Group Message 1 must request one GTK replacement")
+        };
+        connected.complete_group_key_install(request, true).unwrap();
+
+        let changed_rsc = resign_eapol_key_variant(&original, &ptk, true, |bytes| {
+            bytes[65] ^= 1;
+        });
+        assert!(matches!(
+            block_on(connected.on_group_message1(changed_rsc, &mut unwrap)),
+            Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::RetainedGroupMessage1Mismatch
+            ))
+        ));
+
+        let changed_key_data = resign_eapol_key_variant(&original, &ptk, true, |bytes| {
+            bytes[99] ^= 1;
+        });
+        assert!(matches!(
+            block_on(connected.on_group_message1(changed_key_data, &mut unwrap)),
+            Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::RetainedGroupMessage1Mismatch
+            ))
+        ));
+    }
+
+    #[test]
+    fn failed_group_rekey_does_not_retain_message1_commitment() {
+        let pmk = Pmk::derive(b"password", b"ssid").unwrap();
+        let ptk = pmk.derive_ptk(context());
+        let frame = Wpa2TxFrame::<512>::group_message1(LOCAL, 3, [9; 8], &[0x55; 24])
+            .unwrap()
+            .authenticate(&ptk);
+        let mut connected = connected(pmk.derive_ptk(context()));
+        let mut unwrap = GroupKeyUnwrap {
+            plain: group_kde(1, 0x6a),
+        };
+        let Wpa2ConnectedAction::InstallGroupKey(request) =
+            block_on(connected.on_group_message1(owned(&frame), &mut unwrap)).unwrap()
+        else {
+            panic!("new Group Message 1 must request one GTK replacement")
+        };
+        assert_eq!(
+            connected.complete_group_key_install(request, false),
+            Err(Wpa2ConnectedSupplicantError::InstallFailed)
+        );
+
+        let Wpa2ConnectedAction::InstallGroupKey(retry) =
+            block_on(connected.on_group_message1(owned(&frame), &mut unwrap)).unwrap()
+        else {
+            panic!("failed publication must leave the same frame eligible for retry")
+        };
+        connected.complete_group_key_install(retry, true).unwrap();
+        assert!(matches!(
+            block_on(connected.on_group_message1(owned(&frame), &mut unwrap)).unwrap(),
+            Wpa2ConnectedAction::Retransmit(_)
         ));
     }
 

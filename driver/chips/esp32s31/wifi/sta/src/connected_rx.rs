@@ -122,6 +122,31 @@ impl StaCcmpRxReplayEpoch {
         self.group_key_id
     }
 
+    fn merge_group_frontiers(
+        &self,
+        group: &mut CcmpRxReplayState,
+    ) -> Result<(), StaCcmpRxReplayError> {
+        for lane in core::iter::once(CcmpReplayLane::NonQos).chain((0..16).map(CcmpReplayLane::Tid))
+        {
+            let current = self
+                .group
+                .highest(lane)
+                .ok_or(StaCcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
+            let incoming = group
+                .highest(lane)
+                .ok_or(StaCcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
+            if current > incoming {
+                let candidate = group
+                    .prepare(lane, current)
+                    .map_err(StaCcmpRxReplayError::Replay)?;
+                group
+                    .commit(candidate)
+                    .map_err(StaCcmpRxReplayError::Replay)?;
+            }
+        }
+        Ok(())
+    }
+
     fn prepare_group_rotation(
         &self,
         group_key_id: u8,
@@ -138,25 +163,7 @@ impl StaCcmpRxReplayEpoch {
             // path; retaining each lane's maximum therefore preserves every
             // authenticated frontier while allowing a higher RSC to raise
             // all lanes.
-            for lane in
-                core::iter::once(CcmpReplayLane::NonQos).chain((0..16).map(CcmpReplayLane::Tid))
-            {
-                let current = self
-                    .group
-                    .highest(lane)
-                    .ok_or(StaCcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
-                let incoming = group
-                    .highest(lane)
-                    .ok_or(StaCcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
-                if current > incoming {
-                    let candidate = group
-                        .prepare(lane, current)
-                        .map_err(StaCcmpRxReplayError::Replay)?;
-                    group
-                        .commit(candidate)
-                        .map_err(StaCcmpRxReplayError::Replay)?;
-                }
-            }
+            self.merge_group_frontiers(&mut group)?;
         }
         Ok(StaCcmpGroupReplayReplacement {
             expected_key_id: self.group_key_id,
@@ -523,7 +530,7 @@ impl StaCcmpRxReplayControlEndpoint {
 
     pub fn begin_group_rotation(
         &self,
-        prepared: StaCcmpPreparedGroupRotation,
+        mut prepared: StaCcmpPreparedGroupRotation,
     ) -> Result<StaCcmpInstallingGroupRotation, StaCcmpRxReplayError> {
         critical_section::with(|cs| {
             let mut state = self.resource.state.borrow(cs).borrow_mut();
@@ -551,6 +558,14 @@ impl StaCcmpRxReplayControlEndpoint {
             {
                 return Err(StaCcmpRxReplayError::StaleGroupRotation);
             }
+            if replay.group_key_id == prepared.replacement.group_key_id {
+                // Group RX may have advanced one or more lane frontiers after
+                // prepare returned. Refresh the same-KeyID maximum only after
+                // the publication gate is known to be clear, while retaining
+                // the prepared revision check above so a completed rotation
+                // still makes this candidate stale.
+                replay.merge_group_frontiers(&mut prepared.replacement.group)?;
+            }
             state.pending_rotation = Some(prepared.ticket);
             Ok(StaCcmpInstallingGroupRotation { prepared })
         })
@@ -562,10 +577,12 @@ impl StaCcmpRxReplayControlEndpoint {
     ) -> Result<(), StaCcmpRxReplayError> {
         critical_section::with(|cs| {
             let mut state = self.resource.state.borrow(cs).borrow_mut();
-            if state.generation != self.generation
-                || state.pending_rotation != Some(installing.prepared.ticket)
-                || !state.control_active
+            if installing.prepared.generation != self.generation
+                || state.generation != self.generation
             {
+                return Err(StaCcmpRxReplayError::StaleGroupRotation);
+            }
+            if state.pending_rotation != Some(installing.prepared.ticket) || !state.control_active {
                 state.group_quarantined = true;
                 return Err(StaCcmpRxReplayError::StaleGroupRotation);
             }
@@ -596,9 +613,12 @@ impl StaCcmpRxReplayControlEndpoint {
     ) -> Result<(), StaCcmpRxReplayError> {
         critical_section::with(|cs| {
             let mut state = self.resource.state.borrow(cs).borrow_mut();
-            if state.generation != self.generation
-                || state.pending_rotation != Some(installing.prepared.ticket)
+            if installing.prepared.generation != self.generation
+                || state.generation != self.generation
             {
+                return Err(StaCcmpRxReplayError::StaleGroupRotation);
+            }
+            if state.pending_rotation != Some(installing.prepared.ticket) {
                 state.group_quarantined = true;
                 return Err(StaCcmpRxReplayError::StaleGroupRotation);
             }
@@ -1836,6 +1856,44 @@ mod tests {
     }
 
     #[test]
+    fn same_key_id_begin_refreshes_all_lanes_advanced_after_prepare() {
+        let (mut rx, mut control) = replay_resource();
+        let prepared = control
+            .prepare_group_rotation(1, [7, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
+
+        for tid in core::iter::once(None).chain((0_u8..16).map(Some)) {
+            let packet_number = 40 + u64::from(tid.unwrap_or(16));
+            drop(
+                rx.prepare_publication(
+                    ConnectedRxProtection::Group,
+                    tid,
+                    ccmp_header(packet_number, 1),
+                )
+                .unwrap(),
+            );
+        }
+
+        let installing = control.begin_group_rotation(prepared).unwrap();
+        control.commit_group_rotation(installing).unwrap();
+        for tid in core::iter::once(None).chain((0_u8..16).map(Some)) {
+            let packet_number = 40 + u64::from(tid.unwrap_or(16));
+            assert!(matches!(
+                rx.prepare_publication(
+                    ConnectedRxProtection::Group,
+                    tid,
+                    ccmp_header(packet_number, 1),
+                ),
+                Err(StaCcmpRxReplayError::Replay(
+                    CcmpReplayError::Replayed { .. }
+                ))
+            ));
+        }
+        rx.stop().unwrap();
+        control.stop().unwrap();
+    }
+
+    #[test]
     fn group_publication_and_stop_races_fail_without_mixing_epochs() {
         let (mut rx, mut control) = replay_resource();
         let permit = rx
@@ -1891,6 +1949,62 @@ mod tests {
 
         drop(permit);
         let (mut rx, mut control) = resource.start(recovered).unwrap();
+        rx.stop().unwrap();
+        control.stop().unwrap();
+    }
+
+    #[test]
+    fn stale_generation_commit_cannot_quarantine_new_epoch() {
+        let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
+        let (mut old_rx, mut old_control) = resource
+            .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+            .unwrap();
+        let prepared = old_control
+            .prepare_group_rotation(2, [3, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
+        let installing = old_control.begin_group_rotation(prepared).unwrap();
+        old_rx.stop().unwrap();
+        old_control.stop().unwrap();
+
+        let (mut rx, mut control) = resource
+            .start(StaCcmpRxReplayEpoch::new([0; 8], 2, [0; 8]).unwrap())
+            .unwrap();
+        assert_eq!(
+            old_control.commit_group_rotation(installing),
+            Err(StaCcmpRxReplayError::StaleGroupRotation)
+        );
+        drop(
+            rx.prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(1, 2))
+                .unwrap(),
+        );
+        rx.stop().unwrap();
+        control.stop().unwrap();
+    }
+
+    #[test]
+    fn stale_generation_abort_cannot_quarantine_new_epoch() {
+        let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
+        let (mut old_rx, mut old_control) = resource
+            .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+            .unwrap();
+        let prepared = old_control
+            .prepare_group_rotation(2, [3, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
+        let installing = old_control.begin_group_rotation(prepared).unwrap();
+        old_rx.stop().unwrap();
+        old_control.stop().unwrap();
+
+        let (mut rx, mut control) = resource
+            .start(StaCcmpRxReplayEpoch::new([0; 8], 2, [0; 8]).unwrap())
+            .unwrap();
+        assert_eq!(
+            old_control.abort_group_rotation(installing),
+            Err(StaCcmpRxReplayError::StaleGroupRotation)
+        );
+        drop(
+            rx.prepare_publication(ConnectedRxProtection::Group, None, ccmp_header(1, 2))
+                .unwrap(),
+        );
         rx.stop().unwrap();
         control.stop().unwrap();
     }

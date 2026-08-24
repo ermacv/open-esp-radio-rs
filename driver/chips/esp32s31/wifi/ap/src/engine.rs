@@ -19,7 +19,7 @@ use open_esp_radio_ieee80211::{
     ap::{
         ApActionFrame, ApAssociationResponseError, ApDataFrame, ApDataFrameError,
         ApManagementRequest, ApPeerDisconnectKind, ApPowerSaveObservation, ApProtectedDataFrame,
-        EncodedApFrame, observe_ap_power_save, parse_ap_management_request,
+        EncodedApFrame, observe_ap_power_save_for_access_point, parse_ap_management_request,
         write_ap_peer_disconnect, write_ht_association_response_frame,
         write_open_authentication_response,
     },
@@ -397,7 +397,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
     ) -> Option<Esp32s31ApBeaconPublication<'_>> {
         let group_pending = self.service.group_traffic_pending();
         let buffered_group_frames = self.service.buffered_group_frames();
-        let unicast_tim_bitmap = self.service.unicast_tim_bitmap();
+        let unicast_tim_bitmap = self.service.unicast_tim_bitmap().ok()?;
+        let unicast_tim_bitmap = unicast_tim_bitmap.partial();
         let management_sequence = self.service.next_management_sequence();
         let beacon = self.beacon.prepare(
             executor_timestamp_micros,
@@ -1035,7 +1036,9 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         frame: &[u8],
         now_micros: u64,
     ) -> Result<Option<ApPowerSaveAction>, Esp32s31ApEngineError> {
-        let Some(observation) = observe_ap_power_save(frame) else {
+        let Some(observation) =
+            observe_ap_power_save_for_access_point(frame, self.service.address())
+        else {
             return Ok(None);
         };
         self.observe_power_save(observation, now_micros).map(Some)

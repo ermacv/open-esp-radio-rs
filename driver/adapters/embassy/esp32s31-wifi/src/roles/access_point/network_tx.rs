@@ -1962,6 +1962,7 @@ where
 
     fn has_power_save_release(&self) -> bool {
         self.prepared_buffered_release.is_some()
+            || self.active_buffered_release.is_some()
             || self.prepared_group_release.is_some()
             || self.active_group_release.is_some()
             || self.dtim_group_release_remaining != 0

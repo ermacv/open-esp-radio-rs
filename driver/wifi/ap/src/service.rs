@@ -3,7 +3,9 @@
 use core::fmt;
 
 use open_esp_radio_ieee80211::ap::ApPowerSaveObservation;
-use open_esp_radio_ieee80211::beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE;
+use open_esp_radio_ieee80211::beacon::{
+    TimAssociationId, TimBitmapError, TimVirtualBitmap, WPA2_PERSONAL_CCMP_PSK_RSN_IE,
+};
 use open_esp_radio_ieee80211::block_ack::{
     AddbaRequest, BlockAckAction, OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckConfig,
     TxBlockAckError, TxBlockAckResponse, TxBlockAckSession,
@@ -28,6 +30,7 @@ use open_esp_radio_wpa2::{
 /// ESP32-S31 maps these clients to AIDs 1..=15 and hardware pairwise key
 /// entries 8..=22. Higher values are rejected before radio ownership moves.
 pub const AP_MAX_CLIENTS: usize = 15;
+pub const AP_TIM_VIRTUAL_BITMAP_OCTETS: usize = AP_MAX_CLIENTS / 8 + 1;
 pub const AP_STATUS_SUCCESS: u16 = 0;
 pub const AP_STATUS_TOO_MANY_STATIONS: u16 = 17;
 pub const AP_STATUS_UNSUPPORTED_RATES: u16 = 18;
@@ -813,7 +816,7 @@ impl<'peers> AccessPointService<'peers> {
                 peer,
                 association_id,
             } => {
-                {
+                let release_already_pending = {
                     let existing = self.checked_peer_mut(peer)?;
                     if existing.phase != ApPeerPhase::Authorized
                         || existing.power_state != ApPeerPowerState::Sleeping
@@ -825,6 +828,14 @@ impl<'peers> AccessPointService<'peers> {
                     }
                     existing.last_activity_micros = now_micros;
                     existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+                    existing.buffered_release_in_flight
+                };
+                // A retried PS-Poll may arrive while the exact oldest frame is
+                // already reserved or crossing TX. It is idempotent: never
+                // reserve a second frame and never turn a valid control retry
+                // into a terminal protocol error.
+                if release_already_pending {
+                    return Ok(ApPowerSaveAction::None);
                 }
                 Ok(match self.begin_buffered_unicast_release(peer)? {
                     Some(release) => ApPowerSaveAction::ReleaseOne(release),
@@ -834,20 +845,20 @@ impl<'peers> AccessPointService<'peers> {
         }
     }
 
-    /// Two-octet TIM virtual bitmap for the public AP AID range 1..=15.
-    pub fn unicast_tim_bitmap(&self) -> u16 {
-        self.storage()
-            .peers
-            .iter()
-            .flatten()
-            .filter(|peer| {
-                peer.power_state == ApPeerPowerState::Sleeping
-                    && peer.buffered_unicast_frames != 0
-                    && (1..=AP_MAX_CLIENTS as u16).contains(&peer.association_id)
-            })
-            .fold(0_u16, |bitmap, peer| {
-                bitmap | (1_u16 << peer.association_id)
-            })
+    /// Complete typed TIM bitmap for the public AP AID range 1..=15.
+    /// Canonical Partial Virtual Bitmap compression is derived by the beacon
+    /// owner only after every peer AID has passed capacity validation.
+    pub fn unicast_tim_bitmap(
+        &self,
+    ) -> Result<TimVirtualBitmap<AP_TIM_VIRTUAL_BITMAP_OCTETS>, TimBitmapError> {
+        let mut bitmap = TimVirtualBitmap::try_new()?;
+        for peer in self.storage().peers.iter().flatten().filter(|peer| {
+            peer.power_state == ApPeerPowerState::Sleeping && peer.buffered_unicast_frames != 0
+        }) {
+            let association_id = TimAssociationId::new(peer.association_id)?;
+            bitmap.set(association_id, true)?;
+        }
+        Ok(bitmap)
     }
 
     pub const fn buffered_group_frames(&self) -> u16 {

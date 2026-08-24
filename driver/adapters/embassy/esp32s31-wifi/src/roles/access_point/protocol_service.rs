@@ -372,10 +372,24 @@ where
                 peer,
                 state: ApPeerPowerState::Active,
                 buffered_frames,
-            } if buffered_frames != 0 => self
-                .mac
-                .engine_mut()
-                .begin_buffered_unicast_release(peer)?,
+            } if buffered_frames != 0 => {
+                if self
+                    .mac
+                    .engine()
+                    .peer_status(peer)
+                    .is_some_and(|status| status.buffered_release_in_flight)
+                {
+                    // A PS-Poll already owns the oldest frame. Its terminal
+                    // completion will observe the peer as Active and drain
+                    // the remaining queue without manufacturing a second
+                    // reservation for this transition.
+                    None
+                } else {
+                    self.mac
+                        .engine_mut()
+                        .begin_buffered_unicast_release(peer)?
+                }
+            }
             ApPowerSaveAction::None | ApPowerSaveAction::StateChanged { .. } => None,
         };
         let Some(release) = release else {
@@ -526,7 +540,10 @@ where
             }
         };
         let frame_control = u16::from_le_bytes([frame.mpdu[0], frame.mpdu[1]]);
-        let power_save_observation = observe_ap_power_save(frame.mpdu);
+        let power_save_observation = observe_ap_power_save_for_access_point(
+            frame.mpdu,
+            self.mac.engine().service_address(),
+        );
         let ampdu_contained = matches!(
             frame.metadata.ampdu,
             MacRxEvidence::HardwareObserved(true) | MacRxEvidence::ProtocolValidated(true)

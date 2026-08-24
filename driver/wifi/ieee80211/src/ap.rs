@@ -593,12 +593,6 @@ pub fn write_ht_association_response(
     Ok(())
 }
 
-/// Update the TIM partial-virtual-bitmap byte containing an association ID.
-pub const fn updated_tim_bitmap_byte(current: u8, association_id: u16, set: bool) -> u8 {
-    let mask = 1_u8 << (association_id & 7);
-    if set { current | mask } else { current & !mask }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApPowerSaveObservation {
     Sleeping { peer: [u8; 6] },
@@ -644,6 +638,23 @@ pub fn observe_ap_power_save(frame: &[u8]) -> Option<ApPowerSaveObservation> {
     } else {
         Some(ApPowerSaveObservation::Active { peer })
     }
+}
+
+/// Parse an AP power-save edge while binding PS-Poll Receiver Address to the
+/// active BSSID. Protected data admission validates its address mapping in the
+/// data owner; the unprotected control frame needs this explicit check before
+/// its TA/AID tuple can reserve buffered traffic.
+pub fn observe_ap_power_save_for_access_point(
+    frame: &[u8],
+    access_point: [u8; 6],
+) -> Option<ApPowerSaveObservation> {
+    let observation = observe_ap_power_save(frame)?;
+    if matches!(observation, ApPowerSaveObservation::PsPoll { .. })
+        && frame.get(4..10) != Some(access_point.as_slice())
+    {
+        return None;
+    }
+    Some(observation)
 }
 
 #[cfg(test)]
@@ -875,10 +886,16 @@ mod tests {
 
     #[test]
     fn tim_bitmap_update_matches_aid_bit_selection() {
-        assert_eq!(updated_tim_bitmap_byte(0, 0, true), 0x01);
-        assert_eq!(updated_tim_bitmap_byte(0, 7, true), 0x80);
-        assert_eq!(updated_tim_bitmap_byte(0xa5, 8, false), 0xa4);
-        assert_eq!(updated_tim_bitmap_byte(0xa5, 15, false), 0x25);
+        use crate::beacon::{TimAssociationId, TimVirtualBitmap};
+
+        let mut bitmap = TimVirtualBitmap::<2>::try_new().unwrap();
+        bitmap.set(TimAssociationId::new(7).unwrap(), true).unwrap();
+        bitmap.set(TimAssociationId::new(8).unwrap(), true).unwrap();
+        bitmap
+            .set(TimAssociationId::new(15).unwrap(), true)
+            .unwrap();
+        assert_eq!(bitmap.partial().bitmap_offset(), 0);
+        assert_eq!(bitmap.partial().octets(), &[0x80, 0x81]);
     }
 
     #[test]

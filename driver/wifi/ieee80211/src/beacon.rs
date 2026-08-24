@@ -12,6 +12,8 @@ use crate::{
 };
 
 pub const WPA2_BEACON_CAPACITY: usize = 256;
+pub const TIM_MAX_ASSOCIATION_ID: u16 = 2_007;
+pub const TIM_MAX_VIRTUAL_BITMAP_OCTETS: usize = 251;
 
 const MANAGEMENT_HEADER_LEN: usize = 24;
 const BEACON_FIXED_BODY_LEN: usize = 12;
@@ -36,6 +38,121 @@ pub enum ApBeaconBuildError {
     InvalidDtimPeriod,
     InvalidSequenceNumber,
     OutputTooSmall { required: usize },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TimBitmapError {
+    InvalidCapacity {
+        bitmap_octets: usize,
+    },
+    InvalidAssociationId(u16),
+    AssociationIdOutsideCapacity {
+        association_id: u16,
+        bitmap_octets: usize,
+    },
+}
+
+/// Valid unicast association identifier for an IEEE 802.11 TIM bitmap.
+///
+/// AID zero is represented by the multicast indication in Bitmap Control and
+/// is therefore intentionally not constructible through this type.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct TimAssociationId(u16);
+
+impl TimAssociationId {
+    pub const fn new(value: u16) -> Result<Self, TimBitmapError> {
+        if value == 0 || value > TIM_MAX_ASSOCIATION_ID {
+            return Err(TimBitmapError::InvalidAssociationId(value));
+        }
+        Ok(Self(value))
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+}
+
+/// Fixed-capacity owner for the complete virtual bitmap in one AP profile.
+///
+/// `OCTETS` is validated when the value is constructed. Setting an AID beyond
+/// that profile fails explicitly instead of aliasing it through `aid & 7`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TimVirtualBitmap<const OCTETS: usize> {
+    octets: [u8; OCTETS],
+}
+
+impl<const OCTETS: usize> TimVirtualBitmap<OCTETS> {
+    pub const fn try_new() -> Result<Self, TimBitmapError> {
+        if OCTETS == 0 || OCTETS > TIM_MAX_VIRTUAL_BITMAP_OCTETS {
+            return Err(TimBitmapError::InvalidCapacity {
+                bitmap_octets: OCTETS,
+            });
+        }
+        Ok(Self {
+            octets: [0; OCTETS],
+        })
+    }
+
+    pub fn set(
+        &mut self,
+        association_id: TimAssociationId,
+        buffered: bool,
+    ) -> Result<(), TimBitmapError> {
+        let association_id = association_id.get();
+        let octet = usize::from(association_id / 8);
+        let Some(value) = self.octets.get_mut(octet) else {
+            return Err(TimBitmapError::AssociationIdOutsideCapacity {
+                association_id,
+                bitmap_octets: OCTETS,
+            });
+        };
+        let mask = 1_u8 << (association_id % 8);
+        if buffered {
+            *value |= mask;
+        } else {
+            *value &= !mask;
+        }
+        Ok(())
+    }
+
+    /// Derive canonical N1/N2 bounds for the Partial Virtual Bitmap field.
+    /// N1 is even, so a set bit in odd octet 1 still retains octet 0.
+    pub fn partial(&self) -> TimPartialVirtualBitmap<'_> {
+        let Some(first) = self.octets.iter().position(|octet| *octet != 0) else {
+            return TimPartialVirtualBitmap {
+                bitmap_offset: 0,
+                octets: &self.octets[..1],
+            };
+        };
+        let last = self
+            .octets
+            .iter()
+            .rposition(|octet| *octet != 0)
+            .expect("a first nonzero TIM octet has a last nonzero octet");
+        let first = first & !1;
+        TimPartialVirtualBitmap {
+            bitmap_offset: first as u8,
+            octets: &self.octets[first..=last],
+        }
+    }
+}
+
+/// Borrowed canonical Partial Virtual Bitmap and its absolute even N1 offset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TimPartialVirtualBitmap<'bitmap> {
+    bitmap_offset: u8,
+    octets: &'bitmap [u8],
+}
+
+impl<'bitmap> TimPartialVirtualBitmap<'bitmap> {
+    pub const fn bitmap_offset(self) -> u8 {
+        self.bitmap_offset
+    }
+
+    pub const fn octets(self) -> &'bitmap [u8] {
+        self.octets
+    }
 }
 
 /// Build one visible WPA2-Personal HT/WMM beacon without allocating.
@@ -200,6 +317,55 @@ pub fn dtim(bytes: &[u8]) -> Option<(usize, u8, u8)> {
     inspect_element!();
     inspect_element!();
     None
+}
+
+/// Replace the TIM Partial Virtual Bitmap while preserving every following
+/// information element in the bounded beacon owner.
+///
+/// The returned length reflects canonical one- through 251-octet N1/N2
+/// compression. Capacity and all existing TIM bounds are checked before the
+/// frame is moved, so `None` leaves `storage` unchanged.
+pub fn write_tim_partial_virtual_bitmap(
+    storage: &mut [u8],
+    frame_len: usize,
+    partial: TimPartialVirtualBitmap<'_>,
+) -> Option<usize> {
+    let frame = storage.get(..frame_len)?;
+    let (tim_offset, _, _) = dtim(frame)?;
+    let current_body_len = usize::from(*frame.get(tim_offset + 1)?);
+    if current_body_len < 4 || partial.octets.is_empty() {
+        return None;
+    }
+    let current_end = tim_offset.checked_add(2 + current_body_len)?;
+    if current_end > frame_len {
+        return None;
+    }
+    let desired_body_len = 3_usize.checked_add(partial.octets.len())?;
+    let desired_body_len_u8 = u8::try_from(desired_body_len).ok()?;
+    let new_len = if desired_body_len >= current_body_len {
+        frame_len.checked_add(desired_body_len - current_body_len)?
+    } else {
+        frame_len.checked_sub(current_body_len - desired_body_len)?
+    };
+    if new_len > storage.len() {
+        return None;
+    }
+
+    let desired_end = tim_offset + 2 + desired_body_len;
+    if desired_end > current_end {
+        storage.copy_within(current_end..frame_len, desired_end);
+    } else if desired_end < current_end {
+        storage.copy_within(current_end..frame_len, desired_end);
+    }
+
+    storage[tim_offset + 1] = desired_body_len_u8;
+    let group_indication = storage[tim_offset + 4] & 1;
+    storage[tim_offset + 4] = group_indication | partial.bitmap_offset;
+    storage[tim_offset + 5..desired_end].copy_from_slice(partial.octets);
+    if new_len < frame_len {
+        storage[new_len..frame_len].fill(0);
+    }
+    Some(new_len)
 }
 
 /// Replace the TSF, DTIM phase and group-traffic indication before HW submit.

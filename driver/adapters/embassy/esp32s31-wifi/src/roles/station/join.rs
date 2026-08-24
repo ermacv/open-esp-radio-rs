@@ -11,7 +11,7 @@ use open_esp_radio_esp32s31_hal::{
 };
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver};
 use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::{CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
+    crypto::CcmpKeyHardware,
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
     rate_control::BeamformingReportHardware,
@@ -22,7 +22,7 @@ use open_esp_radio_esp32s31_wifi_sta::{
     attempt::{
         Esp32s31StaAttempt, Esp32s31StaAttemptObserver, Esp32s31StaAttemptOutcome,
         Esp32s31StaAttemptProgress, Esp32s31StaAttemptReport, Esp32s31StaAttemptSecurity,
-        Esp32s31StaAttemptStage, Esp32s31StaAttemptStation,
+        Esp32s31StaAttemptStage, Esp32s31StaAttemptStation, Esp32s31StaInstalledSecurity,
     },
     channel::Esp32s31ScanPhy,
     join::{Esp32s31StaJoinObserver, Esp32s31StaJoinTransmit},
@@ -71,8 +71,7 @@ pub enum Esp32s31StationJoinOutcome<
     Connected {
         returned: Esp32s31StationJoinReturned<'storage, 'security, D, COUNT, DMA_BUFFER_SIZE>,
         peer: Esp32s31ConnectedStaPeer,
-        pairwise: StaPairwiseCcmpSlot,
-        group: StaGroupCcmpSlot,
+        installed_security: Esp32s31StaInstalledSecurity,
         report: Esp32s31StaAttemptReport,
         progress: Esp32s31StaAttemptProgress,
     },
@@ -264,9 +263,9 @@ where
             let peer = owner
                 .take_connected_peer()
                 .expect("a connected station attempt owns its peer");
-            let (pairwise, group) = owner
-                .take_installed_keys()
-                .expect("a connected station attempt owns both CCMP keys");
+            let installed_security = owner
+                .take_installed_security()
+                .expect("a connected station attempt owns its selected security frontier");
             let (radio, _storage, station, security) = owner.into_parts();
             let Esp32s31StaAttemptRadio {
                 channel, receive, ..
@@ -279,8 +278,7 @@ where
                     security,
                 },
                 peer,
-                pairwise,
-                group,
+                installed_security,
                 report,
                 progress,
             }

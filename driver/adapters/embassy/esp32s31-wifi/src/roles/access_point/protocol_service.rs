@@ -33,6 +33,7 @@ where
         observation_storage: &'static mut AccessPointObservationStorage,
     ) -> Self {
         let access_point = mac.engine().service_address();
+        let security = mac.engine().security_mode();
         data_rx.reset(Esp32s31ApRxConfig {
             access_point,
             ingress: RxIngressConfig {
@@ -40,6 +41,7 @@ where
                 csi_config: 0,
                 flags: 0,
             },
+            security,
         });
         rx_block_ack
             .prepare_interface(MacInterface::AccessPoint)
@@ -561,7 +563,12 @@ where
         } else {
             None
         };
-        let protocol_class = if frame_control & 0x000c == 0x0008 && frame_control & 0x4000 != 0 {
+        let security_mode = self.mac.engine().security_mode();
+        let data_frame = frame_control & 0x000c == 0x0008;
+        let protected = frame_control & 0x4000 != 0;
+        let protocol_class = if data_frame
+            && (security_mode == WifiSecurityMode::Open || protected)
+        {
             observe_access_point!(self, observation, {
                 observation.protected_data_frames =
                     observation.protected_data_frames.saturating_add(1);
@@ -634,7 +641,7 @@ where
                             AccessPointProtectedFrameDispatch::dispatch(
                                 data_rx,
                                 ordered,
-                                |peer| mac.engine().is_authorized_peer(peer),
+                                |peer| mac.engine().authorized_peer_qos(peer),
                                 publication,
                                 current_buffer as usize,
                                 current_is_amsdu,
@@ -782,12 +789,19 @@ where
                 });
             }
             AccessPointRxProtocolClass::Management
-        } else if frame_control & 0x000c == 0x0008 {
+        } else if data_frame {
             let hardware = hardware
                 .as_deref_mut()
                 .ok_or(Esp32s31AccessPointControlError::ProtocolFrameRequiresHardware)?;
-            self.service_eapol(hardware, frame.mpdu, now_micros)?;
-            AccessPointRxProtocolClass::Eapol
+            if self.service_eapol(hardware, frame.mpdu, now_micros)? {
+                AccessPointRxProtocolClass::Eapol
+            } else {
+                observe_access_point!(self, observation, {
+                    observation.security_mode_mismatches =
+                        observation.security_mode_mismatches.saturating_add(1);
+                });
+                AccessPointRxProtocolClass::Rejected
+            }
         } else {
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
@@ -928,6 +942,16 @@ where
                     starting_sequence,
                     ..
                 } if self.mac.engine().is_authorized_peer(peer) => {
+                    if self.mac.engine().security_mode() == WifiSecurityMode::Open {
+                        self.publish_declined_rx_addba(
+                            hardware,
+                            peer,
+                            dialog_token,
+                            tid,
+                            window,
+                        )?;
+                        return Ok(true);
+                    }
                     let offered = self.rx_block_ack.offer(RxBlockAckRequest {
                         interface: MacInterface::AccessPoint,
                         peer,
@@ -1086,9 +1110,9 @@ where
         let mut sink = DeferredAccessPointRxSink::new(processor.rx_frame);
         let _ = processor.rx_reorder.stop(identity, |segment| {
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
-            let outcome = data_rx.dispatch_protected(
+            let outcome = data_rx.dispatch(
                 segment,
-                |peer| mac.engine().is_authorized_peer(peer),
+                |peer| mac.engine().authorized_peer_qos(peer),
                 &mut sink,
             );
             let _ = observe_protected_dispatch(
@@ -1146,9 +1170,9 @@ where
         let mut sink = DeferredAccessPointRxSink::new(processor.rx_frame);
         let pending_dispatched = processor.rx_reorder.dispatch_pending(|segment| {
             let peer = data_rx.reorder_key(segment).map(|key| key.peer);
-            let outcome = data_rx.dispatch_protected(
+            let outcome = data_rx.dispatch(
                 segment,
-                |peer| mac.engine().is_authorized_peer(peer),
+                |peer| mac.engine().authorized_peer_qos(peer),
                 &mut sink,
             );
             let _ = observe_protected_dispatch(
@@ -1164,9 +1188,9 @@ where
         } else {
             let dispatched = processor.rx_reorder.expire_due(now_micros, |segment| {
                 let peer = data_rx.reorder_key(segment).map(|key| key.peer);
-                let outcome = data_rx.dispatch_protected(
+                let outcome = data_rx.dispatch(
                     segment,
-                    |peer| mac.engine().is_authorized_peer(peer),
+                    |peer| mac.engine().authorized_peer_qos(peer),
                     &mut sink,
                 );
                 let _ = observe_protected_dispatch(

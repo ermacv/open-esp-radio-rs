@@ -14,6 +14,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
 use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity;
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources;
 
 use crate::{
@@ -239,7 +240,26 @@ pub struct Esp32s31ConnectedStaTeardownSuccess<H, R, T, A, C> {
     pub sequences: StaTxSequenceCounters,
     pub aggregate: A,
     pub control: C,
-    pub keys: StaCcmpClearReport,
+    pub security: Esp32s31ConnectedStaSecurityStopReport,
+}
+
+/// Group-key ownership retained outside the connected ordinary TX owner.
+pub enum Esp32s31ConnectedStaGroupSecurity {
+    Open,
+    Wpa2Personal(StaGroupCcmpSlot),
+}
+
+/// Observable result of the security teardown edge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31ConnectedStaSecurityStopReport {
+    OpenNoKeys,
+    Wpa2Personal(StaCcmpClearReport),
+    /// A composition bug supplied unlike pairwise/group modes. Every token
+    /// that did exist was still cleared before this report was returned.
+    ModeMismatchCleared {
+        pairwise_hardware_index: Option<u8>,
+        group_hardware_index: Option<u8>,
+    },
 }
 
 /// Owner-preserving failure at the exact teardown stage that could not
@@ -249,7 +269,7 @@ pub enum Esp32s31ConnectedStaTeardownFailure<H, R, S, X, C, CE, RE> {
     Control {
         error: CE,
         services: SingleRoleServices<H, R, X, C>,
-        group_key: StaGroupCcmpSlot,
+        group_security: Esp32s31ConnectedStaGroupSecurity,
     },
     Rx {
         error: RE,
@@ -257,14 +277,14 @@ pub enum Esp32s31ConnectedStaTeardownFailure<H, R, S, X, C, CE, RE> {
         rx: R,
         tx: X,
         control: C,
-        group_key: StaGroupCcmpSlot,
+        group_security: Esp32s31ConnectedStaGroupSecurity,
     },
     TxActive {
         hardware: H,
         stopped_rx: S,
         tx: X,
         control: C,
-        group_key: StaGroupCcmpSlot,
+        group_security: Esp32s31ConnectedStaGroupSecurity,
     },
 }
 
@@ -276,7 +296,7 @@ impl Esp32s31ConnectedStaTeardownPort {
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn try_teardown<H, R, X, C>(
         services: SingleRoleServices<H, R, X, C>,
-        group_key: StaGroupCcmpSlot,
+        group_security: Esp32s31ConnectedStaGroupSecurity,
     ) -> Result<
         Esp32s31ConnectedStaTeardownSuccess<H, R::Stopped, X::Resources, X::Aggregate, C::Report>,
         Esp32s31ConnectedStaTeardownFailure<H, R, R::Stopped, X, C, C::Error, R::Error>,
@@ -294,7 +314,7 @@ impl Esp32s31ConnectedStaTeardownPort {
                 return Err(Esp32s31ConnectedStaTeardownFailure::Control {
                     error,
                     services: SingleRoleServices::with_control(hardware, rx, tx, control),
-                    group_key,
+                    group_security,
                 });
             }
         };
@@ -307,7 +327,7 @@ impl Esp32s31ConnectedStaTeardownPort {
                     rx,
                     tx,
                     control,
-                    group_key,
+                    group_security,
                 });
             }
         };
@@ -319,11 +339,42 @@ impl Esp32s31ConnectedStaTeardownPort {
                     stopped_rx,
                     tx,
                     control,
-                    group_key,
+                    group_security,
                 });
             }
         };
-        let keys = clear_sta_ccmp_slots(&mut hardware, returned_tx.pairwise_key, group_key);
+        let security = match (returned_tx.security, group_security) {
+            (ConnectedTxSecurity::Open, Esp32s31ConnectedStaGroupSecurity::Open) => {
+                Esp32s31ConnectedStaSecurityStopReport::OpenNoKeys
+            }
+            (
+                ConnectedTxSecurity::Wpa2Personal(pairwise),
+                Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group),
+            ) => Esp32s31ConnectedStaSecurityStopReport::Wpa2Personal(clear_sta_ccmp_slots(
+                &mut hardware,
+                pairwise,
+                group,
+            )),
+            (
+                ConnectedTxSecurity::Wpa2Personal(pairwise),
+                Esp32s31ConnectedStaGroupSecurity::Open,
+            ) => {
+                let pairwise_hardware_index = pairwise.hardware_index();
+                pairwise.clear(&mut hardware);
+                Esp32s31ConnectedStaSecurityStopReport::ModeMismatchCleared {
+                    pairwise_hardware_index: Some(pairwise_hardware_index),
+                    group_hardware_index: None,
+                }
+            }
+            (ConnectedTxSecurity::Open, Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group)) => {
+                let group_hardware_index = group.hardware_index();
+                group.clear(&mut hardware);
+                Esp32s31ConnectedStaSecurityStopReport::ModeMismatchCleared {
+                    pairwise_hardware_index: None,
+                    group_hardware_index: Some(group_hardware_index),
+                }
+            }
+        };
         drop(control);
         Ok(Esp32s31ConnectedStaTeardownSuccess {
             hardware,
@@ -332,7 +383,7 @@ impl Esp32s31ConnectedStaTeardownPort {
             sequences: returned_tx.sequences,
             aggregate: returned_tx.aggregate,
             control: control_observation,
-            keys,
+            security,
         })
     }
 }

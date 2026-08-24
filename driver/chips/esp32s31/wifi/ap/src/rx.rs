@@ -4,14 +4,18 @@
 //! must copy or transfer every Ethernet view before returning, after which the
 //! runtime may recycle the descriptor.
 
-use open_esp_radio_esp32s31_wifi::protected_data_rx::view_protected_data;
+use open_esp_radio_esp32s31_wifi::protected_data_rx::{
+    ProtectedDataDecapsulation, ProtectedDataRxView, UnprotectedDataRxView, view_protected_data,
+    view_unprotected_data,
+};
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{RxError, RxIngressConfig, RxPhyInfo, RxSegment},
+    rx::{RxError, RxIngressConfig, RxPhyInfo, RxSegment, view_normalized_rx_frame},
     rx_ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
 };
 use open_esp_radio_ieee80211::data::{
     DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter,
 };
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_wifi_ap::AP_MAX_CLIENTS;
 use open_esp_radio_wifi_softmac::MacRxMetadata;
 
@@ -19,6 +23,7 @@ use open_esp_radio_wifi_softmac::MacRxMetadata;
 pub struct Esp32s31ApRxConfig {
     pub access_point: [u8; 6],
     pub ingress: RxIngressConfig,
+    pub security: WifiSecurityMode,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -37,6 +42,8 @@ pub trait Esp32s31ApRxSink {
 pub enum Esp32s31ApRxError {
     Radio(RxError),
     Data(DataDecapError),
+    SecurityModeMismatch,
+    PeerQosMismatch,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +58,34 @@ pub enum Esp32s31ApRxDispatch {
 struct ApPeerDuplicateState {
     address: [u8; 6],
     filter: RxDuplicateFilter,
+}
+
+enum ApDataRxView<'frame> {
+    Open(UnprotectedDataRxView<'frame>),
+    Wpa2Personal(ProtectedDataRxView<'frame>),
+}
+
+impl<'frame> ApDataRxView<'frame> {
+    fn mpdu(&self) -> &'frame [u8] {
+        match self {
+            Self::Open(data) => data.mpdu,
+            Self::Wpa2Personal(data) => data.mpdu,
+        }
+    }
+
+    const fn ordering(&self) -> (bool, u16, Option<u8>) {
+        match self {
+            Self::Open(data) => (data.retry, data.sequence_control, data.tid),
+            Self::Wpa2Personal(data) => (data.retry, data.sequence_control, data.tid),
+        }
+    }
+
+    fn decapsulate(self) -> Result<ProtectedDataDecapsulation<'frame>, DataDecapError> {
+        match self {
+            Self::Open(data) => data.decapsulate(DataInterfaceRole::AccessPoint),
+            Self::Wpa2Personal(data) => data.decapsulate(DataInterfaceRole::AccessPoint),
+        }
+    }
 }
 
 /// Independent duplicate history for every admitted AP peer.
@@ -79,10 +114,13 @@ impl Esp32s31ApRxDispatcher {
     /// owner because multiple stations can use the same TID concurrently.
     #[inline(always)]
     pub fn reorder_key(&self, segment: RxSegment<'_>) -> Option<RxBlockAckMpduKey> {
+        if self.config.security == WifiSecurityMode::Open {
+            return None;
+        }
         rx_block_ack_mpdu_key(segment.buffer, self.config.access_point, None)
     }
 
-    pub fn dispatch_protected<S, A>(
+    pub fn dispatch<S, A>(
         &mut self,
         segment: RxSegment<'_>,
         mut is_authorized: A,
@@ -90,31 +128,60 @@ impl Esp32s31ApRxDispatcher {
     ) -> Esp32s31ApRxDispatch
     where
         S: Esp32s31ApRxSink,
-        A: FnMut([u8; 6]) -> bool,
+        A: FnMut([u8; 6]) -> Option<bool>,
     {
-        let data = match view_protected_data(segment, self.config.ingress) {
+        let normalized = match view_normalized_rx_frame(&segment, self.config.ingress) {
+            Ok(frame) => frame,
+            Err(error) => {
+                return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(error));
+            }
+        };
+        let Some(frame_control) = normalized
+            .mpdu
+            .get(..2)
+            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        else {
+            return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(RxError::Bounds));
+        };
+        let protected = frame_control & 0x4000 != 0;
+        if protected != (self.config.security == WifiSecurityMode::Wpa2Personal) {
+            return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::SecurityModeMismatch);
+        }
+        let data = match self.config.security {
+            WifiSecurityMode::Open => {
+                view_unprotected_data(segment, self.config.ingress).map(ApDataRxView::Open)
+            }
+            WifiSecurityMode::Wpa2Personal => {
+                view_protected_data(segment, self.config.ingress).map(ApDataRxView::Wpa2Personal)
+            }
+        };
+        let data = match data {
             Ok(data) => data,
             Err(error) => {
                 return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(error));
             }
         };
-        let mpdu = data.mpdu;
+        let mpdu = data.mpdu();
         if mpdu.len() < 24 || mpdu[4..10] != self.config.access_point {
             return Esp32s31ApRxDispatch::ForeignPeer;
         }
         let peer: [u8; 6] = mpdu[10..16]
             .try_into()
             .expect("validated 802.11 address width");
-        if !is_authorized(peer) {
+        let Some(qos_supported) = is_authorized(peer) else {
             return Esp32s31ApRxDispatch::Unauthorized;
+        };
+        if data.ordering().2.is_some() && !qos_supported {
+            return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::PeerQosMismatch);
         }
         let Some(duplicates) = self.duplicate_filter(peer) else {
             return Esp32s31ApRxDispatch::Unauthorized;
         };
-        if duplicates.is_duplicate(data.retry, data.sequence_control, data.tid) {
+        let (retry, sequence_control, tid) = data.ordering();
+        if duplicates.is_duplicate(retry, sequence_control, tid) {
             return Esp32s31ApRxDispatch::Duplicate;
         }
-        let data = match data.decapsulate(DataInterfaceRole::AccessPoint) {
+        let data = match data.decapsulate() {
             Ok(data) => data,
             Err(error) => return rejected_data(error),
         };
@@ -138,6 +205,22 @@ impl Esp32s31ApRxDispatcher {
             ethernet_frames: count,
             amsdu,
         }
+    }
+
+    /// Compatibility name retained for existing WPA2 compositions. Runtime
+    /// security still comes exclusively from the typed config.
+    pub fn dispatch_protected<S, A>(
+        &mut self,
+        segment: RxSegment<'_>,
+        is_authorized: A,
+        sink: &mut S,
+    ) -> Esp32s31ApRxDispatch
+    where
+        S: Esp32s31ApRxSink,
+        A: FnMut([u8; 6]) -> bool,
+    {
+        let mut is_authorized = is_authorized;
+        self.dispatch(segment, |peer| is_authorized(peer).then_some(true), sink)
     }
 
     #[inline(always)]

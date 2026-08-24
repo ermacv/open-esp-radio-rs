@@ -9,12 +9,10 @@
 use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::{CcmpKeyHardware, StaGroupCcmpSlot},
-    irq::MacInterruptRoute,
-};
+use open_esp_radio_esp32s31_wifi_mac::{crypto::CcmpKeyHardware, irq::MacInterruptRoute};
 use open_esp_radio_wifi_embassy::{await_stack_boundary, connected_tasks::ConnectedTaskGroup};
 
+use crate::roles::station::teardown::Esp32s31ConnectedStaGroupSecurity;
 use crate::{datapath::DatapathRunner, datapath::irq::Esp32s31MacInterruptEpoch};
 use crate::{
     datapath::irq::Esp32s31MacInterruptEpochDrain,
@@ -248,7 +246,7 @@ where
     #[allow(clippy::type_complexity, clippy::result_large_err)]
     pub fn try_teardown(
         self,
-        group_key: StaGroupCcmpSlot,
+        group_security: Esp32s31ConnectedStaGroupSecurity,
     ) -> Result<
         Esp32s31ConnectedEpochCompleted<
             X,
@@ -272,7 +270,7 @@ where
         >,
     > {
         let Self { exit, quiesced } = self;
-        match quiesced.try_teardown(group_key) {
+        match quiesced.try_teardown(group_security) {
             Ok(teardown) => Ok(Esp32s31ConnectedEpochCompleted {
                 exit,
                 interrupt: teardown.interrupt,

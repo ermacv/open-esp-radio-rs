@@ -246,10 +246,11 @@ impl Esp32s31ConnectedStaPort {
                 "a connected epoch requires returned idle standby aggregate storage"
             );
         }
+        let security_mode = resources.security.mode();
         let handoff = ConnectedTxHandoff {
-            key: resources.pairwise_key,
+            security: resources.security,
             sequences: resources.sequences,
-            config: plan.single_mpdu_tx_config(),
+            config: plan.single_mpdu_tx_config().for_security(security_mode),
         };
         let ordinary = match resources.control.try_into_connected(handoff) {
             Ok(ordinary) => ordinary,
@@ -319,7 +320,9 @@ impl Esp32s31ConnectedStaPort {
             }
             control.enable_hardware_doze_boundary();
         }
-        if plan.config.block_ack.request_initial_tx_block_ack
+        if plan.security_mode()
+            == open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal
+            && plan.config.block_ack.request_initial_tx_block_ack
             && matches!(plan.aggregate_tx_rate, TxPhyRate::Ht(_) | TxPhyRate::He(_))
         {
             control.queue_initial_tx_block_ack(

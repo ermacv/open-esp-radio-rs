@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use open_esp_radio_ieee80211::ap::ApPowerSaveObservation;
+use open_esp_radio_ieee80211::ap::{ApAssociationSecurityObservation, ApPowerSaveObservation};
 use open_esp_radio_ieee80211::beacon::{
     TimAssociationId, TimBitmapError, TimVirtualBitmap, WPA2_PERSONAL_CCMP_PSK_RSN_IE,
 };
@@ -11,6 +11,7 @@ use open_esp_radio_ieee80211::block_ack::{
     TxBlockAckError, TxBlockAckResponse, TxBlockAckSession,
 };
 use open_esp_radio_ieee80211::ht::HtPeerCapabilities;
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_wpa2::{
     OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
@@ -287,6 +288,7 @@ pub enum ApMlmeAction {
 pub enum ApServiceError {
     UnknownPeer,
     WrongPeerPhase,
+    SecurityModeMismatch,
     AssociationIdMismatch,
     BufferedTrafficOverflow,
     NoBufferedTraffic,
@@ -496,6 +498,7 @@ pub struct ApPeerStatus {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AccessPointServiceStatus {
+    pub security: WifiSecurityMode,
     pub client_limit: AccessPointClientLimit,
     pub associated: u8,
     pub authorized: u8,
@@ -510,8 +513,7 @@ pub struct AccessPointServiceStatus {
 /// before it may classify the corresponding physical owner as stopped.
 pub struct AccessPointService<'peers> {
     address: [u8; 6],
-    pmk: Pmk,
-    gtk: Wpa2Gtk,
+    security: AccessPointSecurityMaterial,
     peer_storage: Option<&'peers mut AccessPointPeerStorage>,
     client_limit: AccessPointClientLimit,
     inactive_timeout: AccessPointInactiveTimeout,
@@ -525,6 +527,13 @@ pub struct AccessPointService<'peers> {
     buffered_group_release_generation: u32,
     buffered_group_release_in_flight: bool,
     smallest_operational_tx_block_ack_window: Option<u16>,
+}
+
+/// Credential ownership for one AP epoch. Open deliberately has no PMK, GTK
+/// or placeholder key bytes that could be installed by a later generic path.
+pub enum AccessPointSecurityMaterial {
+    Open,
+    Wpa2Personal { pmk: Pmk, gtk: Wpa2Gtk },
 }
 
 impl<'peers> AccessPointService<'peers> {
@@ -543,8 +552,7 @@ impl<'peers> AccessPointService<'peers> {
             .expect("AP peer generation space is not reusable");
         Self {
             address,
-            pmk,
-            gtk,
+            security: AccessPointSecurityMaterial::Wpa2Personal { pmk, gtk },
             peer_storage: Some(peer_storage),
             client_limit,
             inactive_timeout,
@@ -558,6 +566,66 @@ impl<'peers> AccessPointService<'peers> {
             buffered_group_release_generation: 0,
             buffered_group_release_in_flight: false,
             smallest_operational_tx_block_ack_window: None,
+        }
+    }
+
+    pub fn new_open(
+        address: [u8; 6],
+        client_limit: AccessPointClientLimit,
+        inactive_timeout: AccessPointInactiveTimeout,
+        peer_storage: &'peers mut AccessPointPeerStorage,
+    ) -> Self {
+        peer_storage.peers.fill_with(|| None);
+        peer_storage.generation = peer_storage
+            .generation
+            .checked_add(1)
+            .expect("AP peer generation space is not reusable");
+        Self {
+            address,
+            security: AccessPointSecurityMaterial::Open,
+            peer_storage: Some(peer_storage),
+            client_limit,
+            inactive_timeout,
+            next_management_sequence: 0,
+            next_data_sequence: 0,
+            next_qos_sequences: [0; 8],
+            status_revision: 0,
+            associated_count: 0,
+            authorized_count: 0,
+            buffered_group_frames: 0,
+            buffered_group_release_generation: 0,
+            buffered_group_release_in_flight: false,
+            smallest_operational_tx_block_ack_window: None,
+        }
+    }
+
+    pub const fn security_mode(&self) -> WifiSecurityMode {
+        match &self.security {
+            AccessPointSecurityMaterial::Open => WifiSecurityMode::Open,
+            AccessPointSecurityMaterial::Wpa2Personal { .. } => WifiSecurityMode::Wpa2Personal,
+        }
+    }
+
+    /// Exact, non-mutating admission predicate used for both first and retry
+    /// Association Requests.
+    pub fn matches_association_security(
+        &self,
+        security: ApAssociationSecurityObservation<'_>,
+    ) -> bool {
+        if security.malformed_elements || security.legacy_wpa_present {
+            return false;
+        }
+        match self.security_mode() {
+            WifiSecurityMode::Open => {
+                !security.privacy && security.rsn_ie_count == 0 && security.rsn_ie.is_none()
+            }
+            WifiSecurityMode::Wpa2Personal => {
+                security.privacy
+                    && security.rsn_ie_count == 1
+                    && security
+                        .rsn_ie
+                        .is_some_and(|rsn| validate_wpa2_ap_rsn(rsn).is_ok())
+            }
         }
     }
 
@@ -1007,6 +1075,7 @@ impl<'peers> AccessPointService<'peers> {
             });
         }
         AccessPointServiceStatus {
+            security: self.security_mode(),
             client_limit: self.client_limit,
             associated: self.associated_count,
             authorized: self.authorized_count,
@@ -1064,6 +1133,9 @@ impl<'peers> AccessPointService<'peers> {
     }
 
     pub fn next_qos_sequence(&mut self, tid: u8) -> Option<u16> {
+        if self.security_mode() == WifiSecurityMode::Open {
+            return None;
+        }
         let sequence = self.next_qos_sequences.get_mut(usize::from(tid))?;
         let current = *sequence;
         *sequence = (current + 1) & 0x0fff;
@@ -1071,6 +1143,9 @@ impl<'peers> AccessPointService<'peers> {
     }
 
     pub fn current_qos_sequence(&self, tid: u8) -> Option<u16> {
+        if self.security_mode() == WifiSecurityMode::Open {
+            return None;
+        }
         self.next_qos_sequences.get(usize::from(tid)).copied()
     }
 
@@ -1104,19 +1179,23 @@ impl<'peers> AccessPointService<'peers> {
     pub fn associate_wpa2(
         &mut self,
         peer: [u8; 6],
-        rsn_ie: &[u8],
+        security: ApAssociationSecurityObservation<'_>,
         capabilities: ApAssociationCapabilities,
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
         now_micros: u64,
     ) -> Result<ApMlmeAction, ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
+        let security_matches = self.matches_association_security(security);
         let access_point = self.address;
         let inactive_timeout_micros = self.inactive_timeout.micros();
         let existing = self.checked_peer_mut(peer)?;
         if existing.phase != ApPeerPhase::Authenticated {
             return Err(ApServiceError::WrongPeerPhase);
         }
-        if validate_wpa2_ap_rsn(rsn_ie).is_err() {
+        if !security_matches {
             return Ok(ApMlmeAction::AssociationResponse {
                 peer,
                 status: AP_STATUS_INVALID_RSN,
@@ -1152,6 +1231,61 @@ impl<'peers> AccessPointService<'peers> {
         })
     }
 
+    /// Admit an association into an explicitly Open AP epoch.
+    ///
+    /// An empty RSN body is the exact contract: a mixed or WPA-capable
+    /// request is not silently downgraded. Authorization is immediate and no
+    /// authenticator, PTK, GTK or hardware key owner is created.
+    pub fn associate_open(
+        &mut self,
+        peer: [u8; 6],
+        security: ApAssociationSecurityObservation<'_>,
+        capabilities: ApAssociationCapabilities,
+        now_micros: u64,
+    ) -> Result<ApMlmeAction, ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Open {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
+        let security_matches = self.matches_association_security(security);
+        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let existing = self.checked_peer_mut(peer)?;
+        if existing.phase != ApPeerPhase::Authenticated {
+            return Err(ApServiceError::WrongPeerPhase);
+        }
+        if !security_matches {
+            return Ok(ApMlmeAction::AssociationResponse {
+                peer,
+                status: AP_STATUS_INVALID_RSN,
+                association_id: None,
+            });
+        }
+        if capabilities.maximum_legacy_rate_500kbps == 0 {
+            return Ok(ApMlmeAction::AssociationResponse {
+                peer,
+                status: AP_STATUS_UNSUPPORTED_RATES,
+                association_id: None,
+            });
+        }
+        existing.phase = ApPeerPhase::Authorized;
+        existing.wpa2 = None;
+        existing.pending_ptk = None;
+        existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
+        existing.ht = capabilities.ht;
+        // The Open datapath deliberately uses the single non-QoS sequence
+        // space until a separately proven plaintext QoS encoder exists.
+        existing.qos_supported = capabilities.qos_supported;
+        existing.tx_block_ack.stop();
+        existing.last_activity_micros = now_micros;
+        existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+        let association_id = existing.association_id;
+        self.revise_status();
+        Ok(ApMlmeAction::AssociationResponse {
+            peer,
+            status: AP_STATUS_SUCCESS,
+            association_id: Some(association_id),
+        })
+    }
+
     /// Begin the AP-originated TID-0 TX BlockAck negotiation for one
     /// authorized HT peer. The agreement remains owned by that peer entry.
     pub fn begin_tx_block_ack(
@@ -1159,6 +1293,9 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         now_micros: u64,
     ) -> Result<Option<AddbaRequest>, ApServiceError> {
+        if self.security_mode() == WifiSecurityMode::Open {
+            return Ok(None);
+        }
         let starting_sequence = self
             .current_qos_sequence(AP_TX_BLOCK_ACK_TID)
             .expect("AP data TID is representable");
@@ -1179,6 +1316,9 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         action: BlockAckAction,
     ) -> Result<Option<TxBlockAckResponse>, ApServiceError> {
+        if self.security_mode() == WifiSecurityMode::Open {
+            return Ok(None);
+        }
         let peer = self.checked_peer_mut(peer)?;
         match action {
             BlockAckAction::AddbaResponse { .. } => {
@@ -1209,12 +1349,18 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         alarm: TxBlockAckAlarm,
     ) -> Result<bool, ApServiceError> {
+        if self.security_mode() == WifiSecurityMode::Open {
+            return Ok(false);
+        }
         let peer = self.checked_peer_mut(peer)?;
         Ok(peer.tx_block_ack.on_alarm(alarm))
     }
 
     /// Signal that the successful Association Response reached TX complete.
     pub fn begin_wpa2(&self, peer: [u8; 6]) -> Result<ApMlmeAction, ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
         let existing = self.checked_peer(peer)?;
         if existing.phase != ApPeerPhase::Securing {
             return Err(ApServiceError::WrongPeerPhase);
@@ -1223,6 +1369,9 @@ impl<'peers> AccessPointService<'peers> {
     }
 
     pub fn wpa2_mut(&mut self, peer: [u8; 6]) -> Result<&mut Wpa2ApState, ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
         let existing = self.checked_peer_mut(peer)?;
         existing.wpa2.as_mut().ok_or(ApServiceError::WrongPeerPhase)
     }
@@ -1232,8 +1381,9 @@ impl<'peers> AccessPointService<'peers> {
         Ok(existing.wpa2.as_ref().map(Wpa2ApState::phase) == Some(Wpa2ApPhase::Authorized))
     }
 
-    pub fn derive_ptk(&self, context: PtkContext) -> Ptk {
-        self.pmk.derive_ptk(context)
+    pub fn derive_ptk(&self, context: PtkContext) -> Result<Ptk, ApServiceError> {
+        let (pmk, _) = self.wpa2_material()?;
+        Ok(pmk.derive_ptk(context))
     }
 
     /// Build Message 1 only after the successful Association Response reached
@@ -1242,6 +1392,9 @@ impl<'peers> AccessPointService<'peers> {
         &self,
         peer: [u8; 6],
     ) -> Result<Wpa2TxFrame<N>, ApWpa2Error> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch.into());
+        }
         let existing = self.checked_peer(peer)?;
         let state = existing
             .wpa2
@@ -1379,6 +1532,9 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         frame: OwnedEapolFrame<N>,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch.into());
+        }
         let action = self
             .checked_peer_mut(peer)?
             .wpa2
@@ -1431,12 +1587,12 @@ impl<'peers> AccessPointService<'peers> {
         context: Wpa2StatePtkContext,
         message2: OwnedEapolFrame<N>,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
-        let ptk = self.pmk.derive_ptk(PtkContext {
+        let ptk = self.derive_ptk(PtkContext {
             authenticator_address: context.authenticator_address,
             supplicant_address: context.supplicant_address,
             authenticator_nonce: context.authenticator_nonce,
             supplicant_nonce: context.supplicant_nonce,
-        });
+        })?;
         let action = self
             .checked_peer_mut(peer)?
             .wpa2
@@ -1461,9 +1617,10 @@ impl<'peers> AccessPointService<'peers> {
             _ => return Err(ApWpa2Error::UnexpectedAction),
         };
 
+        let (_, gtk) = self.wpa2_material()?;
         let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
         let plain =
-            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, &self.gtk)?;
+            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let action = self
             .checked_peer_mut(peer)?
@@ -1504,9 +1661,10 @@ impl<'peers> AccessPointService<'peers> {
             .pending_ptk
             .as_ref()
             .ok_or(ApWpa2Error::MissingPairwiseKey)?;
+        let (_, gtk) = self.wpa2_material()?;
         let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
         let plain =
-            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, &self.gtk)?;
+            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let response =
             build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(ptk);
@@ -1520,11 +1678,14 @@ impl<'peers> AccessPointService<'peers> {
             .ok_or(ApServiceError::WrongPeerPhase)
     }
 
-    pub const fn gtk(&self) -> &Wpa2Gtk {
-        &self.gtk
+    pub fn gtk(&self) -> Result<&Wpa2Gtk, ApServiceError> {
+        self.wpa2_material().map(|(_, gtk)| gtk)
     }
 
     pub fn authorize(&mut self, peer: [u8; 6], now_micros: u64) -> Result<(), ApServiceError> {
+        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+            return Err(ApServiceError::SecurityModeMismatch);
+        }
         let inactive_timeout_micros = self.inactive_timeout.micros();
         let existing = self.checked_peer_mut(peer)?;
         if existing.wpa2.as_ref().map(Wpa2ApState::phase) != Some(Wpa2ApPhase::Authorized) {
@@ -1538,6 +1699,13 @@ impl<'peers> AccessPointService<'peers> {
         existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
         self.revise_status();
         Ok(())
+    }
+
+    fn wpa2_material(&self) -> Result<(&Pmk, &Wpa2Gtk), ApServiceError> {
+        match &self.security {
+            AccessPointSecurityMaterial::Open => Err(ApServiceError::SecurityModeMismatch),
+            AccessPointSecurityMaterial::Wpa2Personal { pmk, gtk } => Ok((pmk, gtk)),
+        }
     }
 
     pub fn observe_activity(

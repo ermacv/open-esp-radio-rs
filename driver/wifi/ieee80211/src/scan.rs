@@ -7,6 +7,7 @@
 //! extraction.
 
 use crate::ht::{HtPeerCapabilities, ht_peer_capabilities};
+use crate::security::WifiSecurityMode;
 
 pub const SCAN_RECORD_CAPACITY: usize = 32;
 pub const RSN_IE_CAPACITY: usize = 64;
@@ -71,6 +72,8 @@ pub struct ScanRecord {
     pub rssi: i8,
     pub privacy: bool,
     pub rsn: bool,
+    /// Number of complete RSN elements observed in this bounded record.
+    pub rsn_ie_count: u8,
     pub legacy_wpa: bool,
     pub information_elements_truncated: bool,
     pub capability_info: u16,
@@ -104,6 +107,7 @@ impl ScanRecord {
         rssi: i8::MIN,
         privacy: false,
         rsn: false,
+        rsn_ie_count: 0,
         legacy_wpa: false,
         information_elements_truncated: false,
         capability_info: 0,
@@ -130,6 +134,33 @@ impl ScanRecord {
 
     pub fn ssid_bytes(&self) -> &[u8] {
         &self.ssid[..usize::from(self.ssid_len)]
+    }
+
+    /// Whether this observation matches one exact requested security mode.
+    ///
+    /// Mixed WPA/WPA2 advertisements are intentionally rejected. Open means
+    /// that the Privacy capability is clear and neither RSN nor legacy WPA
+    /// was observed; WPA2 means a Privacy-marked, RSN-only BSS. Full WPA2
+    /// suite validation remains at association encoding.
+    pub const fn matches_security(&self, mode: WifiSecurityMode) -> bool {
+        match mode {
+            WifiSecurityMode::Open => {
+                !self.information_elements_truncated
+                    && !self.privacy
+                    && !self.rsn
+                    && self.rsn_ie_count == 0
+                    && !self.legacy_wpa
+                    && self.rsn_ie_len == 0
+            }
+            WifiSecurityMode::Wpa2Personal => {
+                !self.information_elements_truncated
+                    && self.privacy
+                    && self.rsn
+                    && self.rsn_ie_count == 1
+                    && !self.legacy_wpa
+                    && self.rsn_ie_len != 0
+            }
+        }
     }
 
     pub fn supported_rates_bytes(&self) -> &[u8] {
@@ -331,6 +362,22 @@ pub fn best_matching_ssid<'a>(records: &'a [ScanRecord], ssid: &[u8]) -> Option<
         .max_by_key(|record| record.rssi)
 }
 
+/// Select the strongest exact SSID and security match.
+pub fn best_matching_ssid_and_security<'a>(
+    records: &'a [ScanRecord],
+    ssid: &[u8],
+    security: WifiSecurityMode,
+) -> Option<&'a ScanRecord> {
+    records
+        .iter()
+        .filter(|record| {
+            record.ssid_bytes() == ssid
+                && (1..=13).contains(&record.channel)
+                && record.matches_security(security)
+        })
+        .max_by_key(|record| record.rssi)
+}
+
 /// Decode one beacon or probe response into an owned bounded record.
 pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<ScanRecord> {
     if frame.len() < 36 {
@@ -382,6 +429,7 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
             }
             48 => {
                 record.rsn = true;
+                record.rsn_ie_count = record.rsn_ie_count.saturating_add(1);
                 let total = length + 2;
                 if total <= record.rsn_ie.len() {
                     record.rsn_ie[..total].copy_from_slice(&frame[offset - 2..end]);
@@ -445,6 +493,9 @@ pub fn parse_management(frame: &[u8], fallback_channel: u8, rssi: i8) -> Option<
         }
         offset = end;
     }
+    // One trailing byte cannot form an IE header. Treat it as malformed,
+    // rather than silently accepting it as absence of a later RSN/WPA IE.
+    record.information_elements_truncated |= offset != frame.len();
     Some(record)
 }
 

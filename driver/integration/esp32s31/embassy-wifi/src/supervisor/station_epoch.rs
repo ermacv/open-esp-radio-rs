@@ -106,7 +106,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         let interrupt_setup = interrupt_epoch
             .setup()
             .expect("initial scan requires a quiesced interrupt epoch");
-        let scan_plan = Esp32s31StationScanPlan::new(discovery, None);
+        let scan_plan = Esp32s31StationScanPlan::new(discovery, None, security.mode());
         let scan_request = scan_plan.request(identity.station_address);
         let scan = run_esp32s31_station_scan(
             Esp32s31StationScanResources {
@@ -206,8 +206,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             network,
             station,
             peer,
-            pairwise,
-            group,
+            installed_security,
         } = connected;
         let interface = runtime.board().interface;
         let returned = run_connected(
@@ -219,8 +218,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 interface,
                 connected_config(self.power_mode),
                 peer,
-                pairwise,
-                group,
+                installed_security,
                 security,
             ),
         )
@@ -295,7 +293,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         let interrupt_setup = interrupt_epoch
             .setup()
             .expect("running scan requires a quiesced interrupt epoch");
-        let scan_plan = Esp32s31StationScanPlan::new(discovery, None);
+        let scan_plan = Esp32s31StationScanPlan::new(discovery, None, security.mode());
         let scan_request = scan_plan.request(station.station_address);
         let scan = run_esp32s31_station_scan(
             Esp32s31StationScanResources {
@@ -490,8 +488,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             Esp32s31StationJoinOutcome::Connected {
                 returned,
                 peer,
-                pairwise,
-                group,
+                installed_security,
                 report,
                 progress,
             } => {
@@ -513,8 +510,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                         network,
                         station: returned.station,
                         peer,
-                        pairwise,
-                        group,
+                        installed_security,
                     },
                     returned.security,
                 )
@@ -636,8 +632,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             Esp32s31StationJoinOutcome::Connected {
                 returned,
                 peer,
-                pairwise,
-                group,
+                installed_security,
                 report,
                 progress,
             } => {
@@ -658,8 +653,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                         network,
                         station: returned.station,
                         peer,
-                        pairwise,
-                        group,
+                        installed_security,
                     },
                     returned.security,
                 )
@@ -934,16 +928,22 @@ impl ProductionWifiEpochRunner {
     }
 
     fn fresh_security(&self, security: StationSecurity) -> Esp32s31StaAttemptSecurity<'static> {
-        let mut supplicant_nonce = [0; 32];
-        for word in supplicant_nonce.chunks_exact_mut(4) {
-            word.copy_from_slice(&self.trng.random().to_le_bytes());
+        let sequences = StaTxSequenceCounters::new((self.trng.random() & 0x0fff) as u16);
+        match security {
+            StationSecurity::Open => Esp32s31StaAttemptSecurity::open(sequences),
+            StationSecurity::Wpa2Personal(pmk) => {
+                let mut supplicant_nonce = [0; 32];
+                for word in supplicant_nonce.chunks_exact_mut(4) {
+                    word.copy_from_slice(&self.trng.random().to_le_bytes());
+                }
+                Esp32s31StaAttemptSecurity::new(
+                    pmk,
+                    supplicant_nonce,
+                    sequences,
+                    open_esp_radio_esp32s31_wifi_sta::wpa2::Esp32s31Wpa2Message4Protection::Unprotected,
+                )
+            }
         }
-        Esp32s31StaAttemptSecurity::new(
-            security.into_pmk(),
-            supplicant_nonce,
-            StaTxSequenceCounters::new((self.trng.random() & 0x0fff) as u16),
-            open_esp_radio_esp32s31_wifi_sta::wpa2::Esp32s31Wpa2Message4Protection::Unprotected,
-        )
     }
 
     pub(super) fn prepare_station_task(
@@ -957,6 +957,7 @@ impl ProductionWifiEpochRunner {
             stopped.into_parts();
         let station_resources = join_station_activation_resources(physical_resources, station_role);
         let security = self.fresh_security(security);
+        let requested_security = security.mode();
         let owner = match station_resources {
             ProductionWifiStoppedResources::Fresh(fresh) => {
                 let mut materialized = materialize_esp32s31_wifi_role(wifi, fresh);
@@ -1023,6 +1024,7 @@ impl ProductionWifiEpochRunner {
                         identity: Esp32s31StaIdentity {
                             station_address,
                             association_preference: discovery.scan().association_preference(),
+                            security: requested_security,
                         },
                     },
                     security,
@@ -1043,6 +1045,7 @@ impl ProductionWifiEpochRunner {
                 let identity = Esp32s31StaIdentity {
                     station_address: board.interface.interface.address,
                     association_preference: discovery.scan().association_preference(),
+                    security: requested_security,
                 };
                 let phase = match try_rebind_esp32s31_station_phase(phase, rx_storage, identity) {
                     Ok(phase) => phase,

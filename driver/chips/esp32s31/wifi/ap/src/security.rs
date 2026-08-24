@@ -9,6 +9,7 @@ use open_esp_radio_wpa2::{Ptk, frames::Wpa2Gtk};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApSecurityError {
     Crypto(CryptoKeyError),
+    SecurityModeMismatch,
     PairwiseStorageNotEmpty,
     PairwiseAlreadyInstalled,
     AssociationIdAlreadyInstalled,
@@ -22,9 +23,12 @@ impl From<CryptoKeyError> for Esp32s31ApSecurityError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Esp32s31ApSecurityStopReport {
-    pub pairwise_slots_cleared: u8,
-    pub group_hardware_index: u8,
+pub enum Esp32s31ApSecurityStopReport {
+    OpenNoKeys,
+    Wpa2Personal {
+        pairwise_slots_cleared: u8,
+        group_hardware_index: u8,
+    },
 }
 
 /// O(1) identity of one installed pairwise hardware-key slot.
@@ -74,9 +78,14 @@ impl Default for Esp32s31ApPairwiseKeyStorage {
     }
 }
 
-pub struct Esp32s31ApSecurity<'storage> {
-    group: ApGroupCcmpSlot,
-    storage: Option<&'storage mut Esp32s31ApPairwiseKeyStorage>,
+pub enum Esp32s31ApSecurity<'storage> {
+    Open {
+        storage: Option<&'storage mut Esp32s31ApPairwiseKeyStorage>,
+    },
+    Wpa2Personal {
+        group: ApGroupCcmpSlot,
+        storage: Option<&'storage mut Esp32s31ApPairwiseKeyStorage>,
+    },
 }
 
 impl<'storage> Esp32s31ApSecurity<'storage> {
@@ -103,8 +112,23 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
                 });
             }
         };
-        Ok(Self {
+        Ok(Self::Wpa2Personal {
             group,
+            storage: Some(storage),
+        })
+    }
+
+    /// Bind an Open AP epoch without touching any hardware key entry.
+    pub fn open(
+        storage: &'storage mut Esp32s31ApPairwiseKeyStorage,
+    ) -> Result<Self, Esp32s31ApSecurityStartFailure<'storage>> {
+        if storage.pairwise.iter().any(Option::is_some) {
+            return Err(Esp32s31ApSecurityStartFailure {
+                error: Esp32s31ApSecurityError::PairwiseStorageNotEmpty,
+                storage,
+            });
+        }
+        Ok(Self::Open {
             storage: Some(storage),
         })
     }
@@ -119,6 +143,9 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
     where
         H: open_esp_radio_esp32s31_wifi_mac::crypto::CcmpKeyHardware,
     {
+        if matches!(self, Self::Open { .. }) {
+            return Err(Esp32s31ApSecurityError::SecurityModeMismatch);
+        }
         if self
             .slots()
             .iter()
@@ -181,6 +208,9 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
         &mut self,
         peer: [u8; 6],
     ) -> Result<[u8; 8], Esp32s31ApSecurityError> {
+        if matches!(self, Self::Open { .. }) {
+            return Err(Esp32s31ApSecurityError::SecurityModeMismatch);
+        }
         let slot = self
             .slots_mut()
             .iter_mut()
@@ -195,6 +225,9 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
         peer: [u8; 6],
         association_id: u16,
     ) -> Result<Esp32s31ApPairwiseBinding, Esp32s31ApSecurityError> {
+        if matches!(self, Self::Open { .. }) {
+            return Err(Esp32s31ApSecurityError::SecurityModeMismatch);
+        }
         let index = usize::from(
             u8::try_from(
                 association_id
@@ -221,6 +254,9 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
         &mut self,
         binding: Esp32s31ApPairwiseBinding,
     ) -> Result<[u8; 8], Esp32s31ApSecurityError> {
+        if matches!(self, Self::Open { .. }) {
+            return Err(Esp32s31ApSecurityError::SecurityModeMismatch);
+        }
         let slot = self
             .slots_mut()
             .get_mut(usize::from(binding.index))
@@ -233,6 +269,9 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
     }
 
     pub fn pairwise_hardware_index(&self, peer: [u8; 6]) -> Result<u8, Esp32s31ApSecurityError> {
+        if matches!(self, Self::Open { .. }) {
+            return Err(Esp32s31ApSecurityError::SecurityModeMismatch);
+        }
         let slot = self
             .slots()
             .iter()
@@ -242,17 +281,23 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
         Ok(slot.hardware_index())
     }
 
-    pub fn next_group_tx_ccmp_header(&mut self) -> [u8; 8] {
-        self.group.next_tx_ccmp_header()
+    pub fn next_group_tx_ccmp_header(&mut self) -> Result<[u8; 8], Esp32s31ApSecurityError> {
+        match self {
+            Self::Open { .. } => Err(Esp32s31ApSecurityError::SecurityModeMismatch),
+            Self::Wpa2Personal { group, .. } => Ok(group.next_tx_ccmp_header()),
+        }
     }
 
-    pub const fn group_hardware_index(&self) -> u8 {
-        self.group.hardware_index()
+    pub const fn group_hardware_index(&self) -> Result<u8, Esp32s31ApSecurityError> {
+        match self {
+            Self::Open { .. } => Err(Esp32s31ApSecurityError::SecurityModeMismatch),
+            Self::Wpa2Personal { group, .. } => Ok(group.hardware_index()),
+        }
     }
 
     /// Clear every installed AP key before the radio owner may become stopped.
     pub fn stop<H>(
-        mut self,
+        self,
         hardware: &mut H,
     ) -> (
         Esp32s31ApSecurityStopReport,
@@ -261,40 +306,55 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
     where
         H: open_esp_radio_esp32s31_wifi_mac::crypto::CcmpKeyHardware,
     {
-        let storage = self
-            .storage
-            .take()
-            .expect("active AP security owns pairwise-key storage");
+        let (storage, group) = match self {
+            Self::Open { mut storage } => (
+                storage
+                    .take()
+                    .expect("active Open AP security owns pairwise-key storage"),
+                None,
+            ),
+            Self::Wpa2Personal { group, mut storage } => (
+                storage
+                    .take()
+                    .expect("active WPA2 AP security owns pairwise-key storage"),
+                Some(group),
+            ),
+        };
         let mut pairwise_slots_cleared = 0_u8;
         for pairwise in storage.pairwise.iter_mut().filter_map(Option::take) {
             pairwise.clear(hardware);
             pairwise_slots_cleared = pairwise_slots_cleared.saturating_add(1);
         }
-        let group_hardware_index = self.group.hardware_index();
-        self.group.clear(hardware);
-        (
-            Esp32s31ApSecurityStopReport {
+        let report = if let Some(group) = group {
+            let group_hardware_index = group.hardware_index();
+            group.clear(hardware);
+            Esp32s31ApSecurityStopReport::Wpa2Personal {
                 pairwise_slots_cleared,
                 group_hardware_index,
-            },
-            storage,
-        )
+            }
+        } else {
+            debug_assert_eq!(pairwise_slots_cleared, 0);
+            Esp32s31ApSecurityStopReport::OpenNoKeys
+        };
+        (report, storage)
     }
 
     fn slots(&self) -> &[Option<ApPairwiseCcmpSlot>; AP_PAIRWISE_SLOT_COUNT as usize] {
-        &self
-            .storage
-            .as_deref()
-            .expect("active AP security owns pairwise-key storage")
-            .pairwise
+        &match self {
+            Self::Open { storage } | Self::Wpa2Personal { storage, .. } => storage,
+        }
+        .as_deref()
+        .expect("active AP security owns pairwise-key storage")
+        .pairwise
     }
 
     fn slots_mut(&mut self) -> &mut [Option<ApPairwiseCcmpSlot>; AP_PAIRWISE_SLOT_COUNT as usize] {
-        &mut self
-            .storage
-            .as_deref_mut()
-            .expect("active AP security owns pairwise-key storage")
-            .pairwise
+        &mut match self {
+            Self::Open { storage } | Self::Wpa2Personal { storage, .. } => storage,
+        }
+        .as_deref_mut()
+        .expect("active AP security owns pairwise-key storage")
+        .pairwise
     }
 }
 

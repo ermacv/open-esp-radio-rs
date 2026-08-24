@@ -43,7 +43,7 @@ where
         hardware: &mut H,
         mpdu: &[u8],
         now_micros: u64,
-    ) -> Result<(), Esp32s31AccessPointControlError>
+    ) -> Result<bool, Esp32s31AccessPointControlError>
     where
         H: TxHardware + Esp32s31ApRuntimeHardware,
     {
@@ -56,7 +56,7 @@ where
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
             });
-            return Ok(());
+            return Ok(false);
         };
         let Ok(plan) = plan_data_decapsulation(
             DataInterfaceRole::AccessPoint,
@@ -67,7 +67,7 @@ where
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
             });
-            return Ok(());
+            return Ok(false);
         };
         if plan.ether_type != EAPOL_ETHERTYPE
             || plan.destination != self.mac.engine().service_address()
@@ -76,7 +76,7 @@ where
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
             });
-            return Ok(());
+            return Ok(false);
         }
         let payload = &mpdu[plan.payload_offset..plan.payload_offset + plan.payload_length];
         let Ok(frame) = OwnedEapolFrame::<EAPOL_CAPACITY>::try_copy(
@@ -87,7 +87,7 @@ where
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
             });
-            return Ok(());
+            return Ok(false);
         };
         match self
             .mac
@@ -128,7 +128,7 @@ where
             }
             Esp32s31ApWpa2Outcome::None => {}
         }
-        Ok(())
+        Ok(true)
     }
 
     pub async fn service_tx<H>(

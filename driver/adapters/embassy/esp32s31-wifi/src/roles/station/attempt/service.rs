@@ -72,12 +72,27 @@ where
         owner: &'a mut Self::Owner,
     ) -> impl Future<Output = Result<(), Esp32s31StaAttemptStepError<Self::Error>>> + 'a {
         async move {
+            // This is the first attempt edge and precedes candidate TX policy
+            // or channel/MMIO mutation. A public caller may only pair a
+            // station request with security material of the same exact mode;
+            // never reinterpret missing WPA material as an Open attempt.
+            if owner.station.security != owner.security.mode() {
+                return Err(Esp32s31StaAttemptStepError::terminal(
+                    Esp32s31StaAttemptTargetError::Security(StaSecurityError::SecurityModeMismatch),
+                ));
+            }
             owner.prepared_peer = None;
             owner.association = None;
             owner.connected_peer = None;
             owner.pending_keys = None;
-            owner.installed_keys = None;
+            owner.installed_security = None;
             owner.report = Esp32s31StaAttemptReport::default();
+            owner.report.security = Some(match owner.security.mode() {
+                WifiSecurityMode::Open => {
+                    Esp32s31StaAttemptSecurityExecution::OpenHandshakeAndKeyInstallSkipped
+                }
+                WifiSecurityMode::Wpa2Personal => Esp32s31StaAttemptSecurityExecution::Wpa2Personal,
+            });
             owner.prepared_peer = Some(
                 Esp32s31StaPeerPort::prepare(owner.transmit, &owner.station.access_point).map_err(
                     |error| {
@@ -138,7 +153,8 @@ where
                     owner.station.access_point,
                     owner.station.association_preference,
                 )
-                .with_listen_interval(owner.listen_interval),
+                .with_listen_interval(owner.listen_interval)
+                .with_security(owner.station.security),
             );
             port.prepare_authentication();
             let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
@@ -185,13 +201,15 @@ where
                     owner.station.access_point,
                     owner.station.association_preference,
                 )
-                .with_listen_interval(owner.listen_interval),
+                .with_listen_interval(owner.listen_interval)
+                .with_security(owner.station.security),
             );
             let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
             let result = runner
                 .associate(
                     owner.station.station_address,
                     owner.station.access_point.bssid,
+                    owner.station.security,
                     owner.security.sequences.non_qos_mut(),
                 )
                 .await;
@@ -250,6 +268,10 @@ where
         owner: &'a mut Self::Owner,
     ) -> impl Future<Output = Result<(), Esp32s31StaAttemptStepError<Self::Error>>> + 'a {
         async move {
+            if owner.security.mode() == WifiSecurityMode::Open {
+                owner.installed_security = Some(Esp32s31StaInstalledSecurity::Open);
+                return Ok(());
+            }
             if owner.connected_peer.is_none() {
                 return Err(Esp32s31StaAttemptStepError::terminal(
                     Esp32s31StaAttemptTargetError::State(
@@ -283,17 +305,23 @@ where
             );
             let mut runner =
                 Wpa2HandshakeRunner::new(port, EmbassyWpa2HandshakeTimer, Wpa2SoftwareAes::new());
-            let mut next_sequence = || owner.security.sequences.take_non_qos();
+            let (pmk, supplicant_nonce, sequences) =
+                owner.security.wpa2_handshake_parts().ok_or_else(|| {
+                    Esp32s31StaAttemptStepError::terminal(Esp32s31StaAttemptTargetError::State(
+                        Esp32s31StaAttemptStateError::MissingConnectedSecurity,
+                    ))
+                })?;
+            let mut next_sequence = || sequences.take_non_qos();
             let result = runner
                 .run(
                     Wpa2HandshakeConfig {
                         local: owner.station.station_address,
                         authenticator: owner.station.access_point.bssid,
-                        supplicant_nonce: owner.security.supplicant_nonce,
+                        supplicant_nonce,
                         association_security_ies: selected_rsn.as_bytes(),
                         authenticator_rsn_ie: owner.station.access_point.rsn_ie_bytes(),
                         authenticator_rsnxe: owner.station.access_point.rsnxe_bytes(),
-                        pmk: &owner.security.pmk,
+                        pmk,
                     },
                     &mut next_sequence,
                 )
@@ -319,6 +347,9 @@ where
         owner: &'a mut Self::Owner,
     ) -> impl Future<Output = Result<(), Esp32s31StaAttemptStepError<Self::Error>>> + 'a {
         async move {
+            if owner.security.mode() == WifiSecurityMode::Open {
+                return Ok(());
+            }
             let pending = owner.pending_keys.take().ok_or_else(|| {
                 Esp32s31StaAttemptStepError::terminal(Esp32s31StaAttemptTargetError::State(
                     Esp32s31StaAttemptStateError::MissingHandshake,
@@ -333,13 +364,18 @@ where
                     ))
                 })?
                 .link;
+            let (_, _, message4_protection) = owner.security.wpa2_material().ok_or_else(|| {
+                Esp32s31StaAttemptStepError::terminal(Esp32s31StaAttemptTargetError::State(
+                    Esp32s31StaAttemptStateError::MissingConnectedSecurity,
+                ))
+            })?;
             let port = Esp32s31Wpa2KeyPort::new(
                 Esp32s31Wpa2KeyRadio::new(&mut *owner.hardware, &mut *owner.transmit),
                 Esp32s31Wpa2KeySession::new(
                     Esp32s31Wpa2Station::new(link.station_address, link.bssid),
                     link.peer_qos,
                     &mut owner.security.sequences,
-                    owner.security.message4_protection,
+                    message4_protection,
                 ),
             );
             let mut runner = Wpa2KeyInstallRunner::new(port);
@@ -353,8 +389,16 @@ where
                 Ok(established) => {
                     owner.report.wpa2 = Some(established.metadata());
                     let (keys, connected) = established.into_parts();
-                    owner.installed_keys = Some(keys.into_parts());
-                    owner.security.connected = Some(connected);
+                    let (pairwise, group) = keys.into_parts();
+                    owner.installed_security =
+                        Some(Esp32s31StaInstalledSecurity::Wpa2Personal { pairwise, group });
+                    if !owner.security.set_connected(connected) {
+                        return Err(Esp32s31StaAttemptStepError::terminal(
+                            Esp32s31StaAttemptTargetError::State(
+                                Esp32s31StaAttemptStateError::MissingConnectedSecurity,
+                            ),
+                        ));
+                    }
                     Ok(())
                 }
                 Err(error) => Err(Esp32s31StaAttemptStepError::retry_current(
@@ -376,9 +420,11 @@ where
         async move {
             let missing = if owner.connected_peer.is_none() {
                 Some(Esp32s31StaAttemptStateError::MissingConnectedPeer)
-            } else if owner.installed_keys.is_none() {
+            } else if owner.installed_security.is_none() {
                 Some(Esp32s31StaAttemptStateError::MissingKeys)
-            } else if owner.security.connected.is_none() {
+            } else if owner.security.mode() == WifiSecurityMode::Wpa2Personal
+                && !owner.security.has_connected_wpa2()
+            {
                 Some(Esp32s31StaAttemptStateError::MissingConnectedSecurity)
             } else {
                 None

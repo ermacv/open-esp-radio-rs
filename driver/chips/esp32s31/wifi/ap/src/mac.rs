@@ -576,19 +576,30 @@ where
                     ApServiceError::UnknownPeer,
                 )))?
         };
-        if peer[0] & 1 != 0 {
-            self.transmit.start_group_protected_encoded(
-                hardware,
-                &scratch[..encoded.length],
-                encoded.hardware_key_selector,
-            )?;
-        } else {
-            self.transmit.start_protected_encoded(
-                hardware,
-                &scratch[..encoded.length],
-                encoded.hardware_key_selector,
-                rate,
-            )?;
+        match encoded.hardware_key_selector {
+            None => {
+                self.transmit.start_unprotected_data_encoded(
+                    hardware,
+                    &scratch[..encoded.length],
+                    peer[0] & 1 != 0,
+                    rate,
+                )?;
+            }
+            Some(hardware_key_selector) if peer[0] & 1 != 0 => {
+                self.transmit.start_group_protected_encoded(
+                    hardware,
+                    &scratch[..encoded.length],
+                    hardware_key_selector,
+                )?;
+            }
+            Some(hardware_key_selector) => {
+                self.transmit.start_protected_encoded(
+                    hardware,
+                    &scratch[..encoded.length],
+                    hardware_key_selector,
+                    rate,
+                )?;
+            }
         }
         self.pending = Some(PendingPublication::Data { peer });
         Ok(())

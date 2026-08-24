@@ -23,6 +23,7 @@ pub use config::{
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelError, WifiChannelWidth},
+    security::WifiSecurityMode,
     ssid::{WifiSsid, WifiSsidError},
     station::StaAssociationPreference,
 };

@@ -14,13 +14,15 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::management::ProbeRequest;
 use open_esp_radio_ieee80211::station::{
-    StaActionFrame, StaProtectedDataFrame, StaProtectedEthernetFrame, StaTxSequenceCounters,
-    StationFrameError,
+    StaActionFrame, StaDataFrame, StaProtectedDataFrame, StaProtectedEthernetFrame,
+    StaTxSequenceCounters, StationFrameError,
 };
 use open_esp_radio_ieee80211::station_power_save::{
     StaAssociationId, StaNullDataFrame, StaPowerManagement, StaPsPollFrame,
 };
-use open_esp_radio_ieee80211::{channel::WifiChannel, esp_now::EspNowRandomValue};
+use open_esp_radio_ieee80211::{
+    channel::WifiChannel, esp_now::EspNowRandomValue, security::WifiSecurityMode,
+};
 use open_esp_radio_wifi_softmac::{
     EspNowPeerId, EspNowProtocol, EspNowSendError, EspNowV2SendError, MacTxPlan, MacTxQueueState,
     interface::BoundVirtualInterface,
@@ -51,15 +53,50 @@ pub struct SingleMpduTxConfig {
     pub exchange: MacTxPlan<TxPhyRate>,
 }
 
+impl SingleMpduTxConfig {
+    /// Derive the effective frame geometry for the selected security mode.
+    /// The current Open encoder is intentionally non-QoS; keeping a peer's
+    /// WMM bit here would consume the wrong sequence space and imply an
+    /// unsupported plaintext A-MPDU path.
+    pub const fn for_security(mut self, security: WifiSecurityMode) -> Self {
+        if matches!(security, WifiSecurityMode::Open) {
+            self.peer_qos = false;
+        }
+        self
+    }
+}
+
 /// Protocol resources installed at the WPA2-to-connected TX handoff.
 ///
 /// Keeping the key token, all independent sequence spaces and the negotiated
 /// publication policy in one value prevents a partial transition from
 /// constructing a connected transmitter with mismatched session state.
 pub struct ConnectedTxHandoff {
-    pub key: StaPairwiseCcmpSlot,
+    pub security: ConnectedTxSecurity,
     pub sequences: StaTxSequenceCounters,
     pub config: SingleMpduTxConfig,
+}
+
+/// Pairwise TX ownership for one connected station epoch.
+pub enum ConnectedTxSecurity {
+    Open,
+    Wpa2Personal(StaPairwiseCcmpSlot),
+}
+
+impl ConnectedTxSecurity {
+    pub const fn mode(&self) -> WifiSecurityMode {
+        match self {
+            Self::Open => WifiSecurityMode::Open,
+            Self::Wpa2Personal(_) => WifiSecurityMode::Wpa2Personal,
+        }
+    }
+
+    pub const fn hardware_key_selector(&self) -> u8 {
+        match self {
+            Self::Open => 0,
+            Self::Wpa2Personal(key) => key.hardware_index(),
+        }
+    }
 }
 
 /// Queue priorities for one unprotected connected Action frame.
@@ -95,6 +132,7 @@ pub enum SingleMpduTxError {
     /// The abstract control owner has no PS-Poll publication implementation.
     PsPollUnsupported,
     EthernetFrameTooShort,
+    SecurityModeMismatch,
     BufferSizeOverflow,
     DeadlineOverflow,
     ProbeEncode,
@@ -160,7 +198,7 @@ impl From<OrdinaryTxError> for SingleMpduTxError {
 /// Unique ordinary-MPDU descriptor, crypto PN and retry owner.
 pub struct Esp32s31SingleMpduTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
     ordinary: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
-    key: StaPairwiseCcmpSlot,
+    security: ConnectedTxSecurity,
     sequences: StaTxSequenceCounters,
     config: SingleMpduTxConfig,
 }
@@ -182,13 +220,13 @@ where
         handoff: ConnectedTxHandoff,
     ) -> Self {
         let ConnectedTxHandoff {
-            key,
+            security,
             sequences,
             config,
         } = handoff;
         Self {
             ordinary: OrdinaryTxOwner::new(resources),
-            key,
+            security,
             sequences,
             config,
         }
@@ -202,13 +240,13 @@ where
     ) -> Self {
         let Esp32s31SingleMpduTxParked { ordinary, handoff } = parked;
         let ConnectedTxHandoff {
-            key,
+            security,
             sequences,
             config,
         } = handoff;
         Self {
             ordinary: OrdinaryTxOwner::resume(resources, ordinary),
-            key,
+            security,
             sequences,
             config,
         }
@@ -216,13 +254,13 @@ where
 
     pub(crate) fn from_ordinary(
         ordinary: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
-        key: StaPairwiseCcmpSlot,
+        security: ConnectedTxSecurity,
         sequences: StaTxSequenceCounters,
         config: SingleMpduTxConfig,
     ) -> Self {
         Self {
             ordinary,
-            key,
+            security,
             sequences,
             config,
         }
@@ -312,7 +350,7 @@ where
     > {
         let Self {
             ordinary,
-            key,
+            security,
             sequences,
             config,
         } = self;
@@ -320,14 +358,14 @@ where
             Ok(resources) => Ok((
                 resources,
                 ConnectedTxHandoff {
-                    key,
+                    security,
                     sequences,
                     config,
                 },
             )),
             Err(ordinary) => Err(Self {
                 ordinary,
-                key,
+                security,
                 sequences,
                 config,
             }),
@@ -348,7 +386,7 @@ where
     > {
         let Self {
             ordinary,
-            key,
+            security,
             sequences,
             config,
         } = self;
@@ -358,7 +396,7 @@ where
                 Esp32s31SingleMpduTxParked {
                     ordinary,
                     handoff: ConnectedTxHandoff {
-                        key,
+                        security,
                         sequences,
                         config,
                     },
@@ -366,7 +404,7 @@ where
             )),
             Err(ordinary) => Err(Self {
                 ordinary,
-                key,
+                security,
                 sequences,
                 config,
             }),
@@ -378,17 +416,24 @@ where
     }
 
     pub fn take_protected_metadata(&mut self, tid: u8) -> Option<StaProtectedEthernetFrame> {
+        let ConnectedTxSecurity::Wpa2Personal(key) = &mut self.security else {
+            return None;
+        };
         Some(StaProtectedEthernetFrame {
             bssid: self.config.bssid,
             sequence_number: self.sequences.take_data(Some(tid))?,
             user_priority: tid,
             peer_qos: self.config.peer_qos,
-            ccmp_header: self.key.next_tx_ccmp_header(),
+            ccmp_header: key.next_tx_ccmp_header(),
         })
     }
 
     pub const fn hardware_key_selector(&self) -> u8 {
-        self.key.hardware_index()
+        self.security.hardware_key_selector()
+    }
+
+    pub const fn security_mode(&self) -> WifiSecurityMode {
+        self.security.mode()
     }
 
     pub const fn config(&self) -> SingleMpduTxConfig {
@@ -399,6 +444,9 @@ where
     /// Sequence Control and CCMP PN are already present and must not be
     /// allocated again; only the IEEE Retry bit is added.
     pub fn copy_encoded_retry(&mut self, encoded: &[u8]) -> Result<usize, SingleMpduTxError> {
+        if self.security_mode() == WifiSecurityMode::Open {
+            return Err(SingleMpduTxError::SecurityModeMismatch);
+        }
         if self.ordinary.active() {
             return Err(SingleMpduTxError::Busy);
         }
@@ -425,6 +473,9 @@ where
         hardware_mic_length: usize,
         rate: TxPhyRate,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        if self.security_mode() == WifiSecurityMode::Open || hardware_mic_length == 0 {
+            return Err(SingleMpduTxError::SecurityModeMismatch);
+        }
         self.ordinary
             .start(
                 hardware,
@@ -438,7 +489,7 @@ where
                         publication_timeout_micros: self.config.exchange.publication_timeout_micros,
                     },
                     hardware_mic_length,
-                    hardware_key_selector: self.key.hardware_index(),
+                    hardware_key_selector: self.security.hardware_key_selector(),
                     interface:
                         open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: LegacyTxQueue::BestEffort.vendor_data_scheduler_priority(),
@@ -480,22 +531,41 @@ where
             .sequences
             .take_data(self.config.peer_qos.then_some(0))
             .expect("TID zero is a valid sequence space");
-        let ccmp_header = self.key.next_tx_ccmp_header();
-        let frame_length = {
+        let (frame_length, hardware_mic_length, hardware_key_selector) = {
             let buffer = self.ordinary.buffer_mut()?;
-            StaProtectedDataFrame {
-                source,
-                bssid: self.config.bssid,
-                destination,
-                sequence_number,
-                user_priority: 0,
-                peer_qos: self.config.peer_qos,
-                ccmp_header,
-                ether_type,
-                payload: &ethernet[14..],
+            match &mut self.security {
+                ConnectedTxSecurity::Open => (
+                    StaDataFrame {
+                        source,
+                        bssid: self.config.bssid,
+                        destination,
+                        sequence_number,
+                        ether_type,
+                        payload: &ethernet[14..],
+                    }
+                    .encode(&mut buffer[TX_METADATA_SIZE..])
+                    .map_err(SingleMpduTxError::Encode)?,
+                    0,
+                    0,
+                ),
+                ConnectedTxSecurity::Wpa2Personal(key) => (
+                    StaProtectedDataFrame {
+                        source,
+                        bssid: self.config.bssid,
+                        destination,
+                        sequence_number,
+                        user_priority: 0,
+                        peer_qos: self.config.peer_qos,
+                        ccmp_header: key.next_tx_ccmp_header(),
+                        ether_type,
+                        payload: &ethernet[14..],
+                    }
+                    .encode(&mut buffer[TX_METADATA_SIZE..])
+                    .map_err(SingleMpduTxError::Encode)?,
+                    TX_CCMP_MIC_SIZE,
+                    key.hardware_index(),
+                ),
             }
-            .encode(&mut buffer[TX_METADATA_SIZE..])
-            .map_err(SingleMpduTxError::Encode)?
         };
         self.ordinary
             .start(
@@ -504,8 +574,8 @@ where
                     frame_length,
                     descriptor_capacity: None,
                     exchange: self.config.exchange,
-                    hardware_mic_length: TX_CCMP_MIC_SIZE,
-                    hardware_key_selector: self.key.hardware_index(),
+                    hardware_mic_length,
+                    hardware_key_selector,
                     interface:
                         open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: LegacyTxQueue::BestEffort.vendor_data_scheduler_priority(),
@@ -526,11 +596,14 @@ where
         if self.ordinary.active() {
             return Err(SingleMpduTxError::Busy);
         }
+        let ConnectedTxSecurity::Wpa2Personal(key) = &mut self.security else {
+            return Err(SingleMpduTxError::SecurityModeMismatch);
+        };
         let sequence_number = self
             .sequences
             .take_data(self.config.peer_qos.then_some(0))
             .expect("selected EAPOL sequence-number owner exists");
-        let ccmp_header = self.key.next_tx_ccmp_header();
+        let ccmp_header = key.next_tx_ccmp_header();
         let frame_length = {
             let buffer = self.ordinary.buffer_mut()?;
             StaProtectedDataFrame {
@@ -562,7 +635,7 @@ where
                         publication_timeout_micros: self.config.exchange.publication_timeout_micros,
                     },
                     hardware_mic_length: TX_CCMP_MIC_SIZE,
-                    hardware_key_selector: self.key.hardware_index(),
+                    hardware_key_selector: key.hardware_index(),
                     interface:
                         open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: LegacyTxQueue::Voice.vendor_data_scheduler_priority(),

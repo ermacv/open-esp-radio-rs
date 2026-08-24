@@ -29,7 +29,6 @@ use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfil
 #[cfg(test)]
 use open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE;
 use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::StaPairwiseCcmpSlot,
     rate_control::{AmpduRateObservationError, StaRateControlAssociation, StaTxRatePolicy},
     tx::{
         AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, HeTriggerBasedTxConfig, LegacyTxQueue,
@@ -85,7 +84,7 @@ pub type StationTxBlockAckStatusSink = fn(tid: u8, operational: bool);
 /// station boundary.
 pub struct Esp32s31ConnectedTxTeardownParts<R, A> {
     pub resources: R,
-    pub pairwise_key: StaPairwiseCcmpSlot,
+    pub security: open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity,
     pub sequences: StaTxSequenceCounters,
     pub aggregate: A,
 }

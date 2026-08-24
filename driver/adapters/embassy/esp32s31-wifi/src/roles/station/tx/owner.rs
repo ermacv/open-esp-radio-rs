@@ -244,6 +244,13 @@ where
     }
 
     pub fn set_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>) {
+        let agreement = if self.ordinary.security_mode()
+            == open_esp_radio_ieee80211::security::WifiSecurityMode::Open
+        {
+            None
+        } else {
+            agreement
+        };
         // The S31 capability bounds negotiated TX windows to 32. Keep the
         // hot owner at the former boolean table size by storing the A-MSDU
         // capability in bit 7; an impossible wider value disables
@@ -297,6 +304,11 @@ where
     }
 
     pub(super) fn aggregate_frame_limit(&self, tid: u8) -> usize {
+        if self.ordinary.security_mode()
+            == open_esp_radio_ieee80211::security::WifiSecurityMode::Open
+        {
+            return 0;
+        }
         if matches!(self.config.rate, TxPhyRate::Ht(_)) {
             return self
                 .ht_role_policy(tid)
@@ -313,6 +325,11 @@ where
         &self,
         tid: u8,
     ) -> Result<Option<HtAmpduTxRolePolicy>, AggregateTxError> {
+        if self.ordinary.security_mode()
+            == open_esp_radio_ieee80211::security::WifiSecurityMode::Open
+        {
+            return Ok(None);
+        }
         let TxPhyRate::Ht(rate) = self.config.rate else {
             return Ok(None);
         };
@@ -672,13 +689,13 @@ where
     > {
         let (resources, handoff, aggregate) = self.try_into_teardown_parts()?;
         let ConnectedTxHandoff {
-            key,
+            security,
             sequences,
             config: _,
         } = handoff;
         Ok(Esp32s31ConnectedTxTeardownParts {
             resources,
-            pairwise_key: key,
+            security,
             sequences,
             aggregate,
         })

@@ -65,6 +65,8 @@ pub struct Esp32s31AccessPointControlObservation {
     pub rx_reorder_gap_timeouts: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
+    /// Data MPDUs whose Protected bit contradicted the requested AP mode.
+    pub security_mode_mismatches: u32,
 }
 
 #[cfg(any(feature = "diagnostics", test))]

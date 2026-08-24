@@ -261,6 +261,30 @@ where
         )
     }
 
+    /// Publish one plaintext Open-network data MPDU. Zero MIC length is the
+    /// authoritative security selector; the key field is ignored by the
+    /// already-reviewed ordinary unprotected path used for EAPOL/management.
+    pub fn start_unprotected_data_encoded<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        frame: &[u8],
+        group: bool,
+        rate: LegacyRate,
+    ) -> Result<WifiTxProgress, Esp32s31ApTxError> {
+        self.start_encoded_with_key(
+            hardware,
+            if group {
+                Esp32s31ApTxClass::GroupData
+            } else {
+                Esp32s31ApTxClass::Data
+            },
+            frame,
+            0,
+            0,
+            Some(rate),
+        )
+    }
+
     /// Publish one GTK-protected group MPDU through the ordinary basic-rate
     /// owner. The transaction has exactly one hardware publication and does
     /// not interpret completion as an acknowledgement.

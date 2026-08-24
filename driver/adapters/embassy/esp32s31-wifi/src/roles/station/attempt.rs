@@ -13,7 +13,7 @@ use open_esp_radio_esp32s31_hal::{
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::{CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
+    crypto::CcmpKeyHardware,
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
     rate_control::BeamformingReportHardware,
@@ -23,8 +23,9 @@ use open_esp_radio_esp32s31_wifi_mac::{
 use open_esp_radio_esp32s31_wifi_sta::{
     attempt::{
         Esp32s31StaAttemptConnected, Esp32s31StaAttemptPort, Esp32s31StaAttemptReport,
-        Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStateError, Esp32s31StaAttemptStation,
-        Esp32s31StaAttemptStepError, Esp32s31StaConnectedEntryFailure,
+        Esp32s31StaAttemptSecurity, Esp32s31StaAttemptSecurityExecution,
+        Esp32s31StaAttemptStateError, Esp32s31StaAttemptStation, Esp32s31StaAttemptStepError,
+        Esp32s31StaConnectedEntryFailure, Esp32s31StaInstalledSecurity,
     },
     channel::Esp32s31ScanPhy,
     join::{Esp32s31StaJoinObserver, Esp32s31StaJoinPortError, Esp32s31StaJoinTransmit},
@@ -40,6 +41,7 @@ use open_esp_radio_esp32s31_wifi_sta::{
         Esp32s31Wpa2Station, Esp32s31Wpa2Transmit,
     },
 };
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_ieee80211::station::{
     AssociationResponse, StaSecurityError, select_sta_association, select_wpa2_psk_rsn,
 };

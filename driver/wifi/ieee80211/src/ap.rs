@@ -13,6 +13,7 @@ use crate::{
         HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
         ht_operation_ie, ht_peer_capabilities,
     },
+    security::WifiSecurityMode,
     station_power_save::STA_NULL_DATA_FRAME_LEN,
 };
 
@@ -108,6 +109,69 @@ impl ApDataFrame<'_> {
         let llc_end = header_len + plan.llc_snap.len();
         frame[header_len..llc_end].copy_from_slice(&plan.llc_snap);
         frame[llc_end..required].copy_from_slice(self.payload);
+        Ok(required)
+    }
+}
+
+/// One plaintext Ethernet-II MPDU for an explicitly Open AP epoch.
+///
+/// Unlike [`ApDataFrame`], which models an AP-originated EAPOL payload, this
+/// codec preserves the complete caller-owned Ethernet header and validates
+/// the destination against the selected unicast/group peer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApUnprotectedDataFrame<'frame> {
+    pub access_point: [u8; 6],
+    pub peer: [u8; 6],
+    pub sequence_number: u16,
+    pub more_data: bool,
+    pub ethernet: &'frame [u8],
+}
+
+impl ApUnprotectedDataFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, ApDataFrameError> {
+        if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
+            return Err(ApDataFrameError::InvalidAccessPoint);
+        }
+        if self.sequence_number > 0x0fff {
+            return Err(ApDataFrameError::InvalidSequenceNumber);
+        }
+        if self.ethernet.len() < ETHERNET_HEADER_LEN {
+            return Err(ApDataFrameError::EthernetFrameTooShort);
+        }
+        let mut ethernet_header = [0; ETHERNET_HEADER_LEN];
+        ethernet_header.copy_from_slice(&self.ethernet[..ETHERNET_HEADER_LEN]);
+        let mut plan = plan_data_encapsulation(
+            DataInterfaceRole::AccessPoint,
+            self.access_point,
+            self.access_point,
+            ethernet_header,
+            0,
+            false,
+            false,
+        )
+        .expect("priority zero is valid for plaintext non-QoS data");
+        if plan.header[4..10] != self.peer {
+            return Err(ApDataFrameError::InvalidPeer);
+        }
+        if self.more_data {
+            plan.header[1] |= 0x20;
+        }
+        let header_len = usize::from(plan.header_len);
+        let required = header_len
+            .checked_add(plan.llc_snap.len())
+            .and_then(|length| length.checked_add(self.ethernet.len() - ETHERNET_HEADER_LEN))
+            .ok_or(ApDataFrameError::OutputTooSmall {
+                required: usize::MAX,
+            })?;
+        if output.len() < required {
+            return Err(ApDataFrameError::OutputTooSmall { required });
+        }
+        let frame = &mut output[..required];
+        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
+        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let llc_end = header_len + plan.llc_snap.len();
+        frame[header_len..llc_end].copy_from_slice(&plan.llc_snap);
+        frame[llc_end..required].copy_from_slice(&self.ethernet[ETHERNET_HEADER_LEN..]);
         Ok(required)
     }
 }
@@ -287,7 +351,7 @@ pub enum ApManagementRequest<'a> {
     },
     Association {
         peer: [u8; 6],
-        rsn_ie: Option<&'a [u8]>,
+        security: ApAssociationSecurityObservation<'a>,
         /// Highest legacy rate shared with the B/G ERP rate set advertised
         /// by this AP, in 500-kbit/s units. Zero means no common rate.
         maximum_legacy_rate_500kbps: u8,
@@ -309,6 +373,20 @@ pub enum ApManagementRequest<'a> {
         peer: [u8; 6],
         action: BlockAckAction,
     },
+}
+
+/// Exact on-air security facts from one Association Request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApAssociationSecurityObservation<'a> {
+    pub privacy: bool,
+    pub rsn_ie: Option<&'a [u8]>,
+    pub rsn_ie_count: u8,
+    /// A legacy WPA vendor IE (00:50:f2:01) was present. It is never an
+    /// acceptable substitute for RSN and makes a mixed request invalid.
+    pub legacy_wpa_present: bool,
+    /// At least one IE header or payload was truncated. Absence inferred from
+    /// a malformed tail is never an Open-security proof.
+    pub malformed_elements: bool,
 }
 
 /// Parse only management requests addressed to this AP.
@@ -342,11 +420,16 @@ pub fn parse_ap_management_request<'a>(
                 .then_some(ApManagementRequest::OpenAuthentication { peer })
         }
         0 => {
+            let fixed = frame.get(24..28)?;
+            let capabilities = u16::from_le_bytes([fixed[0], fixed[1]]);
             let information_elements = frame.get(28..)?;
             let ht_capabilities = ht_peer_capabilities(information_elements);
             Some(ApManagementRequest::Association {
                 peer,
-                rsn_ie: find_information_element(information_elements, 48),
+                security: association_security_observation(
+                    information_elements,
+                    capabilities & 0x0010 != 0,
+                ),
                 maximum_legacy_rate_500kbps: maximum_ap_legacy_rate(information_elements),
                 ht_capabilities,
                 qos_supported: ht_capabilities.is_some() || supports_wmm(information_elements),
@@ -420,6 +503,40 @@ fn supports_wmm(bytes: &[u8]) -> bool {
     false
 }
 
+fn association_security_observation(
+    bytes: &[u8],
+    privacy: bool,
+) -> ApAssociationSecurityObservation<'_> {
+    let mut remaining = bytes;
+    let mut observation = ApAssociationSecurityObservation {
+        privacy,
+        rsn_ie: None,
+        rsn_ie_count: 0,
+        legacy_wpa_present: false,
+        malformed_elements: false,
+    };
+    while !remaining.is_empty() {
+        if remaining.len() < 2 {
+            observation.malformed_elements = true;
+            break;
+        }
+        let length = usize::from(remaining[1]);
+        let Some(record) = remaining.get(..length.saturating_add(2)) else {
+            observation.malformed_elements = true;
+            break;
+        };
+        if remaining[0] == 48 {
+            observation.rsn_ie_count = observation.rsn_ie_count.saturating_add(1);
+            observation.rsn_ie.get_or_insert(record);
+        }
+        if remaining[0] == 221 && length >= 4 && record[2..6] == [0x00, 0x50, 0xf2, 0x01] {
+            observation.legacy_wpa_present = true;
+        }
+        remaining = &remaining[record.len()..];
+    }
+    observation
+}
+
 const AP_BG_LEGACY_RATES_500KBPS: [u8; 12] = [2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108];
 
 fn maximum_ap_legacy_rate(bytes: &[u8]) -> u8 {
@@ -444,20 +561,6 @@ fn maximum_ap_legacy_rate(bytes: &[u8]) -> u8 {
         remaining = &payload[length..];
     }
     maximum
-}
-
-fn find_information_element(bytes: &[u8], wanted: u8) -> Option<&[u8]> {
-    let mut remaining = bytes;
-    while let Some((&id, tail)) = remaining.split_first() {
-        let (&length, payload) = tail.split_first()?;
-        let record_len = usize::from(length).checked_add(2)?;
-        let record = remaining.get(..record_len)?;
-        if id == wanted {
-            return Some(record);
-        }
-        remaining = payload.get(usize::from(length)..)?;
-    }
-    None
 }
 
 /// Encode the response to one successful or rejected Open System request.
@@ -499,6 +602,36 @@ pub fn write_ht_association_response_frame(
     channel: WifiChannel,
     peer_ht: Option<HtPeerCapabilities>,
 ) -> Result<usize, ApAssociationResponseError> {
+    write_ht_association_response_frame_for_security(
+        output,
+        access_point,
+        peer,
+        status,
+        association_id,
+        management_sequence,
+        channel,
+        peer_ht,
+        WifiSecurityMode::Wpa2Personal,
+    )
+}
+
+/// Encode an association response with capability privacy matching the exact
+/// AP mode. The WPA2 wrapper above retains its original bytes.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the frame writer keeps each independently reviewed 802.11 field explicit at its boundary"
+)]
+pub fn write_ht_association_response_frame_for_security(
+    output: &mut [u8],
+    access_point: [u8; 6],
+    peer: [u8; 6],
+    status: u16,
+    association_id: u16,
+    management_sequence: u16,
+    channel: WifiChannel,
+    peer_ht: Option<HtPeerCapabilities>,
+    security: WifiSecurityMode,
+) -> Result<usize, ApAssociationResponseError> {
     if management_sequence > 0x0fff {
         return Err(ApAssociationResponseError::InvalidSequenceNumber);
     }
@@ -514,6 +647,9 @@ pub fn write_ht_association_response_frame(
         .try_into()
         .expect("checked association response body length");
     write_ht_association_response(body, status, association_id, channel, peer_ht)?;
+    if security == WifiSecurityMode::Open {
+        body[..2].copy_from_slice(&0x0421_u16.to_le_bytes());
+    }
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }
 

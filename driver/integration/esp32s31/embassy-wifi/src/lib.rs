@@ -336,6 +336,8 @@ pub struct Esp32s31AccessPointObservation {
     pub rx_reorder_gap_timeouts: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
+    /// Data MPDUs whose Protected bit contradicted the requested AP mode.
+    pub security_mode_mismatches: u32,
 }
 
 /// Value-only failed-attempt detail emitted to diagnostics firmware.

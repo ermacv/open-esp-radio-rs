@@ -6,7 +6,7 @@
 //! network stack or await an executor primitive. Those effects are published
 //! through [`ConnectedRxSink`] and belong to the integration runner.
 
-use open_esp_radio_esp32s31_wifi::protected_data_rx::view_protected_data;
+use open_esp_radio_esp32s31_wifi::protected_data_rx::{view_protected_data, view_unprotected_data};
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
 use open_esp_radio_ieee80211::{
     data::{DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter},
@@ -15,6 +15,7 @@ use open_esp_radio_ieee80211::{
         EspNowWireVersion, esp_now_wire_version,
     },
     ndpa::{HeNdpa, HeNdpaError},
+    security::WifiSecurityMode,
     station::{StaDisconnect, parse_sta_disconnect},
     station_beacon::{StaBeaconError, StaBeaconObservation, parse_sta_beacon},
     trigger::{TriggerCommonInfo, TriggerParseError, parse_trigger_frame},
@@ -63,6 +64,10 @@ pub struct ConnectedRxConfig {
     pub bssid: [u8; 6],
     pub association_id: u16,
     pub ingress: RxIngressConfig,
+    pub security: WifiSecurityMode,
+    /// Peer-negotiated receive geometry. Open TX may deliberately remain
+    /// non-QoS while an HT/WMM AP legitimately sends plaintext QoS Data.
+    pub peer_qos: bool,
 }
 
 /// Destination class observed before protected-data extraction.
@@ -267,6 +272,8 @@ pub enum ConnectedRxError {
     EspNowVersion(EspNowVersionError),
     EspNowV2SinkUnavailable,
     Data(DataDecapError),
+    SecurityModeMismatch,
+    PeerQosMismatch,
 }
 
 /// Result of consuming one independently owned staged RX frame.
@@ -358,7 +365,12 @@ impl ConnectedRxDispatcher {
     /// before the finite dispatch without changing protocol state.
     pub fn may_publish_ethernet(&self, segment: RxSegment<'_>) -> bool {
         public_frame_control(segment.buffer).is_some_and(|frame_control| {
-            frame_control & (DATA_TYPE_MASK | PROTECTED) == DATA_TYPE | PROTECTED
+            let expected = match self.config.security {
+                WifiSecurityMode::Open => DATA_TYPE,
+                WifiSecurityMode::Wpa2Personal => DATA_TYPE | PROTECTED,
+            };
+            frame_control & (DATA_TYPE_MASK | PROTECTED) == expected
+                && (self.config.peer_qos || frame_control & QOS_SUBTYPE == 0)
         })
     }
 
@@ -369,13 +381,18 @@ impl ConnectedRxDispatcher {
     /// MPDU twice or mutating duplicate history. Malformed input may select
     /// the conservative path and then be rejected by [`Self::dispatch`].
     pub fn may_publish_amsdu(&self, segment: RxSegment<'_>) -> bool {
+        if !self.config.peer_qos {
+            return false;
+        }
         let raw = segment.buffer;
         let Some(frame_control) = public_frame_control(raw) else {
             return false;
         };
-        if frame_control & (DATA_TYPE_MASK | PROTECTED | QOS_SUBTYPE)
-            != DATA_TYPE | PROTECTED | QOS_SUBTYPE
-        {
+        let expected = match self.config.security {
+            WifiSecurityMode::Open => DATA_TYPE | QOS_SUBTYPE,
+            WifiSecurityMode::Wpa2Personal => DATA_TYPE | PROTECTED | QOS_SUBTYPE,
+        };
+        if frame_control & (DATA_TYPE_MASK | PROTECTED | QOS_SUBTYPE) != expected {
             return false;
         }
         // Four-address QoS moves the control field by one address slot.
@@ -387,10 +404,14 @@ impl ConnectedRxDispatcher {
 
     /// Classify a frame that belongs to a receive BlockAck sequence space.
     ///
-    /// Group, foreign, unprotected, non-QoS and fragmented frames remain on
-    /// the direct dispatch path. Agreement state still decides whether the
-    /// returned TID is currently reordered.
+    /// Open epochs own no BlockAck/reorder state. In WPA2, group, foreign,
+    /// unprotected, non-QoS and fragmented frames remain on the direct
+    /// dispatch path; agreement state still decides whether the returned TID
+    /// is currently reordered.
     pub fn reorder_key(&self, segment: RxSegment<'_>) -> Option<RxBlockAckMpduKey> {
+        if self.config.security == WifiSecurityMode::Open {
+            return None;
+        }
         rx_block_ack_mpdu_key(
             segment.buffer,
             self.config.station_address,
@@ -565,6 +586,9 @@ impl ConnectedRxDispatcher {
                     && mpdu[10..16] == self.config.bssid
                     && mpdu[16..22] == self.config.bssid;
                 if is_associated_peer_action && let Some(action) = parse_block_ack_action(body) {
+                    if self.config.security == WifiSecurityMode::Open {
+                        return ConnectedRxDispatch::Ignored;
+                    }
                     sink.publish(ConnectedRxEvent::BlockAck { action, body });
                     return ConnectedRxDispatch::BlockAck;
                 }
@@ -696,28 +720,52 @@ impl ConnectedRxDispatcher {
         protection: ConnectedRxProtection,
         sink: &mut S,
     ) -> ConnectedRxDispatch {
-        if public_frame_control & (DATA_TYPE_MASK | PROTECTED) != DATA_TYPE | PROTECTED {
+        if public_frame_control & DATA_TYPE_MASK != DATA_TYPE {
             return ConnectedRxDispatch::Ignored;
         }
-        let data = match view_protected_data(segment, self.config.ingress) {
-            Ok(data) => data,
-            Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+        let observed_protected = public_frame_control & PROTECTED != 0;
+        let expected_protected = self.config.security == WifiSecurityMode::Wpa2Personal;
+        if observed_protected != expected_protected {
+            return rejected(protection, ConnectedRxError::SecurityModeMismatch);
+        }
+        let (mpdu, retry, sequence_control, tid, data) = match self.config.security {
+            WifiSecurityMode::Open => {
+                let view = match view_unprotected_data(segment, self.config.ingress) {
+                    Ok(view) => view,
+                    Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+                };
+                let identity = (view.mpdu, view.retry, view.sequence_control, view.tid);
+                let data = match view.decapsulate(DataInterfaceRole::Station) {
+                    Ok(data) => data,
+                    Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
+                };
+                (identity.0, identity.1, identity.2, identity.3, data)
+            }
+            WifiSecurityMode::Wpa2Personal => {
+                let view = match view_protected_data(segment, self.config.ingress) {
+                    Ok(view) => view,
+                    Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+                };
+                let identity = (view.mpdu, view.retry, view.sequence_control, view.tid);
+                let data = match view.decapsulate(DataInterfaceRole::Station) {
+                    Ok(data) => data,
+                    Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
+                };
+                (identity.0, identity.1, identity.2, identity.3, data)
+            }
         };
-        let mpdu = data.mpdu;
         if mpdu[10..16] != self.config.bssid {
             return ConnectedRxDispatch::Ignored;
         }
+        if tid.is_some() && !self.config.peer_qos {
+            return rejected(protection, ConnectedRxError::PeerQosMismatch);
+        }
         if self
             .duplicate_filter
-            .is_duplicate(data.retry, data.sequence_control, data.tid)
+            .is_duplicate(retry, sequence_control, tid)
         {
             return ConnectedRxDispatch::Duplicate;
         }
-
-        let data = match data.decapsulate(DataInterfaceRole::Station) {
-            Ok(data) => data,
-            Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
-        };
         if protection == ConnectedRxProtection::Pairwise {
             sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
                 more_data: public_frame_control & MORE_DATA != 0,
@@ -757,6 +805,8 @@ impl Default for ConnectedRxDispatcher {
                 csi_config: 0,
                 flags: 0,
             },
+            security: WifiSecurityMode::Wpa2Personal,
+            peer_qos: true,
         })
     }
 }
@@ -784,7 +834,7 @@ fn public_protection(
     frame_control: u16,
     station_address: [u8; 6],
 ) -> Option<ConnectedRxProtection> {
-    if frame_control & (DATA_TYPE_MASK | PROTECTED) != DATA_TYPE | PROTECTED {
+    if frame_control & DATA_TYPE_MASK != DATA_TYPE {
         return Some(ConnectedRxProtection::Other);
     }
     let destination = raw.get(PUBLIC_HEADER_SIZE + 4..PUBLIC_HEADER_SIZE + 10)?;

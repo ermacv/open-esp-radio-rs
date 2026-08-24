@@ -8,6 +8,7 @@
 use crate::{
     channel::WifiChannel,
     ht::{ht_capability_ie, ht_operation_ie},
+    security::WifiSecurityMode,
     ssid::WifiSsid,
 };
 
@@ -170,6 +171,32 @@ pub fn write_wpa2_ht_beacon(
     dtim_period: u8,
     management_sequence: u16,
 ) -> Result<usize, ApBeaconBuildError> {
+    write_ht_beacon(
+        output,
+        access_point,
+        ssid,
+        channel,
+        beacon_interval_tu,
+        dtim_period,
+        management_sequence,
+        WifiSecurityMode::Wpa2Personal,
+    )
+}
+
+/// Build the exact Open or WPA2-Personal beacon selected by the AP request.
+/// Open clears Privacy and omits the RSN element; WPA2 retains the original
+/// byte-for-byte profile.
+#[allow(clippy::too_many_arguments)]
+pub fn write_ht_beacon(
+    output: &mut [u8],
+    access_point: [u8; 6],
+    ssid: &WifiSsid,
+    channel: WifiChannel,
+    beacon_interval_tu: u16,
+    dtim_period: u8,
+    management_sequence: u16,
+    security: WifiSecurityMode,
+) -> Result<usize, ApBeaconBuildError> {
     if !(1..=13).contains(&channel.primary()) {
         return Err(ApBeaconBuildError::InvalidPrimaryChannel);
     }
@@ -182,6 +209,10 @@ pub fn write_wpa2_ht_beacon(
 
     let ht_capability = ht_capability_ie(channel);
     let ht_operation = ht_operation_ie(channel);
+    let rsn = match security {
+        WifiSecurityMode::Open => &[][..],
+        WifiSecurityMode::Wpa2Personal => &WPA2_PERSONAL_CCMP_PSK_RSN_IE,
+    };
     let required = MANAGEMENT_HEADER_LEN
         + BEACON_FIXED_BODY_LEN
         + 2
@@ -190,7 +221,7 @@ pub fn write_wpa2_ht_beacon(
         + SUPPORTED_RATES.len()
         + 3
         + 7
-        + WPA2_PERSONAL_CCMP_PSK_RSN_IE.len()
+        + rsn.len()
         + 2
         + EXTENDED_RATES.len()
         + WMM_PARAMETER_IE.len()
@@ -208,8 +239,14 @@ pub fn write_wpa2_ht_beacon(
     frame[16..22].copy_from_slice(&access_point);
     frame[22..24].copy_from_slice(&(management_sequence << 4).to_le_bytes());
     frame[32..34].copy_from_slice(&beacon_interval_tu.to_le_bytes());
-    // ESS | Privacy | Short Preamble | Short Slot Time.
-    frame[34..36].copy_from_slice(&0x0431_u16.to_le_bytes());
+    // ESS | Short Preamble | Short Slot Time, plus Privacy only for WPA2.
+    let capabilities = 0x0421_u16
+        | if security == WifiSecurityMode::Wpa2Personal {
+            0x0010
+        } else {
+            0
+        };
+    frame[34..36].copy_from_slice(&capabilities.to_le_bytes());
 
     let mut offset = MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN;
     write_element(frame, &mut offset, 0, ssid.as_bytes());
@@ -224,7 +261,9 @@ pub fn write_wpa2_ht_beacon(
         5,
         &[dtim_period - 1, dtim_period, 0, 0, 0],
     );
-    copy_record(frame, &mut offset, &WPA2_PERSONAL_CCMP_PSK_RSN_IE);
+    if !rsn.is_empty() {
+        copy_record(frame, &mut offset, rsn);
+    }
     write_element(frame, &mut offset, 50, &EXTENDED_RATES);
     copy_record(frame, &mut offset, &WMM_PARAMETER_IE);
     copy_record(frame, &mut offset, &ht_capability);

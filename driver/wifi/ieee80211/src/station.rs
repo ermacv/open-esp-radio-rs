@@ -14,6 +14,7 @@ use crate::{
     ht::HtDuplicateMcs32,
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
+    security::WifiSecurityMode,
     wmm::{WmmParameterSet, parse_wmm_parameter_element},
 };
 
@@ -407,6 +408,7 @@ pub enum StationFrameError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaSecurityError {
+    SecurityModeMismatch,
     MissingRsn,
     MalformedRsn,
     UnsupportedVersion,
@@ -924,7 +926,13 @@ pub struct StaAssociationAttempt {
 pub enum StaAssociationFailure {
     Timeout,
     PeerDisconnect(StaDisconnect),
-    Rejected { status_code: u16 },
+    Rejected {
+        status_code: u16,
+    },
+    /// A successful response contradicted the exact security mode selected
+    /// from the scan record. Treating this as association success would make
+    /// the following key/plaintext transition an implicit downgrade.
+    SecurityModeMismatch,
 }
 
 /// Result of observing a management frame or completing one millisecond tick.
@@ -966,6 +974,7 @@ pub enum StaAssociationRuntimeError {
 pub struct StaAssociationRuntime {
     local: [u8; 6],
     bssid: [u8; 6],
+    security: WifiSecurityMode,
     elapsed_ms: u32,
     tick_active: bool,
     terminal: bool,
@@ -973,10 +982,11 @@ pub struct StaAssociationRuntime {
 }
 
 impl StaAssociationRuntime {
-    pub const fn new(local: [u8; 6], bssid: [u8; 6]) -> Self {
+    pub const fn new(local: [u8; 6], bssid: [u8; 6], security: WifiSecurityMode) -> Self {
         Self {
             local,
             bssid,
+            security,
             elapsed_ms: 0,
             tick_active: false,
             terminal: false,
@@ -1032,6 +1042,9 @@ impl StaAssociationRuntime {
             return Ok(self.fail(StaAssociationFailure::Rejected {
                 status_code: response.status_code,
             }));
+        }
+        if !response.matches_security(self.security) {
+            return Ok(self.fail(StaAssociationFailure::SecurityModeMismatch));
         }
         self.tick_active = false;
         self.terminal = true;
@@ -1089,6 +1102,8 @@ pub struct AssociationRequest<'a> {
     pub sequence_number: u16,
     pub listen_interval: u16,
     pub phy: StaAssociationPhy,
+    /// Exact BSS security selected by the station request.
+    pub security: WifiSecurityMode,
     /// HE Power Capability derived from the same calibrated rate-16 power
     /// source used by the MAC. Non-HE modes must leave it absent.
     pub power_capability: Option<StaPowerCapability>,
@@ -1122,8 +1137,8 @@ impl AssociationRequest<'_> {
         }
         let first_rates_len = rates_len.min(SUPPORTED_RATES_ELEMENT_CAPACITY);
         let extended_rates_len = rates_len - first_rates_len;
-        let selected_rsn =
-            select_wpa2_psk_rsn(self.access_point).map_err(AssociationRequestError::Security)?;
+        let selected_rsn = select_association_rsn(self.access_point, self.security)
+            .map_err(AssociationRequestError::Security)?;
         let (ht_capability, he_capability, power_capability, he_ul_mu_power) = match self.phy {
             StaAssociationPhy::Legacy => (None, None, None, None),
             StaAssociationPhy::Ht20 if self.access_point.ht_capability_ie_present => {
@@ -1204,7 +1219,16 @@ impl AssociationRequest<'_> {
             self.access_point.bssid,
             self.sequence_number,
         );
-        let capability = (self.access_point.capability_info & ASSOCIATION_CAPABILITY_MASK) | 1;
+        // Derive Privacy from the exact requested mode, rather than merely
+        // reflecting an untrusted scan record. Candidate admission already
+        // requires the same value; this keeps the transmitted request
+        // fail-closed if a record is ever assembled outside that path.
+        let capability = ((self.access_point.capability_info & ASSOCIATION_CAPABILITY_MASK) | 1)
+            & !0x0010
+            | match self.security {
+                WifiSecurityMode::Open => 0,
+                WifiSecurityMode::Wpa2Personal => 0x0010,
+            };
         frame[24..26].copy_from_slice(&capability.to_le_bytes());
         frame[26..28].copy_from_slice(&self.listen_interval.to_le_bytes());
 
@@ -1293,6 +1317,18 @@ pub struct AssociationResponse {
     pub he_operation: bool,
     pub wmm: bool,
     pub wmm_parameters: Option<WmmParameterSet>,
+}
+
+impl AssociationResponse {
+    /// Match the AP's successful response to the exact security mode selected
+    /// from scan admission. There is no fallback between Open and WPA2.
+    pub const fn matches_security(self, security: WifiSecurityMode) -> bool {
+        let privacy = self.capability_info & 0x0010 != 0;
+        match security {
+            WifiSecurityMode::Open => !privacy,
+            WifiSecurityMode::Wpa2Personal => privacy,
+        }
+    }
 }
 
 /// One unprotected 802.11 data MPDU sent by a station through its AP.
@@ -2031,8 +2067,8 @@ pub fn parse_association_response(
 }
 
 pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, StaSecurityError> {
-    if !access_point.privacy && access_point.rsn_ie_len == 0 {
-        return Ok(SelectedRsn::EMPTY);
+    if !access_point.matches_security(WifiSecurityMode::Wpa2Personal) {
+        return Err(StaSecurityError::SecurityModeMismatch);
     }
     let rsn = access_point.rsn_ie_bytes();
     if rsn.len() < 2 || rsn[0] != 48 || usize::from(rsn[1]) + 2 != rsn.len() {
@@ -2107,6 +2143,22 @@ pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, Sta
         (RSN_CAPABILITY_SPP_AMSDU_CAPABLE >> 8) as u8,
     ]);
     Ok(selected)
+}
+
+/// Select the association security IE for one exact requested mode.
+///
+/// Open never accepts a Privacy/RSN/WPA advertisement. WPA2 never accepts an
+/// open or mixed WPA/WPA2 advertisement, and then validates the complete
+/// retained RSN suites before returning a source-owned RSN element.
+pub fn select_association_rsn(
+    access_point: &ScanRecord,
+    security: WifiSecurityMode,
+) -> Result<SelectedRsn, StaSecurityError> {
+    match security {
+        WifiSecurityMode::Open if access_point.matches_security(security) => Ok(SelectedRsn::EMPTY),
+        WifiSecurityMode::Open => Err(StaSecurityError::SecurityModeMismatch),
+        WifiSecurityMode::Wpa2Personal => select_wpa2_psk_rsn(access_point),
+    }
 }
 
 pub(crate) fn validate_peer(bssid: [u8; 6], sequence_number: u16) -> Result<(), StationFrameError> {
@@ -2617,7 +2669,7 @@ mod tests {
 
     #[test]
     fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
-        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
         let mut sequence = StaSequenceCounter::new(0x0ffc);
         let mut attempts = [StaAssociationAttempt {
             ordinal: 0,
@@ -2662,7 +2714,7 @@ mod tests {
 
     #[test]
     fn association_runtime_accepts_only_selected_peer_response() {
-        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
         let mut sequence = StaSequenceCounter::new(7);
         assert_eq!(
             runtime.begin_tick(&mut sequence).unwrap().unwrap().ordinal,
@@ -2707,7 +2759,8 @@ mod tests {
     #[test]
     fn association_runtime_reports_peer_disconnect_and_rejection() {
         let mut sequence = StaSequenceCounter::new(0);
-        let mut disconnected = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut disconnected =
+            StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
         disconnected.begin_tick(&mut sequence).unwrap();
         disconnected.observe_received_frame().unwrap();
         assert_eq!(
@@ -2721,7 +2774,7 @@ mod tests {
             })
         );
 
-        let mut rejected = StaAssociationRuntime::new(LOCAL, BSSID);
+        let mut rejected = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
         rejected.begin_tick(&mut sequence).unwrap();
         assert_eq!(
             rejected.observe_management_frame(&association_response(17)),

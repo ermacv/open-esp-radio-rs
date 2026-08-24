@@ -437,13 +437,13 @@ where
             return Err((self, handoff));
         }
         let ConnectedTxHandoff {
-            key,
+            security,
             sequences,
             config,
         } = handoff;
         Ok(Esp32s31SingleMpduTx::from_ordinary(
             self.ordinary,
-            key,
+            security,
             sequences,
             config,
         ))

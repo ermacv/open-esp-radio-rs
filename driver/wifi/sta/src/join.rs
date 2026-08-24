@@ -9,6 +9,7 @@
 
 use core::future::Future;
 
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_ieee80211::station::{
     AssociationResponse, StaAssociationAttempt, StaAssociationEvent, StaAssociationFailure,
     StaAssociationRuntime, StaAssociationRuntimeError, StaAuthenticationAttempt,
@@ -290,9 +291,10 @@ where
         &mut self,
         local: [u8; 6],
         bssid: [u8; 6],
+        security: WifiSecurityMode,
         sequence: &mut StaSequenceCounter,
     ) -> Result<StaAssociationSuccess, StaJoinError<B::Error>> {
-        let mut runtime = StaAssociationRuntime::new(local, bssid);
+        let mut runtime = StaAssociationRuntime::new(local, bssid, security);
         self.backend
             .start_receive()
             .await
@@ -572,7 +574,9 @@ mod tests {
             })
         );
         assert_eq!(
-            block_on(runner.associate(LOCAL, BSSID, &mut sequence)),
+            block_on(
+                runner.associate(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal, &mut sequence,)
+            ),
             Ok(StaAssociationSuccess {
                 response: AssociationResponse {
                     capability_info: 0x0431,
@@ -632,7 +636,9 @@ mod tests {
         let mut sequence = StaSequenceCounter::new(7);
 
         assert_eq!(
-            block_on(runner.associate(LOCAL, BSSID, &mut sequence)),
+            block_on(
+                runner.associate(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal, &mut sequence,)
+            ),
             Err(StaJoinError::AssociationFailed {
                 failure: StaAssociationFailure::Timeout,
                 total_received_frames: 0,
@@ -659,7 +665,12 @@ mod tests {
         let mut runner = StaJoinRunner::new(backend, TestTimer::default());
         let mut sequence = StaSequenceCounter::new(0);
 
-        assert!(block_on(runner.associate(LOCAL, BSSID, &mut sequence)).is_ok());
+        assert!(
+            block_on(
+                runner.associate(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal, &mut sequence,)
+            )
+            .is_ok()
+        );
         assert_eq!(runner.timer.now_micros, 1_000_000);
         assert!(runner.backend().receive_live);
         assert_eq!(runner.backend().stops, 0);

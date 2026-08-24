@@ -57,6 +57,10 @@ pub struct Esp32s31ConnectedStaRxPolicy {
 /// Configuration failure detected before any connected owner moves.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ConnectedStaConfigError {
+    SecurityModeMismatch {
+        installed: open_esp_radio_ieee80211::security::WifiSecurityMode,
+        material: open_esp_radio_ieee80211::security::WifiSecurityMode,
+    },
     MissingStationInterface,
     InterfaceRole(VifRole),
     InterfaceAddress {
@@ -105,6 +109,7 @@ pub struct Esp32s31ConnectedStaPlan {
     pub(super) beacon_loss: StaBeaconLossConfig,
     pub(super) power_save: Option<StaPowerSavePolicy>,
     pub(super) esp_now_rx: Option<EspNowRxEpoch>,
+    pub(super) security: open_esp_radio_ieee80211::security::WifiSecurityMode,
 }
 
 /// Why a portable ESP-NOW RX epoch cannot join this connected STA plan.
@@ -120,6 +125,10 @@ pub enum Esp32s31ConnectedStaEspNowRxError {
 }
 
 impl Esp32s31ConnectedStaPlan {
+    pub const fn security_mode(&self) -> open_esp_radio_ieee80211::security::WifiSecurityMode {
+        self.security
+    }
+
     pub const fn interface(&self) -> BoundVirtualInterface {
         self.interface
     }
@@ -188,6 +197,8 @@ impl Esp32s31ConnectedStaPlan {
             bssid: self.link.bssid,
             association_id: self.link.association_id,
             ingress: self.config.receive.ingress,
+            security: self.security,
+            peer_qos: self.link.peer_qos,
         }
     }
 
@@ -287,6 +298,27 @@ impl Esp32s31ConnectedStaPort {
         >(peer, config, interface, None)
     }
 
+    /// Prepare one STA VIF under the exact installed security contract.
+    ///
+    /// Legacy non-WMM peers remain valid for Open because its connected TX is
+    /// deliberately non-QoS and owns no BlockAck/A-MPDU session. Existing
+    /// planner entrypoints retain their WPA2 aggregate contract.
+    #[allow(clippy::result_large_err)]
+    pub fn prepare_for_interface_with_storage_and_security<
+        const AGGREGATE_SLOTS: usize,
+        const RX_REORDER_SLOTS: usize,
+    >(
+        peer: Esp32s31ConnectedStaPeer,
+        config: Esp32s31ConnectedStaConfig,
+        interface: BoundVirtualInterface,
+        security: open_esp_radio_ieee80211::security::WifiSecurityMode,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        Self::prepare_for_interface_with_storage_security_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(peer, config, interface, security, None)
+    }
+
     /// Prepare one STA VIF and evaluate an independent MCS32 fixed request.
     #[allow(clippy::result_large_err)]
     pub fn prepare_for_interface_with_storage_and_ht_duplicate_certification<
@@ -298,6 +330,35 @@ impl Esp32s31ConnectedStaPort {
         interface: BoundVirtualInterface,
         request: Option<HtDuplicateCertificationRequest>,
     ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        Self::prepare_for_interface_with_storage_security_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(
+            peer,
+            config,
+            interface,
+            open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal,
+            request,
+        )
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn prepare_for_interface_with_storage_security_and_ht_duplicate_certification<
+        const AGGREGATE_SLOTS: usize,
+        const RX_REORDER_SLOTS: usize,
+    >(
+        peer: Esp32s31ConnectedStaPeer,
+        mut config: Esp32s31ConnectedStaConfig,
+        interface: BoundVirtualInterface,
+        security: open_esp_radio_ieee80211::security::WifiSecurityMode,
+        request: Option<HtDuplicateCertificationRequest>,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        // Trigger-based publication assumes the QoS/BA-connected contract.
+        // Open owns neither, so erase even a syntactically valid opt-in before
+        // it can reach control or TX runtime state.
+        if security == open_esp_radio_ieee80211::security::WifiSecurityMode::Open {
+            config.tx.he_trigger_based = None;
+        }
         if interface.interface.role != VifRole::Station {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::InterfaceRole(interface.interface.role),
@@ -356,7 +417,9 @@ impl Esp32s31ConnectedStaPort {
                 peer,
             });
         }
-        if !peer.link.peer_qos {
+        if security == open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal
+            && !peer.link.peer_qos
+        {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::PeerDoesNotSupportQos,
                 peer,
@@ -440,6 +503,7 @@ impl Esp32s31ConnectedStaPort {
             beacon_loss,
             power_save,
             esp_now_rx: None,
+            security,
         })
     }
 }

@@ -6,10 +6,10 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net::RawMutex as NetworkRawMutex;
 use open_esp_radio_esp32s31_hal::{ConnectedStaInterruptPrepared, MacInterruptSetup};
-use open_esp_radio_esp32s31_wifi_mac::crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot};
 use open_esp_radio_esp32s31_wifi_mac::{init::MAC_COLD_RX_INTERRUPT_MASK, irq::MacInterruptRoute};
 use open_esp_radio_esp32s31_wifi_sta::{
-    attempt::Esp32s31StaAttemptSecurity, connected_control::ConnectedDisconnectReason,
+    attempt::{Esp32s31StaAttemptSecurity, Esp32s31StaInstalledSecurity},
+    connected_control::ConnectedDisconnectReason,
     peer::Esp32s31ConnectedStaPeer,
 };
 use open_esp_radio_wifi_softmac::interface::BoundVirtualInterface;
@@ -75,8 +75,7 @@ pub struct Esp32s31ConnectedServiceResources<'security, R, E, N> {
     interface: BoundVirtualInterface,
     config: Esp32s31ConnectedStaConfig,
     peer: Esp32s31ConnectedStaPeer,
-    pairwise: StaPairwiseCcmpSlot,
-    group: StaGroupCcmpSlot,
+    installed_security: Esp32s31StaInstalledSecurity,
     security: Esp32s31StaAttemptSecurity<'security>,
 }
 
@@ -88,8 +87,7 @@ impl<'security, R, E, N> Esp32s31ConnectedServiceResources<'security, R, E, N> {
         interface: BoundVirtualInterface,
         config: Esp32s31ConnectedStaConfig,
         peer: Esp32s31ConnectedStaPeer,
-        pairwise: StaPairwiseCcmpSlot,
-        group: StaGroupCcmpSlot,
+        installed_security: Esp32s31StaInstalledSecurity,
         security: Esp32s31StaAttemptSecurity<'security>,
     ) -> Self {
         Self {
@@ -99,8 +97,7 @@ impl<'security, R, E, N> Esp32s31ConnectedServiceResources<'security, R, E, N> {
             interface,
             config,
             peer,
-            pairwise,
-            group,
+            installed_security,
             security,
         }
     }
@@ -113,8 +110,7 @@ impl<'security, R, E, N> Esp32s31ConnectedServiceResources<'security, R, E, N> {
             interface: self.interface,
             config: self.config,
             peer: self.peer,
-            pairwise: self.pairwise,
-            group: self.group,
+            installed_security: self.installed_security,
             security: self.security,
         }
     }
@@ -129,8 +125,7 @@ pub struct Esp32s31ConnectedServiceParts<'security, R, E, N> {
     pub interface: BoundVirtualInterface,
     pub config: Esp32s31ConnectedStaConfig,
     pub peer: Esp32s31ConnectedStaPeer,
-    pub pairwise: StaPairwiseCcmpSlot,
-    pub group: StaGroupCcmpSlot,
+    pub installed_security: Esp32s31StaInstalledSecurity,
     pub security: Esp32s31StaAttemptSecurity<'security>,
 }
 

@@ -49,7 +49,7 @@ pub struct Esp32s31StaAttemptTargetOwner<
     pub(super) association: Option<AssociationResponse>,
     pub(super) connected_peer: Option<Esp32s31ConnectedStaPeer>,
     pub(super) pending_keys: Option<Wpa2PendingKeyInstall>,
-    pub(super) installed_keys: Option<(StaPairwiseCcmpSlot, StaGroupCcmpSlot)>,
+    pub(super) installed_security: Option<Esp32s31StaInstalledSecurity>,
     pub(super) report: Esp32s31StaAttemptReport,
     pub(super) _join_observer: PhantomData<fn() -> J>,
 }
@@ -117,8 +117,9 @@ impl<
             association: None,
             connected_peer: None,
             pending_keys: None,
-            installed_keys: None,
+            installed_security: None,
             report: Esp32s31StaAttemptReport {
+                security: None,
                 authentication: None,
                 association: None,
                 peer: None,
@@ -138,8 +139,8 @@ impl<
         self.connected_peer.take()
     }
 
-    pub fn take_installed_keys(&mut self) -> Option<(StaPairwiseCcmpSlot, StaGroupCcmpSlot)> {
-        self.installed_keys.take()
+    pub fn take_installed_security(&mut self) -> Option<Esp32s31StaInstalledSecurity> {
+        self.installed_security.take()
     }
 
     pub fn into_parts(

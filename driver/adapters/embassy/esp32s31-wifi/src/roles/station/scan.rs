@@ -23,6 +23,7 @@ use open_esp_radio_esp32s31_wifi_sta::{
 };
 use open_esp_radio_ieee80211::{
     scan::{ScanRecord, ScanTable},
+    security::WifiSecurityMode,
     station::StaSequenceCounter,
 };
 use open_esp_radio_wifi_sta::request::{StationDiscovery, WifiSsid};
@@ -63,10 +64,15 @@ pub struct Esp32s31StationScanPlan {
     channels: [u8; 14],
     channel_count: u8,
     ssid: WifiSsid,
+    security: WifiSecurityMode,
 }
 
 impl Esp32s31StationScanPlan {
-    pub fn new(discovery: StationDiscovery, preferred_channel: Option<u8>) -> Self {
+    pub fn new(
+        discovery: StationDiscovery,
+        preferred_channel: Option<u8>,
+        security: WifiSecurityMode,
+    ) -> Self {
         let mut channels = [0; 14];
         let mut channel_count = 0_usize;
         for channel in discovery
@@ -83,6 +89,7 @@ impl Esp32s31StationScanPlan {
             channels,
             channel_count: channel_count as u8,
             ssid: discovery.ssid(),
+            security,
         }
     }
 
@@ -105,6 +112,7 @@ impl Esp32s31StationScanPlan {
             station_address,
             self.target_ssid(),
             &ESP32S31_STATION_PROBE_RATES,
+            self.security,
         )
         .with_descriptor_capacity(ESP32S31_STATION_PROBE_DESCRIPTOR_CAPACITY)
     }
@@ -120,6 +128,7 @@ pub struct Esp32s31StationScanRequest<'ssid, 'rates, 'channels> {
     pub supported_rates: &'rates [u8],
     pub descriptor_capacity: Option<u32>,
     pub select_candidate: bool,
+    pub security: WifiSecurityMode,
 }
 
 impl<'ssid, 'rates, 'channels> Esp32s31StationScanRequest<'ssid, 'rates, 'channels> {
@@ -129,6 +138,7 @@ impl<'ssid, 'rates, 'channels> Esp32s31StationScanRequest<'ssid, 'rates, 'channe
         station_address: [u8; 6],
         target_ssid: &'ssid [u8],
         supported_rates: &'rates [u8],
+        security: WifiSecurityMode,
     ) -> Self {
         Self {
             config,
@@ -138,6 +148,7 @@ impl<'ssid, 'rates, 'channels> Esp32s31StationScanRequest<'ssid, 'rates, 'channe
             supported_rates,
             descriptor_capacity: None,
             select_candidate: true,
+            security,
         }
     }
 
@@ -488,12 +499,14 @@ where
             request.station_address,
             request.target_ssid,
             request.supported_rates,
+            request.security,
         )
         .with_descriptor_capacity(capacity),
         None => Esp32s31ScanStation::new(
             request.station_address,
             request.target_ssid,
             request.supported_rates,
+            request.security,
         ),
     }
     .with_candidate_selection(request.select_candidate);

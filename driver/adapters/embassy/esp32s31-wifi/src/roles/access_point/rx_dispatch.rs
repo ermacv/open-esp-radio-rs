@@ -225,6 +225,22 @@ fn observe_protected_dispatch(
             }
             false
         }
+        Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::SecurityModeMismatch) => {
+            #[cfg(any(feature = "diagnostics", test))]
+            {
+                report.security_mode_mismatches =
+                    report.security_mode_mismatches.saturating_add(1);
+            }
+            false
+        }
+        Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::PeerQosMismatch) => {
+            #[cfg(any(feature = "diagnostics", test))]
+            {
+                report.protected_data_protocol_rejected =
+                    report.protected_data_protocol_rejected.saturating_add(1);
+            }
+            false
+        }
     }
 }
 
@@ -242,7 +258,7 @@ impl AccessPointProtectedFrameDispatch {
     fn dispatch(
         data_rx: &mut Esp32s31ApRxDispatcher,
         ordered: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
-        mut is_authorized: impl FnMut([u8; 6]) -> bool,
+        mut is_authorized: impl FnMut([u8; 6]) -> Option<bool>,
         publication: AccessPointRxPublication,
         current_buffer: usize,
         current_is_amsdu: bool,
@@ -276,9 +292,9 @@ impl AccessPointProtectedFrameDispatch {
             current_is_amsdu,
             deferred.used(),
         ) {
-            data_rx.dispatch_protected(ordered, &mut is_authorized, in_place)
+            data_rx.dispatch(ordered, &mut is_authorized, in_place)
         } else {
-            data_rx.dispatch_protected(ordered, &mut is_authorized, deferred)
+            data_rx.dispatch(ordered, &mut is_authorized, deferred)
         };
         *produced_data |= observe_protected_dispatch(
             outcome,

@@ -85,7 +85,9 @@ pub use super::rx_protocol::{
     Esp32s31ConnectedRxProtocolStorage,
 };
 pub use super::teardown::{
-    Esp32s31AlreadyStoppedRx, Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
+    Esp32s31AlreadyStoppedRx, Esp32s31ConnectedStaGroupSecurity,
+    Esp32s31ConnectedStaSecurityStopReport, Esp32s31ConnectedStaTeardownFailure,
+    Esp32s31ConnectedStaTeardownPort,
 };
 pub use super::tx::Esp32s31ConnectedTx;
 pub use super::tx_epoch::Esp32s31StaTxEpochExt;

@@ -74,6 +74,7 @@ use open_esp_radio_ieee80211::{
         parse_ap_management_request,
     },
     block_ack::BlockAckAction,
+    security::WifiSecurityMode,
 };
 use open_esp_radio_wifi_embassy::await_stack_boundary;
 use open_esp_radio_wifi_softmac::MacRxEvidence;

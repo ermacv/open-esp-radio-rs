@@ -102,6 +102,7 @@ impl ProductionWifiEpochRunner {
             station.station_address(),
             &[],
             &ESP32S31_STATION_PROBE_RATES,
+            open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal,
         )
         .with_descriptor_capacity(ESP32S31_STATION_PROBE_DESCRIPTOR_CAPACITY)
         .without_candidate_selection();

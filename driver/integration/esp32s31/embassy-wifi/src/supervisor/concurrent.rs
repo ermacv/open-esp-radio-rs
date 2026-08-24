@@ -56,7 +56,13 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     },
 };
 use open_esp_radio_ieee80211::vif::StaApRxAddresses;
+use open_esp_radio_esp32s31_wifi_sta::{
+    attempt::{Esp32s31StaAttemptSecurityMaterial, Esp32s31StaInstalledSecurity},
+    single_mpdu_tx::ConnectedTxSecurity,
+};
 use open_esp_radio_wifi_embassy::station_network::RunningStationNetwork;
+use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::
+    Esp32s31ConnectedStaGroupSecurity;
 
 use crate::supervisor::station::{
     IRQ_RUNTIME, RX_REORDER_COMMANDS, RX_REORDER_STORAGE, RX_STAGE_POOL, STA_AP_STAGED_RX_QUEUE,
@@ -135,8 +141,7 @@ impl ProductionWifiEpochRunner {
             network,
             station,
             peer,
-            pairwise,
-            group,
+            installed_security,
         } = connected;
         let (access_point, monitor) = runner.into_port().into_parked_roles();
         let interface = runtime.board().interface;
@@ -151,8 +156,7 @@ impl ProductionWifiEpochRunner {
                 // but paired operation deliberately suppresses PM=1.
                 connected_config(StationPowerMode::AlwaysAwake),
                 peer,
-                pairwise,
-                group,
+                installed_security,
                 security,
             ),
             station,
@@ -228,8 +232,7 @@ impl ProductionWifiEpochRunner {
                 parts.interface,
                 parts.config,
                 parts.peer,
-                parts.pairwise,
-                parts.group,
+                parts.installed_security,
                 parts.security,
             ),
         ) {
@@ -359,6 +362,23 @@ impl ProductionWifiEpochRunner {
         station_channel: open_esp_radio_ieee80211::channel::WifiChannel,
         generation: open_esp_radio::RadioSubsystemGeneration,
     ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
+        let (installed_mode, material_mode) = started.security_modes();
+        if installed_mode != material_mode {
+            endpoint
+                .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                    WifiStartFailure::faulted(Esp32s31RadioError::HardwareFault),
+                )))
+                .await;
+            return EmbassyWifiRoleEpochOutcome::Faulted(
+                ProductionWifiFault::PairedSecurityMismatch {
+                    _started: started,
+                    _station: station,
+                    _access_point: access_point,
+                    _monitor: monitor,
+                    _access_point_request: access_point_request,
+                },
+            );
+        }
         let Esp32s31ConnectedNetworkStartedParts {
             runtime,
             epoch,
@@ -366,8 +386,7 @@ impl ProductionWifiEpochRunner {
             network: network_runner,
             initial_network_task,
             mut plan,
-            pairwise,
-            group,
+            installed_security,
             security,
         } = started.into_parts();
         debug_assert!(initial_network_task.is_none());
@@ -428,8 +447,7 @@ impl ProductionWifiEpochRunner {
                             _network: network_runner,
                             _initial_network_task: initial_network_task,
                             _plan: plan,
-                            _pairwise: pairwise,
-                            _group: group,
+                            _installed_security: installed_security,
                             _security: security,
                         },
                         _station: station,
@@ -482,14 +500,24 @@ impl ProductionWifiEpochRunner {
             #[cfg(feature = "diagnostics")]
             diagnostics,
         } = board;
-        let Esp32s31StaAttemptSecurity {
-            pmk,
-            supplicant_nonce,
-            sequences,
-            message4_protection,
-            connected,
-            ..
-        } = security;
+        let (sequences, mut station_security_material) = security.into_parts();
+        let (tx_security, mut group_security) = match (
+            installed_security,
+            &station_security_material,
+        ) {
+            (Esp32s31StaInstalledSecurity::Open, Esp32s31StaAttemptSecurityMaterial::Open) => (
+                ConnectedTxSecurity::Open,
+                Some(Esp32s31ConnectedStaGroupSecurity::Open),
+            ),
+            (
+                Esp32s31StaInstalledSecurity::Wpa2Personal { pairwise, group },
+                Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { .. },
+            ) => (
+                ConnectedTxSecurity::Wpa2Personal(pairwise),
+                Some(Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group)),
+            ),
+            _ => unreachable!("paired security modes were validated before owner split"),
+        };
         let (control_publisher, control_receiver) = control_resources.split();
         let station_sink = Esp32s31StaApStationRxSink::new(sta_ap_rx_batch, control_publisher);
         let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
@@ -515,7 +543,7 @@ impl ProductionWifiEpochRunner {
             Esp32s31ConnectedStaTxResources {
                 control: control_tx,
                 aggregate,
-                pairwise_key: pairwise,
+                security: tx_security,
                 sequences,
                 #[cfg(feature = "diagnostics")]
                 aggregate_tx_observer: diagnostics.map(|hooks| hooks.aggregate_tx),
@@ -534,12 +562,24 @@ impl ProductionWifiEpochRunner {
                 rx_block_ack: &super::PRODUCTION_RX_BLOCK_ACK,
             },
         );
-        station_control
-            .install_wpa2_security(ConnectedWpa2Security::new(
-                connected.expect("installed station keys retain supplicant state"),
-                group,
-            ))
-            .unwrap_or_else(|_| unreachable!("fresh station control has no security session"));
+        if let Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } =
+            &mut station_security_material
+        {
+            let Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group) = group_security
+                .take()
+                .expect("paired WPA2 mode retains its group-key owner")
+            else {
+                unreachable!("paired security modes were validated before owner split")
+            };
+            station_control
+                .install_wpa2_security(ConnectedWpa2Security::new(
+                    connected
+                        .take()
+                        .expect("installed station keys retain supplicant state"),
+                    group,
+                ))
+                .unwrap_or_else(|_| unreachable!("fresh station control has no security session"));
+        }
         let station_drivers = Esp32s31ConnectedStaPort::assemble(
             plan,
             Esp32s31ConnectedStaDriverParts {
@@ -591,20 +631,30 @@ impl ProductionWifiEpochRunner {
             core::ptr::eq(&super::PRODUCTION_RX_BLOCK_ACK, rx_block_ack),
             "paired STA and AP must share the one ordinary RX BlockAck bank owner",
         );
-        let mut gtk_key = [0_u8; 16];
-        for word in gtk_key.chunks_exact_mut(4) {
-            word.copy_from_slice(&self.trng.random().to_le_bytes());
-        }
-        let gtk = Wpa2Gtk::new(1, true, gtk_key)
-            .unwrap_or_else(|_| unreachable!("production GTK key id is statically valid"));
-        let access_point_service = AccessPointService::new(
-            address,
-            access_point_security.into_pmk(),
-            gtk,
-            client_limit,
-            inactive_timeout,
-            peer_storage,
-        );
+        let access_point_service = match access_point_security {
+            AccessPointSecurity::Open => AccessPointService::new_open(
+                address,
+                client_limit,
+                inactive_timeout,
+                peer_storage,
+            ),
+            AccessPointSecurity::Wpa2Personal(pmk) => {
+                let mut gtk_key = [0_u8; 16];
+                for word in gtk_key.chunks_exact_mut(4) {
+                    word.copy_from_slice(&self.trng.random().to_le_bytes());
+                }
+                let gtk = Wpa2Gtk::new(1, true, gtk_key)
+                    .unwrap_or_else(|_| unreachable!("production GTK key id is valid"));
+                AccessPointService::new(
+                    address,
+                    pmk,
+                    gtk,
+                    client_limit,
+                    inactive_timeout,
+                    peer_storage,
+                )
+            }
+        };
         let engine = Esp32s31ApEngine::start(
             &mut hardware,
             access_point_service,
@@ -849,10 +899,19 @@ impl ProductionWifiEpochRunner {
             report: _,
         } = station_drivers;
         let (hardware, (), station_tx, mut station_control) = station_services.into_parts();
-        let station_security = station_control
-            .take_wpa2_security()
-            .expect("paired station control returns its association security owner");
-        let (_connected, group) = station_security.into_parts();
+        let group_security = match &mut station_security_material {
+            Esp32s31StaAttemptSecurityMaterial::Open => group_security
+                .take()
+                .expect("paired Open station retains its no-key group marker"),
+            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } => {
+                let station_security = station_control
+                    .take_wpa2_security()
+                    .expect("paired WPA2 station control returns its security owner");
+                let (returned_connected, group) = station_security.into_parts();
+                *connected = Some(returned_connected);
+                Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group)
+            }
+        };
         let (stopped_protocol, station_sink) = station_protocol.into_stopped_with_sink();
         let (sta_ap_rx_batch, _control_publisher) = station_sink.into_parts();
         let (frame, ethernet, rx_protocol_runtime) = stopped_protocol.into_parts();
@@ -863,7 +922,7 @@ impl ProductionWifiEpochRunner {
                 station_tx,
                 station_control,
             ),
-            group,
+            group_security,
         )
         .unwrap_or_else(|_| unreachable!("paired DATAPATH stop returns idle station services"));
         tx_storage
@@ -878,12 +937,22 @@ impl ProductionWifiEpochRunner {
             teardown.aggregate,
             control_resources,
         );
-        let station_security = Esp32s31StaAttemptSecurity::new(
-            pmk,
-            supplicant_nonce,
-            teardown.sequences,
-            message4_protection,
-        );
+        let station_security = match station_security_material {
+            Esp32s31StaAttemptSecurityMaterial::Open => {
+                Esp32s31StaAttemptSecurity::open(teardown.sequences)
+            }
+            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
+                pmk,
+                supplicant_nonce,
+                message4_protection,
+                ..
+            } => Esp32s31StaAttemptSecurity::new(
+                pmk,
+                supplicant_nonce,
+                teardown.sequences,
+                message4_protection,
+            ),
+        };
         let station_owner = ProductionStationOwner::new(
             production_station_runtime(
                 role,

@@ -121,6 +121,11 @@ where
         if !self.station.select_candidate {
             return Ok(None);
         }
-        Ok(best_matching_ssid(self.storage.table.records(), self.station.target_ssid).copied())
+        Ok(best_matching_ssid_and_security(
+            self.storage.table.records(),
+            self.station.target_ssid,
+            self.station.security,
+        )
+        .copied())
     }
 }

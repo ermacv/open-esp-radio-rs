@@ -19,12 +19,13 @@ use open_esp_radio_ieee80211::{
     ap::{
         ApActionFrame, ApAssociationResponseError, ApDataFrame, ApDataFrameError,
         ApManagementRequest, ApPeerDisconnectKind, ApPowerSaveObservation, ApProtectedDataFrame,
-        EncodedApFrame, observe_ap_power_save_for_access_point, parse_ap_management_request,
-        write_ap_peer_disconnect, write_ht_association_response_frame,
-        write_open_authentication_response,
+        ApUnprotectedDataFrame, EncodedApFrame, observe_ap_power_save_for_access_point,
+        parse_ap_management_request, write_ap_peer_disconnect,
+        write_ht_association_response_frame_for_security, write_open_authentication_response,
     },
-    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, dtim, write_wpa2_ht_beacon},
+    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, dtim, write_ht_beacon},
     channel::WifiChannel,
+    security::WifiSecurityMode,
     ssid::WifiSsid,
 };
 use open_esp_radio_wifi_ap::{
@@ -116,7 +117,9 @@ pub enum Esp32s31ApWpa2Outcome<const N: usize> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApProtectedFrame {
     pub length: usize,
-    pub hardware_key_selector: u8,
+    /// `None` is a plaintext Open MPDU and must use the zero-MIC ordinary TX
+    /// path. A selector is present only for the WPA2 CCMP path.
+    pub hardware_key_selector: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -325,7 +328,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         beacon_interval_tu: u16,
         dtim_period: u8,
     ) -> Result<Self, Esp32s31ApEngineStartFailure<'storage>> {
-        let beacon_len = match write_wpa2_ht_beacon(
+        let security_mode = service.security_mode();
+        let beacon_len = match write_ht_beacon(
             beacon_storage,
             service.address(),
             ssid,
@@ -333,6 +337,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             beacon_interval_tu,
             dtim_period,
             0,
+            security_mode,
         ) {
             Ok(len) => len,
             Err(error) => {
@@ -347,18 +352,27 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         let beacon =
             Esp32s31ApBeacon::from_initialized(beacon_storage, beacon_len, beacon_interval_tu);
         configure_ap_receive_policy(hardware, service.address());
-        let security =
-            match Esp32s31ApSecurity::install_group(hardware, service.gtk(), pairwise_storage) {
-                Ok(security) => security,
-                Err(failure) => {
-                    return Err(Esp32s31ApEngineStartFailure {
-                        service,
-                        beacon_storage: beacon.into_storage(),
-                        pairwise_storage: failure.storage,
-                        error: Esp32s31ApEngineError::Security(failure.error),
-                    });
-                }
-            };
+        let security = match security_mode {
+            WifiSecurityMode::Open => Esp32s31ApSecurity::open(pairwise_storage),
+            WifiSecurityMode::Wpa2Personal => Esp32s31ApSecurity::install_group(
+                hardware,
+                service
+                    .gtk()
+                    .expect("WPA2 service mode owns one GTK for this epoch"),
+                pairwise_storage,
+            ),
+        };
+        let security = match security {
+            Ok(security) => security,
+            Err(failure) => {
+                return Err(Esp32s31ApEngineStartFailure {
+                    service,
+                    beacon_storage: beacon.into_storage(),
+                    pairwise_storage: failure.storage,
+                    error: Esp32s31ApEngineError::Security(failure.error),
+                });
+            }
+        };
         // This is the first irreversible timing edge. Beacon construction and
         // group-key installation have succeeded, so a failed start never
         // leaves an unowned hardware TSF epoch behind.
@@ -375,6 +389,10 @@ impl<'storage> Esp32s31ApEngine<'storage> {
 
     pub const fn channel(&self) -> WifiChannel {
         self.channel
+    }
+
+    pub const fn security_mode(&self) -> WifiSecurityMode {
+        self.service.security_mode()
     }
 
     #[cfg(any(feature = "diagnostics", test))]
@@ -536,7 +554,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             }
             ApManagementRequest::Association {
                 peer,
-                rsn_ie,
+                security,
                 maximum_legacy_rate_500kbps,
                 ht_capabilities,
                 qos_supported,
@@ -549,13 +567,17 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     // class-2 case yet, so retain the owner and ignore it.
                     return Ok(Esp32s31ApManagementOutcome::Ignored);
                 };
-                if peer_status.phase == ApPeerPhase::Securing {
+                if self.service.matches_association_security(security)
+                    && (peer_status.phase == ApPeerPhase::Securing
+                        || (self.service.security_mode() == WifiSecurityMode::Open
+                            && peer_status.phase == ApPeerPhase::Authorized))
+                {
                     // A station can repeat Association Request when the first
                     // response ACK was lost. Preserve the in-flight WPA2
                     // state, retransmit the same successful association and
                     // do not start a second Message-1 transaction.
                     let sequence = self.service.next_management_sequence();
-                    let len = write_ht_association_response_frame(
+                    let len = write_ht_association_response_frame_for_security(
                         output,
                         self.service.address(),
                         peer,
@@ -564,6 +586,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                         sequence,
                         self.channel,
                         peer_status.ht,
+                        self.service.security_mode(),
                     )?;
                     #[cfg(any(feature = "diagnostics", test))]
                     self.observe(
@@ -579,28 +602,35 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 if peer_status.phase != ApPeerPhase::Authenticated {
                     return Ok(Esp32s31ApManagementOutcome::Ignored);
                 }
-                let action = self.service.associate_wpa2(
-                    peer,
-                    rsn_ie.unwrap_or(&[]),
-                    ApAssociationCapabilities {
-                        maximum_legacy_rate_500kbps,
-                        ht: ht_capabilities,
-                        qos_supported,
-                    },
-                    authenticator_nonce,
-                    initial_replay_counter,
-                    now_micros,
-                )?;
+                let capabilities = ApAssociationCapabilities {
+                    maximum_legacy_rate_500kbps,
+                    ht: ht_capabilities,
+                    qos_supported,
+                };
+                let action = match self.service.security_mode() {
+                    WifiSecurityMode::Open => {
+                        self.service
+                            .associate_open(peer, security, capabilities, now_micros)?
+                    }
+                    WifiSecurityMode::Wpa2Personal => self.service.associate_wpa2(
+                        peer,
+                        security,
+                        capabilities,
+                        authenticator_nonce,
+                        initial_replay_counter,
+                        now_micros,
+                    )?,
+                };
                 let ApMlmeAction::AssociationResponse {
                     status,
                     association_id,
                     ..
                 } = action
                 else {
-                    unreachable!("associate_wpa2 has one response action")
+                    unreachable!("AP association has one response action")
                 };
                 let sequence = self.service.next_management_sequence();
-                let len = write_ht_association_response_frame(
+                let len = write_ht_association_response_frame_for_security(
                     output,
                     self.service.address(),
                     peer,
@@ -609,6 +639,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     sequence,
                     self.channel,
                     ht_capabilities,
+                    self.service.security_mode(),
                 )?;
                 if association_id.is_some() {
                     // Recovered `ic_set_sta` evidence gives the legacy B/G
@@ -625,9 +656,18 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                         associated_peers: self.service.associated_count(),
                     },
                 );
+                #[cfg(any(feature = "diagnostics", test))]
+                if association_id.is_some()
+                    && self.service.security_mode() == WifiSecurityMode::Open
+                {
+                    self.observe(Esp32s31ApEngineObservationEvent::PeerAuthorized {
+                        authorized_peers: self.service.authorized_count(),
+                    });
+                }
                 Ok(Esp32s31ApManagementOutcome::Response {
                     len,
-                    begin_wpa2: association_id.is_some(),
+                    begin_wpa2: association_id.is_some()
+                        && self.service.security_mode() == WifiSecurityMode::Wpa2Personal,
                 })
             }
             ApManagementRequest::Disassociation { peer, .. }
@@ -829,9 +869,9 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         Ok(len)
     }
 
-    /// Encode one network-owned Ethernet frame for an authorized unicast peer
-    /// or for the AP group key. The returned selector is meaningful only to
-    /// the S31 TX owner.
+    /// Encode one network-owned Ethernet frame under the exact AP security
+    /// mode. Open yields a plaintext non-QoS MPDU and no key selector; WPA2
+    /// retains the original CCMP path.
     pub fn encode_protected_ethernet(
         &mut self,
         destination: [u8; 6],
@@ -853,14 +893,41 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         output: &mut [u8],
         more_data: bool,
     ) -> Result<Esp32s31ApProtectedFrame, Esp32s31ApEngineError> {
+        if self.service.security_mode() == WifiSecurityMode::Open {
+            let group = destination[0] & 1 != 0;
+            if group {
+                if self.service.authorized_count() == 0 {
+                    return Err(ApServiceError::WrongPeerPhase.into());
+                }
+            } else if self.service.peer_status(destination).is_none() {
+                return Err(ApServiceError::UnknownPeer.into());
+            } else if !self.service.is_authorized(destination) {
+                return Err(ApServiceError::WrongPeerPhase.into());
+            }
+            let sequence_number = self.service.current_data_sequence();
+            let length = ApUnprotectedDataFrame {
+                access_point: self.service.address(),
+                peer: destination,
+                sequence_number,
+                more_data,
+                ethernet,
+            }
+            .encode(output)?;
+            let consumed = self.service.next_data_sequence();
+            debug_assert_eq!(consumed, sequence_number);
+            return Ok(Esp32s31ApProtectedFrame {
+                length,
+                hardware_key_selector: None,
+            });
+        }
         let group = destination[0] & 1 != 0;
         let (hardware_key_selector, ccmp_header, peer_qos) = if group {
             if self.service.authorized_count() == 0 {
                 return Err(ApServiceError::WrongPeerPhase.into());
             }
             (
-                self.security.group_hardware_index(),
-                self.security.next_group_tx_ccmp_header(),
+                self.security.group_hardware_index()?,
+                self.security.next_group_tx_ccmp_header()?,
                 false,
             )
         } else {
@@ -911,7 +978,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         debug_assert_eq!(consumed_sequence_number, sequence_number);
         Ok(Esp32s31ApProtectedFrame {
             length,
-            hardware_key_selector,
+            hardware_key_selector: Some(hardware_key_selector),
         })
     }
 
@@ -987,6 +1054,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
 
     pub fn peer_status(&self, peer: [u8; 6]) -> Option<ApPeerStatus> {
         self.service.peer_status(peer)
+    }
+
+    /// RX QoS geometry admitted by this peer's successful association.
+    pub fn authorized_peer_qos(&self, peer: [u8; 6]) -> Option<bool> {
+        self.service
+            .peer_status(peer)
+            .filter(|status| status.phase == ApPeerPhase::Authorized)
+            .map(|status| status.qos_supported)
     }
 
     pub fn downlink_disposition(

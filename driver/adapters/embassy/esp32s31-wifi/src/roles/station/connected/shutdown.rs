@@ -8,7 +8,7 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net::RawMutex as NetworkRawMutex;
-use open_esp_radio_esp32s31_wifi_mac::crypto::{CcmpKeyHardware, StaGroupCcmpSlot};
+use open_esp_radio_esp32s31_wifi_mac::crypto::CcmpKeyHardware;
 use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
 use open_esp_radio_wifi_embassy::connected_tasks::{ConnectedTaskGroup, stop_connected_task_group};
 
@@ -20,9 +20,10 @@ use crate::{
     datapath::services::SingleRoleServices,
     datapath::{DatapathRunner, DatapathServices},
     roles::station::teardown::{
-        Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaRxTeardown,
-        Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
-        Esp32s31ConnectedStaTeardownSuccess, Esp32s31ConnectedStaTxTeardown,
+        Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaGroupSecurity,
+        Esp32s31ConnectedStaRxTeardown, Esp32s31ConnectedStaTeardownFailure,
+        Esp32s31ConnectedStaTeardownPort, Esp32s31ConnectedStaTeardownSuccess,
+        Esp32s31ConnectedStaTxTeardown,
     },
 };
 
@@ -141,7 +142,7 @@ where
     #[allow(clippy::type_complexity, clippy::result_large_err)]
     pub fn try_teardown(
         self,
-        group_key: StaGroupCcmpSlot,
+        group_security: Esp32s31ConnectedStaGroupSecurity,
     ) -> Result<
         Esp32s31ConnectedEpochTeardown<
             I,
@@ -169,7 +170,7 @@ where
             services,
             tasks,
         } = self;
-        match Esp32s31ConnectedStaTeardownPort::try_teardown(services, group_key) {
+        match Esp32s31ConnectedStaTeardownPort::try_teardown(services, group_security) {
             Ok(driver) => Ok(Esp32s31ConnectedEpochTeardown {
                 interrupt,
                 interrupt_drain,

@@ -38,9 +38,13 @@ pub use open_esp_radio_esp32s31_wifi_embassy::roles::esp_now::{
 pub use open_esp_radio_ieee80211::esp_now::{
     ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_V1_MAX_PAYLOAD_LEN,
     ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN, ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN,
-    EspNowCcmpPacketNumber, EspNowCcmpPacketNumberError, EspNowDestination,
-    EspNowEncryptedV1Unavailable, EspNowProtectedV1Envelope, EspNowProtectedV1WireError,
-    EspNowRandomValue, EspNowUnicastAddress, EspNowV1WireError,
+    ESP_NOW_V2_ACTION_PREFIX_LEN, ESP_NOW_V2_MAX_ACTION_LEN, ESP_NOW_V2_MAX_ELEMENT_COUNT,
+    ESP_NOW_V2_MAX_ELEMENT_PAYLOAD_LEN, ESP_NOW_V2_MAX_MPDU_LEN, ESP_NOW_V2_MAX_PAYLOAD_LEN,
+    ESP_NOW_V2_MAX_VENDOR_CONTENT_LEN, ESP_NOW_V2_VERSION, EspNowCcmpPacketNumber,
+    EspNowCcmpPacketNumberError, EspNowDestination, EspNowEncryptedV1Unavailable,
+    EspNowProtectedV1Envelope, EspNowProtectedV1WireError, EspNowRandomValue,
+    EspNowUnicastAddress, EspNowV1WireError, EspNowV2Action, EspNowV2Element,
+    EspNowV2Elements, EspNowV2Frame, EspNowV2Payload, EspNowV2Reassembly, EspNowV2WireError,
 };
 pub use open_esp_radio_wifi_softmac::{
     ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY, ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_KEY_LEN,
@@ -49,10 +53,12 @@ pub use open_esp_radio_wifi_softmac::{
     EspNowEncryptedPeerMutationFailure, EspNowEncryptedPeerReplacement, EspNowEncryptedPeerTable,
     EspNowEncryptedPeerRestoreFailure, EspNowEncryptedPeerView, EspNowEncryptedProtocol,
     EspNowEncryptedReceiveError, EspNowEncryptedRxCandidate, EspNowEncryptedSendError, EspNowLmk,
-    EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity, EspNowPeerTableError, EspNowPhyMode,
-    EspNowPmk, EspNowPmkError, EspNowPmkId, EspNowPmkMutationFailure, EspNowPmkOwner,
-    EspNowPreparedEncryptedV1Tx, EspNowProtocol, EspNowRemovedEncryptedPeer,
-    EspNowRxReplayCandidate, encrypted_peer_destination, esp_now_encrypted_v1_codec_status,
+    EspNowPeerCapability, EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity,
+    EspNowPeerTableError, EspNowPhyMode, EspNowPmk, EspNowPmkError, EspNowPmkId,
+    EspNowPmkMutationFailure, EspNowPmkOwner, EspNowPreparedEncryptedV1Tx, EspNowPreparedV2Tx,
+    EspNowProtocol, EspNowReceivedV2, EspNowRemovedEncryptedPeer, EspNowRxReplayCandidate,
+    EspNowV2ReceiveError, EspNowV2SendError, encrypted_peer_destination,
+    esp_now_encrypted_v1_codec_status,
 };
 
 /// Failed standalone materialization retains the portable owners unchanged.

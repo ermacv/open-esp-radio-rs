@@ -1,12 +1,22 @@
-//! Allocation-free ESP-NOW v1 wire format.
+//! Allocation-free ESP-NOW plaintext wire formats.
 //!
-//! ESP-NOW v1 is carried in a vendor-specific IEEE 802.11 Action management
-//! frame. This module owns only the public on-air representation: it does not
-//! select a radio channel, install a key, allocate a DMA descriptor or weaken
-//! a receive filter. In particular, decoding a frame here is not evidence that
-//! a backend has admitted or authenticated its sender.
+//! ESP-NOW is carried in a vendor-specific IEEE 802.11 Action management
+//! frame. This module owns only the public on-air representation for v1 and
+//! plaintext v2: it does not select a radio channel, install a key, allocate a
+//! DMA descriptor or weaken a receive filter. In particular, decoding a frame
+//! here is not evidence that a backend has admitted or authenticated its
+//! sender.
 
 use core::fmt;
+
+mod v2;
+
+pub use v2::{
+    ESP_NOW_V2_ACTION_PREFIX_LEN, ESP_NOW_V2_MAX_ACTION_LEN, ESP_NOW_V2_MAX_ELEMENT_COUNT,
+    ESP_NOW_V2_MAX_ELEMENT_PAYLOAD_LEN, ESP_NOW_V2_MAX_MPDU_LEN, ESP_NOW_V2_MAX_PAYLOAD_LEN,
+    ESP_NOW_V2_MAX_VENDOR_CONTENT_LEN, ESP_NOW_V2_VERSION, EspNowV2Action, EspNowV2Element,
+    EspNowV2Elements, EspNowV2Frame, EspNowV2Payload, EspNowV2Reassembly, EspNowV2WireError,
+};
 
 pub const ESP_NOW_ACTION_CATEGORY: u8 = 127;
 pub const ESP_NOW_ORGANIZATION_IDENTIFIER: [u8; 3] = [0x18, 0xfe, 0x34];

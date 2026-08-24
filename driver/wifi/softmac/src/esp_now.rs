@@ -1,4 +1,4 @@
-//! Portable ESP-NOW protocol ownership for the initial plaintext profile.
+//! Portable ESP-NOW protocol ownership for plaintext v1 and v2 profiles.
 //!
 //! This module binds ESP-NOW to an existing station VIF and its one home
 //! channel. It owns peer admission and frame construction, but deliberately
@@ -10,7 +10,7 @@ use open_esp_radio_ieee80211::{
     channel::WifiChannel,
     esp_now::{
         EspNowDestination, EspNowRandomValue, EspNowUnicastAddress, EspNowV1Frame, EspNowV1Payload,
-        EspNowV1WireError,
+        EspNowV1WireError, EspNowV2Frame, EspNowV2Payload, EspNowV2WireError,
     },
     station::StaSequenceCounter,
 };
@@ -147,6 +147,25 @@ pub enum EspNowPeerSecurity {
     Encrypted,
 }
 
+/// Wire-version capability explicitly asserted for one plaintext peer.
+///
+/// A v2-capable device can also receive v1. Keeping the default at
+/// [`Self::V1Only`] makes existing unicast and broadcast configurations safe
+/// for mixed-version networks. Marking a broadcast destination v2-capable is
+/// the caller's assertion that every intended receiver supports v2.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum EspNowPeerCapability {
+    #[default]
+    V1Only,
+    V2Capable,
+}
+
+impl EspNowPeerCapability {
+    pub const fn supports_v2(self) -> bool {
+        matches!(self, Self::V2Capable)
+    }
+}
+
 /// One ESP-NOW service bound to a station interface and one tuned channel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EspNowConfig {
@@ -216,6 +235,7 @@ pub struct EspNowPeerConfig {
     destination: EspNowDestination,
     channel: WifiChannel,
     phy_mode: EspNowPhyMode,
+    capability: EspNowPeerCapability,
 }
 
 impl EspNowPeerConfig {
@@ -226,13 +246,26 @@ impl EspNowPeerConfig {
             destination,
             channel,
             phy_mode: EspNowPhyMode::LegacyDsss1M,
+            capability: EspNowPeerCapability::V1Only,
         }
+    }
+
+    /// Configure an explicitly v2-capable peer. The same peer remains valid
+    /// for v1 sends because v2 receivers are backwards-compatible.
+    pub const fn plaintext_v2(destination: EspNowDestination, channel: WifiChannel) -> Self {
+        Self::plaintext(destination, channel).with_capability(EspNowPeerCapability::V2Capable)
     }
 
     /// Request a typed PHY mode. Unsupported chip backends must fail before
     /// publishing the frame rather than lowering LR to an ordinary rate code.
     pub const fn with_phy_mode(mut self, phy_mode: EspNowPhyMode) -> Self {
         self.phy_mode = phy_mode;
+        self
+    }
+
+    /// Set the peer's asserted wire-version capability.
+    pub const fn with_capability(mut self, capability: EspNowPeerCapability) -> Self {
+        self.capability = capability;
         self
     }
 
@@ -246,6 +279,10 @@ impl EspNowPeerConfig {
 
     pub const fn phy_mode(self) -> EspNowPhyMode {
         self.phy_mode
+    }
+
+    pub const fn capability(self) -> EspNowPeerCapability {
+        self.capability
     }
 
     pub const fn security(self) -> EspNowPeerSecurity {
@@ -608,6 +645,43 @@ impl<const N: usize> EspNowProtocol<N> {
         })
     }
 
+    /// Resolve an explicitly v2-capable peer and construct a portable v2
+    /// handoff. No chip/runtime transmit support is implied by this value.
+    ///
+    /// Capability and payload validation happen before the shared station
+    /// sequence counter advances.
+    pub fn prepare_v2_tx<'payload>(
+        &self,
+        peer: EspNowPeerId,
+        sequence: &mut StaSequenceCounter,
+        random_value: EspNowRandomValue,
+        payload: &'payload [u8],
+    ) -> Result<EspNowPreparedV2Tx<'payload>, EspNowV2SendError> {
+        let peer_config = self.peers.get(peer).map_err(EspNowV2SendError::Peer)?;
+        if !peer_config.capability.supports_v2() {
+            return Err(EspNowV2SendError::PeerNotV2Capable {
+                peer,
+                capability: peer_config.capability,
+            });
+        }
+        EspNowV2Payload::new(payload).map_err(EspNowV2SendError::Wire)?;
+        let frame = EspNowV2Frame::new(
+            peer_config.destination,
+            self.config.local_address,
+            sequence.take(),
+            random_value,
+            payload,
+        )
+        .map_err(EspNowV2SendError::Wire)?;
+        Ok(EspNowPreparedV2Tx {
+            peer,
+            home_channel: self.config.home_channel,
+            station: self.config.station,
+            phy_mode: peer_config.phy_mode,
+            frame,
+        })
+    }
+
     /// Parse and admit a plaintext frame addressed to this service from one
     /// configured individual peer. A configured broadcast destination grants
     /// TX authority only; it never acts as a wildcard RX peer. The active
@@ -631,6 +705,50 @@ impl<const N: usize> EspNowProtocol<N> {
             return Err(EspNowReceiveError::UnknownPeer(source));
         };
         Ok(EspNowReceivedV1 { peer, frame })
+    }
+
+    /// Structurally parse and admit one portable plaintext v2 frame from an
+    /// explicitly v2-capable individual peer. This does not claim that a chip
+    /// backend has wired the frame into its normal-RX path and does not perform
+    /// the duplicate suppression owned by a live runtime RX epoch.
+    pub fn receive_v2<'frame>(
+        &self,
+        active_station: BoundVirtualInterface,
+        active_channel: WifiChannel,
+        bytes: &'frame [u8],
+    ) -> Result<EspNowReceivedV2<'frame>, EspNowV2ReceiveError> {
+        if active_station != self.config.station {
+            return Err(EspNowV2ReceiveError::StationBindingMismatch {
+                configured: self.config.station,
+                active: active_station,
+            });
+        }
+        if active_channel != self.config.home_channel {
+            return Err(EspNowV2ReceiveError::ChannelMismatch {
+                configured: self.config.home_channel,
+                active: active_channel,
+            });
+        }
+        let frame = EspNowV2Frame::parse(bytes).map_err(EspNowV2ReceiveError::Wire)?;
+        if !matches!(frame.destination(), EspNowDestination::Broadcast)
+            && frame.destination() != EspNowDestination::Unicast(self.config.local_address)
+        {
+            return Err(EspNowV2ReceiveError::ForeignDestination(
+                frame.destination(),
+            ));
+        }
+        let source = frame.source();
+        let Some(peer) = self.peers.find(EspNowDestination::Unicast(source)) else {
+            return Err(EspNowV2ReceiveError::UnknownPeer(source));
+        };
+        let peer_config = self.peers.get(peer).map_err(EspNowV2ReceiveError::Peer)?;
+        if !peer_config.capability.supports_v2() {
+            return Err(EspNowV2ReceiveError::PeerNotV2Capable {
+                peer,
+                capability: peer_config.capability,
+            });
+        }
+        Ok(EspNowReceivedV2 { peer, frame })
     }
 }
 
@@ -785,6 +903,58 @@ impl EspNowPreparedV1Tx<'_> {
     }
 }
 
+/// Portable, fully validated v2 plaintext handoff.
+///
+/// S31 runtime support remains a separate ownership boundary; this value may
+/// be encoded by an application/backend that explicitly owns a sufficiently
+/// large ordinary Action-frame TX buffer.
+#[derive(Clone, Copy, Debug)]
+pub struct EspNowPreparedV2Tx<'payload> {
+    peer: EspNowPeerId,
+    home_channel: WifiChannel,
+    station: BoundVirtualInterface,
+    phy_mode: EspNowPhyMode,
+    frame: EspNowV2Frame<'payload>,
+}
+
+impl EspNowPreparedV2Tx<'_> {
+    pub const fn peer(self) -> EspNowPeerId {
+        self.peer
+    }
+
+    pub const fn destination(self) -> EspNowDestination {
+        self.frame.destination()
+    }
+
+    pub const fn home_channel(self) -> WifiChannel {
+        self.home_channel
+    }
+
+    pub const fn station(self) -> BoundVirtualInterface {
+        self.station
+    }
+
+    pub const fn channel_context(self) -> ChannelContextId {
+        self.station.channel_context
+    }
+
+    pub const fn phy_mode(self) -> EspNowPhyMode {
+        self.phy_mode
+    }
+
+    pub const fn security(self) -> EspNowPeerSecurity {
+        EspNowPeerSecurity::Plaintext
+    }
+
+    pub const fn encoded_len(self) -> usize {
+        self.frame.encoded_len()
+    }
+
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, EspNowV2WireError> {
+        self.frame.encode(output)
+    }
+}
+
 /// Protocol-admitted borrowed receive frame.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EspNowReceivedV1<'frame> {
@@ -798,6 +968,25 @@ impl<'frame> EspNowReceivedV1<'frame> {
     }
 
     pub const fn frame(self) -> EspNowV1Frame<'frame> {
+        self.frame
+    }
+}
+
+/// Protocol-admitted borrowed v2 receive frame. Its element bodies remain
+/// borrowed; use the codec iterator or caller-owned reassembly storage before
+/// releasing the underlying RX lease.
+#[derive(Clone, Copy, Debug)]
+pub struct EspNowReceivedV2<'frame> {
+    peer: EspNowPeerId,
+    frame: EspNowV2Frame<'frame>,
+}
+
+impl<'frame> EspNowReceivedV2<'frame> {
+    pub const fn peer(self) -> EspNowPeerId {
+        self.peer
+    }
+
+    pub const fn frame(self) -> EspNowV2Frame<'frame> {
         self.frame
     }
 }
@@ -883,6 +1072,31 @@ impl fmt::Display for EspNowSendError {
 impl core::error::Error for EspNowSendError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowV2SendError {
+    Peer(EspNowPeerTableError),
+    PeerNotV2Capable {
+        peer: EspNowPeerId,
+        capability: EspNowPeerCapability,
+    },
+    Wire(EspNowV2WireError),
+}
+
+impl fmt::Display for EspNowV2SendError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Peer(error) => write!(formatter, "ESP-NOW v2 peer error: {error}"),
+            Self::PeerNotV2Capable { peer, capability } => write!(
+                formatter,
+                "ESP-NOW peer {peer:?} has {capability:?} capability, not v2"
+            ),
+            Self::Wire(error) => write!(formatter, "ESP-NOW v2 frame error: {error}"),
+        }
+    }
+}
+
+impl core::error::Error for EspNowV2SendError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspNowReceiveError {
     StationBindingMismatch {
         configured: BoundVirtualInterface,
@@ -920,3 +1134,55 @@ impl fmt::Display for EspNowReceiveError {
 }
 
 impl core::error::Error for EspNowReceiveError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowV2ReceiveError {
+    StationBindingMismatch {
+        configured: BoundVirtualInterface,
+        active: BoundVirtualInterface,
+    },
+    ChannelMismatch {
+        configured: WifiChannel,
+        active: WifiChannel,
+    },
+    Wire(EspNowV2WireError),
+    ForeignDestination(EspNowDestination),
+    UnknownPeer(EspNowUnicastAddress),
+    Peer(EspNowPeerTableError),
+    PeerNotV2Capable {
+        peer: EspNowPeerId,
+        capability: EspNowPeerCapability,
+    },
+}
+
+impl fmt::Display for EspNowV2ReceiveError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StationBindingMismatch { configured, active } => write!(
+                formatter,
+                "ESP-NOW v2 configured station binding {configured:?} differs from active binding {active:?}"
+            ),
+            Self::ChannelMismatch { configured, active } => write!(
+                formatter,
+                "ESP-NOW v2 configured channel {configured:?} differs from active channel {active:?}"
+            ),
+            Self::Wire(error) => write!(formatter, "ESP-NOW v2 frame error: {error}"),
+            Self::ForeignDestination(destination) => {
+                write!(
+                    formatter,
+                    "ESP-NOW v2 frame is addressed to {destination:?}"
+                )
+            }
+            Self::UnknownPeer(source) => {
+                write!(formatter, "ESP-NOW v2 source {source:?} is not configured")
+            }
+            Self::Peer(error) => write!(formatter, "ESP-NOW v2 peer error: {error}"),
+            Self::PeerNotV2Capable { peer, capability } => write!(
+                formatter,
+                "ESP-NOW peer {peer:?} has {capability:?} capability, not v2"
+            ),
+        }
+    }
+}
+
+impl core::error::Error for EspNowV2ReceiveError {}

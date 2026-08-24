@@ -15,6 +15,7 @@ pub mod ccmp;
 pub mod channel;
 pub mod classification;
 pub mod data;
+pub mod esp_now;
 pub mod he;
 pub mod ht;
 pub mod management;

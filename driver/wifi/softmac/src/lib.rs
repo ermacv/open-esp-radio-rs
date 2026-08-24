@@ -16,12 +16,18 @@
 //! means only that a caller must not assume the operation is an offload.
 
 pub mod configuration;
+pub mod esp_now;
 pub mod interface;
 pub mod monitor;
 
 pub use configuration::{
     WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
     WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
+};
+pub use esp_now::{
+    ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowConfigError, EspNowPeerConfig, EspNowPeerId,
+    EspNowPeerSecurity, EspNowPeerTable, EspNowPeerTableError, EspNowPeers, EspNowPhyMode,
+    EspNowPreparedV1Tx, EspNowProtocol, EspNowReceiveError, EspNowReceivedV1, EspNowSendError,
 };
 pub use monitor::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType, MonitorFrameTypeMask,

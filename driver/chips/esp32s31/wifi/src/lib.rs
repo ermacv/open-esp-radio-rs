@@ -19,6 +19,7 @@ pub mod ampdu_tx;
 pub mod cold_start;
 pub mod cooperative_hardware;
 pub mod datapath;
+pub mod esp_now;
 #[cfg(target_arch = "riscv32")]
 pub mod mac_start;
 pub mod ordinary_tx;

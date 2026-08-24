@@ -564,8 +564,15 @@ impl ProductionWifiEpochRunner {
         let (ordinary, aggregate_resources) = physical_tx
             .try_lend(DatapathPairRole::Second)
             .unwrap_or_else(|_| unreachable!("station preparation returns available physical TX"));
-        let (ssid, access_point_security, channel, client_limit, inactive_timeout) =
-            access_point_request.into_parts();
+        let (
+            ssid,
+            access_point_security,
+            channel,
+            client_limit,
+            inactive_timeout,
+            beacon_interval,
+            dtim_period,
+        ) = access_point_request.into_parts();
         let ProductionAccessPointResources {
             address,
             beacon,
@@ -605,8 +612,8 @@ impl ProductionWifiEpochRunner {
             pairwise_storage,
             &ssid,
             channel,
-            AccessPointRequest::BEACON_INTERVAL_TU,
-            AccessPointRequest::DTIM_PERIOD,
+            beacon_interval.tu(),
+            dtim_period.get(),
         )
         .unwrap_or_else(|_| {
             unreachable!("validated paired AP resources must start on the associated channel")

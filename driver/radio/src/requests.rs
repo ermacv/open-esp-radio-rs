@@ -5,7 +5,10 @@
 //! describes how an already validated role should operate for one runtime
 //! epoch.
 
-use core::{fmt, num::NonZeroU16};
+use core::{
+    fmt,
+    num::{NonZeroU8, NonZeroU16},
+};
 
 use open_esp_radio_ieee80211::{channel::WifiChannel, ssid::WifiSsid};
 pub use open_esp_radio_wifi_ap::{
@@ -123,23 +126,101 @@ impl fmt::Debug for AccessPointSecurity {
     }
 }
 
+/// Nonzero IEEE beacon interval in timing units (TU).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AccessPointBeaconInterval(NonZeroU16);
+
+impl AccessPointBeaconInterval {
+    pub const DEFAULT_TU: u16 = 100;
+
+    pub const fn new(tu: u16) -> Result<Self, AccessPointBeaconIntervalError> {
+        match NonZeroU16::new(tu) {
+            Some(tu) => Ok(Self(tu)),
+            None => Err(AccessPointBeaconIntervalError::Zero),
+        }
+    }
+
+    pub const fn tu(self) -> u16 {
+        self.0.get()
+    }
+}
+
+impl Default for AccessPointBeaconInterval {
+    fn default() -> Self {
+        Self(NonZeroU16::new(Self::DEFAULT_TU).expect("default beacon interval is nonzero"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccessPointBeaconIntervalError {
+    Zero,
+}
+
+impl fmt::Display for AccessPointBeaconIntervalError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("access-point beacon interval must be nonzero")
+    }
+}
+
+impl core::error::Error for AccessPointBeaconIntervalError {}
+
+/// Nonzero number of beacon intervals in one DTIM period.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AccessPointDtimPeriod(NonZeroU8);
+
+impl AccessPointDtimPeriod {
+    pub const DEFAULT: u8 = 2;
+
+    pub const fn new(period: u8) -> Result<Self, AccessPointDtimPeriodError> {
+        match NonZeroU8::new(period) {
+            Some(period) => Ok(Self(period)),
+            None => Err(AccessPointDtimPeriodError::Zero),
+        }
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0.get()
+    }
+}
+
+impl Default for AccessPointDtimPeriod {
+    fn default() -> Self {
+        Self(NonZeroU8::new(Self::DEFAULT).expect("default DTIM period is nonzero"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccessPointDtimPeriodError {
+    Zero,
+}
+
+impl fmt::Display for AccessPointDtimPeriodError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("access-point DTIM period must be nonzero")
+    }
+}
+
+impl core::error::Error for AccessPointDtimPeriodError {}
+
 /// Complete owned policy for one AP service epoch.
 ///
-/// Beacon cadence, DTIM and peer capacity are implementation guarantees, not
-/// tuning switches: 100 TU, DTIM period 2 and a validated admission limit of
-/// 1..=15 clients. The typed channel owns valid HT20/HT40 geometry before any
-/// hardware owner moves.
+/// Beacon cadence, DTIM and peer capacity are validated before hardware
+/// ownership moves. Defaults remain 100 TU and DTIM period 2; both cadence
+/// values are explicit nonzero types so the TIM/DTIM publisher and buffering
+/// policy consume the same request geometry.
 pub struct AccessPointRequest {
     ssid: WifiSsid,
     security: AccessPointSecurity,
     channel: WifiChannel,
     client_limit: AccessPointClientLimit,
     inactive_timeout: AccessPointInactiveTimeout,
+    beacon_interval: AccessPointBeaconInterval,
+    dtim_period: AccessPointDtimPeriod,
 }
 
 impl AccessPointRequest {
-    pub const BEACON_INTERVAL_TU: u16 = 100;
-    pub const DTIM_PERIOD: u8 = 2;
+    pub const BEACON_INTERVAL_TU: u16 = AccessPointBeaconInterval::DEFAULT_TU;
+    pub const DTIM_PERIOD: u8 = AccessPointDtimPeriod::DEFAULT;
     pub const PEER_CAPACITY: usize = AccessPointClientLimit::MAX as usize;
 
     pub fn new(
@@ -157,6 +238,13 @@ impl AccessPointRequest {
             channel,
             client_limit,
             inactive_timeout: AccessPointInactiveTimeout::default(),
+            beacon_interval: AccessPointBeaconInterval(
+                NonZeroU16::new(Self::BEACON_INTERVAL_TU)
+                    .expect("default beacon interval is nonzero"),
+            ),
+            dtim_period: AccessPointDtimPeriod(
+                NonZeroU8::new(Self::DTIM_PERIOD).expect("default DTIM period is nonzero"),
+            ),
         })
     }
 
@@ -180,8 +268,26 @@ impl AccessPointRequest {
         self.inactive_timeout
     }
 
+    pub const fn beacon_interval(&self) -> AccessPointBeaconInterval {
+        self.beacon_interval
+    }
+
+    pub const fn dtim_period(&self) -> AccessPointDtimPeriod {
+        self.dtim_period
+    }
+
     pub const fn with_inactive_timeout(mut self, timeout: AccessPointInactiveTimeout) -> Self {
         self.inactive_timeout = timeout;
+        self
+    }
+
+    pub const fn with_beacon_cadence(
+        mut self,
+        beacon_interval: AccessPointBeaconInterval,
+        dtim_period: AccessPointDtimPeriod,
+    ) -> Self {
+        self.beacon_interval = beacon_interval;
+        self.dtim_period = dtim_period;
         self
     }
 
@@ -193,6 +299,8 @@ impl AccessPointRequest {
         WifiChannel,
         AccessPointClientLimit,
         AccessPointInactiveTimeout,
+        AccessPointBeaconInterval,
+        AccessPointDtimPeriod,
     ) {
         (
             self.ssid,
@@ -200,6 +308,8 @@ impl AccessPointRequest {
             self.channel,
             self.client_limit,
             self.inactive_timeout,
+            self.beacon_interval,
+            self.dtim_period,
         )
     }
 }
@@ -213,6 +323,8 @@ impl fmt::Debug for AccessPointRequest {
             .field("channel", &self.channel)
             .field("client_limit", &self.client_limit)
             .field("inactive_timeout", &self.inactive_timeout)
+            .field("beacon_interval", &self.beacon_interval)
+            .field("dtim_period", &self.dtim_period)
             .finish()
     }
 }

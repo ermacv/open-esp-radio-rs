@@ -1099,7 +1099,15 @@ impl ProductionWifiEpochRunner {
             }
         };
 
-        let (ssid, security, channel, client_limit, inactive_timeout) = request.into_parts();
+        let (
+            ssid,
+            security,
+            channel,
+            client_limit,
+            inactive_timeout,
+            beacon_interval,
+            dtim_period,
+        ) = request.into_parts();
         let ProductionAccessPointResources {
             address,
             beacon,
@@ -1172,8 +1180,8 @@ impl ProductionWifiEpochRunner {
             pairwise_storage,
             &ssid,
             channel,
-            AccessPointRequest::BEACON_INTERVAL_TU,
-            AccessPointRequest::DTIM_PERIOD,
+            beacon_interval.tu(),
+            dtim_period.get(),
         ) {
             Ok(engine) => engine,
             Err(engine) => {

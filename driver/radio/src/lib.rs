@@ -36,13 +36,14 @@ pub use open_esp_radio_wifi_sta::station::{StaLifecycleStage, StaReconnectPolicy
 pub use open_esp_radio_wpa2::Pmk;
 #[cfg(feature = "wifi")]
 pub use requests::{
-    AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
-    AccessPointInactiveTimeoutError, AccessPointRequest, AccessPointRequestError,
-    AccessPointSecurity, MonitorCapturePolicy, MonitorRequest, StationAccessPointRequest,
-    StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
-    StationRequest, StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
-    StationScanChannelsError, StationScanPolicy, StationSecurity, WifiScanRequest,
-    WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
+    AccessPointBeaconInterval, AccessPointBeaconIntervalError, AccessPointClientLimit,
+    AccessPointClientLimitError, AccessPointDtimPeriod, AccessPointDtimPeriodError,
+    AccessPointInactiveTimeout, AccessPointInactiveTimeoutError, AccessPointRequest,
+    AccessPointRequestError, AccessPointSecurity, MonitorCapturePolicy, MonitorRequest,
+    StationAccessPointRequest, StationDiscovery, StationListenInterval, StationPowerMode,
+    StationPowerSavePolicy, StationRequest, StationScanChannelIter, StationScanChannelOrderIter,
+    StationScanChannels, StationScanChannelsError, StationScanPolicy, StationSecurity,
+    WifiScanRequest, WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
     WifiServiceRequestError, WifiServiceRequestFailure, WifiSupervisorConfiguration,
 };
 #[cfg(feature = "wifi")]

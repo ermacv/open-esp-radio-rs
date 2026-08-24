@@ -5,19 +5,26 @@
 //! but it cannot produce a doze permit until the shared TX owner reports an
 //! acknowledged Null Data MPDU. The returned permit is expressed in the
 //! station TSF clock domain so executor queue latency cannot move the wake
-//! edge past the next TBTT.
+//! edge past the next mandatory listen/DTIM TBTT.
 
 use open_esp_radio_ieee80211::{
     station_beacon::{StaBeaconObservation, StaTimObservation},
     station_power_save::StaPowerManagement,
 };
 
+use crate::request::StationListenInterval;
+
 const TU_MICROS: u64 = 1_024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaPowerSavePolicyError {
     ZeroBeaconInterval,
+    ZeroBeaconMissLimit,
     WakeGuardOutsideBeaconInterval,
+    ListenIntervalExceedsBeaconLoss {
+        listen_interval: u16,
+        beacon_miss_limit: u8,
+    },
 }
 
 /// Association-owned timing policy. Beacon frames may refresh traffic state,
@@ -27,6 +34,8 @@ pub enum StaPowerSavePolicyError {
 pub struct StaPowerSavePolicy {
     beacon_interval_tu: u16,
     beacon_interval_micros: u64,
+    listen_interval: StationListenInterval,
+    beacon_miss_limit: u8,
     wake_guard_micros: u32,
 }
 
@@ -35,6 +44,22 @@ impl StaPowerSavePolicy {
         beacon_interval_tu: u16,
         wake_guard_micros: u32,
     ) -> Result<Self, StaPowerSavePolicyError> {
+        let listen_interval = match StationListenInterval::new(1) {
+            Some(interval) => interval,
+            None => unreachable!(),
+        };
+        Self::for_association(beacon_interval_tu, listen_interval, wake_guard_micros, 1)
+    }
+
+    /// Build policy from association timing and the connected link-loss
+    /// bound. A station may intentionally skip beacons only while the next
+    /// mandatory listen edge remains inside that bound.
+    pub const fn for_association(
+        beacon_interval_tu: u16,
+        listen_interval: StationListenInterval,
+        wake_guard_micros: u32,
+        beacon_miss_limit: u8,
+    ) -> Result<Self, StaPowerSavePolicyError> {
         if beacon_interval_tu == 0 {
             return Err(StaPowerSavePolicyError::ZeroBeaconInterval);
         }
@@ -42,9 +67,20 @@ impl StaPowerSavePolicy {
         if wake_guard_micros as u64 >= beacon_interval_micros {
             return Err(StaPowerSavePolicyError::WakeGuardOutsideBeaconInterval);
         }
+        if beacon_miss_limit == 0 {
+            return Err(StaPowerSavePolicyError::ZeroBeaconMissLimit);
+        }
+        if listen_interval.get() > beacon_miss_limit as u16 {
+            return Err(StaPowerSavePolicyError::ListenIntervalExceedsBeaconLoss {
+                listen_interval: listen_interval.get(),
+                beacon_miss_limit,
+            });
+        }
         Ok(Self {
             beacon_interval_tu,
             beacon_interval_micros,
+            listen_interval,
+            beacon_miss_limit,
             wake_guard_micros,
         })
     }
@@ -59,6 +95,14 @@ impl StaPowerSavePolicy {
 
     pub const fn wake_guard_micros(self) -> u32 {
         self.wake_guard_micros
+    }
+
+    pub const fn listen_interval(self) -> StationListenInterval {
+        self.listen_interval
+    }
+
+    pub const fn beacon_miss_limit(self) -> u8 {
+        self.beacon_miss_limit
     }
 }
 
@@ -88,6 +132,14 @@ pub enum StaPowerSaveState {
     AdvertisingActive,
 }
 
+/// Association-owned reason selecting the next mandatory receive edge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaDozeWakeReason {
+    ListenInterval,
+    Dtim,
+    ListenIntervalAndDtim,
+}
+
 /// A single-use authorization for the chip-specific sleep owner.
 ///
 /// This value does not itself touch RF, PHY, clocks or wake registers. Before
@@ -96,7 +148,11 @@ pub enum StaPowerSaveState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaDozePermit {
     pub beacon_timestamp_tsf: u64,
+    pub next_listen_tsf: u64,
+    pub next_dtim_tsf: u64,
     pub wake_tsf: u64,
+    pub wake_after_beacons: u16,
+    pub wake_reason: StaDozeWakeReason,
     pub dtim_count: u8,
     pub dtim_period: u8,
 }
@@ -105,6 +161,8 @@ pub struct StaDozePermit {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaDozePrepareError {
     WakeDeadlinePassed,
+    InvalidTimPhase,
+    InvalidWakeGeometry,
 }
 
 /// Affine, live authorization presented to a chip-specific doze leaf.
@@ -118,8 +176,29 @@ pub struct StaPreparedDoze {
 
 impl StaPreparedDoze {
     pub fn prepare(permit: StaDozePermit, station_tsf: u64) -> Result<Self, StaDozePrepareError> {
-        if !strictly_future_tsf(station_tsf, permit.wake_tsf) {
+        if permit.dtim_period == 0 || permit.dtim_count >= permit.dtim_period {
+            return Err(StaDozePrepareError::InvalidTimPhase);
+        }
+        let Some(wake_distance) = future_tsf_distance(station_tsf, permit.wake_tsf) else {
             return Err(StaDozePrepareError::WakeDeadlinePassed);
+        };
+        let Some(listen_distance) = future_tsf_distance(station_tsf, permit.next_listen_tsf) else {
+            return Err(StaDozePrepareError::InvalidWakeGeometry);
+        };
+        let Some(dtim_distance) = future_tsf_distance(station_tsf, permit.next_dtim_tsf) else {
+            return Err(StaDozePrepareError::InvalidWakeGeometry);
+        };
+        let expected_reason = match listen_distance.cmp(&dtim_distance) {
+            core::cmp::Ordering::Less => StaDozeWakeReason::ListenInterval,
+            core::cmp::Ordering::Equal => StaDozeWakeReason::ListenIntervalAndDtim,
+            core::cmp::Ordering::Greater => StaDozeWakeReason::Dtim,
+        };
+        if permit.wake_after_beacons == 0
+            || wake_distance > listen_distance
+            || wake_distance > dtim_distance
+            || permit.wake_reason != expected_reason
+        {
+            return Err(StaDozePrepareError::InvalidWakeGeometry);
         }
         Ok(Self { permit })
     }
@@ -203,7 +282,8 @@ pub enum StaStayAwakeReason {
     TrafficPending,
     MissingTim,
     InvalidTimPhase,
-    BufferedTraffic,
+    UnicastBuffered,
+    GroupBuffered,
     PowerManagementTxPending,
     NoFreshDozeWindow,
     WakeDeadlinePassed,
@@ -215,6 +295,25 @@ pub enum StaPowerSaveDecision {
     StayAwake(StaStayAwakeReason),
     SendPowerManagement(StaPowerManagement),
     PermitDoze(StaDozePermit),
+}
+
+impl StaPowerSaveDecision {
+    /// Whether safe progress requires leaving AP-visible power-save rather
+    /// than merely keeping the modem awake. Group delivery after a DTIM is
+    /// received while PM=1; unicast retrieval has no open PS-Poll/U-APSD
+    /// owner and therefore falls back to acknowledged PM=0.
+    pub const fn requires_active_advertisement(self) -> bool {
+        matches!(
+            self,
+            Self::StayAwake(
+                StaStayAwakeReason::TrafficPending
+                    | StaStayAwakeReason::MissingTim
+                    | StaStayAwakeReason::InvalidTimPhase
+                    | StaStayAwakeReason::UnicastBuffered
+                    | StaStayAwakeReason::WakeDeadlinePassed
+            )
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -286,18 +385,52 @@ impl StaPowerSavePlanner {
             self.candidate = None;
             return StaPowerSaveDecision::StayAwake(StaStayAwakeReason::InvalidTimPhase);
         }
-        if tim.unicast_buffered || tim.group_buffered {
+        if tim.unicast_buffered {
             self.candidate = None;
-            return StaPowerSaveDecision::StayAwake(StaStayAwakeReason::BufferedTraffic);
+            return StaPowerSaveDecision::StayAwake(StaStayAwakeReason::UnicastBuffered);
+        }
+        if tim.group_buffered {
+            self.candidate = None;
+            return StaPowerSaveDecision::StayAwake(StaStayAwakeReason::GroupBuffered);
         }
 
+        let listen_beacons = self.policy.listen_interval.get();
+        let dtim_beacons = if tim.dtim_count == 0 {
+            u16::from(tim.dtim_period)
+        } else {
+            u16::from(tim.dtim_count)
+        };
+        let wake_after_beacons = listen_beacons.min(dtim_beacons);
+        let wake_reason = match listen_beacons.cmp(&dtim_beacons) {
+            core::cmp::Ordering::Less => StaDozeWakeReason::ListenInterval,
+            core::cmp::Ordering::Equal => StaDozeWakeReason::ListenIntervalAndDtim,
+            core::cmp::Ordering::Greater => StaDozeWakeReason::Dtim,
+        };
+        let next_listen_tsf = opportunity.beacon.timestamp_tsf.wrapping_add(
+            self.policy
+                .beacon_interval_micros
+                .wrapping_mul(u64::from(listen_beacons)),
+        );
+        let next_dtim_tsf = opportunity.beacon.timestamp_tsf.wrapping_add(
+            self.policy
+                .beacon_interval_micros
+                .wrapping_mul(u64::from(dtim_beacons)),
+        );
         let permit = StaDozePermit {
             beacon_timestamp_tsf: opportunity.beacon.timestamp_tsf,
+            next_listen_tsf,
+            next_dtim_tsf,
             wake_tsf: opportunity
                 .beacon
                 .timestamp_tsf
-                .wrapping_add(self.policy.beacon_interval_micros)
+                .wrapping_add(
+                    self.policy
+                        .beacon_interval_micros
+                        .wrapping_mul(u64::from(wake_after_beacons)),
+                )
                 .wrapping_sub(u64::from(self.policy.wake_guard_micros)),
+            wake_after_beacons,
+            wake_reason,
             dtim_count: tim.dtim_count,
             dtim_period: tim.dtim_period,
         };
@@ -409,8 +542,16 @@ const fn valid_tim_phase(tim: StaTimObservation) -> bool {
 /// Compare two wrapping 64-bit TSF values, accepting only the nearer future
 /// half of the counter domain.
 const fn strictly_future_tsf(now: u64, deadline: u64) -> bool {
+    future_tsf_distance(now, deadline).is_some()
+}
+
+const fn future_tsf_distance(now: u64, deadline: u64) -> Option<u64> {
     let distance = deadline.wrapping_sub(now);
-    distance != 0 && distance <= i64::MAX as u64
+    if distance != 0 && distance <= i64::MAX as u64 {
+        Some(distance)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -482,7 +623,11 @@ mod tests {
 
         let permit = StaDozePermit {
             beacon_timestamp_tsf: 1_000_000,
+            next_listen_tsf: 1_102_400,
+            next_dtim_tsf: 1_102_400,
             wake_tsf: 1_100_400,
+            wake_after_beacons: 1,
+            wake_reason: StaDozeWakeReason::ListenIntervalAndDtim,
             dtim_count: 1,
             dtim_period: 3,
         };
@@ -565,7 +710,7 @@ mod tests {
                     1_000_100,
                     StaTrafficState::Quiescent,
                 ),
-                StaStayAwakeReason::BufferedTraffic,
+                StaStayAwakeReason::UnicastBuffered,
             ),
             (
                 opportunity(Some(tim()), 1_000_100, StaTrafficState::Pending),

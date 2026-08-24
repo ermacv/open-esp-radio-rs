@@ -123,6 +123,9 @@ pub struct ApProtectedDataFrame<'frame> {
     pub sequence_number: u16,
     pub user_priority: u8,
     pub peer_qos: bool,
+    /// Set the IEEE 802.11 More Data bit for a frame released from an AP
+    /// power-save queue while further traffic remains buffered.
+    pub more_data: bool,
     pub ccmp_header: [u8; CCMP_HEADER_LEN],
     pub ethernet: &'frame [u8],
 }
@@ -169,6 +172,9 @@ impl ApProtectedDataFrame<'_> {
             return Err(ApDataFrameError::InvalidPeer);
         }
         plan.header[1] |= 0x40;
+        if self.more_data {
+            plan.header[1] |= 0x20;
+        }
         let header_len = usize::from(plan.header_len);
         let required = header_len
             .checked_add(CCMP_HEADER_LEN)
@@ -250,6 +256,9 @@ impl ApProtectedDataFrame<'_> {
         )
         .ok_or(ApDataFrameError::InvalidUserPriority)?;
         plan.header[1] |= 0x40;
+        if self.more_data {
+            plan.header[1] |= 0x20;
+        }
         let header_len = usize::from(plan.header_len);
         let prefix_len = header_len + CCMP_HEADER_LEN + plan.llc_snap.len();
         let headroom = prefix_len - ETHERNET_HEADER_LEN;
@@ -684,6 +693,7 @@ mod tests {
             sequence_number: 7,
             user_priority: 0,
             peer_qos: true,
+            more_data: false,
             ccmp_header: ccmp,
             ethernet: &ethernet,
         }
@@ -715,6 +725,7 @@ mod tests {
                 sequence_number: 0,
                 user_priority: 0,
                 peer_qos: false,
+                more_data: false,
                 ccmp_header: [0; 8],
                 ethernet: &ethernet,
             }
@@ -741,6 +752,7 @@ mod tests {
             sequence_number: 7,
             user_priority: 0,
             peer_qos: true,
+            more_data: false,
             ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
             ethernet: &[],
         }

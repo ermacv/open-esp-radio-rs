@@ -551,6 +551,9 @@ where
                 }
                 self.observe_role_state();
                 self.observe_tx_started();
+                if !self.control.tx_pending() {
+                    let _ = self.network_tx.stage_awake_buffered_release(self.control)?;
+                }
 
                 // A retained Ethernet record must not block the lower DMA
                 // ownership frontier. `control.service_rx` stages and
@@ -750,7 +753,8 @@ where
     }
 
     fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
-        self.network_tx.cancel_prepared(self.aggregate)
+        self.network_tx
+            .cancel_prepared(self.aggregate, self.control)
     }
 
     fn service_tx<'a>(

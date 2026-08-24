@@ -236,4 +236,6 @@ pub struct Esp32s31ConnectedStaReport {
     pub link: Esp32s31StaConnectedLink,
     pub data_tx_rate: TxPhyRate,
     pub aggregate_tx_rate: TxPhyRate,
+    /// Explicit MCS32 selection/rejection retained independently of rates.
+    pub ht_duplicate_tx_selection: HtDuplicateTxSelection,
 }

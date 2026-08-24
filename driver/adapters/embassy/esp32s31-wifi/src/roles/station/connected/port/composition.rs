@@ -307,6 +307,7 @@ impl Esp32s31ConnectedStaPort {
         control.enable_beacon_loss(plan.beacon_loss);
         if let Some(policy) = plan.power_save {
             control.enable_power_save(policy);
+            control.enable_hardware_doze_boundary();
         }
         if plan.config.block_ack.request_initial_tx_block_ack
             && matches!(plan.aggregate_tx_rate, TxPhyRate::Ht(_) | TxPhyRate::He(_))
@@ -504,6 +505,7 @@ impl Esp32s31ConnectedStaPort {
                 link: plan.link,
                 data_tx_rate: plan.data_tx_rate,
                 aggregate_tx_rate: plan.aggregate_tx_rate,
+                ht_duplicate_tx_selection: plan.ht_duplicate_tx_selection,
             },
         }
     }

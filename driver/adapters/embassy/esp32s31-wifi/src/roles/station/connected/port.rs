@@ -14,8 +14,10 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx::RxIngressConfig,
     rx_ampdu::{RxBlockAckSessions, RxBlockAckSessionsError},
     tx::{
-        HeDcmRate, HeEdcaTxopLimit, HeMcs, HeTriggerBasedTxConfig, HtGuardInterval, HtMcs,
-        LegacyRate, TxPhyRate, TxSlotState,
+        HeDcmRate, HeEdcaTxopLimit, HeMcs, HeTriggerBasedTxConfig, HtChannelWidth,
+        HtDuplicateCertificationRequest, HtDuplicateTxLinkCapabilities, HtDuplicateTxSelection,
+        HtGuardInterval, HtMcs, LegacyRate, TxPhyRate, TxSlotState,
+        select_esp32s31_ht_duplicate_tx,
     },
     tx_ampdu::{StaTxBlockAckSessions, TxBlockAckError},
 };

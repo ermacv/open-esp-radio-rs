@@ -20,6 +20,7 @@ use embassy_time::{Instant, Timer};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::crypto::{CryptoKeyError, StaGroupCcmpSlot};
 pub use open_esp_radio_esp32s31_wifi_mac::rx_ampdu::{RxReorderCommand, RxReorderCommandError};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxControlEvent;
 pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::{
         ConnectedControlError, ConnectedControlPorts, ConnectedControlReorder, ConnectedControlTx,
@@ -254,6 +255,20 @@ pub struct Esp32s31ConnectedControl<'resources, M: RawMutex, const CAPACITY: usi
     rx_block_ack: Esp32s31ConnectedRxBlockAck<'resources>,
     rx_reorder_commands: Option<RxReorderCommandSender<'resources, M>>,
     security: Option<ConnectedWpa2Security>,
+    deferred_control_event: Option<ConnectedRxControlEvent>,
+    hardware_doze_boundary_enabled: bool,
+    doze_restore: Option<StaDozeRestore>,
+    last_doze_boundary_failure: Option<StationDozeBoundaryFailure>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationDozeBoundaryFailure {
+    Prepare(StaDozePrepareError),
+    Hardware(StationDozeHardwareError),
+}
+
+const fn control_event_requires_active(event: ConnectedRxControlEvent) -> bool {
+    matches!(event, ConnectedRxControlEvent::BlockAck(_))
 }
 
 enum Esp32s31ConnectedRxBlockAck<'resources> {
@@ -285,6 +300,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             rx_block_ack: Esp32s31ConnectedRxBlockAck::Local(Esp32s31StaApRxBlockAck::new()),
             rx_reorder_commands: None,
             security: None,
+            deferred_control_event: None,
+            hardware_doze_boundary_enabled: false,
+            doze_restore: None,
+            last_doze_boundary_failure: None,
         }
     }
 
@@ -301,6 +320,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             rx_block_ack: Esp32s31ConnectedRxBlockAck::Shared(rx_block_ack),
             rx_reorder_commands: None,
             security: None,
+            deferred_control_event: None,
+            hardware_doze_boundary_enabled: false,
+            doze_restore: None,
+            last_doze_boundary_failure: None,
         }
     }
 
@@ -354,6 +377,17 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
 
     pub fn enable_power_save(&mut self, policy: StaPowerSavePolicy) {
         self.core.enable_power_save(policy);
+    }
+
+    /// Drive the affine hardware-doze boundary after each logical permit.
+    /// ESP32-S31 production currently reaches this boundary and records
+    /// `Unsupported`; it does not claim that RF or PHY entered sleep.
+    pub fn enable_hardware_doze_boundary(&mut self) {
+        self.hardware_doze_boundary_enabled = true;
+    }
+
+    pub const fn last_doze_boundary_failure(&self) -> Option<StationDozeBoundaryFailure> {
+        self.last_doze_boundary_failure
     }
 
     pub fn queue_initial_tx_block_ack(&mut self, attempt_limit: u8) {
@@ -412,6 +446,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.power_save()
     }
 
+    pub const fn power_save_wake_deadline_micros(&self) -> Option<u64> {
+        self.core.power_save_wake_deadline_micros()
+    }
+
     pub fn take_doze_permit(&mut self) -> Option<StaDozePermit> {
         self.core.take_doze_permit()
     }
@@ -456,6 +494,52 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         restore.restore_with(hardware, ConnectedControlHardware::restore_station_awake)
     }
 
+    fn service_hardware_doze_boundary<H>(
+        &mut self,
+        hardware: &mut H,
+        allow_entry: bool,
+    ) -> Result<Option<DatapathControlProgress<ConnectedDisconnectReason>>, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+    {
+        if let Some(restore) = self.doze_restore.take() {
+            match Self::restore_from_doze(restore, hardware) {
+                Ok(_) => {}
+                Err(failure) => {
+                    self.doze_restore = Some(failure.restore);
+                    return Err(failure.error.into());
+                }
+            }
+        }
+        if !self.hardware_doze_boundary_enabled || !allow_entry {
+            return Ok(None);
+        }
+        let Some(permit) = self.core.take_doze_permit() else {
+            return Ok(None);
+        };
+        let prepared = match StaPreparedDoze::prepare(permit, hardware.station_tsf()) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.last_doze_boundary_failure = Some(StationDozeBoundaryFailure::Prepare(error));
+                return Ok(None);
+            }
+        };
+        match Self::enter_prepared_doze(prepared, hardware) {
+            Ok(restore) => {
+                self.doze_restore = Some(restore);
+                self.last_doze_boundary_failure = None;
+                // Do not immediately restore in this same scheduler turn.
+                // The next timer, mailbox, network-TX or stop edge owns wake.
+                Ok(Some(DatapathControlProgress::Idle))
+            }
+            Err(failure) => {
+                self.last_doze_boundary_failure =
+                    Some(StationDozeBoundaryFailure::Hardware(failure.error));
+                Ok(None)
+            }
+        }
+    }
+
     pub fn shutdown<H, X>(
         &mut self,
         hardware: &mut H,
@@ -465,6 +549,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
+        if let Some(restore) = self.doze_restore.take()
+            && let Err(failure) = Self::restore_from_doze(restore, hardware)
+        {
+            self.doze_restore = Some(failure.restore);
+            return Err(failure.error.into());
+        }
         let shutdown = self
             .rx_block_ack
             .sessions()
@@ -476,6 +566,9 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         while self.receiver.try_receive_security().is_some() {
             discarded_events = discarded_events.saturating_add(1);
         }
+        if self.deferred_control_event.take().is_some() {
+            discarded_events = discarded_events.saturating_add(1);
+        }
         Ok(ConnectedControlShutdown {
             rx_block_ack_agreements: shutdown.rx_block_ack_agreements,
             tx_block_ack_sessions: shutdown.tx_block_ack_sessions,
@@ -485,7 +578,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     }
 
     pub fn has_immediate_work(&self) -> bool {
-        self.receiver.overflowed()
+        self.deferred_control_event.is_some()
+            || self.receiver.overflowed()
             || self
                 .security
                 .as_ref()
@@ -562,6 +656,13 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         H: ConnectedControlHardware + 'a,
         X: ConnectedControlTx + 'a,
     {
+        let allow_doze_entry = !context.network_tx_pending
+            && !context.stop_pending
+            && self.deferred_control_event.is_none()
+            && self.receiver.is_empty();
+        if let Some(progress) = self.service_hardware_doze_boundary(hardware, allow_doze_entry)? {
+            return Ok(progress);
+        }
         // The shared ordinary-TX completion always precedes newly queued
         // RX work. Security and the generic control core can never both
         // own that transaction.
@@ -584,7 +685,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                         rx_block_ack,
                     },
                     None,
-                    !self.receiver.is_empty(),
+                    self.deferred_control_event.is_some() || !self.receiver.is_empty(),
                     context,
                 )
             });
@@ -596,11 +697,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             ));
         }
 
-        // Do not dequeue a terminal, security or BlockAck event while the AP
-        // still believes the station is asleep. The core first publishes an
-        // acknowledged PM=0 Null Data transaction; the mailbox retains the
-        // event until that transaction completes.
-        if !self.receiver.is_empty()
+        // Security processing can publish EAPOL immediately, so retain that
+        // frame until an acknowledged PM=0 transition completes. Beacons are
+        // deliberately handled below while PM=1: a mandatory listen/DTIM
+        // receive edge is not itself an exit from legacy power-save.
+        if self.receiver.security_pending()
             && self
                 .core
                 .power_save()
@@ -646,7 +747,32 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             };
             return Ok(security.process(hardware, tx, frame).await);
         }
-        let event = self.receiver.try_receive_control();
+        let event = self
+            .deferred_control_event
+            .take()
+            .or_else(|| self.receiver.try_receive_control())
+            .or_else(|| self.receiver.try_receive_he_observation());
+        if event.is_some_and(control_event_requires_active)
+            && self
+                .core
+                .power_save()
+                .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
+        {
+            self.deferred_control_event = event;
+            return self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
+                self.core.service_step(
+                    ConnectedControlPorts {
+                        hardware,
+                        tx,
+                        reorder: &mut reorder,
+                        rx_block_ack,
+                    },
+                    None,
+                    true,
+                    context,
+                )
+            });
+        }
         self.rx_block_ack.sessions().with_sessions(|rx_block_ack| {
             self.core.service_step(
                 ConnectedControlPorts {
@@ -656,7 +782,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                     rx_block_ack,
                 },
                 event,
-                !self.receiver.is_empty(),
+                self.deferred_control_event.is_some() || !self.receiver.is_empty(),
                 context,
             )
         })
@@ -690,15 +816,19 @@ where
     }
 
     fn required_before_network_tx(&self) -> bool {
-        self.core
-            .power_save()
-            .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
+        self.doze_restore.is_some()
+            || self
+                .core
+                .power_save()
+                .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
     }
 
     fn required_before_stop(&self) -> bool {
-        self.core
-            .power_save()
-            .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
+        self.doze_restore.is_some()
+            || self
+                .core
+                .power_save()
+                .is_some_and(|planner| planner.state() != StaPowerSaveState::Awake)
     }
 
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a {

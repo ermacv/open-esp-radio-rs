@@ -1027,7 +1027,12 @@ fn doze_permit_requires_idle_beacon_and_acknowledged_pm_one() {
         control.take_doze_permit(),
         Some(StaDozePermit {
             beacon_timestamp_tsf: 1_000_000,
+            next_listen_tsf: 1_102_400,
+            next_dtim_tsf: 1_102_400,
             wake_tsf: 1_100_400,
+            wake_after_beacons: 1,
+            wake_reason:
+                open_esp_radio_wifi_sta::power_save::StaDozeWakeReason::ListenIntervalAndDtim,
             dtim_count: 1,
             dtim_period: 3,
         })
@@ -1060,6 +1065,7 @@ fn queued_network_traffic_blocks_pm_one() {
             &mut tx,
             DatapathControlContext {
                 network_tx_pending: true,
+                stop_pending: false,
             },
         )),
         Ok(DatapathControlProgress::More)
@@ -1146,6 +1152,7 @@ fn queued_network_traffic_restores_pm_zero_before_data() {
 
     let pending = DatapathControlContext {
         network_tx_pending: true,
+        stop_pending: false,
     };
     assert_eq!(
         embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
@@ -1204,6 +1211,7 @@ fn failed_pm_zero_disconnects_instead_of_releasing_queued_data() {
 
     let pending = DatapathControlContext {
         network_tx_pending: true,
+        stop_pending: false,
     };
     assert_eq!(
         embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),

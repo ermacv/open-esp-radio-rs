@@ -16,8 +16,9 @@ use open_esp_radio_esp32s31_wifi::{
     tx::{WifiTxProgress, WifiTxWake},
 };
 use open_esp_radio_esp32s31_wifi_mac::tx::{
-    HtAmpduTxConfig, HtChannelWidth, HtDuplicateRate, HtGuardInterval, HtMcs, HtRate, LegacyRate,
-    LegacyTxQueue, TxHardware, TxPhyRate,
+    HtAmpduTxConfig, HtChannelWidth, HtDuplicateCertificationRequest, HtDuplicateRate,
+    HtDuplicateTxLinkCapabilities, HtDuplicateTxSelection, HtGuardInterval, HtMcs, HtRate,
+    LegacyRate, LegacyTxQueue, TxHardware, TxPhyRate, select_esp32s31_ht_duplicate_tx,
 };
 use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelWidth},
@@ -94,6 +95,7 @@ impl From<OrdinaryTxError> for Esp32s31ApTxError {
 pub struct Esp32s31ApTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
     ordinary: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
     config: Esp32s31ApTxConfig,
+    ht_duplicate_certification: Option<HtDuplicateCertificationRequest>,
 }
 
 /// AP-local ordinary-TX policy retained while the physical descriptor owner
@@ -101,6 +103,7 @@ pub struct Esp32s31ApTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApTxParked {
     config: Esp32s31ApTxConfig,
+    ht_duplicate_certification: Option<HtDuplicateCertificationRequest>,
 }
 
 impl<'slot, P, E, T, const BUFFER_SIZE: usize> Esp32s31ApTx<'slot, P, E, T, BUFFER_SIZE>
@@ -116,7 +119,26 @@ where
         Self {
             ordinary: OrdinaryTxOwner::new(resources),
             config,
+            ht_duplicate_certification: None,
         }
+    }
+
+    /// Install the independent, fixed MCS32 certification request.
+    ///
+    /// Normal AP rate selection never consults this request as a ranked
+    /// candidate. The peer planner reports its typed rejection and retains
+    /// the ordinary HT fallback until the S31 formatter contract is reviewed.
+    pub fn set_ht_duplicate_certification_request(
+        &mut self,
+        request: Option<HtDuplicateCertificationRequest>,
+    ) {
+        self.ht_duplicate_certification = request;
+    }
+
+    pub const fn ht_duplicate_certification_request(
+        &self,
+    ) -> Option<HtDuplicateCertificationRequest> {
+        self.ht_duplicate_certification
     }
 
     pub fn queue_state(&self) -> MacTxQueueState {
@@ -303,10 +325,24 @@ where
         ),
         Self,
     > {
-        let Self { ordinary, config } = self;
+        let Self {
+            ordinary,
+            config,
+            ht_duplicate_certification,
+        } = self;
         match ordinary.try_into_resources() {
-            Ok(resources) => Ok((resources, Esp32s31ApTxParked { config })),
-            Err(ordinary) => Err(Self { ordinary, config }),
+            Ok(resources) => Ok((
+                resources,
+                Esp32s31ApTxParked {
+                    config,
+                    ht_duplicate_certification,
+                },
+            )),
+            Err(ordinary) => Err(Self {
+                ordinary,
+                config,
+                ht_duplicate_certification,
+            }),
         }
     }
 
@@ -314,7 +350,11 @@ where
         resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
         parked: Esp32s31ApTxParked,
     ) -> Self {
-        Self::new(resources, parked.config)
+        Self {
+            ordinary: OrdinaryTxOwner::new(resources),
+            config: parked.config,
+            ht_duplicate_certification: parked.ht_duplicate_certification,
+        }
     }
 
     /// Recover the common TX capability only when no descriptor is owned by
@@ -373,9 +413,9 @@ pub fn peer_ht_rate(channel: WifiChannel, peer: HtPeerCapabilities) -> Option<Ht
 /// Retain a peer-admitted HT Duplicate candidate without publishing it.
 ///
 /// The returned value is protocol-valid, including peer capability and HT40
-/// geometry. It cannot be converted into [`TxPhyRate`] until the ESP32-S31
-/// queue/rate/power encoding has a reviewed oracle; that conversion fails
-/// closed with `HtDuplicateTxUnavailable` in the MAC layer.
+/// geometry. It cannot enter [`TxPhyRate`] until the ESP32-S31 queue/rate/power
+/// encoding has a reviewed oracle; the explicit selector below reports that
+/// hardware rejection without changing the ordinary peer rate.
 pub fn peer_ht_duplicate_rate(
     channel: WifiChannel,
     peer: HtPeerCapabilities,
@@ -391,6 +431,41 @@ pub fn peer_ht_duplicate_rate(
         HtGuardInterval::Long800Ns
     };
     Some(HtDuplicateRate::new(guard_interval))
+}
+
+/// Evaluate the AP's explicit MCS32 request for one associated peer.
+///
+/// This is an observation/planning path only. A rejected request leaves
+/// [`peer_ht_rate`] in sole ownership of the publishable HT fallback.
+pub fn peer_ht_duplicate_tx_selection(
+    channel: WifiChannel,
+    peer: Option<HtPeerCapabilities>,
+    request: Option<HtDuplicateCertificationRequest>,
+) -> HtDuplicateTxSelection {
+    let Some(peer) = peer else {
+        return select_esp32s31_ht_duplicate_tx(
+            request,
+            HtDuplicateTxLinkCapabilities::new(None, false, false),
+        );
+    };
+    let (channel_width, peer_supports_short_guard_interval) = match channel.width() {
+        WifiChannelWidth::Mhz20 => (
+            HtChannelWidth::Mhz20,
+            peer.supports_short_guard_interval(WifiChannelWidth::Mhz20),
+        ),
+        width @ (WifiChannelWidth::Mhz40Above | WifiChannelWidth::Mhz40Below) => (
+            HtChannelWidth::Mhz40,
+            peer.supports_short_guard_interval(width),
+        ),
+    };
+    select_esp32s31_ht_duplicate_tx(
+        request,
+        HtDuplicateTxLinkCapabilities::new(
+            Some(channel_width),
+            peer.supports_ht_duplicate_mcs32(),
+            peer_supports_short_guard_interval,
+        ),
+    )
 }
 
 #[cfg(test)]

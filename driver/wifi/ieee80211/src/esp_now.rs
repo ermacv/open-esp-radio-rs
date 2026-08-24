@@ -18,6 +18,21 @@ pub const ESP_NOW_V1_ACTION_OVERHEAD: usize = 15;
 pub const ESP_NOW_MANAGEMENT_HEADER_LEN: usize = 24;
 pub const ESP_NOW_V1_MAX_MPDU_LEN: usize =
     ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_V1_ACTION_OVERHEAD + ESP_NOW_V1_MAX_PAYLOAD_LEN;
+/// Generic CCMP header carried between an 802.11 management header and its
+/// protected body.
+pub const ESP_NOW_CCMP_HEADER_LEN: usize = 8;
+/// CCMP MIC length. The protected-envelope parser never treats these bytes as
+/// authenticated until a separate cryptographic owner has verified them.
+pub const ESP_NOW_CCMP_MIC_LEN: usize = 8;
+pub const ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN: usize = ESP_NOW_MANAGEMENT_HEADER_LEN
+    + ESP_NOW_CCMP_HEADER_LEN
+    + ESP_NOW_V1_ACTION_OVERHEAD
+    + ESP_NOW_CCMP_MIC_LEN;
+pub const ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN: usize = ESP_NOW_MANAGEMENT_HEADER_LEN
+    + ESP_NOW_CCMP_HEADER_LEN
+    + ESP_NOW_V1_ACTION_OVERHEAD
+    + ESP_NOW_V1_MAX_PAYLOAD_LEN
+    + ESP_NOW_CCMP_MIC_LEN;
 
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
 const PROTOCOL_VERSION_MASK: u16 = 0x0003;
@@ -31,6 +46,10 @@ const PROTECTED_FLAG: u16 = 0x4000;
 const ORDER_FLAG: u16 = 0x8000;
 const BROADCAST_ADDRESS: [u8; 6] = [0xff; 6];
 const VENDOR_ELEMENT_FIXED_BODY_LEN: usize = 5;
+const CCMP_EXTENDED_IV_FLAG: u8 = 0x20;
+const CCMP_KEY_ID_MASK: u8 = 0xc0;
+const CCMP_RESERVED_CONTROL_MASK: u8 = 0x1f;
+const CCMP_PACKET_NUMBER_MAX: u64 = (1_u64 << 48) - 1;
 
 /// Valid individual address used as the source of an ESP-NOW frame.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -132,6 +151,54 @@ impl EspNowRandomValue {
         self.0
     }
 }
+
+/// Nonzero 48-bit packet number observed in a protected ESP-NOW envelope.
+///
+/// This is wire metadata only. Possessing it does not prove that the CCMP MIC
+/// was checked or that the frame is fresh.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct EspNowCcmpPacketNumber(u64);
+
+impl EspNowCcmpPacketNumber {
+    pub const fn new(value: u64) -> Result<Self, EspNowCcmpPacketNumberError> {
+        if value == 0 {
+            return Err(EspNowCcmpPacketNumberError::Zero);
+        }
+        if value > CCMP_PACKET_NUMBER_MAX {
+            return Err(EspNowCcmpPacketNumberError::Exceeds48Bits(value));
+        }
+        Ok(Self(value))
+    }
+
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+
+    pub const fn bytes(self) -> [u8; 6] {
+        let bytes = self.0.to_le_bytes();
+        [bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]]
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowCcmpPacketNumberError {
+    Zero,
+    Exceeds48Bits(u64),
+}
+
+impl fmt::Display for EspNowCcmpPacketNumberError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Zero => formatter.write_str("a CCMP packet number must be nonzero"),
+            Self::Exceeds48Bits(value) => {
+                write!(formatter, "CCMP packet number {value} exceeds 48 bits")
+            }
+        }
+    }
+}
+
+impl core::error::Error for EspNowCcmpPacketNumberError {}
 
 /// Borrowed v1 payload whose size fits the one-byte vendor-element length.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -386,6 +453,257 @@ impl<'payload> EspNowV1Frame<'payload> {
         })
     }
 }
+
+/// Strictly parsed outer metadata of one encrypted, unicast ESP-NOW v1 MPDU.
+///
+/// The Action body is intentionally opaque ciphertext. Parsing this envelope
+/// proves only structural admission: it does not authenticate, decrypt or
+/// interpret the body, and it does not advance a replay window. The exact
+/// ESP-NOW Action-frame AAD and S31 transform contract are not present in the
+/// reviewed evidence, so no encrypted encoder/decoder is exposed here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EspNowProtectedV1Envelope<'frame> {
+    management_header: &'frame [u8; ESP_NOW_MANAGEMENT_HEADER_LEN],
+    destination: EspNowUnicastAddress,
+    source: EspNowUnicastAddress,
+    sequence_number: u16,
+    retry: bool,
+    key_id: u8,
+    packet_number: EspNowCcmpPacketNumber,
+    ccmp_header: &'frame [u8; ESP_NOW_CCMP_HEADER_LEN],
+    ciphertext: &'frame [u8],
+    mic: &'frame [u8; ESP_NOW_CCMP_MIC_LEN],
+}
+
+impl<'frame> EspNowProtectedV1Envelope<'frame> {
+    /// Parse protected-frame metadata while leaving ciphertext and MIC
+    /// unauthenticated and uninterpreted.
+    pub fn parse(input: &'frame [u8]) -> Result<Self, EspNowProtectedV1WireError> {
+        if input.len() < ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN {
+            return Err(EspNowProtectedV1WireError::FrameTooShort {
+                minimum: ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN,
+            });
+        }
+        if input.len() > ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN {
+            return Err(EspNowProtectedV1WireError::FrameTooLong {
+                maximum: ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN,
+                actual: input.len(),
+            });
+        }
+
+        let frame_control = u16::from_le_bytes([input[0], input[1]]);
+        if frame_control & PROTOCOL_VERSION_MASK != 0
+            || frame_control & FRAME_TYPE_AND_SUBTYPE_MASK != ACTION_FRAME_CONTROL
+            || frame_control & TO_FROM_DS_MASK != 0
+            || frame_control & (POWER_MANAGEMENT_FLAG | MORE_DATA_FLAG | ORDER_FLAG) != 0
+        {
+            return Err(EspNowProtectedV1WireError::UnsupportedFrameControl(
+                frame_control,
+            ));
+        }
+        if frame_control & PROTECTED_FLAG == 0 {
+            return Err(EspNowProtectedV1WireError::ProtectionRequired);
+        }
+
+        let destination_bytes = [input[4], input[5], input[6], input[7], input[8], input[9]];
+        if destination_bytes == BROADCAST_ADDRESS {
+            return Err(EspNowProtectedV1WireError::EncryptedBroadcastUnsupported);
+        }
+        let destination = EspNowUnicastAddress::new(destination_bytes)
+            .map_err(EspNowProtectedV1WireError::InvalidDestination)?;
+        let source = EspNowUnicastAddress::new([
+            input[10], input[11], input[12], input[13], input[14], input[15],
+        ])
+        .map_err(EspNowProtectedV1WireError::InvalidSource)?;
+        if input[16..22] != BROADCAST_ADDRESS {
+            return Err(EspNowProtectedV1WireError::InvalidBssid);
+        }
+
+        let sequence_control = u16::from_le_bytes([input[22], input[23]]);
+        if frame_control & MORE_FRAGMENTS_FLAG != 0 || sequence_control & 0x000f != 0 {
+            return Err(EspNowProtectedV1WireError::FragmentedFrame(
+                (sequence_control & 0x000f) as u8,
+            ));
+        }
+
+        let ccmp_header: &[u8; ESP_NOW_CCMP_HEADER_LEN] = input[ESP_NOW_MANAGEMENT_HEADER_LEN
+            ..ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN]
+            .try_into()
+            .expect("validated protected ESP-NOW header extent");
+        if ccmp_header[2] != 0 || ccmp_header[3] & CCMP_RESERVED_CONTROL_MASK != 0 {
+            return Err(EspNowProtectedV1WireError::ReservedCcmpBitsSet {
+                reserved_byte: ccmp_header[2],
+                control: ccmp_header[3],
+            });
+        }
+        if ccmp_header[3] & CCMP_EXTENDED_IV_FLAG == 0 {
+            return Err(EspNowProtectedV1WireError::MissingExtendedIv);
+        }
+        let packet_number = u64::from(ccmp_header[0])
+            | (u64::from(ccmp_header[1]) << 8)
+            | (u64::from(ccmp_header[4]) << 16)
+            | (u64::from(ccmp_header[5]) << 24)
+            | (u64::from(ccmp_header[6]) << 32)
+            | (u64::from(ccmp_header[7]) << 40);
+        let packet_number = EspNowCcmpPacketNumber::new(packet_number)
+            .map_err(EspNowProtectedV1WireError::InvalidPacketNumber)?;
+
+        let protected_body = &input[ESP_NOW_MANAGEMENT_HEADER_LEN + ESP_NOW_CCMP_HEADER_LEN..];
+        let ciphertext_length = protected_body.len() - ESP_NOW_CCMP_MIC_LEN;
+        let (ciphertext, mic) = protected_body.split_at(ciphertext_length);
+        // The outer length bounds imply this conversion and preserve a fixed
+        // MIC extent for a future authenticated decoder.
+        let mic: &[u8; ESP_NOW_CCMP_MIC_LEN] = mic
+            .try_into()
+            .expect("validated protected ESP-NOW MIC extent");
+        let management_header = input[..ESP_NOW_MANAGEMENT_HEADER_LEN]
+            .try_into()
+            .expect("validated protected ESP-NOW management header extent");
+
+        Ok(Self {
+            management_header,
+            destination,
+            source,
+            sequence_number: sequence_control >> 4,
+            retry: frame_control & RETRY_FLAG != 0,
+            key_id: (ccmp_header[3] & CCMP_KEY_ID_MASK) >> 6,
+            packet_number,
+            ccmp_header,
+            ciphertext,
+            mic,
+        })
+    }
+
+    pub const fn management_header(self) -> &'frame [u8; ESP_NOW_MANAGEMENT_HEADER_LEN] {
+        self.management_header
+    }
+
+    pub const fn destination(self) -> EspNowUnicastAddress {
+        self.destination
+    }
+
+    pub const fn source(self) -> EspNowUnicastAddress {
+        self.source
+    }
+
+    pub const fn sequence_number(self) -> u16 {
+        self.sequence_number
+    }
+
+    pub const fn retry(self) -> bool {
+        self.retry
+    }
+
+    pub const fn key_id(self) -> u8 {
+        self.key_id
+    }
+
+    pub const fn packet_number(self) -> EspNowCcmpPacketNumber {
+        self.packet_number
+    }
+
+    pub const fn ccmp_header(self) -> &'frame [u8; ESP_NOW_CCMP_HEADER_LEN] {
+        self.ccmp_header
+    }
+
+    pub const fn ciphertext(self) -> &'frame [u8] {
+        self.ciphertext
+    }
+
+    pub const fn mic(self) -> &'frame [u8; ESP_NOW_CCMP_MIC_LEN] {
+        self.mic
+    }
+}
+
+/// Structural failures at the protected-envelope boundary. None of these
+/// outcomes make an authentication claim.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowProtectedV1WireError {
+    FrameTooShort { minimum: usize },
+    FrameTooLong { maximum: usize, actual: usize },
+    UnsupportedFrameControl(u16),
+    ProtectionRequired,
+    EncryptedBroadcastUnsupported,
+    InvalidDestination(EspNowAddressError),
+    InvalidSource(EspNowAddressError),
+    InvalidBssid,
+    FragmentedFrame(u8),
+    ReservedCcmpBitsSet { reserved_byte: u8, control: u8 },
+    MissingExtendedIv,
+    InvalidPacketNumber(EspNowCcmpPacketNumberError),
+}
+
+impl fmt::Display for EspNowProtectedV1WireError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FrameTooShort { minimum } => {
+                write!(
+                    formatter,
+                    "protected ESP-NOW input is shorter than {minimum} bytes"
+                )
+            }
+            Self::FrameTooLong { maximum, actual } => write!(
+                formatter,
+                "protected ESP-NOW input has {actual} bytes, exceeding {maximum}"
+            ),
+            Self::UnsupportedFrameControl(frame_control) => write!(
+                formatter,
+                "unsupported protected ESP-NOW frame-control value {frame_control:#06x}"
+            ),
+            Self::ProtectionRequired => {
+                formatter.write_str("protected ESP-NOW envelope requires the Protected flag")
+            }
+            Self::EncryptedBroadcastUnsupported => formatter
+                .write_str("ESP-NOW encryption is supported only for an individual destination"),
+            Self::InvalidDestination(error) => write!(formatter, "invalid destination: {error}"),
+            Self::InvalidSource(error) => write!(formatter, "invalid source: {error}"),
+            Self::InvalidBssid => formatter.write_str("protected ESP-NOW BSSID is not broadcast"),
+            Self::FragmentedFrame(fragment) => {
+                write!(
+                    formatter,
+                    "protected ESP-NOW fragment {fragment} is unsupported"
+                )
+            }
+            Self::ReservedCcmpBitsSet {
+                reserved_byte,
+                control,
+            } => write!(
+                formatter,
+                "protected ESP-NOW CCMP header has reserved bits set ({reserved_byte:#04x}, {control:#04x})"
+            ),
+            Self::MissingExtendedIv => {
+                formatter.write_str("protected ESP-NOW CCMP header is missing ExtIV")
+            }
+            Self::InvalidPacketNumber(error) => {
+                write!(
+                    formatter,
+                    "invalid protected ESP-NOW packet number: {error}"
+                )
+            }
+        }
+    }
+}
+
+impl core::error::Error for EspNowProtectedV1WireError {}
+
+/// First unavailable stage of the interoperable encrypted-v1 codec.
+///
+/// The outer envelope is parseable, but constructing or decrypting the Action
+/// body would require an exact, reviewed CCMP AAD and callback contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspNowEncryptedV1Unavailable {
+    ActionAadContractUnproven,
+}
+
+impl fmt::Display for EspNowEncryptedV1Unavailable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(
+            "encrypted ESP-NOW v1 Action AAD and construct/decrypt contract are unproven",
+        )
+    }
+}
+
+impl core::error::Error for EspNowEncryptedV1Unavailable {}
 
 /// Why bytes cannot cross the strict plaintext ESP-NOW v1 boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

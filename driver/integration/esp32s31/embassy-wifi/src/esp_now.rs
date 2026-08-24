@@ -8,6 +8,8 @@
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 pub use open_esp_radio_esp32s31_wifi::esp_now::{
+    Esp32s31EspNowCryptoDiagnostics, Esp32s31EspNowCryptoError, Esp32s31EspNowKeyOwner,
+    Esp32s31EspNowKeySlot,
     Esp32s31EspNowLongRangeMissing, Esp32s31EspNowLongRangeRate,
     Esp32s31EspNowLongRangeReached, Esp32s31EspNowLongRangeUnsupported,
     Esp32s31EspNowTxConfig, Esp32s31EspNowTxConfigError, Esp32s31EspNowTxError,
@@ -21,12 +23,23 @@ pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::{
     EspNowTxTrySendError, attach_esp_now_tx,
 };
 pub use open_esp_radio_ieee80211::esp_now::{
-    ESP_NOW_V1_MAX_PAYLOAD_LEN, EspNowDestination, EspNowRandomValue, EspNowUnicastAddress,
-    EspNowV1WireError,
+    ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_V1_MAX_PAYLOAD_LEN,
+    ESP_NOW_V1_MAX_PROTECTED_MPDU_LEN, ESP_NOW_V1_MIN_PROTECTED_MPDU_LEN,
+    EspNowCcmpPacketNumber, EspNowCcmpPacketNumberError, EspNowDestination,
+    EspNowEncryptedV1Unavailable, EspNowProtectedV1Envelope, EspNowProtectedV1WireError,
+    EspNowRandomValue, EspNowUnicastAddress, EspNowV1WireError,
 };
 pub use open_esp_radio_wifi_softmac::{
-    ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowConfigError, EspNowPeerConfig, EspNowPeerId,
-    EspNowPeerSecurity, EspNowPeerTableError, EspNowPhyMode, EspNowProtocol,
+    ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY, ESP_NOW_DEFAULT_PEER_CAPACITY, ESP_NOW_KEY_LEN,
+    ESP_NOW_RX_REPLAY_WINDOW_BITS, EspNowConfig, EspNowConfigError, EspNowEncryptedPeerConfig,
+    EspNowEncryptedPeerDiagnostics, EspNowEncryptedPeerError, EspNowEncryptedPeerId,
+    EspNowEncryptedPeerMutationFailure, EspNowEncryptedPeerReplacement, EspNowEncryptedPeerTable,
+    EspNowEncryptedPeerRestoreFailure, EspNowEncryptedPeerView, EspNowEncryptedProtocol,
+    EspNowEncryptedReceiveError, EspNowEncryptedRxCandidate, EspNowEncryptedSendError, EspNowLmk,
+    EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity, EspNowPeerTableError, EspNowPhyMode,
+    EspNowPmk, EspNowPmkError, EspNowPmkId, EspNowPmkMutationFailure, EspNowPmkOwner,
+    EspNowPreparedEncryptedV1Tx, EspNowProtocol, EspNowRemovedEncryptedPeer,
+    EspNowRxReplayCandidate, encrypted_peer_destination, esp_now_encrypted_v1_codec_status,
 };
 
 /// Small product default; applications may select another fixed capacity.

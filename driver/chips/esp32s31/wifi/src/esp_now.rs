@@ -1,9 +1,10 @@
-//! ESP32-S31 handoff for the supported plaintext ESP-NOW v1 TX profile.
+//! ESP32-S31 handoff for ESP-NOW v1.
 //!
 //! The portable protocol owner supplies an already validated vendor Action
 //! MPDU. This module binds it to the ordinary station queue only after the
 //! caller proves that the active channel context is still the configured home
-//! channel. Encryption and LR are rejected before descriptor publication.
+//! channel. Plaintext is live; encryption and LR are rejected before
+//! descriptor publication at their first unproven contract.
 
 use core::fmt;
 
@@ -15,8 +16,9 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::{channel::WifiChannel, wmm::WmmAccessCategory};
 use open_esp_radio_wifi_softmac::{
-    EspNowHtGuardInterval, EspNowHtMcs, EspNowOfdmRate, EspNowPhyMode, EspNowPreparedV1Tx,
-    MacTxPlan, interface::BoundVirtualInterface,
+    EspNowEncryptedPeerId, EspNowHtGuardInterval, EspNowHtMcs, EspNowLmk, EspNowOfdmRate,
+    EspNowPhyMode, EspNowPreparedEncryptedV1Tx, EspNowPreparedV1Tx, MacTxPlan,
+    interface::BoundVirtualInterface,
 };
 
 use crate::{
@@ -154,6 +156,139 @@ impl fmt::Display for Esp32s31EspNowTxConfigError {
 }
 
 impl core::error::Error for Esp32s31EspNowTxConfigError {}
+
+/// S31-specific key namespace for ESP-NOW.
+///
+/// The tracked evidence assigns WPA2 STA pairwise/group slots 4/1 and AP
+/// pairwise slots 8..=22 (plus AP group-key slots). It does not establish an
+/// ESP-NOW key-selector mapping for any remaining entry. Consequently this
+/// owner has zero installable hardware slots and cannot alias a WPA2 token.
+pub struct Esp32s31EspNowKeyOwner {
+    diagnostics: Esp32s31EspNowCryptoDiagnostics,
+}
+
+impl Esp32s31EspNowKeyOwner {
+    pub const fn new() -> Self {
+        Self {
+            diagnostics: Esp32s31EspNowCryptoDiagnostics {
+                key_install_rejections: 0,
+                encrypted_tx_rejections: 0,
+            },
+        }
+    }
+
+    pub const fn hardware_slot_capacity(&self) -> usize {
+        0
+    }
+
+    pub const fn diagnostics(&self) -> Esp32s31EspNowCryptoDiagnostics {
+        self.diagnostics
+    }
+
+    /// Fail before copying an LMK or touching key-table MMIO. The uninhabited
+    /// success token makes it impossible for downstream TX to guess a WPA2 or
+    /// AP hardware selector.
+    pub fn install(
+        &mut self,
+        _peer: EspNowEncryptedPeerId,
+        _lmk: &EspNowLmk,
+    ) -> Result<Esp32s31EspNowKeySlot, Esp32s31EspNowCryptoError> {
+        self.diagnostics.key_install_rejections =
+            self.diagnostics.key_install_rejections.saturating_add(1);
+        Err(Esp32s31EspNowCryptoError::KeySelectorOwnershipUnproven)
+    }
+
+    fn reject_encrypted_tx(&mut self) {
+        self.diagnostics.encrypted_tx_rejections =
+            self.diagnostics.encrypted_tx_rejections.saturating_add(1);
+    }
+}
+
+impl Default for Esp32s31EspNowKeyOwner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Uninhabited ESP-NOW-only hardware key authority.
+///
+/// This becomes inhabited only after reviewed evidence assigns a disjoint S31
+/// selector and exact key image. No conversion exists from STA/AP CCMP slots.
+pub enum Esp32s31EspNowKeySlot {}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Esp32s31EspNowCryptoDiagnostics {
+    pub key_install_rejections: u32,
+    pub encrypted_tx_rejections: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31EspNowCryptoError {
+    ChannelMismatch {
+        prepared: WifiChannel,
+        active: WifiChannel,
+    },
+    StationBindingMismatch {
+        prepared: BoundVirtualInterface,
+        active: BoundVirtualInterface,
+    },
+    KeySelectorOwnershipUnproven,
+    ActionAadContractUnproven,
+}
+
+impl fmt::Display for Esp32s31EspNowCryptoError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ChannelMismatch { prepared, active } => write!(
+                formatter,
+                "encrypted ESP-NOW prepared channel {prepared:?} differs from active channel {active:?}"
+            ),
+            Self::StationBindingMismatch { prepared, active } => write!(
+                formatter,
+                "encrypted ESP-NOW station binding {prepared:?} differs from active binding {active:?}"
+            ),
+            Self::KeySelectorOwnershipUnproven => formatter.write_str(
+                "ESP32-S31 has no reviewed ESP-NOW hardware key-selector namespace",
+            ),
+            Self::ActionAadContractUnproven => formatter.write_str(
+                "ESP32-S31 encrypted ESP-NOW Action AAD and construct/decrypt contract are unproven",
+            ),
+        }
+    }
+}
+
+impl core::error::Error for Esp32s31EspNowCryptoError {}
+
+/// Validate the live station/channel binding, then fail before touching the
+/// ordinary TX buffer. Both exact Action AAD and a disjoint S31 key selector
+/// are required before this handoff may become live.
+pub fn start_esp_now_v1_encrypted<P, E, T, const BUFFER_SIZE: usize>(
+    _ordinary: &mut OrdinaryTxOwner<'_, P, E, T, BUFFER_SIZE>,
+    keys: &mut Esp32s31EspNowKeyOwner,
+    prepared: EspNowPreparedEncryptedV1Tx<'_>,
+    active_channel: WifiChannel,
+    active_station: BoundVirtualInterface,
+) -> Result<WifiTxProgress, Esp32s31EspNowCryptoError>
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+{
+    if prepared.home_channel() != active_channel {
+        return Err(Esp32s31EspNowCryptoError::ChannelMismatch {
+            prepared: prepared.home_channel(),
+            active: active_channel,
+        });
+    }
+    if prepared.station() != active_station {
+        return Err(Esp32s31EspNowCryptoError::StationBindingMismatch {
+            prepared: prepared.station(),
+            active: active_station,
+        });
+    }
+    keys.reject_encrypted_tx();
+    Err(Esp32s31EspNowCryptoError::ActionAadContractUnproven)
+}
 
 /// Encode and publish one validated plaintext ESP-NOW v1 frame.
 ///

@@ -2449,6 +2449,7 @@ name = "open-esp-radio-wifi-softmac"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-ieee80211",
+ "zeroize",
 ]
 
 [[package]]

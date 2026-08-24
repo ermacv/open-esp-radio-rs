@@ -137,13 +137,14 @@ pub enum EspNowPhyMode {
     LongRange,
 }
 
-/// Security frontier of the initial service.
+/// Security profile of one typed ESP-NOW handoff.
 ///
-/// This single variant is intentional: no constructor accepts a PMK/LMK and
-/// no backend handoff contains a hardware key selector.
+/// Encrypted peers are owned by the separate zeroizing security protocol;
+/// this enum carries no key bytes or hardware key selector.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspNowPeerSecurity {
     Plaintext,
+    Encrypted,
 }
 
 /// One ESP-NOW service bound to a station interface and one tuned channel.

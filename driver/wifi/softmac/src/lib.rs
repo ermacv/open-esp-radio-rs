@@ -17,6 +17,7 @@
 
 pub mod configuration;
 pub mod esp_now;
+pub mod esp_now_security;
 pub mod interface;
 pub mod monitor;
 
@@ -30,6 +31,17 @@ pub use esp_now::{
     EspNowOwnedReceivedV1, EspNowPeerConfig, EspNowPeerId, EspNowPeerSecurity, EspNowPeerTable,
     EspNowPeerTableError, EspNowPeers, EspNowPhyMode, EspNowPreparedV1Tx, EspNowProtocol,
     EspNowReceiveError, EspNowReceivedV1, EspNowRxEpoch, EspNowRxOutcome, EspNowSendError,
+};
+pub use esp_now_security::{
+    ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY, ESP_NOW_KEY_LEN, ESP_NOW_RX_REPLAY_WINDOW_BITS,
+    EspNowEncryptedPeerConfig, EspNowEncryptedPeerDiagnostics, EspNowEncryptedPeerError,
+    EspNowEncryptedPeerId, EspNowEncryptedPeerMutationFailure, EspNowEncryptedPeerReplacement,
+    EspNowEncryptedPeerRestoreFailure, EspNowEncryptedPeerTable, EspNowEncryptedPeerView,
+    EspNowEncryptedProtocol, EspNowEncryptedReceiveError, EspNowEncryptedRxCandidate,
+    EspNowEncryptedSendError, EspNowLmk, EspNowPmk, EspNowPmkError, EspNowPmkId,
+    EspNowPmkMutationFailure, EspNowPmkOwner, EspNowPreparedEncryptedV1Tx,
+    EspNowRemovedEncryptedPeer, EspNowRxReplayCandidate, encrypted_peer_destination,
+    esp_now_encrypted_v1_codec_status,
 };
 pub use monitor::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType, MonitorFrameTypeMask,

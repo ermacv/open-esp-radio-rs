@@ -9,6 +9,7 @@ description = "Executor-independent Wi-Fi SoftMAC service contract"
 
 [dependencies]
 open-esp-radio-ieee80211 = { path = "../ieee80211" }
+zeroize = { version = "1.9.0", default-features = false, features = ["derive"] }
 
 [lints]
 workspace = true

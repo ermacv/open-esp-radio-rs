@@ -57,9 +57,10 @@ pub enum Esp32s31ApRxError {
     Replay(CcmpReplayError),
     KeyGenerationMismatch,
     Fragment(OpenDataFragmentError),
-    /// A protected fragment has an independently authenticated CCMP PN, but
-    /// this dispatcher has no fragment-aware replay transaction that can
-    /// safely commit the complete PN series.
+    /// The public header advertises both Protected and fragmentation. This is
+    /// rejected before CCMP extraction, so the outcome makes no integrity or
+    /// PN-admission claim; protected reassembly needs a fragment-aware replay
+    /// transaction that can safely commit the complete PN series.
     ProtectedFragmentationUnsupported,
 }
 
@@ -398,6 +399,7 @@ impl Esp32s31ApRxDispatcher {
                     return Esp32s31ApRxDispatch::Rejected(error);
                 }
             };
+        self.bind_duplicate_owner(peer, duplicate_owner);
         if ccmp_header.is_none() {
             let identity = match parse_open_data_identity(DataInterfaceRole::AccessPoint, mpdu) {
                 Ok(identity) => identity,
@@ -493,6 +495,21 @@ impl Esp32s31ApRxDispatcher {
                     return Esp32s31ApRxDispatch::Rejected(error);
                 }
             };
+        self.bind_duplicate_owner(peer, duplicate_owner);
+        if view.fragment.fragment_number() == 0
+            && self.duplicate_filter(peer, duplicate_owner).is_duplicate(
+                view.fragment.retry(),
+                view.fragment.sequence_control(),
+                identity.tid(),
+            )
+        {
+            // Fragment zero shares the ordinary MPDU's Sequence Control
+            // value. Consult the exact association duplicate owner only at
+            // this edge so Retry cannot manufacture a new fragment train by
+            // toggling More Fragments on an already accepted ordinary MPDU.
+            // Later fragments remain with the reassembler's own history.
+            return Esp32s31ApRxDispatch::Duplicate;
+        }
         let raw = view.raw;
         let metadata = view.metadata;
         match self.fragments.ingest_in_epoch(
@@ -551,22 +568,39 @@ impl Esp32s31ApRxDispatcher {
     }
 
     #[inline(always)]
+    fn bind_duplicate_owner(&mut self, peer: [u8; 6], owner: Esp32s31ApRxDuplicateOwner) {
+        let index = owner.slot();
+        let current_matches = self.duplicates[index]
+            .as_ref()
+            .is_some_and(|state| state.address == peer && state.owner == owner);
+        if current_matches {
+            return;
+        }
+
+        // An AID slot or same-address association epoch has changed. Revoke
+        // both sides of a possible slot reuse before installing the new
+        // duplicate owner, so no retained Open bytes survive a controlled-
+        // port/association generation edge even if explicit peer-close
+        // cleanup raced or was skipped.
+        if let Some(stale) = self.duplicates[index].take() {
+            self.fragments.forget_transmitter(stale.address);
+        }
+        self.fragments.forget_transmitter(peer);
+        self.duplicates[index] = Some(ApPeerDuplicateState {
+            address: peer,
+            owner,
+            filter: RxDuplicateFilter::new(),
+        });
+    }
+
+    #[inline(always)]
     fn duplicate_filter(
         &mut self,
         peer: [u8; 6],
         owner: Esp32s31ApRxDuplicateOwner,
     ) -> &mut RxDuplicateFilter {
+        self.bind_duplicate_owner(peer, owner);
         let index = owner.slot();
-        let current_matches = self.duplicates[index]
-            .as_ref()
-            .is_some_and(|state| state.address == peer && state.owner == owner);
-        if !current_matches {
-            self.duplicates[index] = Some(ApPeerDuplicateState {
-                address: peer,
-                owner,
-                filter: RxDuplicateFilter::new(),
-            });
-        }
         self.duplicates[index]
             .as_mut()
             .map(|state| &mut state.filter)
@@ -747,15 +781,28 @@ mod tests {
                 &mut sink,
             ),
             Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(
-                OpenDataFragmentError::IdentityMismatch
+                OpenDataFragmentError::Orphan { fragment_number: 1 }
             ))
         );
+        assert_eq!(dispatcher.clear_open_fragmentation(), 0);
         assert!(sink.ethernet.is_empty());
         assert_eq!(
             dispatcher.dispatch_at(
-                segment(&final_storage, final_descriptor),
+                segment(&first_storage, first_descriptor),
                 14,
-                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 1)),
+                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 2)),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::FragmentBuffered {
+                expired: 0,
+                evicted: false,
+            }
+        );
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&final_storage, final_descriptor),
+                15,
+                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 2)),
                 &mut sink,
             ),
             Esp32s31ApRxDispatch::Data {
@@ -772,7 +819,7 @@ mod tests {
         let _ = dispatcher.dispatch_at(
             segment(&first_storage, first_descriptor),
             20,
-            |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 1)),
+            |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 2)),
             &mut sink,
         );
         assert!(dispatcher.forget_peer(PEER));
@@ -780,7 +827,7 @@ mod tests {
             dispatcher.dispatch_at(
                 segment(&final_storage, final_descriptor),
                 21,
-                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 1)),
+                |_| Esp32s31ApRxAdmission::authorized(duplicate_owner(1, 2)),
                 &mut sink,
             ),
             Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(
@@ -807,6 +854,57 @@ mod tests {
             Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::ProtectedFragmentationUnsupported)
         );
         assert!(sink.ethernet.is_empty());
+    }
+
+    #[test]
+    fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
+        let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1];
+        let mut ordinary_storage = [0_u8; 192];
+        let ordinary_descriptor =
+            open_fragment(&mut ordinary_storage, 7, 0, false, DESTINATION, &payload);
+        let owner = duplicate_owner(1, 1);
+        let mut dispatcher = Esp32s31ApRxDispatcher::new(open_config());
+        let mut sink = Sink::default();
+
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&ordinary_storage, ordinary_descriptor),
+                1,
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            }
+        );
+
+        ordinary_storage[PUBLIC_HEADER_SIZE + 1] |= 0x04 | 0x08;
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&ordinary_storage, ordinary_descriptor),
+                2,
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Duplicate
+        );
+        assert_eq!(dispatcher.clear_open_fragmentation(), 0);
+
+        let mut final_storage = [0_u8; 192];
+        let final_descriptor = open_fragment(&mut final_storage, 7, 1, false, DESTINATION, &[2]);
+        assert_eq!(
+            dispatcher.dispatch_at(
+                segment(&final_storage, final_descriptor),
+                3,
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Fragment(
+                OpenDataFragmentError::Orphan { fragment_number: 1 }
+            ))
+        );
+        assert_eq!(sink.ethernet.len(), 1);
     }
 
     #[test]

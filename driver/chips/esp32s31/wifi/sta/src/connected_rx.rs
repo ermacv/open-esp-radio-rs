@@ -966,9 +966,10 @@ pub enum ConnectedRxError {
     PeerQosMismatch,
     CcmpReplay(StaCcmpRxReplayError),
     Fragment(OpenDataFragmentError),
-    /// CCMP replay is committed per integrity-verified MPDU. Protected MSDU
-    /// reassembly remains unavailable until those PN commits are owned by one
-    /// fragment-aware transaction instead of being guessed at this boundary.
+    /// The public header advertises both Protected and fragmentation. This is
+    /// rejected before CCMP extraction, so the outcome makes no integrity or
+    /// PN-admission claim; protected reassembly needs one fragment-aware
+    /// replay transaction instead of guesses at this boundary.
     ProtectedFragmentationUnsupported,
 }
 
@@ -1717,6 +1718,21 @@ impl ConnectedRxDispatcher {
         }
         if identity.tid().is_some() && !self.config.peer_qos {
             return rejected(protection, ConnectedRxError::PeerQosMismatch);
+        }
+        if view.fragment.fragment_number() == 0
+            && self.duplicate_filter.is_duplicate(
+                view.fragment.retry(),
+                view.fragment.sequence_control(),
+                identity.tid(),
+            )
+        {
+            // Fragment zero shares the ordinary MPDU's Sequence Control
+            // value. Consult the association-wide duplicate owner exactly at
+            // this edge so a retry cannot turn an already accepted ordinary
+            // MPDU into a new fragment train merely by setting More
+            // Fragments. Later fragments remain owned by the reassembler's
+            // per-fragment history.
+            return ConnectedRxDispatch::Duplicate;
         }
         let power_save_delivery =
             (protection == ConnectedRxProtection::Pairwise).then_some(StaPsPollDelivery {
@@ -2636,6 +2652,67 @@ mod tests {
             }
         );
         assert_eq!(dispatcher.clear_open_fragmentation(), 0);
+    }
+
+    #[test]
+    fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
+        let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1];
+        let mut ordinary_storage = [0_u8; 192];
+        let ordinary_signal =
+            open_fragment(&mut ordinary_storage, 7, 0, false, false, SOURCE, &payload);
+        let mut open = config();
+        open.security = WifiSecurityMode::Open;
+        open.peer_qos = false;
+        let mut dispatcher = ConnectedRxDispatcher::new(open);
+        let mut sink = RecordingSink::default();
+        let mut mpdu = [0_u8; 128];
+        let mut ethernet = [0_u8; 128];
+
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&ordinary_storage, ordinary_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(1),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            }
+        );
+
+        ordinary_storage[FRAME_OFFSET + 1] |= 0x04 | 0x08;
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&ordinary_storage, ordinary_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(2),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Duplicate
+        );
+        assert_eq!(dispatcher.clear_open_fragmentation(), 0);
+
+        let mut final_storage = [0_u8; 192];
+        let final_signal = open_fragment(&mut final_storage, 7, 1, false, false, SOURCE, &[2]);
+        assert_eq!(
+            dispatcher.dispatch_with_runtime_received_at(
+                segment(&final_storage, final_signal),
+                &mut mpdu,
+                &mut ethernet,
+                Some(3),
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Rejected {
+                protection: ConnectedRxProtection::Pairwise,
+                error: ConnectedRxError::Fragment(OpenDataFragmentError::Orphan {
+                    fragment_number: 1,
+                }),
+            }
+        );
+        assert_eq!(sink.ethernet.len(), 1);
     }
 
     #[test]

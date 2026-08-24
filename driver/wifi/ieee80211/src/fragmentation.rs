@@ -139,6 +139,7 @@ pub enum OpenDataFragmentError {
     Protected,
     OrderedUnsupported,
     RoleMismatch,
+    InvalidReceiver,
     InvalidTransmitter,
     AmsduUnsupported,
     EmptyPayload,
@@ -155,9 +156,10 @@ pub enum OpenDataFragmentError {
 
 /// Parse an Open data fragment from one normalized (FCS-free) MPDU.
 ///
-/// A successful value proves exact three-address role mapping, an unprotected
-/// Data/QoS-Data subtype, no HT-Control or A-MSDU, and a nonempty fragment
-/// body. Unfragmented MPDUs remain with the ordinary decapsulation path.
+/// A successful value proves exact three-address role mapping with an
+/// individual receiver address, an unprotected Data/QoS-Data subtype, no
+/// HT-Control or A-MSDU, and a nonempty fragment body. Unfragmented MPDUs
+/// remain with the ordinary decapsulation path.
 pub fn parse_open_data_fragment(
     role: DataInterfaceRole,
     mpdu: &[u8],
@@ -165,6 +167,13 @@ pub fn parse_open_data_fragment(
     let header = parse_open_data_header(role, mpdu)?;
     if header.qos_amsdu_present {
         return Err(OpenDataFragmentError::AmsduUnsupported);
+    }
+    if header.identity.receiver_address == [0; 6] || header.identity.receiver_address[0] & 1 != 0 {
+        // IEEE fragmentation is defined only for an individual Address 1.
+        // Ordinary group-addressed MPDUs remain valid and therefore this
+        // check belongs to the fragment constructor, not the shared identity
+        // parser used by unfragmented receive.
+        return Err(OpenDataFragmentError::InvalidReceiver);
     }
     let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
     let fragment_number = (sequence_control & 0x000f) as u8;
@@ -473,6 +482,19 @@ impl<const CONTEXTS: usize, const CAPACITY: usize> OpenDataDefragmenter<CONTEXTS
                 .any(|entry| entry.identity.same_sequence_space(identity))
         {
             return Err(OpenDataFragmentError::IdentityMismatch);
+        }
+        if !retry {
+            // A fresh ordinary MPDU supersedes a retained fragment-completion
+            // fingerprint in the same 12-bit sequence space. At high packet
+            // rates the sequence number can legitimately wrap inside the
+            // completion-history timeout; keeping the old address identity
+            // would then reject the new ordinary MPDU's retry before the
+            // role-local duplicate filter can recognize it.
+            for completed in &mut self.completed {
+                if completed.is_some_and(|entry| entry.identity.same_sequence_space(identity)) {
+                    *completed = None;
+                }
+            }
         }
         Ok(OpenDataUnfragmentedAdmission::Admitted { expired })
     }
@@ -954,6 +976,17 @@ mod tests {
             Err(OpenDataFragmentError::AmsduUnsupported)
         );
 
+        let mut group = fragment(DataInterfaceRole::Station, 2, 0, true, false, &payload);
+        group[4..10].fill(0xff);
+        assert_eq!(
+            parse_open_data_fragment(DataInterfaceRole::Station, &group[..33]),
+            Err(OpenDataFragmentError::InvalidReceiver)
+        );
+        assert!(
+            parse_open_data_identity(DataInterfaceRole::Station, &group[..33]).is_ok(),
+            "ordinary group-address identity remains valid"
+        );
+
         let first = fragment(DataInterfaceRole::AccessPoint, 3, 0, true, false, &payload);
         let second = fragment(DataInterfaceRole::AccessPoint, 3, 1, false, false, &[2, 3]);
         let mut state = OpenDataDefragmenter::<1, 10>::new(100);
@@ -983,5 +1016,78 @@ mod tests {
             .unwrap();
         assert_eq!(state.forget_transmitter(STA), 1);
         assert_eq!(state.clear(), 0);
+    }
+
+    #[test]
+    fn fresh_ordinary_wrap_replaces_stale_fragment_completion_identity() {
+        let first_payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1];
+        let first = fragment(
+            DataInterfaceRole::Station,
+            7,
+            0,
+            true,
+            false,
+            &first_payload,
+        );
+        let final_fragment = fragment(DataInterfaceRole::Station, 7, 1, false, false, &[2]);
+        let mut state = OpenDataDefragmenter::<1, 32>::new(100);
+        state
+            .ingest(
+                parsed(DataInterfaceRole::Station, &first, first_payload.len()),
+                1,
+                |_| (),
+            )
+            .unwrap();
+        assert!(matches!(
+            state.ingest(
+                parsed(DataInterfaceRole::Station, &final_fragment, 1),
+                2,
+                |_| (),
+            ),
+            Ok(OpenDataDefragmentation::Complete { .. })
+        ));
+
+        // A 12-bit sequence number can wrap while the bounded completion
+        // fingerprint is still live. A fresh ordinary MPDU with a different
+        // third address owns the reused sequence; its retry is left to the
+        // ordinary duplicate filter instead of colliding with stale fragment
+        // identity here.
+        let mut ordinary = fragment(DataInterfaceRole::Station, 7, 0, false, false, &[9]);
+        ordinary[16..22].copy_from_slice(&[2, 0, 0, 0, 0, 9]);
+        let ordinary_identity =
+            parse_open_data_identity(DataInterfaceRole::Station, &ordinary[..25]).unwrap();
+        assert_eq!(
+            state.admit_unfragmented(ordinary_identity, false, Some(3)),
+            Ok(OpenDataUnfragmentedAdmission::Admitted { expired: 0 })
+        );
+        assert_eq!(
+            state.admit_unfragmented(ordinary_identity, true, Some(4)),
+            Ok(OpenDataUnfragmentedAdmission::Admitted { expired: 0 })
+        );
+    }
+
+    #[test]
+    fn clock_wrap_expires_retained_bytes_before_sequence_reuse() {
+        let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1];
+        let first = fragment(DataInterfaceRole::Station, 9, 0, true, false, &payload);
+        let final_fragment = fragment(DataInterfaceRole::Station, 9, 1, false, false, &[2]);
+        let mut state = OpenDataDefragmenter::<1, 32>::new(100);
+        state
+            .ingest(
+                parsed(DataInterfaceRole::Station, &first, payload.len()),
+                u64::MAX - 1,
+                |_| (),
+            )
+            .unwrap();
+
+        assert_eq!(
+            state.ingest(
+                parsed(DataInterfaceRole::Station, &final_fragment, 1),
+                1,
+                |_| (),
+            ),
+            Err(OpenDataFragmentError::Orphan { fragment_number: 1 })
+        );
+        assert_eq!(state.active_contexts(), 0);
     }
 }

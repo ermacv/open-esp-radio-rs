@@ -93,6 +93,7 @@ pub struct Esp32s31ConnectedStaPlan {
     pub(super) config: Esp32s31ConnectedStaConfig,
     pub(super) data_tx_rate: TxPhyRate,
     pub(super) aggregate_tx_rate: TxPhyRate,
+    pub(super) ht_duplicate_tx_selection: HtDuplicateTxSelection,
     pub(super) aggregate_rate_policy: StaTxRatePolicy,
     pub(super) rate_control: Option<StaRateControlAssociation>,
     pub(super) beacon_loss: StaBeaconLossConfig,
@@ -114,6 +115,11 @@ impl Esp32s31ConnectedStaPlan {
 
     pub const fn aggregate_tx_rate(&self) -> TxPhyRate {
         self.aggregate_tx_rate
+    }
+
+    /// Independent fixed-request outcome; never part of ordinary rate ranking.
+    pub const fn ht_duplicate_tx_selection(&self) -> HtDuplicateTxSelection {
+        self.ht_duplicate_tx_selection
     }
 
     pub const fn beacon_loss(&self) -> StaBeaconLossConfig {
@@ -180,15 +186,36 @@ impl Esp32s31ConnectedStaPort {
         config: Esp32s31ConnectedStaConfig,
         wifi: WifiPlan,
     ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        Self::prepare_for_wifi_plan_with_storage_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(peer, config, wifi, None)
+    }
+
+    /// Prepare a STA plan with an explicit MCS32 certification request.
+    ///
+    /// The result retains the request's typed rejection for telemetry while
+    /// the ordinary MCS0..MCS7/HE schedule remains the publishable plan.
+    #[allow(clippy::result_large_err)]
+    pub fn prepare_for_wifi_plan_with_storage_and_ht_duplicate_certification<
+        const AGGREGATE_SLOTS: usize,
+        const RX_REORDER_SLOTS: usize,
+    >(
+        peer: Esp32s31ConnectedStaPeer,
+        config: Esp32s31ConnectedStaConfig,
+        wifi: WifiPlan,
+        request: Option<HtDuplicateCertificationRequest>,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
         let Some(interface) = wifi.station() else {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::MissingStationInterface,
                 peer,
             });
         };
-        Self::prepare_for_interface_with_storage::<AGGREGATE_SLOTS, RX_REORDER_SLOTS>(
-            peer, config, interface,
-        )
+        Self::prepare_for_interface_with_storage_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(peer, config, interface, request)
     }
 
     /// Prepare one explicitly identified STA VIF on a hardware channel
@@ -201,6 +228,23 @@ impl Esp32s31ConnectedStaPort {
         peer: Esp32s31ConnectedStaPeer,
         config: Esp32s31ConnectedStaConfig,
         interface: BoundVirtualInterface,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        Self::prepare_for_interface_with_storage_and_ht_duplicate_certification::<
+            AGGREGATE_SLOTS,
+            RX_REORDER_SLOTS,
+        >(peer, config, interface, None)
+    }
+
+    /// Prepare one STA VIF and evaluate an independent MCS32 fixed request.
+    #[allow(clippy::result_large_err)]
+    pub fn prepare_for_interface_with_storage_and_ht_duplicate_certification<
+        const AGGREGATE_SLOTS: usize,
+        const RX_REORDER_SLOTS: usize,
+    >(
+        peer: Esp32s31ConnectedStaPeer,
+        config: Esp32s31ConnectedStaConfig,
+        interface: BoundVirtualInterface,
+        request: Option<HtDuplicateCertificationRequest>,
     ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
         if interface.interface.role != VifRole::Station {
             return Err(Esp32s31ConnectedStaPrepareFailure {
@@ -302,6 +346,20 @@ impl Esp32s31ConnectedStaPort {
         };
 
         let Esp32s31ConnectedStaPeer { link, rate_control } = peer;
+        let ht_duplicate_tx_selection = select_esp32s31_ht_duplicate_tx(
+            request,
+            HtDuplicateTxLinkCapabilities::new(
+                match link.association_phy {
+                    StaAssociationPhy::Legacy => None,
+                    StaAssociationPhy::Ht20 | StaAssociationPhy::He20 => {
+                        Some(HtChannelWidth::Mhz20)
+                    }
+                    StaAssociationPhy::Ht40 => Some(HtChannelWidth::Mhz40),
+                },
+                link.peer_supports_ht_duplicate_mcs32,
+                link.peer_supports_ht_short_guard_interval,
+            ),
+        );
         let data_policy = sta_tx_rate_policy(link, config.tx.rate, false);
         let aggregate_policy = sta_tx_rate_policy(link, config.tx.rate, true);
         let aggregate_tx_rate = rate_control.ampdu_tx_rate(aggregate_policy);
@@ -311,6 +369,7 @@ impl Esp32s31ConnectedStaPort {
             config,
             data_tx_rate: data_policy.fallback_rate(),
             aggregate_tx_rate,
+            ht_duplicate_tx_selection,
             aggregate_rate_policy: aggregate_policy,
             rate_control: Some(rate_control),
             beacon_loss,

@@ -1533,10 +1533,11 @@ pub(crate) async fn run_connected<'state, 'security>(
         })
         .await;
     diagnostics_event!(
-        "open-radio: connected datapath active phy={} tx={}kbps ampdu={}kbps",
+        "open-radio: connected datapath active phy={} tx={}kbps ampdu={}kbps mcs32={:?}",
         report.link.association_phy.name(),
         report.data_tx_rate.nominal_kbps(),
         report.aggregate_tx_rate.nominal_kbps(),
+        report.ht_duplicate_tx_selection,
     );
     #[cfg(feature = "diagnostics")]
     // This finite register snapshot is emitted at Info in diagnostics

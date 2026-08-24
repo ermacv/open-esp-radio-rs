@@ -199,6 +199,8 @@ pub(super) fn publish_access_point_observation(
         tx_ht_aggregates: control.tx_ht_aggregates,
         tx_ht40_mcs7_aggregates: control.tx_ht40_mcs7_aggregates,
         data_frames_transmitted: mac.data_frames_transmitted,
+        ht_duplicate_tx_requests: mac.ht_duplicate_tx_requests,
+        ht_duplicate_tx_selection: mac.ht_duplicate_tx_selection,
         data_tx_attempts: mac.data_tx.attempts,
         data_tx_retried_frames: mac.data_tx.retried_frames,
         data_tx_maximum_attempts: mac.data_tx.maximum_attempts,

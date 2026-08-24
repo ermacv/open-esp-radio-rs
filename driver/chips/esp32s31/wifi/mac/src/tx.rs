@@ -1089,6 +1089,177 @@ pub enum HtDuplicateTxUnavailable {
     Esp32s31EncodingUnverified,
 }
 
+/// Explicit, finite request for the HT Duplicate certification path.
+///
+/// This request is deliberately separate from [`HtMcs`] and the recovered
+/// rate-control schedules. Ordinary link adaptation can therefore never rank
+/// MCS32 beside MCS0..MCS7. The duration is a caller-owned upper bound for one
+/// PPDU; zero is retained as an invalid input so a planner can report the exact
+/// rejection instead of silently substituting a policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HtDuplicateCertificationRequest {
+    channel_width: HtChannelWidth,
+    guard_interval: HtGuardInterval,
+    maximum_ppdu_duration_micros: u32,
+}
+
+impl HtDuplicateCertificationRequest {
+    pub const fn new(
+        channel_width: HtChannelWidth,
+        guard_interval: HtGuardInterval,
+        maximum_ppdu_duration_micros: u32,
+    ) -> Self {
+        Self {
+            channel_width,
+            guard_interval,
+            maximum_ppdu_duration_micros,
+        }
+    }
+
+    pub const fn channel_width(self) -> HtChannelWidth {
+        self.channel_width
+    }
+
+    pub const fn guard_interval(self) -> HtGuardInterval {
+        self.guard_interval
+    }
+
+    pub const fn maximum_ppdu_duration_micros(self) -> u32 {
+        self.maximum_ppdu_duration_micros
+    }
+}
+
+/// Negotiated facts consumed by the MCS32-only selector.
+///
+/// `channel_width == None` represents a legacy association. Keeping this
+/// small value independent of STA/AP peer records gives both role planners
+/// one shared validation and hardware-admission boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct HtDuplicateTxLinkCapabilities {
+    channel_width: Option<HtChannelWidth>,
+    peer_supports_mcs32: bool,
+    peer_supports_short_guard_interval: bool,
+}
+
+impl HtDuplicateTxLinkCapabilities {
+    pub const fn new(
+        channel_width: Option<HtChannelWidth>,
+        peer_supports_mcs32: bool,
+        peer_supports_short_guard_interval: bool,
+    ) -> Self {
+        Self {
+            channel_width,
+            peer_supports_mcs32,
+            peer_supports_short_guard_interval,
+        }
+    }
+
+    pub const fn channel_width(self) -> Option<HtChannelWidth> {
+        self.channel_width
+    }
+}
+
+/// Exact reason an explicit MCS32 request was not selected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HtDuplicateTxRejection {
+    ZeroMaximumPpduDuration,
+    RequestedWidthMustBe40Mhz,
+    LinkIsNot40Mhz,
+    PeerDoesNotSupportMcs32,
+    PeerDoesNotSupportShortGuardInterval,
+    Hardware(HtDuplicateTxUnavailable),
+}
+
+/// Value-only planner/telemetry result for the independent MCS32 request.
+///
+/// A rejected request never changes the ordinary STA/AP fallback rate. A
+/// future `Selected` value must come only from the hardware boundary below;
+/// it is not a candidate in the recovered rate-control schedule.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum HtDuplicateTxSelection {
+    #[default]
+    NotRequested,
+    Rejected {
+        request: HtDuplicateCertificationRequest,
+        reason: HtDuplicateTxRejection,
+    },
+    Selected {
+        request: HtDuplicateCertificationRequest,
+        rate: TxPhyRate,
+    },
+}
+
+impl HtDuplicateTxSelection {
+    pub const fn request(self) -> Option<HtDuplicateCertificationRequest> {
+        match self {
+            Self::NotRequested => None,
+            Self::Rejected { request, .. } | Self::Selected { request, .. } => Some(request),
+        }
+    }
+
+    pub const fn rejection(self) -> Option<HtDuplicateTxRejection> {
+        match self {
+            Self::Rejected { reason, .. } => Some(reason),
+            Self::NotRequested | Self::Selected { .. } => None,
+        }
+    }
+}
+
+/// Evaluate one fixed MCS32 request against negotiated link facts and the
+/// reviewed ESP32-S31 hardware contract.
+///
+/// Width, GI and the caller's finite PPDU-duration bound are rejected before
+/// touching the hardware boundary. Today every protocol-valid candidate then
+/// fails closed because no tracked oracle proves the special queue selector,
+/// HT-SIG/DATA_LENGTH image, protection rate or calibrated power lookup.
+pub fn select_esp32s31_ht_duplicate_tx(
+    request: Option<HtDuplicateCertificationRequest>,
+    link: HtDuplicateTxLinkCapabilities,
+) -> HtDuplicateTxSelection {
+    let Some(request) = request else {
+        return HtDuplicateTxSelection::NotRequested;
+    };
+    let rejection = if request.maximum_ppdu_duration_micros() == 0 {
+        Some(HtDuplicateTxRejection::ZeroMaximumPpduDuration)
+    } else if request.channel_width() != HtChannelWidth::Mhz40 {
+        Some(HtDuplicateTxRejection::RequestedWidthMustBe40Mhz)
+    } else if link.channel_width() != Some(HtChannelWidth::Mhz40) {
+        Some(HtDuplicateTxRejection::LinkIsNot40Mhz)
+    } else if !link.peer_supports_mcs32 {
+        Some(HtDuplicateTxRejection::PeerDoesNotSupportMcs32)
+    } else if request.guard_interval() == HtGuardInterval::Short400Ns
+        && !link.peer_supports_short_guard_interval
+    {
+        Some(HtDuplicateTxRejection::PeerDoesNotSupportShortGuardInterval)
+    } else {
+        None
+    };
+    if let Some(reason) = rejection {
+        return HtDuplicateTxSelection::Rejected { request, reason };
+    }
+
+    match esp32s31_ht_duplicate_hardware_boundary(
+        HtDuplicateRate::new(request.guard_interval()),
+        Some(request.maximum_ppdu_duration_micros()),
+    ) {
+        Ok(rate) => HtDuplicateTxSelection::Selected { request, rate },
+        Err(error) => HtDuplicateTxSelection::Rejected {
+            request,
+            reason: HtDuplicateTxRejection::Hardware(error),
+        },
+    }
+}
+
+/// Sole source boundary at which reviewed S31 MCS32 formatter evidence can be
+/// attached. Until that evidence identifies every queue-vector and power
+/// input, a protocol-valid certification request remains unpublishable.
+fn esp32s31_ht_duplicate_hardware_boundary(
+    _rate: HtDuplicateRate,
+    _maximum_ppdu_duration_micros: Option<u32>,
+) -> Result<TxPhyRate, HtDuplicateTxUnavailable> {
+    Err(HtDuplicateTxUnavailable::Esp32s31EncodingUnverified)
+}
+
 /// One-spatial-stream 802.11ax modulation and coding scheme.
 ///
 /// The ESP32-S31 is 1T1R. HE SU therefore admits MCS0..MCS9 for this first
@@ -1920,11 +2091,13 @@ pub enum TxPhyRate {
     He(HeRate),
 }
 
+/// A rate-only conversion cannot bypass the certification request's duration
+/// and peer gates. It reaches the same hardware boundary and fails closed.
 impl TryFrom<HtDuplicateRate> for TxPhyRate {
     type Error = HtDuplicateTxUnavailable;
 
-    fn try_from(_rate: HtDuplicateRate) -> Result<Self, Self::Error> {
-        Err(HtDuplicateTxUnavailable::Esp32s31EncodingUnverified)
+    fn try_from(rate: HtDuplicateRate) -> Result<Self, Self::Error> {
+        esp32s31_ht_duplicate_hardware_boundary(rate, None)
     }
 }
 

@@ -172,7 +172,6 @@ pub enum TxResetReason {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrdinaryTxError {
     Busy,
-    UnsupportedHeOrdinaryMpdu,
     BufferSizeOverflow,
     DeadlineOverflow,
     Tx(TxError),

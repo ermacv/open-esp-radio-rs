@@ -85,7 +85,6 @@ impl ActionTxConfig {
 pub enum SingleMpduTxError {
     Busy,
     EthernetFrameTooShort,
-    UnsupportedHeOrdinaryMpdu,
     BufferSizeOverflow,
     DeadlineOverflow,
     ProbeEncode,
@@ -132,7 +131,6 @@ impl From<OrdinaryTxError> for SingleMpduTxError {
     fn from(error: OrdinaryTxError) -> Self {
         match error {
             OrdinaryTxError::Busy => Self::Busy,
-            OrdinaryTxError::UnsupportedHeOrdinaryMpdu => Self::UnsupportedHeOrdinaryMpdu,
             OrdinaryTxError::BufferSizeOverflow => Self::BufferSizeOverflow,
             OrdinaryTxError::DeadlineOverflow => Self::DeadlineOverflow,
             OrdinaryTxError::Tx(error) => Self::Tx(error),

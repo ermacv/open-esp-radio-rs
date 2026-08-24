@@ -68,7 +68,6 @@ pub enum ControlTxError {
     StationEncode(StationFrameError),
     AssociationEncode(AssociationRequestError),
     Busy,
-    UnsupportedHeOrdinaryMpdu,
     BufferSizeOverflow,
     DeadlineOverflow,
     Tx(TxError),
@@ -92,7 +91,6 @@ impl ControlTxError {
             Self::ProbeEncode(_)
                 | Self::StationEncode(_)
                 | Self::AssociationEncode(_)
-                | Self::UnsupportedHeOrdinaryMpdu
                 | Self::BufferSizeOverflow
                 | Self::DeadlineOverflow
                 | Self::Retry(_)
@@ -106,7 +104,6 @@ impl From<OrdinaryTxError> for ControlTxError {
     fn from(error: OrdinaryTxError) -> Self {
         match error {
             OrdinaryTxError::Busy => Self::Busy,
-            OrdinaryTxError::UnsupportedHeOrdinaryMpdu => Self::UnsupportedHeOrdinaryMpdu,
             OrdinaryTxError::BufferSizeOverflow => Self::BufferSizeOverflow,
             OrdinaryTxError::DeadlineOverflow => Self::DeadlineOverflow,
             OrdinaryTxError::Tx(error) => Self::Tx(error),

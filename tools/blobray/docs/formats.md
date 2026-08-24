@@ -77,7 +77,11 @@ obsolete cache schema is maintained.
 Do not commit, publish or hand-edit the store. Generated linked-IR bundles are
 the portable/public artifacts; reviewed TOML remains the accepted knowledge.
 The SQLite WAL requires a local filesystem and is not supported on a network
-share.
+share. JSONL and ZIP are intentionally not cache backends: they do not provide
+the indexed point lookup, multi-table atomic binding update and incremental
+append/recovery contract required here. Use JSON/JSONL for portable reports and
+bundle files, and use revision snapshots plus reviewed TOML to preserve research
+across vendor releases.
 
 Human output is not an automation API. Scripts use `--format json` and check
 the reported schema.

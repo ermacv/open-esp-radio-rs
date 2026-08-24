@@ -84,7 +84,7 @@ fn fresh_cache_stats_is_typed_and_does_not_create_or_modify_the_project_tree() {
     );
     let report: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("cache stats stdout is one JSON document");
-    assert_eq!(report["schema_version"], 1);
+    assert_eq!(report["schema_version"], 2);
     assert_eq!(report["command"], "project cache stats");
     assert_eq!(report["present"], false);
     assert_eq!(
@@ -122,6 +122,8 @@ fn fresh_cache_stats_is_typed_and_does_not_create_or_modify_the_project_tree() {
         assert_eq!(report[field], 0, "unexpected fresh-cache field {field}");
     }
     assert_eq!(report["query_kinds"], serde_json::json!([]));
+    assert_eq!(report["compaction"]["eligible_on_next_write"], false);
+    assert_eq!(report["compaction"]["minimum_reclaimable_percent"], 25);
     assert_eq!(tree_snapshot(&project.root), before);
     assert!(!project.root.join("generated/.blobray-cache").exists());
 }

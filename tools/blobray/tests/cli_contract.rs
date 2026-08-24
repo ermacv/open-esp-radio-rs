@@ -1458,7 +1458,7 @@ fn project_analysis_plan_is_deterministic_and_read_only_when_blocked() {
     assert_eq!(first.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&first.stdout).expect("analysis plan stdout must be valid JSON");
-    assert_eq!(document["schema"], 1);
+    assert_eq!(document["schema"], 2);
     assert_eq!(document["command"], "project analyze --plan");
     assert_eq!(document["mode"], "write");
     assert_eq!(document["read_only"], true);
@@ -1603,6 +1603,22 @@ fn project_analysis_plan_tracks_soft_symbol_materialization_for_linked_ir() {
     assert_eq!(
         linked["optional-depends-on"],
         serde_json::json!(["symbol-inventory"])
+    );
+    let item = &linked["work-items"][0];
+    assert_eq!(item["action"], "deferred");
+    assert!(
+        item["cause"]
+            .as_str()
+            .is_some_and(|cause| cause.len() < 256 && cause.contains("1 generated input"))
+    );
+    assert_eq!(
+        item["awaiting-inputs"][0]["producer-stage"],
+        "symbol-inventory"
+    );
+    assert!(
+        item["awaiting-inputs"][0]["path"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("generated/symbols.json"))
     );
     assert_eq!(snapshot_tree(&directory), before);
     std::fs::remove_dir_all(directory).unwrap();

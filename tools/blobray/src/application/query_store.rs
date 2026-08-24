@@ -31,10 +31,9 @@ const INLINE_VALUE_LIMIT: usize = 64 * 1024;
 const FUNCTION_FACT_LOOKUP_BATCH: usize = 256;
 const PACK_RECORD_MAGIC: &[u8; 8] = b"BLBRCAS1";
 const PACK_HEADER_BYTES: u64 = 8 + 32 + 8;
-#[cfg(target_os = "linux")]
 const COMPACT_MIN_PACK_BYTES: u64 = 256 * 1024 * 1024;
-#[cfg(target_os = "linux")]
 const COMPACT_MIN_RECLAIMABLE_BYTES: u64 = 64 * 1024 * 1024;
+const COMPACT_MIN_RECLAIMABLE_PERCENT: u8 = 25;
 static NEXT_RESTORE_ID: AtomicU64 = AtomicU64::new(0);
 
 struct PreparedFunctionFact<'a> {
@@ -70,10 +69,21 @@ pub(crate) struct QueryStoreStatistics {
     pub(crate) live_objects: u64,
     pub(crate) live_record_bytes: u64,
     pub(crate) reclaimable_pack_bytes: u64,
+    pub(crate) compaction: QueryStoreCompactionStatistics,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct QueryStoreCompactionStatistics {
+    pub(crate) supported: bool,
+    pub(crate) automatic: bool,
+    pub(crate) eligible_on_next_write: bool,
+    pub(crate) minimum_pack_bytes: u64,
+    pub(crate) minimum_reclaimable_bytes: u64,
+    pub(crate) minimum_reclaimable_percent: u8,
 }
 
 impl QueryStoreStatistics {
-    fn empty(cache_root: PathBuf, database_path: PathBuf) -> Self {
+    pub(crate) fn empty(cache_root: PathBuf, database_path: PathBuf) -> Self {
         Self {
             present: false,
             cache_root,
@@ -93,7 +103,28 @@ impl QueryStoreStatistics {
             live_objects: 0,
             live_record_bytes: 0,
             reclaimable_pack_bytes: 0,
+            compaction: compaction_statistics(0, 0),
         }
+    }
+}
+
+fn compaction_statistics(
+    pack_bytes: u64,
+    reclaimable_pack_bytes: u64,
+) -> QueryStoreCompactionStatistics {
+    let supported = cfg!(target_os = "linux");
+    let eligible_on_next_write = supported
+        && pack_bytes >= COMPACT_MIN_PACK_BYTES
+        && reclaimable_pack_bytes >= COMPACT_MIN_RECLAIMABLE_BYTES
+        && reclaimable_pack_bytes.saturating_mul(100)
+            >= pack_bytes.saturating_mul(u64::from(COMPACT_MIN_RECLAIMABLE_PERCENT));
+    QueryStoreCompactionStatistics {
+        supported,
+        automatic: supported,
+        eligible_on_next_write,
+        minimum_pack_bytes: COMPACT_MIN_PACK_BYTES,
+        minimum_reclaimable_bytes: COMPACT_MIN_RECLAIMABLE_BYTES,
+        minimum_reclaimable_percent: COMPACT_MIN_RECLAIMABLE_PERCENT,
     }
 }
 
@@ -626,6 +657,7 @@ impl QueryStore {
             live_objects,
             live_record_bytes,
             reclaimable_pack_bytes,
+            compaction: compaction_statistics(pack_bytes, reclaimable_pack_bytes),
         })
     }
 
@@ -1578,7 +1610,8 @@ impl QueryStore {
         })?;
         let reclaimable = total_pack_bytes.saturating_sub(live_record_bytes);
         if reclaimable < COMPACT_MIN_RECLAIMABLE_BYTES
-            || reclaimable.saturating_mul(4) < total_pack_bytes
+            || reclaimable.saturating_mul(100)
+                < total_pack_bytes.saturating_mul(u64::from(COMPACT_MIN_RECLAIMABLE_PERCENT))
         {
             return self.validate_root_identity();
         }
@@ -4014,5 +4047,24 @@ mod tests {
         assert_eq!(store.get("live-function").unwrap().unwrap(), live);
         assert!(store.open_object(&retired_digest).is_err());
         assert_eq!(pack_files(&store.root).unwrap(), vec![store.pack_path]);
+    }
+
+    #[test]
+    fn compaction_assessment_requires_size_bytes_and_ratio_thresholds() {
+        let minimum = compaction_statistics(COMPACT_MIN_PACK_BYTES, 0);
+        assert!(!minimum.eligible_on_next_write);
+
+        let too_small =
+            compaction_statistics(COMPACT_MIN_PACK_BYTES - 1, COMPACT_MIN_RECLAIMABLE_BYTES);
+        assert!(!too_small.eligible_on_next_write);
+
+        let too_little_garbage =
+            compaction_statistics(COMPACT_MIN_PACK_BYTES, COMPACT_MIN_RECLAIMABLE_BYTES - 1);
+        assert!(!too_little_garbage.eligible_on_next_write);
+
+        let eligible = compaction_statistics(COMPACT_MIN_PACK_BYTES, COMPACT_MIN_RECLAIMABLE_BYTES);
+        assert_eq!(eligible.supported, cfg!(target_os = "linux"));
+        assert_eq!(eligible.automatic, cfg!(target_os = "linux"));
+        assert_eq!(eligible.eligible_on_next_write, cfg!(target_os = "linux"));
     }
 }

@@ -19,7 +19,7 @@ struct CacheStatsDocument<'a> {
 pub(super) fn stats(project_manifest: &Path) -> Result<bool> {
     let statistics = project_cache_statistics(project_manifest)?;
     let document = CacheStatsDocument {
-        schema_version: 1,
+        schema_version: 2,
         command: "project cache stats",
         statistics: &statistics,
     };
@@ -50,6 +50,30 @@ fn render_human(statistics: &ProjectCacheStatistics) {
             statistics.dependencies,
             human_bytes(statistics.reclaimable_pack_bytes),
         ))
+    );
+
+    outputln!("\n{}", output::heading("Assessment"));
+    if !statistics.compaction.supported {
+        outputln!(
+            "- Automatic pack compaction is disabled on this platform because the cache root cannot yet be pinned strongly enough for destructive cleanup."
+        );
+    } else if statistics.compaction.eligible_on_next_write {
+        outputln!(
+            "- Pack compaction is eligible and will run automatically after the next successful cache write."
+        );
+    } else {
+        outputln!(
+            "- Pack compaction is not needed: it requires at least {} total, {} reclaimable and {}% garbage.",
+            human_bytes(statistics.compaction.minimum_pack_bytes),
+            human_bytes(statistics.compaction.minimum_reclaimable_bytes),
+            statistics.compaction.minimum_reclaimable_percent,
+        );
+    }
+    outputln!(
+        "- This directory is disposable local acceleration state. Preserve research with reviewed TOML, generated linked IR and revision snapshots, not by copying the cache."
+    );
+    outputln!(
+        "- Use `project analyze --plan` to classify stages as current, restorable or recomputed before a write."
     );
     outputln!(
         "\n{}",
@@ -192,36 +216,21 @@ mod tests {
 
     #[test]
     fn machine_document_has_command_identity_separate_from_store_schema() {
-        let statistics = ProjectCacheStatistics {
-            present: false,
-            cache_root: "generated/.blobray-cache".into(),
-            database_path: "generated/.blobray-cache/queries.sqlite3".into(),
-            schema: None,
-            root_bytes: 0,
-            database_bytes: 0,
-            pack_bytes: 0,
-            query_results: 0,
-            inline_bytes: 0,
-            dependencies: 0,
-            objects: 0,
-            object_payload_bytes: 0,
-            stage_bindings: 0,
-            stage_outputs: 0,
-            live_objects: 0,
-            live_record_bytes: 0,
-            reclaimable_pack_bytes: 0,
-            query_kinds: Vec::new(),
-        };
+        let statistics = ProjectCacheStatistics::empty(
+            "generated/.blobray-cache".into(),
+            "generated/.blobray-cache/queries.sqlite3".into(),
+        );
         let document = serde_json::to_value(CacheStatsDocument {
-            schema_version: 1,
+            schema_version: 2,
             command: "project cache stats",
             statistics: &statistics,
         })
         .unwrap();
-        assert_eq!(document["schema_version"], 1);
+        assert_eq!(document["schema_version"], 2);
         assert_eq!(document["command"], "project cache stats");
         assert_eq!(document["schema"], serde_json::Value::Null);
         assert_eq!(document["present"], false);
+        assert_eq!(document["compaction"]["eligible_on_next_write"], false);
         assert_eq!(detail_metric_rows(&statistics).len(), 7);
         assert_eq!(detail_metric_rows(&statistics)[0][0], "Store schema");
         assert_eq!(detail_metric_rows(&statistics)[5][0], "Live objects");

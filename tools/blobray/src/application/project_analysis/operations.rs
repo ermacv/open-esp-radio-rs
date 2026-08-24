@@ -220,12 +220,19 @@ impl ResolvedProjectAnalysisOperations<'_> {
         if materializations.is_empty() && check {
             ensure_check_outputs(outputs)?;
         }
+        let awaiting_inputs = materializations
+            .iter()
+            .map(
+                |(input, dependency, _)| super::ProjectAnalysisPlanAwaitingInput {
+                    path: input.clone(),
+                    producer_stage: dependency.clone(),
+                },
+            )
+            .collect::<Vec<_>>();
         let (action, signature, cause) = if !materializations.is_empty() {
-            let dependencies = materializations
+            let producers = materializations
                 .iter()
-                .map(|(_, dependency, output)| {
-                    format!("{} after stage {dependency:?}", output.display())
-                })
+                .map(|(_, dependency, _)| dependency.as_str())
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>()
@@ -234,7 +241,8 @@ impl ResolvedProjectAnalysisOperations<'_> {
                 ProjectAnalysisPlanAction::Deferred,
                 None,
                 Some(format!(
-                    "cache state depends on generated input(s) {dependencies} materializing"
+                    "cache state awaits {} generated input(s) from stage(s) {producers}",
+                    materializations.len()
                 )),
             )
         } else if check {
@@ -292,6 +300,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
                     signature,
                     outputs: outputs.to_vec(),
                     cause,
+                    awaiting_inputs,
                 },
             );
         Ok(Some(if action == ProjectAnalysisPlanAction::Current {

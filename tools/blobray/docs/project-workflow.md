@@ -165,6 +165,22 @@ an existing cache read-only. If the store has not been created, that state is
 reported without creating `generated/.blobray-cache/` or any SQLite sidecar.
 `cache stats` does not perform garbage collection, compaction, pruning, schema
 migration, or quota enforcement; it only describes the state already on disk.
+Its assessment reports the platform support and exact thresholds for automatic
+pack compaction. `project analyze --plan` is the read-only way to see whether
+each stage is current, restorable from CAS, or requires recomputation. Plan
+schema 2 keeps the default decision summary bounded while exposing every
+deferred generated input and its producer stage as structured
+`awaiting-inputs` in JSON and in `--details` output.
+
+SQLite and the append-only pack have different jobs. SQLite provides indexed
+function queries, transactional stage bindings, dependency edges and locking;
+the pack keeps large immutable values and generated outputs out of the database
+WAL. JSONL would require linear scans or a second index and cannot atomically
+replace several bindings. ZIP central-directory rewrites make it unsuitable for
+incremental writes and crash recovery. Both remain useful interchange formats,
+not query-store replacements. The store is local and disposable: portable
+research progress lives in sparse reviewed TOML, generated linked-IR bundles
+and revision snapshots. Never copy the SQLite/WAL directory between machines.
 
 For performance measurements, set `BLOBRAY_REPORT_USAGE=1` when
 calling `scripts/run-limited`. This selects its process-session watchdog and

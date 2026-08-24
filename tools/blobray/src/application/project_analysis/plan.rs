@@ -50,6 +50,15 @@ pub struct ProjectAnalysisPlanWorkItem {
     pub outputs: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cause: Option<String>,
+    #[serde(rename = "awaiting-inputs", skip_serializing_if = "Vec::is_empty")]
+    pub awaiting_inputs: Vec<ProjectAnalysisPlanAwaitingInput>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ProjectAnalysisPlanAwaitingInput {
+    pub path: PathBuf,
+    #[serde(rename = "producer-stage")]
+    pub producer_stage: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -148,16 +157,7 @@ impl ProjectAnalysisPlanner {
                 )
             } else {
                 let action = aggregate_actions(work_items.iter().map(|item| item.action));
-                let causes = work_items
-                    .iter()
-                    .filter(|item| item.action != ProjectAnalysisPlanAction::Current)
-                    .filter_map(|item| {
-                        item.cause
-                            .as_deref()
-                            .map(|cause| format!("{}: {cause}", item.name))
-                    })
-                    .collect::<Vec<_>>();
-                (action, (!causes.is_empty()).then(|| causes.join("; ")))
+                (action, aggregate_cause(&work_items))
             };
             stages.push(ProjectAnalysisPlanStage {
                 order: index + 1,
@@ -172,7 +172,7 @@ impl ProjectAnalysisPlanner {
 
         let count = |action| stages.iter().filter(|stage| stage.action == action).count();
         ProjectAnalysisPlanReport {
-            schema: 1,
+            schema: 2,
             command: "project analyze --plan",
             mode: execution.mode,
             read_only: true,
@@ -189,6 +189,39 @@ impl ProjectAnalysisPlanner {
             stages,
         }
     }
+}
+
+fn aggregate_cause(work_items: &[ProjectAnalysisPlanWorkItem]) -> Option<String> {
+    let pending = work_items
+        .iter()
+        .filter(|item| item.action != ProjectAnalysisPlanAction::Current)
+        .collect::<Vec<_>>();
+    if pending.len() == 1 {
+        let item = pending[0];
+        return Some(item.cause.as_deref().map_or_else(
+            || format!("{}: {}", item.name, item.action.label()),
+            |cause| format!("{}: {cause}", item.name),
+        ));
+    }
+    if pending.is_empty() {
+        return None;
+    }
+    let counts = [
+        ProjectAnalysisPlanAction::Restore,
+        ProjectAnalysisPlanAction::Compute,
+        ProjectAnalysisPlanAction::Verify,
+        ProjectAnalysisPlanAction::Deferred,
+        ProjectAnalysisPlanAction::Blocked,
+        ProjectAnalysisPlanAction::Failed,
+    ]
+    .into_iter()
+    .filter_map(|action| {
+        let count = pending.iter().filter(|item| item.action == action).count();
+        (count != 0).then(|| format!("{}={count}", action.label()))
+    })
+    .collect::<Vec<_>>()
+    .join(", ");
+    Some(format!("{} work items: {counts}", pending.len()))
 }
 
 fn action_for_stage_status(status: &str) -> Option<ProjectAnalysisPlanAction> {
@@ -352,6 +385,24 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_cause_keeps_many_profile_misses_bounded() {
+        let items = (0..19)
+            .map(|index| ProjectAnalysisPlanWorkItem {
+                name: format!("linked-ir:profile-{index}"),
+                action: ProjectAnalysisPlanAction::Compute,
+                signature: Some(format!("signature-{index}")),
+                outputs: Vec::new(),
+                cause: Some("no cached result matches the current stage signature".to_owned()),
+                awaiting_inputs: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            aggregate_cause(&items).as_deref(),
+            Some("19 work items: compute=19")
+        );
+    }
+
+    #[test]
     fn failed_stage_outcome_dominates_work_items_planned_before_the_failure() {
         let mut planner = ProjectAnalysisPlanner::default();
         planner.record(
@@ -362,6 +413,7 @@ mod tests {
                 signature: Some("first-signature".to_owned()),
                 outputs: vec!["generated/first.ir".into()],
                 cause: None,
+                awaiting_inputs: Vec::new(),
             },
         );
         let report = planner.finish(

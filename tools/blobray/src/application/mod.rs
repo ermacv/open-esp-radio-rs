@@ -25,9 +25,9 @@ pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
 pub use pipeline::StageReport as ProjectAnalysisStageReport;
 pub use project_analysis::{
-    ProjectAnalysisPlanAction, ProjectAnalysisPlanReport, ProjectAnalysisPlanStage,
-    ProjectAnalysisPlanWorkItem, ProjectAnalysisReport, ProjectAnalysisRequest,
-    ProjectAnalysisStatus,
+    ProjectAnalysisPlanAction, ProjectAnalysisPlanAwaitingInput, ProjectAnalysisPlanReport,
+    ProjectAnalysisPlanStage, ProjectAnalysisPlanWorkItem, ProjectAnalysisReport,
+    ProjectAnalysisRequest, ProjectAnalysisStatus,
 };
 pub(crate) use query_store::QueryStoreStatistics as ProjectCacheStatistics;
 pub(crate) use resolve::{

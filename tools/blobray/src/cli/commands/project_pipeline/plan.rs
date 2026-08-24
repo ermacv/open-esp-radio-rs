@@ -38,26 +38,31 @@ fn print_human(document: &ProjectAnalysisPlanReport) {
     outputln!(
         "{}",
         table::render(
-            [
-                "#",
-                "Stage",
-                "Action",
-                "Depends on",
-                "Optional from",
-                "Cause",
-            ],
+            ["#", "Stage", "Action", "After"],
             document.stages.iter().map(|stage| {
                 [
                     stage.order.to_string(),
                     stage.name.clone(),
                     stage.action.label().to_owned(),
-                    stage.dependencies.join(", "),
-                    stage.optional_dependencies.join(", "),
-                    stage.cause.clone().unwrap_or_default(),
+                    dependency_summary(stage),
                 ]
             })
         )
     );
+    let decisions = document
+        .stages
+        .iter()
+        .filter_map(|stage| {
+            stage
+                .cause
+                .as_ref()
+                .map(|cause| [stage.name.clone(), cause.clone()])
+        })
+        .collect::<Vec<_>>();
+    if !decisions.is_empty() {
+        outputln!("\n{}", output::heading("Decisions"));
+        outputln!("{}", table::render(["Stage", "Reason"], decisions));
+    }
 
     if !output::details() {
         return;
@@ -76,6 +81,31 @@ fn print_human(document: &ProjectAnalysisPlanReport) {
             rows,
         )
     );
+
+    let awaiting = awaiting_input_rows(document);
+    if !awaiting.is_empty() {
+        outputln!("\n{}", output::heading("Awaiting generated inputs"));
+        outputln!(
+            "{}",
+            table::render(["Stage", "Work item", "Producer", "Input"], awaiting,)
+        );
+    }
+}
+
+fn dependency_summary(
+    stage: &crate::application::project_analysis::ProjectAnalysisPlanStage,
+) -> String {
+    let mut parts = Vec::new();
+    if !stage.dependencies.is_empty() {
+        parts.push(stage.dependencies.join(", "));
+    }
+    if !stage.optional_dependencies.is_empty() {
+        parts.push(format!(
+            "optional: {}",
+            stage.optional_dependencies.join(", ")
+        ));
+    }
+    parts.join("; ")
 }
 
 fn work_item_rows(document: &ProjectAnalysisPlanReport) -> Vec<[String; 6]> {
@@ -105,6 +135,25 @@ fn work_item_rows(document: &ProjectAnalysisPlanReport) -> Vec<[String; 6]> {
         .collect()
 }
 
+fn awaiting_input_rows(document: &ProjectAnalysisPlanReport) -> Vec<[String; 4]> {
+    document
+        .stages
+        .iter()
+        .flat_map(|stage| {
+            stage.work_items.iter().flat_map(|item| {
+                item.awaiting_inputs.iter().map(|input| {
+                    [
+                        stage.name.clone(),
+                        item.name.clone(),
+                        input.producer_stage.clone(),
+                        input.path.display().to_string(),
+                    ]
+                })
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,7 +165,7 @@ mod tests {
     #[test]
     fn plan_document_keeps_order_dependencies_and_actions_typed() {
         let document = ProjectAnalysisPlanReport {
-            schema: 1,
+            schema: 2,
             command: "project analyze --plan",
             mode: "write",
             read_only: true,
@@ -152,7 +201,7 @@ mod tests {
     #[test]
     fn detail_rows_keep_every_profile_and_all_work_item_fields() {
         let document = ProjectAnalysisPlanReport {
-            schema: 1,
+            schema: 2,
             command: "project analyze --plan",
             mode: "write",
             read_only: true,
@@ -171,6 +220,7 @@ mod tests {
                         signature: Some("sha256:release".to_owned()),
                         outputs: vec![PathBuf::from("generated/release/linked-ir.json")],
                         cause: None,
+                        awaiting_inputs: Vec::new(),
                     },
                     ProjectAnalysisPlanWorkItem {
                         name: "linked-ir:debug".to_owned(),
@@ -181,6 +231,7 @@ mod tests {
                             PathBuf::from("generated/debug/calls.json"),
                         ],
                         cause: Some("profile input is invalid".to_owned()),
+                        awaiting_inputs: Vec::new(),
                     },
                 ],
             }],

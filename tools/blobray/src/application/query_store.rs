@@ -9,16 +9,19 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
+    ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime},
 };
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, config::DbConfig, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::Result;
+
+type PackedObjectLocations = Vec<(String, u64, u64)>;
 
 const STORE_SCHEMA: i64 = 7;
 const INLINE_VALUE_LIMIT: usize = 64 * 1024;
@@ -28,7 +31,9 @@ const INLINE_VALUE_LIMIT: usize = 64 * 1024;
 const FUNCTION_FACT_LOOKUP_BATCH: usize = 256;
 const PACK_RECORD_MAGIC: &[u8; 8] = b"BLBRCAS1";
 const PACK_HEADER_BYTES: u64 = 8 + 32 + 8;
+#[cfg(target_os = "linux")]
 const COMPACT_MIN_PACK_BYTES: u64 = 256 * 1024 * 1024;
+#[cfg(target_os = "linux")]
 const COMPACT_MIN_RECLAIMABLE_BYTES: u64 = 64 * 1024 * 1024;
 static NEXT_RESTORE_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -160,13 +165,225 @@ impl CacheTreeFingerprint {
 }
 
 pub(crate) struct QueryStore {
-    connection: Connection,
+    connection: PinnedConnection,
+    /// Stable user-facing path. Blobray's direct filesystem and pack access
+    /// goes through `storage_root`; on Linux that root is held by a directory
+    /// descriptor. SQLite is opened there but may canonicalize it internally.
     root: PathBuf,
+    root_identity: CacheRootIdentity,
+    storage_root: PathBuf,
     pack_path: PathBuf,
     next_pack_generation: u64,
+    _root_pin: PinnedCacheRoot,
+    _access_lock: File,
+}
+
+/// Lifetime guard for the persistent-cache snapshot seen by a plan.
+///
+/// The database lock excludes a writer for that generation. On Linux the
+/// directory handle pins direct file and pack reads to the same directory even
+/// if the user-facing cache path is renamed and replaced. SQLite may resolve
+/// sidecar names through a canonical pathname; permanent replacement is
+/// rejected by binding checks, but closing that narrow race completely would
+/// require a custom VFS. Other targets retain identity checks as a best-effort
+/// guard and disable destructive pack compaction/cleanup until they have an
+/// equivalent handle-relative backend.
+#[derive(Debug)]
+pub(crate) struct PlanReadGuard {
+    root: PathBuf,
+    root_identity: CacheRootIdentity,
+    pinned_root: PinnedCacheRoot,
+    database_path: PathBuf,
+    access_lock: File,
+}
+
+#[derive(Debug)]
+struct PinnedCacheRoot {
+    storage_root: PathBuf,
+    #[cfg(target_os = "linux")]
+    directory: File,
+}
+
+/// Writer-close hardening for a database opened through the pinned root.
+///
+/// Binding validation and `NO_CKPT_ON_CLOSE` keep permanent root replacement
+/// fail-closed. This does not replace SQLite's pathname-based sidecar VFS, so
+/// it is not a complete defense against a hostile replacement-and-restore ABA.
+struct PinnedConnection {
+    connection: Option<Connection>,
+    cleanup: Option<PinnedConnectionCleanup>,
+}
+
+struct PinnedConnectionCleanup {
+    root: PathBuf,
+    root_identity: CacheRootIdentity,
+    storage_database_path: PathBuf,
+    database_file: File,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CacheRootIdentity {
+    parent: DirectoryIdentity,
+    root: DirectoryIdentity,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DirectoryIdentity {
+    canonical: PathBuf,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+    #[cfg(not(unix))]
+    created: Option<SystemTime>,
 }
 
 impl QueryStore {
+    /// Pin the cache-root generation observed by a complete plan and hold its
+    /// process-wide shared database lock without creating state. The pin is
+    /// descriptor-backed on Linux and identity-checked elsewhere.
+    pub(crate) fn plan_read_guard(project_manifest: &Path) -> Result<Option<PlanReadGuard>> {
+        let project_root = project_manifest.parent().unwrap_or_else(|| Path::new("."));
+        let cache_root = project_root.join("generated/.blobray-cache");
+        let database_path = cache_root.join("queries.sqlite3");
+        let root_metadata = match fs::symlink_metadata(&cache_root) {
+            Ok(metadata) => metadata,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
+                validate_absent_cache_root_parent(&cache_root)?;
+                return Ok(None);
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
+            return Err(crate::Error::invalid(format!(
+                "query cache root {} is not a regular directory",
+                cache_root.display()
+            )));
+        }
+        let root_identity = CacheRootIdentity::capture(&cache_root)?;
+        let pinned_root = PinnedCacheRoot::open(&cache_root, &root_identity)?;
+        let storage_database_path = pinned_root.storage_root.join("queries.sqlite3");
+        let database_metadata = match fs::symlink_metadata(&storage_database_path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                validate_cold_cache_root(&pinned_root.storage_root)?;
+                root_identity.validate(&cache_root)?;
+                return Ok(None);
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if database_metadata.file_type().is_symlink() || !database_metadata.is_file() {
+            return Err(crate::Error::invalid(format!(
+                "query cache database {} is not a regular file",
+                database_path.display()
+            )));
+        }
+        let access_lock = open_cache_database_read_only(&storage_database_path)?;
+        access_lock
+            .try_lock_shared()
+            .map_err(|error| cache_lock_error("read", &database_path, error))?;
+        root_identity.validate(&cache_root)?;
+        Ok(Some(PlanReadGuard {
+            root: cache_root,
+            root_identity,
+            pinned_root,
+            database_path,
+            access_lock,
+        }))
+    }
+
+    /// Read one stage result from the generation pinned by `guard` without
+    /// creating, migrating, repairing, restoring, or rebinding state.
+    ///
+    /// Blobray resolves the database and pack through the pinned root. SQLite
+    /// may canonicalize the database pathname internally; root and database
+    /// binding checks reject a persistent lexical-root replacement before or
+    /// after the read.
+    pub(crate) fn stage_output_digests_read_only(
+        guard: &PlanReadGuard,
+        query_key: &str,
+        validate_payloads: bool,
+    ) -> Result<Option<Vec<String>>> {
+        guard.validate_lexical_root()?;
+        let storage_database_path = guard.pinned_root.storage_root.join("queries.sqlite3");
+        let preflight = fingerprint_cache_tree(&guard.pinned_root.storage_root)?;
+        reject_nonempty_wal(&preflight, &guard.database_path)?;
+        let connection = Connection::open_with_flags(
+            immutable_database_uri_pinned(&storage_database_path)?,
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+                | OpenFlags::SQLITE_OPEN_URI,
+        )
+        .map_err(|error| store_error("open query database read-only", error))?;
+        let schema = connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .map_err(|error| store_error("read query database schema", error))?;
+        if schema != STORE_SCHEMA {
+            // Write-mode opening deliberately replaces an obsolete schema.
+            // A plan must remain read-only, but it should predict the same
+            // cold computation instead of treating replaceable cache state as
+            // a project blocker.
+            drop(connection);
+            let postflight = fingerprint_cache_tree(&guard.pinned_root.storage_root)?;
+            reject_nonempty_wal(&postflight, &guard.database_path)?;
+            if postflight != preflight {
+                return Err(crate::Error::invalid(
+                    "query cache changed during read-only stage inspection; retry after the cache writer exits",
+                ));
+            }
+            guard.validate_lexical_root()?;
+            return Ok(None);
+        }
+        let (active_pack, next_pack_generation) = connection
+            .query_row(
+                "SELECT active_pack, next_pack_generation FROM cache_state WHERE singleton = 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .map_err(|error| store_error("read query-cache state", error))?;
+        if !is_pack_name(&active_pack) || next_pack_generation < 0 {
+            return Err(crate::Error::invalid(
+                "query cache has an invalid active pack or generation",
+            ));
+        }
+        let root_pin = guard.pinned_root.try_clone()?;
+        let storage_root = root_pin.storage_root.clone();
+        let store = Self {
+            connection: PinnedConnection::read_only(connection),
+            root: guard.root.clone(),
+            root_identity: guard.root_identity.clone(),
+            storage_root,
+            pack_path: guard.root.join(active_pack),
+            next_pack_generation: next_pack_generation as u64,
+            _root_pin: root_pin,
+            _access_lock: guard.access_lock.try_clone()?,
+        };
+        let result = store.stage_output_digests(query_key)?;
+        if validate_payloads && let Some(digests) = result.as_ref() {
+            // A cache record is restorable only when every generated output
+            // still has a complete payload matching its content digest.
+            for digest in digests {
+                store.validate_object_payload(digest)?;
+            }
+        }
+        drop(store);
+
+        let postflight = fingerprint_cache_tree(&guard.pinned_root.storage_root)?;
+        reject_nonempty_wal(&postflight, &guard.database_path)?;
+        if postflight != preflight {
+            return Err(crate::Error::invalid(
+                "query cache changed during read-only stage inspection; retry after the cache writer exits",
+            ));
+        }
+        guard.validate_lexical_root()?;
+        Ok(result)
+    }
+
     /// Inspect persistent cache storage without creating, migrating or
     /// repairing it.
     ///
@@ -199,11 +416,15 @@ impl QueryStore {
                 cache_root.display()
             )));
         }
+        let root_identity = CacheRootIdentity::capture(&cache_root)?;
+        let root_pin = PinnedCacheRoot::open(&cache_root, &root_identity)?;
+        let storage_root = &root_pin.storage_root;
+        let storage_database_path = storage_root.join("queries.sqlite3");
 
-        let database_metadata = match fs::symlink_metadata(&database_path) {
+        let database_metadata = match fs::symlink_metadata(&storage_database_path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                if fs::read_dir(&cache_root)?.next().is_none() {
+                if fs::read_dir(storage_root)?.next().is_none() {
                     return Ok(empty());
                 }
                 return Err(crate::Error::invalid(format!(
@@ -223,7 +444,7 @@ impl QueryStore {
         // Measure before opening SQLite. Besides making the reported physical
         // state one coherent snapshot, this ensures an accidental sidecar
         // creation cannot be hidden from read-only regression tests.
-        let preflight = fingerprint_cache_tree(&cache_root)?;
+        let preflight = fingerprint_cache_tree(storage_root)?;
         reject_nonempty_wal(&preflight, &database_path)?;
         let root_bytes = preflight.file_bytes()?;
         let database_bytes = preflight
@@ -232,7 +453,7 @@ impl QueryStore {
         let pack_bytes = preflight.pack_bytes()?;
         let _postflight_guard = after_preflight();
 
-        let database_uri = immutable_database_uri(&database_path)?;
+        let database_uri = immutable_database_uri_pinned(&storage_database_path)?;
         let connection = Connection::open_with_flags(
             database_uri,
             OpenFlags::SQLITE_OPEN_READ_ONLY
@@ -331,7 +552,7 @@ impl QueryStore {
                 "query cache has {invalid_objects} object(s) with invalid locations"
             )));
         }
-        validate_indexed_pack_extents(&connection, &cache_root)?;
+        validate_indexed_pack_extents(&connection, storage_root)?;
 
         let stage_bindings = query_nonnegative_count(
             &connection,
@@ -378,13 +599,14 @@ impl QueryStore {
             ))
         })?;
 
-        let postflight = fingerprint_cache_tree(&cache_root)?;
+        let postflight = fingerprint_cache_tree(storage_root)?;
         reject_nonempty_wal(&postflight, &database_path)?;
         if postflight != preflight {
             return Err(crate::Error::invalid(
                 "query cache changed during read-only statistics inspection; retry after the cache writer exits",
             ));
         }
+        root_identity.validate(&cache_root)?;
         Ok(QueryStoreStatistics {
             present: true,
             cache_root,
@@ -410,10 +632,29 @@ impl QueryStore {
     pub(crate) fn open(project_manifest: &Path) -> Result<Self> {
         let project_root = project_manifest.parent().unwrap_or_else(|| Path::new("."));
         let root = project_root.join("generated/.blobray-cache");
-        fs::create_dir_all(&root)?;
+        ensure_cache_root(&root)?;
+        let root_identity = CacheRootIdentity::capture(&root)?;
+        let root_pin = PinnedCacheRoot::open(&root, &root_identity)?;
+        let storage_root = root_pin.storage_root.clone();
         let database_path = root.join("queries.sqlite3");
-        let connection = Connection::open(&database_path)
+        let storage_database_path = storage_root.join("queries.sqlite3");
+        validate_sqlite_sidecars(&storage_database_path)?;
+        let access_lock = open_cache_database(&storage_database_path)?;
+        access_lock
+            .try_lock()
+            .map_err(|error| cache_lock_error("write", &database_path, error))?;
+        let connection = Connection::open(&storage_database_path)
             .map_err(|error| store_error("open query database", error))?;
+        verify_open_file_path(&access_lock, &storage_database_path, "query cache database")?;
+        root_identity.validate(&root)?;
+        validate_sqlite_sidecars(&storage_database_path)?;
+        let connection = PinnedConnection::writer(
+            connection,
+            root.clone(),
+            root_identity.clone(),
+            storage_database_path,
+            access_lock.try_clone()?,
+        )?;
         connection
             .busy_timeout(Duration::from_secs(30))
             .map_err(|error| store_error("configure query database timeout", error))?;
@@ -439,7 +680,8 @@ impl QueryStore {
                      DROP TABLE IF EXISTS cache_state;",
                 )
                 .map_err(|error| store_error("reset obsolete query database", error))?;
-            remove_pack_files(&root)?;
+            #[cfg(target_os = "linux")]
+            remove_pack_files(&storage_root)?;
         }
         connection
             .execute_batch(
@@ -493,17 +735,52 @@ impl QueryStore {
         let next_pack_generation = u64::try_from(next_pack_generation).map_err(|_| {
             crate::Error::invalid("query cache has a negative next pack generation")
         })?;
+        if !is_pack_name(&active_pack) {
+            return Err(crate::Error::invalid(format!(
+                "query cache has invalid active pack name {active_pack:?}"
+            )));
+        }
         let mut store = Self {
             connection,
             pack_path: root.join(active_pack),
             root,
+            root_identity,
+            storage_root,
             next_pack_generation,
+            _root_pin: root_pin,
+            _access_lock: access_lock,
         };
         store.remove_unreferenced_pack_files()?;
         Ok(store)
     }
 
+    fn validate_root_identity(&self) -> Result<()> {
+        self.root_identity.validate(&self.root)?;
+        verify_open_file_path(
+            &self._access_lock,
+            &self.storage_root.join("queries.sqlite3"),
+            "query cache database",
+        )?;
+        self.root_identity.validate(&self.root)
+    }
+
+    fn active_storage_pack_path(&self) -> Result<PathBuf> {
+        let name = self
+            .pack_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| crate::Error::invalid("query cache pack has no UTF-8 file name"))?;
+        if self.pack_path.parent() != Some(self.root.as_path()) || !is_pack_name(name) {
+            return Err(crate::Error::invalid(format!(
+                "query cache has invalid active pack path {}",
+                self.pack_path.display()
+            )));
+        }
+        Ok(self.storage_root.join(name))
+    }
+
     pub(crate) fn stage_output_digests(&self, query_key: &str) -> Result<Option<Vec<String>>> {
+        self.validate_root_identity()?;
         let kind = self
             .connection
             .query_row(
@@ -532,6 +809,7 @@ impl QueryStore {
         query_key: &str,
         outputs: &[(String, String, PathBuf)],
     ) -> Result<()> {
+        self.validate_root_identity()?;
         let content_digests = outputs
             .iter()
             .map(|(_, digest, _)| digest.clone())
@@ -554,6 +832,7 @@ impl QueryStore {
         paths: &[String],
         content_digests: &[String],
     ) -> Result<()> {
+        self.validate_root_identity()?;
         if paths.len() != content_digests.len() {
             return Err(crate::Error::invalid(format!(
                 "cached stage {stage:?} has {} paths for {} output digests",
@@ -564,6 +843,49 @@ impl QueryStore {
         self.bind_stage(stage, query_key, paths, content_digests)
     }
 
+    /// Remove a stage publication only if it still names `query_key`.
+    ///
+    /// Input mutation checks use this after a post-commit validation fails.
+    /// The immutable query result is retired only when no other stage binding
+    /// owns it; pack payloads remain harmless orphans until later compaction.
+    pub(crate) fn retire_stage_binding(&mut self, stage: &str, query_key: &str) -> Result<()> {
+        self.validate_root_identity()?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|error| store_error("begin stage-binding retirement transaction", error))?;
+        let retired = transaction
+            .execute(
+                "DELETE FROM stage_bindings WHERE stage = ?1 AND query_key = ?2",
+                params![stage, query_key],
+            )
+            .map_err(|error| store_error("retire cached stage binding", error))?;
+        if retired != 0 {
+            transaction
+                .execute("DELETE FROM stage_outputs WHERE stage = ?1", [stage])
+                .map_err(|error| store_error("retire cached stage outputs", error))?;
+            let remaining_bindings = transaction
+                .query_row(
+                    "SELECT COUNT(*) FROM stage_bindings WHERE query_key = ?1",
+                    [query_key],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|error| store_error("count remaining cached stage owners", error))?;
+            if remaining_bindings == 0 {
+                transaction
+                    .execute(
+                        "DELETE FROM query_results WHERE query_key = ?1",
+                        [query_key],
+                    )
+                    .map_err(|error| store_error("retire unowned cached stage result", error))?;
+            }
+        }
+        transaction
+            .commit()
+            .map_err(|error| store_error("commit stage-binding retirement", error))?;
+        self.validate_root_identity()
+    }
+
     fn bind_stage(
         &mut self,
         stage: &str,
@@ -571,6 +893,7 @@ impl QueryStore {
         paths: &[String],
         content_digests: &[String],
     ) -> Result<()> {
+        self.validate_root_identity()?;
         let transaction = self
             .connection
             .transaction()
@@ -620,10 +943,11 @@ impl QueryStore {
         transaction
             .commit()
             .map_err(|error| store_error("commit cached stage transaction", error))?;
-        Ok(())
+        self.validate_root_identity()
     }
 
     pub(crate) fn restore_output(&self, digest: &str, destination: &Path) -> Result<()> {
+        self.validate_root_identity()?;
         let (mut pack, length) = self.open_object(digest)?;
         let parent = destination.parent().unwrap_or_else(|| Path::new("."));
         fs::create_dir_all(parent)?;
@@ -668,6 +992,25 @@ impl QueryStore {
         result
     }
 
+    fn validate_object_payload(&self, digest: &str) -> Result<()> {
+        let (mut pack, mut remaining) = self.open_object(digest)?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0_u8; 64 * 1024];
+        while remaining != 0 {
+            let requested = usize::try_from(remaining.min(buffer.len() as u64))
+                .expect("bounded cache validation read");
+            pack.read_exact(&mut buffer[..requested])?;
+            hasher.update(&buffer[..requested]);
+            remaining -= requested as u64;
+        }
+        if format!("{:x}", hasher.finalize()) != digest {
+            return Err(crate::Error::invalid(format!(
+                "query cache object {digest} failed its content digest"
+            )));
+        }
+        Ok(())
+    }
+
     /// Store one completed immutable query value and its direct query edges.
     /// Query callers compute `query_key` from the semantic revision and exact
     /// input fingerprints; scopes and profile names are not valid inputs.
@@ -679,6 +1022,7 @@ impl QueryStore {
         dependencies: &[String],
         value: &[u8],
     ) -> Result<String> {
+        self.validate_root_identity()?;
         let result_digest = sha256_hex(value);
         let mut requested_dependencies = dependencies.to_vec();
         requested_dependencies.sort();
@@ -774,10 +1118,12 @@ impl QueryStore {
         transaction
             .commit()
             .map_err(|error| store_error("commit query-result transaction", error))?;
+        self.validate_root_identity()?;
         Ok(result_digest)
     }
 
     pub(crate) fn get(&self, query_key: &str) -> Result<Option<Vec<u8>>> {
+        self.validate_root_identity()?;
         let location = self
             .connection
             .query_row(
@@ -811,6 +1157,7 @@ impl QueryStore {
                 "query cache entry {query_key:?} failed its content digest"
             )));
         }
+        self.validate_root_identity()?;
         Ok(Some(value))
     }
 
@@ -828,6 +1175,7 @@ impl QueryStore {
         facts: &[(String, Vec<u8>)],
         observe_statement: impl FnMut(usize),
     ) -> Result<()> {
+        self.validate_root_identity()?;
         // Canonicalize the complete caller batch before the first SQLite or
         // pack access. Stable key order makes statement boundaries independent
         // of worker completion order. Exact duplicates coalesce; conflicting
@@ -896,7 +1244,8 @@ impl QueryStore {
         }
         transaction
             .commit()
-            .map_err(|error| store_error("commit function-fact transaction", error))
+            .map_err(|error| store_error("commit function-fact transaction", error))?;
+        self.validate_root_identity()
     }
 
     fn preflight_function_fact_batches(
@@ -969,11 +1318,13 @@ impl QueryStore {
         if missing.is_empty() {
             return Ok(());
         }
-        let mut pack = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(&self.pack_path)?;
+        let storage_pack_path = self.active_storage_pack_path()?;
+        let mut pack = open_pack_for_append(
+            &self.root,
+            &self.root_identity,
+            &self.storage_root,
+            &self.pack_path,
+        )?;
         let mut locations = Vec::with_capacity(missing.len());
         for (digest, path) in missing {
             let mut input = File::open(&path)?;
@@ -1004,6 +1355,8 @@ impl QueryStore {
         }
         pack.flush()?;
         pack.sync_data()?;
+        verify_open_file_path(&pack, &storage_pack_path, "query cache active pack")?;
+        self.validate_root_identity()?;
         self.index_objects(locations)
     }
 
@@ -1013,6 +1366,14 @@ impl QueryStore {
     fn ensure_objects<'a>(
         &mut self,
         values: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+    ) -> Result<()> {
+        self.ensure_objects_after_pack_sync(values, || {})
+    }
+
+    fn ensure_objects_after_pack_sync<'a>(
+        &mut self,
+        values: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+        after_pack_sync: impl FnOnce(),
     ) -> Result<()> {
         let mut missing = Vec::new();
         let mut scheduled = BTreeSet::new();
@@ -1034,11 +1395,13 @@ impl QueryStore {
         if missing.is_empty() {
             return Ok(());
         }
-        let mut pack = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(&self.pack_path)?;
+        let storage_pack_path = self.active_storage_pack_path()?;
+        let mut pack = open_pack_for_append(
+            &self.root,
+            &self.root_identity,
+            &self.storage_root,
+            &self.pack_path,
+        )?;
         let mut locations = Vec::with_capacity(missing.len());
         for (digest, value) in missing {
             let raw_digest = hex_digest(&digest)?;
@@ -1051,10 +1414,14 @@ impl QueryStore {
         }
         pack.flush()?;
         pack.sync_data()?;
+        after_pack_sync();
+        verify_open_file_path(&pack, &storage_pack_path, "query cache active pack")?;
+        self.validate_root_identity()?;
         self.index_objects(locations)
     }
 
-    fn index_objects(&mut self, locations: Vec<(String, u64, u64)>) -> Result<()> {
+    fn index_objects(&mut self, locations: PackedObjectLocations) -> Result<()> {
+        self.validate_root_identity()?;
         let pack_name = self
             .pack_path
             .file_name()
@@ -1081,7 +1448,7 @@ impl QueryStore {
         transaction
             .commit()
             .map_err(|error| store_error("commit cached objects", error))?;
-        Ok(())
+        self.validate_root_identity()
     }
 
     fn read_object(&self, digest: &str) -> Result<Vec<u8>> {
@@ -1097,6 +1464,7 @@ impl QueryStore {
     }
 
     fn open_object(&self, digest: &str) -> Result<(File, u64)> {
+        self.validate_root_identity()?;
         let (pack_name, offset, length) = self
             .connection
             .query_row(
@@ -1121,7 +1489,41 @@ impl QueryStore {
         let length = u64::try_from(length).map_err(|_| {
             crate::Error::invalid(format!("query cache object {digest} has a negative length"))
         })?;
-        let mut pack = File::open(self.root.join(pack_name))?;
+        if !is_pack_name(&pack_name) {
+            return Err(crate::Error::invalid(format!(
+                "query cache object {digest} references invalid pack name {pack_name:?}"
+            )));
+        }
+        let pack_path = self.root.join(&pack_name);
+        let storage_pack_path = self.storage_root.join(&pack_name);
+        let metadata = fs::symlink_metadata(&storage_pack_path).map_err(|error| {
+            crate::Error::invalid(format!(
+                "cannot inspect query cache pack {}: {error}",
+                pack_path.display()
+            ))
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(crate::Error::invalid(format!(
+                "query cache indexed pack {} is not a regular file",
+                pack_path.display()
+            )));
+        }
+        let required = offset
+            .checked_add(PACK_HEADER_BYTES)
+            .and_then(|end| end.checked_add(length))
+            .ok_or_else(|| {
+                crate::Error::invalid(format!(
+                    "query cache object {digest} has an overflowing pack extent"
+                ))
+            })?;
+        if metadata.len() < required {
+            return Err(crate::Error::invalid(format!(
+                "query cache pack {} has {} bytes but object {digest} requires {required}",
+                pack_path.display(),
+                metadata.len()
+            )));
+        }
+        let mut pack = open_cache_file_read_only(&storage_pack_path)?;
         pack.seek(SeekFrom::Start(offset))?;
         let mut magic = [0_u8; 8];
         let mut stored_digest = [0_u8; 32];
@@ -1141,14 +1543,21 @@ impl QueryStore {
         Ok((pack, length))
     }
 
+    #[cfg(not(target_os = "linux"))]
     fn compact_if_needed(&mut self) -> Result<()> {
-        let total_pack_bytes = pack_files(&self.root)?
+        self.validate_root_identity()
+    }
+
+    #[cfg(target_os = "linux")]
+    fn compact_if_needed(&mut self) -> Result<()> {
+        self.validate_root_identity()?;
+        let total_pack_bytes = pack_files(&self.storage_root)?
             .into_iter()
             .try_fold(0_u64, |total, path| -> Result<u64> {
                 Ok(total.saturating_add(fs::metadata(path)?.len()))
             })?;
         if total_pack_bytes < COMPACT_MIN_PACK_BYTES {
-            return Ok(());
+            return self.validate_root_identity();
         }
         let live_record_bytes = self
             .connection
@@ -1171,7 +1580,7 @@ impl QueryStore {
         if reclaimable < COMPACT_MIN_RECLAIMABLE_BYTES
             || reclaimable.saturating_mul(4) < total_pack_bytes
         {
-            return Ok(());
+            return self.validate_root_identity();
         }
         tracing::info!(
             total_pack_bytes,
@@ -1186,7 +1595,14 @@ impl QueryStore {
     /// atomically redirect SQLite, then remove packs no longer referenced by
     /// the index. A crash before the transaction leaves an orphan new pack;
     /// a crash after it leaves an orphan old pack. Both are removed on open.
+    #[cfg(not(target_os = "linux"))]
     fn compact(&mut self) -> Result<()> {
+        self.validate_root_identity()
+    }
+
+    #[cfg(target_os = "linux")]
+    fn compact(&mut self) -> Result<()> {
+        self.validate_root_identity()?;
         let live = {
             let mut statement = self
                 .connection
@@ -1213,13 +1629,13 @@ impl QueryStore {
         };
 
         let pack_name = format!("objects-{}.pack", self.next_pack_generation);
-        let destination = self.root.join(&pack_name);
-        let temporary = self.root.join(format!(
+        let destination = self.storage_root.join(&pack_name);
+        let temporary = self.storage_root.join(format!(
             ".{pack_name}.compact-{}-{}",
             std::process::id(),
             NEXT_RESTORE_ID.fetch_add(1, Ordering::Relaxed)
         ));
-        let write_result = (|| -> Result<Vec<(String, u64, u64)>> {
+        let write_result = (|| -> Result<(PackedObjectLocations, File)> {
             let mut output = OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -1251,16 +1667,18 @@ impl QueryStore {
             }
             output.flush()?;
             output.sync_data()?;
-            Ok(locations)
+            Ok((locations, output))
         })();
-        let locations = match write_result {
-            Ok(locations) => locations,
+        let (locations, output) = match write_result {
+            Ok(written) => written,
             Err(error) => {
                 let _ = fs::remove_file(&temporary);
                 return Err(error);
             }
         };
         fs::rename(&temporary, &destination)?;
+        verify_open_file_path(&output, &destination, "query cache compacted pack")?;
+        self.validate_root_identity()?;
 
         let transaction = self
             .connection
@@ -1306,12 +1724,19 @@ impl QueryStore {
             .commit()
             .map_err(|error| store_error("commit query-cache compaction", error))?;
 
-        self.pack_path = destination;
+        self.pack_path = self.root.join(&pack_name);
         self.next_pack_generation = next_generation;
         self.remove_unreferenced_pack_files()
     }
 
+    #[cfg(not(target_os = "linux"))]
     fn remove_unreferenced_pack_files(&mut self) -> Result<()> {
+        self.validate_root_identity()
+    }
+
+    #[cfg(target_os = "linux")]
+    fn remove_unreferenced_pack_files(&mut self) -> Result<()> {
+        self.validate_root_identity()?;
         let mut referenced = BTreeSet::new();
         referenced.insert(
             self.pack_path
@@ -1333,7 +1758,7 @@ impl QueryStore {
             );
         }
         drop(statement);
-        for path in pack_files(&self.root)? {
+        for path in pack_files(&self.storage_root)? {
             let name = path
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -1344,7 +1769,7 @@ impl QueryStore {
                 fs::remove_file(path)?;
             }
         }
-        Ok(())
+        self.validate_root_identity()
     }
 
     fn load_function_facts_batched(
@@ -1352,6 +1777,7 @@ impl QueryStore {
         keys: &[String],
         mut observe_statement: impl FnMut(usize),
     ) -> Result<Vec<(String, Vec<u8>)>> {
+        self.validate_root_identity()?;
         let full_key_count = keys.len() / FUNCTION_FACT_LOOKUP_BATCH * FUNCTION_FACT_LOOKUP_BATCH;
         let (full_batches, tail) = keys.split_at(full_key_count);
         let mut output = Vec::new();
@@ -1376,6 +1802,7 @@ impl QueryStore {
             observe_statement(tail.len());
             self.append_function_fact_batch(&mut statement, tail, &mut output)?;
         }
+        self.validate_root_identity()?;
         Ok(output)
     }
 
@@ -1622,8 +2049,15 @@ fn reject_nonempty_wal(fingerprint: &CacheTreeFingerprint, database_path: &Path)
     Ok(())
 }
 
-fn immutable_database_uri(database: &Path) -> Result<String> {
+fn immutable_database_uri_pinned(database: &Path) -> Result<String> {
+    #[cfg(target_os = "linux")]
+    let database = database.to_owned();
+    #[cfg(not(target_os = "linux"))]
     let database = fs::canonicalize(database)?;
+    immutable_database_uri_for_path(&database)
+}
+
+fn immutable_database_uri_for_path(database: &Path) -> Result<String> {
     let database = database.to_str().ok_or_else(|| {
         crate::Error::invalid(format!(
             "query cache database path {} is not UTF-8",
@@ -1730,6 +2164,386 @@ fn is_pack_name(name: &str) -> bool {
     !generation.is_empty() && generation.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+fn ensure_cache_root(root: &Path) -> Result<()> {
+    let generated = root
+        .parent()
+        .ok_or_else(|| crate::Error::invalid("query cache root has no parent directory"))?;
+    ensure_regular_directory(generated, "query cache parent")?;
+    ensure_regular_directory(root, "query cache root")
+}
+
+fn validate_absent_cache_root_parent(root: &Path) -> Result<()> {
+    let generated = root
+        .parent()
+        .ok_or_else(|| crate::Error::invalid("query cache root has no parent directory"))?;
+    match fs::symlink_metadata(generated) {
+        Ok(_) => validate_existing_directory(generated, "query cache parent"),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let project_root = generated.parent().ok_or_else(|| {
+                crate::Error::invalid("query cache parent has no project directory")
+            })?;
+            validate_existing_directory(project_root, "query cache project root")
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn validate_cold_cache_root(storage_root: &Path) -> Result<()> {
+    validate_sqlite_sidecars(&storage_root.join("queries.sqlite3"))?;
+    let _ = fingerprint_cache_tree(storage_root)?;
+    let _ = pack_files(storage_root)?;
+    Ok(())
+}
+
+impl CacheRootIdentity {
+    fn capture(root: &Path) -> Result<Self> {
+        let parent = root
+            .parent()
+            .ok_or_else(|| crate::Error::invalid("query cache root has no parent directory"))?;
+        Ok(Self {
+            parent: DirectoryIdentity::capture(parent, "query cache parent")?,
+            root: DirectoryIdentity::capture(root, "query cache root")?,
+        })
+    }
+
+    fn validate(&self, root: &Path) -> Result<()> {
+        let current = Self::capture(root)?;
+        if current != *self {
+            return Err(crate::Error::invalid(format!(
+                "query cache root {} was replaced while the store was open",
+                root.display()
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl PlanReadGuard {
+    fn validate_lexical_root(&self) -> Result<()> {
+        self.root_identity.validate(&self.root)?;
+        verify_open_file_path(
+            &self.access_lock,
+            &self.pinned_root.storage_root.join("queries.sqlite3"),
+            "query cache database",
+        )?;
+        self.root_identity.validate(&self.root)
+    }
+}
+
+impl PinnedCacheRoot {
+    fn open(root: &Path, identity: &CacheRootIdentity) -> Result<Self> {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
+
+            let mut options = OpenOptions::new();
+            options
+                .read(true)
+                .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC);
+            let directory = options.open(root)?;
+            let metadata = directory.metadata()?;
+            use std::os::unix::fs::MetadataExt;
+            if !metadata.is_dir()
+                || metadata.dev() != identity.root.device
+                || metadata.ino() != identity.root.inode
+            {
+                return Err(crate::Error::invalid(format!(
+                    "query cache root {} changed while it was being pinned",
+                    root.display()
+                )));
+            }
+            identity.validate(root)?;
+            let storage_root = PathBuf::from(format!("/proc/self/fd/{}/.", directory.as_raw_fd()));
+            let pinned_metadata = fs::metadata(&storage_root)?;
+            if pinned_metadata.dev() != metadata.dev() || pinned_metadata.ino() != metadata.ino() {
+                return Err(crate::Error::invalid(format!(
+                    "query cache root {} could not be pinned through /proc/self/fd",
+                    root.display()
+                )));
+            }
+            Ok(Self {
+                storage_root,
+                directory,
+            })
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            identity.validate(root)?;
+            Ok(Self {
+                storage_root: root.to_owned(),
+            })
+        }
+    }
+
+    fn try_clone(&self) -> Result<Self> {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+
+            let directory = self.directory.try_clone()?;
+            let storage_root = PathBuf::from(format!("/proc/self/fd/{}/.", directory.as_raw_fd()));
+            Ok(Self {
+                storage_root,
+                directory,
+            })
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Ok(Self {
+                storage_root: self.storage_root.clone(),
+            })
+        }
+    }
+}
+
+impl PinnedConnection {
+    fn read_only(connection: Connection) -> Self {
+        Self {
+            connection: Some(connection),
+            cleanup: None,
+        }
+    }
+
+    fn writer(
+        connection: Connection,
+        root: PathBuf,
+        root_identity: CacheRootIdentity,
+        storage_database_path: PathBuf,
+        database_file: File,
+    ) -> Result<Self> {
+        connection
+            .set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)
+            .map_err(|error| store_error("disable SQLite checkpoint-on-close", error))?;
+        Ok(Self {
+            connection: Some(connection),
+            cleanup: Some(PinnedConnectionCleanup {
+                root,
+                root_identity,
+                storage_database_path,
+                database_file,
+            }),
+        })
+    }
+}
+
+impl Deref for PinnedConnection {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        self.connection
+            .as_ref()
+            .expect("pinned SQLite connection is available before drop")
+    }
+}
+
+impl DerefMut for PinnedConnection {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.connection
+            .as_mut()
+            .expect("pinned SQLite connection is available before drop")
+    }
+}
+
+impl Drop for PinnedConnection {
+    fn drop(&mut self) {
+        let Some(connection) = self.connection.take() else {
+            return;
+        };
+        let cleanup = self.cleanup.as_ref();
+        let storage_binding_is_current = cleanup.is_some_and(|cleanup| {
+            cleanup.root_identity.validate(&cleanup.root).is_ok()
+                && verify_open_file_path(
+                    &cleanup.database_file,
+                    &cleanup.storage_database_path,
+                    "query cache database",
+                )
+                .is_ok()
+        });
+        let checkpointed = !storage_binding_is_current
+            || connection
+                .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                .is_ok();
+        let closed = match connection.close() {
+            Ok(()) => true,
+            Err((connection, _)) => {
+                // NO_CKPT_ON_CLOSE remains set on this fallback drop.
+                drop(connection);
+                false
+            }
+        };
+        if !storage_binding_is_current || !checkpointed || !closed {
+            return;
+        }
+        let cleanup = cleanup.expect("current storage binding requires writer cleanup state");
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let path = sqlite_sidecar_path(&cleanup.storage_database_path, suffix);
+            match fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.is_file() || metadata.file_type().is_symlink() => {
+                    let _ = fs::remove_file(path);
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => {}
+            }
+        }
+    }
+}
+
+impl DirectoryIdentity {
+    fn capture(path: &Path, kind: &str) -> Result<Self> {
+        let metadata = fs::symlink_metadata(path)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(crate::Error::invalid(format!(
+                "{kind} {} is not a regular directory",
+                path.display()
+            )));
+        }
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        Ok(Self {
+            canonical: fs::canonicalize(path)?,
+            #[cfg(unix)]
+            device: metadata.dev(),
+            #[cfg(unix)]
+            inode: metadata.ino(),
+            #[cfg(not(unix))]
+            created: metadata.created().ok(),
+        })
+    }
+}
+
+fn ensure_regular_directory(path: &Path, kind: &str) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(crate::Error::invalid(format!(
+                    "{kind} {} is not a regular directory",
+                    path.display()
+                )));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir(path)?;
+        }
+        Err(error) => return Err(error.into()),
+    }
+    validate_existing_directory(path, kind)
+}
+
+fn validate_existing_directory(path: &Path, kind: &str) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(crate::Error::invalid(format!(
+            "{kind} {} is not a regular directory",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn open_cache_database(path: &Path) -> Result<File> {
+    reject_existing_symlink_or_non_file(path, "query cache database")?;
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    set_no_follow(&mut options);
+    let file = options.open(path)?;
+    verify_open_file_path(&file, path, "query cache database")?;
+    Ok(file)
+}
+
+fn open_cache_database_read_only(path: &Path) -> Result<File> {
+    open_cache_file_read_only(path)
+}
+
+fn open_cache_file_read_only(path: &Path) -> Result<File> {
+    reject_existing_symlink_or_non_file(path, "query cache file")?;
+    let mut options = OpenOptions::new();
+    options.read(true);
+    set_no_follow(&mut options);
+    let file = options.open(path)?;
+    verify_open_file_path(&file, path, "query cache file")?;
+    Ok(file)
+}
+
+fn validate_sqlite_sidecars(database: &Path) -> Result<()> {
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let path = sqlite_sidecar_path(database, suffix);
+        reject_existing_symlink_or_non_file(&path, "query cache SQLite sidecar")?;
+    }
+    Ok(())
+}
+
+fn open_pack_for_append(
+    root: &Path,
+    identity: &CacheRootIdentity,
+    storage_root: &Path,
+    path: &Path,
+) -> Result<File> {
+    identity.validate(root)?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| crate::Error::invalid("query cache pack has no UTF-8 file name"))?;
+    if path.parent() != Some(root) || !is_pack_name(name) {
+        return Err(crate::Error::invalid(format!(
+            "query cache has invalid active pack path {}",
+            path.display()
+        )));
+    }
+    let storage_path = storage_root.join(name);
+    reject_existing_symlink_or_non_file(&storage_path, "query cache active pack")?;
+    let mut options = OpenOptions::new();
+    options.create(true).append(true).read(true);
+    set_no_follow(&mut options);
+    let file = options.open(&storage_path)?;
+    verify_open_file_path(&file, &storage_path, "query cache active pack")?;
+    identity.validate(root)?;
+    Ok(file)
+}
+
+fn reject_existing_symlink_or_non_file(path: &Path, kind: &str) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => Err(
+            crate::Error::invalid(format!("{kind} {} is not a regular file", path.display())),
+        ),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn verify_open_file_path(file: &File, path: &Path, kind: &str) -> Result<()> {
+    let opened = file.metadata()?;
+    let current = fs::symlink_metadata(path)?;
+    if !opened.is_file() || current.file_type().is_symlink() || !current.is_file() {
+        return Err(crate::Error::invalid(format!(
+            "{kind} {} is not a regular file",
+            path.display()
+        )));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if opened.dev() != current.dev() || opened.ino() != current.ino() {
+            return Err(crate::Error::invalid(format!(
+                "{kind} {} changed while it was being opened",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn set_no_follow(options: &mut OpenOptions) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    }
+    #[cfg(not(unix))]
+    let _ = options;
+}
+
 fn pack_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     for entry in fs::read_dir(root)? {
@@ -1755,6 +2569,7 @@ fn pack_files(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
+#[cfg(target_os = "linux")]
 fn remove_pack_files(root: &Path) -> Result<()> {
     for path in pack_files(root)? {
         fs::remove_file(path)?;
@@ -1785,6 +2600,19 @@ fn hex_digest(value: &str) -> Result<[u8; 32]> {
     Ok(output)
 }
 
+fn cache_lock_error(access: &str, database: &Path, error: std::fs::TryLockError) -> crate::Error {
+    match error {
+        std::fs::TryLockError::WouldBlock => crate::Error::invalid(format!(
+            "query cache database {} has an active writer or reader; cannot acquire {access} snapshot, retry after the other Blobray process exits",
+            database.display()
+        )),
+        std::fs::TryLockError::Error(error) => crate::Error::invalid(format!(
+            "cannot lock query cache database {} for {access}: {error}",
+            database.display()
+        )),
+    }
+}
+
 fn store_error(context: &str, error: rusqlite::Error) -> crate::Error {
     crate::Error::invalid(format!("{context}: {error}"))
 }
@@ -1808,6 +2636,17 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, value).unwrap();
         (path.to_string_lossy().into_owned(), sha256_hex(value), path)
+    }
+
+    fn read_only_stage_digests(
+        manifest: &Path,
+        query_key: &str,
+        validate_payloads: bool,
+    ) -> Result<Option<Vec<String>>> {
+        let Some(guard) = QueryStore::plan_read_guard(manifest)? else {
+            return Ok(None);
+        };
+        QueryStore::stage_output_digests_read_only(&guard, query_key, validate_payloads)
     }
 
     fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<(u64, String)>)> {
@@ -1868,6 +2707,241 @@ mod tests {
         );
         assert_eq!(snapshot_tree(project_root), before);
         assert!(!project_root.join("generated").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plan_guard_rejects_a_cold_root_with_a_symlinked_sqlite_sidecar() {
+        use std::os::unix::fs::symlink;
+
+        let manifest = manifest("plan-cold-symlink-sidecar");
+        let project_root = manifest.parent().unwrap();
+        let cache_root = project_root.join("generated/.blobray-cache");
+        let external = project_root.join("external-wal");
+        fs::create_dir_all(&cache_root).unwrap();
+        fs::write(&external, b"caller-owned").unwrap();
+        symlink(&external, cache_root.join("queries.sqlite3-wal")).unwrap();
+
+        let error = QueryStore::plan_read_guard(&manifest).unwrap_err();
+
+        assert!(error.to_string().contains("SQLite sidecar"));
+        assert!(error.to_string().contains("not a regular file"));
+        assert_eq!(fs::read(&external).unwrap(), b"caller-owned");
+        assert!(!cache_root.join("queries.sqlite3").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plan_guard_rejects_hostile_entries_in_a_cold_cache_root() {
+        use std::{os::unix::fs::symlink, os::unix::net::UnixListener};
+
+        let pack_manifest = manifest("plan-cold-symlink-pack");
+        let pack_project = pack_manifest.parent().unwrap();
+        let pack_root = pack_project.join("generated/.blobray-cache");
+        let external_pack = pack_project.join("external.pack");
+        fs::create_dir_all(&pack_root).unwrap();
+        fs::write(&external_pack, b"caller-owned").unwrap();
+        symlink(&external_pack, pack_root.join("objects-0.pack")).unwrap();
+
+        let pack_error = QueryStore::plan_read_guard(&pack_manifest).unwrap_err();
+        assert!(pack_error.to_string().contains("symbolic link"));
+        assert_eq!(fs::read(&external_pack).unwrap(), b"caller-owned");
+        assert!(!pack_root.join("queries.sqlite3").exists());
+
+        let socket_manifest = manifest("plan-cold-unsupported-entry");
+        let socket_root = socket_manifest
+            .parent()
+            .unwrap()
+            .join("generated/.blobray-cache");
+        fs::create_dir_all(&socket_root).unwrap();
+        let socket = socket_root.join("hostile.sock");
+        let _listener = UnixListener::bind(&socket).unwrap();
+
+        let socket_error = QueryStore::plan_read_guard(&socket_manifest).unwrap_err();
+        assert!(
+            socket_error
+                .to_string()
+                .contains("unsupported filesystem entry")
+        );
+        assert!(!socket_root.join("queries.sqlite3").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plan_guard_rejects_invalid_generated_parent_before_reporting_absent() {
+        use std::os::unix::fs::symlink;
+
+        let symlink_manifest = manifest("plan-absent-generated-symlink");
+        let symlink_project = symlink_manifest.parent().unwrap();
+        let external = symlink_project.join("external-generated");
+        fs::create_dir(&external).unwrap();
+        symlink(&external, symlink_project.join("generated")).unwrap();
+
+        let symlink_error = QueryStore::plan_read_guard(&symlink_manifest).unwrap_err();
+        assert!(symlink_error.to_string().contains("query cache parent"));
+        assert!(
+            symlink_error
+                .to_string()
+                .contains("not a regular directory")
+        );
+        assert!(fs::read_dir(&external).unwrap().next().is_none());
+
+        let file_manifest = manifest("plan-absent-generated-file");
+        let file_project = file_manifest.parent().unwrap();
+        let generated = file_project.join("generated");
+        fs::write(&generated, b"caller-owned").unwrap();
+
+        let file_error = QueryStore::plan_read_guard(&file_manifest).unwrap_err();
+        assert!(file_error.to_string().contains("query cache parent"));
+        assert!(file_error.to_string().contains("not a regular directory"));
+        assert_eq!(fs::read(&generated).unwrap(), b"caller-owned");
+    }
+
+    #[test]
+    fn cache_lifetime_lock_serializes_writers_and_plan_snapshots() {
+        let manifest = manifest("lifetime-lock");
+        let writer = QueryStore::open(&manifest).unwrap();
+
+        let second_writer = QueryStore::open(&manifest)
+            .err()
+            .expect("second writer must be rejected");
+        assert!(
+            second_writer
+                .to_string()
+                .contains("active writer or reader")
+        );
+        let reader = QueryStore::plan_read_guard(&manifest).unwrap_err();
+        assert!(reader.to_string().contains("active writer or reader"));
+        drop(writer);
+
+        let snapshot = QueryStore::plan_read_guard(&manifest)
+            .unwrap()
+            .expect("initialized cache snapshot");
+        let blocked_writer = QueryStore::open(&manifest)
+            .err()
+            .expect("writer must wait for the plan snapshot");
+        assert!(
+            blocked_writer
+                .to_string()
+                .contains("active writer or reader")
+        );
+        drop(snapshot);
+        let reopened = QueryStore::open(&manifest).unwrap();
+        drop(reopened);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn plan_guard_fails_closed_after_cache_root_generation_replacement() {
+        let manifest = manifest("plan-pinned-generation");
+        let project_root = manifest.parent().unwrap();
+        let cache_root = project_root.join("generated/.blobray-cache");
+        let retired_root = project_root.join("generated/.blobray-cache-generation-a");
+        let generation_a_digest = {
+            let mut writer = QueryStore::open(&manifest).unwrap();
+            let cached = output(&manifest, "generation-a/output.json", b"generation a");
+            let digest = cached.1.clone();
+            writer
+                .record_stage("symbol-inventory", "stage-signature", &[cached])
+                .unwrap();
+            digest
+        };
+        let guard = QueryStore::plan_read_guard(&manifest)
+            .unwrap()
+            .expect("generation A has a database");
+        assert_eq!(guard.root, cache_root);
+        assert!(guard.pinned_root.storage_root.starts_with("/proc/self/fd"));
+        assert_eq!(
+            QueryStore::stage_output_digests_read_only(&guard, "stage-signature", false,).unwrap(),
+            Some(vec![generation_a_digest])
+        );
+
+        fs::rename(&cache_root, &retired_root).unwrap();
+        {
+            let mut writer = QueryStore::open(&manifest).unwrap();
+            let cached = output(&manifest, "generation-b/output.json", b"generation b");
+            writer
+                .record_stage("symbol-inventory", "stage-signature", &[cached])
+                .unwrap();
+        }
+        let generation_a_before = snapshot_tree(&retired_root);
+        let generation_b_before = snapshot_tree(&cache_root);
+
+        let error = QueryStore::stage_output_digests_read_only(&guard, "stage-signature", true)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("was replaced"));
+        assert_eq!(snapshot_tree(&retired_root), generation_a_before);
+        assert_eq!(snapshot_tree(&cache_root), generation_b_before);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn replaced_writer_never_mutates_or_cleans_the_new_generation() {
+        let manifest = manifest("writer-pinned-generation");
+        let project_root = manifest.parent().unwrap();
+        let cache_root = project_root.join("generated/.blobray-cache");
+        let retired_root = project_root.join("generated/.blobray-cache-generation-a");
+        let mut writer = QueryStore::open(&manifest).unwrap();
+        writer
+            .put(
+                "generation-a",
+                "function",
+                "inputs",
+                &[],
+                &vec![0x31; INLINE_VALUE_LIMIT + 1],
+            )
+            .unwrap();
+        assert_eq!(writer.root, cache_root);
+        assert_eq!(writer.pack_path.parent(), Some(cache_root.as_path()));
+
+        fs::rename(&cache_root, &retired_root).unwrap();
+        {
+            let mut generation_b = QueryStore::open(&manifest).unwrap();
+            generation_b
+                .put(
+                    "generation-b",
+                    "function",
+                    "inputs",
+                    &[],
+                    &vec![0x42; INLINE_VALUE_LIMIT + 1],
+                )
+                .unwrap();
+        }
+        fs::write(
+            cache_root.join("objects-999.pack"),
+            b"generation-b sentinel",
+        )
+        .unwrap();
+        let generation_b_before = snapshot_tree(&cache_root);
+
+        let put_error = writer
+            .put("late", "function", "inputs", &[], b"late")
+            .unwrap_err();
+        assert!(put_error.to_string().contains("was replaced"));
+        assert!(
+            writer
+                .compact()
+                .unwrap_err()
+                .to_string()
+                .contains("was replaced")
+        );
+        assert!(
+            writer
+                .remove_unreferenced_pack_files()
+                .unwrap_err()
+                .to_string()
+                .contains("was replaced")
+        );
+        assert_eq!(snapshot_tree(&cache_root), generation_b_before);
+
+        drop(writer);
+
+        assert_eq!(snapshot_tree(&cache_root), generation_b_before);
+        assert_eq!(
+            fs::read(cache_root.join("objects-999.pack")).unwrap(),
+            b"generation-b sentinel"
+        );
     }
 
     #[test]
@@ -2176,6 +3250,254 @@ mod tests {
     }
 
     #[test]
+    fn pack_replacement_after_fsync_is_rejected_before_sqlite_indexing() {
+        let manifest = manifest("pack-replaced-before-index");
+        let mut store = QueryStore::open(&manifest).unwrap();
+        let value = vec![0x5a; INLINE_VALUE_LIMIT + 1];
+        let digest = sha256_hex(&value);
+        let active_pack = store.pack_path.clone();
+        let detached_pack = active_pack.with_file_name("detached-objects.pack");
+
+        let error = store
+            .ensure_objects_after_pack_sync(
+                std::iter::once((digest.as_str(), value.as_slice())),
+                || {
+                    fs::rename(&active_pack, &detached_pack).unwrap();
+                    fs::write(&active_pack, b"replacement pack").unwrap();
+                },
+            )
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("changed while it was being opened")
+        );
+        assert_eq!(fs::read(&active_pack).unwrap(), b"replacement pack");
+        assert!(fs::metadata(&detached_pack).unwrap().len() > PACK_HEADER_BYTES);
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM objects WHERE digest = ?1",
+                    [&digest],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn writer_revalidates_the_pinned_database_binding_before_operations_and_drop() {
+        let manifest = manifest("database-replaced-after-open");
+        let project_root = manifest.parent().unwrap();
+        let database = project_root.join("generated/.blobray-cache/queries.sqlite3");
+        let detached_database = project_root.join("detached-queries.sqlite3");
+        let mut store = QueryStore::open(&manifest).unwrap();
+        fs::rename(&database, &detached_database).unwrap();
+        fs::write(&database, b"replacement database").unwrap();
+
+        let error = store
+            .put("late", "function", "inputs", &[], b"late value")
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("changed while it was being opened")
+        );
+        assert_eq!(fs::read(&database).unwrap(), b"replacement database");
+        drop(store);
+        assert_eq!(fs::read(&database).unwrap(), b"replacement database");
+    }
+
+    #[test]
+    fn stage_plan_treats_an_obsolete_schema_as_a_cold_cache_without_resetting_it() {
+        let manifest = manifest("stage-plan-obsolete-schema");
+        let project_root = manifest.parent().unwrap();
+        {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            let cached = output(&manifest, "generated/output.json", b"cached output");
+            store
+                .record_stage("symbol-inventory", "stage-signature", &[cached])
+                .unwrap();
+            store
+                .connection
+                .execute_batch("PRAGMA user_version=99;")
+                .unwrap();
+        }
+        let before = snapshot_tree(project_root);
+
+        let result = read_only_stage_digests(&manifest, "stage-signature", false).unwrap();
+
+        assert_eq!(result, None);
+        assert_eq!(snapshot_tree(project_root), before);
+    }
+
+    #[test]
+    fn stage_plan_hashes_the_complete_cached_output_payload_read_only() {
+        let manifest = manifest("stage-plan-corrupt-payload");
+        let project_root = manifest.parent().unwrap();
+        let (pack_path, payload_offset) = {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            let cached = output(&manifest, "generated/output.json", b"cached output");
+            let digest = cached.1.clone();
+            store
+                .record_stage("symbol-inventory", "stage-signature", &[cached])
+                .unwrap();
+            let offset = store
+                .connection
+                .query_row(
+                    "SELECT pack_offset FROM objects WHERE digest = ?1",
+                    [&digest],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap();
+            (
+                store.pack_path.clone(),
+                u64::try_from(offset).unwrap() + PACK_HEADER_BYTES,
+            )
+        };
+        let mut pack = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(pack_path)
+            .unwrap();
+        pack.seek(SeekFrom::Start(payload_offset)).unwrap();
+        let mut byte = [0_u8; 1];
+        pack.read_exact(&mut byte).unwrap();
+        byte[0] ^= 0xff;
+        pack.seek(SeekFrom::Start(payload_offset)).unwrap();
+        pack.write_all(&byte).unwrap();
+        pack.sync_all().unwrap();
+        drop(pack);
+        let before = snapshot_tree(project_root);
+
+        let error = read_only_stage_digests(&manifest, "stage-signature", true).unwrap_err();
+
+        assert!(error.to_string().contains("failed its content digest"));
+        assert_eq!(snapshot_tree(project_root), before);
+    }
+
+    #[test]
+    fn cached_object_pack_names_cannot_escape_the_cache_root() {
+        let manifest = manifest("object-pack-path");
+        let project_root = manifest.parent().unwrap();
+        {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            let cached = output(&manifest, "generated/output.json", b"cached output");
+            store
+                .record_stage("symbol-inventory", "stage-signature", &[cached])
+                .unwrap();
+            store
+                .connection
+                .execute("UPDATE objects SET pack_name = '../outside.pack'", [])
+                .unwrap();
+        }
+        let before = snapshot_tree(project_root);
+
+        let error = read_only_stage_digests(&manifest, "stage-signature", true).unwrap_err();
+
+        assert!(error.to_string().contains("invalid pack name"));
+        assert_eq!(snapshot_tree(project_root), before);
+    }
+
+    #[test]
+    fn writer_rejects_an_active_pack_name_outside_the_cache_root() {
+        let manifest = manifest("active-pack-path");
+        let project_root = manifest.parent().unwrap();
+        let outside = project_root.join("outside.pack");
+        fs::write(&outside, b"caller-owned").unwrap();
+        {
+            let store = QueryStore::open(&manifest).unwrap();
+            store
+                .connection
+                .execute(
+                    "UPDATE cache_state SET active_pack = '../outside.pack' WHERE singleton = 1",
+                    [],
+                )
+                .unwrap();
+        }
+
+        let error = QueryStore::open(&manifest)
+            .err()
+            .expect("invalid active pack must fail writer open");
+
+        assert!(error.to_string().contains("invalid active pack name"));
+        assert_eq!(fs::read(&outside).unwrap(), b"caller-owned");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writer_rejects_symlinked_cache_roots_databases_and_active_packs() {
+        use std::os::unix::fs::symlink;
+
+        let root_manifest = manifest("writer-root-symlink");
+        let root_project = root_manifest.parent().unwrap();
+        let generated = root_project.join("generated");
+        let external_root = root_project.join("external-cache");
+        fs::create_dir_all(&generated).unwrap();
+        fs::create_dir_all(&external_root).unwrap();
+        symlink(&external_root, generated.join(".blobray-cache")).unwrap();
+        let error = QueryStore::open(&root_manifest)
+            .err()
+            .expect("symlinked cache root must fail writer open");
+        assert!(error.to_string().contains("not a regular directory"));
+        assert!(fs::read_dir(&external_root).unwrap().next().is_none());
+
+        let database_manifest = manifest("writer-database-symlink");
+        {
+            let _store = QueryStore::open(&database_manifest).unwrap();
+        }
+        let database_project = database_manifest.parent().unwrap();
+        let database = database_project.join("generated/.blobray-cache/queries.sqlite3");
+        let external_database = database_project.join("external.sqlite3");
+        fs::rename(&database, &external_database).unwrap();
+        symlink(&external_database, &database).unwrap();
+        let error = QueryStore::open(&database_manifest)
+            .err()
+            .expect("symlinked database must fail writer open");
+        assert!(error.to_string().contains("not a regular file"));
+
+        let sidecar_manifest = manifest("writer-sidecar-symlink");
+        {
+            let _store = QueryStore::open(&sidecar_manifest).unwrap();
+        }
+        let sidecar_project = sidecar_manifest.parent().unwrap();
+        let sidecar_database = sidecar_project.join("generated/.blobray-cache/queries.sqlite3");
+        let external_sidecar = sidecar_project.join("external-wal");
+        fs::write(&external_sidecar, b"caller-owned").unwrap();
+        symlink(
+            &external_sidecar,
+            sqlite_sidecar_path(&sidecar_database, "-wal"),
+        )
+        .unwrap();
+        let error = QueryStore::open(&sidecar_manifest)
+            .err()
+            .expect("symlinked SQLite sidecar must fail writer open");
+        assert!(error.to_string().contains("SQLite sidecar"));
+        assert_eq!(fs::read(&external_sidecar).unwrap(), b"caller-owned");
+
+        let pack_manifest = manifest("writer-pack-symlink");
+        let mut store = QueryStore::open(&pack_manifest).unwrap();
+        let external_pack = pack_manifest.parent().unwrap().join("external.pack");
+        fs::write(&external_pack, b"caller-owned").unwrap();
+        symlink(&external_pack, &store.pack_path).unwrap();
+        let error = store
+            .put(
+                "large",
+                "function",
+                "inputs",
+                &[],
+                &vec![0x5a; INLINE_VALUE_LIMIT + 1],
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("not a regular file"));
+        assert_eq!(fs::read(&external_pack).unwrap(), b"caller-owned");
+    }
+
+    #[test]
     fn stage_binding_is_replaced_without_retaining_an_old_owner() {
         let manifest = manifest("stage");
         let mut store = QueryStore::open(&manifest).unwrap();
@@ -2215,6 +3537,88 @@ mod tests {
         assert_eq!(
             store.stage_output_digests("shared-query").unwrap(),
             Some(vec![sha256_hex(b"same-function")])
+        );
+    }
+
+    #[test]
+    fn stage_binding_retirement_is_conditional_and_preserves_shared_owners() {
+        let manifest = manifest("retire-shared-stage");
+        let mut store = QueryStore::open(&manifest).unwrap();
+        let focused = output(&manifest, "focused/functions.jsonl", b"same-function");
+        let full = output(&manifest, "full/functions.jsonl", b"same-function");
+        store
+            .record_stage("linked-ir:focused", "shared-query", &[focused])
+            .unwrap();
+        store
+            .record_stage("linked-ir:full", "shared-query", &[full])
+            .unwrap();
+
+        store
+            .retire_stage_binding("linked-ir:focused", "shared-query")
+            .unwrap();
+        assert_eq!(
+            store.stage_output_digests("shared-query").unwrap(),
+            Some(vec![sha256_hex(b"same-function")])
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM stage_outputs WHERE stage = ?1",
+                    ["linked-ir:focused"],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+
+        store
+            .retire_stage_binding("linked-ir:full", "different-query")
+            .unwrap();
+        assert!(
+            store
+                .stage_output_digests("shared-query")
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM stage_outputs WHERE stage = ?1",
+                    ["linked-ir:full"],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+
+        store
+            .retire_stage_binding("linked-ir:full", "shared-query")
+            .unwrap();
+        assert!(
+            store
+                .stage_output_digests("shared-query")
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM stage_bindings", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM stage_outputs", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
         );
     }
 
@@ -2584,6 +3988,7 @@ mod tests {
         assert!(error.to_string().contains("failed its content digest"));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn compaction_keeps_only_reachable_objects_and_switches_pack_atomically() {
         let manifest = manifest("compact");

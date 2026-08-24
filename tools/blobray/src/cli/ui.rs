@@ -1,8 +1,8 @@
 //! Process-wide diagnostic and tracing configuration.
 
-use std::env;
+use std::{env, fmt as std_fmt, time::Duration};
 
-use indicatif::ProgressStyle;
+use indicatif::{FormattedDuration, HumanFloatCount, ProgressState, ProgressStyle};
 use tracing::level_filters::LevelFilter;
 use tracing_indicatif::{
     IndicatifLayer,
@@ -46,13 +46,58 @@ pub(super) fn init(arguments: &UiArgs) -> Result<()> {
 
 fn progress_style(ansi: bool) -> ProgressStyle {
     let template = if ansi {
-        "{spinner:.cyan} {msg}"
+        "{spinner:.cyan} {blobray_progress} {msg}"
     } else {
-        "{spinner} {msg}"
+        "{spinner} {blobray_progress} {msg}"
     };
     ProgressStyle::with_template(template)
         .expect("static progress template")
+        .with_key("blobray_progress", write_progress_state)
         .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
+}
+
+fn write_progress_state(state: &ProgressState, writer: &mut dyn std_fmt::Write) {
+    let rate = measured_rate(state.pos(), state.per_sec());
+    write_progress_fields(
+        writer,
+        state.elapsed(),
+        state.pos(),
+        state.len(),
+        rate,
+        rate.map(|_| state.eta()),
+    );
+}
+
+fn measured_rate(position: u64, rate: f64) -> Option<f64> {
+    (position > 0 && rate.is_finite() && rate > 0.0).then_some(rate)
+}
+
+fn write_progress_fields(
+    writer: &mut dyn std_fmt::Write,
+    elapsed: Duration,
+    position: u64,
+    length: Option<u64>,
+    rate: Option<f64>,
+    eta: Option<Duration>,
+) {
+    let _ = write!(writer, "[{}]", FormattedDuration(elapsed));
+    let Some(length) = length else {
+        return;
+    };
+    let _ = write!(writer, " {position:>5}/{length:<5} ");
+    match (rate, eta) {
+        (Some(rate), Some(eta)) => {
+            let _ = write!(
+                writer,
+                "{}/s ETA {}",
+                HumanFloatCount(rate),
+                FormattedDuration(eta)
+            );
+        }
+        _ => {
+            let _ = writer.write_str("--/s ETA --:--:--");
+        }
+    }
 }
 
 fn diagnostic_filter(arguments: &UiArgs) -> EnvFilter {
@@ -111,5 +156,50 @@ mod tests {
             ..UiArgs::default()
         });
         assert_eq!(filter.to_string(), "off");
+    }
+
+    #[test]
+    fn indeterminate_progress_reports_elapsed_time_without_inventing_a_total() {
+        let mut rendered = String::new();
+        write_progress_fields(
+            &mut rendered,
+            Duration::from_secs(65),
+            7,
+            None,
+            Some(3.5),
+            Some(Duration::from_secs(9)),
+        );
+        assert_eq!(rendered, "[00:01:05]");
+    }
+
+    #[test]
+    fn determinate_progress_waits_for_a_measured_rate_before_estimating() {
+        let mut rendered = String::new();
+        write_progress_fields(
+            &mut rendered,
+            Duration::from_secs(2),
+            0,
+            Some(120),
+            None,
+            None,
+        );
+        assert_eq!(rendered, "[00:00:02]     0/120   --/s ETA --:--:--");
+        assert_eq!(measured_rate(0, 42.0), None);
+        assert_eq!(measured_rate(1, 0.0), None);
+        assert_eq!(measured_rate(1, f64::NAN), None);
+    }
+
+    #[test]
+    fn determinate_progress_reports_position_rate_and_eta() {
+        let mut rendered = String::new();
+        write_progress_fields(
+            &mut rendered,
+            Duration::from_secs(75),
+            25,
+            Some(100),
+            Some(12.5),
+            Some(Duration::from_secs(6)),
+        );
+        assert_eq!(rendered, "[00:01:15]    25/100   12.5/s ETA 00:00:06");
     }
 }

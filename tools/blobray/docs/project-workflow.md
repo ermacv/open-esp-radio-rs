@@ -21,6 +21,21 @@ cargo blobray project status --project path/to/vendor-project.toml
 - `analyze` refreshes symbol, MMIO, interface, linked-IR and navigation facts.
 - `status` reads the current results without regenerating the whole project.
 
+Preview the exact stage order and cache work before a large analysis:
+
+```console
+cargo blobray project analyze --plan --project path/to/vendor-project.toml
+```
+
+The plan is read-only. It reports configured dependencies and distinguishes
+current outputs, CAS restoration, cold computation, check-mode verification,
+deferred decisions, blocked work, failures, and unconfigured stages. If an
+earlier stage must materialize an input, a dependent cache decision is reported
+as `deferred`; Blobray does not guess the digest of an output that has not been
+produced yet. JSON output includes the exact stage signatures that were safe to
+evaluate. Add `--details` to the human view to see every profile/work item,
+output and cause without grouping.
+
 Before publishing or merging a replacement, run:
 
 ```console

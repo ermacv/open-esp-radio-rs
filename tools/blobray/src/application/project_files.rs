@@ -372,7 +372,7 @@ fn unowned_files(
     Ok(unowned)
 }
 
-pub(crate) fn collect(context: ProjectContext<'_>) -> Result<ProjectFilesReport> {
+pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport> {
     let project = context.project;
     let mut files = Vec::new();
     push(

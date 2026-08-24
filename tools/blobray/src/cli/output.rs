@@ -99,15 +99,7 @@ pub(super) fn failure(value: impl AsRef<str>) -> String {
 /// human CLI. Keep ordinary repository paths readable while protecting spaces
 /// and shell metacharacters.
 pub(super) fn shell_arg(value: impl AsRef<OsStr>) -> String {
-    let value = value.as_ref().to_string_lossy();
-    if !value.is_empty()
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"_+-./:=,@%".contains(&byte))
-    {
-        return value.into_owned();
-    }
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
+    crate::shell::arg(value)
 }
 
 pub(super) fn line(arguments: fmt::Arguments<'_>) {

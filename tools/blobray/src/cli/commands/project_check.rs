@@ -5,7 +5,7 @@ use serde::Serialize;
 use super::Result;
 use crate::{
     application::{
-        ProjectSession,
+        FollowUpRequirements, ProjectContext, ProjectSession,
         pipeline::StageReport,
         project_analysis::ProjectAnalysisRequest,
         project_publication::{ProjectPublicationRequest, execute as publish},
@@ -41,19 +41,43 @@ struct ProjectCheckIssue {
     reason: String,
 }
 
-pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Result<bool> {
-    if !(1..=8).contains(&arguments.jobs) {
-        return Err(crate::Error::invalid("project check --jobs accepts 1..=8"));
+struct ProjectCheckFollowUps {
+    check: String,
+    audit_bindings: String,
+    analyze_check: String,
+    verify_check: String,
+    publish_check: String,
+}
+
+impl ProjectCheckFollowUps {
+    fn new(context: &ProjectContext<'_>) -> Self {
+        Self {
+            check: context.follow_up_command("project check", FollowUpRequirements::ANALYSIS),
+            audit_bindings: context
+                .follow_up_command("project audit bindings", FollowUpRequirements::TARGET),
+            analyze_check: context
+                .follow_up_command("project analyze --check", FollowUpRequirements::ANALYSIS),
+            verify_check: context
+                .follow_up_command("project verify --check", FollowUpRequirements::ANALYSIS),
+            publish_check: context.follow_up_command(
+                "project publish --check",
+                FollowUpRequirements::PROJECT_ONLY,
+            ),
+        }
     }
+}
+
+pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Result<bool> {
+    let context = session.context();
+    let follow_ups = ProjectCheckFollowUps::new(&context);
     let binding_audit = crate::verification::audit(&session.project)?;
-    let analysis = crate::application::project_analysis::analyze_project(
-        session,
-        ProjectAnalysisRequest {
-            check: true,
-            deny_unreviewed: arguments.deny_unreviewed,
-            jobs: usize::from(arguments.jobs),
-        },
-    );
+    let analysis_request = ProjectAnalysisRequest {
+        check: true,
+        deny_unreviewed: arguments.deny_unreviewed,
+        jobs: usize::from(arguments.jobs),
+    }
+    .validate()?;
+    let analysis = crate::application::project_analysis::analyze_project(session, analysis_request);
     let verification = super::project_verification::execute(
         ProjectVerifyArgs {
             check: true,
@@ -70,7 +94,7 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         session.memory_map.as_ref(),
         ProjectPublicationRequest { check: true },
     )?;
-    let policy = policy_stage(session);
+    let policy = policy_stage(session, &follow_ups.check);
     let ownership = crate::application::project_files::collect_ownership(&session.project)?;
 
     let passed = ownership.passed()
@@ -122,9 +146,9 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                 next_actions: (!ownership.passed())
                     .then(|| {
                         format!(
-                            "remove the {} files without a current project owner, then rerun `blobray project check --project {}`",
+                            "remove the {} files without a current project owner, then rerun `{}`",
                             ownership.issue_count(),
-                            session.manifest.display()
+                            follow_ups.check,
                         )
                     })
                     .into_iter()
@@ -156,8 +180,8 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                 next_actions: (!binding_audit.passed)
                     .then(|| {
                         format!(
-                            "run `blobray project audit bindings --project {}`; fix every invalid declaration and every verification-blocked binding required by the verification policy before accepting baselines",
-                            session.manifest.display()
+                            "run `{}`; fix every invalid declaration and every verification-blocked binding required by the verification policy before accepting baselines",
+                            follow_ups.audit_bindings,
                         )
                     })
                     .into_iter()
@@ -177,8 +201,8 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                 next_actions: (!analysis_passed)
                     .then(|| {
                         format!(
-                            "inspect failed analysis stages above and rerun `blobray project analyze --check --project {}`",
-                            session.manifest.display()
+                            "inspect failed analysis stages above and rerun `{}`",
+                            follow_ups.analyze_check,
                         )
                     })
                     .into_iter()
@@ -201,9 +225,9 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                 next_actions: (!verification.passed)
                     .then(|| {
                         format!(
-                            "inspect {}; edit the responsible verification dispositions/contracts and rerun `blobray project verify --check --project {}`",
+                            "inspect {}; edit the responsible verification dispositions/contracts and rerun `{}`",
                             report_path.display(),
-                            session.manifest.display()
+                            follow_ups.verify_check,
                         )
                     })
                     .into_iter()
@@ -222,8 +246,8 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                 next_actions: (!publication_passed)
                     .then(|| {
                         format!(
-                            "fix the publication issue above and rerun `blobray project publish --check --project {}`",
-                            session.manifest.display()
+                            "fix the publication issue above and rerun `{}`",
+                            follow_ups.publish_check,
                         )
                     })
                     .into_iter()
@@ -291,7 +315,7 @@ fn render_human(report: &ProjectCheckReport) {
     );
 }
 
-fn policy_stage(session: &ProjectSession) -> ProjectCheckStage {
+fn policy_stage(session: &ProjectSession, check_command: &str) -> ProjectCheckStage {
     let manifest = session.manifest.display();
     let Some(policy_path) = session
         .project
@@ -339,7 +363,7 @@ fn policy_stage(session: &ProjectSession) -> ProjectCheckStage {
                 next_actions: (!report.passed)
                     .then(|| {
                         format!(
-                            "close the reported verification surface and rerun `blobray project check --project {manifest}`"
+                            "close the reported verification surface and rerun `{check_command}`"
                         )
                     })
                     .into_iter()
@@ -361,7 +385,7 @@ fn policy_stage(session: &ProjectSession) -> ProjectCheckStage {
                 reason: error.to_string(),
             }],
             next_actions: vec![format!(
-                "regenerate analysis and verification reports, then rerun `blobray project check --project {manifest}`"
+                "regenerate analysis and verification reports, then rerun `{check_command}`"
             )],
         },
     }
@@ -432,6 +456,8 @@ fn verification_issues(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{MmioMap, TargetSpec, application::ExplicitProjectContext, project::ProjectSpec};
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn pipeline_failures_remain_typed_and_actionable() {
@@ -491,6 +517,77 @@ mod tests {
         assert_eq!(
             value["stages"][0]["next_actions"][0],
             "inspect verification.json"
+        );
+    }
+
+    #[test]
+    fn check_follow_ups_quote_context_and_scope_overrides_per_destination() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/generic-project/vendor-project.toml");
+        let project = ProjectSpec::load(&fixture).unwrap();
+        let target = TargetSpec::load(&project.target_spec).unwrap();
+        let svd = MmioMap::load_all(&[]).unwrap();
+        let manifest = PathBuf::from("/tmp/vendor  owner's project/vendor project.toml");
+        let explicit_target = PathBuf::from("/tmp/target owner's.toml");
+        let explicit_run = PathBuf::from("/tmp/run spec.toml");
+        let explicit_svds = vec![
+            PathBuf::from("/tmp/registers one.svd"),
+            PathBuf::from("/tmp/register owner's two.svd"),
+        ];
+        let explicit_context = ExplicitProjectContext {
+            target_spec: Some(explicit_target.clone()),
+            run_spec: Some(explicit_run.clone()),
+            svd_paths: explicit_svds.clone(),
+        };
+        let context = ProjectContext {
+            project_path: &manifest,
+            project: &project,
+            target_path: &project.target_spec,
+            target: &target,
+            run_spec_path: None,
+            run_spec: None,
+            memory_map: None,
+            svd_paths: &[],
+            svd: &svd,
+            explicit_context: &explicit_context,
+        };
+        let arg = |path: &Path| crate::shell::arg(path.as_os_str());
+        let follow_ups = ProjectCheckFollowUps::new(&context);
+        let analysis_context = format!(
+            "--project {} --target-spec {} --run-spec {} --svd {} --svd {}",
+            arg(&manifest),
+            arg(&explicit_target),
+            arg(&explicit_run),
+            arg(&explicit_svds[0]),
+            arg(&explicit_svds[1]),
+        );
+
+        assert_eq!(
+            follow_ups.check,
+            format!("blobray project check {analysis_context}")
+        );
+        assert_eq!(
+            follow_ups.analyze_check,
+            format!("blobray project analyze --check {analysis_context}")
+        );
+        assert_eq!(
+            follow_ups.verify_check,
+            format!("blobray project verify --check {analysis_context}")
+        );
+        assert_eq!(
+            follow_ups.audit_bindings,
+            format!(
+                "blobray project audit bindings --project {} --target-spec {}",
+                arg(&manifest),
+                arg(&explicit_target),
+            )
+        );
+        assert_eq!(
+            follow_ups.publish_check,
+            format!(
+                "blobray project publish --check --project {}",
+                arg(&manifest)
+            )
         );
     }
 }

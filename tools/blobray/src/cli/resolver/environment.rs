@@ -72,8 +72,9 @@ pub(super) fn resolve_from(
         command => command,
     };
 
-    // An explicit target selects standalone target/backend development and
-    // therefore deliberately disables implicit project discovery.
+    // An explicit target without an explicit project selects standalone
+    // target/backend development and deliberately disables project discovery.
+    // When both are present, the target is a project-scoped override.
     let project_path = if requested_project.is_some() || requested_target.is_some() {
         requested_project
     } else {
@@ -153,6 +154,7 @@ pub(super) fn resolve_from(
         memory_map,
         resolved_svd_paths,
         mut svd,
+        explicit_context,
     ) = if let Some(manifest) = project_path.as_deref() {
         let session = ProjectSession::open_with(
             manifest,
@@ -174,6 +176,7 @@ pub(super) fn resolve_from(
             session.memory_map,
             session.svd_paths,
             session.mmio,
+            session.explicit_context,
         )
     } else {
         let target_path = requested_target
@@ -193,6 +196,7 @@ pub(super) fn resolve_from(
             memory_map,
             svd_paths,
             svd,
+            Default::default(),
         )
     };
     let svd_paths = resolved_svd_paths;
@@ -234,6 +238,7 @@ pub(super) fn resolve_from(
             memory_map,
             svd_paths,
             svd,
+            explicit_context,
         },
     )
 }

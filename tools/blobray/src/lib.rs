@@ -22,6 +22,7 @@ mod memory_map;
 mod navigation;
 mod orchestration;
 mod parse;
+mod progress;
 mod project;
 mod project_analysis;
 mod project_ir;
@@ -30,6 +31,7 @@ mod registers;
 mod resource_usage;
 mod review_scopes;
 mod run_spec;
+mod shell;
 mod source_id;
 mod target;
 #[cfg(test)]

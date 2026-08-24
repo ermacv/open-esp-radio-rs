@@ -6,7 +6,6 @@ use std::{
     thread,
 };
 
-use indicatif::ProgressStyle;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::{
@@ -1133,17 +1132,7 @@ fn linked_ir_progress_span(source: &str, functions: usize) -> tracing::Span {
         source,
         functions,
     );
-    span.pb_set_style(
-        &ProgressStyle::with_template(
-            "{spinner:.cyan} [{elapsed_precise}] {pos:>5}/{len:<5} {msg}",
-        )
-        .expect("static linked-IR progress template")
-        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
-    );
-    span.pb_set_length(functions as u64);
-    span.pb_set_message(&format!("{source}: analyzing functions"));
-    span.pb_start();
-    span
+    crate::progress::determinate_span(span, functions, &format!("{source}: analyzing functions"))
 }
 
 #[cfg(test)]

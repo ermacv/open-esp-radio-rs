@@ -1,7 +1,7 @@
 //! Fail-closed status for the flat verification policy.
 
 use super::model::{Component, Phase, Readiness};
-use crate::application::ProjectContext;
+use crate::application::{FollowUpRequirements, ProjectContext};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     let policy_path = context
@@ -60,7 +60,13 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                 Component::new("surfaces", Readiness::Incomplete)
                     .detail("policy", policy_path.display().to_string())
                     .diagnostic(error)
-                    .next_action("regenerate review and verification reports, then retry"),
+                    .next_action(format!(
+                        "regenerate review with `{}`, then verification with `{}`",
+                        context
+                            .follow_up_command("project analyze", FollowUpRequirements::ANALYSIS,),
+                        context
+                            .follow_up_command("project verify", FollowUpRequirements::ANALYSIS,)
+                    )),
             ],
         ),
     }

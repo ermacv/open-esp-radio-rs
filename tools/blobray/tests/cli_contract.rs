@@ -209,6 +209,231 @@ fn project_status_human_details_explain_shallow_validation_and_render_fields() {
 }
 
 #[test]
+fn status_and_doctor_next_actions_preserve_explicit_resolution_context() {
+    let (directory, manifest) = init_temporary_project("follow-up-context");
+    let target = directory.join("explicit target's.toml");
+    std::fs::copy(directory.join("target.toml"), &target).unwrap();
+    let run_spec = directory.join("explicit-run.toml");
+    let artifact = directory.join("explicit-vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+    std::fs::write(
+        &run_spec,
+        format!(
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:fixture\"\npath = {:?}\n",
+            artifact.display().to_string(),
+        ),
+    )
+    .unwrap();
+    let svd = directory.join("explicit-registers.svd");
+    std::fs::write(
+        &svd,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FOLLOW_UP</name>
+  <version>1</version>
+  <description>follow-up context fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals/>
+</device>
+"#,
+    )
+    .unwrap();
+    let quoted_target = format!(
+        "'{}'",
+        target.display().to_string().replace('\'', "'\"'\"'")
+    );
+    let expected = format!(
+        "blobray project analyze --project {} --target-spec {} --run-spec {} --svd {}",
+        manifest.display(),
+        quoted_target,
+        run_spec.display(),
+        svd.display(),
+    );
+
+    let machine = blobray()
+        .current_dir(repository_root())
+        .args(["project", "status", "--project"])
+        .arg(&manifest)
+        .args(["--target-spec"])
+        .arg(&target)
+        .args(["--run-spec"])
+        .arg(&run_spec)
+        .args(["--svd"])
+        .arg(&svd)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("render project status with explicit context");
+    assert!(
+        machine.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&machine.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&machine.stdout).unwrap();
+    let next_actions = document["phases"]
+        .as_object()
+        .unwrap()
+        .values()
+        .flat_map(|phase| phase["components"].as_array().unwrap())
+        .filter_map(|component| component["next_action"].as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        next_actions.contains(&expected.as_str()),
+        "{next_actions:#?}"
+    );
+
+    for workflow in ["status", "doctor"] {
+        let human = blobray()
+            .current_dir(repository_root())
+            .args(["project", workflow, "--project"])
+            .arg(&manifest)
+            .args(["--target-spec"])
+            .arg(&target)
+            .args(["--run-spec"])
+            .arg(&run_spec)
+            .args(["--svd"])
+            .arg(&svd)
+            .args(["--color", "never"])
+            .output()
+            .expect("render human follow-up context");
+        let stdout = String::from_utf8_lossy(&human.stdout);
+        assert!(stdout.contains(&expected), "{workflow} stdout: {stdout}");
+    }
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn status_human_next_actions_preserve_shell_quoted_spaces_and_apostrophes() {
+    let (directory, _) = init_temporary_project("quoted-follow-up-context");
+    let quoted_directory = directory.with_file_name(format!(
+        "{}  owner's project",
+        directory.file_name().unwrap().to_string_lossy()
+    ));
+    std::fs::rename(&directory, &quoted_directory).unwrap();
+    let manifest = quoted_directory.join("vendor-project.toml");
+    let quoted_manifest = format!(
+        "'{}'",
+        manifest.display().to_string().replace('\'', "'\"'\"'")
+    );
+    let expected = format!("blobray project inputs init --project {quoted_manifest} --help");
+
+    let output = blobray()
+        .current_dir(repository_root())
+        .args(["project", "status", "--project"])
+        .arg(&manifest)
+        .args(["--color", "never", "--progress", "never"])
+        .output()
+        .expect("render shell-safe status follow-up");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(&expected), "stdout: {stdout}");
+
+    std::fs::remove_dir_all(quoted_directory).unwrap();
+}
+
+#[test]
+fn status_input_repair_targets_the_explicit_run_spec() {
+    let (directory, manifest) = init_temporary_project("explicit-run-repair");
+    let project = std::fs::read_to_string(&manifest).unwrap().replace(
+        "chip-pack = \"chip.toml\"\n",
+        "chip-pack = \"chip.toml\"\nverification-addon = \"verification-addon.toml\"\n",
+    );
+    std::fs::write(&manifest, project).unwrap();
+    std::fs::write(
+        directory.join("verification-addon.toml"),
+        r#"schema = 3
+id = "explicit-run-repair"
+report = "generated/verification.json"
+evidence-index = "generated/vendor-evidence.json"
+
+[[suites]]
+id = "fixture"
+rust-artifact-role = "rust-artifact:fixture"
+rust-prefix = "fixture_"
+profiles = []
+dispositions = ["dispositions.toml"]
+baselines = []
+gate = "informational"
+
+[[suites.vendor]]
+source = "vendor"
+prefix = "fixture_"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("dispositions.toml"),
+        "schema = 3\ndefault-disposition = \"not-yet-ported\"\ndefault-protocol = \"unknown\"\n",
+    )
+    .unwrap();
+    let artifact = directory.join("vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+    let run_spec = directory.join("explicit-run.toml");
+    std::fs::write(
+        &run_spec,
+        format!(
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:vendor\"\npath = {:?}\n",
+            artifact.display().to_string(),
+        ),
+    )
+    .unwrap();
+
+    let output = blobray()
+        .current_dir(repository_root())
+        .args(["project", "status", "--project"])
+        .arg(&manifest)
+        .arg("--run-spec")
+        .arg(&run_spec)
+        .args([
+            "--format",
+            "json",
+            "--color",
+            "never",
+            "--progress",
+            "never",
+        ])
+        .output()
+        .expect("render explicit run-spec repair action");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let component = document["phases"]["verification"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|component| component["name"] == "suite-inputs")
+        .unwrap();
+    let expected = format!(
+        "bind the missing roles in {} using `blobray project inputs init --project {} --output {} --help`",
+        run_spec.display(),
+        manifest.display(),
+        run_spec.display(),
+    );
+    assert_eq!(component["next_action"], expected);
+
+    let help = blobray()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--project"])
+        .arg(&manifest)
+        .arg("--output")
+        .arg(&run_spec)
+        .arg("--help")
+        .output()
+        .expect("run the suggested binding help command");
+    assert!(help.status.success());
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn project_doctor_json_is_one_complete_typed_report() {
     let output = run(&[
         "project",
@@ -1135,6 +1360,7 @@ fn project_analysis_and_ci_check_are_distinct_typed_entry_points() {
     let help = run(&["project", "analyze", "--help"]);
     assert!(help.status.success());
     let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("--plan"));
     assert!(help.contains("--check"));
     assert!(help.contains("--deny-unreviewed"));
     assert!(help.contains("--progress"));
@@ -1164,7 +1390,7 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     assert_eq!(output.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 4);
+    assert_eq!(document["schema"], 5);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["mode"], "check");
     assert_eq!(document["status"], "failed");
@@ -1220,6 +1446,395 @@ fn project_analysis_blocked_by_preflight_does_not_create_persistent_state() {
 }
 
 #[test]
+fn project_analysis_plan_is_deterministic_and_read_only_when_blocked() {
+    let (directory, manifest) = init_temporary_project("blocked-analysis-plan");
+    let before = snapshot_tree(&directory);
+
+    let first = run_project_command(&manifest, &["project", "analyze", "--plan"]);
+    assert_eq!(first.status.code(), Some(2));
+    let document: serde_json::Value =
+        serde_json::from_slice(&first.stdout).expect("analysis plan stdout must be valid JSON");
+    assert_eq!(document["schema"], 1);
+    assert_eq!(document["command"], "project analyze --plan");
+    assert_eq!(document["mode"], "write");
+    assert_eq!(document["read_only"], true);
+    assert_eq!(document["status"], "failed");
+    let stages = document["stages"].as_array().unwrap();
+    assert_eq!(stages.len(), 14);
+    assert_eq!(stages[0]["order"], 1);
+    assert_eq!(stages[0]["name"], "symbol-inventory");
+    assert_eq!(stages[0]["action"], "blocked");
+    assert!(
+        stages[0]["cause"]
+            .as_str()
+            .unwrap()
+            .contains("run-spec is not configured")
+    );
+    assert_eq!(snapshot_tree(&directory), before);
+    assert!(!directory.join("generated/.blobray-cache").exists());
+
+    let second = run_project_command(&manifest, &["project", "analyze", "--plan"]);
+    assert_eq!(second.status.code(), Some(2));
+    assert_eq!(second.stdout, first.stdout);
+    assert_eq!(snapshot_tree(&directory), before);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn project_analysis_plan_fails_closed_for_a_missing_bound_input_in_every_mode() {
+    let (directory, manifest) = init_temporary_project("missing-analysis-plan-input");
+    let missing = directory.join("private/missing-vendor.a");
+    std::fs::write(
+        directory.join("local.toml"),
+        format!(
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:vendor\"\npath = {:?}\n",
+            missing.display().to_string()
+        ),
+    )
+    .unwrap();
+    let before = snapshot_tree(&directory);
+
+    for arguments in [
+        ["project", "analyze", "--plan"].as_slice(),
+        ["project", "analyze", "--plan", "--check"].as_slice(),
+    ] {
+        let output = run_project_command(&manifest, arguments);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(document["status"], "failed");
+        let symbols = document["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|stage| stage["name"] == "symbol-inventory")
+            .unwrap();
+        assert_eq!(symbols["action"], "failed");
+        assert!(
+            symbols["cause"]
+                .as_str()
+                .unwrap()
+                .contains("analysis input")
+        );
+        assert!(
+            symbols["cause"]
+                .as_str()
+                .unwrap()
+                .contains("missing-vendor.a")
+        );
+        for name in ["mmio-discovery", "interface-discovery", "linked-ir"] {
+            let dependant = document["stages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|stage| stage["name"] == name)
+                .unwrap();
+            assert!(
+                dependant["depends-on"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|dependency| dependency == "symbol-inventory"),
+                "{name} must expose its generated symbol dependency"
+            );
+        }
+        assert_eq!(snapshot_tree(&directory), before);
+    }
+
+    assert!(!directory.join("generated/.blobray-cache").exists());
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn project_analysis_plan_tracks_soft_symbol_materialization_for_linked_ir() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-soft-symbol-plan-contract-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 3\nid = \"soft-symbol-plan\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+    let artifact = directory.join("vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+    std::fs::write(
+        directory.join("local.toml"),
+        format!(
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:fixture\"\npath = {:?}\n",
+            artifact.display().to_string()
+        ),
+    )
+    .unwrap();
+    let before = snapshot_tree(&directory);
+
+    let output = run_project_command(&manifest, &["project", "analyze", "--plan"]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let linked = document["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stage| stage["name"] == "linked-ir")
+        .unwrap();
+    assert_eq!(linked["action"], "deferred");
+    assert_eq!(linked["depends-on"], serde_json::json!([]));
+    assert_eq!(
+        linked["optional-depends-on"],
+        serde_json::json!(["symbol-inventory"])
+    );
+    assert_eq!(snapshot_tree(&directory), before);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn project_analysis_plan_preflights_inputs_independent_of_generated_predecessors() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-independent-plan-input-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let missing_code_pack = directory.join("missing-code-pack.toml");
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 3\nid = \"independent-plan-input\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[code]\npack = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            target.display().to_string(),
+            missing_code_pack.display().to_string(),
+        ),
+    )
+    .unwrap();
+    let artifact = directory.join("vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+    std::fs::write(
+        directory.join("local.toml"),
+        format!(
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:fixture\"\npath = {:?}\n",
+            artifact.display().to_string()
+        ),
+    )
+    .unwrap();
+    let before = snapshot_tree(&directory);
+
+    let output = run_project_command(&manifest, &["project", "analyze", "--plan"]);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["status"], "failed");
+    let linked = document["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stage| stage["name"] == "linked-ir")
+        .unwrap();
+    assert_eq!(linked["action"], "failed");
+    assert!(
+        linked["cause"]
+            .as_str()
+            .unwrap()
+            .contains("missing-code-pack.toml")
+    );
+    assert_eq!(snapshot_tree(&directory), before);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn discovery_plan_ignores_missing_run_bindings_that_the_stage_does_not_consume() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-stage-specific-run-inputs-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let fixture = repository_root().join("tools/blobray/tests/fixtures/generic-project");
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 3\nid = \"stage-input-plan\"\ntarget-spec = {:?}\nchip-pack = {:?}\n\n[registers]\nfacts = \"generated/mmio.json\"\nmodel = \"reviewed/registers.toml\"\nowned-ranges = [\"fixture-mmio\"]\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
+            fixture.join("target.toml").display().to_string(),
+            fixture.join("chip.toml").display().to_string(),
+        ),
+    )
+    .unwrap();
+    let artifact = directory.join("vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+    std::fs::write(
+        directory.join("local.toml"),
+        format!(
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:fixture\"\npath = {:?}\n\n[[inputs]]\nrole = \"source-companion:unused\"\npath = {:?}\n",
+            artifact.display().to_string(),
+            directory.join("missing-unused.debug").display().to_string(),
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(directory.join("reviewed/peripherals")).unwrap();
+    std::fs::write(
+        directory.join("reviewed/registers.toml"),
+        "schema = 2\nfragments = [\"peripherals/fixture.toml\"]\n\n[device]\nname = \"fixture\"\nversion = \"1\"\ndescription = \"fixture\"\naddress-unit-bits = 8\nwidth = 32\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("reviewed/peripherals/fixture.toml"),
+        "schema = 2\n\n[[peripherals]]\nname = \"FIXTURE\"\nbaseAddress = 0x20000000\n",
+    )
+    .unwrap();
+
+    let output = run_project_command(&manifest, &["project", "analyze", "--plan"]);
+    assert!(
+        output.status.success(),
+        "stderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    for name in ["mmio-discovery", "interface-discovery"] {
+        let stage = document["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|stage| stage["name"] == name)
+            .unwrap();
+        assert_eq!(stage["action"], "compute", "{name}: {stage}");
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn project_analysis_plan_distinguishes_current_and_restorable_outputs_without_restoring() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-analysis-plan-cache-contract-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 3\nid = \"analysis-plan-cache\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+    let artifact = directory.join("vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+    let inputs = blobray()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--project"])
+        .arg(&manifest)
+        .arg("--bind")
+        .arg(format!("source-artifact:fixture={}", artifact.display()))
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("initialize analysis plan inputs");
+    assert!(
+        inputs.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&inputs.stderr)
+    );
+    let generated = run_project_command(&manifest, &["project", "analyze"]);
+    assert!(
+        generated.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+
+    let before_current = snapshot_tree(&directory);
+    let current = run_project_command(&manifest, &["project", "analyze", "--plan"]);
+    assert!(
+        current.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&current.stderr)
+    );
+    let current: serde_json::Value = serde_json::from_slice(&current.stdout).unwrap();
+    let symbols = current["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stage| stage["name"] == "symbol-inventory")
+        .unwrap();
+    assert_eq!(symbols["action"], "current");
+    assert!(symbols["work-items"][0]["signature"].is_string());
+    assert_eq!(snapshot_tree(&directory), before_current);
+
+    let symbols_path = directory.join("generated/symbols.json");
+    std::fs::remove_file(&symbols_path).unwrap();
+    let before_restore = snapshot_tree(&directory);
+    let restore = run_project_command(&manifest, &["project", "analyze", "--plan"]);
+    assert!(restore.status.success());
+    let restore: serde_json::Value = serde_json::from_slice(&restore.stdout).unwrap();
+    let symbols = restore["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stage| stage["name"] == "symbol-inventory")
+        .unwrap();
+    assert_eq!(symbols["action"], "restore");
+    assert!(
+        symbols["cause"]
+            .as_str()
+            .unwrap()
+            .contains("missing or differ")
+    );
+    assert!(!symbols_path.exists());
+    assert_eq!(snapshot_tree(&directory), before_restore);
+
+    let restored = run_project_command(&manifest, &["project", "analyze"]);
+    assert!(
+        restored.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&restored.stderr)
+    );
+    let restored: serde_json::Value = serde_json::from_slice(&restored.stdout).unwrap();
+    assert_eq!(restored["schema"], 5);
+    assert_eq!(restored["written"], 0);
+    assert_eq!(restored["restored"], 1);
+    assert_eq!(restored["up-to-date"], 0);
+    let symbols = restored["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stage| stage["name"] == "symbol-inventory")
+        .unwrap();
+    assert_eq!(symbols["status"], "restored");
+    assert!(symbols_path.is_file());
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
     let directory = std::env::temp_dir().join(format!(
         "blobray-nothing-configured-contract-{}",
@@ -1267,7 +1882,7 @@ fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
     assert_eq!(json.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&json.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 4);
+    assert_eq!(document["schema"], 5);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["status"], "nothing-configured");
     assert_eq!(document["not-configured"], 14);
@@ -1482,7 +2097,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         );
         let document: serde_json::Value = serde_json::from_slice(&output.stdout)
             .expect("project analysis stdout must be valid JSON");
-        assert_eq!(document["schema"], 4);
+        assert_eq!(document["schema"], 5);
         assert_eq!(document["command"], "project analyze");
         assert_eq!(document["status"], "ok");
         let measured_total = document["stages"]

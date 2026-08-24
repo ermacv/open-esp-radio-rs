@@ -6,8 +6,11 @@ use serde::Serialize;
 
 use crate::{
     Result,
-    application::status::model::{
-        DetailValue, ProjectStatusReport, Readiness, StatusValidation, TargetIdentity,
+    application::{
+        FollowUpRequirements, ProjectContext,
+        status::model::{
+            DetailValue, ProjectStatusReport, Readiness, StatusValidation, TargetIdentity,
+        },
     },
     cli::{output, table},
 };
@@ -50,7 +53,7 @@ pub(super) struct StatusDocument<'a> {
     publication: Option<crate::cli::output::Publication>,
 }
 
-pub(super) fn print_text(report: &ProjectStatusReport) {
+pub(super) fn print_text(report: &ProjectStatusReport, context: &ProjectContext<'_>) {
     outputln!("{}", output::heading("Project status"));
     outputln!("Project:  {}", report.project_id);
     outputln!("Manifest: {}", report.manifest);
@@ -63,9 +66,14 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
     outputln!("Validation: shallow project-status inspection");
     outputln!("Freshness:  unknown unless a component states otherwise");
     outputln!("Deep validation:");
-    let manifest = output::shell_arg(&report.manifest);
-    outputln!("  blobray project doctor --project {manifest}");
-    outputln!("  blobray project check --project {manifest}");
+    outputln!(
+        "  {}",
+        context.follow_up_command("project doctor", FollowUpRequirements::ANALYSIS)
+    );
+    outputln!(
+        "  {}",
+        context.follow_up_command("project check", FollowUpRequirements::ANALYSIS)
+    );
     let outcome = match report.overall {
         Readiness::Ready => output::success(
             "SHALLOW OVERVIEW — configured outputs are present; freshness not validated",
@@ -137,7 +145,7 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
     for phase in &report.phases {
         for component in &phase.components {
             if let Some(action) = component.next_action.as_deref() {
-                let action = sanitize(action);
+                let action = sanitize_next_action(action);
                 let component = format!("{}/{}", phase.name, component.name);
                 if let Some(position) = action_positions.get(&action).copied() {
                     actions[position].1.push(component);
@@ -296,6 +304,16 @@ fn sanitize(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn sanitize_next_action(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            '\r' | '\n' => ' ',
+            character => character,
+        })
+        .collect()
+}
+
 fn phase_problem_count(phase: &crate::application::status::model::Phase) -> usize {
     phase
         .components
@@ -310,6 +328,17 @@ mod tests {
     use crate::application::status::model::{
         Component, LinkedIrProfileDetail, Phase, TargetIdentity,
     };
+
+    #[test]
+    fn next_action_sanitizing_preserves_shell_quoted_argument_bytes() {
+        let command =
+            "blobray project status --project '/tmp/owner'\"'\"'s/project  tree/vendor.toml'";
+        assert_eq!(sanitize_next_action(command), command);
+        assert_eq!(
+            sanitize_next_action("blobray project status\r\n--help"),
+            "blobray project status  --help"
+        );
+    }
 
     #[test]
     fn json_schema_keeps_phase_and_component_states_explicit() {

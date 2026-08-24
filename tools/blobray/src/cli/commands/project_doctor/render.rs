@@ -1,13 +1,16 @@
 //! Task-first human rendering for project-doctor reports.
 
 use super::model::{CapabilityReport, DoctorReport};
-use crate::cli::{output, table};
+use crate::{
+    application::{FollowUpRequirements, ProjectContext},
+    cli::{output, table},
+};
 
-pub(super) fn render(report: &DoctorReport) {
-    output::render_report(report, || human(report));
+pub(super) fn render(report: &DoctorReport, context: &ProjectContext<'_>) {
+    output::render_report(report, || human(report, context));
 }
 
-fn human(report: &DoctorReport) {
+fn human(report: &DoctorReport, context: &ProjectContext<'_>) {
     outputln!("{}", output::heading("Project doctor"));
     outputln!("Project:  {}", report.project.id);
     outputln!("Manifest: {}", report.project.path.display());
@@ -82,10 +85,12 @@ fn human(report: &DoctorReport) {
 
     if report.errors != 0 || report.warnings != 0 {
         outputln!("\n{}", output::heading("Next"));
-        let project = report.project.path.display();
         if report.run_spec.status != "available" {
-            outputln!("1. blobray project inputs init --project {project} --help");
-            outputln!("2. blobray project files --project {project} --details");
+            outputln!("1. {}", context.inputs_init_help_command());
+            outputln!(
+                "2. {} --details",
+                context.follow_up_command("project files", FollowUpRequirements::TARGET)
+            );
         } else if report.inputs.iter().any(|input| input.status == "missing") {
             outputln!("1. rebuild or restore these already-bound artifacts:");
             for input in report
@@ -97,15 +102,28 @@ fn human(report: &DoctorReport) {
             }
             if let Some(path) = report.run_spec.path.as_deref() {
                 outputln!(
-                    "2. only if a path changed, recreate its binding in {} with `blobray project inputs init --help`",
-                    path.display()
+                    "2. only if a path changed, recreate its binding in {} with `{}`",
+                    path.display(),
+                    context.inputs_init_help_command(),
                 );
             }
-            outputln!("3. blobray project status --project {project}");
+            outputln!(
+                "3. {}",
+                context.follow_up_command("project status", FollowUpRequirements::RUN_SPEC)
+            );
         } else {
-            outputln!("1. blobray project files --project {project} --details");
-            outputln!("2. blobray project analyze --project {project}");
-            outputln!("3. blobray project status --project {project}");
+            outputln!(
+                "1. {} --details",
+                context.follow_up_command("project files", FollowUpRequirements::TARGET)
+            );
+            outputln!(
+                "2. {}",
+                context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS)
+            );
+            outputln!(
+                "3. {}",
+                context.follow_up_command("project status", FollowUpRequirements::RUN_SPEC)
+            );
         }
     }
 

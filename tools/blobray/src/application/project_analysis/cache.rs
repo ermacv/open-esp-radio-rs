@@ -17,19 +17,291 @@ use crate::Result;
 pub(super) struct ProjectAnalysisCache {
     store: PersistentStore,
     digests: BTreeMap<PathBuf, DigestMemo>,
+    observed_inputs: BTreeMap<String, ObservedInputs>,
+    last_lookup_restored: bool,
+    planning_snapshot: Option<PlanningSnapshot>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum ProjectAnalysisCachePlan {
+    Current {
+        signature: String,
+    },
+    Restorable {
+        signature: String,
+        changed_outputs: usize,
+    },
+    Missing {
+        signature: String,
+        cause: String,
+    },
 }
 
 enum PersistentStore {
     Disabled,
     Deferred(PathBuf),
-    Ready(crate::application::query_store::QueryStore),
+    Ready(Box<crate::application::query_store::QueryStore>),
+    Failed(String),
+}
+
+enum PlanningSnapshot {
+    Absent,
+    Locked {
+        guard: crate::application::query_store::PlanReadGuard,
+    },
     Failed(String),
 }
 
 struct DigestMemo {
+    version: FileVersion,
+    value: String,
+}
+
+struct ObservedInputs {
+    snapshot: InputSnapshot,
+    mutation_guard: InputMutationGuard,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InputSnapshot {
+    signature: String,
+    filesystem: Vec<(PathBuf, InputPathVersion)>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InputPathVersion {
+    /// `lstat` identity of the directory entry itself. Unlike `metadata`, this
+    /// preserves the generation of a symbolic link instead of only observing
+    /// its current target.
+    entry: Option<FileVersion>,
+    entry_kind: InputEntryKind,
+    /// Followed target identity. Regular entries repeat `entry`; symbolic
+    /// links carry both identities so target and link changes are observable.
+    target: Option<(InputTargetKind, FileVersion)>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InputEntryKind {
+    Missing,
+    File,
+    Directory,
+    SymbolicLink,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InputTargetKind {
+    File,
+    Directory,
+    Other,
+}
+
+#[cfg(target_os = "linux")]
+struct InputMutationGuard {
+    inotify: nix::sys::inotify::Inotify,
+    watches: BTreeMap<
+        nix::sys::inotify::WatchDescriptor,
+        std::collections::BTreeSet<std::ffi::OsString>,
+    >,
+}
+
+#[cfg(not(target_os = "linux"))]
+struct InputMutationGuard {
+    /// Portable fail-closed fallback. Platforms without a filename-filtered
+    /// notification backend may invalidate on unrelated sibling mutations,
+    /// but never accept an ABA-rebound input as current.
+    parents: Vec<(PathBuf, Option<FileVersion>)>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FileVersion {
     len: u64,
     modified: Option<std::time::SystemTime>,
-    value: String,
+    created: Option<std::time::SystemTime>,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+    #[cfg(unix)]
+    changed_seconds: i64,
+    #[cfg(unix)]
+    changed_nanoseconds: i64,
+}
+
+impl FileVersion {
+    fn from_metadata(metadata: &fs::Metadata) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+            created: metadata.created().ok(),
+            #[cfg(unix)]
+            device: metadata.dev(),
+            #[cfg(unix)]
+            inode: metadata.ino(),
+            #[cfg(unix)]
+            changed_seconds: metadata.ctime(),
+            #[cfg(unix)]
+            changed_nanoseconds: metadata.ctime_nsec(),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl InputMutationGuard {
+    fn new(inputs: &[PathBuf]) -> Result<Self> {
+        use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
+
+        let inotify =
+            Inotify::init(InitFlags::IN_CLOEXEC | InitFlags::IN_NONBLOCK).map_err(|error| {
+                crate::Error::invalid(format!(
+                    "cannot start the analysis-input mutation guard: {error}"
+                ))
+            })?;
+        let mut guard = Self {
+            inotify,
+            watches: BTreeMap::new(),
+        };
+        let mask = AddWatchFlags::IN_ATTRIB
+            | AddWatchFlags::IN_CLOSE_WRITE
+            | AddWatchFlags::IN_CREATE
+            | AddWatchFlags::IN_DELETE
+            | AddWatchFlags::IN_DELETE_SELF
+            | AddWatchFlags::IN_MODIFY
+            | AddWatchFlags::IN_MOVED_FROM
+            | AddWatchFlags::IN_MOVED_TO
+            | AddWatchFlags::IN_MOVE_SELF
+            | AddWatchFlags::IN_UNMOUNT;
+        for binding in input_binding_paths(inputs)? {
+            let Some((parent, name)) = closest_watchable_binding(&binding) else {
+                continue;
+            };
+            let descriptor = guard.inotify.add_watch(&parent, mask).map_err(|error| {
+                crate::Error::invalid(format!(
+                    "cannot watch analysis input binding {} in {}: {error}",
+                    binding.display(),
+                    parent.display()
+                ))
+            })?;
+            guard.watches.entry(descriptor).or_default().insert(name);
+        }
+        Ok(guard)
+    }
+
+    fn changed(&mut self) -> Result<bool> {
+        use nix::{errno::Errno, sys::inotify::AddWatchFlags};
+
+        loop {
+            let events = match self.inotify.read_events() {
+                Ok(events) => events,
+                Err(Errno::EAGAIN) => return Ok(false),
+                Err(error) => {
+                    return Err(crate::Error::invalid(format!(
+                        "cannot read the analysis-input mutation guard: {error}"
+                    )));
+                }
+            };
+            for event in events {
+                if event.mask.intersects(
+                    AddWatchFlags::IN_Q_OVERFLOW
+                        | AddWatchFlags::IN_UNMOUNT
+                        | AddWatchFlags::IN_IGNORED,
+                ) {
+                    return Ok(true);
+                }
+                let Some(names) = self.watches.get(&event.wd) else {
+                    return Ok(true);
+                };
+                match event.name {
+                    Some(name) if !names.contains(&name) => {}
+                    _ => return Ok(true),
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for InputMutationGuard {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+
+        let _ = nix::unistd::close(self.inotify.as_raw_fd());
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl InputMutationGuard {
+    fn new(inputs: &[PathBuf]) -> Result<Self> {
+        let parents = input_binding_paths(inputs)?
+            .into_iter()
+            .filter_map(|path| path.parent().map(Path::to_owned))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .map(|path| {
+                let version = fs::metadata(&path)
+                    .ok()
+                    .map(|metadata| FileVersion::from_metadata(&metadata));
+                (path, version)
+            })
+            .collect();
+        Ok(Self { parents })
+    }
+
+    fn changed(&mut self) -> Result<bool> {
+        for (path, expected) in &self.parents {
+            let current = fs::metadata(path)
+                .ok()
+                .map(|metadata| FileVersion::from_metadata(&metadata));
+            if &current != expected {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
+fn input_binding_paths(inputs: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let mut bindings = std::collections::BTreeSet::new();
+    for input in inputs {
+        bindings.insert(input.clone());
+        let mut ancestor = input.parent();
+        while let Some(path) = ancestor {
+            match fs::symlink_metadata(path) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    bindings.insert(path.to_owned());
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+            ancestor = path.parent();
+        }
+        if let Ok(canonical) = fs::canonicalize(input) {
+            bindings.insert(canonical);
+        }
+    }
+    Ok(bindings.into_iter().collect())
+}
+
+#[cfg(target_os = "linux")]
+fn closest_watchable_binding(path: &Path) -> Option<(PathBuf, std::ffi::OsString)> {
+    let mut binding = path;
+    loop {
+        let parent = binding.parent()?;
+        let parent = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+        if fs::metadata(parent).is_ok_and(|metadata| metadata.is_dir()) {
+            return binding
+                .file_name()
+                .map(|name| (parent.to_owned(), name.to_owned()));
+        }
+        binding = parent;
+    }
 }
 
 impl ProjectAnalysisCache {
@@ -42,6 +314,9 @@ impl ProjectAnalysisCache {
         Self {
             store: PersistentStore::Disabled,
             digests: BTreeMap::new(),
+            observed_inputs: BTreeMap::new(),
+            last_lookup_restored: false,
+            planning_snapshot: None,
         }
     }
 
@@ -55,6 +330,123 @@ impl ProjectAnalysisCache {
         Self {
             store: PersistentStore::Deferred(project_manifest.to_owned()),
             digests: BTreeMap::new(),
+            observed_inputs: BTreeMap::new(),
+            last_lookup_restored: false,
+            planning_snapshot: None,
+        }
+    }
+
+    /// Freeze the persistent cache generation observed by a complete plan.
+    /// Missing cache state stays missing even if another process creates it
+    /// later; an existing database is protected by a shared lifetime lock.
+    pub(super) fn planning(project_manifest: &Path) -> Self {
+        let planning_snapshot =
+            match crate::application::query_store::QueryStore::plan_read_guard(project_manifest) {
+                Ok(Some(guard)) => PlanningSnapshot::Locked { guard },
+                Ok(None) => PlanningSnapshot::Absent,
+                Err(error) => PlanningSnapshot::Failed(error.to_string()),
+            };
+        Self {
+            store: PersistentStore::Disabled,
+            digests: BTreeMap::new(),
+            observed_inputs: BTreeMap::new(),
+            last_lookup_restored: false,
+            planning_snapshot: Some(planning_snapshot),
+        }
+    }
+
+    pub(super) fn ensure_planning_snapshot(&self) -> Result<()> {
+        match self.planning_snapshot.as_ref() {
+            Some(PlanningSnapshot::Absent | PlanningSnapshot::Locked { .. }) => Ok(()),
+            Some(PlanningSnapshot::Failed(error)) => Err(crate::Error::invalid(format!(
+                "persistent query cache snapshot is unavailable: {error}"
+            ))),
+            None => Err(crate::Error::invalid(
+                "persistent query cache was not opened for planning",
+            )),
+        }
+    }
+
+    /// Inspect one exact stage signature without allowing CAS restoration or
+    /// any SQLite mutation.
+    pub(super) fn plan(
+        &mut self,
+        stage: &str,
+        configuration: &str,
+        inputs: &[PathBuf],
+        outputs: &[PathBuf],
+    ) -> Result<ProjectAnalysisCachePlan> {
+        self.ensure_planning_snapshot()?;
+        let signature = self.signature(stage, configuration, inputs)?;
+        if matches!(self.planning_snapshot, Some(PlanningSnapshot::Absent)) {
+            return Ok(ProjectAnalysisCachePlan::Missing {
+                signature,
+                cause: "persistent cache was absent when planning started".to_owned(),
+            });
+        }
+        let cached = {
+            let PlanningSnapshot::Locked { guard } = self
+                .planning_snapshot
+                .as_ref()
+                .expect("planning snapshot was validated")
+            else {
+                unreachable!("absent planning snapshot returned before cache lookup")
+            };
+            crate::application::query_store::QueryStore::stage_output_digests_read_only(
+                guard, &signature, false,
+            )?
+        };
+        let Some(cached) = cached else {
+            return Ok(ProjectAnalysisCachePlan::Missing {
+                signature,
+                cause: "no cached result matches the current stage signature".to_owned(),
+            });
+        };
+        if cached.len() != outputs.len() {
+            return Ok(ProjectAnalysisCachePlan::Missing {
+                signature,
+                cause: format!(
+                    "cached result has {} output(s), but the stage now declares {}",
+                    cached.len(),
+                    outputs.len()
+                ),
+            });
+        }
+        let mut changed_outputs = 0;
+        for (path, expected) in outputs.iter().zip(&cached) {
+            let current = path
+                .is_file()
+                .then(|| self.digest(path))
+                .transpose()?
+                .is_some_and(|actual| &actual == expected);
+            if !current {
+                changed_outputs += 1;
+            }
+        }
+        if changed_outputs == 0 {
+            Ok(ProjectAnalysisCachePlan::Current { signature })
+        } else {
+            let verified = {
+                let PlanningSnapshot::Locked { guard } = self
+                    .planning_snapshot
+                    .as_ref()
+                    .expect("planning snapshot was validated")
+                else {
+                    unreachable!("absent planning snapshot returned before payload validation")
+                };
+                crate::application::query_store::QueryStore::stage_output_digests_read_only(
+                    guard, &signature, true,
+                )?
+            };
+            if verified.as_ref() != Some(&cached) {
+                return Err(crate::Error::invalid(
+                    "query cache stage binding changed during planning; retry after the cache writer exits",
+                ));
+            }
+            Ok(ProjectAnalysisCachePlan::Restorable {
+                signature,
+                changed_outputs,
+            })
         }
     }
 
@@ -65,11 +457,32 @@ impl ProjectAnalysisCache {
         inputs: &[PathBuf],
         outputs: &[PathBuf],
     ) -> Result<bool> {
-        let signature = self.signature(stage, configuration, inputs)?;
+        self.is_current_with_post_bind_hook(stage, configuration, inputs, outputs, || {})
+    }
+
+    fn is_current_with_post_bind_hook(
+        &mut self,
+        stage: &str,
+        configuration: &str,
+        inputs: &[PathBuf],
+        outputs: &[PathBuf],
+        after_bind: impl FnOnce(),
+    ) -> Result<bool> {
+        self.last_lookup_restored = false;
+        self.observed_inputs.remove(stage);
+        // Initialize the persistent cache before taking the stage snapshot.
+        // First use may create `generated/.blobray-cache`; that local cache
+        // setup must not look like a concurrent rebind of a project input in
+        // the containing directory.
+        self.store_mut()?;
+        let mut observed = self.begin_observing_inputs(stage, configuration, inputs)?;
+        let signature = observed.snapshot.signature.clone();
         let Some(cached) = self.store_mut()?.stage_output_digests(&signature)? else {
+            self.observed_inputs.insert(stage.to_owned(), observed);
             return Ok(false);
         };
         if cached.len() != outputs.len() {
+            self.observed_inputs.insert(stage.to_owned(), observed);
             return Ok(false);
         }
         let mut restored = false;
@@ -94,13 +507,46 @@ impl ProjectAnalysisCache {
         if restored {
             tracing::info!(cache_stage = stage, "restored generated outputs from CAS");
         }
+        if self.observed_inputs_changed(stage, configuration, inputs, &mut observed)? {
+            self.resnapshot_inputs(stage, configuration, inputs)?;
+            tracing::warn!(
+                cache_stage = stage,
+                "analysis inputs changed during cache lookup; recomputing the stage"
+            );
+            return Ok(false);
+        }
         let paths = outputs
             .iter()
             .map(|path| path_key(path))
             .collect::<Vec<_>>();
         self.store_mut()?
             .bind_restored_stage(stage, &signature, &paths, &cached)?;
+        after_bind();
+        match self.observed_inputs_changed(stage, configuration, inputs, &mut observed) {
+            Ok(false) => {}
+            Ok(true) => {
+                self.store_mut()?.retire_stage_binding(stage, &signature)?;
+                self.resnapshot_inputs(stage, configuration, inputs)?;
+                tracing::warn!(
+                    cache_stage = stage,
+                    "analysis inputs changed while the cache hit was being published; recomputing the stage"
+                );
+                return Ok(false);
+            }
+            Err(validation_error) => {
+                self.digests.clear();
+                self.store_mut()?.retire_stage_binding(stage, &signature)?;
+                return Err(crate::Error::invalid(format!(
+                    "analysis inputs could not be validated after cached stage {stage:?} was rebound; the cached binding was retired: {validation_error}"
+                )));
+            }
+        }
+        self.last_lookup_restored = restored;
         Ok(true)
+    }
+
+    pub(super) const fn last_lookup_restored(&self) -> bool {
+        self.last_lookup_restored
     }
 
     pub(super) fn record(
@@ -110,7 +556,28 @@ impl ProjectAnalysisCache {
         inputs: &[PathBuf],
         outputs: &[PathBuf],
     ) -> Result<()> {
-        let signature = self.signature(stage, configuration, inputs)?;
+        self.record_with_post_publish_hook(stage, configuration, inputs, outputs, || {})
+    }
+
+    fn record_with_post_publish_hook(
+        &mut self,
+        stage: &str,
+        configuration: &str,
+        inputs: &[PathBuf],
+        outputs: &[PathBuf],
+        after_publish: impl FnOnce(),
+    ) -> Result<()> {
+        let mut expected = self.observed_inputs.remove(stage).ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "analysis cache stage {stage:?} was recorded without a preceding input snapshot"
+            ))
+        })?;
+        if self.observed_inputs_changed(stage, configuration, inputs, &mut expected)? {
+            return Err(crate::Error::invalid(format!(
+                "analysis input changed while stage {stage:?} was running; generated output was not cached, rerun the analysis"
+            )));
+        }
+        let signature = expected.snapshot.signature.clone();
         let mut cached_outputs = Vec::with_capacity(outputs.len());
         for path in outputs {
             self.digests.remove(path);
@@ -118,7 +585,36 @@ impl ProjectAnalysisCache {
         }
         self.store_mut()?
             .record_stage(stage, &signature, &cached_outputs)?;
-        Ok(())
+        after_publish();
+        match self.observed_inputs_changed(stage, configuration, inputs, &mut expected) {
+            Ok(false) => Ok(()),
+            Ok(true) => {
+                self.digests.clear();
+                self.store_mut()?.retire_stage_binding(stage, &signature)?;
+                Err(crate::Error::invalid(format!(
+                    "analysis input changed while stage {stage:?} output was entering the persistent cache; the cached binding was retired, rerun the analysis"
+                )))
+            }
+            Err(validation_error) => {
+                self.digests.clear();
+                self.store_mut()?.retire_stage_binding(stage, &signature)?;
+                Err(crate::Error::invalid(format!(
+                    "analysis inputs could not be validated after stage {stage:?} output entered the persistent cache; the cached binding was retired: {validation_error}"
+                )))
+            }
+        }
+    }
+
+    /// Borrow the coordinator-owned query store for nested analysis queries.
+    ///
+    /// Project analysis keeps one exclusive store for its complete lifetime.
+    /// Expensive stages that also use the function-fact cache must borrow this
+    /// value instead of opening a second writer and conflicting with the
+    /// coordinator's lifetime lock.
+    pub(super) fn query_store_mut(
+        &mut self,
+    ) -> Result<&mut crate::application::query_store::QueryStore> {
+        self.store_mut()
     }
 
     fn store_mut(&mut self) -> Result<&mut crate::application::query_store::QueryStore> {
@@ -128,7 +624,7 @@ impl ProjectAnalysisCache {
         };
         if let Some(manifest) = manifest {
             self.store = match crate::application::query_store::QueryStore::open(&manifest) {
-                Ok(store) => PersistentStore::Ready(store),
+                Ok(store) => PersistentStore::Ready(Box::new(store)),
                 Err(error) => PersistentStore::Failed(error.to_string()),
             };
         }
@@ -142,6 +638,76 @@ impl ProjectAnalysisCache {
             ))),
             PersistentStore::Deferred(_) => unreachable!("deferred query store was not opened"),
         }
+    }
+
+    fn observed_inputs_changed(
+        &mut self,
+        stage: &str,
+        configuration: &str,
+        inputs: &[PathBuf],
+        observed: &mut ObservedInputs,
+    ) -> Result<bool> {
+        let verified = self.observe_inputs(stage, configuration, inputs)?;
+        Ok(verified != observed.snapshot || observed.mutation_guard.changed()?)
+    }
+
+    fn resnapshot_inputs(
+        &mut self,
+        stage: &str,
+        configuration: &str,
+        inputs: &[PathBuf],
+    ) -> Result<()> {
+        self.digests.clear();
+        let current = self.begin_observing_inputs(stage, configuration, inputs)?;
+        self.observed_inputs.insert(stage.to_owned(), current);
+        Ok(())
+    }
+
+    fn begin_observing_inputs(
+        &mut self,
+        stage: &str,
+        configuration: &str,
+        inputs: &[PathBuf],
+    ) -> Result<ObservedInputs> {
+        for _ in 0..2 {
+            let mut mutation_guard = InputMutationGuard::new(inputs)?;
+            let snapshot = self.observe_inputs(stage, configuration, inputs)?;
+            if !mutation_guard.changed()? {
+                return Ok(ObservedInputs {
+                    snapshot,
+                    mutation_guard,
+                });
+            }
+            self.digests.clear();
+        }
+        Err(crate::Error::invalid(format!(
+            "analysis inputs for stage {stage:?} changed while their mutation guard was being established"
+        )))
+    }
+
+    fn observe_inputs(
+        &mut self,
+        stage: &str,
+        configuration: &str,
+        inputs: &[PathBuf],
+    ) -> Result<InputSnapshot> {
+        for _ in 0..2 {
+            let observed = InputSnapshot {
+                signature: self.signature(stage, configuration, inputs)?,
+                filesystem: input_path_versions(inputs)?,
+            };
+            let verified = InputSnapshot {
+                signature: self.signature(stage, configuration, inputs)?,
+                filesystem: input_path_versions(inputs)?,
+            };
+            if observed == verified {
+                return Ok(observed);
+            }
+            self.digests.clear();
+        }
+        Err(crate::Error::invalid(format!(
+            "analysis inputs for stage {stage:?} changed while their cache snapshot was being captured"
+        )))
     }
 
     fn signature(
@@ -187,20 +753,33 @@ impl ProjectAnalysisCache {
     }
 
     fn directory_digest(&mut self, root: &Path) -> Result<String> {
-        fn collect_files(directory: &Path, output: &mut Vec<PathBuf>) -> Result<()> {
+        fn collect_files(
+            directory: &Path,
+            ancestors: &mut Vec<PathBuf>,
+            output: &mut Vec<PathBuf>,
+        ) -> Result<()> {
+            let canonical = fs::canonicalize(directory)?;
+            if ancestors.contains(&canonical) {
+                return Err(crate::Error::invalid(format!(
+                    "cache input directory {} contains a symbolic-link cycle",
+                    directory.display()
+                )));
+            }
+            ancestors.push(canonical);
             for entry in fs::read_dir(directory)? {
                 let path = entry?.path();
                 if path.is_dir() {
-                    collect_files(&path, output)?;
+                    collect_files(&path, ancestors, output)?;
                 } else if path.is_file() {
                     output.push(path);
                 }
             }
+            ancestors.pop();
             Ok(())
         }
 
         let mut files = Vec::new();
-        collect_files(root, &mut files)?;
+        collect_files(root, &mut Vec::new(), &mut files)?;
         files.sort();
         let mut digest = Sha256::new();
         digest.update(b"blobray-directory-v1\0");
@@ -222,24 +801,148 @@ impl ProjectAnalysisCache {
 
     fn digest(&mut self, path: &Path) -> Result<String> {
         let metadata = fs::metadata(path)?;
-        let modified = metadata.modified().ok();
+        let version = FileVersion::from_metadata(&metadata);
         if let Some(existing) = self.digests.get(path)
-            && existing.len == metadata.len()
-            && existing.modified == modified
+            && existing.version == version
         {
             return Ok(existing.value.clone());
         }
-        let value = crate::artifact_sha256(path)?;
-        self.digests.insert(
-            path.to_owned(),
-            DigestMemo {
-                len: metadata.len(),
-                modified,
-                value: value.clone(),
-            },
-        );
-        Ok(value)
+        for _ in 0..2 {
+            let before = fs::metadata(path)?;
+            let value = crate::artifact_sha256(path)?;
+            let after = fs::metadata(path)?;
+            if same_file_version(&before, &after) {
+                self.digests.insert(
+                    path.to_owned(),
+                    DigestMemo {
+                        version: FileVersion::from_metadata(&after),
+                        value: value.clone(),
+                    },
+                );
+                return Ok(value);
+            }
+        }
+        Err(crate::Error::invalid(format!(
+            "analysis input {} changed while its cache identity was being computed",
+            path.display()
+        )))
     }
+}
+
+fn input_path_versions(inputs: &[PathBuf]) -> Result<Vec<(PathBuf, InputPathVersion)>> {
+    fn target_version(metadata: &fs::Metadata) -> (InputTargetKind, FileVersion) {
+        let kind = if metadata.is_file() {
+            InputTargetKind::File
+        } else if metadata.is_dir() {
+            InputTargetKind::Directory
+        } else {
+            InputTargetKind::Other
+        };
+        (kind, FileVersion::from_metadata(metadata))
+    }
+
+    fn snapshot(path: &Path) -> Result<InputPathVersion> {
+        let entry = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(InputPathVersion {
+                    entry: None,
+                    entry_kind: InputEntryKind::Missing,
+                    target: None,
+                });
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let entry_kind = if entry.file_type().is_symlink() {
+            InputEntryKind::SymbolicLink
+        } else if entry.is_file() {
+            InputEntryKind::File
+        } else if entry.is_dir() {
+            InputEntryKind::Directory
+        } else {
+            InputEntryKind::Other
+        };
+        let target = match fs::metadata(path) {
+            Ok(metadata) => Some(target_version(&metadata)),
+            Err(error)
+                if entry.file_type().is_symlink()
+                    && error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                None
+            }
+            Err(error) => return Err(error.into()),
+        };
+        Ok(InputPathVersion {
+            entry: Some(FileVersion::from_metadata(&entry)),
+            entry_kind,
+            target,
+        })
+    }
+
+    fn collect_symlink_ancestors(
+        path: &Path,
+        output: &mut BTreeMap<PathBuf, InputPathVersion>,
+    ) -> Result<()> {
+        let mut ancestor = path.parent();
+        while let Some(path) = ancestor {
+            let metadata = match fs::symlink_metadata(path) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Err(error) => return Err(error.into()),
+            };
+            if metadata.file_type().is_symlink() {
+                output.insert(path.to_owned(), snapshot(path)?);
+            }
+            ancestor = path.parent();
+        }
+        Ok(())
+    }
+
+    fn collect(
+        path: &Path,
+        directory_ancestors: &mut Vec<PathBuf>,
+        output: &mut BTreeMap<PathBuf, InputPathVersion>,
+    ) -> Result<()> {
+        collect_symlink_ancestors(path, output)?;
+        let version = snapshot(path)?;
+        let directory = matches!(version.target, Some((InputTargetKind::Directory, _)));
+        output.insert(path.to_owned(), version);
+        if !directory {
+            return Ok(());
+        }
+
+        let canonical = fs::canonicalize(path)?;
+        if directory_ancestors.contains(&canonical) {
+            return Err(crate::Error::invalid(format!(
+                "cache input directory {} contains a symbolic-link cycle",
+                path.display()
+            )));
+        }
+        directory_ancestors.push(canonical);
+        let mut children = fs::read_dir(path)?
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<std::io::Result<Vec<_>>>()?;
+        children.sort();
+        for child in children {
+            collect(&child, directory_ancestors, output)?;
+        }
+        directory_ancestors.pop();
+        Ok(())
+    }
+
+    let mut roots = inputs.to_vec();
+    roots.sort();
+    roots.dedup();
+    let mut output = BTreeMap::new();
+    for path in roots {
+        collect(&path, &mut Vec::new(), &mut output)?;
+    }
+    Ok(output.into_iter().collect())
+}
+
+fn same_file_version(before: &fs::Metadata, after: &fs::Metadata) -> bool {
+    before.file_type() == after.file_type()
+        && FileVersion::from_metadata(before) == FileVersion::from_metadata(after)
 }
 
 /// Explicit semantic revision of each cached generator.
@@ -404,6 +1107,362 @@ mod tests {
     }
 
     #[test]
+    fn cache_refuses_to_record_when_an_input_changes_during_a_stage() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-analysis-cache-input-race-{}",
+            std::process::id()
+        ));
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("vendor.bin");
+        let output = directory.join("generated/output.json");
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        fs::write(&input, "artifact-a").unwrap();
+        fs::write(&output, "output").unwrap();
+
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output),
+                )
+                .unwrap()
+        );
+        // Keep the byte length identical and restore the original contents:
+        // content signatures alone are ABA-blind, while the captured file
+        // generation must still prove that a rebuild happened mid-stage.
+        fs::write(&input, "artifact-b").unwrap();
+        fs::write(&input, "artifact-a").unwrap();
+        let error = cache
+            .record(
+                "linked-ir",
+                "profile=a",
+                std::slice::from_ref(&input),
+                std::slice::from_ref(&output),
+            )
+            .unwrap_err();
+
+        assert!(error.to_string().contains("changed while stage"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn cache_retires_a_stage_binding_when_inputs_change_after_publication() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-analysis-cache-post-publish-input-race-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("vendor.bin");
+        let saved = directory.join("vendor.saved.bin");
+        let replacement = directory.join("vendor.replacement.bin");
+        let output = directory.join("generated/output.json");
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        fs::write(&input, "artifact-a").unwrap();
+        fs::write(&replacement, "artifact-b").unwrap();
+        fs::write(&output, vec![0x5a; 128 * 1024]).unwrap();
+
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output),
+                )
+                .unwrap()
+        );
+        let original_snapshot = cache
+            .observed_inputs
+            .get("linked-ir")
+            .unwrap()
+            .snapshot
+            .clone();
+        let signature = original_snapshot.signature.clone();
+
+        let error = cache
+            .record_with_post_publish_hook(
+                "linked-ir",
+                "profile=a",
+                std::slice::from_ref(&input),
+                std::slice::from_ref(&output),
+                || {
+                    fs::rename(&input, &saved).unwrap();
+                    fs::rename(&replacement, &input).unwrap();
+                    fs::rename(&input, &replacement).unwrap();
+                    fs::rename(&saved, &input).unwrap();
+                },
+            )
+            .unwrap_err();
+
+        assert!(error.to_string().contains("entering the persistent cache"));
+        assert!(
+            cache
+                .store_mut()
+                .unwrap()
+                .stage_output_digests(&signature)
+                .unwrap()
+                .is_none()
+        );
+        assert!(!cache.observed_inputs.contains_key("linked-ir"));
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output),
+                )
+                .unwrap()
+        );
+        assert_eq!(fs::read(&input).unwrap(), b"artifact-a");
+        assert_eq!(
+            cache
+                .observed_inputs
+                .get("linked-ir")
+                .unwrap()
+                .snapshot
+                .signature,
+            original_snapshot.signature
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn cache_retires_a_restored_binding_when_inputs_change_after_rebind() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-analysis-cache-post-bind-input-race-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("vendor.bin");
+        let saved = directory.join("vendor.saved.bin");
+        let replacement = directory.join("vendor.replacement.bin");
+        let output = directory.join("generated/output.json");
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        fs::write(&input, "artifact-a").unwrap();
+        fs::write(&replacement, "artifact-b").unwrap();
+        let output_bytes = vec![0x31; 128 * 1024];
+        fs::write(&output, &output_bytes).unwrap();
+
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output),
+                )
+                .unwrap()
+        );
+        let original_snapshot = cache
+            .observed_inputs
+            .get("linked-ir")
+            .unwrap()
+            .snapshot
+            .clone();
+        let signature = original_snapshot.signature.clone();
+        cache
+            .record(
+                "linked-ir",
+                "profile=a",
+                std::slice::from_ref(&input),
+                std::slice::from_ref(&output),
+            )
+            .unwrap();
+        fs::remove_file(&output).unwrap();
+
+        assert!(
+            !cache
+                .is_current_with_post_bind_hook(
+                    "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output),
+                    || {
+                        fs::rename(&input, &saved).unwrap();
+                        fs::rename(&replacement, &input).unwrap();
+                        fs::rename(&input, &replacement).unwrap();
+                        fs::rename(&saved, &input).unwrap();
+                    },
+                )
+                .unwrap()
+        );
+
+        assert_eq!(fs::read(&output).unwrap(), output_bytes);
+        assert!(!cache.last_lookup_restored());
+        assert!(
+            cache
+                .store_mut()
+                .unwrap()
+                .stage_output_digests(&signature)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(fs::read(&input).unwrap(), b"artifact-a");
+        assert_eq!(
+            cache
+                .observed_inputs
+                .get("linked-ir")
+                .unwrap()
+                .snapshot
+                .signature,
+            original_snapshot.signature
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn cache_refuses_an_atomic_input_rebind_even_when_the_original_inode_returns() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-analysis-cache-input-rebind-{}",
+            std::process::id()
+        ));
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("vendor.bin");
+        let saved = directory.join("vendor.saved.bin");
+        let replacement = directory.join("vendor.replacement.bin");
+        let output = directory.join("generated/output.json");
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        fs::write(&input, "artifact-a").unwrap();
+        fs::write(&replacement, "artifact-b").unwrap();
+        fs::write(&output, "output").unwrap();
+
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output),
+                )
+                .unwrap()
+        );
+        fs::rename(&input, &saved).unwrap();
+        fs::rename(&replacement, &input).unwrap();
+        fs::rename(&input, &replacement).unwrap();
+        fs::rename(&saved, &input).unwrap();
+
+        let error = cache
+            .record(
+                "linked-ir",
+                "profile=a",
+                std::slice::from_ref(&input),
+                std::slice::from_ref(&output),
+            )
+            .unwrap_err();
+
+        assert!(error.to_string().contains("changed while stage"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_refuses_a_symlink_input_rebind_even_when_the_target_returns() {
+        use std::os::unix::fs::symlink;
+
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-analysis-cache-symlink-rebind-{}",
+            std::process::id()
+        ));
+        let manifest = directory.join("vendor-project.toml");
+        let first = directory.join("vendor-a.bin");
+        let second = directory.join("vendor-b.bin");
+        let input = directory.join("vendor.bin");
+        let output = directory.join("generated/output.json");
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        fs::write(&first, "artifact-a").unwrap();
+        fs::write(&second, "artifact-b").unwrap();
+        symlink(&first, &input).unwrap();
+        fs::write(&output, "output").unwrap();
+
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output),
+                )
+                .unwrap()
+        );
+        fs::remove_file(&input).unwrap();
+        symlink(&second, &input).unwrap();
+        fs::remove_file(&input).unwrap();
+        symlink(&first, &input).unwrap();
+
+        let error = cache
+            .record(
+                "linked-ir",
+                "profile=a",
+                std::slice::from_ref(&input),
+                std::slice::from_ref(&output),
+            )
+            .unwrap_err();
+
+        assert!(error.to_string().contains("changed while stage"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn cache_allows_a_stage_to_publish_a_sibling_of_its_input() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-analysis-cache-sibling-output-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("symbols.json");
+        let output = directory.join("mmio.json");
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        fs::write(&input, "symbols").unwrap();
+
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "mmio-discovery",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output),
+                )
+                .unwrap()
+        );
+        fs::write(&output, "mmio").unwrap();
+
+        cache
+            .record(
+                "mmio-discovery",
+                "profile=a",
+                std::slice::from_ref(&input),
+                std::slice::from_ref(&output),
+            )
+            .unwrap();
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn cache_hashes_files_inside_declared_input_directories() {
         let directory = std::env::temp_dir().join(format!(
             "blobray-analysis-directory-cache-{}",
@@ -420,6 +1479,16 @@ mod tests {
         fs::write(&output, "review-a").unwrap();
 
         let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "function-review",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output),
+                )
+                .unwrap()
+        );
         cache
             .record(
                 "function-review",
@@ -455,6 +1524,42 @@ mod tests {
     }
 
     #[test]
+    fn cache_signatures_distinguish_optional_absence_from_later_presence() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-analysis-missing-cache-input-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("vendor-project.toml");
+        let missing = directory.join("missing-vendor.a");
+        fs::write(&manifest, "schema = 3\n").unwrap();
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+
+        let absent = cache
+            .signature(
+                "symbol-inventory",
+                "symbols",
+                std::slice::from_ref(&missing),
+            )
+            .unwrap();
+        fs::write(&missing, "now available").unwrap();
+        let present = cache
+            .signature(
+                "symbol-inventory",
+                "symbols",
+                std::slice::from_ref(&missing),
+            )
+            .unwrap();
+
+        assert_ne!(absent, present);
+        assert!(!directory.join("generated").exists());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn equivalent_profile_bindings_restore_one_shared_result() {
         let directory = std::env::temp_dir().join(format!(
             "blobray-shared-profile-cache-{}",
@@ -470,6 +1575,16 @@ mod tests {
         fs::write(&focused, "recovered-function").unwrap();
 
         let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir:focused",
+                    "sources=[vendor];roots=all",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&focused),
+                )
+                .unwrap()
+        );
         cache
             .record(
                 "linked-ir:focused",

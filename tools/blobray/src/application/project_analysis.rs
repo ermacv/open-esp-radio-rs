@@ -2,8 +2,10 @@
 
 mod cache;
 mod operations;
+mod plan;
 
 pub(crate) use operations::*;
+pub use plan::*;
 
 use std::path::Path;
 
@@ -14,11 +16,38 @@ use super::pipeline::{
 };
 use crate::{Result, project::ProjectSpec};
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ProjectAnalysisRequest {
-    pub(crate) check: bool,
-    pub(crate) deny_unreviewed: bool,
-    pub(crate) jobs: usize,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProjectAnalysisRequest {
+    pub check: bool,
+    pub deny_unreviewed: bool,
+    pub jobs: usize,
+}
+
+impl ProjectAnalysisRequest {
+    pub const MIN_JOBS: usize = 1;
+    pub const MAX_JOBS: usize = 8;
+
+    pub(crate) fn validate(self) -> Result<Self> {
+        if !(Self::MIN_JOBS..=Self::MAX_JOBS).contains(&self.jobs) {
+            return Err(crate::Error::invalid(format!(
+                "project analysis jobs must be in {}..={}, got {}",
+                Self::MIN_JOBS,
+                Self::MAX_JOBS,
+                self.jobs
+            )));
+        }
+        Ok(self)
+    }
+}
+
+impl Default for ProjectAnalysisRequest {
+    fn default() -> Self {
+        Self {
+            check: false,
+            deny_unreviewed: false,
+            jobs: 1,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -26,11 +55,12 @@ pub(crate) struct ProjectAnalysisInputs {
     pub(crate) run_spec: bool,
     pub(crate) memory_map: bool,
     pub(crate) event_replays: bool,
+    pub(crate) event_replays_require_interfaces: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum ProjectAnalysisStatus {
+pub enum ProjectAnalysisStatus {
     #[serde(rename = "ok")]
     Complete,
     NothingConfigured,
@@ -59,26 +89,27 @@ pub(crate) trait ProjectAnalysisOperations {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct ProjectAnalysisReport {
-    pub(crate) schema: u32,
-    pub(crate) command: &'static str,
-    pub(crate) mode: &'static str,
-    pub(crate) status: ProjectAnalysisStatus,
-    pub(crate) stages: Vec<super::pipeline::StageReport>,
-    pub(crate) written: usize,
-    pub(crate) verified: usize,
+pub struct ProjectAnalysisReport {
+    pub schema: u32,
+    pub command: &'static str,
+    pub mode: &'static str,
+    pub status: ProjectAnalysisStatus,
+    pub stages: Vec<super::pipeline::StageReport>,
+    pub written: usize,
+    pub restored: usize,
+    pub verified: usize,
     #[serde(rename = "up-to-date")]
-    pub(crate) current: usize,
-    pub(crate) failed: usize,
-    pub(crate) blocked: usize,
+    pub current: usize,
+    pub failed: usize,
+    pub blocked: usize,
     #[serde(rename = "not-configured")]
-    pub(crate) not_configured: usize,
+    pub not_configured: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) duration_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
 }
 
 impl ProjectAnalysisReport {
-    pub(crate) const fn succeeded(&self) -> bool {
+    pub const fn succeeded(&self) -> bool {
         matches!(self.status, ProjectAnalysisStatus::Complete)
     }
 }
@@ -106,6 +137,9 @@ pub(crate) fn run(
         None => StageExecution::not_configured("[registers] is absent"),
         Some(_) if !inputs.run_spec => StageExecution::blocked("run-spec is not configured"),
         Some(_) if !inputs.memory_map => StageExecution::blocked("memory-map is not configured"),
+        Some(_) if project.code.is_some() && symbols.blocks_dependants() => {
+            StageExecution::blocked("symbol-inventory did not complete")
+        }
         Some(_) => execute("mmio-discovery", generated, || {
             operations.discover_mmio(mode.is_check(), request.jobs)
         }),
@@ -115,6 +149,9 @@ pub(crate) fn run(
     let interfaces = match project.interfaces.as_ref() {
         None => StageExecution::not_configured("[interfaces] is absent"),
         Some(_) if !inputs.run_spec => StageExecution::blocked("run-spec is not configured"),
+        Some(_) if project.code.is_some() && symbols.blocks_dependants() => {
+            StageExecution::blocked("symbol-inventory did not complete")
+        }
         Some(_) => execute("interface-discovery", generated, || {
             operations.discover_interfaces(mode.is_check())
         }),
@@ -125,6 +162,10 @@ pub(crate) fn run(
         StageExecution::not_configured("[[analysis.ir]] is absent")
     } else if !inputs.run_spec {
         StageExecution::blocked("run-spec is not configured")
+    } else if project.code.is_some() && symbols.blocks_dependants() {
+        StageExecution::blocked("symbol-inventory did not complete")
+    } else if linked_ir_uses_reviewed_interfaces(project) && interfaces.blocks_dependants() {
+        StageExecution::blocked("interface-discovery did not complete")
     } else {
         execute("linked-ir", generated, || {
             operations.build_linked_ir(mode.is_check(), request.jobs)
@@ -136,10 +177,8 @@ pub(crate) fn run(
         StageExecution::not_configured("no reviewed event replay is configured")
     } else if !inputs.run_spec {
         StageExecution::blocked("run-spec is not configured")
-    } else if project.interfaces.is_some() && interfaces.blocks_dependants() {
+    } else if inputs.event_replays_require_interfaces && interfaces.blocks_dependants() {
         StageExecution::blocked("interface-discovery did not complete")
-    } else if !project.ir_profiles.is_empty() && ir.blocks_dependants() {
-        StageExecution::blocked("linked-ir did not complete")
     } else {
         execute("event-replays", generated, || {
             operations.build_event_replays(mode.is_check())
@@ -279,18 +318,19 @@ pub(crate) fn run(
 
     let status = if !summary.succeeded() {
         ProjectAnalysisStatus::Failed
-    } else if summary.written + summary.verified + summary.current == 0 {
+    } else if summary.written + summary.restored + summary.verified + summary.current == 0 {
         ProjectAnalysisStatus::NothingConfigured
     } else {
         ProjectAnalysisStatus::Complete
     };
     ProjectAnalysisReport {
-        schema: 4,
+        schema: 5,
         command: "project analyze",
         mode: mode.label(),
         status,
         stages: summary.stages().to_vec(),
         written: summary.written,
+        restored: summary.restored,
         verified: summary.verified,
         current: summary.current,
         failed: summary.failed,
@@ -307,6 +347,13 @@ fn review_depends_on_project_ir(project: &ProjectSpec, reports: &[std::path::Pat
         .any(|profile| reports.iter().any(|report| report == &profile.output))
 }
 
+pub(super) fn linked_ir_uses_reviewed_interfaces(project: &ProjectSpec) -> bool {
+    project
+        .interfaces
+        .as_ref()
+        .is_some_and(|interfaces| interfaces.pack.is_some())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,11 +363,15 @@ mod tests {
     struct FakeOperations {
         calls: Vec<&'static str>,
         current: bool,
+        fail: Option<&'static str>,
     }
 
     impl FakeOperations {
         fn called(&mut self, name: &'static str) -> Result<StageRun> {
             self.calls.push(name);
+            if self.fail == Some(name) {
+                return Err(crate::Error::invalid(format!("{name} failed")));
+            }
             Ok(if self.current {
                 StageRun::Current
             } else {
@@ -409,6 +460,35 @@ mod tests {
     }
 
     #[test]
+    fn public_request_bounds_are_shared_with_all_frontends() {
+        for jobs in [0, ProjectAnalysisRequest::MAX_JOBS + 1] {
+            let error = ProjectAnalysisRequest {
+                jobs,
+                ..ProjectAnalysisRequest::default()
+            }
+            .validate()
+            .unwrap_err();
+            assert!(error.to_string().contains("jobs must be in 1..=8"));
+        }
+        assert!(
+            ProjectAnalysisRequest {
+                jobs: ProjectAnalysisRequest::MIN_JOBS,
+                ..ProjectAnalysisRequest::default()
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            ProjectAnalysisRequest {
+                jobs: ProjectAnalysisRequest::MAX_JOBS,
+                ..ProjectAnalysisRequest::default()
+            }
+            .validate()
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn optional_absence_is_a_typed_non_successful_noop() {
         let mut operations = FakeOperations::default();
         let report = run(
@@ -471,6 +551,7 @@ mod tests {
                 run_spec: true,
                 memory_map: false,
                 event_replays: false,
+                event_replays_require_interfaces: false,
             },
             &mut operations,
         );
@@ -490,5 +571,97 @@ mod tests {
                     .sum::<u64>()
             )
         );
+    }
+
+    #[test]
+    fn linked_ir_is_blocked_when_its_reviewed_interface_predecessor_fails() {
+        let mut project = empty_project();
+        project.interfaces = Some(crate::project::InterfaceWorkspacePaths {
+            facts: "interfaces.json".into(),
+            pack: Some("interfaces.toml".into()),
+            semantic_catalogs: Vec::new(),
+        });
+        project
+            .ir_profiles
+            .push(crate::project_ir::ProjectIrProfile {
+                id: "fixture".to_owned(),
+                sources: vec!["fixture".to_owned()],
+                roots: crate::project_ir::ProjectIrRoots::All,
+                include_reachable: true,
+                entry_contract: "none".to_owned(),
+                output: "fixture.ir".into(),
+            });
+        let mut operations = FakeOperations {
+            fail: Some("interfaces"),
+            ..FakeOperations::default()
+        };
+
+        let report = run(
+            &project,
+            ProjectAnalysisRequest::default(),
+            ProjectAnalysisInputs {
+                run_spec: true,
+                memory_map: false,
+                event_replays: false,
+                event_replays_require_interfaces: false,
+            },
+            &mut operations,
+        );
+
+        assert!(!operations.calls.contains(&"ir"));
+        let linked_ir = report
+            .stages
+            .iter()
+            .find(|stage| stage.name == "linked-ir")
+            .unwrap();
+        assert_eq!(linked_ir.status, "blocked");
+        assert_eq!(
+            linked_ir.reason.as_deref(),
+            Some("interface-discovery did not complete")
+        );
+    }
+
+    #[test]
+    fn table_free_event_replay_is_independent_of_interface_and_ir_failures() {
+        let mut project = empty_project();
+        project.interfaces = Some(crate::project::InterfaceWorkspacePaths {
+            facts: "interfaces.json".into(),
+            pack: Some("interfaces.toml".into()),
+            semantic_catalogs: Vec::new(),
+        });
+        project
+            .ir_profiles
+            .push(crate::project_ir::ProjectIrProfile {
+                id: "fixture".to_owned(),
+                sources: vec!["fixture".to_owned()],
+                roots: crate::project_ir::ProjectIrRoots::All,
+                include_reachable: true,
+                entry_contract: "none".to_owned(),
+                output: "fixture.ir".into(),
+            });
+        let mut operations = FakeOperations {
+            fail: Some("interfaces"),
+            ..FakeOperations::default()
+        };
+
+        let report = run(
+            &project,
+            ProjectAnalysisRequest::default(),
+            ProjectAnalysisInputs {
+                run_spec: true,
+                memory_map: false,
+                event_replays: true,
+                event_replays_require_interfaces: false,
+            },
+            &mut operations,
+        );
+
+        assert!(operations.calls.contains(&"event-replays"));
+        let replay = report
+            .stages
+            .iter()
+            .find(|stage| stage.name == "event-replays")
+            .unwrap();
+        assert_eq!(replay.status, "written");
     }
 }

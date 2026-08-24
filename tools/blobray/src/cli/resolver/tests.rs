@@ -363,12 +363,21 @@ fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
 }
 
 #[test]
-fn explicit_run_spec_and_svd_override_project_defaults() {
+fn explicit_target_run_spec_and_svd_override_project_defaults() {
     let directory = fixture_directory("precedence");
     write_target(&directory.join("target.toml"));
+    let explicit_target = directory.join("explicit target's.toml");
+    write_target(&explicit_target);
+    std::fs::write(
+        &explicit_target,
+        std::fs::read_to_string(&explicit_target)
+            .unwrap()
+            .replace("id = \"fixture\"", "id = \"explicit-fixture\""),
+    )
+    .unwrap();
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
-        "run-spec = \"project.toml\"\nchip-pack = \"chip.toml\"\n",
+        "run-spec = \"project.toml\"\nchip-pack = \"chip.toml\"\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n",
     );
     std::fs::write(
         directory.join("chip.toml"),
@@ -392,6 +401,8 @@ fn explicit_run_spec_and_svd_override_project_defaults() {
             "status",
             "--project",
             directory.join(DEFAULT_PROJECT_MANIFEST).to_str().unwrap(),
+            "--target-spec",
+            explicit_target.to_str().unwrap(),
             "--run-spec",
             directory.join("explicit.toml").to_str().unwrap(),
             "--svd",
@@ -403,13 +414,79 @@ fn explicit_run_spec_and_svd_override_project_defaults() {
     let ResolvedInvocation::ProjectStatus { session, .. } = resolved else {
         panic!("expected a resolved project-status command")
     };
+    assert_eq!(session.target_path, explicit_target);
+    assert_eq!(session.target.id, "explicit-fixture");
     assert_eq!(session.run_spec_path, Some(directory.join("explicit.toml")));
     assert!(
-        session.run_spec.unwrap().inputs()[0]
+        session.run_spec.as_ref().unwrap().inputs()[0]
             .path
             .ends_with("explicit.elf")
     );
     assert_eq!(session.svd_paths, [PathBuf::from("cli.svd")]);
+    assert_eq!(
+        session.explicit_context.target_spec,
+        Some(explicit_target.clone())
+    );
+    assert_eq!(
+        session.explicit_context.run_spec,
+        Some(directory.join("explicit.toml"))
+    );
+    assert_eq!(
+        session.explicit_context.svd_paths,
+        [PathBuf::from("cli.svd")]
+    );
+
+    let context = session.context();
+    assert_eq!(
+        context.follow_up_command(
+            "project analyze",
+            crate::application::FollowUpRequirements::ANALYSIS,
+        ),
+        format!(
+            "blobray project analyze --project {} --target-spec {} --run-spec {} --svd cli.svd",
+            crate::shell::arg(directory.join(DEFAULT_PROJECT_MANIFEST).as_os_str()),
+            crate::shell::arg(explicit_target.as_os_str()),
+            crate::shell::arg(directory.join("explicit.toml").as_os_str()),
+        )
+    );
+    assert_eq!(
+        context.inputs_init_help_command(),
+        format!(
+            "blobray project inputs init --project {} --output {} --help",
+            crate::shell::arg(directory.join(DEFAULT_PROJECT_MANIFEST).as_os_str()),
+            crate::shell::arg(directory.join("explicit.toml").as_os_str()),
+        )
+    );
+    assert_eq!(
+        context.follow_up_command(
+            "project files",
+            crate::application::FollowUpRequirements::TARGET,
+        ),
+        format!(
+            "blobray project files --project {} --target-spec {}",
+            crate::shell::arg(directory.join(DEFAULT_PROJECT_MANIFEST).as_os_str()),
+            crate::shell::arg(explicit_target.as_os_str()),
+        )
+    );
+
+    let report = crate::application::status::collect(&context);
+    let actions = report
+        .phases
+        .iter()
+        .flat_map(|phase| &phase.components)
+        .filter_map(|component| component.next_action.as_deref())
+        .collect::<Vec<_>>();
+    assert!(
+        actions.contains(
+            &format!(
+                "blobray project analyze --project {} --target-spec {} --run-spec {} --svd cli.svd",
+                crate::shell::arg(directory.join(DEFAULT_PROJECT_MANIFEST).as_os_str()),
+                crate::shell::arg(explicit_target.as_os_str()),
+                crate::shell::arg(directory.join("explicit.toml").as_os_str()),
+            )
+            .as_str()
+        )
+    );
 
     std::fs::remove_dir_all(directory).unwrap();
 }

@@ -3,8 +3,10 @@
 use std::{path::PathBuf, sync::OnceLock};
 
 use crate::{
-    MemoryMap, MmioMap, ProjectSpec, Result, TargetSpec, application::ProjectSession,
-    cli::args::Command, run_spec::RunSpec,
+    MemoryMap, MmioMap, ProjectSpec, Result, TargetSpec,
+    application::{ExplicitProjectContext, ProjectSession},
+    cli::args::Command,
+    run_spec::RunSpec,
 };
 
 use super::model::{
@@ -22,6 +24,7 @@ pub(super) struct ResolvedEnvironment {
     pub(super) memory_map: Option<MemoryMap>,
     pub(super) svd_paths: Vec<PathBuf>,
     pub(super) svd: MmioMap,
+    pub(super) explicit_context: ExplicitProjectContext,
 }
 
 impl ResolvedEnvironment {
@@ -40,6 +43,7 @@ impl ResolvedEnvironment {
             memory_map: self.memory_map,
             svd_paths: self.svd_paths,
             mmio: self.svd,
+            explicit_context: self.explicit_context,
             function_workspace: OnceLock::new(),
             code_workspace: OnceLock::new(),
             register_workspace: OnceLock::new(),

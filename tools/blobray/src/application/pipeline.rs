@@ -40,6 +40,7 @@ impl WorkflowMode {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StageSuccess {
     Written,
+    Restored,
     Verified,
     Current,
 }
@@ -48,6 +49,7 @@ impl StageSuccess {
     const fn label(self) -> &'static str {
         match self {
             Self::Written => "written",
+            Self::Restored => "restored",
             Self::Verified => "verified",
             Self::Current => "up-to-date",
         }
@@ -57,6 +59,7 @@ impl StageSuccess {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StageRun {
     Executed,
+    Restored,
     Current,
 }
 
@@ -128,19 +131,20 @@ impl From<StageOutcome> for StageExecution {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct StageReport {
-    pub(crate) name: String,
-    pub(crate) status: &'static str,
+pub struct StageReport {
+    pub name: String,
+    pub status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) duration_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) reason: Option<String>,
+    pub reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub(crate) struct PipelineSummary {
     stages: Vec<StageReport>,
     pub(crate) written: usize,
+    pub(crate) restored: usize,
     pub(crate) verified: usize,
     #[serde(rename = "up-to-date")]
     pub(crate) current: usize,
@@ -171,6 +175,7 @@ impl PipelineSummary {
         }
         match outcome {
             StageOutcome::Complete(StageSuccess::Written) => self.written += 1,
+            StageOutcome::Complete(StageSuccess::Restored) => self.restored += 1,
             StageOutcome::Complete(StageSuccess::Verified) => self.verified += 1,
             StageOutcome::Complete(StageSuccess::Current) => self.current += 1,
             StageOutcome::Failed(_) => self.failed += 1,
@@ -237,6 +242,7 @@ fn execute_with_timer<T: StageActionResult>(
     let outcome = match result {
         Ok(value) => match value.stage_run() {
             Some(StageRun::Executed) => StageOutcome::Complete(success),
+            Some(StageRun::Restored) => StageOutcome::Complete(StageSuccess::Restored),
             Some(StageRun::Current) => StageOutcome::Complete(StageSuccess::Current),
             None => StageOutcome::Failed(format!("{name} reported an unsuccessful result")),
         },
@@ -290,10 +296,15 @@ mod tests {
             &StageExecution::unmeasured(StageOutcome::Complete(StageSuccess::Current)),
         );
         summary.record(
+            "restored",
+            &StageExecution::unmeasured(StageOutcome::Complete(StageSuccess::Restored)),
+        );
+        summary.record(
             "blocked",
             &StageExecution::unmeasured(StageOutcome::Blocked("missing".to_owned())),
         );
         assert_eq!(summary.written, 1);
+        assert_eq!(summary.restored, 1);
         assert_eq!(summary.current, 1);
         assert_eq!(summary.blocked, 1);
         assert!(!summary.succeeded());

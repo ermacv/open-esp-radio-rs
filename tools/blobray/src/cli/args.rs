@@ -99,17 +99,16 @@ struct Cli {
     #[command(flatten)]
     ui: UiArgs,
 
-    /// Project manifest. Conflicts with an explicit target specification.
+    /// Project manifest. May be paired with a target override for project-scoped development.
     #[arg(
         long,
         global = true,
         value_name = "PATH",
-        conflicts_with = "target_spec",
         help_heading = "Project selection"
     )]
     project: Option<PathBuf>,
 
-    /// Explicit target specification for backend and target-pack development.
+    /// Explicit target specification or project-scoped target override.
     #[arg(
         long,
         global = true,
@@ -836,8 +835,21 @@ mod tests {
             panic!("unexpected argument type")
         };
         assert!(arguments.check);
+        assert!(!arguments.plan);
         assert!(arguments.deny_unreviewed);
         assert_eq!(arguments.jobs, 2);
+
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "analyze".to_owned(),
+            "--plan".to_owned(),
+        ])
+        .unwrap();
+        let Command::ProjectAnalyze(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert!(arguments.plan);
+        assert!(!arguments.check);
 
         let invocation =
             ParsedInvocation::parse(["project".to_owned(), "check".to_owned()]).unwrap();

@@ -11,6 +11,8 @@ cd "$repo_root"
 generated_unsafe_leaf="driver/chips/esp32s31/pac-raw"
 audited_unsafe_leaves=(
     "driver/common/dma"
+    "driver/chips/esp32s31/bluetooth"
+    "driver/chips/esp32s31/pac"
     "driver/chips/esp32s31/wifi/dma"
     "driver/adapters/esp-hal/esp32s31-radio-platform"
     "driver/adapters/embassy/esp32s31-platform"
@@ -212,6 +214,172 @@ if rg -n 'pub (unsafe )?fn [^(]+\([^)]*(RadioRegisters|ColdRadioRegisters|WifiRa
     --glob '*.rs'
 then
     echo "chip hardware public API exposes a PAC leaf-owner parameter" >&2
+    exit 1
+fi
+
+# Rust has no cross-crate friend visibility. The finite BTBB transaction is an
+# unsafe hidden PAC SPI used by exactly one production lifecycle bridge and
+# one isolated compiled-production probe. Safe downstream code must not be
+# able to bypass the post-common-PHY typestate.
+if ! rg -q 'pub unsafe fn initialize_baseband_v2_arg_one\(' \
+    driver/chips/esp32s31/pac/src/bluetooth_baseband.rs
+then
+    echo "Bluetooth baseband PAC prerequisite is no longer compiler-enforced" >&2
+    exit 1
+fi
+if ! rg -q 'pub\(crate\) unsafe fn initialize_baseband_v2\(' \
+    driver/chips/esp32s31/bluetooth/src/resources.rs
+then
+    echo "Bluetooth lifecycle bridge no longer preserves the PAC prerequisite" >&2
+    exit 1
+fi
+if ! rg -q 'pub unsafe fn initialize_bluetooth_baseband_v2\(' \
+    driver/chips/esp32s31/pac/src/validation.rs \
+    || ! rg -q 'pub unsafe fn initialize_baseband_v2\(' \
+        driver/chips/esp32s31/bluetooth/src/validation.rs
+then
+    echo "Bluetooth validation probe lost its explicit common-PHY prerequisite" >&2
+    exit 1
+fi
+if rg -n 'task\.into_cold\(interrupts\)' \
+    driver/chips/esp32s31/pac/src/validation.rs
+then
+    echo "Bluetooth validation probe reconstructed cold ownership before teardown" >&2
+    exit 1
+fi
+if rg -n '\.initialize_baseband_v2_arg_one\(' \
+    driver \
+    --glob '*.rs' \
+    --glob '!driver/chips/esp32s31/pac/src/validation.rs' \
+    --glob '!driver/chips/esp32s31/bluetooth/src/resources.rs'
+then
+    echo "Bluetooth baseband PAC SPI bypassed its lifecycle owner" >&2
+    exit 1
+fi
+
+# The memory-list selector transaction proves only an encoding and exact MMIO
+# sequence. Until controller list backing, active-state ownership and teardown
+# are proved, its unsafe PAC SPI may be reached only through the two
+# feature-gated compiled-production validation bridges.
+memory_list_spi=driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs
+memory_list_pac_validation=driver/chips/esp32s31/pac/src/validation.rs
+memory_list_bt_validation=driver/chips/esp32s31/bluetooth/src/validation.rs
+if ! rg -q 'pub unsafe fn program_memory_list_pointer\(' "$memory_list_spi"
+then
+    echo "Bluetooth memory-list PAC prerequisite is no longer explicit" >&2
+    exit 1
+fi
+mapfile -t memory_list_spi_callers < <(
+    rg -l '[.]program_memory_list_pointer[[:space:]]*\(' driver --glob '*.rs' | sort
+)
+if test "${#memory_list_spi_callers[@]}" -ne 1 \
+    || test "${memory_list_spi_callers[0]}" != "$memory_list_pac_validation"
+then
+    echo "Bluetooth memory-list SPI escaped isolated PAC validation before lifecycle/teardown proof" >&2
+    exit 1
+fi
+if ! rg -q 'pub unsafe fn program_bluetooth_memory_list_pointer\(' \
+    "$memory_list_pac_validation" \
+    || ! rg -q 'pub unsafe fn program_memory_list_pointer\(' \
+        "$memory_list_bt_validation"
+then
+    echo "Bluetooth memory-list validation path lost an unsafe prerequisite" >&2
+    exit 1
+fi
+mapfile -t memory_list_validation_callers < <(
+    rg -l 'validation::program_bluetooth_memory_list_pointer[[:space:]]*\(' \
+        driver \
+        --glob '*.rs' \
+        | sort
+)
+if test "${#memory_list_validation_callers[@]}" -ne 1 \
+    || test "${memory_list_validation_callers[0]}" != "$memory_list_bt_validation"
+then
+    echo "Bluetooth memory-list validation bridge escaped the Bluetooth validation boundary" >&2
+    exit 1
+fi
+
+# The complete BLE PHY register body is known, but its prerequisite lifecycle
+# and rollback are not. Its crate-private unsafe PAC edge may therefore be
+# reached only by the two feature-gated compiled-production validation bridges.
+ble_phy_init_spi=driver/chips/esp32s31/pac/src/bluetooth_phy_init.rs
+ble_phy_init_pac_validation=driver/chips/esp32s31/pac/src/validation.rs
+ble_phy_init_bt_validation=driver/chips/esp32s31/bluetooth/src/validation.rs
+if ! rg -q 'pub\(crate\) unsafe fn initialize_ble_phy_registers\(' \
+    "$ble_phy_init_spi"
+then
+    echo "Bluetooth PHY init PAC prerequisite is no longer crate-private and unsafe" >&2
+    exit 1
+fi
+mapfile -t ble_phy_init_spi_callers < <(
+    rg -l '[.]initialize_ble_phy_registers[[:space:]]*\(' driver --glob '*.rs' | sort
+)
+if test "${#ble_phy_init_spi_callers[@]}" -ne 1 \
+    || test "${ble_phy_init_spi_callers[0]}" != "$ble_phy_init_pac_validation"
+then
+    echo "Bluetooth PHY init SPI escaped isolated PAC validation before lifecycle/teardown proof" >&2
+    exit 1
+fi
+if ! rg -q 'pub unsafe fn initialize_bluetooth_phy_registers\(' \
+    "$ble_phy_init_pac_validation" \
+    || ! rg -q 'pub unsafe fn initialize_phy_registers\(' \
+        "$ble_phy_init_bt_validation"
+then
+    echo "Bluetooth PHY init validation path lost an unsafe prerequisite" >&2
+    exit 1
+fi
+mapfile -t ble_phy_init_validation_callers < <(
+    rg -l 'validation::initialize_bluetooth_phy_registers[[:space:]]*\(' \
+        driver \
+        --glob '*.rs' \
+        | sort
+)
+if test "${#ble_phy_init_validation_callers[@]}" -ne 1 \
+    || test "${ble_phy_init_validation_callers[0]}" != "$ble_phy_init_bt_validation"
+then
+    echo "Bluetooth PHY init bridge escaped the Bluetooth validation boundary" >&2
+    exit 1
+fi
+
+# Powered/partial Bluetooth PHY states are fail-stop until the complete
+# last-owner teardown exists. Storing the ordinary platform owner directly, or
+# extracting the armed owner without that transaction, would reintroduce an
+# implicit clock-gating path through its Drop implementation.
+if rg -n '(^|[[:space:]])_?platform:[[:space:]]*P,' \
+    driver/chips/esp32s31/bluetooth/src/phy.rs \
+    driver/chips/esp32s31/bluetooth/src/baseband.rs \
+    driver/chips/esp32s31/bluetooth/src/scheduler.rs \
+    || rg -n 'ManuallyDrop::(into_inner|take)' \
+        driver/chips/esp32s31/bluetooth/src \
+        --glob '*.rs'
+then
+    echo "powered Bluetooth state can implicitly release its platform owner" >&2
+    exit 1
+fi
+
+# The pinned controller lifecycle performs task/controller initialization
+# between clock setup and the common-PHY enable edge. The public API must stop
+# at the fact-bounded scheduler prefix until those intervening stages exist;
+# restoring the former direct clocks-to-PHY method would encode a false order.
+if rg -n 'pub async fn initialize_common_phy' \
+    driver/chips/esp32s31/bluetooth/src \
+    --glob '*.rs'
+then
+    echo "Bluetooth public API bypasses incomplete controller init before common PHY" >&2
+    exit 1
+fi
+if ! rg -q 'pub fn clear_scheduler_table_low_bits\(self\).*BluetoothSchedulerTableLowBitsCleared' \
+    driver/chips/esp32s31/bluetooth/src/scheduler.rs
+then
+    echo "Bluetooth clocked owner lost its fact-bounded scheduler frontier" >&2
+    exit 1
+fi
+if rg -n 'initialize_scheduler_table' \
+    driver/chips/esp32s31/bluetooth/src \
+    driver/chips/esp32s31/pac/src \
+    --glob '*.rs'
+then
+    echo "overclaiming Bluetooth scheduler compatibility name was restored" >&2
     exit 1
 fi
 

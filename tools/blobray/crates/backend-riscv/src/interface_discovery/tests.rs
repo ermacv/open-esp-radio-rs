@@ -433,6 +433,95 @@ fn linked_absolute_address_is_retained_as_a_root() {
         }
     );
     assert_eq!(calls[0].target.slot().unwrap().offset, 16);
+
+    let bounded = discover_interface_calls_with_data_symbols(
+        &symbol,
+        &[artifact::ArtifactDataSymbolDefinition {
+            member: None,
+            name: "function_pointer_cell".to_owned(),
+            address: 0x1234_2010,
+            size: 4,
+            exported: true,
+        }],
+    )
+    .unwrap();
+    assert_eq!(bounded.len(), 1);
+    assert_eq!(
+        bounded[0].target.root,
+        InterfaceRoot::BoundedDataAddress {
+            member: None,
+            symbol: "function_pointer_cell".to_owned(),
+            symbol_address: 0x1234_2010,
+            symbol_size: 4,
+            address: 0x1234_2010,
+        }
+    );
+    assert_eq!(bounded[0].target.slot().unwrap().offset, 0);
+}
+
+#[test]
+fn linked_static_table_registration_retains_bounded_absolute_addresses() {
+    let mut symbol = symbol(
+        vec![
+            0xb7, 0x17, 0x06, 0x10, // lui a5, 0x10061
+            0x37, 0x17, 0x06, 0x10, // lui a4, 0x10061
+            0x93, 0x87, 0x07, 0x0c, // addi a5, a5, 0xc0
+            0x23, 0x26, 0xf7, 0x32, // sw a5, 0x32c(a4)
+            0x01, 0x45, // li a0, 0
+            0x82, 0x80, // ret
+        ],
+        Vec::new(),
+    );
+    symbol.address = 0x1004_e5ea;
+    symbol.addresses_resolved = true;
+    let data_symbols = [
+        artifact::ArtifactDataSymbolDefinition {
+            member: None,
+            name: "registered_table".to_owned(),
+            address: 0x1006_10c0,
+            size: 0x70,
+            exported: true,
+        },
+        artifact::ArtifactDataSymbolDefinition {
+            member: None,
+            name: "table_cell".to_owned(),
+            address: 0x1006_132c,
+            size: 4,
+            exported: true,
+        },
+    ];
+
+    assert!(
+        discover_interface_calls(&symbol)
+            .unwrap()
+            .assignments
+            .is_empty()
+    );
+    let discovery = discover_interface_calls_with_data_symbols(&symbol, &data_symbols).unwrap();
+    assert_eq!(discovery.assignments.len(), 1);
+    let assignment = &discovery.assignments[0];
+    assert_eq!(assignment.site, 0x1004_e5f6);
+    assert_eq!(assignment.offset, 0);
+    assert_eq!(
+        assignment.root,
+        InterfaceRoot::BoundedDataAddress {
+            member: None,
+            symbol: "table_cell".to_owned(),
+            symbol_address: 0x1006_132c,
+            symbol_size: 4,
+            address: 0x1006_132c,
+        }
+    );
+    assert_eq!(
+        assignment.target,
+        InterfaceRoot::BoundedDataAddress {
+            member: None,
+            symbol: "registered_table".to_owned(),
+            symbol_address: 0x1006_10c0,
+            symbol_size: 0x70,
+            address: 0x1006_10c0,
+        }
+    );
 }
 
 #[test]

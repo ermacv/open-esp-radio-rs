@@ -77,9 +77,38 @@ pub(super) fn validate(facts: &InterfaceFacts) -> Result<()> {
             &assignment.container_path,
             "interface assignment container path",
         )?;
+        validate_bounded_data_root(&assignment.root, "interface assignment root")?;
+        validate_bounded_data_root(&assignment.target, "interface assignment target")?;
+        if let InterfaceFactRoot::BoundedDataAddress {
+            address,
+            symbol_address,
+            symbol_size,
+            ..
+        } = &assignment.root
+            && assignment.container_path.is_empty()
+        {
+            if assignment.offset != 0 {
+                return Err(crate::Error::invalid(
+                    "bounded interface assignment root is not normalized to offset zero",
+                ));
+            }
+            let end = symbol_address
+                .checked_add(*symbol_size)
+                .ok_or_else(|| crate::Error::invalid("bounded data-symbol range overflows"))?;
+            let access_end = address
+                .checked_add(u32::from(assignment.width) / 8)
+                .ok_or_else(|| crate::Error::invalid("bounded assignment access overflows"))?;
+            if access_end > end {
+                return Err(crate::Error::invalid(
+                    "bounded interface assignment store exceeds its data symbol",
+                ));
+            }
+        }
         if !matches!(
             assignment.target,
-            InterfaceFactRoot::RelocatedSymbol { .. } | InterfaceFactRoot::FunctionArgument { .. }
+            InterfaceFactRoot::RelocatedSymbol { .. }
+                | InterfaceFactRoot::FunctionArgument { .. }
+                | InterfaceFactRoot::BoundedDataAddress { .. }
         ) {
             return Err(crate::Error::invalid(
                 "interface assignment target lacks function-pointer provenance",
@@ -88,6 +117,45 @@ pub(super) fn validate(facts: &InterfaceFacts) -> Result<()> {
         if !assignment_keys.insert(assignment.clone()) {
             return Err(crate::Error::invalid("duplicate interface assignment fact"));
         }
+    }
+    Ok(())
+}
+
+fn validate_bounded_data_root(root: &InterfaceFactRoot, context: &str) -> Result<()> {
+    let InterfaceFactRoot::BoundedDataAddress {
+        canonical,
+        member,
+        symbol,
+        address,
+        symbol_address,
+        symbol_size,
+        ..
+    } = root
+    else {
+        return Ok(());
+    };
+    if symbol.is_empty() || *symbol_size == 0 {
+        return Err(crate::Error::invalid(format!(
+            "{context} has an empty data-symbol identity or range"
+        )));
+    }
+    let end = symbol_address
+        .checked_add(*symbol_size)
+        .ok_or_else(|| crate::Error::invalid(format!("{context} data-symbol range overflows")))?;
+    if *address < *symbol_address || *address >= end {
+        return Err(crate::Error::invalid(format!(
+            "{context} address lies outside its data-symbol range"
+        )));
+    }
+    let expected = format!(
+        "{}::{symbol}{:+#x}",
+        member.as_deref().unwrap_or("<elf>"),
+        address.wrapping_sub(*symbol_address)
+    );
+    if canonical != &expected {
+        return Err(crate::Error::invalid(format!(
+            "{context} canonical identity does not match its bounded address"
+        )));
     }
     Ok(())
 }

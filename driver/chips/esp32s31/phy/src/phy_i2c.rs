@@ -100,6 +100,7 @@ const PHY_I2C_READ_MASKS: [u16; 13] = [
     0x0100, 0x0020, 0x0010, 0x0000, 0x0000, 0x0080, 0x0004, 0x0000, 0x0800, 0x0040, 0x0008, 0x0000,
     0x8000,
 ];
+#[cfg(any(target_arch = "riscv32", test))]
 const PHY_I2C_HOST_ONE_BLOCKS: u16 = 0x0647;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -132,7 +133,8 @@ impl PhyI2cAddress {
         self.register
     }
 
-    pub const fn host(self) -> u8 {
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn host(self) -> u8 {
         let index = self.block.wrapping_sub(0x61);
         ((PHY_I2C_HOST_ONE_BLOCKS >> index) & 1) as u8
     }
@@ -218,11 +220,6 @@ pub mod analog_registers {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cError {
     Busy,
-}
-
-#[cfg(test)]
-const fn with_phy_i2c_host_config(value: u32) -> u32 {
-    (value & 0xfffc_000f) | 0x0003_fa00
 }
 
 #[cfg(test)]
@@ -433,18 +430,17 @@ pub fn configure_i2c_master_command_memory(
 /// The caller must keep borrowing the same platform I2C owner until
 /// [`try_finish_read`] succeeds.
 #[cfg(target_arch = "riscv32")]
-pub fn try_start_read(
+pub(crate) fn try_start_read(
     platform: &mut impl hal_phy_i2c::PhyI2cMasterControl,
     address: PhyI2cAddress,
 ) -> Result<(), PhyI2cError> {
-    hal_phy_i2c::try_start_read(
-        platform,
-        hal_host(address.host()),
-        address.block(),
-        address.register(),
-        address.read_mask(),
-    )
-    .map_err(|_| PhyI2cError::Busy)
+    let host = configure_and_select_phy_i2c_host(platform, address);
+    if platform.phy_i2c_master_is_busy(host) {
+        return Err(PhyI2cError::Busy);
+    }
+    platform.publish_phy_i2c_read_mask(address.read_mask());
+    platform.publish_phy_i2c_command(host, address.block(), address.register(), 0, false);
+    Ok(())
 }
 
 /// Observe one previously published PHY-I2C read exactly once.
@@ -457,11 +453,16 @@ pub fn try_start_read(
 /// `address` must name the in-flight command started by [`try_start_read`]
 /// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
-pub fn try_finish_read(
+pub(crate) fn try_finish_read(
     platform: &impl hal_phy_i2c::PhyI2cMasterControl,
     address: PhyI2cAddress,
 ) -> Result<u8, PhyI2cError> {
-    hal_phy_i2c::try_finish_read(platform, hal_host(address.host())).map_err(|_| PhyI2cError::Busy)
+    let host = hal_host(address.host());
+    if platform.phy_i2c_master_is_busy(host) {
+        Err(PhyI2cError::Busy)
+    } else {
+        Ok(platform.sample_phy_i2c_result(host))
+    }
 }
 
 /// Publish one complete-register PHY-I2C write after observing the
@@ -471,19 +472,17 @@ pub fn try_finish_read(
 /// The caller must keep borrowing the same platform I2C owner until
 /// [`try_finish_write`] succeeds.
 #[cfg(target_arch = "riscv32")]
-pub fn try_start_write(
+pub(crate) fn try_start_write(
     platform: &mut impl hal_phy_i2c::PhyI2cMasterControl,
     address: PhyI2cAddress,
     value: u8,
 ) -> Result<(), PhyI2cError> {
-    hal_phy_i2c::try_start_write(
-        platform,
-        hal_host(address.host()),
-        address.block(),
-        address.register(),
-        value,
-    )
-    .map_err(|_| PhyI2cError::Busy)
+    let host = configure_and_select_phy_i2c_host(platform, address);
+    if platform.phy_i2c_master_is_busy(host) {
+        return Err(PhyI2cError::Busy);
+    }
+    platform.publish_phy_i2c_command(host, address.block(), address.register(), value, true);
+    Ok(())
 }
 
 /// Observe one previously published PHY-I2C write exactly once.
@@ -495,11 +494,33 @@ pub fn try_start_write(
 /// `address` must name the in-flight command started by [`try_start_write`]
 /// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
-pub fn try_finish_write(
+pub(crate) fn try_finish_write(
     platform: &impl hal_phy_i2c::PhyI2cMasterControl,
     address: PhyI2cAddress,
 ) -> Result<(), PhyI2cError> {
-    hal_phy_i2c::try_finish_write(platform, hal_host(address.host())).map_err(|_| PhyI2cError::Busy)
+    if platform.phy_i2c_master_is_busy(hal_host(address.host())) {
+        Err(PhyI2cError::Busy)
+    } else {
+        Ok(())
+    }
+}
+
+/// Execute the complete accredited-domain behavior of archive
+/// `phy_get_i2c_hostid_new`.
+///
+/// The address constructor limits callers to blocks `0x61..=0x6d`. This edge
+/// selects the typed command host from the reviewed `0x0647` bitmap and then
+/// performs exactly one platform-owned `ANA_CONF2` read-modify-write. Both
+/// read and write command paths use this same function; it is not a
+/// verification-only projection.
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn configure_and_select_phy_i2c_host(
+    platform: &mut impl hal_phy_i2c::PhyI2cMasterControl,
+    address: PhyI2cAddress,
+) -> hal_phy_i2c::PhyI2cHost {
+    let host = hal_host(address.host());
+    platform.configure_phy_i2c_host_map();
+    host
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -2944,7 +2965,6 @@ mod tests {
         RfpllChargePumpCompletion, RfpllChargePumpOutcome, RfpllChargePumpTransition,
         Sar2InitAction, Sar2InitCompletion, Sar2InitTransition, command_is_busy, encode_read,
         encode_write, master_command, master_command_from_snapshot, read_result,
-        with_phy_i2c_host_config,
     };
     use crate::phy_cold::PhyColdExternalBinding;
     use crate::phy_dc_iq::{
@@ -3468,8 +3488,6 @@ mod tests {
         assert!(!command_is_busy(0x05a5_146b));
         assert!(command_is_busy(0x07a5_146b));
         assert_eq!(read_result(0x043c_146b), 0x3c);
-        assert_eq!(with_phy_i2c_host_config(0xffff_ffff), 0xffff_fa0f);
-        assert_eq!(with_phy_i2c_host_config(0), 0x3fa00);
     }
 
     #[test]

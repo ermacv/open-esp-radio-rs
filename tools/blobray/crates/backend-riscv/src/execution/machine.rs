@@ -220,6 +220,7 @@ pub fn execute(
         )
         .into());
     }
+    validate_diagnostic_boundaries(image, &scenario)?;
     validate_fifo_services(&scenario)?;
     let start = image
         .symbol_address(symbol)
@@ -325,6 +326,19 @@ pub fn execute(
         carried_memory: BTreeMap::new(),
         persistent_memory,
     })
+}
+
+fn validate_diagnostic_boundaries(image: &ExecutableImage, scenario: &Scenario) -> Result<()> {
+    for binding in &scenario.fifo_bindings {
+        if image.diagnostic_argument_count(&binding.symbol).is_some() {
+            return Err(format!(
+                "reviewed diagnostic call {} cannot also have a FIFO service binding",
+                binding.symbol
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]

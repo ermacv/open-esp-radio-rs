@@ -1,4 +1,4 @@
-//! Typed consumer projection for schema-v6 interface discovery facts.
+//! Typed consumer projection for schema-v7 interface discovery facts.
 
 #![allow(
     dead_code,
@@ -148,6 +148,16 @@ pub(crate) enum StoredInterfaceRoot {
     FunctionArgument {
         canonical: String,
         argument: u8,
+    },
+    BoundedDataAddress {
+        canonical: String,
+        member: Option<String>,
+        symbol: String,
+        #[serde(deserialize_with = "hex_u32")]
+        address: u32,
+        #[serde(deserialize_with = "hex_u32")]
+        symbol_address: u32,
+        symbol_size: u32,
     },
     AbsoluteAddress {
         canonical: String,

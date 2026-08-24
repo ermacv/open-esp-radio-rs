@@ -96,7 +96,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
         ("WifiInterruptPeripherals", "wifi_interrupts", 2),
         ("RadioPhyPeripherals", "radio_phy", 18),
         ("CoexistencePeripherals", "coexistence", 4),
-        ("BluetoothControllerPeripherals", "bluetooth", 15),
+        ("BluetoothControllerPeripherals", "bluetooth", 19),
         ("BluetoothInterruptPeripherals", "bluetooth_interrupts", 1),
         ("SharedRadioPeripherals", "shared_radio", 4),
     ];
@@ -948,6 +948,22 @@ fn compiled_probe_operations_do_not_call_pac_validation_directly() {
         !probe.contains("open_esp_radio_esp32s31_pac::validation"),
         "compiled operations must acquire validation ownership through HAL"
     );
+    let bluetooth_probe = fs::read_to_string(
+        repository.join("verification/vendor/targets/esp32s31/probes/bluetooth-library/src/lib.rs"),
+    )
+    .expect("read Bluetooth compiled probe library");
+    assert!(
+        !bluetooth_probe.contains("open_esp_radio_esp32s31_pac::validation"),
+        "Bluetooth probes must acquire their validation ownership through the Bluetooth boundary"
+    );
+    assert!(
+        bluetooth_probe
+            .contains("open_esp_radio_esp32s31_bluetooth::validation::initialize_baseband_v2")
+    );
+    assert!(
+        bluetooth_probe
+            .contains("open_esp_radio_esp32s31_bluetooth::validation::initialize_phy_registers")
+    );
     for retired_prefix in [
         "open_libpp_coex_trace_",
         "open_libpp_power_trace_",
@@ -971,15 +987,12 @@ fn compiled_probe_operations_do_not_call_pac_validation_directly() {
             .expect("read PAC validation capability factory");
     let exported = pac_validation
         .lines()
-        .filter(|line| line.trim_start().starts_with("pub fn "))
-        .map(|line| {
-            line.trim_start()
-                .strip_prefix("pub fn ")
-                .expect("filtered public function")
-                .split('(')
-                .next()
-                .expect("public function name")
+        .filter_map(|line| {
+            let line = line.trim_start();
+            line.strip_prefix("pub fn ")
+                .or_else(|| line.strip_prefix("pub unsafe fn "))
         })
+        .map(|signature| signature.split('(').next().expect("public function name"))
         .collect::<Vec<_>>();
     assert_eq!(
         exported,
@@ -990,6 +1003,8 @@ fn compiled_probe_operations_do_not_call_pac_validation_directly() {
             "mac_power_interrupt_registers",
             "bluetooth_interrupt_registers",
             "initialize_bluetooth_baseband_v2",
+            "program_bluetooth_memory_list_pointer",
+            "initialize_bluetooth_phy_registers",
         ],
         "PAC validation surface changed without updating the exact compiled-probe contract"
     );

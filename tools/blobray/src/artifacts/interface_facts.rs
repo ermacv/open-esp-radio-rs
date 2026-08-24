@@ -32,6 +32,15 @@ enum RootDocument {
         canonical: String,
         argument: u8,
     },
+    BoundedDataAddress {
+        kind: &'static str,
+        canonical: String,
+        member: Option<String>,
+        symbol: String,
+        address: String,
+        symbol_address: String,
+        symbol_size: u32,
+    },
     AbsoluteAddress {
         kind: &'static str,
         canonical: String,
@@ -59,6 +68,21 @@ impl From<&InterfaceRoot> for RootDocument {
                 kind: root.kind(),
                 canonical: root.canonical(),
                 argument: *index,
+            },
+            InterfaceRoot::BoundedDataAddress {
+                member,
+                symbol,
+                symbol_address,
+                symbol_size,
+                address,
+            } => Self::BoundedDataAddress {
+                kind: root.kind(),
+                canonical: root.canonical(),
+                member: member.clone(),
+                symbol: symbol.clone(),
+                address: format!("{address:#010x}"),
+                symbol_address: format!("{symbol_address:#010x}"),
+                symbol_size: *symbol_size,
             },
             InterfaceRoot::AbsoluteAddress { address } => Self::AbsoluteAddress {
                 kind: root.kind(),

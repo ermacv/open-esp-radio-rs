@@ -4,9 +4,7 @@ use std::{collections::BTreeSet, path::PathBuf};
 
 use crate::{
     Result, artifact,
-    interface_discovery::{
-        InterfaceCallCandidate, InterfaceRoot, InterfaceSlotAssignment, discover_interface_calls,
-    },
+    interface_discovery::{InterfaceCallCandidate, InterfaceRoot, InterfaceSlotAssignment},
 };
 
 use super::{LinkageSymbolLocation, ProjectLinkageInventory, build_project_linkage_inventory};
@@ -128,10 +126,14 @@ pub(crate) fn discover_project_interfaces(
                 0,
             ),
         };
+        let data_symbols = artifact::load_data_symbols(&artifact.path)?;
         functions.push(symbols.len());
         reviewed_boundaries.push(reviewed_count);
         for symbol in symbols {
-            match discover_interface_calls(&symbol) {
+            match crate::interface_discovery::discover_interface_calls_with_data_symbols(
+                &symbol,
+                &data_symbols,
+            ) {
                 Ok(discovered) => {
                     decode_blockers.extend(discovered.decode_blockers.into_iter().map(|blocker| {
                         InterfaceDecodeBlocker {
@@ -212,6 +214,17 @@ pub(crate) fn interface_root_linkage(
             } => &symbol.member == member && &symbol.fact.name == name,
             InterfaceRoot::AbsoluteAddress { address } => {
                 symbol.fact.definition.is_definition() && symbol.fact.address == u64::from(*address)
+            }
+            InterfaceRoot::BoundedDataAddress {
+                member,
+                symbol: name,
+                symbol_address,
+                ..
+            } => {
+                symbol.fact.definition.is_definition()
+                    && &symbol.member == member
+                    && &symbol.fact.name == name
+                    && symbol.fact.address == u64::from(*symbol_address)
             }
             InterfaceRoot::FunctionArgument { .. } => false,
         };

@@ -307,11 +307,22 @@ fn archive_call_matches_binding(
                 .candidates
                 .iter()
                 .filter(|candidate| {
-                    candidate.kind == "data"
-                        && candidate.address == pointer_cell
+                    candidate.address == pointer_cell
                         && facts
                             .artifact(candidate.artifact)
                             .is_some_and(|artifact| artifact.sources.contains(&contract.source))
+                        && (candidate.kind == "data"
+                            || candidate.kind == "unknown"
+                                && facts.tables.iter().any(|table| {
+                                    table.artifact == candidate.artifact
+                                        && matches!(
+                                            table.root,
+                                            super::InterfaceFactRoot::AbsoluteAddress {
+                                                address: table_address
+                                            } if table_address == *address
+                                        )
+                                        && table.container_path == contract.container_path
+                                }))
                 })
                 .count()
                 == 1
@@ -337,7 +348,7 @@ mod tests {
     use super::*;
     use crate::interfaces::{
         InterfaceFactArtifact, InterfaceFactRoot, InterfaceFactStep, InterfaceFacts,
-        InterfaceRootLinkageFact, InterfaceSymbolLocationFact,
+        InterfaceRootLinkageFact, InterfaceSymbolLocationFact, InterfaceTableFact,
     };
 
     fn call(
@@ -464,6 +475,38 @@ mod tests {
             &binding(),
             &contract(),
             &facts(),
+        ));
+    }
+
+    #[test]
+    fn absolute_linker_symbol_is_accepted_only_with_an_observed_table_fact() {
+        let mut call = call(1, Some("event.o"), 0, 0x40);
+        call.root_linkage.candidates[0].kind = "unknown".to_owned();
+        let mut facts = facts();
+
+        assert!(!archive_call_matches_binding(
+            &call,
+            &binding(),
+            &contract(),
+            &facts,
+        ));
+
+        facts.tables.push(InterfaceTableFact {
+            artifact: 0,
+            root: InterfaceFactRoot::AbsoluteAddress { address: 0x2000 },
+            container_path: vec![InterfaceFactStep {
+                offset: -0x100,
+                width: 32,
+                selector: None,
+            }],
+            slots: Vec::new(),
+            functions: BTreeSet::new(),
+        });
+        assert!(archive_call_matches_binding(
+            &call,
+            &binding(),
+            &contract(),
+            &facts,
         ));
     }
 

@@ -1,0 +1,92 @@
+schema = 2
+
+[[peripherals]]
+name = "BLE_SCAN_CONTROL"
+description = """
+Three positional complete images published by one ble_lll_scan.c path. The
+source file establishes scan-path ownership, but the undocumented hardware
+actions represented by the images remain unknown.
+"""
+baseAddress = 0x20101970
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "COMMAND_0"
+description = "The observed path publishes the finite complete images 0x00000100 and 0x00000001 at different points."
+addressOffset = 0x0
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "COMMAND_1"
+description = "Both observed publications write the finite complete image one."
+addressOffset = 0x4
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "COMMAND_2"
+description = "Both observed publications write the finite complete image one."
+addressOffset = 0x8
+size = 32
+access = "write-only"
+[[peripherals.registers.register.fields]]
+name = "IMAGE"
+bitOffset = 0
+bitWidth = 32
+
+[[review]]
+entity = "BLE_SCAN_CONTROL"
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+provenance = "derived"
+accuracy = "exact"
+completeness = "partial"
+
+[[review]]
+entity = "BLE_SCAN_CONTROL.COMMAND_0"
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+[[review]]
+entity = "BLE_SCAN_CONTROL.COMMAND_0.IMAGE"
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLE_SCAN_CONTROL.COMMAND_1"
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+[[review]]
+entity = "BLE_SCAN_CONTROL.COMMAND_1.IMAGE"
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLE_SCAN_CONTROL.COMMAND_2"
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
+[[review]]
+entity = "BLE_SCAN_CONTROL.COMMAND_2.IMAGE"
+sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

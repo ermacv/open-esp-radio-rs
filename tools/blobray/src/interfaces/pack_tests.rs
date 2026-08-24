@@ -9,6 +9,12 @@ use super::*;
 use crate::{
     ExternalCallModelSetRef, ExternalCallModelSetSpec, ExternalCallModelSpec, ExternalOutputModel,
     ExternalReturnModel, KnowledgeContractSpec,
+    analysis::{
+        DiscoveredInterfaceAssignment, LinkageArtifact, ProjectInterfaceDiscovery,
+        ProjectLinkageInventory,
+    },
+    artifact::ArtifactContainerKind,
+    interface_discovery::{InterfaceRoot, InterfaceSlotAssignment},
 };
 
 const EXECUTION_MODELS: &[ExternalCallModelSpec] = &[ExternalCallModelSpec {
@@ -70,7 +76,7 @@ fn write_facts(path: &Path, digest: &str) {
         path,
         format!(
             r#"{{
-  "schema_version": 6,
+  "schema_version": 7,
   "command": "interfaces discover",
   "analysis_scope": {{
     "architecture":"riscv32",
@@ -177,6 +183,73 @@ fn write_facts(path: &Path, digest: &str) {
     .unwrap();
 }
 
+fn bounded_data_root(symbol: &str, address: u32, size: u32) -> InterfaceRoot {
+    InterfaceRoot::BoundedDataAddress {
+        member: None,
+        symbol: symbol.to_owned(),
+        symbol_address: address,
+        symbol_size: size,
+        address,
+    }
+}
+
+fn bounded_assignment_document(directory: &Path) -> serde_json::Value {
+    let artifact_path = directory.join("bounded-assignment.elf");
+    std::fs::write(&artifact_path, b"bounded assignment fixture").unwrap();
+    let discovery = ProjectInterfaceDiscovery {
+        linkage: ProjectLinkageInventory {
+            artifacts: vec![LinkageArtifact {
+                path: artifact_path,
+                roles: Vec::new(),
+                sources: vec!["fixture".to_owned()],
+                container: ArtifactContainerKind::Elf32,
+                objects: 1,
+                skipped_members: 0,
+                code_sections: Vec::new(),
+            }],
+            symbols: Vec::new(),
+        },
+        functions: vec![1],
+        reviewed_boundaries: vec![0],
+        calls: Vec::new(),
+        assignments: vec![DiscoveredInterfaceAssignment {
+            artifact: 0,
+            assignment: InterfaceSlotAssignment {
+                member: None,
+                function: "install_static_table".to_owned(),
+                function_address: 0x1000,
+                site: 0x1010,
+                root: bounded_data_root("table_cell", 0x2000, 4),
+                container_loads: Vec::new(),
+                offset: 0,
+                width: 32,
+                target: bounded_data_root("static_table", 0x3000, 0x20),
+            },
+        }],
+        decode_blockers: Vec::new(),
+        failures: Vec::new(),
+    };
+    serde_json::to_value(crate::artifacts::build_interface_facts(&discovery).unwrap()).unwrap()
+}
+
+fn load_bounded_assignment_document(
+    directory: &Path,
+    document: &serde_json::Value,
+) -> crate::Result<InterfaceFacts> {
+    let facts_path = directory.join("bounded-facts.json");
+    std::fs::write(&facts_path, document.to_string()).unwrap();
+    InterfaceFacts::load(&facts_path)
+}
+
+fn bounded_assignment_error(mutate: impl FnOnce(&mut serde_json::Value)) -> String {
+    let directory = fixture_directory();
+    let mut document = bounded_assignment_document(&directory);
+    mutate(&mut document);
+    let error = load_bounded_assignment_document(&directory, &document).unwrap_err();
+    std::fs::remove_dir_all(directory).unwrap();
+    error.to_string()
+}
+
 fn write_catalog(path: &Path) {
     std::fs::write(
         path,
@@ -216,6 +289,123 @@ fn stored_interface_facts_reject_unknown_and_missing_fields() {
     let error = crate::artifacts::parse_interface_facts(&missing.to_string()).unwrap_err();
     assert!(error.to_string().contains("missing field `container`"));
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn bounded_data_assignment_round_trips_through_schema_v7() {
+    let directory = fixture_directory();
+    let document = bounded_assignment_document(&directory);
+
+    assert_eq!(document["schema_version"], serde_json::json!(7));
+    crate::artifacts::parse_interface_facts(&document.to_string()).unwrap();
+    let facts = load_bounded_assignment_document(&directory, &document).unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+
+    assert_eq!(facts.assignments.len(), 1);
+    let assignment = &facts.assignments[0];
+    assert_eq!(assignment.offset, 0);
+    assert_eq!(assignment.width, 32);
+    assert!(matches!(
+        &assignment.root,
+        InterfaceFactRoot::BoundedDataAddress {
+            canonical,
+            member: None,
+            symbol,
+            address: 0x2000,
+            symbol_address: 0x2000,
+            symbol_size: 4,
+        } if canonical == "<elf>::table_cell+0x0" && symbol == "table_cell"
+    ));
+    assert!(matches!(
+        &assignment.target,
+        InterfaceFactRoot::BoundedDataAddress {
+            canonical,
+            member: None,
+            symbol,
+            address: 0x3000,
+            symbol_address: 0x3000,
+            symbol_size: 0x20,
+        } if canonical == "<elf>::static_table+0x0" && symbol == "static_table"
+    ));
+}
+
+#[test]
+fn bounded_data_assignment_rejects_out_of_bounds_address() {
+    let error = bounded_assignment_error(|document| {
+        document["assignments"][0]["target"]["address"] = serde_json::json!("0x00003020");
+    });
+    assert!(
+        error.contains("interface assignment target address lies outside its data-symbol range"),
+        "{error}"
+    );
+}
+
+#[test]
+fn bounded_data_assignment_rejects_overflowing_symbol_range() {
+    let error = bounded_assignment_error(|document| {
+        let root = &mut document["assignments"][0]["root"];
+        root["address"] = serde_json::json!("0xfffffffc");
+        root["symbol_address"] = serde_json::json!("0xfffffffc");
+        root["symbol_size"] = serde_json::json!(8);
+    });
+    assert!(
+        error.contains("interface assignment root data-symbol range overflows"),
+        "{error}"
+    );
+}
+
+#[test]
+fn bounded_data_assignment_rejects_nonzero_root_offset() {
+    let error = bounded_assignment_error(|document| {
+        document["assignments"][0]["offset"] = serde_json::json!(4);
+    });
+    assert!(
+        error.contains("bounded interface assignment root is not normalized to offset zero"),
+        "{error}"
+    );
+}
+
+#[test]
+fn bounded_data_pointer_cell_retains_an_indirect_object_field_offset() {
+    let directory = fixture_directory();
+    let mut document = bounded_assignment_document(&directory);
+    document["assignments"][0]["container_path"] = serde_json::json!([{
+        "site": "0x00001008",
+        "offset": 0,
+        "width": 32
+    }]);
+    document["assignments"][0]["offset"] = serde_json::json!(12);
+
+    let facts = load_bounded_assignment_document(&directory, &document).unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+    assert_eq!(facts.assignments[0].container_path.len(), 1);
+    assert_eq!(facts.assignments[0].offset, 12);
+}
+
+#[test]
+fn bounded_data_assignment_rejects_store_crossing_symbol_end() {
+    let error = bounded_assignment_error(|document| {
+        document["assignments"][0]["root"]["symbol_size"] = serde_json::json!(2);
+    });
+    assert!(
+        error.contains("bounded interface assignment store exceeds its data symbol"),
+        "{error}"
+    );
+}
+
+#[test]
+fn interface_assignment_rejects_plain_absolute_address_target() {
+    let error = bounded_assignment_error(|document| {
+        document["assignments"][0]["target"] = serde_json::json!({
+            "kind": "absolute-address",
+            "canonical": "0x00003000",
+            "address": "0x00003000"
+        });
+    });
+    assert!(
+        error.contains("interface assignment target lacks function-pointer provenance"),
+        "{error}"
+    );
 }
 
 fn reviewed_pack(digest: &str, semantic: &str) -> String {

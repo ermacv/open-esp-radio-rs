@@ -1,0 +1,27 @@
+schema = 3
+default-disposition = "not-yet-ported"
+default-protocol = "shared"
+
+# The probe constructs the official Bluetooth platform owner and projects the
+# typed host at the ABI boundary. The selected host and ANA_CONF2 transaction
+# are produced by the exact private production function and adapter.
+[[functions]]
+source = "archive"
+symbol = "phy_get_i2c_hostid_new"
+disposition = "bounded-feature"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_i2c::configure_and_select_phy_i2c_host"
+binding = "v2"
+rust-binding = "reviewed-abi-projection"
+rust-probe = "open_phy_i2c_host_trace_phy_get_i2c_hostid_new"
+comparison-plan = "direct-effects-v1"
+compare-return = true
+effect-contract = "exact-effects-v2"
+
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010f820 }
+disposition = { kind = "required" }
+
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010f820 }
+disposition = { kind = "required" }

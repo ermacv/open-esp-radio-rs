@@ -255,6 +255,13 @@ fn selector_matches(selector: &InterfaceRootSelector, root: &InterfaceFactRoot) 
                 address: fact_address,
             },
         ) => address == fact_address,
+        (
+            InterfaceRootSelector::AbsoluteAddress { address },
+            InterfaceFactRoot::BoundedDataAddress {
+                address: fact_address,
+                ..
+            },
+        ) => address == fact_address,
         _ => false,
     }
 }

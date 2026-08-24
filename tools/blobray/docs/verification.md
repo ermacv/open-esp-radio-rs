@@ -34,14 +34,24 @@ projection.
 Suites and comparison inputs live in `verification-addon.toml`, outside the
 neutral project manifest. A generic project can therefore analyze and publish
 register evidence without configuring production comparison. The chip pack's
-optional knowledge provider may enrich lifting and generated references, but
-it cannot execute a production comparison or return a verdict. The generic
-verification engine alone compares compiled artifacts and observations.
+optional knowledge provider may enrich lifting, generated references, and the
+reviewed ABI inventory of opaque diagnostic calls, but it cannot execute a
+production comparison or return a verdict. The generic verification engine
+alone compares compiled artifacts and observations.
 
 Effect contracts define the ordered observable reads, writes, calls, state
 changes and allowed normalizations. Unlisted effects fail closed. Concrete
 profiles define arguments, initial memory/device state, observations and
 finite-domain preconditions.
+
+Independent `mmio-domains` form a Cartesian product. When multiple register
+words are meaningful only as complete correlated states, list the concrete
+case names in `mmio-image-cases` instead. Blobray then uses each named case's
+entire `mmio-initial` map as one indivisible static-coverage input image; it
+does not infer combinations between words from different images. Every image
+must contain the same address set and still remains an ordinary executable
+case. The combined argument/MMIO coverage domain is checked before it is
+materialized and fails closed above 4096 cases.
 
 Profile schema 5 requires explicit `case-execution` and
 `transaction-comparison` policies. `case-execution = "independent"` gives
@@ -113,6 +123,16 @@ when an add-on supplies their signature and bounded behavior. Their calls
 remain visible facts, but Blobray does not recursively reconstruct an
 available implementation merely because bytes for that implementation are
 present. Unknown calls remain blockers.
+
+Every target-aware run, comparison, profile verification, and event replay
+installs the diagnostic call contracts from the `TargetSpec` knowledge
+provider. A neutral target installs none. Comparison reports and replay
+evidence record both the provider `id@analysis_cache_revision` and the actual
+contracts sorted by `(symbol, argument_count)`. The same canonical identity is
+part of execution-profile evidence and replay-cache fingerprints, so changing
+a provider contract cannot reuse evidence produced under the old ABI list.
+Explicit scripted responses remain scenario inputs; they are not deleted or
+inferred from the provider contract.
 
 Function identity is `(source, symbol)`, not symbol spelling alone. Probe names
 never imply production ownership; dispositions provide that reviewed mapping

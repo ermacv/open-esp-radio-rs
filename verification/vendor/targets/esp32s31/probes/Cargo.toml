@@ -19,7 +19,9 @@ publish = false
 [workspace.dependencies]
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "unstable"] }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../../driver/adapters/embassy/esp32s31-wifi" }
+open-esp-radio-esp32s31-radio-platform-esp-hal = { path = "../../../../../driver/adapters/esp-hal/esp32s31-radio-platform", features = ["esp32s31"] }
 open-esp-radio-esp32s31-hal = { path = "../../../../../driver/chips/esp32s31/hal", features = ["validation-probes"] }
 open-esp-radio-esp32s31-bluetooth = { path = "../../../../../driver/chips/esp32s31/bluetooth", features = ["validation-probes"] }
 open-esp-radio-esp32s31-coex = { path = "../../../../../driver/chips/esp32s31/coex" }

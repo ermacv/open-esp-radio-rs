@@ -1,0 +1,47 @@
+schema = 3
+default-disposition = "not-yet-ported"
+default-protocol = "ble"
+
+[[functions]]
+source = "ble-controller"
+symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ"
+disposition = "bounded-feature"
+protocol = "ble"
+rust-component = "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::program_memory_list_pointer"
+binding = "v2"
+rust-binding = "exact-production-entry"
+rust-probe = "open_ble_memory_list_a_trace_r_sym_ble_lbo_ru27_ea_u8_mv8_q7_uuf_z"
+comparison-plan = "direct-effects-v1"
+effect-contract = "exact-effects-v2"
+
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20101280 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20101280 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "fence", fm = 0, predecessor = 15, successor = 15 }
+disposition = { kind = "rust-addition", value = "device-ordering" }
+
+[[functions]]
+source = "ble-controller"
+symbol = "r_sym_ble_ZzrExMrn8EDiTFI7PENK"
+disposition = "bounded-feature"
+protocol = "ble"
+rust-component = "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::program_memory_list_pointer"
+binding = "v2"
+rust-binding = "exact-production-entry"
+rust-probe = "open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_penk"
+comparison-plan = "direct-effects-v1"
+effect-contract = "exact-effects-v2"
+
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20101284 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20101284 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "fence", fm = 0, predecessor = 15, successor = 15 }
+disposition = { kind = "rust-addition", value = "device-ordering" }

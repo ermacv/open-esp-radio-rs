@@ -147,6 +147,18 @@ impl ProjectAnalysisCache {
         digest.update(env!("CARGO_PKG_VERSION").as_bytes());
         digest.update([0]);
         digest.update(stage_revision(stage)?.to_le_bytes());
+        if let Some(schema) = stage_artifact_schema(stage) {
+            // Persistent document formats are owned independently from the
+            // analysis algorithm revision. Including the exact output schema
+            // here prevents a content-addressed cache hit from restoring an
+            // older document that the current strict reader must reject.
+            digest.update([0]);
+            digest.update(b"output-schema");
+            digest.update([0]);
+            digest.update(schema.version.to_le_bytes());
+            digest.update([0]);
+            digest.update(schema.command.as_bytes());
+        }
         if stage_uses_compiled_knowledge(stage) {
             digest.update([0]);
             digest.update(self.compiled_knowledge_identity.as_bytes());
@@ -229,6 +241,18 @@ fn stage_uses_compiled_knowledge(stage: &str) -> bool {
     stage == "linked-ir" || stage.starts_with("linked-ir:") || stage == "event-replays"
 }
 
+fn stage_artifact_schema(stage: &str) -> Option<crate::artifacts::ArtifactSchema> {
+    let owner = stage.split_once(':').map_or(stage, |(owner, _)| owner);
+    match owner {
+        "symbol-inventory" => Some(crate::artifacts::SYMBOL_INVENTORY),
+        "mmio-discovery" => Some(crate::artifacts::MMIO_FACTS),
+        "interface-discovery" => Some(crate::artifacts::INTERFACE_FACTS),
+        "linked-ir" => Some(crate::artifacts::LINKED_IR),
+        "event-replays" => Some(crate::artifacts::REPLAY_EVIDENCE),
+        _ => None,
+    }
+}
+
 /// Explicit semantic revision of each cached generator.
 ///
 /// A digest of the whole executable made presentation-only changes invalidate
@@ -237,13 +261,13 @@ fn stage_uses_compiled_knowledge(stage: &str) -> bool {
 /// hashes continue to protect project and caller-owned state.
 fn stage_revision(stage: &str) -> Result<u32> {
     if stage.starts_with("linked-ir:") {
-        return Ok(38);
+        return Ok(42);
     }
     match stage {
         "symbol-inventory" => Ok(2),
         "mmio-discovery" => Ok(4),
-        "interface-discovery" => Ok(6),
-        "linked-ir" => Ok(38),
+        "interface-discovery" => Ok(7),
+        "linked-ir" => Ok(42),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(5),
         "navigation-index" => Ok(2),
@@ -488,6 +512,31 @@ mod tests {
             assert!(stage_revision(stage).unwrap() > 0);
         }
         assert!(stage_revision("new-unversioned-stage").is_err());
+    }
+
+    #[test]
+    fn persistent_artifact_stages_include_their_strict_output_schema() {
+        assert_eq!(
+            stage_artifact_schema("symbol-inventory"),
+            Some(crate::artifacts::SYMBOL_INVENTORY)
+        );
+        assert_eq!(
+            stage_artifact_schema("mmio-discovery"),
+            Some(crate::artifacts::MMIO_FACTS)
+        );
+        assert_eq!(
+            stage_artifact_schema("interface-discovery"),
+            Some(crate::artifacts::INTERFACE_FACTS)
+        );
+        assert_eq!(
+            stage_artifact_schema("linked-ir:focused"),
+            Some(crate::artifacts::LINKED_IR)
+        );
+        assert_eq!(
+            stage_artifact_schema("event-replays"),
+            Some(crate::artifacts::REPLAY_EVIDENCE)
+        );
+        assert_eq!(stage_artifact_schema("register-review"), None);
     }
 
     #[test]

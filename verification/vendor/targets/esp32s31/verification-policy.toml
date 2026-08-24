@@ -375,6 +375,111 @@ requirement = "ble-scheduler-table-prefix-reviewed-domain"
 rationale = "The fingerprint pins the two-case profile, exact sixteen-entry MMIO domain and vendor stop at wr_btdm_osal_event_init. The effect contract admits only the production device-ordering fence after the 32 required ordered MMIO effects; no event/list or complete-controller equivalence is claimed."
 
 [[surfaces]]
+id = "ble-memory-list-selector-one-publication"
+description = "The compiled hidden PAC SPI preserves both selector-one memory-list publications without assigning list semantics or exposing a production lifecycle transition."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ble-memory-list-selector-one-slot-a"
+description = "Selector one slot A preserves the reviewed compressed-pointer RMW sequence over complementary register images."
+suite = "ble-memory-list-selector-one"
+source = "ble-controller"
+symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.requirements]]
+id = "ble-memory-list-selector-one-slot-b"
+description = "Selector one slot B preserves the reviewed literal-zero and compressed-pointer RMW sequence over complementary register images."
+suite = "ble-memory-list-selector-one"
+source = "ble-controller"
+symbol = "r_sym_ble_ZzrExMrn8EDiTFI7PENK"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ble-memory-list-selector-one-slot-a-transaction"
+vendor = { source = "ble-controller", symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ", fingerprint = "sha256:4084aeeeccadf1733213b9d430deb74cc15b786cc826aac0a2985dc15b3c55ba" }
+disposition = "verified"
+requirement = "ble-memory-list-selector-one-slot-a"
+rationale = "The selector-one profile pins zero and encoded pointer images, two different ordered read responses, exact R/W/R/W values, and the sole allowed production fence; it does not claim list direction, allocator behavior, lifecycle or controller readiness."
+
+[[surfaces.effects]]
+id = "ble-memory-list-selector-one-slot-b-transaction"
+vendor = { source = "ble-controller", symbol = "r_sym_ble_ZzrExMrn8EDiTFI7PENK", fingerprint = "sha256:4084aeeeccadf1733213b9d430deb74cc15b786cc826aac0a2985dc15b3c55ba" }
+disposition = "verified"
+requirement = "ble-memory-list-selector-one-slot-b"
+rationale = "The selector-one profile pins zero and encoded pointer images, two different ordered read responses, exact R/W/R/W values, and the sole allowed production fence; it does not claim list direction, allocator behavior, lifecycle or controller readiness."
+
+[[surfaces]]
+id = "ble-memory-list-selector-two-publication"
+description = "The compiled hidden PAC SPI preserves both selector-two memory-list publications without assigning list semantics or exposing a production lifecycle transition."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ble-memory-list-selector-two-slot-a"
+description = "Selector two slot A preserves the reviewed compressed-pointer RMW sequence over complementary register images."
+suite = "ble-memory-list-selector-two"
+source = "ble-controller"
+symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.requirements]]
+id = "ble-memory-list-selector-two-slot-b"
+description = "Selector two slot B preserves the reviewed literal-zero and compressed-pointer RMW sequence over complementary register images."
+suite = "ble-memory-list-selector-two"
+source = "ble-controller"
+symbol = "r_sym_ble_ZzrExMrn8EDiTFI7PENK"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ble-memory-list-selector-two-slot-a-transaction"
+vendor = { source = "ble-controller", symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ", fingerprint = "sha256:64d6931d0f23e87acebe6c6bd6d9d449d1e72d8407d28101cadb617e2a8a1b3e" }
+disposition = "verified"
+requirement = "ble-memory-list-selector-two-slot-a"
+rationale = "The selector-two profile pins zero and encoded pointer images, two different ordered read responses, exact R/W/R/W values, and the sole allowed production fence; it does not claim list direction, allocator behavior, lifecycle or controller readiness."
+
+[[surfaces.effects]]
+id = "ble-memory-list-selector-two-slot-b-transaction"
+vendor = { source = "ble-controller", symbol = "r_sym_ble_ZzrExMrn8EDiTFI7PENK", fingerprint = "sha256:64d6931d0f23e87acebe6c6bd6d9d449d1e72d8407d28101cadb617e2a8a1b3e" }
+disposition = "verified"
+requirement = "ble-memory-list-selector-two-slot-b"
+rationale = "The selector-two profile pins zero and encoded pointer images, two different ordered read responses, exact R/W/R/W values, and the sole allowed production fence; it does not claim list direction, allocator behavior, lifecycle or controller readiness."
+
+[[surfaces]]
+id = "ble-memory-list-selector-three-publication"
+description = "The compiled hidden PAC SPI preserves both selector-three memory-list publications without assigning list semantics or exposing a production lifecycle transition."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ble-memory-list-selector-three-slot-a"
+description = "Selector three slot A preserves the reviewed compressed-pointer RMW sequence over complementary register images."
+suite = "ble-memory-list-selector-three"
+source = "ble-controller"
+symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.requirements]]
+id = "ble-memory-list-selector-three-slot-b"
+description = "Selector three slot B preserves the reviewed literal-zero and compressed-pointer RMW sequence over complementary register images."
+suite = "ble-memory-list-selector-three"
+source = "ble-controller"
+symbol = "r_sym_ble_ZzrExMrn8EDiTFI7PENK"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ble-memory-list-selector-three-slot-a-transaction"
+vendor = { source = "ble-controller", symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ", fingerprint = "sha256:cba10afe74d4deaad206bc0018cf83f015f02e05dd3d759de36e2e237de881ca" }
+disposition = "verified"
+requirement = "ble-memory-list-selector-three-slot-a"
+rationale = "The selector-three profile pins zero and encoded pointer images, two different ordered read responses, exact R/W/R/W values, and the sole allowed production fence; it does not claim list direction, allocator behavior, lifecycle or controller readiness."
+
+[[surfaces.effects]]
+id = "ble-memory-list-selector-three-slot-b-transaction"
+vendor = { source = "ble-controller", symbol = "r_sym_ble_ZzrExMrn8EDiTFI7PENK", fingerprint = "sha256:cba10afe74d4deaad206bc0018cf83f015f02e05dd3d759de36e2e237de881ca" }
+disposition = "verified"
+requirement = "ble-memory-list-selector-three-slot-b"
+rationale = "The selector-three profile pins zero and encoded pointer images, two different ordered read responses, exact R/W/R/W values, and the sole allowed production fence; it does not claim list direction, allocator behavior, lifecycle or controller readiness."
+
+[[surfaces]]
 id = "btbb-v2-init-arg-one-ordered-mmio"
 description = "The compiled restricted PAC transaction preserves the exact finite MMIO order and values observed for bt_bb_v2_init_cmplx(1), without claiming its diagnostic, return value, common-PHY prerequisite or complete controller readiness."
 kind = "bounded-property"
@@ -389,7 +494,47 @@ claim = "reviewed-domain-equivalence"
 
 [[surfaces.effects]]
 id = "btbb-v2-init-arg-one-mmio"
-vendor = { source = "btbb", symbol = "bt_bb_v2_init_cmplx", fingerprint = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+vendor = { source = "btbb", symbol = "bt_bb_v2_init_cmplx", fingerprint = "sha256:7a40ac0f4504bbdb72f2c2374278f77136dfb4706963c7810606d7bd132405e1" }
 disposition = "verified"
 requirement = "btbb-v2-init-arg-one-reviewed-domain"
-rationale = "Temporary candidate pin replaced immediately after the first deterministic two-case comparison; no evidence is promoted with this value."
+rationale = "The fingerprint pins the exact two-case arg-one profile, its correlated complete MMIO images, explicit diagnostic response assumption and reviewed linked gain-byte inputs. The effect contract admits only the production device-ordering fence after the required ordered MMIO effects; no diagnostic, return, common-PHY teardown or complete-controller equivalence is claimed."
+
+[[surfaces]]
+id = "shared-phy-i2c-host-map-bluetooth-adapter"
+description = "The shared PHY host selector and official Bluetooth ESP-HAL platform adapter preserve the complete target host return and ANA_CONF2 transaction for every accredited ESP32-S31 analog block."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "phy-i2c-host-map-bluetooth-reviewed-domain"
+description = "All thirteen accepted blocks and both complementary ANA_CONF2 images preserve the vendor host selection, fresh read and complete-register write without claiming the out-of-domain fallback."
+suite = "phy-i2c-host-map-bluetooth"
+source = "archive"
+symbol = "phy_get_i2c_hostid_new"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "phy-i2c-host-map-bluetooth-transaction"
+vendor = { source = "archive", symbol = "phy_get_i2c_hostid_new", fingerprint = "sha256:f81f6834bee20170577e29ea42d7ffcc400ea87c2011cd0a22da465c3017a224" }
+disposition = "verified"
+requirement = "phy-i2c-host-map-bluetooth-reviewed-domain"
+rationale = "The fingerprint pins the complete 26-case profile: all thirteen accredited blocks, both host results and complementary ANA_CONF2 images. The required effect contract admits exactly one fresh read and one complete-register write; the vendor fallback outside the reviewed address type is not claimed."
+
+[[surfaces]]
+id = "ble-phy-register-init-ordered-mmio"
+description = "The compiled hidden PAC transaction must preserve the complete ordered BLE PHY register-initialization body for the reviewed linked-input and branch domain without claiming controller readiness."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ble-phy-register-init-reviewed-domain"
+description = "Both reviewed branch cases must preserve every ordered MMIO effect after the explicit vendor table-registration setup, including linked environment, resolving-list and SDK-option inputs."
+suite = "ble-phy-register-init"
+source = "ble-controller"
+symbol = "r_sym_ble_3472b6bNiQdnWkYo6Ggv"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ble-phy-register-init-mmio-transaction"
+vendor = { source = "ble-controller", symbol = "r_sym_ble_3472b6bNiQdnWkYo6Ggv", fingerprint = "sha256:44e25fda6c4ff898859377163b735fe2e6c045b1ad793fb27dabdfc3535aecec" }
+disposition = "verified"
+requirement = "ble-phy-register-init-reviewed-domain"
+rationale = "The fingerprint pins the exact two-case stateful profile, explicit esp_ble_register_bb_funcs setup, linked environment/list/provider inputs and every required ordered MMIO effect. It does not claim setup execution outside the profile, controller readiness, interrupt activation, HCI operation or teardown."

@@ -425,6 +425,7 @@ impl OmissionReason {
 #[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
 pub enum EffectDisposition {
     Required,
+    RequiredWhenObserved,
     ReplacedByAsync { condition: String, timeout: Timeout },
     PlatformProvidedInput { input: String },
     PlatformProvidedService { service: String },
@@ -454,6 +455,7 @@ impl EffectDisposition {
     pub fn canonical(&self) -> String {
         match self {
             Self::Required => "required".to_owned(),
+            Self::RequiredWhenObserved => "required-when-observed".to_owned(),
             Self::ReplacedByAsync { condition, timeout } => {
                 format!("replaced-by-async {condition} {}", timeout.canonical())
             }
@@ -585,7 +587,12 @@ fn validate_effect_rule(selector: &EffectSelector, disposition: &EffectDispositi
     match (selector, disposition) {
         (EffectSelector::PlatformCall { .. }, EffectDisposition::AllowedOmission(_))
         | (EffectSelector::PlatformCall { .. }, EffectDisposition::PlatformOwned)
-        | (_, EffectDisposition::Required | EffectDisposition::Forbidden)
+        | (
+            _,
+            EffectDisposition::Required
+            | EffectDisposition::RequiredWhenObserved
+            | EffectDisposition::Forbidden,
+        )
         | (
             EffectSelector::Delay | EffectSelector::MmioRead { .. },
             EffectDisposition::ReplacedByAsync { .. },

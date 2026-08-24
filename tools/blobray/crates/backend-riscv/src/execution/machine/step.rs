@@ -69,6 +69,42 @@ impl Machine<'_> {
         }
     }
 
+    fn execute_diagnostic_call(
+        &mut self,
+        site: u32,
+        indirect_target: Option<u32>,
+        symbol: String,
+        argument_count: u8,
+        link: Reg,
+        continuation: u32,
+    ) -> Result<bool> {
+        self.image
+            .validate_diagnostic_link_register(&symbol, site, link)?;
+        let Some(response) = self.modeled_call_response(&symbol, site)? else {
+            return Err(format!(
+                "execution reached diagnostic call {symbol} at {site:#010x} without an explicit scripted call response"
+            )
+            .into());
+        };
+        let arguments = self.record_diagnostic_call(site, symbol.clone(), argument_count);
+        if let Some(target) = indirect_target {
+            self.indirect_calls.insert(IndirectCall {
+                site,
+                symbol: symbol.clone(),
+                arguments,
+            });
+            self.record_indirect_table_call(site, target, &symbol);
+        }
+        self.apply_modeled_call_response(&symbol, site, response)?;
+        if link == Reg::ZERO {
+            Ok(self.finish_external_leaf())
+        } else {
+            self.set_register(Reg::RA, continuation);
+            self.pc = continuation;
+            Ok(true)
+        }
+    }
+
     fn dispatch_builtin_memory_call(&mut self, symbol: &str) -> Result<Option<bool>> {
         const MAX_BUILTIN_MEMORY_BYTES: u32 = 1 << 20;
 
@@ -182,6 +218,13 @@ impl Machine<'_> {
                 self.record_event(ExecutionEvent::DelayMicros(self.register(Reg::A0)));
                 return Ok(self.finish_external_leaf());
             }
+            if self.image.diagnostic_argument_count(&symbol).is_some() {
+                return Err(format!(
+                    "diagnostic boundary {symbol} at {:#010x} was reached without a classified call site",
+                    self.pc
+                )
+                .into());
+            }
 
             if self.image.call_trampoline_addresses.contains(&self.pc) {
                 if self.fifo_bindings.contains_key(&symbol) {
@@ -219,6 +262,26 @@ impl Machine<'_> {
             let link = self.image.relocated_call_link_register(self.pc)?;
             let continuation = self.pc.wrapping_add(8);
             let name = call.name.clone();
+            let diagnostic = self
+                .image
+                .diagnostic_call(&name)
+                .map(|(symbol, argument_count)| (symbol.to_owned(), argument_count))
+                .or_else(|| {
+                    let symbol = self.call_symbol_at(call.target?)?;
+                    self.image
+                        .diagnostic_call(symbol)
+                        .map(|(symbol, argument_count)| (symbol.to_owned(), argument_count))
+                });
+            if let Some((symbol, argument_count)) = diagnostic {
+                return self.execute_diagnostic_call(
+                    self.pc,
+                    None,
+                    symbol,
+                    argument_count,
+                    link,
+                    continuation,
+                );
+            }
             if self.fifo_bindings.contains_key(&name) {
                 self.record_call(self.pc, name.clone());
                 self.apply_fifo_service_call(&name, self.pc)?;
@@ -546,6 +609,21 @@ impl Machine<'_> {
             Inst::Jal { offset, dest } => {
                 let target = self.pc.wrapping_add(offset.as_u32());
                 if let Some(symbol) = self.call_symbol_at(target).map(str::to_owned)
+                    && let Some((symbol, argument_count)) = self
+                        .image
+                        .diagnostic_call(&symbol)
+                        .map(|(symbol, argument_count)| (symbol.to_owned(), argument_count))
+                {
+                    return self.execute_diagnostic_call(
+                        self.pc,
+                        None,
+                        symbol,
+                        argument_count,
+                        dest,
+                        next,
+                    );
+                }
+                if let Some(symbol) = self.call_symbol_at(target).map(str::to_owned)
                     && self.fifo_bindings.contains_key(&symbol)
                 {
                     self.record_call(self.pc, symbol.clone());
@@ -590,6 +668,23 @@ impl Machine<'_> {
             }
             Inst::Jalr { offset, base, dest } => {
                 let target = self.register(base).wrapping_add(offset.as_u32()) & !1;
+                let is_return = dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0;
+                if !is_return
+                    && let Some(symbol) = self.call_symbol_at(target).map(str::to_owned)
+                    && let Some((symbol, argument_count)) = self
+                        .image
+                        .diagnostic_call(&symbol)
+                        .map(|(symbol, argument_count)| (symbol.to_owned(), argument_count))
+                {
+                    return self.execute_diagnostic_call(
+                        self.pc,
+                        Some(target),
+                        symbol,
+                        argument_count,
+                        dest,
+                        next,
+                    );
+                }
                 if let Some(symbol) = self.call_symbol_at(target).map(str::to_owned)
                     && self.fifo_bindings.contains_key(&symbol)
                 {

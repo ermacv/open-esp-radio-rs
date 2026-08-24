@@ -97,7 +97,7 @@ pub struct BluetoothClockedResources<P> {
 }
 
 impl<P> BluetoothClockedResources<P> {
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn into_parts(self) -> (BluetoothPhysicalResources, P) {
         (self.resources, self.platform)
     }

@@ -8,6 +8,72 @@ use super::{ExecutableImage, RelocatedCall, UnresolvedRelocation};
 use crate::Result;
 
 impl ExecutableImage {
+    /// Register reviewed opaque diagnostic boundaries for concrete and
+    /// static execution.
+    ///
+    /// The backend remains vendor-neutral: callers provide these symbol/ABI
+    /// facts from composed knowledge. Concrete execution still requires an
+    /// explicit scripted response for every reached diagnostic call. Every
+    /// other unresolved external call continues to fail closed.
+    pub fn configure_diagnostic_calls<'a>(
+        &mut self,
+        calls: impl IntoIterator<Item = (&'a str, u8)>,
+    ) -> Result<()> {
+        for (symbol, argument_count) in calls {
+            if symbol.trim().is_empty() {
+                return Err("diagnostic call symbol must not be empty".into());
+            }
+            if argument_count > 8 {
+                return Err(format!(
+                    "diagnostic call {symbol} declares {argument_count} arguments; RV32 execution supports at most 8 register arguments"
+                )
+                .into());
+            }
+            if let Some(previous) = self
+                .diagnostic_calls
+                .insert(symbol.to_owned(), argument_count)
+                && previous != argument_count
+            {
+                return Err(format!(
+                    "diagnostic call {symbol} has conflicting argument counts {previous} and {argument_count}"
+                )
+                .into());
+            }
+        }
+        Ok(())
+    }
+
+    pub(in crate::execution) fn diagnostic_call(&self, symbol: &str) -> Option<(&str, u8)> {
+        self.diagnostic_calls
+            .get_key_value(symbol)
+            .or_else(|| {
+                symbol
+                    .strip_prefix("__call_")
+                    .and_then(|symbol| self.diagnostic_calls.get_key_value(symbol))
+            })
+            .map(|(symbol, argument_count)| (symbol.as_str(), *argument_count))
+    }
+
+    pub(in crate::execution) fn diagnostic_argument_count(&self, symbol: &str) -> Option<u8> {
+        self.diagnostic_call(symbol)
+            .map(|(_, argument_count)| argument_count)
+    }
+
+    pub(in crate::execution) fn validate_diagnostic_link_register(
+        &self,
+        symbol: &str,
+        site: u32,
+        link: Reg,
+    ) -> Result<()> {
+        if matches!(link, Reg::ZERO | Reg::RA) {
+            return Ok(());
+        }
+        Err(format!(
+            "diagnostic call {symbol} at {site:#010x} uses unsupported link register {link}; only zero and ra are supported"
+        )
+        .into())
+    }
+
     pub fn symbol_address(&self, name: &str) -> Option<u32> {
         self.symbols_by_name.get(name).copied()
     }

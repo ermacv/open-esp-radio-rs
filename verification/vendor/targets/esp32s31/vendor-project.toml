@@ -578,6 +578,9 @@ roots = [
     # role. Keep it explicit until the reviewed indirect interface edge from
     # the public lifecycle is resolved by the canonical linked image.
     "ble-controller:r_sym_ble_3472b6bNiQdnWkYo6Ggv",
+    # Complete positional address-slot writer. Named public- and random-address
+    # callers prove two uses, while selector two remains intentionally unnamed.
+    "ble-controller:r_sym_ble_ylitQQeG9NPtG1fXz4Tk",
     "ble-controller:r_ble_controller_init",
     "ble-controller:r_ble_controller_deinit",
     "ble-controller:r_base_stack_initEnv",

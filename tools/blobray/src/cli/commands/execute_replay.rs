@@ -60,6 +60,15 @@ fn render_human(
     outputln!("Artifact: {}", document.artifact.path);
     outputln!("Manifest: {}", document.manifest.path);
     outputln!(
+        "Diagnostics: {} ({} contracts)",
+        document
+            .diagnostic_contracts
+            .knowledge_provider
+            .as_deref()
+            .unwrap_or("neutral"),
+        document.diagnostic_contracts.calls.len()
+    );
+    outputln!(
         "\n{}",
         crate::cli::table::render(
             [

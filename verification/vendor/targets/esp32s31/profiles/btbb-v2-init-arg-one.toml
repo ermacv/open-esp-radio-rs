@@ -16,195 +16,14 @@ vendor-symbol = "bt_bb_v2_init_cmplx"
 rust-symbol = "open_btbb_v2_init_trace_r_sym_bt_bb_v2_init_cmplx_x1"
 compare-return = false
 
-[[profiles.mmio-domains]]
-address = 0x20102170
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x2010200c
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020f0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20104c24
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x2010204c
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028d0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028d4
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x2010288c
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102888
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020bc
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020c0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102800
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x2010284c
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102000
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102c0c
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102c00
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102844
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102848
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102868
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20107cd0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102840
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102854
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028a0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028a8
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028b8
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102898
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028b0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102894
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028b4
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028bc
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102884
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028e0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028e4
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028e8
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028ec
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028f0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102900
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102068
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102100
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028dc
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028f8
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x2010286c
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028c0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201028c4
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201021c4
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020fc
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102c10
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102c18
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102c34
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102c2c
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102c30
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102c14
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102c28
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020e0
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020e4
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020e8
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020ec
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020f4
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20100870
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102014
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x201020b8
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102010
-values = [0xa5a55a5a, 0x5a5aa5a5]
-[[profiles.mmio-domains]]
-address = 0x20102184
-values = [0xa5a55a5a, 0x5a5aa5a5]
+mmio-image-cases = [
+    "complement-a-gain-zero",
+    "complement-b-gain-max",
+]
+
+[[profiles.argument-values]]
+index = 0
+values = [1]
 
 [[profiles.cases]]
 name = "complement-a-gain-zero"
@@ -212,6 +31,7 @@ arguments = [1, 0x00]
 vendor-ram-symbols = [
     { target-symbol = "phy_param", offset = 0x120, value = 0x00000000, observe = false },
 ]
+vendor-calls = [{ symbol = "phy_printf", return-words = [0] }]
 mmio-initial = [
     { address = 0x20102170, value = 0xa5a55a5a },
     { address = 0x2010200c, value = 0xa5a55a5a },
@@ -284,6 +104,7 @@ arguments = [1, 0x7f]
 vendor-ram-symbols = [
     { target-symbol = "phy_param", offset = 0x120, value = 0x0000007f, observe = false },
 ]
+vendor-calls = [{ symbol = "phy_printf", return-words = [0] }]
 mmio-initial = [
     { address = 0x20102170, value = 0x5a5aa5a5 },
     { address = 0x2010200c, value = 0x5a5aa5a5 },

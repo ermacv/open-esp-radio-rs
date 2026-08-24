@@ -63,6 +63,21 @@ pub(crate) fn origin_instruction_correspondence(
             continue;
         }
 
+        // Linker relaxation may remove a run of hoisted HI20 bases while
+        // retaining a later LO12 instruction. Resynchronize only across
+        // relocation-bearing LUI instructions: skipping arbitrary code here
+        // would manufacture origin identity from a coincidental opcode
+        // match. This occurs in ppTask, where three unused table bases vanish
+        // before the surviving .LANCHOR24 low relocation.
+        if let Some(next_origin_index) = resynchronize_after_relaxed_hi20_run(
+            &origin.instructions,
+            origin_index,
+            current_runtime,
+        ) {
+            origin_index = next_origin_index;
+            continue;
+        }
+
         // Bound resynchronization to one instruction. Larger gaps are left
         // deliberately unmapped instead of manufacturing correspondence.
         if origin
@@ -179,6 +194,33 @@ fn relaxed_single_instruction_matches(
 ) -> bool {
     instruction_mnemonic(&origin.text) == instruction_mnemonic(&runtime.text)
         && destination_register(&origin.text) == destination_register(&runtime.text)
+        && instruction_registers(&runtime.text).last() == Some(&"zero")
+}
+
+fn resynchronize_after_relaxed_hi20_run(
+    origins: &[artifact::FunctionInstruction],
+    origin_index: usize,
+    runtime: &artifact::FunctionInstruction,
+) -> Option<usize> {
+    const MAX_RELAXED_BASES: usize = 8;
+
+    let mut candidate = origin_index;
+    while candidate.saturating_sub(origin_index) < MAX_RELAXED_BASES {
+        let instruction = origins.get(candidate)?;
+        if candidate != origin_index && instruction_shapes_match(instruction, runtime) {
+            return Some(candidate);
+        }
+        if instruction_mnemonic(&instruction.text) != "lui"
+            || !instruction
+                .relocations
+                .iter()
+                .any(|relocation| relocation.kind == "hi20")
+        {
+            return None;
+        }
+        candidate += 1;
+    }
+    None
 }
 
 fn instruction_shapes_match(
@@ -388,6 +430,55 @@ mod tests {
             !correspondence.iter().any(|item| {
                 item.origin_offsets.contains(&12) && item.runtime_address == 0x100c
             })
+        );
+    }
+
+    #[test]
+    fn hoisted_relaxed_bases_do_not_shift_a_low_relocation_onto_a_table_slot_load() {
+        let origin = body(
+            "fixture.a",
+            0,
+            vec![
+                instruction(0, 0, "lui s5, 0", Some(("hi20", "tx_table"))),
+                instruction(4, 4, "lui s6, 0", Some(("hi20", "config_table"))),
+                instruction(8, 8, "lui s7, 0", Some(("hi20", "timer_table"))),
+                instruction(12, 12, "mv s2, s2", Some(("lo12-i", ".LANCHOR24"))),
+                instruction(16, 16, "lw a5, 0(s0)", Some(("lo12-i", "g_osi_funcs_p"))),
+                instruction(20, 20, "lw a0, 0(s3)", Some(("lo12-i", "xphyQueue"))),
+                instruction(24, 24, "li a2, -1", None),
+                instruction(26, 26, "lw a5, 116(a5)", None),
+                instruction(30, 30, "jalr ra, 0(a5)", None),
+            ],
+        );
+        let runtime = body(
+            "fixture.elf",
+            0x1000,
+            vec![
+                instruction(0, 0x1000, "addi s2, s2, 52", None),
+                instruction(4, 0x1004, "lw a5, 0(zero)", None),
+                instruction(8, 0x1008, "lw a0, 0(zero)", None),
+                instruction(12, 0x100c, "li a2, -1", None),
+                instruction(14, 0x100e, "lw a5, 116(a5)", None),
+                instruction(18, 0x1012, "jalr ra, 0(a5)", None),
+            ],
+        );
+
+        let correspondence = origin_instruction_correspondence(&origin, &runtime);
+
+        assert!(correspondence.iter().any(|item| {
+            item.origin_offsets == [16]
+                && item.runtime_address == 0x1004
+                && item.relocation_symbols == ["g_osi_funcs_p"]
+        }));
+        assert!(correspondence.iter().any(|item| {
+            item.origin_offsets == [20]
+                && item.runtime_address == 0x1008
+                && item.relocation_symbols == ["xphyQueue"]
+        }));
+        assert!(
+            !correspondence
+                .iter()
+                .any(|item| { item.origin_offsets == [16] && item.runtime_address == 0x100e })
         );
     }
 }

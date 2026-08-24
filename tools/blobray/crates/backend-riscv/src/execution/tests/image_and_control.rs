@@ -368,6 +368,7 @@ fn call_trampoline_does_not_duplicate_the_ordered_target_call() {
             },
         )]),
         unresolved_relocations_by_address: BTreeMap::new(),
+        diagnostic_calls: BTreeMap::new(),
         global_pointer: None,
     };
     let result = execute(&image, &empty_svd(), "wrapper", Scenario::default()).unwrap();
@@ -481,6 +482,7 @@ fn ordered_control_flow_retains_call_multiplicity_and_loop_iterations() {
         call_trampoline_addresses: BTreeSet::new(),
         relocated_calls_by_address: BTreeMap::new(),
         unresolved_relocations_by_address: BTreeMap::new(),
+        diagnostic_calls: BTreeMap::new(),
         global_pointer: None,
     };
     let result = execute(&calls, &empty_svd(), "wrapper", Scenario::default()).unwrap();

@@ -1,12 +1,13 @@
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 mod agc;
 mod agc_runtime;
 mod baseband;
-#[cfg(feature = "validation-probes")]
 mod bluetooth_baseband;
 mod bluetooth_interrupt;
+mod bluetooth_memory_lists;
+mod bluetooth_phy_init;
 mod bluetooth_scheduler;
 mod cfr;
 pub mod clock;
@@ -57,6 +58,10 @@ pub mod validation;
 mod validation_transactions;
 pub use agc_runtime::ForcedRxGain;
 pub use bluetooth_interrupt::BluetoothInterruptObservation;
+pub use bluetooth_memory_lists::{
+    BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+    BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
+};
 pub use cfr::CfrValue;
 pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
 /// Reviewed writable MAC interrupt mask.

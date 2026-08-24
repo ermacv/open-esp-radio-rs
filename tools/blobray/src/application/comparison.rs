@@ -93,7 +93,7 @@ pub(super) fn compare_profile(
         })
         .collect::<Vec<_>>();
     operations::validate_table_instances(resolved, &table_scenarios)?;
-    let coverage_domain = profile.coverage_constraints();
+    let coverage_domain = profile.coverage_constraints()?;
     Ok(crate::compare_execution_scenarios(
         &resolved.mmio,
         crate::ExecutionInput {
@@ -112,6 +112,9 @@ pub(super) fn compare_profile(
             transaction_comparison: profile.transaction_comparison,
             effect_policy: None,
             call_equivalences: &profile.call_equivalences,
+            diagnostic_contracts: crate::harnesses::diagnostic_contracts_or_empty(
+                resolved.target.knowledge_provider.as_deref(),
+            )?,
             coverage_domain: &coverage_domain,
             vendor_setup: &profile.vendor_setup,
         },

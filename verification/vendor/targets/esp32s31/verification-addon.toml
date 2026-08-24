@@ -259,8 +259,83 @@ rust-artifact-role = "rust-artifact:bluetooth"
 rust-prefix = "open_btbb_v2_init_trace_"
 profiles = ["profiles/btbb-v2-init-arg-one.toml"]
 dispositions = ["dispositions/btbb-v2-init-arg-one.toml"]
-baselines = []
-gate = "informational"
+baselines = ["baselines/btbb-v2-init-arg-one.toml"]
+gate = "regression"
+match-floor = 1
 [[suites.vendor]]
 source = "btbb"
 symbols = ["bt_bb_v2_init_cmplx"]
+
+[[suites]]
+id = "ble-memory-list-selector-one"
+rust-artifact-role = "rust-artifact:bluetooth"
+rust-prefix = "open_ble_memory_list_"
+profiles = ["profiles/ble-memory-list-selector-one.toml"]
+dispositions = ["dispositions/ble-memory-list-selector-one.toml"]
+baselines = ["baselines/ble-memory-list-selector-one.toml"]
+gate = "regression"
+match-floor = 2
+[[suites.vendor]]
+source = "ble-controller"
+symbols = [
+    "r_sym_ble_LboRu27EaU8MV8Q7UUfZ",
+    "r_sym_ble_ZzrExMrn8EDiTFI7PENK",
+]
+
+[[suites]]
+id = "ble-phy-register-init"
+rust-artifact-role = "rust-artifact:bluetooth"
+rust-prefix = "open_ble_phy_register_init_trace_"
+profiles = ["profiles/ble-phy-register-init.toml"]
+dispositions = ["dispositions/ble-phy-register-init.toml"]
+baselines = ["baselines/ble-phy-register-init.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "ble-controller"
+symbols = ["r_sym_ble_3472b6bNiQdnWkYo6Ggv"]
+
+[[suites]]
+id = "ble-memory-list-selector-two"
+rust-artifact-role = "rust-artifact:bluetooth"
+rust-prefix = "open_ble_memory_list_"
+profiles = ["profiles/ble-memory-list-selector-two.toml"]
+dispositions = ["dispositions/ble-memory-list-selector-two.toml"]
+baselines = ["baselines/ble-memory-list-selector-two.toml"]
+gate = "regression"
+match-floor = 2
+[[suites.vendor]]
+source = "ble-controller"
+symbols = [
+    "r_sym_ble_LboRu27EaU8MV8Q7UUfZ",
+    "r_sym_ble_ZzrExMrn8EDiTFI7PENK",
+]
+
+[[suites]]
+id = "ble-memory-list-selector-three"
+rust-artifact-role = "rust-artifact:bluetooth"
+rust-prefix = "open_ble_memory_list_"
+profiles = ["profiles/ble-memory-list-selector-three.toml"]
+dispositions = ["dispositions/ble-memory-list-selector-three.toml"]
+baselines = ["baselines/ble-memory-list-selector-three.toml"]
+gate = "regression"
+match-floor = 2
+[[suites.vendor]]
+source = "ble-controller"
+symbols = [
+    "r_sym_ble_LboRu27EaU8MV8Q7UUfZ",
+    "r_sym_ble_ZzrExMrn8EDiTFI7PENK",
+]
+
+[[suites]]
+id = "phy-i2c-host-map-bluetooth"
+rust-artifact-role = "rust-artifact:bluetooth"
+rust-prefix = "open_phy_i2c_host_trace_"
+profiles = ["profiles/phy-i2c-host-map-bluetooth.toml"]
+dispositions = ["dispositions/phy-i2c-host-map-bluetooth.toml"]
+baselines = ["baselines/phy-i2c-host-map-bluetooth.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "archive"
+symbols = ["phy_get_i2c_hostid_new"]

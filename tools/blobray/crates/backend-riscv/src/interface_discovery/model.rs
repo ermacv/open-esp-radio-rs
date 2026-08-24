@@ -28,6 +28,18 @@ pub enum InterfaceRoot {
     FunctionArgument {
         index: u8,
     },
+    /// Exact linked address proven to lie inside one sized data symbol.
+    ///
+    /// This preserves the bound that distinguishes an observed static-data
+    /// pointer from an arbitrary numeric constant. It does not claim that the
+    /// pointed object has been initialized or that a producer has executed.
+    BoundedDataAddress {
+        member: Option<String>,
+        symbol: String,
+        symbol_address: u32,
+        symbol_size: u32,
+        address: u32,
+    },
     AbsoluteAddress {
         address: u32,
     },
@@ -38,6 +50,7 @@ impl InterfaceRoot {
         match self {
             Self::RelocatedSymbol { .. } => "relocated-symbol",
             Self::FunctionArgument { .. } => "function-argument",
+            Self::BoundedDataAddress { .. } => "bounded-data-address",
             Self::AbsoluteAddress { .. } => "absolute-address",
         }
     }
@@ -54,6 +67,17 @@ impl InterfaceRoot {
                 member.as_deref().unwrap_or("<elf>")
             ),
             Self::FunctionArgument { index } => format!("arg{index}"),
+            Self::BoundedDataAddress {
+                member,
+                symbol,
+                symbol_address,
+                address,
+                ..
+            } => format!(
+                "{}::{symbol}{:+#x}",
+                member.as_deref().unwrap_or("<elf>"),
+                address.wrapping_sub(*symbol_address)
+            ),
             Self::AbsoluteAddress { address } => format!("{address:#010x}"),
         }
     }
@@ -61,7 +85,9 @@ impl InterfaceRoot {
     pub const fn addressing(&self) -> Option<InterfaceSymbolAddressing> {
         match self {
             Self::RelocatedSymbol { addressing, .. } => Some(*addressing),
-            Self::FunctionArgument { .. } | Self::AbsoluteAddress { .. } => None,
+            Self::FunctionArgument { .. }
+            | Self::BoundedDataAddress { .. }
+            | Self::AbsoluteAddress { .. } => None,
         }
     }
 }
@@ -99,13 +125,14 @@ pub struct InterfacePointer {
     pub post_offset: i32,
 }
 
-/// One statically evidenced function-pointer store into a table slot.
+/// One statically evidenced pointer store into a table slot or pointer cell.
 ///
-/// Both sides retain provenance. A target may be a relocated function or a
-/// function argument supplied by a runtime registration call. This record
-/// says only that the producer can perform the store; it does not claim that
-/// the producer has executed, that an argument is executable code, or that
-/// the assignment is the active runtime value.
+/// Both sides retain provenance. A target may be a relocated function, a
+/// function argument supplied by a runtime registration call, or a linked
+/// address bounded by a sized static-data symbol. This record says only that
+/// the producer can perform the store; it does not claim that the producer
+/// has executed, that an argument is executable code, that static data has
+/// its initial contents, or that the assignment is the active runtime value.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct InterfaceSlotAssignment {
     pub member: Option<String>,

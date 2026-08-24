@@ -784,7 +784,7 @@ mod tests {
         std::fs::write(&manifest, "schema = 2\n# changed\n").unwrap();
         std::fs::write(&artifact, b"linked-image").unwrap();
         let document = serde_json::json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "command": "execute replay",
             "manifest": {
                 "path": std::fs::canonicalize(&manifest).unwrap(),
@@ -794,6 +794,7 @@ mod tests {
                 "path": std::fs::canonicalize(&artifact).unwrap(),
                 "sha256": crate::artifact_sha256(&artifact).unwrap(),
             },
+            "diagnostic_contracts": { "calls": [] },
             "phases": [
                 {
                     "name": "post",

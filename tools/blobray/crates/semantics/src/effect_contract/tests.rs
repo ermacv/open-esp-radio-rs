@@ -55,6 +55,29 @@ fn exact_policy_rejects_an_extra_rust_effect() {
 }
 
 #[test]
+fn required_when_observed_accepts_an_inactive_vendor_branch() {
+    let selector = read().selector();
+    let policy = EffectPolicy::new(
+        EffectComparison::ExactEffectsV2,
+        [(selector, EffectDisposition::RequiredWhenObserved)],
+    )
+    .unwrap();
+
+    assert_eq!(
+        compare_effects(&[], &[], &policy).unwrap(),
+        EquivalenceOutcome::matched(EquivalenceMode::Semantic)
+    );
+    assert_eq!(
+        compare_effects(&[read()], &[read()], &policy).unwrap(),
+        EquivalenceOutcome::matched(EquivalenceMode::Semantic)
+    );
+    assert_eq!(
+        compare_effects(&[], &[read()], &policy).unwrap().verdict,
+        EquivalenceVerdict::Incomplete
+    );
+}
+
+#[test]
 fn v2_requires_an_exactly_declared_rust_device_ordering_fence() {
     let selector = read().selector();
     let fence = ContractEffect::Fence {

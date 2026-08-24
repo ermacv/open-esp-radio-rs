@@ -38,9 +38,18 @@ pub trait PhyI2cMasterControl {
 /// A finite PHY-I2C operation could not be published or observed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cError {
-    Busy,
     CommandMemoryIndexOutOfRange,
     CommandMemoryWordOutOfRange,
+}
+
+/// Replace the complete S31 PHY-I2C host-map field while preserving every
+/// unrelated bit.
+///
+/// Complete archive `phy_get_i2c_hostid_new` proves the mask and replacement
+/// image. Platform adapters retain the official `I2C_ANA_MST` singleton and
+/// use this pure transform inside one fresh read-modify-write.
+pub const fn configured_host_map_image(previous: u32) -> u32 {
+    (previous & 0xfffc_000f) | 0x0003_fa00
 }
 
 /// Test the exact busy bit shared by both PHY-I2C master hosts.
@@ -64,80 +73,6 @@ pub fn pulse_master_reset(platform: &mut impl PhyI2cMasterControl, host: PhyI2cH
 /// Sample one PHY-I2C master reset busy edge without retrying.
 pub fn sample_master_reset_busy(platform: &impl PhyI2cMasterControl, host: PhyI2cHost) -> bool {
     platform.phy_i2c_master_is_busy(host)
-}
-
-/// Publish one PHY-I2C read after a single fail-fast busy observation.
-///
-/// Basis: complete rev0 ROM `phy_chip_i2c_readReg_org` at `0x2f829ffa`,
-/// combined with the complete S31 `libphy.a[phy_i2c.o]` host-config and
-/// read-mask callbacks. Rust additionally rejects a busy host before
-/// publication; it never reproduces the ROM polling loop.
-pub fn try_start_read(
-    platform: &mut impl PhyI2cMasterControl,
-    host: PhyI2cHost,
-    block: u8,
-    register: u8,
-    read_mask: u16,
-) -> Result<(), PhyI2cError> {
-    platform.configure_phy_i2c_host_map();
-    if platform.phy_i2c_master_is_busy(host) {
-        return Err(PhyI2cError::Busy);
-    }
-    platform.publish_phy_i2c_read_mask(read_mask);
-    platform.publish_phy_i2c_command(host, block, register, 0, false);
-    Ok(())
-}
-
-/// Observe one previously published PHY-I2C read exactly once.
-///
-/// Basis: the completion/result suffix of complete rev0 ROM
-/// `phy_chip_i2c_readReg_org`. A set busy bit returns `Busy` to the external
-/// async owner instead of spinning; otherwise bits 23:16 are the exact byte
-/// result.
-pub fn try_finish_read(
-    platform: &impl PhyI2cMasterControl,
-    host: PhyI2cHost,
-) -> Result<u8, PhyI2cError> {
-    if platform.phy_i2c_master_is_busy(host) {
-        Err(PhyI2cError::Busy)
-    } else {
-        Ok(platform.sample_phy_i2c_result(host))
-    }
-}
-
-/// Publish one PHY-I2C write after a single fail-fast busy observation.
-///
-/// Basis: complete rev0 ROM `phy_chip_i2c_writeReg` at `0x2f82a30e` and the
-/// complete S31 libphy host-config callback. Command bytes and bits 24/26 are
-/// instruction-exact; completion remains externally driven.
-pub fn try_start_write(
-    platform: &mut impl PhyI2cMasterControl,
-    host: PhyI2cHost,
-    block: u8,
-    register: u8,
-    value: u8,
-) -> Result<(), PhyI2cError> {
-    platform.configure_phy_i2c_host_map();
-    if platform.phy_i2c_master_is_busy(host) {
-        return Err(PhyI2cError::Busy);
-    }
-    platform.publish_phy_i2c_command(host, block, register, value, true);
-    Ok(())
-}
-
-/// Observe one previously published PHY-I2C write exactly once.
-///
-/// Basis: the busy-test suffix of complete rev0 ROM
-/// `phy_chip_i2c_writeReg`. This method deliberately performs no retry.
-pub fn try_finish_write(
-    platform: &impl PhyI2cMasterControl,
-    host: PhyI2cHost,
-) -> Result<(), PhyI2cError> {
-    if platform.phy_i2c_master_is_busy(host) {
-        Err(PhyI2cError::Busy)
-    } else {
-        Ok(())
-    }
 }
 
 /// Apply all six writes of the recovered PHY-I2C clock selection.
@@ -209,7 +144,15 @@ pub fn write_command_memory(
 
 #[cfg(test)]
 mod tests {
-    use super::{bbpll_calibration_bits, master_reset_busy};
+    use super::{bbpll_calibration_bits, configured_host_map_image, master_reset_busy};
+
+    #[test]
+    fn host_map_transform_preserves_only_the_reviewed_outer_fields() {
+        assert_eq!(configured_host_map_image(0), 0x0003_fa00);
+        assert_eq!(configured_host_map_image(u32::MAX), 0xffff_fa0f);
+        assert_eq!(configured_host_map_image(0xa5a5_5a5a), 0xa5a7_fa0a);
+        assert_eq!(configured_host_map_image(0x5a5a_a5a5), 0x5a5b_fa05);
+    }
 
     #[test]
     fn bbpll_calibration_retains_both_complete_rom_encodings() {

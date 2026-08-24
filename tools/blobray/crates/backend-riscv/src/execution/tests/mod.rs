@@ -23,6 +23,7 @@ fn tiny_image(bytes: Vec<u8>, memory_size: u32) -> ExecutableImage {
         call_trampoline_addresses: BTreeSet::new(),
         relocated_calls_by_address: BTreeMap::new(),
         unresolved_relocations_by_address: BTreeMap::new(),
+        diagnostic_calls: BTreeMap::new(),
         global_pointer: None,
     }
 }
@@ -72,6 +73,7 @@ fn tail_relocation_image(target: Option<u32>) -> ExecutableImage {
             },
         )]),
         unresolved_relocations_by_address: BTreeMap::new(),
+        diagnostic_calls: BTreeMap::new(),
         global_pointer: None,
     }
 }

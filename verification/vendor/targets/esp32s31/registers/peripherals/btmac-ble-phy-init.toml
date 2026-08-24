@@ -27,21 +27,41 @@ bitWidth = 32
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_PRESERVE_BIT_17"
-description = "BLE PHY register initialization preserves only bit 17 and clears every other bit."
+name = "INIT_CONTROL_00B4"
+description = "BLE PHY register initialization first applies a fresh-read RMW with mask 0x00020000, preserving only bit 17 and clearing every other bit. Its conditional tail later performs a second fresh-read RMW that sets exactly bits 11, 15, 20 and 24 with mask 0x01108800. The five evidenced bit positions have neutral initialization names; all omitted bit ranges retain unknown hardware semantics."
 addressOffset = 0xB4
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_CLEAR_LOW"
-bitOffset = 0
-bitWidth = 17
+name = "INIT_SET_11"
+description = "The conditional initialization tail sets bit 11. Its hardware meaning remains unknown."
+bitOffset = 11
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "INIT_CLEAR_HIGH"
-bitOffset = 18
-bitWidth = 14
+name = "INIT_SET_15"
+description = "The conditional initialization tail sets bit 15. Its hardware meaning remains unknown."
+bitOffset = 15
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "INIT_PRESERVE_17"
+description = "The first initialization RMW preserves bit 17 while clearing every other bit. Its hardware meaning remains unknown."
+bitOffset = 17
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "INIT_SET_20"
+description = "The conditional initialization tail sets bit 20. Its hardware meaning remains unknown."
+bitOffset = 20
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "INIT_SET_24"
+description = "The conditional initialization tail sets bit 24. Its hardware meaning remains unknown."
+bitOffset = 24
+bitWidth = 1
 
 [[peripherals.registers]]
 
@@ -466,21 +486,42 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_PRESERVE_BIT_17"
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_PRESERVE_BIT_17.INIT_CLEAR_LOW"
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_SET_11"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_PRESERVE_BIT_17.INIT_CLEAR_HIGH"
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_SET_15"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_PRESERVE_17"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_SET_20"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_SET_24"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"

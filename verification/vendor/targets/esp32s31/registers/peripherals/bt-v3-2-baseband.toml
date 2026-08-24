@@ -76,6 +76,16 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
+name = "FORCE_ZERO_BITS_16_18"
+description = "bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown."
+bitOffset = 16
+bitWidth = 3
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7
+
+[[peripherals.registers.register.fields]]
 name = "ENCODED_VALUE_MINUS_10"
 description = "bt_bb_set_le_tx_on_delay stores argument 0 minus 10; bt_bb_get_le_tx_on_delay returns this field plus 10."
 bitOffset = 19
@@ -940,6 +950,13 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "BT_V3_2_BASEBAND.LE_TX_ON_DELAY.FORCE_ZERO_BITS_16_18"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_TX_ON_DELAY.ENCODED_VALUE_MINUS_10"

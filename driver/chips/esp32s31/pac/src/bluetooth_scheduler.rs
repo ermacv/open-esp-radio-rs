@@ -1,11 +1,11 @@
 //! Restricted ownership for the first controller scheduler-table transaction.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 use super::{BluetoothTaskRegisters, device_fence};
 
 impl BluetoothTaskRegisters {
-    /// Initialize the low twenty state bits of all sixteen scheduler entries.
+    /// Clear the low twenty state bits of all sixteen scheduler entries.
     ///
     /// SOURCE: complete ESP32-S31 `libbtdm_common.a` member `btdm_sched.c`
     /// symbol `r_sym_bt_XPuqTHliEO5V9xpR7aJR`. Its first hardware transaction
@@ -15,7 +15,7 @@ impl BluetoothTaskRegisters {
     /// This method deliberately does not expose the later software event and
     /// list initialization performed by the vendor function, and therefore
     /// does not claim that the complete controller or scheduler is running.
-    pub fn initialize_scheduler_table(&mut self) {
+    pub fn clear_scheduler_table_low_bits(&mut self) {
         for entry in self.bluetooth.btdm_scheduler_table.entry_iter() {
             entry.modify(|_, writer| writer.state_low_20().cleared());
         }

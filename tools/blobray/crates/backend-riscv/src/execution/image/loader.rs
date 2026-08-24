@@ -201,6 +201,7 @@ impl ExecutableImage {
             call_trampoline_addresses,
             relocated_calls_by_address,
             unresolved_relocations_by_address,
+            diagnostic_calls: BTreeMap::new(),
             global_pointer,
         })
     }

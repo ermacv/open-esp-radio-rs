@@ -125,6 +125,22 @@ fn root(root: artifacts::StoredInterfaceRoot) -> InterfaceFactRoot {
         artifacts::StoredInterfaceRoot::FunctionArgument { argument, .. } => {
             InterfaceFactRoot::FunctionArgument { argument }
         }
+        artifacts::StoredInterfaceRoot::BoundedDataAddress {
+            canonical,
+            member,
+            symbol,
+            address,
+            symbol_address,
+            symbol_size,
+            ..
+        } => InterfaceFactRoot::BoundedDataAddress {
+            canonical,
+            member,
+            symbol,
+            address,
+            symbol_address,
+            symbol_size,
+        },
         artifacts::StoredInterfaceRoot::AbsoluteAddress { address, .. } => {
             InterfaceFactRoot::AbsoluteAddress { address }
         }

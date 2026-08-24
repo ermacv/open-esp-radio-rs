@@ -21,6 +21,37 @@ pub(super) enum Value {
 }
 
 impl Value {
+    fn bounded_data_root(
+        address: u32,
+        byte_width: u32,
+        data_symbols: &[artifact::ArtifactDataSymbolDefinition],
+    ) -> Option<InterfaceRoot> {
+        let access_end = address.checked_add(byte_width)?;
+        let symbol = data_symbols
+            .iter()
+            .filter(|symbol| {
+                symbol
+                    .address
+                    .checked_add(symbol.size)
+                    .is_some_and(|end| symbol.address <= address && access_end <= end)
+            })
+            .min_by(|left, right| {
+                (left.size, !left.exported, &left.member, &left.name).cmp(&(
+                    right.size,
+                    !right.exported,
+                    &right.member,
+                    &right.name,
+                ))
+            })?;
+        Some(InterfaceRoot::BoundedDataAddress {
+            member: symbol.member.clone(),
+            symbol: symbol.name.clone(),
+            symbol_address: symbol.address,
+            symbol_size: symbol.size,
+            address,
+        })
+    }
+
     pub(super) fn add_constant(self, offset: i32) -> Self {
         match self {
             Self::Constant(value) => Self::Constant(value.wrapping_add(offset as u32)),
@@ -87,6 +118,48 @@ impl Value {
             }),
             _ => None,
         }
+    }
+
+    pub(super) fn as_data_pointer(
+        &self,
+        data_symbols: &[artifact::ArtifactDataSymbolDefinition],
+    ) -> Option<InterfacePointer> {
+        self.as_pointer().or_else(|| {
+            let Self::Constant(address) = self else {
+                return None;
+            };
+            Self::bounded_data_root(*address, 1, data_symbols).map(|root| InterfacePointer {
+                root,
+                loads: Vec::new(),
+                post_offset: 0,
+            })
+        })
+    }
+
+    pub(super) fn as_data_store_pointer(
+        &self,
+        offset: i32,
+        width: u8,
+        data_symbols: &[artifact::ArtifactDataSymbolDefinition],
+    ) -> Option<InterfacePointer> {
+        if let Some(mut pointer) = self.as_pointer() {
+            pointer.post_offset = pointer.post_offset.wrapping_add(offset);
+            return Some(pointer);
+        }
+        (|| {
+            let Self::Constant(base) = self else {
+                return None;
+            };
+            let address = base.checked_add_signed(offset)?;
+            let byte_width = u32::from(width).checked_div(8)?;
+            Self::bounded_data_root(address, byte_width, data_symbols).map(|root| {
+                InterfacePointer {
+                    root,
+                    loads: Vec::new(),
+                    post_offset: 0,
+                }
+            })
+        })()
     }
 
     pub(super) fn as_pointers(&self) -> Vec<InterfacePointer> {
@@ -224,19 +297,54 @@ pub(super) fn low_relocation_value<'a>(
     Some((base == &expected_base).then_some((relocation, value)))
 }
 
-pub(super) fn append_load(value: Value, site: u32, offset: i32, width: u8) -> Value {
+pub(super) fn append_load(
+    value: Value,
+    site: u32,
+    offset: i32,
+    width: u8,
+    data_symbols: &[artifact::ArtifactDataSymbolDefinition],
+) -> Value {
     if let Value::PointerAlternatives(pointers) = value {
         return pointer_alternatives(
             pointers
                 .into_iter()
                 .filter_map(|pointer| {
-                    match append_load(Value::Pointer(pointer), site, offset, width) {
+                    match append_load(Value::Pointer(pointer), site, offset, width, data_symbols) {
                         Value::Pointer(pointer) => Some(pointer),
                         _ => None,
                     }
                 })
                 .collect(),
         );
+    }
+    if let Value::Constant(base) = value {
+        let byte_width = u32::from(width) / 8;
+        if let Some(address) = base.checked_add_signed(offset)
+            && let Some(root) = Value::bounded_data_root(address, byte_width, data_symbols)
+        {
+            return Value::Pointer(InterfacePointer {
+                root,
+                loads: vec![InterfaceLoad {
+                    site,
+                    offset: 0,
+                    width,
+                    selector: None,
+                }],
+                post_offset: 0,
+            });
+        }
+        let mut pointer = InterfacePointer {
+            root: InterfaceRoot::AbsoluteAddress { address: base },
+            loads: Vec::new(),
+            post_offset: 0,
+        };
+        pointer.loads.push(InterfaceLoad {
+            site,
+            offset,
+            width,
+            selector: None,
+        });
+        return Value::Pointer(pointer);
     }
     let (mut pointer, selector) = match value {
         Value::Pointer(pointer) => (pointer, None),
@@ -249,14 +357,7 @@ pub(super) fn append_load(value: Value, site: u32, offset: i32, width: u8) -> Va
             },
             None,
         ),
-        Value::Constant(address) => (
-            InterfacePointer {
-                root: InterfaceRoot::AbsoluteAddress { address },
-                loads: Vec::new(),
-                post_offset: 0,
-            },
-            None,
-        ),
+        Value::Constant(_) => unreachable!("constant load handled above"),
         Value::Selector(_)
         | Value::PointerAlternatives(_)
         | Value::GotAddress(_)

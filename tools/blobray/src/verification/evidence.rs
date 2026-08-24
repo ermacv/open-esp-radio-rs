@@ -139,7 +139,10 @@ pub(crate) fn effect_contract_evidence(
     .expect("static effect-contract evidence components are valid")
 }
 
-pub(crate) fn profile_evidence(profile: &profiles::Profile) -> EvidenceIdentity {
+pub(crate) fn profile_evidence(
+    profile: &profiles::Profile,
+    diagnostic_contracts: &crate::DiagnosticContractsReport,
+) -> EvidenceIdentity {
     let canonical = format!("{profile:#?}");
     EvidenceIdentity::composed(
         format!(
@@ -151,6 +154,7 @@ pub(crate) fn profile_evidence(profile: &profiles::Profile) -> EvidenceIdentity 
         "open-esp-radio-execution-profile-v4",
         [
             component("profile", canonical),
+            component("diagnostic-contracts", diagnostic_contracts.canonical()),
             component("profile-parser", include_str!("profiles.rs")),
             combined_component(
                 "comparison-orchestrator",
@@ -171,4 +175,70 @@ pub(crate) fn profile_evidence(profile: &profiles::Profile) -> EvidenceIdentity 
         ],
     )
     .expect("static execution-profile evidence components are valid")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture_profile() -> profiles::Profile {
+        profiles::Profile {
+            name: "diagnostic-provenance".to_owned(),
+            vendor_source: "vendor".to_owned(),
+            vendor_symbol: "vendor_entry".to_owned(),
+            rust_symbol: "rust_entry".to_owned(),
+            claim: open_radio_vendor_semantics::VerificationClaim::WholeFunctionEquivalence,
+            precondition: None,
+            contract: profiles::ProfileContract::Scenario,
+            compare_return: false,
+            case_execution: profiles::CaseExecution::Independent,
+            transaction_comparison: profiles::TransactionComparison::Observables,
+            call_equivalences: Vec::new(),
+            argument_ranges: Vec::new(),
+            argument_values: Vec::new(),
+            mmio_domains: Vec::new(),
+            mmio_images: Vec::new(),
+            vendor_setup: Vec::new(),
+            scenarios: vec![crate::NamedScenario::new("default".to_owned())],
+        }
+    }
+
+    #[test]
+    fn profile_fingerprint_tracks_canonical_provider_diagnostic_contracts() {
+        let profile = fixture_profile();
+        let first = crate::DiagnosticContractsReport::from_calls(
+            Some("fixture-provider@7".to_owned()),
+            [("z_log", 2), ("a_assert", 4)],
+        )
+        .unwrap();
+        let reordered = crate::DiagnosticContractsReport::from_calls(
+            Some("fixture-provider@7".to_owned()),
+            [("a_assert", 4), ("z_log", 2)],
+        )
+        .unwrap();
+        let revised_contract = crate::DiagnosticContractsReport::from_calls(
+            Some("fixture-provider@7".to_owned()),
+            [("a_assert", 3), ("z_log", 2)],
+        )
+        .unwrap();
+        let revised_provider = crate::DiagnosticContractsReport::from_calls(
+            Some("fixture-provider@8".to_owned()),
+            [("a_assert", 4), ("z_log", 2)],
+        )
+        .unwrap();
+
+        assert_eq!(first.calls[0].symbol, "a_assert");
+        assert_eq!(
+            profile_evidence(&profile, &first),
+            profile_evidence(&profile, &reordered)
+        );
+        assert_ne!(
+            profile_evidence(&profile, &first).digest,
+            profile_evidence(&profile, &revised_contract).digest
+        );
+        assert_ne!(
+            profile_evidence(&profile, &first).digest,
+            profile_evidence(&profile, &revised_provider).digest
+        );
+    }
 }

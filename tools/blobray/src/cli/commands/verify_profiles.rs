@@ -135,7 +135,11 @@ fn print_human(report: &ProfileVerificationReport) {
     );
 }
 
-pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> {
+pub(super) fn run(
+    arguments: VerifyProfilesArgs,
+    svd: &MmioMap,
+    target: &TargetSpec,
+) -> Result<bool> {
     let profile_path = arguments
         .profiles
         .ok_or("missing --profiles")
@@ -149,11 +153,13 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> 
         .ok_or("missing --rust-artifact")
         .map_err(crate::Error::invalid)?;
     let loaded_profiles = profiles::load(&profile_path)?;
+    let diagnostic_contracts =
+        crate::harnesses::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
     let mut matched = 0_usize;
     let mut different = 0_usize;
     let mut reports = Vec::with_capacity(loaded_profiles.len());
     for profile in &loaded_profiles {
-        let coverage_domain = profile.coverage_constraints();
+        let coverage_domain = profile.coverage_constraints()?;
         let comparison = compare_execution_scenarios(
             svd,
             ExecutionInput {
@@ -172,6 +178,7 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> 
                 transaction_comparison: profile.transaction_comparison,
                 effect_policy: None,
                 call_equivalences: &profile.call_equivalences,
+                diagnostic_contracts: diagnostic_contracts.clone(),
                 coverage_domain: &coverage_domain,
                 vendor_setup: &profile.vendor_setup,
             },
@@ -188,7 +195,7 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> 
         });
     }
     let report = ProfileVerificationReport {
-        schema_version: 2,
+        schema_version: 3,
         command: "verify profiles",
         summary: ProfileVerificationSummary {
             profiles: loaded_profiles.len(),

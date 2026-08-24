@@ -228,6 +228,34 @@ fn mmio_write_does_not_create_a_generic_readback_value() {
 }
 
 #[test]
+fn ordered_mmio_responses_survive_an_intervening_write() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let mmio_svd = MmioMap {
+        registers: Vec::new(),
+        regions: vec![crate::MmioRegion {
+            name: "radio".to_owned(),
+            start: 0x2010_0000,
+            end: 0x2020_0000,
+            readable: true,
+            writable: true,
+        }],
+    };
+    let address = 0x2010_1280;
+    let mut scenario = Scenario::default();
+    scenario
+        .mmio_reads
+        .entry(address)
+        .or_default()
+        .extend([0xa5aa_bcde, 0x5a51_2345]);
+    let mut machine = Machine::new(&image, &mmio_svd, 0x1000, scenario);
+
+    assert_eq!(machine.read(address, 32).unwrap(), 0xa5aa_bcde);
+    machine.write(address, 32, 0xa5a0_0000).unwrap();
+    assert_eq!(machine.read(address, 32).unwrap(), 0x5a51_2345);
+    assert!(machine.mmio_reads[&address].is_empty());
+}
+
+#[test]
 fn bss_tail_is_known_zero() {
     let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 8);
     assert_eq!(image.byte(0x1004), Some(0));

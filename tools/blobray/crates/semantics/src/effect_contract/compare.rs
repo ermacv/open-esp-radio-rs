@@ -76,7 +76,9 @@ pub fn compare_effects(
         };
         used_rules.insert(selector.clone());
         match disposition {
-            EffectDisposition::Required | EffectDisposition::PlatformOwned => {
+            EffectDisposition::Required
+            | EffectDisposition::RequiredWhenObserved
+            | EffectDisposition::PlatformOwned => {
                 let Some(rust_effect) = rust.get(rust_index) else {
                     return Ok(EquivalenceOutcome::different(
                         EquivalenceMode::Semantic,
@@ -221,7 +223,11 @@ pub fn compare_effects(
         ));
     }
     for (selector, disposition) in policy.rules() {
-        if disposition != &EffectDisposition::Forbidden && !used_rules.contains(selector) {
+        if !matches!(
+            disposition,
+            EffectDisposition::Forbidden | EffectDisposition::RequiredWhenObserved
+        ) && !used_rules.contains(selector)
+        {
             return Ok(EquivalenceOutcome::incomplete(
                 EquivalenceMode::Semantic,
                 format!(

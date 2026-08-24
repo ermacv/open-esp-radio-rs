@@ -92,6 +92,9 @@ pub(super) fn compare(
                 crate::verification::profiles::TransactionComparison::Observables,
             effect_policy: None,
             call_equivalences: &[],
+            diagnostic_contracts: crate::harnesses::diagnostic_contracts_or_empty(
+                resolved.target.knowledge_provider.as_deref(),
+            )?,
             coverage_domain: &coverage_domain,
             vendor_setup: &[],
         },

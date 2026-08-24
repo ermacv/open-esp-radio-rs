@@ -1,0 +1,67 @@
+schema = 5
+case-execution = "independent"
+transaction-comparison = "observables-under-effect-contract"
+
+[[profiles]]
+name = "ble-memory-list-selector-two-slot-a-publication"
+claim = "reviewed-domain-equivalence"
+precondition = "selector-two-and-two-correlated-zero-or-encoded-pointer-readback-cases-without-list-semantics"
+vendor-source = "ble-controller"
+vendor-symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ"
+rust-symbol = "open_ble_memory_list_a_trace_r_sym_ble_lbo_ru27_ea_u8_mv8_q7_uuf_z"
+compare-return = false
+
+[[profiles.argument-values]]
+index = 0
+values = [2]
+[[profiles.argument-values]]
+index = 1
+values = [0, 0x2f123454]
+
+[[profiles.cases]]
+name = "selector-two-a-zero-image-with-changing-readback"
+arguments = [2, 0]
+mmio-reads = [
+    { address = 0x20101288, value = 0xa5aabcde },
+    { address = 0x20101288, value = 0x5a512345 },
+]
+
+[[profiles.cases]]
+name = "selector-two-a-address-image-with-changing-readback"
+arguments = [2, 0x2f123454]
+mmio-reads = [
+    { address = 0x20101288, value = 0x5a512345 },
+    { address = 0x20101288, value = 0xa5aabcde },
+]
+
+[[profiles]]
+name = "ble-memory-list-selector-two-slot-b-publication"
+claim = "reviewed-domain-equivalence"
+precondition = "selector-two-and-two-correlated-zero-or-encoded-pointer-readback-cases-without-list-semantics"
+vendor-source = "ble-controller"
+vendor-symbol = "r_sym_ble_ZzrExMrn8EDiTFI7PENK"
+rust-symbol = "open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_penk"
+compare-return = false
+
+[[profiles.argument-values]]
+index = 0
+values = [2]
+[[profiles.argument-values]]
+index = 1
+values = [0, 0x2f123454]
+
+[[profiles.cases]]
+name = "selector-two-b-zero-image-with-changing-readback"
+arguments = [2, 0]
+mmio-reads = [
+    { address = 0x2010128c, value = 0xa5aabcde },
+    { address = 0x2010128c, value = 0x5a512345 },
+]
+
+[[profiles.cases]]
+name = "selector-two-b-address-image-with-changing-readback"
+arguments = [2, 0x2f123454]
+mmio-reads = [
+    { address = 0x2010128c, value = 0x5a512345 },
+    { address = 0x2010128c, value = 0xa5aabcde },
+]

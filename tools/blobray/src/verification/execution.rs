@@ -452,6 +452,7 @@ pub(crate) fn compare_execution_scenarios(
         transaction_comparison,
         effect_policy,
         call_equivalences,
+        diagnostic_contracts,
         coverage_domain,
         vendor_setup,
     } = policy;
@@ -487,10 +488,12 @@ pub(crate) fn compare_execution_scenarios(
     if let Some(companion) = vendor.companion {
         vendor_image.add_companion(companion)?;
     }
+    vendor_image.configure_diagnostic_calls(diagnostic_contracts.configured_calls())?;
     let mut rust_image = execution::ExecutableImage::load(rust.artifact)?;
     if let Some(companion) = rust.companion {
         rust_image.add_companion(companion)?;
     }
+    rust_image.configure_diagnostic_calls(diagnostic_contracts.configured_calls())?;
     let concrete_state_cases = transaction_comparison.state_domain();
     let mut vendor_inventory = if concrete_state_cases {
         execution::CoverageInventory::default()
@@ -914,6 +917,7 @@ pub(crate) fn compare_execution_scenarios(
         rust: rust_report,
         compare_return,
         case_execution,
+        diagnostic_contracts,
         coverage_scope: if concrete_state_cases {
             CoverageScopeReport::ConcreteStateCases
         } else {

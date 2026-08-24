@@ -204,12 +204,12 @@ pub(super) fn run_target(
         TargetCommand::AuditImageTargets(arguments) => audit_image_targets::run(arguments),
         TargetCommand::DiscoverMmio(arguments) => discover_mmio::run(arguments, svd, project),
         TargetCommand::ExportIr(arguments) => export_ir::run(arguments, svd, target, project),
-        TargetCommand::ExecuteRun(arguments) => execute_run::run(arguments, svd),
+        TargetCommand::ExecuteRun(arguments) => execute_run::run(arguments, svd, target),
         TargetCommand::ExecuteReplay(arguments) => {
             execute_replay::run(arguments, svd, target, project)
         }
-        TargetCommand::ExecuteCompare(arguments) => execute_compare::run(arguments, svd),
-        TargetCommand::VerifyProfiles(arguments) => verify_profiles::run(arguments, svd),
+        TargetCommand::ExecuteCompare(arguments) => execute_compare::run(arguments, svd, target),
+        TargetCommand::VerifyProfiles(arguments) => verify_profiles::run(arguments, svd, target),
         TargetCommand::GenerateReference(arguments) => {
             generate_reference::run(arguments, svd, target)
         }

@@ -97,7 +97,7 @@ struct ExecutionDocument {
     summary: ExecutionSummary,
 }
 
-pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioMap) -> Result<bool> {
+pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioMap, target: &TargetSpec) -> Result<bool> {
     let mut scenario = resolve_scenario(arguments.scenario)?;
     for assignment in arguments.call {
         let (symbol, value) = parse_call_return(&assignment, "--call")?;
@@ -132,6 +132,9 @@ pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioMap) -> Result<bool> {
     if let Some(companion) = companion.as_deref() {
         image.add_companion(companion)?;
     }
+    let diagnostic_contracts =
+        crate::harnesses::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
+    image.configure_diagnostic_calls(diagnostic_contracts.configured_calls())?;
     let inventory = if concrete_only {
         execution::CoverageInventory::default()
     } else {

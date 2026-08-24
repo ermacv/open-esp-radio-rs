@@ -1,4 +1,4 @@
-//! Strict consumer for schema-v2 concrete replay evidence.
+//! Strict consumer for schema-v3 concrete replay evidence.
 
 #![allow(
     dead_code,
@@ -18,6 +18,7 @@ pub(crate) struct StoredReplayEvidence {
     command: String,
     pub(crate) manifest: StoredReplayIdentity,
     pub(crate) artifact: StoredReplayIdentity,
+    diagnostic_contracts: crate::DiagnosticContractsReport,
     pub(crate) phases: Vec<StoredReplayPhase>,
     pub(crate) complete: bool,
 }
@@ -133,6 +134,7 @@ impl StoredReplayEvidence {
     pub(crate) fn validate_freshness(&self) -> Result<()> {
         validate_identity("manifest", &self.manifest)?;
         validate_identity("artifact", &self.artifact)?;
+        self.diagnostic_contracts.validate()?;
         if !self.complete {
             return Err(crate::Error::invalid(
                 "replay evidence does not make a complete concrete-execution claim",

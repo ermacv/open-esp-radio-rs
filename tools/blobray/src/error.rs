@@ -144,6 +144,20 @@ pub(crate) enum BlobrayError {
         #[source]
         source: Box<BlobrayError>,
     },
+    #[error(
+        "profile {profile} combined argument/MMIO coverage domain has {cases} cases; maximum is {maximum}"
+    )]
+    #[diagnostic(
+        code(blobray::verification::coverage_domain_too_large),
+        help(
+            "reduce independent finite-domain dimensions or describe correlated register states as MMIO image cases"
+        )
+    )]
+    CoverageDomainTooLarge {
+        profile: String,
+        cases: u64,
+        maximum: u64,
+    },
     #[error(transparent)]
     Analysis(#[from] open_radio_vendor_analysis_model::Error),
     #[error(transparent)]

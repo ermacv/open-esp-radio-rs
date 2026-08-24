@@ -29,6 +29,7 @@ pub(super) fn evaluate(
     source: VerifySource<'_>,
     rust_artifact: &Path,
     rust_companion: Option<&Path>,
+    diagnostic_contracts: DiagnosticContractsReport,
     binding: ReviewedBinding<'_>,
 ) -> Result<Evaluation> {
     let reviewed_domain =
@@ -49,6 +50,7 @@ pub(super) fn evaluate(
         )));
     }
 
+    let coverage_domain = profile.coverage_constraints()?;
     let comparison = compare_execution_scenarios(
         svd,
         ExecutionInput {
@@ -72,7 +74,8 @@ pub(super) fn evaluate(
             .then_some(binding.effect_policy)
             .flatten(),
             call_equivalences: &profile.call_equivalences,
-            coverage_domain: &profile.coverage_constraints(),
+            diagnostic_contracts,
+            coverage_domain: &coverage_domain,
             vendor_setup: &profile.vendor_setup,
         },
         &profile.scenarios,

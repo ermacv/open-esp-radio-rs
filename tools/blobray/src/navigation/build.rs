@@ -383,6 +383,9 @@ impl InterfaceRootIndex {
                     .then(|| self.absolute.get(&(artifact_sha256.to_owned(), *address)))
                     .flatten()
             }
+            StoredInterfaceRoot::BoundedDataAddress { member, symbol, .. } => self
+                .relocated
+                .get(&(artifact_sha256.to_owned(), member.clone(), symbol.clone())),
             StoredInterfaceRoot::FunctionArgument { .. } => None,
         }
         .into_iter()
@@ -395,6 +398,7 @@ fn interface_root_kind(root: &StoredInterfaceRoot) -> &'static str {
     match root {
         StoredInterfaceRoot::RelocatedSymbol { .. } => "relocated-symbol",
         StoredInterfaceRoot::FunctionArgument { .. } => "function-argument",
+        StoredInterfaceRoot::BoundedDataAddress { .. } => "bounded-data-address",
         StoredInterfaceRoot::AbsoluteAddress { .. } => "absolute-address",
     }
 }

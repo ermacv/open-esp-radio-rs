@@ -6,19 +6,72 @@ use crate::{NamedScenario, Result};
 use open_radio_vendor_semantics::VerificationClaim;
 
 use super::{
-    ArgumentRange, ArgumentValues, CaseExecution, MmioDomain, Profile, ProfileContract,
+    ArgumentRange, ArgumentValues, CaseExecution, MmioDomain, MmioImage, Profile, ProfileContract,
     TransactionComparison,
 };
+
+const MAX_DOMAIN_CASES: u64 = 4_096;
+
+fn include_domain_factor(profile: &str, cases: &mut u64, factor: u128) -> Result<()> {
+    let product = u128::from(*cases).saturating_mul(factor);
+    if product > u128::from(MAX_DOMAIN_CASES) {
+        return Err(crate::error::BlobrayError::CoverageDomainTooLarge {
+            profile: profile.to_owned(),
+            cases: u64::try_from(product).unwrap_or(u64::MAX),
+            maximum: MAX_DOMAIN_CASES,
+        });
+    }
+    *cases = product as u64;
+    Ok(())
+}
+
+pub(super) fn coverage_domain_cardinality(
+    profile: &str,
+    argument_ranges: &[ArgumentRange],
+    argument_values: &[ArgumentValues],
+    mmio_domains: &[MmioDomain],
+    mmio_images: &[MmioImage],
+) -> Result<usize> {
+    let mut cases = 1_u64;
+
+    for range in argument_ranges {
+        if range.min > range.max {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} arg-range {} has minimum above maximum",
+                range.index
+            )));
+        }
+        include_domain_factor(
+            profile,
+            &mut cases,
+            u128::from(range.max) - u128::from(range.min) + 1,
+        )?;
+    }
+    for domain in argument_values {
+        include_domain_factor(profile, &mut cases, domain.values.len() as u128)?;
+    }
+    for domain in mmio_domains {
+        include_domain_factor(profile, &mut cases, domain.values.len() as u128)?;
+    }
+    if !mmio_images.is_empty() {
+        include_domain_factor(profile, &mut cases, mmio_images.len() as u128)?;
+    }
+
+    usize::try_from(cases).map_err(|_| {
+        crate::Error::invalid(format!(
+            "profile {profile} coverage-domain cardinality does not fit usize"
+        ))
+    })
+}
 
 pub(super) fn validate_coverage_domain(
     profile: &str,
     argument_ranges: &[ArgumentRange],
     argument_values: &[ArgumentValues],
     mmio_domains: &[MmioDomain],
+    mmio_images: &[MmioImage],
     scenarios: &[NamedScenario],
 ) -> Result<()> {
-    const MAX_DOMAIN_CASES: usize = 4_096;
-
     for pair in mmio_domains.windows(2) {
         if pair[0].address == pair[1].address {
             return Err(crate::Error::invalid(format!(
@@ -43,6 +96,48 @@ pub(super) fn validate_coverage_domain(
         }
     }
 
+    let independent_addresses = mmio_domains
+        .iter()
+        .map(|domain| domain.address)
+        .collect::<BTreeSet<_>>();
+    let mut image_words = BTreeSet::new();
+    let expected_addresses = mmio_images
+        .first()
+        .map(|image| image.words.keys().copied().collect::<BTreeSet<_>>());
+    for image in mmio_images {
+        if image.words.is_empty() {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} MMIO image case {:?} has no initial words",
+                image.case
+            )));
+        }
+        let addresses = image.words.keys().copied().collect::<BTreeSet<_>>();
+        if expected_addresses.as_ref() != Some(&addresses) {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} MMIO image case {:?} does not define the same complete address set as the first image",
+                image.case
+            )));
+        }
+        if let Some(address) = addresses.intersection(&independent_addresses).next() {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} constrains MMIO {address:#010x} both independently and through an image"
+            )));
+        }
+        if !image_words.insert(image.words.clone()) {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} repeats an identical MMIO image"
+            )));
+        }
+    }
+
+    coverage_domain_cardinality(
+        profile,
+        argument_ranges,
+        argument_values,
+        mmio_domains,
+        mmio_images,
+    )?;
+
     let stub = Profile {
         name: String::new(),
         vendor_source: String::new(),
@@ -58,16 +153,11 @@ pub(super) fn validate_coverage_domain(
         argument_ranges: argument_ranges.to_vec(),
         argument_values: argument_values.to_vec(),
         mmio_domains: mmio_domains.to_vec(),
+        mmio_images: mmio_images.to_vec(),
         vendor_setup: Vec::new(),
         scenarios: Vec::new(),
     };
-    let expected = stub.coverage_constraints();
-    if expected.len() > MAX_DOMAIN_CASES {
-        return Err(crate::Error::invalid(format!(
-            "profile {profile} combined argument/MMIO domain has {} cases; maximum is {MAX_DOMAIN_CASES}",
-            expected.len()
-        )));
-    }
+    let expected = stub.coverage_constraints()?;
     for constraint in expected {
         let covered = scenarios.iter().any(|scenario| {
             argument_ranges.iter().all(|range| {
@@ -178,8 +268,6 @@ pub(super) fn validate_argument_domain(
     values: &[ArgumentValues],
     scenarios: &[NamedScenario],
 ) -> Result<()> {
-    const MAX_DOMAIN_CASES: u64 = 4_096;
-
     for pair in ranges.windows(2) {
         if pair[0].index == pair[1].index {
             return Err(crate::Error::invalid(format!(
@@ -220,15 +308,11 @@ pub(super) fn validate_argument_domain(
                 range.index
             )));
         }
-        domain_size = domain_size
-            .checked_mul(u64::from(range.max) - u64::from(range.min) + 1)
-            .ok_or_else(|| format!("profile {profile} argument domain overflows"))
-            .map_err(crate::Error::invalid)?;
-        if domain_size > MAX_DOMAIN_CASES {
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} argument domain has {domain_size} cases; maximum is {MAX_DOMAIN_CASES}"
-            )));
-        }
+        include_domain_factor(
+            profile,
+            &mut domain_size,
+            u128::from(range.max) - u128::from(range.min) + 1,
+        )?;
     }
 
     for domain in values {
@@ -250,15 +334,7 @@ pub(super) fn validate_argument_domain(
                 domain.index
             )));
         }
-        domain_size = domain_size
-            .checked_mul(domain.values.len() as u64)
-            .ok_or_else(|| format!("profile {profile} argument domain overflows"))
-            .map_err(crate::Error::invalid)?;
-        if domain_size > MAX_DOMAIN_CASES {
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} argument domain has {domain_size} cases; maximum is {MAX_DOMAIN_CASES}"
-            )));
-        }
+        include_domain_factor(profile, &mut domain_size, domain.values.len() as u128)?;
     }
 
     if ranges.is_empty() && values.is_empty() {
@@ -328,10 +404,11 @@ pub(super) fn validate_argument_domain(
         argument_ranges: ranges.to_vec(),
         argument_values: values.to_vec(),
         mmio_domains: Vec::new(),
+        mmio_images: Vec::new(),
         vendor_setup: Vec::new(),
         scenarios: Vec::new(),
     };
-    for expected in profile_stub.coverage_argument_constraints() {
+    for expected in profile_stub.coverage_argument_constraints(domain_size as usize) {
         if !covered.contains(&expected) {
             let values = ranges
                 .iter()
@@ -355,6 +432,7 @@ pub(super) fn validate_claim(
     ranges: &[ArgumentRange],
     values: &[ArgumentValues],
     mmio_domains: &[MmioDomain],
+    mmio_images: &[MmioImage],
 ) -> Result<()> {
     match claim {
         VerificationClaim::WholeFunctionEquivalence => {
@@ -381,7 +459,11 @@ pub(super) fn validate_claim(
                     "reviewed-domain profile {profile} has invalid precondition {precondition:?}"
                 )));
             }
-            if ranges.is_empty() && values.is_empty() && mmio_domains.is_empty() {
+            if ranges.is_empty()
+                && values.is_empty()
+                && mmio_domains.is_empty()
+                && mmio_images.is_empty()
+            {
                 return Err(crate::Error::invalid(format!(
                     "reviewed-domain profile {profile} must declare a finite argument or MMIO domain"
                 )));
@@ -397,4 +479,31 @@ pub(super) fn validate_claim(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checked_cardinality_rejects_thirteen_binary_mmio_dimensions_as_8192() {
+        let domains = (0_u32..13)
+            .map(|index| MmioDomain {
+                address: 0x2010_0000 + index * 4,
+                values: vec![0, 1],
+            })
+            .collect::<Vec<_>>();
+
+        let error = coverage_domain_cardinality("binary-mmio", &[], &[], &domains, &[])
+            .expect_err("8192 cases must be rejected before constraint enumeration");
+
+        assert!(matches!(
+            error,
+            crate::error::BlobrayError::CoverageDomainTooLarge {
+                cases: 8_192,
+                maximum: 4_096,
+                ..
+            }
+        ));
+    }
 }

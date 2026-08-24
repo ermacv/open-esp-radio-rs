@@ -1,0 +1,130 @@
+schema = 5
+case-execution = "independent"
+transaction-comparison = "observables-under-effect-contract"
+
+# This bounded claim covers every ESP32-S31 PHY-I2C block accepted by the
+# reviewed production address type. Two complementary ANA_CONF2 images prove
+# both values of every preserved bit without claiming the vendor fallback for
+# blocks outside the accredited 0x61..=0x6d domain.
+[[profiles]]
+name = "phy-i2c-host-map-accredited-domain"
+claim = "reviewed-domain-equivalence"
+precondition = "accredited-blocks-61-through-6d-and-two-complementary-ana-conf2-images"
+vendor-source = "archive"
+vendor-symbol = "phy_get_i2c_hostid_new"
+rust-symbol = "open_phy_i2c_host_trace_phy_get_i2c_hostid_new"
+compare-return = true
+
+[[profiles.argument-ranges]]
+index = 0
+min = 0x61
+max = 0x6d
+
+[[profiles.mmio-domains]]
+address = 0x2010f820
+values = [0xa5a55a5a, 0x5a5aa5a5]
+
+[[profiles.cases]]
+name = "block-61-seed-a"
+arguments = [0x61]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-61-seed-b"
+arguments = [0x61]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-62-seed-a"
+arguments = [0x62]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-62-seed-b"
+arguments = [0x62]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-63-seed-a"
+arguments = [0x63]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-63-seed-b"
+arguments = [0x63]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-64-seed-a"
+arguments = [0x64]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-64-seed-b"
+arguments = [0x64]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-65-seed-a"
+arguments = [0x65]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-65-seed-b"
+arguments = [0x65]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-66-seed-a"
+arguments = [0x66]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-66-seed-b"
+arguments = [0x66]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-67-seed-a"
+arguments = [0x67]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-67-seed-b"
+arguments = [0x67]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-68-seed-a"
+arguments = [0x68]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-68-seed-b"
+arguments = [0x68]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-69-seed-a"
+arguments = [0x69]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-69-seed-b"
+arguments = [0x69]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-6a-seed-a"
+arguments = [0x6a]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-6a-seed-b"
+arguments = [0x6a]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-6b-seed-a"
+arguments = [0x6b]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-6b-seed-b"
+arguments = [0x6b]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-6c-seed-a"
+arguments = [0x6c]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-6c-seed-b"
+arguments = [0x6c]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]
+[[profiles.cases]]
+name = "block-6d-seed-a"
+arguments = [0x6d]
+mmio-initial = [{ address = 0x2010f820, value = 0xa5a55a5a }]
+[[profiles.cases]]
+name = "block-6d-seed-b"
+arguments = [0x6d]
+mmio-initial = [{ address = 0x2010f820, value = 0x5a5aa5a5 }]

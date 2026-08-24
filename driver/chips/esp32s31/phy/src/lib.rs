@@ -43,6 +43,8 @@ pub mod phy_txdc_pwdet;
 pub mod phy_txiq;
 pub mod phy_xtal_duty;
 mod size_limits;
+#[cfg(feature = "validation-probes")]
+pub mod validation;
 
 pub use executor::{PhyRegisterPort, PhyRegisterRunError, run_phy_register};
 pub use phy_register::{

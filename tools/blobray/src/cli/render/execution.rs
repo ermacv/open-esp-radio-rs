@@ -186,6 +186,16 @@ pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
     );
     let _ = writeln!(&mut output, "{verdict} — mode {}", report.mode.label());
     let _ = writeln!(&mut output, "Cases:  {}", report.case_execution.label());
+    let _ = writeln!(
+        &mut output,
+        "Diagnostics: {} ({} contracts)",
+        report
+            .diagnostic_contracts
+            .knowledge_provider
+            .as_deref()
+            .unwrap_or("neutral"),
+        report.diagnostic_contracts.calls.len()
+    );
     let _ = writeln!(&mut output, "Vendor: {}", report.vendor.path);
     if command_output::details() {
         let _ = writeln!(&mut output, "SHA-256: {}", report.vendor.sha256);

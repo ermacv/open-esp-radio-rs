@@ -20,6 +20,14 @@ pub(crate) enum InterfaceFactRoot {
     FunctionArgument {
         argument: u8,
     },
+    BoundedDataAddress {
+        canonical: String,
+        member: Option<String>,
+        symbol: String,
+        address: u32,
+        symbol_address: u32,
+        symbol_size: u32,
+    },
     AbsoluteAddress {
         address: u32,
     },
@@ -30,6 +38,7 @@ impl InterfaceFactRoot {
         match self {
             Self::RelocatedSymbol { .. } => "relocated-symbol",
             Self::FunctionArgument { .. } => "function-argument",
+            Self::BoundedDataAddress { .. } => "bounded-data-address",
             Self::AbsoluteAddress { .. } => "absolute-address",
         }
     }

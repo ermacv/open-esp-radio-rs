@@ -82,6 +82,18 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             lines.push(field("Verdict", report.verdict.label()));
             lines.push(field("Mode", report.mode.label()));
             lines.push(field(
+                "Diagnostics",
+                format!(
+                    "{} ({} contracts)",
+                    report
+                        .diagnostic_contracts
+                        .knowledge_provider
+                        .as_deref()
+                        .unwrap_or("neutral"),
+                    report.diagnostic_contracts.calls.len()
+                ),
+            ));
+            lines.push(field(
                 "Summary",
                 format!(
                     "match={} diff={} incomplete={}",

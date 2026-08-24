@@ -35,6 +35,7 @@ pub struct Profile {
     pub argument_ranges: Vec<ArgumentRange>,
     pub argument_values: Vec<ArgumentValues>,
     pub mmio_domains: Vec<MmioDomain>,
+    pub mmio_images: Vec<MmioImage>,
     pub vendor_setup: Vec<VendorSetupPhase>,
     pub scenarios: Vec<NamedScenario>,
 }
@@ -169,6 +170,17 @@ pub struct MmioDomain {
     pub values: Vec<u32>,
 }
 
+/// One exact correlated MMIO input image selected from a concrete case.
+///
+/// Unlike [`MmioDomain`], words within an image are not independent finite
+/// dimensions. Static coverage evaluates only the complete declared images;
+/// it must not invent their Cartesian product.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct MmioImage {
+    pub case: String,
+    pub words: BTreeMap<u32, u32>,
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ProfileCoverageConstraint {
     pub arguments: [Option<u32>; 8],
@@ -179,8 +191,9 @@ impl Profile {
     /// Enumerates the explicitly admissible ABI argument domain for static
     /// reachability. Arguments without an `argument-range` or
     /// `argument-values` entry remain unknown.
-    pub fn coverage_argument_constraints(&self) -> Vec<[Option<u32>; 8]> {
-        let mut constraints = vec![[None; 8]];
+    fn coverage_argument_constraints(&self, capacity: usize) -> Vec<[Option<u32>; 8]> {
+        let mut constraints = Vec::with_capacity(capacity);
+        constraints.push([None; 8]);
         for range in &self.argument_ranges {
             let mut expanded = Vec::new();
             for constraint in constraints {
@@ -209,9 +222,16 @@ impl Profile {
     /// Enumerate the reviewed finite input domain used by static coverage.
     /// MMIO words listed here must also be present in concrete cases, so a
     /// hardware selector invariant cannot silently hide an untested path.
-    pub fn coverage_constraints(&self) -> Vec<ProfileCoverageConstraint> {
+    pub fn coverage_constraints(&self) -> Result<Vec<ProfileCoverageConstraint>> {
+        let capacity = validation::coverage_domain_cardinality(
+            &self.name,
+            &self.argument_ranges,
+            &self.argument_values,
+            &self.mmio_domains,
+            &self.mmio_images,
+        )?;
         let mut constraints = self
-            .coverage_argument_constraints()
+            .coverage_argument_constraints(capacity)
             .into_iter()
             .map(|arguments| ProfileCoverageConstraint {
                 arguments,
@@ -229,7 +249,18 @@ impl Profile {
             }
             constraints = expanded;
         }
-        constraints
+        if !self.mmio_images.is_empty() {
+            let mut expanded = Vec::with_capacity(capacity);
+            for constraint in constraints {
+                for image in &self.mmio_images {
+                    let mut constraint = constraint.clone();
+                    constraint.stable_words.extend(&image.words);
+                    expanded.push(constraint);
+                }
+            }
+            constraints = expanded;
+        }
+        Ok(constraints)
     }
 }
 
@@ -282,6 +313,8 @@ struct ProfileInput {
     argument_values: Vec<ArgumentValuesInput>,
     #[serde(default)]
     mmio_domains: Vec<MmioDomainInput>,
+    #[serde(default)]
+    mmio_image_cases: Vec<String>,
     #[serde(default)]
     vendor_setup: Vec<VendorSetupInput>,
     #[serde(rename = "cases")]
@@ -671,11 +704,42 @@ impl ProfileInput {
             })
             .collect::<Vec<_>>();
         mmio_domains.sort_by_key(|domain| domain.address);
+        let mut image_case_names = BTreeSet::new();
+        let mmio_images = self
+            .mmio_image_cases
+            .into_iter()
+            .map(|case| {
+                if case.trim().is_empty() || !image_case_names.insert(case.clone()) {
+                    return Err(crate::Error::invalid(format!(
+                        "profile {} has an empty or duplicate MMIO image case",
+                        self.name
+                    )));
+                }
+                let mut matching = scenarios.iter().filter(|scenario| scenario.name == case);
+                let scenario = matching.next().ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "profile {} MMIO image refers to missing case {case:?}",
+                        self.name
+                    ))
+                })?;
+                if matching.next().is_some() {
+                    return Err(crate::Error::invalid(format!(
+                        "profile {} MMIO image case {case:?} is ambiguous",
+                        self.name
+                    )));
+                }
+                Ok(MmioImage {
+                    case,
+                    words: scenario.scenario.mmio_initial.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         validation::validate_coverage_domain(
             &self.name,
             &argument_ranges,
             &argument_values,
             &mmio_domains,
+            &mmio_images,
             &scenarios,
         )?;
         validation::validate_claim(
@@ -685,6 +749,7 @@ impl ProfileInput {
             &argument_ranges,
             &argument_values,
             &mmio_domains,
+            &mmio_images,
         )?;
         Ok(Profile {
             name: self.name,
@@ -701,6 +766,7 @@ impl ProfileInput {
             argument_ranges,
             argument_values,
             mmio_domains,
+            mmio_images,
             vendor_setup,
             scenarios,
         })
@@ -1063,6 +1129,60 @@ mod schema_tests {
         );
         let profiles = finish(toml_edit::de::from_str(&input).unwrap()).unwrap();
         assert_eq!(profiles[0].case_execution, CaseExecution::Stateful);
+    }
+
+    #[test]
+    fn coverage_cardinality_fails_before_materializing_an_oversized_mmio_product() {
+        let domains = (0_u32..13)
+            .map(|index| {
+                format!(
+                    "[[profiles.mmio-domains]]\naddress = {}\nvalues = [0, 1]\n",
+                    0x2010_0000 + index * 4
+                )
+            })
+            .collect::<String>();
+        let input = minimal_profile(
+            "independent",
+            &format!("{domains}\n[[profiles.cases]]\nname = \"only\"\n"),
+        );
+        let error = finish(toml_edit::de::from_str(&input).unwrap()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            crate::error::BlobrayError::CoverageDomainTooLarge {
+                cases: 8_192,
+                maximum: 4_096,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn mmio_image_cases_preserve_correlation_without_a_cartesian_product() {
+        let input = minimal_profile(
+            "independent",
+            "mmio-image-cases = [\"image-a\", \"image-b\"]\n\
+             [[profiles.cases]]\n\
+             name = \"image-a\"\n\
+             mmio-initial = [\
+                 { address = 0x20100000, value = 0xaaaaaaaa },\
+                 { address = 0x20100004, value = 0x55555555 },\
+             ]\n\
+             [[profiles.cases]]\n\
+             name = \"image-b\"\n\
+             mmio-initial = [\
+                 { address = 0x20100000, value = 0x55555555 },\
+                 { address = 0x20100004, value = 0xaaaaaaaa },\
+             ]\n",
+        );
+        let profiles = finish(toml_edit::de::from_str(&input).unwrap()).unwrap();
+        let constraints = profiles[0].coverage_constraints().unwrap();
+
+        assert_eq!(constraints.len(), 2);
+        assert_eq!(constraints[0].stable_words[&0x2010_0000], 0xaaaa_aaaa);
+        assert_eq!(constraints[0].stable_words[&0x2010_0004], 0x5555_5555);
+        assert_eq!(constraints[1].stable_words[&0x2010_0000], 0x5555_5555);
+        assert_eq!(constraints[1].stable_words[&0x2010_0004], 0xaaaa_aaaa);
     }
 
     #[test]

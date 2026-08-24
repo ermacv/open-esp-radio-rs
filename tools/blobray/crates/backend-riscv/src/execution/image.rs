@@ -58,6 +58,11 @@ pub struct ExecutableImage {
     /// symbol. Keeping these as poison lets an unrelated function in a large
     /// linked oracle run while any reachable use still fails closed.
     pub(super) unresolved_relocations_by_address: BTreeMap<u32, UnresolvedRelocation>,
+    /// Reviewed opaque diagnostic boundaries supplied by composed target
+    /// knowledge. The artifact proves the call site; this map classifies the
+    /// named ABI arguments as diagnostic/non-observable, but supplies no
+    /// return or register-clobber semantics.
+    pub(super) diagnostic_calls: BTreeMap<String, u8>,
     pub(super) global_pointer: Option<u32>,
 }
 

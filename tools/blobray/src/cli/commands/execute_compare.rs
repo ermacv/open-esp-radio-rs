@@ -2,7 +2,11 @@
 
 use super::super::*;
 
-pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioMap) -> Result<bool> {
+pub(super) fn run(
+    arguments: ExecuteCompareArgs,
+    svd: &MmioMap,
+    target: &TargetSpec,
+) -> Result<bool> {
     let scenarios = if arguments.case.is_empty() {
         vec![NamedScenario::new("default".to_owned())]
     } else {
@@ -66,6 +70,9 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioMap) -> Result<bool> 
                 crate::verification::profiles::TransactionComparison::Observables,
             effect_policy: None,
             call_equivalences: &[],
+            diagnostic_contracts: crate::harnesses::diagnostic_contracts_or_empty(
+                target.knowledge_provider.as_deref(),
+            )?,
             coverage_domain: &unconstrained_coverage,
             vendor_setup: &[],
         },

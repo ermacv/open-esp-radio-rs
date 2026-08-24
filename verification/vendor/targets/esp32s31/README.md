@@ -76,11 +76,18 @@ preserves cross-archive call identity; its lazy profiles expose controller
 lifecycle, HCI transport and NPL-layout slices without treating linked IR as
 hardware truth.
 
-The first ownership-only production slice now exists: one neutral radio root
-can enter either the exclusive Wi-Fi or Bluetooth route, both routes return
-the root losslessly, and the Bluetooth interrupt owner exposes only the two
-reviewed opaque status-to-clear transactions. It deliberately performs no
-controller reset, clock, mask, enable or CPU-routing operation.
+The cold ownership slice is lossless: one neutral radio root can enter either
+the exclusive Wi-Fi or Bluetooth route and return before power-up. The public
+Bluetooth init path now consumes that cold owner through clock/reset and the
+verified sixteen-entry scheduler-table low-bit transaction, then stops. It
+does not skip the still-missing event/list, LP, BLE-stack and HCI init stages.
+The separately implemented common-PHY and finite `bt_bb_v2_init_cmplx(1)`
+components preserve their correct enable-stage order but are deliberately not
+reachable from that incomplete init frontier. Once the first powered MMIO
+mutation occurs, every owner is retained fail-stop because complete rollback
+and last-owner PHY teardown remain unrecovered. The isolated interrupt
+transaction still exposes only two reviewed opaque status-to-clear words; it
+does not imply controller mask, CPU route, task or HCI readiness.
 
 The powered lifecycle is not ready yet, but its top-level S31 provenance is no
 longer missing. The authenticated local `libble_app.a` and
@@ -92,16 +99,22 @@ in `components/bt/controller/esp32s31/bt.c`. That source is authoritative for
 the outer init/enable/disable/deinit order and rollback shape of this exact
 library set. It does not prove the internal behavior of the called binary
 entries; Blobray facts and compiled-production comparisons retain that role.
-The next lifecycle slice must therefore implement and verify the called
-platform/OSAL, clock/reset, task, BLE-stack and HCI boundaries in that order,
-without exposing one premature monolithic powered capability.
+The next lifecycle slices must therefore implement and verify the remaining
+platform/OSAL, controller-task, interrupt-route, BLE-stack and HCI boundaries
+in outer vendor order, without exposing one premature monolithic powered
+capability.
 
 The standalone enable order is also a hard production contract:
 `btdm_lp_reset(true)` calls `esp_phy_enable(PHY_MODEM_BT)` before
 `esp_btbb_enable()`. On the first PHY use, the former reaches
 `register_chipv7_phy`; on the first BT-baseband use, the latter reaches
-`bt_bb_v2_init_cmplx(1)`. The Bluetooth API must therefore produce a completed
-common-PHY typestate before it can expose the finite BT-baseband transaction.
+`bt_bb_v2_init_cmplx(1)`. The eventual Bluetooth enable API must therefore
+produce a completed common-PHY typestate before it can expose the finite
+BT-baseband transaction. The implemented BTBB component already enforces that
+local order: its edge consumes `BluetoothPhyInitialized`, and its gain byte is
+projected from the owned PHY state rather than supplied as an unrelated
+runtime argument. It will become reachable only after the complete
+controller-init owner exists.
 
 The recovered
 BTDM task lifecycle calls coexistence registration hooks even when BLE is the

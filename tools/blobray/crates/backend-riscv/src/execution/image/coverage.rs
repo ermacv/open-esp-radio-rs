@@ -180,6 +180,17 @@ impl ExecutableImage {
                     continue;
                 }
                 let link = self.relocated_call_link_register(address)?;
+                let diagnostic = self.diagnostic_call(&call.name).or_else(|| {
+                    self.call_symbol_at(call.target?)
+                        .and_then(|symbol| self.diagnostic_call(symbol))
+                });
+                if let Some((symbol, _)) = diagnostic {
+                    self.validate_diagnostic_link_register(symbol, address, link)?;
+                    if link == Reg::RA {
+                        enqueue!(address.wrapping_add(8), after_call(registers));
+                    }
+                    continue;
+                }
                 if link != Reg::ZERO {
                     enqueue!(address.wrapping_add(8), after_call(registers));
                 }
@@ -393,6 +404,16 @@ impl ExecutableImage {
                     {
                         continue;
                     }
+                    if let Some((symbol, _)) = self
+                        .call_symbol_at(target)
+                        .and_then(|symbol| self.diagnostic_call(symbol))
+                    {
+                        self.validate_diagnostic_link_register(symbol, address, dest)?;
+                        if dest == Reg::RA {
+                            enqueue!(next, after_call(registers));
+                        }
+                        continue;
+                    }
                     if dest == Reg::ZERO {
                         enqueue!(target, registers);
                     } else {
@@ -410,6 +431,16 @@ impl ExecutableImage {
                             .call_symbol_at(target)
                             .is_some_and(|symbol| stop_call_symbols.contains(symbol))
                         {
+                            continue;
+                        }
+                        if let Some((symbol, _)) = self
+                            .call_symbol_at(target)
+                            .and_then(|symbol| self.diagnostic_call(symbol))
+                        {
+                            self.validate_diagnostic_link_register(symbol, address, dest)?;
+                            if dest == Reg::RA {
+                                enqueue!(next, after_call(registers));
+                            }
                             continue;
                         }
                         if dest == Reg::ZERO {

@@ -173,6 +173,9 @@ pub(crate) fn execute(
     if let Some(companion) = request.companion.as_deref() {
         image.add_companion(companion)?;
     }
+    let diagnostic_contracts =
+        crate::harnesses::diagnostic_contracts_or_empty(target.knowledge_provider.as_deref())?;
+    image.configure_diagnostic_calls(diagnostic_contracts.configured_calls())?;
     validate_tables(project, target, &manifest)?;
 
     let mut services = Some(manifest.fifo_services);
@@ -313,7 +316,12 @@ pub(crate) fn execute(
             memory_observations,
         });
     }
-    crate::artifacts::build_replay_evidence(&request.manifest, &request.artifact, phase_evidence)
+    crate::artifacts::build_replay_evidence(
+        &request.manifest,
+        &request.artifact,
+        diagnostic_contracts,
+        phase_evidence,
+    )
 }
 
 struct ResolvedMemoryObservation {

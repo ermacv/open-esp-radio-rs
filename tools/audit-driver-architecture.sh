@@ -443,4 +443,86 @@ cargo test \
     --package open-esp-radio-esp32s31-wifi-embassy \
     owner_graph_contract
 
+# PHY-I2C knowledge and authority have one owner per layer. The PHY owns the
+# reviewed block/host mapping and transaction order; HAL owns the pure S31
+# ANA_CONF2 transform; only the two official ESP-HAL owners may touch the
+# I2C_ANA_MST register block. This also prevents a validation bridge from
+# becoming an ordinary public command-serialization bypass.
+phy_i2c_hal="driver/chips/esp32s31/hal/src/phy_i2c.rs"
+phy_i2c_driver="driver/chips/esp32s31/phy/src/phy_i2c.rs"
+phy_i2c_validation="driver/chips/esp32s31/phy/src/validation.rs"
+phy_i2c_adapter_bluetooth="driver/adapters/esp-hal/esp32s31-radio-platform/src/esp32s31.rs"
+phy_i2c_adapter_wifi="driver/adapters/esp-hal/esp32s31-wifi/src/lib.rs"
+
+mapfile -t phy_i2c_mmio_owners < <(rg -l 'I2C_ANA_MST::regs\(\)' driver --glob '*.rs' | sort)
+if test "${#phy_i2c_mmio_owners[@]}" -ne 2 \
+    || test "${phy_i2c_mmio_owners[0]}" != "$phy_i2c_adapter_bluetooth" \
+    || test "${phy_i2c_mmio_owners[1]}" != "$phy_i2c_adapter_wifi"
+then
+    echo "PHY-I2C MMIO authority escaped the two official ESP-HAL owners" >&2
+    exit 1
+fi
+
+mapfile -t phy_i2c_impl_owners < <(rg -l 'impl PhyI2cMasterControl for' driver --glob '*.rs' | sort)
+if test "${#phy_i2c_impl_owners[@]}" -ne 2 \
+    || test "${phy_i2c_impl_owners[0]}" != "$phy_i2c_adapter_bluetooth" \
+    || test "${phy_i2c_impl_owners[1]}" != "$phy_i2c_adapter_wifi"
+then
+    echo "PHY-I2C platform implementation inventory changed without a serialization owner" >&2
+    exit 1
+fi
+
+if rg -n '0x00fc_000f' driver --glob '*.rs'; then
+    echo "obsolete PHY-I2C host-map mask that clears the upper byte survived" >&2
+    exit 1
+fi
+mapfile -t phy_i2c_transform_owners < <(
+    rg -l '0xfffc_000f|0x0003_fa00' driver --glob '*.rs' | sort
+)
+if test "${#phy_i2c_transform_owners[@]}" -ne 1 \
+    || test "${phy_i2c_transform_owners[0]}" != "$phy_i2c_hal"
+then
+    echo "PHY-I2C ANA_CONF2 transform has more than one production owner" >&2
+    exit 1
+fi
+mapfile -t phy_i2c_host_knowledge_owners < <(rg -l '0x0647' driver --glob '*.rs' | sort)
+if test "${#phy_i2c_host_knowledge_owners[@]}" -ne 1 \
+    || test "${phy_i2c_host_knowledge_owners[0]}" != "$phy_i2c_driver"
+then
+    echo "PHY-I2C host-map knowledge escaped its PHY owner" >&2
+    exit 1
+fi
+
+if rg -n 'try_(start|finish)_(read|write)' "$phy_i2c_hal"; then
+    echo "HAL regained ownership of PHY-I2C command sequencing" >&2
+    exit 1
+fi
+for helper in \
+    try_start_read \
+    try_finish_read \
+    try_start_write \
+    try_finish_write \
+    configure_and_select_phy_i2c_host
+do
+    if ! rg -q "pub\(crate\) fn ${helper}" "$phy_i2c_driver"; then
+        echo "PHY-I2C serialization helper is not crate-private: $helper" >&2
+        exit 1
+    fi
+done
+if ! rg -q '#\[cfg\(feature = "validation-probes"\)\][[:space:]]*' \
+    driver/chips/esp32s31/phy/src/lib.rs \
+    || ! rg -q 'crate::phy_i2c::configure_and_select_phy_i2c_host' "$phy_i2c_validation"
+then
+    echo "PHY-I2C compiled-comparison bridge escaped its feature or production delegate" >&2
+    exit 1
+fi
+for adapter in "$phy_i2c_adapter_bluetooth" "$phy_i2c_adapter_wifi"; do
+    if ! rg -q 'configured_host_map_image' "$adapter" \
+        || ! rg -q '_i2c_ana_mst: I2C_ANA_MST' "$adapter"
+    then
+        echo "official PHY-I2C adapter lost its affine owner or shared transform: $adapter" >&2
+        exit 1
+    fi
+done
+
 echo "driver architecture audit passed: ${#production_manifests[@]} production crates"

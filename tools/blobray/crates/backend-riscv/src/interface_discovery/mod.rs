@@ -38,6 +38,20 @@ impl std::ops::Deref for InterfaceDiscovery {
 pub fn discover_interface_calls(
     symbol: &artifact::ArtifactSymbolDefinition,
 ) -> Result<InterfaceDiscovery> {
+    discover_interface_calls_with_data_symbols(symbol, &[])
+}
+
+/// Discover indirect calls and statically initialized pointer-cell stores in
+/// an authoritative linked image.
+///
+/// Linked instructions contain final numeric addresses even when retained ELF
+/// relocations are ambiguous local aliases. `data_symbols` is therefore used
+/// only to classify a numeric value as a pointer into a bounded data object;
+/// it does not assign a type or claim that the producer has executed.
+pub fn discover_interface_calls_with_data_symbols(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    data_symbols: &[artifact::ArtifactDataSymbolDefinition],
+) -> Result<InterfaceDiscovery> {
     let instructions = artifact::decode_symbol_for_analysis(symbol)?;
     if instructions.is_empty() {
         return Ok(InterfaceDiscovery::default());
@@ -174,13 +188,14 @@ pub fn discover_interface_calls(
                     {
                         value
                     }
-                    Some(Some((_, value))) => append_load(value, pc, 0, width),
+                    Some(Some((_, value))) => append_load(value, pc, 0, width, data_symbols),
                     Some(None) => Value::Unknown,
                     None => append_load(
                         values[usize::from(base.0)].clone(),
                         pc,
                         offset.as_i32(),
                         width,
+                        data_symbols,
                     ),
                 };
                 set(&mut values, dest, value);
@@ -245,17 +260,23 @@ pub fn discover_interface_calls(
         };
         if let Inst::Sw { offset, src, base } = decoded.instruction
             && let (Some(mut location), Some(target)) = (
-                values[usize::from(base.0)].as_pointer(),
-                values[usize::from(src.0)].as_pointer(),
+                values[usize::from(base.0)].as_data_store_pointer(
+                    offset.as_i32(),
+                    32,
+                    data_symbols,
+                ),
+                values[usize::from(src.0)].as_data_pointer(data_symbols),
             )
             && target.loads.is_empty()
             && target.post_offset == 0
             && matches!(
                 target.root,
-                InterfaceRoot::RelocatedSymbol { .. } | InterfaceRoot::FunctionArgument { .. }
+                InterfaceRoot::RelocatedSymbol { .. }
+                    | InterfaceRoot::FunctionArgument { .. }
+                    | InterfaceRoot::BoundedDataAddress { .. }
             )
         {
-            let slot_offset = location.post_offset.wrapping_add(offset.as_i32());
+            let slot_offset = location.post_offset;
             location.post_offset = 0;
             assignments.insert(InterfaceSlotAssignment {
                 member: symbol.member.clone(),

@@ -201,9 +201,17 @@ impl Machine<'_> {
         };
     }
 
-    pub(in crate::execution) fn record_call(&mut self, site: u32, symbol: String) {
-        let arguments =
-            core::array::from_fn(|index| self.registers[usize::from(Reg::A0.0) + index]);
+    fn call_arguments(&self, argument_count: u8) -> [u32; 8] {
+        core::array::from_fn(|index| {
+            if index < usize::from(argument_count) {
+                self.registers[usize::from(Reg::A0.0) + index]
+            } else {
+                0
+            }
+        })
+    }
+
+    fn record_call_with_arguments(&mut self, site: u32, symbol: String, arguments: [u32; 8]) {
         self.calls.insert(symbol.clone());
         let call = OrderedCall {
             site,
@@ -212,6 +220,22 @@ impl Machine<'_> {
         };
         self.ordered_calls.push(call.clone());
         self.timeline.push(ExecutionTimelineEvent::Call(call));
+    }
+
+    pub(in crate::execution) fn record_call(&mut self, site: u32, symbol: String) {
+        let arguments = self.call_arguments(8);
+        self.record_call_with_arguments(site, symbol, arguments);
+    }
+
+    pub(in crate::execution) fn record_diagnostic_call(
+        &mut self,
+        site: u32,
+        symbol: String,
+        argument_count: u8,
+    ) -> [u32; 8] {
+        let arguments = self.call_arguments(argument_count);
+        self.record_call_with_arguments(site, symbol, arguments);
+        arguments
     }
 
     pub(in crate::execution) fn record_indirect_table_call(

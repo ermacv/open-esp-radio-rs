@@ -1,0 +1,31 @@
+schema = 2
+
+[[evidence]]
+source = "ble-controller"
+symbol = "r_sym_ble_LboRu27EaU8MV8Q7UUfZ"
+kind = "reviewed-domain-equivalence/profile:scenario/ble-memory-list-selector-two-slot-a-publication"
+digest = "8d629612f31b1d0f8ff70b5a1ef6ff2f131379c2053e2edad2b23db0394c20c6"
+
+[evidence.components]
+comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
+diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
+execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
+profile = "71125055984474a2bb92f7f58726a83040d11e7df2a252be8abb8e87595434db"
+profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"
+
+[[evidence]]
+source = "ble-controller"
+symbol = "r_sym_ble_ZzrExMrn8EDiTFI7PENK"
+kind = "reviewed-domain-equivalence/profile:scenario/ble-memory-list-selector-two-slot-b-publication"
+digest = "7cc7c653f7a1fc855d12d2071bfaab221212165d8f2eea4b18d9e0f24b9d353b"
+
+[evidence.components]
+comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
+diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
+execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
+execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
+profile = "e947017a92c05135fe7afdb4d3c4dd69ce73fe370789f052185461070dfd6dd6"
+profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"

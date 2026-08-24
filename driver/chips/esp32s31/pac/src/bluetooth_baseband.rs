@@ -6,7 +6,7 @@
 //! higher Bluetooth crate may expose this transaction only after it owns an
 //! equivalent PHY-initialized typestate.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 use super::{BluetoothTaskRegisters, device_fence};
 
@@ -26,7 +26,25 @@ impl BluetoothTaskRegisters {
     /// higher-level meaning remains unassigned. The vendor diagnostic print
     /// selected by argument one is intentionally outside this hardware
     /// transaction and is omitted from the comparison effect contract.
-    pub(crate) fn initialize_baseband_v2_printing(&mut self, gain_parameter: u8) {
+    ///
+    /// This hidden SPI is public only because Rust has no cross-crate friend
+    /// visibility. It is unsafe so safe downstream code cannot bypass the
+    /// post-common-PHY lifecycle owner.
+    ///
+    /// # Safety
+    ///
+    /// The caller must prove that controller clocks/resets are active, common
+    /// PHY initialization completed for this same hardware owner, and
+    /// `gain_parameter` came from that terminal PHY state. Every physical
+    /// owner must remain retained until a verified last-owner PHY teardown;
+    /// the task partition must not be reunited into cold ownership after this
+    /// transaction without that teardown.
+    #[allow(
+        unsafe_code,
+        reason = "the unsafe signature encodes the cross-crate common-PHY hardware prerequisite"
+    )]
+    #[doc(hidden)]
+    pub unsafe fn initialize_baseband_v2_arg_one(&mut self, gain_parameter: u8) {
         self.initialize_baseband_v2_tx();
         self.initialize_baseband_v2_rx(gain_parameter);
         self.initialize_gaussian_1m_coefficients();
@@ -93,7 +111,7 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.select_2().set(0));
         baseband
             .rx_filter_select()
-            .modify(|_, w| w.select_0().set(1));
+            .modify(|_, w| w.select_0().set(2));
 
         self.initialize_shared_receive_prefix();
         self.bluetooth
@@ -441,7 +459,12 @@ impl BluetoothTaskRegisters {
         self.bluetooth
             .bt_v3_2_baseband
             .le_tx_on_delay()
-            .modify(|_, w| w.encoded_value_minus_10().set(50));
+            .modify(|_, w| {
+                w.force_zero_bits_16_18()
+                    .set(0)
+                    .encoded_value_minus_10()
+                    .set(50)
+            });
         let cca = self.bluetooth.bt_v3_2_baseband.tx_cca_control_0();
         cca.modify(|_, w| {
             w.period_force_zero_20_22()

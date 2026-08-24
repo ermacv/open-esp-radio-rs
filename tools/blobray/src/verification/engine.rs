@@ -37,6 +37,7 @@ pub(crate) fn verify_source(
     disposition_manifest: Option<&dispositions::Manifest>,
     evidence: &mut EvidenceSet,
 ) -> Result<SourceVerificationReport> {
+    let diagnostic_contracts = crate::harnesses::diagnostic_contracts_or_empty(knowledge_provider)?;
     let vendor_symbols = vendor_symbols(source)?;
     // A reviewed binding names one exact compiled symbol and is independent
     // of the convention-based probe prefix. Keep the filtered inventory only
@@ -228,6 +229,7 @@ pub(crate) fn verify_source(
                 source,
                 rust_artifact,
                 rust_companion,
+                diagnostic_contracts.clone(),
                 execution_profile::ReviewedBinding {
                     disposition_label: resolved_disposition
                         .as_ref()
@@ -275,7 +277,7 @@ pub(crate) fn verify_source(
                     evidence,
                     source.name,
                     &vendor.name,
-                    profile_evidence(profile),
+                    profile_evidence(profile, &comparison.diagnostic_contracts),
                 )?;
             } else if accepted_match {
                 summary.implemented_unqualified += 1;
@@ -283,7 +285,7 @@ pub(crate) fn verify_source(
                     evidence,
                     source.name,
                     &vendor.name,
-                    profile_evidence(profile),
+                    profile_evidence(profile, &comparison.diagnostic_contracts),
                 )?;
             } else {
                 match verdict {

@@ -65,6 +65,10 @@ fn knowledge_descriptor(provider: &str) -> crate::Result<&'static KnowledgeProvi
         })
 }
 
+fn descriptor_identity(descriptor: &KnowledgeProviderDescriptor) -> String {
+    format!("{}@{}", descriptor.id, descriptor.analysis_cache_revision)
+}
+
 pub(crate) fn is_available(provider: &str) -> bool {
     registry()
         .knowledge
@@ -73,17 +77,37 @@ pub(crate) fn is_available(provider: &str) -> bool {
 }
 
 pub(crate) fn analysis_cache_identity(provider: Option<&str>) -> String {
-    match provider {
-        None => "neutral-knowledge@1".to_owned(),
-        Some(provider) => knowledge_descriptor(provider).map_or_else(
-            |_| format!("unavailable:{provider}"),
-            |descriptor| format!("{}@{}", descriptor.id, descriptor.analysis_cache_revision),
-        ),
-    }
+    diagnostic_contracts_or_empty(provider).map_or_else(
+        |_| format!("unavailable:{}", provider.unwrap_or("<none>")),
+        |contracts| contracts.canonical(),
+    )
 }
 
 pub(crate) fn contracts(provider: &str) -> crate::Result<&'static crate::KnowledgeContractSpec> {
     Ok(knowledge_descriptor(provider)?.contracts)
+}
+
+pub(crate) fn diagnostic_contracts_or_empty(
+    provider: Option<&str>,
+) -> crate::Result<crate::DiagnosticContractsReport> {
+    let Some(provider) = provider else {
+        return Ok(crate::DiagnosticContractsReport::default());
+    };
+    let descriptor = knowledge_descriptor(provider)?;
+    diagnostic_contracts(descriptor)
+}
+
+fn diagnostic_contracts(
+    descriptor: &KnowledgeProviderDescriptor,
+) -> crate::Result<crate::DiagnosticContractsReport> {
+    crate::DiagnosticContractsReport::from_calls(
+        Some(descriptor_identity(descriptor)),
+        descriptor
+            .contracts
+            .diagnostic_calls
+            .iter()
+            .map(|call| (call.symbol, call.argument_count)),
+    )
 }
 
 pub(crate) fn riscv(provider: &str) -> crate::Result<&'static crate::RiscvHarnessSpec> {
@@ -135,11 +159,57 @@ mod tests {
             let descriptor = knowledge_descriptor(id).unwrap();
             assert_eq!(descriptor.id, id);
             assert!(descriptor.analysis_cache_revision > 0);
+            diagnostic_contracts_or_empty(Some(id)).unwrap();
         }
     }
 
     #[test]
     fn provider_capabilities_have_independent_registries() {
         assert!(registry().knowledge.is_empty());
+    }
+
+    #[test]
+    fn neutral_diagnostic_contract_provenance_is_empty_and_canonical() {
+        let contracts = diagnostic_contracts_or_empty(None).unwrap();
+
+        assert!(contracts.knowledge_provider.is_none());
+        assert!(contracts.calls.is_empty());
+        assert_eq!(contracts.canonical(), "provider:6:<none>");
+    }
+
+    #[test]
+    fn provider_diagnostic_contract_provenance_uses_revision_and_sorted_actual_calls() {
+        static CALLS: &[crate::DiagnosticCallSpec] = &[
+            crate::DiagnosticCallSpec {
+                symbol: "z_log",
+                argument_count: 2,
+            },
+            crate::DiagnosticCallSpec {
+                symbol: "a_assert",
+                argument_count: 4,
+            },
+        ];
+        static CONTRACTS: crate::KnowledgeContractSpec = crate::KnowledgeContractSpec {
+            external_call_model_sets: &[],
+            entry_contracts: &[],
+            diagnostic_calls: CALLS,
+        };
+        let descriptor = KnowledgeProviderDescriptor {
+            id: "fixture-provider",
+            analysis_cache_revision: 7,
+            contracts: &CONTRACTS,
+            riscv: None,
+        };
+
+        let actual = diagnostic_contracts(&descriptor).unwrap();
+
+        assert_eq!(
+            actual.knowledge_provider.as_deref(),
+            Some("fixture-provider@7")
+        );
+        assert_eq!(actual.calls[0].symbol, "a_assert");
+        assert_eq!(actual.calls[0].argument_count, 4);
+        assert_eq!(actual.calls[1].symbol, "z_log");
+        assert_eq!(actual.calls[1].argument_count, 2);
     }
 }

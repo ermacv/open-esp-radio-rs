@@ -522,8 +522,11 @@ impl PhyI2cMasterControl for EspHalRadioPeripheral {
         // SOURCE[BLOB_LIBPHY_PHY_I2C]. The complete S31 host callback
         // replaces ANA_CONF2 bits 17:4 with 0x3fa0.
         I2C_ANA_MST::regs().ana_conf2().modify(|r, w| {
-            w.ana_conf2()
-                .set((r.ana_conf2().bits() & 0x00fc_000f) | 0x0003_fa00)
+            w.ana_conf2().set(
+                open_esp_radio_esp32s31_hal::phy_i2c::configured_host_map_image(
+                    r.ana_conf2().bits(),
+                ),
+            )
         });
     }
 

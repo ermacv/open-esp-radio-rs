@@ -13944,21 +13944,41 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_PRESERVE_BIT_17</name>
-          <description>BLE PHY register initialization preserves only bit 17 and clears every other bit.</description>
+          <name>INIT_CONTROL_00B4</name>
+          <description>BLE PHY register initialization first applies a fresh-read RMW with mask 0x00020000, preserving only bit 17 and clearing every other bit. Its conditional tail later performs a second fresh-read RMW that sets exactly bits 11, 15, 20 and 24 with mask 0x01108800. The five evidenced bit positions have neutral initialization names; all omitted bit ranges retain unknown hardware semantics.</description>
           <addressOffset>0xB4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_CLEAR_LOW</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>17</bitWidth>
+              <name>INIT_SET_11</name>
+              <description>The conditional initialization tail sets bit 11. Its hardware meaning remains unknown.</description>
+              <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>INIT_CLEAR_HIGH</name>
-              <bitOffset>18</bitOffset>
-              <bitWidth>14</bitWidth>
+              <name>INIT_SET_15</name>
+              <description>The conditional initialization tail sets bit 15. Its hardware meaning remains unknown.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>INIT_PRESERVE_17</name>
+              <description>The first initialization RMW preserves bit 17 while clearing every other bit. Its hardware meaning remains unknown.</description>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>INIT_SET_20</name>
+              <description>The conditional initialization tail sets bit 20. Its hardware meaning remains unknown.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>INIT_SET_24</name>
+              <description>The conditional initialization tail sets bit 24. Its hardware meaning remains unknown.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
@@ -14439,6 +14459,20 @@ BLUETOOTH_INTERRUPT_BANK.
           </fields>
         </register>
         <register>
+          <name>CONTROLLER_AUXILIARY_POINTER</name>
+          <description>Three observed controller paths read the low twenty bits after consulting SCHEDULER_STATE and reconstruct an SRAM address as 0x2F000000 | (value &lt;&lt; 2). The relationship between the two pointer sources remains unknown.</description>
+          <addressOffset>0x80</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>COMPRESSED_SRAM_POINTER</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>20</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
           <name>HAL_INIT_BYTES</name>
           <description>Complete BTDM HAL initialization replaces bytes zero and one with two independently runtime-derived values while preserving bits 16..31. Their inner meanings remain unknown.</description>
           <addressOffset>0x84</addressOffset>
@@ -14529,8 +14563,8 @@ BLUETOOTH_INTERRUPT_BANK.
           </fields>
         </register>
         <register>
-          <name>SLEEP_TIMER_LATCHED_TIME</name>
-          <description>BTDM sleep/wakeup paths set SLEEP_TIMER_CONTROL.LATCH_REQUEST, wait for hardware to clear it, then read this complete latched time image.</description>
+          <name>SLEEP_TIMER_LATCHED_TIME_0</name>
+          <description>First word of the three-word sleep-timer snapshot read after software requests a latch and hardware clears SLEEP_TIMER_CONTROL.LATCH_REQUEST.</description>
           <addressOffset>0xAC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -14539,6 +14573,64 @@ BLUETOOTH_INTERRUPT_BANK.
               <name>IMAGE</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>SLEEP_TIMER_LATCHED_TIME_1</name>
+          <description>Second word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown.</description>
+          <addressOffset>0xB0</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>IMAGE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>SLEEP_TIMER_LATCHED_TIME_2</name>
+          <description>Third word of the same three-word sleep-timer snapshot. Its inner counter or window meaning remains unknown.</description>
+          <addressOffset>0xB4</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>IMAGE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CONTROLLER_TRANSACTION_0</name>
+          <description>First positional controller transaction word. The observed instruction sequence publishes bit 31 together with a dynamic low-twenty-bit value, waits for bit 30, then republishes while bit 31 remains clear. The hardware operation remains unknown.</description>
+          <addressOffset>0xC4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>DYNAMIC_LOW_20</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>20</bitWidth>
+            </field>
+            <field>
+              <name>ZERO_IMAGE_20_29</name>
+              <description>Every observed complete publication writes these positions as zero; no hardware-field semantics are assigned.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>10</bitWidth>
+            </field>
+            <field>
+              <name>STATUS_30</name>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>PUBLISH_31</name>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
@@ -14567,6 +14659,36 @@ BLUETOOTH_INTERRUPT_BANK.
               <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CONTROLLER_TRANSACTION_1</name>
+          <description>Second positional controller transaction word. Observed instruction sequences publish bit 31 with either a dynamic low-twenty-bit value or zero, wait for bit 30, then republish while bit 31 remains clear. The hardware operation remains unknown.</description>
+          <addressOffset>0xD8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>DYNAMIC_LOW_20</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>20</bitWidth>
+            </field>
+            <field>
+              <name>ZERO_IMAGE_20_29</name>
+              <description>Every observed complete publication writes these positions as zero; no hardware-field semantics are assigned.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>10</bitWidth>
+            </field>
+            <field>
+              <name>STATUS_30</name>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>PUBLISH_31</name>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
@@ -16073,6 +16195,169 @@ two phases remain unproved, so no neighboring 0x201088xx words are absorbed.
       </registers>
     </peripheral>
     <peripheral>
+      <name>BLE_CONTROLLER_ADDRESS_SLOTS</name>
+      <description>Three positional six-byte controller address slots. A complete ESP32-S31
+ble_phy.c leaf proves the selector range, pair stride, byte packing and write
+order. Named callers identify public-address use of slot zero and
+random-address use of slot one; slot two remains intentionally unnamed.
+</description>
+      <baseAddress>0x2010180C</baseAddress>
+      <registers>
+        <register>
+          <dim>3</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-2</dimIndex>
+          <name>SLOT%s_LOW</name>
+          <description>Bytes zero through three of the selected six-byte value, packed in little-endian order and written before the paired high word.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>OCTETS_0_TO_3</name>
+              <description>The complete low word assembled from input bytes zero through three.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>3</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-2</dimIndex>
+          <name>SLOT%s_HIGH</name>
+          <description>Bytes four and five of the selected six-byte value in bits 0..15; the complete write clears bits 16..31.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>OCTETS_4_TO_5</name>
+              <description>Input bytes four and five packed in little-endian order.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>BLE_CONTROLLER_POINTER_PUBLICATION</name>
+      <description>Narrow positional owner for one controller word written by six ble_hw.c
+paths. The software source context is a useful ownership hint, while neither
+the destination's hardware action nor the dynamic value's inner meaning is
+claimed.
+</description>
+      <baseAddress>0x20101874</baseAddress>
+      <registers>
+        <register>
+          <name>VALUE</name>
+          <description>Observed complete publications contain a dynamic value in bits 0..19 and zero in bits 20..31.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>IMAGE_LOW_20</name>
+              <description>Dynamic low-twenty-bit image; its pointer or index semantics are not established.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>20</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>BLE_SYNC_PUBLICATION</name>
+      <description>Two positional write-only words used by one ble_lll_sync.c path. The source
+identity records software context only; the register names deliberately do
+not turn that context into an undocumented hardware meaning.
+</description>
+      <baseAddress>0x20101878</baseAddress>
+      <registers>
+        <register>
+          <name>VALUE_0</name>
+          <description>One runtime-derived complete 32-bit image.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>IMAGE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>VALUE_1</name>
+          <description>One runtime-derived low-24-bit image; the complete publication writes bits 24..31 as zero.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>IMAGE_LOW_24</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>24</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>BLE_SCAN_CONTROL</name>
+      <description>Three positional complete images published by one ble_lll_scan.c path. The
+source file establishes scan-path ownership, but the undocumented hardware
+actions represented by the images remain unknown.
+</description>
+      <baseAddress>0x20101970</baseAddress>
+      <registers>
+        <register>
+          <name>COMMAND_0</name>
+          <description>The observed path publishes the finite complete images 0x00000100 and 0x00000001 at different points.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>IMAGE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>COMMAND_1</name>
+          <description>Both observed publications write the finite complete image one.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>IMAGE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>COMMAND_2</name>
+          <description>Both observed publications write the finite complete image one.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>IMAGE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
       <name>BLE_HW_ACCELERATOR</name>
       <description>Sparse ESP32-S31 BLE hardware-accelerator view. Complete ble_hw.c operations
 independently prove encryption and resolving-list engines in this physical
@@ -16699,6 +16984,18 @@ unknown C signature semantics rather than inventing a hardware meaning.</descrip
           <size>0x20</size>
           <access>read-write</access>
           <fields>
+            <field>
+              <name>FORCE_ZERO_BITS_16_18</name>
+              <description>bt_bb_set_le_tx_on_delay clears these three low positional bits in the same RMW that writes the encoded delay. Their hardware meaning remains unknown.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
+            </field>
             <field>
               <name>ENCODED_VALUE_MINUS_10</name>
               <description>bt_bb_set_le_tx_on_delay stores argument 0 minus 10; bt_bb_get_le_tx_on_delay returns this field plus 10.</description>

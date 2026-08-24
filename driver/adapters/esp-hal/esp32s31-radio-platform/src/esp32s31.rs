@@ -291,8 +291,11 @@ impl PhyTemperatureSystemControl for EspHalBluetoothPlatform<'_> {
 impl PhyI2cMasterControl for EspHalBluetoothPlatform<'_> {
     fn configure_phy_i2c_host_map(&mut self) {
         I2C_ANA_MST::regs().ana_conf2().modify(|r, w| {
-            w.ana_conf2()
-                .set((r.ana_conf2().bits() & 0x00fc_000f) | 0x0003_fa00)
+            w.ana_conf2().set(
+                open_esp_radio_esp32s31_hal::phy_i2c::configured_host_map_image(
+                    r.ana_conf2().bits(),
+                ),
+            )
         });
     }
 

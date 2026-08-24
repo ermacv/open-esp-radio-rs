@@ -73,7 +73,7 @@ pub(crate) const MMIO_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
-    version: 6,
+    version: 7,
     command: "interfaces discover",
 };
 
@@ -83,7 +83,7 @@ pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const REPLAY_EVIDENCE: ArtifactSchema = ArtifactSchema {
-    version: 2,
+    version: 3,
     command: "execute replay",
 };
 
@@ -127,7 +127,7 @@ mod tests {
         assert_eq!(
             INTERFACE_FACTS,
             ArtifactSchema {
-                version: 6,
+                version: 7,
                 command: "interfaces discover",
             }
         );
@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(
             REPLAY_EVIDENCE,
             ArtifactSchema {
-                version: 2,
+                version: 3,
                 command: "execute replay",
             }
         );

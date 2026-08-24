@@ -8,10 +8,128 @@ use open_radio_vendor_semantics::{EquivalenceMode, EquivalenceVerdict};
 
 /// Persistent concrete-comparison report schema.
 ///
-/// Schema 15 also records the explicit side-specific private-stack fill used
-/// for optimized code which copies padding. Readers must reject older reports
-/// rather than silently treating poison replacement as an inferred value.
-pub const EXECUTION_COMPARISON_REPORT_SCHEMA: u32 = 15;
+/// Schema 16 records the exact compiled knowledge-provider revision and the
+/// sorted diagnostic ABI contracts installed for execution. Readers must not
+/// accept a comparison without knowing which opaque diagnostic boundaries
+/// affected reachability and concrete replay.
+pub const EXECUTION_COMPARISON_REPORT_SCHEMA: u32 = 16;
+
+/// One reviewed opaque diagnostic call boundary installed in the executor.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiagnosticCallContractReport {
+    pub symbol: String,
+    pub argument_count: u8,
+}
+
+/// Canonical provenance for the diagnostic contracts used by an execution.
+///
+/// `knowledge_provider` is the selected descriptor's
+/// `id@analysis_cache_revision`. A neutral target has no provider and must
+/// keep `calls` empty. Calls are sorted by `(symbol, argument_count)` so the
+/// same compiled contract has one report and fingerprint identity regardless
+/// of declaration order.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiagnosticContractsReport {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub knowledge_provider: Option<String>,
+    pub calls: Vec<DiagnosticCallContractReport>,
+}
+
+impl DiagnosticContractsReport {
+    pub(crate) fn from_calls(
+        knowledge_provider: Option<String>,
+        calls: impl IntoIterator<Item = (impl Into<String>, u8)>,
+    ) -> crate::Result<Self> {
+        let mut calls = calls
+            .into_iter()
+            .map(|(symbol, argument_count)| DiagnosticCallContractReport {
+                symbol: symbol.into(),
+                argument_count,
+            })
+            .collect::<Vec<_>>();
+        calls.sort();
+        let report = Self {
+            knowledge_provider,
+            calls,
+        };
+        report.validate()?;
+        Ok(report)
+    }
+
+    pub(crate) fn validate(&self) -> crate::Result<()> {
+        if self.knowledge_provider.is_none() && !self.calls.is_empty() {
+            return Err(crate::Error::invalid(
+                "neutral diagnostic contract provenance must be empty",
+            ));
+        }
+        if let Some(provider) = self.knowledge_provider.as_deref() {
+            let valid = provider
+                .rsplit_once('@')
+                .filter(|(id, _)| !id.is_empty())
+                .and_then(|(_, revision)| revision.parse::<u32>().ok())
+                .is_some_and(|revision| revision > 0);
+            if !valid {
+                return Err(crate::Error::invalid(format!(
+                    "diagnostic contract knowledge-provider identity {provider:?} must be id@analysis_cache_revision",
+                )));
+            }
+        }
+        for call in &self.calls {
+            if call.symbol.trim().is_empty() {
+                return Err(crate::Error::invalid(
+                    "diagnostic call symbol must not be empty",
+                ));
+            }
+            if call.argument_count > 8 {
+                return Err(crate::Error::invalid(format!(
+                    "diagnostic call {} declares {} arguments; RV32 execution supports at most 8 register arguments",
+                    call.symbol, call.argument_count
+                )));
+            }
+        }
+        for pair in self.calls.windows(2) {
+            if pair[0] > pair[1] {
+                return Err(crate::Error::invalid(
+                    "diagnostic call contracts must be sorted by symbol and argument count",
+                ));
+            }
+            if pair[0].symbol == pair[1].symbol {
+                return Err(crate::Error::invalid(format!(
+                    "diagnostic call {} is declared more than once",
+                    pair[0].symbol
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn configured_calls(&self) -> impl Iterator<Item = (&str, u8)> {
+        self.calls
+            .iter()
+            .map(|call| (call.symbol.as_str(), call.argument_count))
+    }
+
+    /// Length-delimited canonical identity used by caches and evidence
+    /// fingerprints. The human-readable report retains the same inputs.
+    pub(crate) fn canonical(&self) -> String {
+        let provider = self.knowledge_provider.as_deref().unwrap_or("<none>");
+        let mut identity = format!("provider:{}:{provider}", provider.len());
+        for call in &self.calls {
+            use std::fmt::Write as _;
+            write!(
+                identity,
+                "\ncall:{}:{}:{}",
+                call.symbol.len(),
+                call.symbol,
+                call.argument_count
+            )
+            .expect("writing to a String cannot fail");
+        }
+        identity
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ArtifactReport {
@@ -588,6 +706,7 @@ pub struct ExecutionComparisonReport {
     pub rust: ArtifactReport,
     pub compare_return: bool,
     pub case_execution: super::profiles::CaseExecution,
+    pub diagnostic_contracts: DiagnosticContractsReport,
     pub coverage_scope: CoverageScopeReport,
     pub vendor_setup: Vec<SetupPhaseReport>,
     /// Concrete Rust PCs reached by all complete cases. Kept out of the

@@ -19,6 +19,7 @@ pub(crate) struct ReplayEvidenceDocument {
     pub(crate) command: &'static str,
     pub(crate) manifest: ReplayArtifactIdentity,
     pub(crate) artifact: ReplayArtifactIdentity,
+    pub(crate) diagnostic_contracts: crate::DiagnosticContractsReport,
     pub(crate) phases: Vec<ReplayPhaseDocument>,
     pub(crate) complete: bool,
 }
@@ -75,6 +76,7 @@ pub(crate) struct ReplayCallDocument {
 pub(crate) fn build_replay_evidence(
     manifest: &Path,
     artifact: &Path,
+    diagnostic_contracts: crate::DiagnosticContractsReport,
     phases: Vec<ReplayPhaseEvidence>,
 ) -> Result<ReplayEvidenceDocument> {
     Ok(ReplayEvidenceDocument {
@@ -82,6 +84,7 @@ pub(crate) fn build_replay_evidence(
         command: REPLAY_EVIDENCE.command,
         manifest: identity(manifest)?,
         artifact: identity(artifact)?,
+        diagnostic_contracts,
         phases: phases
             .into_iter()
             .map(|phase| ReplayPhaseDocument {

@@ -1,0 +1,126 @@
+schema = 5
+case-execution = "stateful"
+transaction-comparison = "observables-under-effect-contract"
+
+# The linked vendor body obtains five inputs through globals/providers rather
+# than its unused C ABI. Each case seeds that linked state and passes the same
+# projected values to compiled Rust. Setup executes the real vendor
+# registration function once in the same session; the discovered store remains
+# evidence of a possible initializer, not an assertion that it already ran.
+[[profiles]]
+name = "ble-phy-register-init-ordered-mmio"
+claim = "reviewed-domain-equivalence"
+precondition = "post-common-phy-baseband-coexistence-controller-stack-callback-and-scheduler-registration-with-two-correlated-linked-input-images"
+vendor-source = "ble-controller"
+vendor-symbol = "r_sym_ble_3472b6bNiQdnWkYo6Ggv"
+rust-symbol = "open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_yo6_ggv"
+compare-return = false
+
+[[profiles.vendor-setup]]
+name = "install-external-baseband-table"
+symbol = "esp_ble_register_bb_funcs"
+max-steps = 128
+
+[[profiles.argument-values]]
+index = 0
+values = [0, 0xa5]
+
+# Only the config-derived branch byte is an independent finite coverage
+# dimension. Environment/list/provider projections are correlated linked
+# state: the two concrete cases pin their complete images without inventing
+# the other thirty combinations of five independent binary domains.
+
+[[profiles.cases]]
+name = "branch-zero-timing-underflow-complement-a"
+arguments = [0, 0x20001000, 0x2f002000, 0, 0x12]
+max-steps = 4096
+vendor-ram-symbols = [
+    { target-symbol = "r_sym_ble_bqJBRF8mYn0ghottL4MN", value = 0x2f001000, observe = false },
+    { target-symbol = "r_sym_ble_3l1rQEOi5smnaXRwFNEV", value = 0x20001000, observe = false },
+    { target-symbol = "r_sym_ble_ANOxuZc8u88p2bmqzI1S", value = 0x2f002000, observe = false },
+    { target-symbol = "r_sym_ble_90INe2qcjPtxAZ5DC9xu", value = 0x2f003000, observe = false },
+]
+vendor-ram = [
+    { address = 0x2f001010, value = 0x00000000 },
+    { address = 0x2f003020, value = 0x2f004000 },
+    { address = 0x2f004054, value = 0x00000000 },
+    { address = 0x2f004058, value = 0x00001200 },
+]
+mmio-reads = [
+    { address = 0x201014b4, value = 0xa5a55a5a },
+    { address = 0x20101650, value = 0x11112222 },
+    { address = 0x20101650, value = 0x33334444 },
+    { address = 0x20102014, value = 0x55556666 },
+    { address = 0x20101654, value = 0x77778888 },
+    { address = 0x20101654, value = 0x9999aaaa },
+    { address = 0x20101654, value = 0xbbbbcccc },
+    { address = 0x20101654, value = 0xddddeeee },
+    { address = 0x20101800, value = 0x12345678 },
+    { address = 0x20101950, value = 0x01020304 },
+    { address = 0x20101950, value = 0x11121314 },
+    { address = 0x20101950, value = 0x21222324 },
+    { address = 0x20101954, value = 0x31323334 },
+    { address = 0x20101954, value = 0x41424344 },
+    { address = 0x20101954, value = 0x51525354 },
+    { address = 0x20101954, value = 0x61626364 },
+    { address = 0x2010195c, value = 0x71727374 },
+    { address = 0x2010195c, value = 0x81828384 },
+    { address = 0x2010195c, value = 0x91929394 },
+    { address = 0x2010195c, value = 0xa1a2a3a4 },
+    { address = 0x20101958, value = 0xb1b2b3b4 },
+    { address = 0x20101958, value = 0xc1c2c3c4 },
+    { address = 0x20101958, value = 0xd1d2d3d4 },
+    { address = 0x20101958, value = 0xe1e2e3e4 },
+    { address = 0x20101858, value = 0xf1f2f3f4 },
+    { address = 0x2010194c, value = 0x0f0e0d0c },
+    { address = 0x201014b4, value = 0x89abcdef },
+    { address = 0x201014c4, value = 0x76543210 },
+]
+
+[[profiles.cases]]
+name = "branch-nonzero-complement-b"
+arguments = [0xa5, 0x3fce2000, 0x2f123450, 1, 0xe7]
+max-steps = 4096
+vendor-ram-symbols = [
+    { target-symbol = "r_sym_ble_bqJBRF8mYn0ghottL4MN", value = 0x2f001000, observe = false },
+    { target-symbol = "r_sym_ble_3l1rQEOi5smnaXRwFNEV", value = 0x3fce2000, observe = false },
+    { target-symbol = "r_sym_ble_ANOxuZc8u88p2bmqzI1S", value = 0x2f123450, observe = false },
+    { target-symbol = "r_sym_ble_90INe2qcjPtxAZ5DC9xu", value = 0x2f003000, observe = false },
+]
+vendor-ram = [
+    { address = 0x2f001010, value = 0x000000a5 },
+    { address = 0x2f003020, value = 0x2f004000 },
+    { address = 0x2f004054, value = 0x00000100 },
+    { address = 0x2f004058, value = 0x0000e700 },
+]
+mmio-reads = [
+    { address = 0x201014b4, value = 0x5a5aa5a5 },
+    { address = 0x20101650, value = 0xeeeedddd },
+    { address = 0x20101650, value = 0xccccbbbb },
+    { address = 0x20102014, value = 0xaaaa9999 },
+    { address = 0x20101654, value = 0x88887777 },
+    { address = 0x20101654, value = 0x66665555 },
+    { address = 0x20101654, value = 0x44443333 },
+    { address = 0x20101654, value = 0x22221111 },
+    { address = 0x20101800, value = 0xedcba987 },
+    { address = 0x20101950, value = 0xfefdfcfb },
+    { address = 0x20101950, value = 0xeeedeceb },
+    { address = 0x20101950, value = 0xdedddcdb },
+    { address = 0x20101954, value = 0xcecdcccb },
+    { address = 0x20101954, value = 0xbebdbcbb },
+    { address = 0x20101954, value = 0xaeadacab },
+    { address = 0x20101954, value = 0x9e9d9c9b },
+    { address = 0x2010195c, value = 0x8e8d8c8b },
+    { address = 0x2010195c, value = 0x7e7d7c7b },
+    { address = 0x2010195c, value = 0x6e6d6c6b },
+    { address = 0x2010195c, value = 0x5e5d5c5b },
+    { address = 0x20101958, value = 0x4e4d4c4b },
+    { address = 0x20101958, value = 0x3e3d3c3b },
+    { address = 0x20101958, value = 0x2e2d2c2b },
+    { address = 0x20101958, value = 0x1e1d1c1b },
+    { address = 0x20101858, value = 0x0e0d0c0b },
+    { address = 0x2010194c, value = 0xf0f1f2f3 },
+    { address = 0x20101870, value = 0x13579bdf },
+    { address = 0x201014b4, value = 0x76543210 },
+    { address = 0x201014c4, value = 0x89abcdef },
+]

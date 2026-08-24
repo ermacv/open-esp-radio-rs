@@ -855,6 +855,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-radio-platform-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "open-esp-radio-esp32s31-bluetooth",
+ "open-esp-radio-esp32s31-hal",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-wifi"
 version = "0.1.0"
 dependencies = [
@@ -962,13 +972,17 @@ version = "0.1.0"
 name = "open-esp-radio-verification-esp32s31-bluetooth-probes"
 version = "0.1.0"
 dependencies = [
+ "esp-hal",
  "open-esp-radio-esp32s31-bluetooth",
+ "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-radio-platform-esp-hal",
 ]
 
 [[package]]
 name = "open-esp-radio-verification-esp32s31-bluetooth-probes-elf"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "open-esp-radio-verification-esp32s31-bluetooth-probes",
 ]
 

@@ -28,6 +28,328 @@ fn unresolved_external_tail_call_fails_closed() {
 }
 
 #[test]
+fn reviewed_diagnostic_tail_call_uses_an_explicit_response() {
+    let mut image = tail_relocation_image(None);
+    image.configure_diagnostic_calls([("callee", 1)]).unwrap();
+
+    let inventory = image.coverage_inventory("wrapper").unwrap();
+    assert!(inventory.unresolved_edges.is_empty());
+    assert!(inventory.branch_sites.is_empty());
+
+    let scenario = Scenario {
+        arguments: vec![0x1111_1111, 0x2222_2222],
+        call_responses: BTreeMap::from([(
+            "callee".to_owned(),
+            VecDeque::from([ModeledCallResponse::scalar(0x3456_789a)]),
+        )]),
+        ..Scenario::default()
+    };
+    let result = execute(&image, &empty_svd(), "wrapper", scenario).unwrap();
+
+    assert!(matches!(result.completion, ExecutionCompletion::Returned));
+    assert!(result.events.is_empty());
+    assert_eq!(result.return_value, 0x3456_789a);
+    assert_eq!(result.ordered_calls.len(), 1);
+    assert_eq!(result.ordered_calls[0].symbol, "callee");
+    assert_eq!(result.ordered_calls[0].arguments[0], 0x1111_1111);
+    assert_eq!(&result.ordered_calls[0].arguments[1..], &[0; 7]);
+}
+
+#[test]
+fn reviewed_diagnostic_returning_call_applies_the_scripted_response() {
+    let mut image = tiny_image(
+        vec![
+            0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+            0x97, 0x00, 0x00, 0x00, // relocated auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // relocated jalr ra, 0(ra)
+            0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        20,
+    );
+    image.relocated_calls_by_address.insert(
+        0x1004,
+        RelocatedCall {
+            name: "diagnostic_sink".to_owned(),
+            target: None,
+        },
+    );
+    image
+        .configure_diagnostic_calls([("diagnostic_sink", 2)])
+        .unwrap();
+
+    let scenario = Scenario {
+        arguments: vec![0x1111_1111, 0x2222_2222, 0x3333_3333],
+        call_responses: BTreeMap::from([(
+            "diagnostic_sink".to_owned(),
+            VecDeque::from([ModeledCallResponse::scalar(0x3456_789a)]),
+        )]),
+        ..Scenario::default()
+    };
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+
+    assert_eq!(result.return_value, 0x3456_789a);
+    assert_eq!(result.ordered_calls.len(), 1);
+    assert_eq!(
+        result.ordered_calls[0].arguments,
+        [0x1111_1111, 0x2222_2222, 0, 0, 0, 0, 0, 0]
+    );
+}
+
+#[test]
+fn reviewed_diagnostic_does_not_execute_a_linked_body() {
+    let mut image = tiny_image(
+        vec![
+            0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+            0xef, 0x00, 0x00, 0x01, // jal ra, 16
+            0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+            0x67, 0x80, 0x00, 0x00, // ret
+            0, 0, 0, 0, // padding
+            0x73, 0x00, 0x10, 0x00, // diagnostic: ebreak (must not execute)
+        ],
+        24,
+    );
+    image
+        .symbols_by_name
+        .insert("diagnostic_sink".to_owned(), 0x1014);
+    image
+        .symbols_by_address
+        .insert(0x1014, "diagnostic_sink".to_owned());
+    image
+        .configure_diagnostic_calls([("diagnostic_sink", 1)])
+        .unwrap();
+
+    let inventory = image.coverage_inventory("test").unwrap();
+    assert!(inventory.unresolved_edges.is_empty());
+
+    let scenario = Scenario {
+        arguments: vec![0x1111_1111, 0x2222_2222],
+        call_responses: BTreeMap::from([(
+            "diagnostic_sink".to_owned(),
+            VecDeque::from([ModeledCallResponse::scalar(0x3456_789a)]),
+        )]),
+        ..Scenario::default()
+    };
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+
+    assert!(matches!(result.completion, ExecutionCompletion::Returned));
+    assert_eq!(result.ordered_calls.len(), 1);
+    assert_eq!(result.ordered_calls[0].symbol, "diagnostic_sink");
+    assert_eq!(
+        result.ordered_calls[0].arguments,
+        [0x1111_1111, 0, 0, 0, 0, 0, 0, 0]
+    );
+}
+
+#[test]
+fn reviewed_indirect_diagnostic_uses_the_scripted_response_without_executing_its_body() {
+    let mut image = tiny_image(
+        vec![
+            0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+            0xb7, 0x32, 0x00, 0x00, // lui t0, 0x3
+            0x83, 0xa2, 0x02, 0x00, // lw t0, 0(t0)
+            0xe7, 0x80, 0x02, 0x00, // jalr ra, 0(t0)
+            0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+            0x67, 0x80, 0x00, 0x00, // ret
+            0x73, 0x00, 0x10, 0x00, // diagnostic: ebreak (must not execute)
+        ],
+        28,
+    );
+    image
+        .symbols_by_name
+        .insert("diagnostic_sink".to_owned(), 0x1018);
+    image
+        .symbols_by_address
+        .insert(0x1018, "diagnostic_sink".to_owned());
+    image
+        .configure_diagnostic_calls([("diagnostic_sink", 2)])
+        .unwrap();
+    let mut scenario = Scenario {
+        arguments: vec![0x1111_1111, 0x2222_2222, 0x3333_3333],
+        call_responses: BTreeMap::from([(
+            "diagnostic_sink".to_owned(),
+            VecDeque::from([ModeledCallResponse::scalar(0x3456_789a)]),
+        )]),
+        ..Scenario::default()
+    };
+    for (offset, byte) in 0x1018_u32.to_le_bytes().into_iter().enumerate() {
+        scenario.memory_initial.insert(0x3000 + offset as u32, byte);
+    }
+
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+
+    assert_eq!(result.return_value, 0x3456_789a);
+    assert!(!result.executed_pcs.contains(&0x1018));
+    assert_eq!(result.ordered_calls.len(), 1);
+    assert_eq!(result.ordered_calls[0].symbol, "diagnostic_sink");
+    assert_eq!(
+        result.ordered_calls[0].arguments,
+        [0x1111_1111, 0x2222_2222, 0, 0, 0, 0, 0, 0]
+    );
+    assert!(result.indirect_calls.iter().any(|call| {
+        call.site == 0x100c
+            && call.symbol == "diagnostic_sink"
+            && call.arguments == result.ordered_calls[0].arguments
+    }));
+}
+
+#[test]
+fn reviewed_diagnostic_without_a_scripted_response_fails_closed() {
+    let mut image = tail_relocation_image(None);
+    image.configure_diagnostic_calls([("callee", 1)]).unwrap();
+
+    let error = execute(&image, &empty_svd(), "wrapper", Scenario::default()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("without an explicit scripted call response")
+    );
+}
+
+#[test]
+fn reviewed_diagnostic_cannot_compete_with_a_fifo_binding() {
+    let mut image = tail_relocation_image(None);
+    image.configure_diagnostic_calls([("callee", 1)]).unwrap();
+    let scenario = Scenario {
+        fifo_services: vec![FifoServiceInstance {
+            id: "unused".to_owned(),
+            handle: 1,
+            item_width: 32,
+            capacity: 1,
+            items: Vec::new(),
+        }],
+        fifo_bindings: vec![FifoServiceBinding {
+            symbol: "callee".to_owned(),
+            service_id: "unused".to_owned(),
+            handle_argument: 0,
+            operation: FifoServiceOperation::Len,
+        }],
+        ..Scenario::default()
+    };
+
+    let error = execute(&image, &empty_svd(), "wrapper", scenario).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("cannot also have a FIFO service binding")
+    );
+}
+
+#[test]
+fn reviewed_diagnostic_rejects_a_nonstandard_link_register() {
+    let mut image = tail_relocation_image(None);
+    // Rewrite `jalr zero, 0(t1)` as `jalr s0, 0(t1)`.
+    image.segments[0].bytes[5] = 0x04;
+    image.configure_diagnostic_calls([("callee", 1)]).unwrap();
+    let scenario = Scenario {
+        call_responses: BTreeMap::from([(
+            "callee".to_owned(),
+            VecDeque::from([ModeledCallResponse::scalar(0)]),
+        )]),
+        ..Scenario::default()
+    };
+
+    let coverage_error = image.coverage_inventory("wrapper").unwrap_err();
+    assert!(
+        coverage_error
+            .to_string()
+            .contains("unsupported link register")
+    );
+    let execution_error = execute(&image, &empty_svd(), "wrapper", scenario).unwrap_err();
+    assert!(
+        execution_error
+            .to_string()
+            .contains("unsupported link register")
+    );
+}
+
+#[test]
+fn reviewed_direct_diagnostic_rejects_a_nonstandard_link_register() {
+    let mut image = tiny_image(
+        vec![
+            0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+            0x6f, 0x04, 0x00, 0x01, // jal s0, 16
+            0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+            0x67, 0x80, 0x00, 0x00, // ret
+            0, 0, 0, 0, // padding
+            0x73, 0x00, 0x10, 0x00, // diagnostic: ebreak
+        ],
+        24,
+    );
+    image
+        .symbols_by_name
+        .insert("diagnostic_sink".to_owned(), 0x1014);
+    image
+        .symbols_by_address
+        .insert(0x1014, "diagnostic_sink".to_owned());
+    image
+        .configure_diagnostic_calls([("diagnostic_sink", 1)])
+        .unwrap();
+    let scenario = Scenario {
+        call_responses: BTreeMap::from([(
+            "diagnostic_sink".to_owned(),
+            VecDeque::from([ModeledCallResponse::scalar(0)]),
+        )]),
+        ..Scenario::default()
+    };
+
+    let coverage_error = image.coverage_inventory("test").unwrap_err();
+    assert!(
+        coverage_error
+            .to_string()
+            .contains("unsupported link register")
+    );
+    let execution_error = execute(&image, &empty_svd(), "test", scenario).unwrap_err();
+    assert!(
+        execution_error
+            .to_string()
+            .contains("unsupported link register")
+    );
+}
+
+#[test]
+fn reviewed_indirect_diagnostic_rejects_a_nonstandard_link_register() {
+    let mut image = tiny_image(
+        vec![
+            0x97, 0x02, 0x00, 0x00, // auipc t0, 0
+            0x93, 0x82, 0xc2, 0x00, // addi t0, t0, 12
+            0xe7, 0x82, 0x02, 0x00, // jalr t0, 0(t0)
+            0x73, 0x00, 0x10, 0x00, // diagnostic: ebreak
+        ],
+        16,
+    );
+    image
+        .symbols_by_name
+        .insert("diagnostic_sink".to_owned(), 0x100c);
+    image
+        .symbols_by_address
+        .insert(0x100c, "diagnostic_sink".to_owned());
+    image
+        .configure_diagnostic_calls([("diagnostic_sink", 1)])
+        .unwrap();
+    let scenario = Scenario {
+        call_responses: BTreeMap::from([(
+            "diagnostic_sink".to_owned(),
+            VecDeque::from([ModeledCallResponse::scalar(0)]),
+        )]),
+        ..Scenario::default()
+    };
+
+    let coverage_error = image.coverage_inventory("test").unwrap_err();
+    assert!(
+        coverage_error
+            .to_string()
+            .contains("unsupported link register")
+    );
+    let execution_error = execute(&image, &empty_svd(), "test", scenario).unwrap_err();
+    assert!(
+        execution_error
+            .to_string()
+            .contains("unsupported link register")
+    );
+}
+
+#[test]
 fn bounded_call_goal_stops_static_inventory_before_callee_body() {
     let mut image = tail_relocation_image(Some(0x2000));
     image

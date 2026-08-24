@@ -6,6 +6,7 @@
 
 pub mod access_point;
 pub mod concurrent;
+pub mod esp_now;
 pub mod monitor;
 pub mod scan;
 pub mod station;

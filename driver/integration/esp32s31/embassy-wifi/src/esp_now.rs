@@ -7,6 +7,10 @@
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
+pub use open_esp_radio::{
+    StandaloneEspNowPeerError, StandaloneEspNowRequest, WifiStandaloneEspNowPlan,
+};
+
 pub use open_esp_radio_esp32s31_wifi::esp_now::{
     Esp32s31EspNowCryptoDiagnostics, Esp32s31EspNowCryptoError, Esp32s31EspNowKeyOwner,
     Esp32s31EspNowKeySlot,
@@ -21,6 +25,15 @@ pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::{
     EspNowTxCompletion, EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError,
     EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket,
     EspNowTxTrySendError, attach_esp_now_tx,
+};
+pub use open_esp_radio_esp32s31_wifi_embassy::roles::esp_now::{
+    Esp32s31StandaloneEspNowBinding, Esp32s31StandaloneEspNowBindingError,
+    Esp32s31StandaloneEspNowReceive, Esp32s31StandaloneEspNowRunError,
+    Esp32s31StandaloneEspNowRunFailure, Esp32s31StandaloneEspNowRunReport,
+    Esp32s31StandaloneEspNowRx, Esp32s31StandaloneEspNowRxProgress,
+    Esp32s31StandaloneEspNowService, Esp32s31StandaloneEspNowStopError,
+    Esp32s31StandaloneEspNowStopped, EspNowRxMailboxEpochError, EspNowRxMailboxResources,
+    EspNowRxMailboxShutdown, EspNowRxPublishOutcome, EspNowRxPublisher, EspNowRxReceiver,
 };
 pub use open_esp_radio_ieee80211::esp_now::{
     ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_V1_MAX_PAYLOAD_LEN,
@@ -41,6 +54,39 @@ pub use open_esp_radio_wifi_softmac::{
     EspNowPreparedEncryptedV1Tx, EspNowProtocol, EspNowRemovedEncryptedPeer,
     EspNowRxReplayCandidate, encrypted_peer_destination, esp_now_encrypted_v1_codec_status,
 };
+
+/// Failed standalone materialization retains the portable owners unchanged.
+pub struct Esp32s31StandaloneEspNowPrepareFailure<const PEERS: usize> {
+    pub error: Esp32s31StandaloneEspNowBindingError,
+    pub plan: WifiStandaloneEspNowPlan,
+    pub protocol: EspNowProtocol<PEERS>,
+}
+
+/// Join a portable standalone request to the channel currently held by the
+/// exclusive radio owner.
+///
+/// Integration must tune and verify `active_channel` before calling this
+/// function. The returned binding is the only chip-runtime input; this hook
+/// intentionally performs no scan, association, off-channel fallback or
+/// guessed channel programming.
+pub fn prepare_esp32s31_standalone_esp_now<const PEERS: usize>(
+    request: StandaloneEspNowRequest<PEERS>,
+    active_channel: open_esp_radio_ieee80211::channel::WifiChannel,
+    tx: Esp32s31EspNowTxConfig,
+) -> Result<
+    (EspNowProtocol<PEERS>, Esp32s31StandaloneEspNowBinding),
+    Esp32s31StandaloneEspNowPrepareFailure<PEERS>,
+> {
+    let (plan, protocol) = request.into_parts();
+    match Esp32s31StandaloneEspNowBinding::new(plan, &protocol, active_channel, tx) {
+        Ok(binding) => Ok((protocol, binding)),
+        Err(error) => Err(Esp32s31StandaloneEspNowPrepareFailure {
+            error,
+            plan,
+            protocol,
+        }),
+    }
+}
 
 /// Small product default; applications may select another fixed capacity.
 pub const ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH: usize = 4;

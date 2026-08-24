@@ -79,3 +79,13 @@ pub fn configure_sta_esp_now_receive_policy<H: StaEspNowRxPolicyHardware>(
 ) {
     hardware.apply_sta_esp_now_policy(bssid);
 }
+
+/// Apply the reviewed normal-STA/auto-ACK policy for an unassociated
+/// station-address VIF, followed by the exact policy-six Mode2 leaf already
+/// used for connected ESP-NOW vendor Action admission.
+///
+/// The protocol-defined broadcast BSSID is supplied to the existing typed
+/// transaction; this function introduces no new register image or submode.
+pub fn configure_standalone_esp_now_receive_policy<H: StaEspNowRxPolicyHardware>(hardware: &mut H) {
+    hardware.apply_sta_esp_now_policy(open_esp_radio_ieee80211::management::BROADCAST_ADDRESS);
+}

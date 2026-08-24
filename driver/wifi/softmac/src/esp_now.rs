@@ -544,6 +544,41 @@ impl<const N: usize> EspNowProtocol<N> {
         })
     }
 
+    /// Prove that an independently moved receive epoch is the current peer
+    /// snapshot produced by this protocol owner.
+    ///
+    /// Runtime compositions use this before touching RX policy so an epoch
+    /// from another request cannot admit a peer which is not registered in
+    /// the active standalone service.
+    pub fn owns_rx_epoch(&self, epoch: &EspNowRxEpoch<N>) -> bool {
+        if epoch.config != self.config {
+            return false;
+        }
+        let mut peer_count = 0;
+        for (index, peer_slot) in self.peers.slots.iter().enumerate() {
+            let expected = match peer_slot.config {
+                Some(EspNowPeerConfig {
+                    destination: EspNowDestination::Unicast(address),
+                    ..
+                }) => {
+                    peer_count += 1;
+                    Some((
+                        EspNowPeerId {
+                            index,
+                            generation: peer_slot.generation,
+                        },
+                        address,
+                    ))
+                }
+                Some(_) | None => None,
+            };
+            if epoch.slots[index].peer != expected {
+                return false;
+            }
+        }
+        epoch.peer_count == peer_count
+    }
+
     /// Resolve a peer, validate the payload, then consume one shared station
     /// management/non-QoS sequence number and return a backend handoff.
     pub fn prepare_v1_tx<'payload>(

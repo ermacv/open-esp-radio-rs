@@ -16,26 +16,35 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_runtime::{OrdinaryRetryError, WifiTxRuntimePolicy},
 };
 use open_esp_radio_ieee80211::{
+    channel::WifiChannel,
+    esp_now::EspNowRandomValue,
     management::{ProbeRequest, ProbeRequestError},
     station::{
         AssociationRequest, AssociationRequestError, OpenAuthenticationRequest, StaDataFrame,
-        StaProtectedDataFrame, StationFrameError,
+        StaProtectedDataFrame, StaSequenceCounter, StationFrameError,
     },
     wmm::WmmParameterSet,
 };
-use open_esp_radio_wifi_softmac::MacTxPlan;
+use open_esp_radio_wifi_softmac::{
+    EspNowPeerId, EspNowProtocol, MacTxPlan, interface::BoundVirtualInterface,
+};
 
 use crate::{
-    join::Esp32s31StaJoinTransmit, peer::Esp32s31StaPeerTransmit,
-    single_mpdu_tx::Esp32s31SingleMpduTx, wpa2::Esp32s31Wpa2Transmit,
+    join::Esp32s31StaJoinTransmit,
+    peer::Esp32s31StaPeerTransmit,
+    single_mpdu_tx::{
+        Esp32s31SingleMpduTx, SingleMpduEspNowTxError, SingleMpduTxError, SingleMpduTxOutcome,
+    },
+    wpa2::Esp32s31Wpa2Transmit,
 };
 
 use open_esp_radio_esp32s31_wifi::{
+    esp_now::{Esp32s31EspNowTxConfig, Esp32s31EspNowTxError, start_esp_now_v1_plaintext},
     ordinary_tx::{
         OrdinaryTxError, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
         TX_METADATA_SIZE, TxResetReason, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
     },
-    tx::WifiTxProgress,
+    tx::{WifiTxProgress, WifiTxWake},
 };
 
 pub use crate::single_mpdu_tx::ConnectedTxHandoff;
@@ -145,6 +154,68 @@ where
 
     pub const fn power_profile(&self) -> &P {
         self.ordinary.power()
+    }
+
+    /// Whether the pre-connected ordinary descriptor is hardware-owned.
+    pub const fn active(&self) -> bool {
+        self.ordinary.active()
+    }
+
+    pub fn now_micros(&self) -> u64 {
+        self.ordinary.now_micros()
+    }
+
+    pub fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
+        self.ordinary.take_last_outcome()
+    }
+
+    /// Resolve, encode and publish one standalone plaintext ESP-NOW v1
+    /// Action MPDU through the pre-connected station ordinary descriptor.
+    ///
+    /// The standalone role owns the sole management/non-QoS sequence space;
+    /// no association or WPA2 handoff is needed and no key slot is borrowed.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_esp_now_v1_plaintext<H: TxHardware, const PEERS: usize>(
+        &mut self,
+        hardware: &mut H,
+        protocol: &EspNowProtocol<PEERS>,
+        sequence: &mut StaSequenceCounter,
+        peer: EspNowPeerId,
+        random_value: EspNowRandomValue,
+        payload: &[u8],
+        active_channel: WifiChannel,
+        active_station: BoundVirtualInterface,
+        config: Esp32s31EspNowTxConfig,
+    ) -> Result<WifiTxProgress, SingleMpduEspNowTxError> {
+        if self.ordinary.active() {
+            return Err(Esp32s31EspNowTxError::Tx(OrdinaryTxError::Busy).into());
+        }
+        let prepared = protocol.prepare_v1_tx(peer, sequence, random_value, payload)?;
+        start_esp_now_v1_plaintext(
+            &mut self.ordinary,
+            hardware,
+            prepared,
+            active_channel,
+            active_station,
+            config,
+        )
+        .map_err(Into::into)
+    }
+
+    pub fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        self.ordinary.wait_deadline()
+    }
+
+    /// Consume one IRQ/deadline edge for a standalone ordinary transaction.
+    pub async fn service<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        wake: WifiTxWake,
+    ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        self.ordinary
+            .service(hardware, wake)
+            .await
+            .map_err(Into::into)
     }
 
     /// Return the role-neutral ordinary descriptor while it is idle.

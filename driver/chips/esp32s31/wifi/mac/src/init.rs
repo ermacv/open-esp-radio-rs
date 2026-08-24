@@ -27,6 +27,7 @@ pub use crate::sniffer::MacSnifferHardware;
 pub use crate::sta_link_policy::{
     StaEspNowRxPolicyHardware, StaLinkRxPolicyHardware, StaNoiseFloorHardware,
     configure_sta_esp_now_receive_policy, configure_sta_link_receive_policy,
+    configure_standalone_esp_now_receive_policy,
 };
 pub use open_esp_radio_esp32s31_hal::types::{MacInterruptMask, MacTxPowerPair, MacTxPowerTable};
 

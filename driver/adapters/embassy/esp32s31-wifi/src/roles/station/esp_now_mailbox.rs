@@ -9,6 +9,9 @@ use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
+use open_esp_radio_esp32s31_wifi_sta::standalone_esp_now_rx::{
+    StandaloneEspNowRxEvent, StandaloneEspNowRxSink,
+};
 use open_esp_radio_wifi_softmac::{EspNowOwnedReceivedV1, MacRxMetadata};
 
 use crate::{
@@ -151,6 +154,14 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxPublisher<'_, M, CAPACITY> {
     }
 }
 
+impl<M: RawMutex, const CAPACITY: usize> StandaloneEspNowRxSink
+    for EspNowRxPublisher<'_, M, CAPACITY>
+{
+    fn publish(&mut self, event: StandaloneEspNowRxEvent<'_>) {
+        let _ = self.try_publish(event.received, event.metadata);
+    }
+}
+
 /// Application-side capability for one connected epoch.
 pub struct EspNowRxReceiver<'resources, M: RawMutex, const CAPACITY: usize> {
     receiver: Receiver<'resources, M, EspNowOwnedRxEvent, CAPACITY>,
@@ -184,6 +195,10 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxReceiver<'_, M, CAPACITY> {
 
     pub fn len(&self) -> usize {
         self.receiver.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.receiver.is_empty()
     }
 
     pub fn dropped(&self) -> u32 {

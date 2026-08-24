@@ -17,7 +17,8 @@ pub mod supervisor;
 #[cfg(feature = "wifi")]
 pub use config::{
     WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
-    WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
+    WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
+    WifiStationConfig,
 };
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_ieee80211::{
@@ -40,10 +41,11 @@ pub use requests::{
     AccessPointClientLimitError, AccessPointDtimPeriod, AccessPointDtimPeriodError,
     AccessPointInactiveTimeout, AccessPointInactiveTimeoutError, AccessPointRequest,
     AccessPointRequestError, AccessPointSecurity, MonitorCapturePolicy, MonitorRequest,
-    StationAccessPointRequest, StationDiscovery, StationListenInterval, StationPowerMode,
-    StationPowerSavePolicy, StationRequest, StationScanChannelIter, StationScanChannelOrderIter,
-    StationScanChannels, StationScanChannelsError, StationScanPolicy, StationSecurity,
-    WifiScanRequest, WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
+    StandaloneEspNowPeerError, StandaloneEspNowRequest, StationAccessPointRequest,
+    StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
+    StationRequest, StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
+    StationScanChannelsError, StationScanPolicy, StationSecurity, WifiScanRequest,
+    WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
     WifiServiceRequestError, WifiServiceRequestFailure, WifiSupervisorConfiguration,
 };
 #[cfg(feature = "wifi")]

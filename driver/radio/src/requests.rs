@@ -16,7 +16,10 @@ pub use open_esp_radio_wifi_ap::{
     AccessPointInactiveTimeoutError,
 };
 use open_esp_radio_wifi_softmac::{
-    MacServiceCapabilities, WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiStationConfig,
+    ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowConfigError, EspNowPeerConfig, EspNowPeerId,
+    EspNowPeerTableError, EspNowPhyMode, EspNowProtocol, MacServiceCapabilities,
+    WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiStandaloneEspNowPlan,
+    WifiStationConfig,
 };
 pub use open_esp_radio_wifi_sta::request::{
     StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
@@ -27,6 +30,92 @@ use open_esp_radio_wifi_sta::station::StaReconnectPolicy;
 use open_esp_radio_wpa2::Pmk;
 
 use crate::{WifiMonitorConfig, WifiPlan};
+
+/// Complete plaintext request for one standalone ESP-NOW radio epoch.
+///
+/// The embedded protocol owner is already bound to the exclusive station VIF
+/// and fixed home channel. Peers may be registered before the request is
+/// moved into the chip runtime; there is intentionally no credential,
+/// association, network, encryption, LR or off-channel field.
+pub struct StandaloneEspNowRequest<const PEERS: usize = ESP_NOW_DEFAULT_PEER_CAPACITY> {
+    plan: WifiStandaloneEspNowPlan,
+    protocol: EspNowProtocol<PEERS>,
+}
+
+impl<const PEERS: usize> StandaloneEspNowRequest<PEERS> {
+    pub fn new(
+        plan: WifiStandaloneEspNowPlan,
+        home_channel: WifiChannel,
+    ) -> Result<Self, EspNowConfigError> {
+        let protocol = EspNowProtocol::new(EspNowConfig::new(plan.station(), home_channel)?);
+        Ok(Self { plan, protocol })
+    }
+
+    pub const fn plan(&self) -> WifiStandaloneEspNowPlan {
+        self.plan
+    }
+
+    pub const fn home_channel(&self) -> WifiChannel {
+        self.protocol.config().home_channel()
+    }
+
+    pub const fn protocol(&self) -> &EspNowProtocol<PEERS> {
+        &self.protocol
+    }
+
+    pub fn add_peer(
+        &mut self,
+        peer: EspNowPeerConfig,
+    ) -> Result<EspNowPeerId, StandaloneEspNowPeerError> {
+        if peer.phy_mode() == EspNowPhyMode::LongRange {
+            return Err(StandaloneEspNowPeerError::LongRangeUnsupported);
+        }
+        self.protocol
+            .add_peer(peer)
+            .map_err(StandaloneEspNowPeerError::PeerTable)
+    }
+
+    pub fn remove_peer(
+        &mut self,
+        peer: EspNowPeerId,
+    ) -> Result<EspNowPeerConfig, EspNowPeerTableError> {
+        self.protocol.remove_peer(peer)
+    }
+
+    pub fn into_parts(self) -> (WifiStandaloneEspNowPlan, EspNowProtocol<PEERS>) {
+        (self.plan, self.protocol)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StandaloneEspNowPeerError {
+    LongRangeUnsupported,
+    PeerTable(EspNowPeerTableError),
+}
+
+impl fmt::Display for StandaloneEspNowPeerError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LongRangeUnsupported => formatter
+                .write_str("standalone ESP-NOW does not support the unqualified long-range PHY"),
+            Self::PeerTable(error) => write!(formatter, "ESP-NOW peer table error: {error}"),
+        }
+    }
+}
+
+impl core::error::Error for StandaloneEspNowPeerError {}
+
+impl<const PEERS: usize> fmt::Debug for StandaloneEspNowRequest<PEERS> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("StandaloneEspNowRequest")
+            .field("plan", &self.plan)
+            .field("home_channel", &self.home_channel())
+            .field("peer_count", &self.protocol.peers().len())
+            .field("security", &"plaintext")
+            .finish()
+    }
+}
 
 /// Finite standalone scan policy.
 ///

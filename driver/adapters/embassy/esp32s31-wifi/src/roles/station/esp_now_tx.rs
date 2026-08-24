@@ -24,7 +24,7 @@ use open_esp_radio_esp32s31_wifi::esp_now::Esp32s31EspNowTxConfig;
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
 use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::ConnectedDisconnectReason,
-    single_mpdu_tx::{SingleMpduEspNowTxError, SingleMpduTxOutcome},
+    single_mpdu_tx::{SingleMpduEspNowTxError, SingleMpduTxError, SingleMpduTxOutcome},
 };
 use open_esp_radio_ieee80211::{
     channel::WifiChannel,
@@ -102,9 +102,9 @@ impl EspNowTxTicket {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct EspNowQueuedTx {
-    ticket: EspNowTxTicket,
-    request: EspNowOwnedV1Tx,
+pub(crate) struct EspNowQueuedTx {
+    pub(crate) ticket: EspNowTxTicket,
+    pub(crate) request: EspNowOwnedV1Tx,
 }
 
 /// Why an admitted request ended without starting a new transmission.
@@ -119,6 +119,7 @@ pub enum EspNowTxCancelReason {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspNowTxRuntimeFailure {
     MissingOrdinaryTxOutcome,
+    TxLifecycle(SingleMpduTxError),
 }
 
 /// Exactly one terminal result for an admitted ticket.
@@ -404,11 +405,11 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxOwner<'_, M, CAPACITY> {
         self.requests.ready_to_receive().await;
     }
 
-    fn try_take(&self) -> Option<EspNowQueuedTx> {
+    pub(crate) fn try_take(&self) -> Option<EspNowQueuedTx> {
         self.requests.try_receive().ok()
     }
 
-    fn close(&mut self) {
+    pub(crate) fn close(&mut self) {
         if !self.open {
             return;
         }
@@ -421,7 +422,7 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxOwner<'_, M, CAPACITY> {
         self.open = false;
     }
 
-    fn publish(
+    pub(crate) fn publish(
         &self,
         queued: EspNowQueuedTx,
         terminal: EspNowTxTerminal,
@@ -435,7 +436,7 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxOwner<'_, M, CAPACITY> {
             .map_err(|TrySendError::Full(_)| EspNowTxMailboxInvariantError::CompletionQueueFull)
     }
 
-    fn cancel_pending(
+    pub(crate) fn cancel_pending(
         &self,
         reason: EspNowTxCancelReason,
     ) -> Result<u32, EspNowTxMailboxInvariantError> {
@@ -452,7 +453,7 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowTxMailboxOwner<'_, M, CAPACITY> {
         Ok(cancelled)
     }
 
-    fn shutdown(
+    pub(crate) fn shutdown(
         mut self,
         reason: EspNowTxCancelReason,
     ) -> Result<EspNowTxMailboxShutdown, EspNowTxMailboxInvariantError> {

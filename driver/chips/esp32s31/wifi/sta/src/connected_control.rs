@@ -35,11 +35,19 @@ use open_esp_radio_wifi_sta::{
 };
 
 use crate::{
-    connected_control_hardware::ConnectedControlHardware,
+    connected_control_hardware::{ConnectedControlHardware, StationDozeHardwareError},
     single_mpdu_tx::{
         ActionTxConfig, Esp32s31SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome,
     },
 };
+
+const fn earliest_deadline(left: Option<u64>, right: Option<u64>) -> Option<u64> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(if left < right { left } else { right }),
+        (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
+        (None, None) => None,
+    }
+}
 
 // Complete `libnet80211.a[ieee80211_sta.o]::send_ap_probe` rearms
 // `mgd_probe_send_timeout` for 500 ms. Its timeout process retries a bounded
@@ -249,6 +257,8 @@ pub enum ConnectedControlError {
     BeaconDeadline(StaBeaconLossConfigError),
     PowerSaveCompletion(UnexpectedStaPowerManagementCompletion),
     MissingPowerSavePlanner,
+    PowerSaveDeadlineOverflow,
+    DozeHardware(StationDozeHardwareError),
     RxReorderCommand(RxReorderCommandError),
 }
 
@@ -288,6 +298,12 @@ impl From<UnexpectedStaPowerManagementCompletion> for ConnectedControlError {
     }
 }
 
+impl From<StationDozeHardwareError> for ConnectedControlError {
+    fn from(error: StationDozeHardwareError) -> Self {
+        Self::DozeHardware(error)
+    }
+}
+
 impl From<RxReorderCommandError> for ConnectedControlError {
     fn from(error: RxReorderCommandError) -> Self {
         Self::RxReorderCommand(error)
@@ -316,6 +332,7 @@ pub struct Esp32s31ConnectedControlCore {
     beacon_lost: bool,
     power_save: Option<StaPowerSavePlanner>,
     pending_doze_permit: Option<StaDozePermit>,
+    power_save_wake_deadline_micros: Option<u64>,
     observations: ConnectedControlObservations,
 }
 
@@ -333,6 +350,7 @@ impl Esp32s31ConnectedControlCore {
             beacon_lost: false,
             power_save: None,
             pending_doze_permit: None,
+            power_save_wake_deadline_micros: None,
             observations: ConnectedControlObservations::default(),
         }
     }
@@ -346,6 +364,7 @@ impl Esp32s31ConnectedControlCore {
     pub fn enable_power_save(&mut self, policy: StaPowerSavePolicy) {
         self.power_save = Some(StaPowerSavePlanner::new(policy));
         self.pending_doze_permit = None;
+        self.power_save_wake_deadline_micros = None;
     }
 
     /// Queue a bounded number of ADDBA publications for each recovered STA
@@ -397,6 +416,10 @@ impl Esp32s31ConnectedControlCore {
         self.pending_doze_permit.take()
     }
 
+    pub const fn power_save_wake_deadline_micros(&self) -> Option<u64> {
+        self.power_save_wake_deadline_micros
+    }
+
     /// Whether the next step must consume the shared TX completion before a
     /// newly delivered control event.
     pub const fn tx_in_flight(&self) -> bool {
@@ -419,11 +442,10 @@ impl Esp32s31ConnectedControlCore {
             .beacon_monitor
             .as_ref()
             .and_then(StaBeaconMonitor::deadline_micros);
-        match (block_ack, link) {
-            (Some(left), Some(right)) => Some(left.min(right)),
-            (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
-            (None, None) => None,
-        }
+        earliest_deadline(
+            earliest_deadline(block_ack, link),
+            self.power_save_wake_deadline_micros,
+        )
     }
 
     pub fn shutdown<H, X, const PEER_CAPACITY: usize>(
@@ -490,6 +512,7 @@ impl Esp32s31ConnectedControlCore {
         self.beacon_lost = false;
         self.power_save = None;
         self.pending_doze_permit = None;
+        self.power_save_wake_deadline_micros = None;
 
         Ok(ConnectedControlCoreShutdown {
             rx_block_ack_agreements,
@@ -593,6 +616,20 @@ impl Esp32s31ConnectedControlCore {
             return Ok(DatapathControlProgress::More);
         }
 
+        let now_micros = tx.now_micros();
+        if self
+            .power_save_wake_deadline_micros
+            .is_some_and(|deadline| now_micros >= deadline)
+        {
+            // The hardware/Embassy wake boundary has been reached. Remain in
+            // AP-visible power-save while listening to the mandatory beacon;
+            // buffered traffic or a local TX request will separately drive
+            // the acknowledged PM=0 transition.
+            self.power_save_wake_deadline_micros = None;
+            self.pending_doze_permit = None;
+            return Ok(DatapathControlProgress::More);
+        }
+
         if let Some(event) = event {
             self.observations.last_event = Some(event);
             return self.apply_event(
@@ -608,7 +645,6 @@ impl Esp32s31ConnectedControlCore {
             );
         }
 
-        let now_micros = tx.now_micros();
         if let Some(tid) = self.tx_block_ack.expire_next(now_micros) {
             tx.set_tx_block_ack_agreement(tid, None);
             self.observations.last_expired_tid = Some(tid);
@@ -703,7 +739,7 @@ impl Esp32s31ConnectedControlCore {
                         .as_mut()
                         .expect("power-save planner was checked above");
                     let mut decision = planner.observe_beacon(opportunity);
-                    if matches!(decision, StaPowerSaveDecision::StayAwake(_))
+                    if decision.requires_active_advertisement()
                         && planner.state() == StaPowerSaveState::PowerSave
                     {
                         decision = planner.request_active();
@@ -811,6 +847,7 @@ impl Esp32s31ConnectedControlCore {
         control_event_pending: bool,
     ) -> bool {
         context.network_tx_pending
+            || context.stop_pending
             || control_event_pending
             || self.initial_tx_block_ack.into_iter().any(|pending| pending)
     }
@@ -865,6 +902,8 @@ impl Esp32s31ConnectedControlCore {
         }
         self.beacon_probe_attempts = 0;
         self.beacon_lost = true;
+        self.pending_doze_permit = None;
+        self.power_save_wake_deadline_micros = None;
         Ok(DatapathControlProgress::Exit(
             ConnectedDisconnectReason::BeaconLoss,
         ))
@@ -882,17 +921,31 @@ impl Esp32s31ConnectedControlCore {
     {
         match decision {
             StaPowerSaveDecision::PermitDoze(permit) => {
+                let station_tsf = hardware.station_tsf();
+                let until_wake = permit.wake_tsf.wrapping_sub(station_tsf);
+                if until_wake == 0 || until_wake > i64::MAX as u64 {
+                    self.pending_doze_permit = None;
+                    self.power_save_wake_deadline_micros = None;
+                    return Ok(DatapathControlProgress::More);
+                }
+                self.power_save_wake_deadline_micros = Some(
+                    tx.now_micros()
+                        .checked_add(until_wake)
+                        .ok_or(ConnectedControlError::PowerSaveDeadlineOverflow)?,
+                );
                 self.pending_doze_permit = Some(permit);
                 Ok(DatapathControlProgress::More)
             }
             StaPowerSaveDecision::SendPowerManagement(power_management) => {
                 self.pending_doze_permit = None;
+                self.power_save_wake_deadline_micros = None;
                 let progress = tx.start_power_management_null(hardware, power_management)?;
                 self.in_flight = Some(ControlInFlight::PowerManagement(power_management));
                 Ok(progress)
             }
             StaPowerSaveDecision::StayAwake(_) => {
                 self.pending_doze_permit = None;
+                self.power_save_wake_deadline_micros = None;
                 Ok(DatapathControlProgress::More)
             }
         }

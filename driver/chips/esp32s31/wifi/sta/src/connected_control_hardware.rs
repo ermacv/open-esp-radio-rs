@@ -29,8 +29,10 @@ pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
         enabled: bool,
     ) -> Result<(), S31RxBlockAckAgreementError>;
 
-    /// Enter modem doze. No ESP32-S31 implementation exists yet: WDEVPWR
-    /// causes, RF/PHY retention and wake ordering are not sufficiently owned.
+    /// Enter modem doze atomically. `Err` must leave every hardware owner in
+    /// its awake pre-call state. No ESP32-S31 implementation exists yet:
+    /// WDEVPWR causes, RF/PHY retention and wake ordering are not sufficiently
+    /// owned.
     fn enter_station_doze(
         &mut self,
         _permit: &StaDozePermit,
@@ -38,7 +40,9 @@ pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
         Err(StationDozeHardwareError::Unsupported)
     }
 
-    /// Restore every hardware owner changed by `enter_station_doze`.
+    /// Restore every hardware owner changed by `enter_station_doze`. Failure
+    /// retains the affine restore obligation at the caller and must quarantine
+    /// normal TX/teardown progress.
     fn restore_station_awake(&mut self) -> Result<(), StationDozeHardwareError> {
         Err(StationDozeHardwareError::Unsupported)
     }

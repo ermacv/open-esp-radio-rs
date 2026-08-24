@@ -331,9 +331,11 @@ impl Esp32s31ConnectedStaPort {
         };
         let power_save = match config.power.power_save_policy() {
             None => None,
-            Some(policy) => match StaPowerSavePolicy::new(
+            Some(policy) => match StaPowerSavePolicy::for_association(
                 peer.link.beacon_interval_tu,
+                policy.listen_interval(),
                 policy.wake_guard_micros(),
+                config.receive.beacon_miss_limit,
             ) {
                 Ok(policy) => Some(policy),
                 Err(error) => {

@@ -95,7 +95,7 @@ where
                 if self.services.control_required_before_stop() {
                     match self
                         .services
-                        .service_control(DatapathControlContext::IDLE)
+                        .service_control(DatapathControlContext::STOPPING)
                         .await?
                     {
                         DatapathControlProgress::More => continue,
@@ -147,7 +147,10 @@ where
             );
             if control_ready {
                 self.control_ready_latched = false;
-                let control_context = DatapathControlContext { network_tx_pending };
+                let control_context = DatapathControlContext {
+                    network_tx_pending,
+                    stop_pending: false,
+                };
                 match self.services.service_control(control_context).await? {
                     DatapathControlProgress::More => {
                         self.control_ready_latched = true;

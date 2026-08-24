@@ -502,11 +502,16 @@ where
                             .rx_ht_mpdus_with_aggregation_bit
                             .saturating_add(1);
                     }
-                    if signal.channel_width_mhz == 40
-                        && let Some(count) =
+                    if signal.channel_width_mhz == 40 {
+                        if signal.ht_duplicate_mcs32().is_some() {
+                            observation.rx_ht40_mcs32_frames =
+                                observation.rx_ht40_mcs32_frames.saturating_add(1);
+                        }
+                        if let Some(count) =
                             observation.rx_ht40_mcs_frames.get_mut(signal.mcs as usize)
-                    {
-                        *count = count.saturating_add(1);
+                        {
+                            *count = count.saturating_add(1);
+                        }
                     }
                 }
             });

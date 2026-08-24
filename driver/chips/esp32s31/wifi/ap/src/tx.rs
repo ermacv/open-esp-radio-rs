@@ -16,8 +16,8 @@ use open_esp_radio_esp32s31_wifi::{
     tx::{WifiTxProgress, WifiTxWake},
 };
 use open_esp_radio_esp32s31_wifi_mac::tx::{
-    HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, LegacyTxQueue,
-    TxHardware, TxPhyRate,
+    HtAmpduTxConfig, HtChannelWidth, HtDuplicateRate, HtGuardInterval, HtMcs, HtRate, LegacyRate,
+    LegacyTxQueue, TxHardware, TxPhyRate,
 };
 use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelWidth},
@@ -368,6 +368,29 @@ pub fn peer_ht_rate(channel: WifiChannel, peer: HtPeerCapabilities) -> Option<Ht
         HtGuardInterval::Long800Ns
     };
     Some(HtRate::new(mcs, guard_interval, channel_width))
+}
+
+/// Retain a peer-admitted HT Duplicate candidate without publishing it.
+///
+/// The returned value is protocol-valid, including peer capability and HT40
+/// geometry. It cannot be converted into [`TxPhyRate`] until the ESP32-S31
+/// queue/rate/power encoding has a reviewed oracle; that conversion fails
+/// closed with `HtDuplicateTxUnavailable` in the MAC layer.
+pub fn peer_ht_duplicate_rate(
+    channel: WifiChannel,
+    peer: HtPeerCapabilities,
+) -> Option<HtDuplicateRate> {
+    peer.ht_duplicate_mcs32()?;
+    let width = match channel.width() {
+        width @ (WifiChannelWidth::Mhz40Above | WifiChannelWidth::Mhz40Below) => width,
+        WifiChannelWidth::Mhz20 => return None,
+    };
+    let guard_interval = if peer.supports_short_guard_interval(width) {
+        HtGuardInterval::Short400Ns
+    } else {
+        HtGuardInterval::Long800Ns
+    };
+    Some(HtDuplicateRate::new(guard_interval))
 }
 
 #[cfg(test)]

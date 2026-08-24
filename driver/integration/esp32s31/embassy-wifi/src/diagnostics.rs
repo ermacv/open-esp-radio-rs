@@ -7,7 +7,7 @@
 #![cfg(feature = "diagnostics")]
 
 use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::RxObservedEthernetFrame;
-use open_esp_radio_esp32s31_wifi_mac::rx::{RxPhyInfo, HeSuSignal};
+use open_esp_radio_esp32s31_wifi_mac::rx::{HeSuSignal, HtSignal, RxPhyInfo};
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxEvent;
 use open_esp_radio_wifi_softmac::{MacRxEvidence, MacRxMetadata};
 
@@ -51,11 +51,35 @@ impl From<HeSuSignal> for Esp32s31HeSuRxObservation {
     }
 }
 
+/// Decoded HT-SIG fields required by diagnostic rate evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31HtRxObservation {
+    pub mcs: u8,
+    pub bandwidth_mhz: u16,
+    pub short_guard_interval: bool,
+    pub aggregation: bool,
+    /// True only for the standard MCS32 selector with HT40 geometry.
+    pub duplicate_mcs32: bool,
+}
+
+impl From<HtSignal> for Esp32s31HtRxObservation {
+    fn from(signal: HtSignal) -> Self {
+        Self {
+            mcs: signal.mcs,
+            bandwidth_mhz: u16::from(signal.channel_width_mhz),
+            short_guard_interval: signal.short_guard_interval,
+            aggregation: signal.aggregation,
+            duplicate_mcs32: signal.ht_duplicate_mcs32().is_some(),
+        }
+    }
+}
+
 /// Decoded public RX-control facts; no raw header storage escapes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31DecodedRxPhyObservation {
     pub baseband_format: u8,
     pub rate: u8,
+    pub ht: Option<Esp32s31HtRxObservation>,
     pub he_su: Option<Esp32s31HeSuRxObservation>,
 }
 
@@ -64,6 +88,7 @@ impl From<RxPhyInfo> for Esp32s31DecodedRxPhyObservation {
         Self {
             baseband_format: phy.baseband_format().raw(),
             rate: phy.rate,
+            ht: phy.ht_signal().map(Into::into),
             he_su: phy.he_su_signal().map(Into::into),
         }
     }

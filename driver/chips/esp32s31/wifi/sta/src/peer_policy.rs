@@ -13,6 +13,7 @@ use open_esp_radio_ieee80211::{
         He20Capabilities, He20PeerState, HeDcmConstellation, HeElementError, HeMcsNssSupport,
         parse_he20_capabilities, parse_he20_operation, parse_he20_peer_state,
     },
+    ht::HtPeerCapabilities,
     scan::ScanRecord,
     station::{AssociationResponse, StaAssociationPhy},
     wmm::WmmParameterSet,
@@ -90,6 +91,7 @@ impl StaWmmPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaPeerScanPolicy {
     pub ht_ampdu: HtPeerAmpduParameters,
+    pub ht_capabilities: Option<HtPeerCapabilities>,
     pub wmm: StaWmmPolicy,
     pub he_bss_color: u8,
     pub he_capabilities: Option<He20Capabilities>,
@@ -105,10 +107,12 @@ impl StaPeerScanPolicy {
                 .ht_capability_ie_bytes()
                 .map_or(0, |capability| capability[4]),
         );
+        let ht_capabilities = access_point.ht_peer_capabilities();
         let he_bss_color = parse_he20_operation(access_point.he_operation_ie_bytes())
             .map_or(0, |operation| operation.effective_bss_color());
         Ok(Self {
             ht_ampdu,
+            ht_capabilities,
             wmm: StaWmmPolicy::from_scan(access_point)?,
             he_bss_color,
             he_capabilities: parse_he20_capabilities(access_point.he_capability_ie_bytes()).ok(),
@@ -197,6 +201,7 @@ impl StaPeerScanPolicy {
         Ok(StaPeerAssociationPlan {
             association_phy,
             ht_ampdu: self.ht_ampdu,
+            ht_capabilities: self.ht_capabilities,
             wmm,
             he_bss_color: self.he_bss_color,
             he_capabilities,
@@ -214,6 +219,7 @@ impl StaPeerScanPolicy {
 pub struct StaPeerAssociationPlan {
     pub association_phy: StaAssociationPhy,
     pub ht_ampdu: HtPeerAmpduParameters,
+    pub ht_capabilities: Option<HtPeerCapabilities>,
     pub wmm: StaWmmPolicy,
     pub he_bss_color: u8,
     pub he_capabilities: Option<He20Capabilities>,

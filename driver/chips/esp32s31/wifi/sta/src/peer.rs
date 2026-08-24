@@ -20,6 +20,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::{
     he::{He20Capabilities, He20PeerState, HeDcmConstellation},
+    ht::HtPeerCapabilities,
     scan::ScanRecord,
     station::{AssociationResponse, StaAssociationPhy},
     wmm::WmmParameterSet,
@@ -87,6 +88,10 @@ pub struct Esp32s31StaConnectedLink {
     /// The selected HT channel width is allowed to use a 400 ns guard
     /// interval according to the AP's retained HT Capabilities IE.
     pub peer_supports_ht_short_guard_interval: bool,
+    /// The selected HT40 peer advertised the independent MCS32 receive bit.
+    /// This fact is retained for diagnostics and future policy only: the S31
+    /// hardware TX encoding is not yet oracle-qualified.
+    pub peer_supports_ht_duplicate_mcs32: bool,
     pub peer_supports_one_ltf_800ns_gi: bool,
     pub peer_supports_ldpc: bool,
     pub peer_dcm_receive: HeDcmConstellation,
@@ -108,6 +113,7 @@ pub struct Esp32s31StaPeerProgrammingReport {
     pub rssi_dbm: i8,
     pub noise_floor_dbm: i8,
     pub link_metric: StaLinkMetric,
+    pub ht_capabilities: Option<HtPeerCapabilities>,
     pub he_capabilities: Option<He20Capabilities>,
     pub he_peer_state: Option<He20PeerState>,
 }
@@ -199,6 +205,7 @@ impl Esp32s31StaPeerPort {
             .program_hardware(radio.hardware)
             .map_err(Esp32s31StaPeerPortError::RateControl)?;
 
+        let ht_capabilities = plan.ht_capabilities;
         let he_capabilities = plan.he_capabilities;
         let link = Esp32s31StaConnectedLink {
             station_address: station.station_address,
@@ -216,6 +223,8 @@ impl Esp32s31StaPeerPort {
                     .supports_ht_short_guard_interval_40mhz(),
                 StaAssociationPhy::Legacy | StaAssociationPhy::He20 => false,
             },
+            peer_supports_ht_duplicate_mcs32: station.association_phy == StaAssociationPhy::Ht40
+                && ht_capabilities.is_some_and(HtPeerCapabilities::supports_ht_duplicate_mcs32),
             peer_supports_one_ltf_800ns_gi: he_capabilities
                 .is_some_and(|capability| capability.supports_one_ltf_800ns_gi()),
             peer_supports_ldpc: he_capabilities
@@ -234,6 +243,7 @@ impl Esp32s31StaPeerPort {
                 rssi_dbm: prepared.access_point.rssi,
                 noise_floor_dbm,
                 link_metric: plan.link_metric,
+                ht_capabilities,
                 he_capabilities,
                 he_peer_state: plan.he_peer_state,
             },

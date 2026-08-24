@@ -21,13 +21,13 @@ pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
 #[cfg(not(target_pointer_width = "32"))]
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::{PinnedTxDmaStorage, TxDmaStorageError};
-use open_esp_radio_ieee80211::he::HeDcmConstellation;
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
     TriggerCommonInfo, TriggerFrame, TriggerGiLtf, TriggerParseError, TriggerRuAllocation,
     TriggerType, TriggerUserSpatialStreamInfo, parse_trigger_user_spatial_stream,
 };
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
+use open_esp_radio_ieee80211::{he::HeDcmConstellation, ht::HtDuplicateMcs32};
 
 use crate::{
     rate_control::dot11g_schedule_for_legacy_rate,
@@ -702,6 +702,8 @@ impl LegacyRate {
 /// The ESP32-S31 is 1T1R, so the open HT path intentionally exposes only the
 /// standard single-stream MCS0..MCS7 set. MCS8..MCS31 describe additional
 /// spatial streams and cannot be made valid by passing an unchecked integer.
+/// The special duplicate-mode MCS32 is represented separately by
+/// [`HtDuplicateRate`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum HtMcs {
@@ -1029,6 +1031,62 @@ impl HtRate {
         let code = schedule_rate_after_failures(schedule, failed_attempts)?;
         TxPhyRate::from_code(code, self.channel_width)
     }
+}
+
+/// Protocol-valid HT Duplicate MCS32 rate, kept outside [`HtMcs`].
+///
+/// MCS32 repeats one coded stream across both halves of a 40-MHz channel. It
+/// is neither a fifth spatial stream nor a throughput successor to MCS7. This
+/// type therefore fixes the channel width at 40 MHz and carries only the
+/// independently selected guard interval.
+///
+/// The ESP32-S31 queue-rate, length, protection and calibrated-power encoding
+/// for this mode has no reviewed oracle. Consequently this type deliberately
+/// exposes none of the `code`, `power_lookup_code`, or retry-table methods of
+/// [`HtRate`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HtDuplicateRate {
+    mcs: HtDuplicateMcs32,
+    guard_interval: HtGuardInterval,
+}
+
+impl HtDuplicateRate {
+    pub const fn new(guard_interval: HtGuardInterval) -> Self {
+        Self {
+            mcs: HtDuplicateMcs32::new(),
+            guard_interval,
+        }
+    }
+
+    pub const fn mcs(self) -> HtDuplicateMcs32 {
+        self.mcs
+    }
+
+    pub const fn mcs_index(self) -> u8 {
+        HtDuplicateMcs32::INDEX
+    }
+
+    pub const fn guard_interval(self) -> HtGuardInterval {
+        self.guard_interval
+    }
+
+    pub const fn channel_width(self) -> HtChannelWidth {
+        HtChannelWidth::Mhz40
+    }
+
+    pub const fn nominal_kbps(self) -> u32 {
+        match self.guard_interval {
+            HtGuardInterval::Long800Ns => 6_000,
+            HtGuardInterval::Short400Ns => 6_700,
+        }
+    }
+}
+
+/// Explicit fail-closed boundary between protocol MCS32 and S31 TX hardware.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HtDuplicateTxUnavailable {
+    /// No reviewed vendor trace identifies the S31 queue, rate or power image.
+    Esp32s31EncodingUnverified,
 }
 
 /// One-spatial-stream 802.11ax modulation and coding scheme.
@@ -1860,6 +1918,14 @@ pub enum TxPhyRate {
     Legacy(LegacyRate),
     Ht(HtRate),
     He(HeRate),
+}
+
+impl TryFrom<HtDuplicateRate> for TxPhyRate {
+    type Error = HtDuplicateTxUnavailable;
+
+    fn try_from(_rate: HtDuplicateRate) -> Result<Self, Self::Error> {
+        Err(HtDuplicateTxUnavailable::Esp32s31EncodingUnverified)
+    }
 }
 
 impl TxPhyRate {

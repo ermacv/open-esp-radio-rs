@@ -6,6 +6,8 @@
 //! implementation is chip-independent and forms the maintained upper-stack
 //! extraction.
 
+use crate::ht::{HtPeerCapabilities, ht_peer_capabilities};
+
 pub const SCAN_RECORD_CAPACITY: usize = 32;
 pub const RSN_IE_CAPACITY: usize = 64;
 pub const RSNXE_CAPACITY: usize = 16;
@@ -141,6 +143,17 @@ impl ScanRecord {
     pub fn ht_capability_ie_bytes(&self) -> Option<&[u8; HT_CAPABILITY_IE_LEN]> {
         self.ht_capability_ie_present
             .then_some(&self.ht_capability_ie)
+    }
+
+    /// Parse the retained HT IE into peer receive capabilities.
+    pub fn ht_peer_capabilities(&self) -> Option<HtPeerCapabilities> {
+        ht_peer_capabilities(self.ht_capability_ie_bytes()?)
+    }
+
+    /// Whether this peer advertises the special 40-MHz HT Duplicate MCS32.
+    pub fn supports_ht_duplicate_mcs32(&self) -> bool {
+        self.ht_peer_capabilities()
+            .is_some_and(HtPeerCapabilities::supports_ht_duplicate_mcs32)
     }
 
     pub fn ht_operation_ie_bytes(&self) -> Option<&[u8; HT_OPERATION_IE_LEN]> {

@@ -39,6 +39,7 @@ fn peer() -> Esp32s31ConnectedStaPeer {
             peer_qos: true,
             association_phy: StaAssociationPhy::He20,
             peer_supports_ht_short_guard_interval: false,
+            peer_supports_ht_duplicate_mcs32: false,
             peer_supports_one_ltf_800ns_gi: true,
             peer_supports_ldpc: true,
             peer_dcm_receive: HeDcmConstellation::Qam16,

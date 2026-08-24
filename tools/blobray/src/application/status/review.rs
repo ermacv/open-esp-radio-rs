@@ -1,5 +1,7 @@
 //! Reviewed register, interface, function, and context workspace readiness.
 
+use std::collections::BTreeSet;
+
 use super::model::{Component, Phase, Readiness, ReviewScopeDetail};
 use crate::application::{FollowUpRequirements, ProjectContext};
 
@@ -77,6 +79,16 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                     report.analysis_inventory_complete,
                 )
             }));
+            let research_root_causes = reports
+                .iter()
+                .flat_map(|report| report.review_queue.iter().map(|item| item.id.as_str()))
+                .collect::<BTreeSet<_>>();
+            let research_scopes = reports
+                .iter()
+                .filter(|report| {
+                    !report.review_queue.is_empty() || report.has_replacement_coverage_gaps()
+                })
+                .count();
             if gate.publication_count == 0 {
                 return Component::new("scopes", Readiness::Incomplete)
                     .detail("report", workspace.output.display().to_string())
@@ -127,7 +139,7 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                     replacement_uncovered: report.replacement_uncovered,
                 })
                 .collect::<Vec<_>>();
-            Component::new("scopes", Readiness::Ready)
+            let mut component = Component::new("scopes", Readiness::Ready)
                 .detail("report", workspace.output.display().to_string())
                 .detail("count", reports.len())
                 .detail("validation_depth", "shallow")
@@ -143,10 +155,24 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                     "analysis_inventory_blocked",
                     gate.analysis_inventory_blocked,
                 )
-                .detail("scopes", details)
+                .detail("research_root_causes", research_root_causes.len())
+                .detail("research_scopes", research_scopes)
+                .detail("scopes", details);
+            if recommend_research(research_root_causes.len(), gate.replacement_coverage_gaps) {
+                component = component.next_action(format!(
+                    "run `{}`",
+                    context
+                        .follow_up_command("project research next", FollowUpRequirements::TARGET,)
+                ));
+            }
+            component
         }
         Err(error) => Component::new("scopes", Readiness::Invalid).diagnostic(error),
     }
+}
+
+const fn recommend_research(root_causes: usize, replacement_gaps: usize) -> bool {
+    root_causes != 0 || replacement_gaps != 0
 }
 
 fn code(context: &ProjectContext<'_>) -> Component {
@@ -323,5 +349,12 @@ mod tests {
         assert_eq!(gate.replacement_coverage_complete, 1);
         assert_eq!(gate.replacement_coverage_gaps, 1);
         assert_eq!(gate.analysis_inventory_blocked, 2);
+    }
+
+    #[test]
+    fn research_is_recommended_for_analysis_or_replacement_debt() {
+        assert!(recommend_research(1, 0));
+        assert!(recommend_research(0, 1));
+        assert!(!recommend_research(0, 0));
     }
 }

@@ -163,7 +163,7 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
-    assert_eq!(document["schema"], 7);
+    assert_eq!(document["schema"], 8);
     assert_eq!(document["scope"], "blobray-pipeline");
     assert_eq!(document["command"], "project status");
     assert_eq!(document["validation"]["depth"], "shallow");
@@ -453,9 +453,13 @@ fn project_doctor_json_is_one_complete_typed_report() {
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("doctor stdout must be one JSON document");
     let report = &document;
-    assert_eq!(report["schema"], 2);
+    assert_eq!(report["schema"], 3);
     assert_eq!(report["command"], "project doctor");
     assert_eq!(report["status"], "valid-with-warnings");
+    assert_eq!(report["validation"]["depth"], "deep");
+    assert_eq!(report["validation"]["freshness"], "unknown");
+    assert!(report["duration_ms"].is_u64());
+    assert_eq!(report["timings"].as_array().unwrap().len(), 8);
     assert_eq!(report["project"]["id"], "generic-rv32-fixture");
     assert_eq!(report["target"]["id"], "generic-rv32");
     assert!(report["capabilities"].as_array().unwrap().len() > 10);

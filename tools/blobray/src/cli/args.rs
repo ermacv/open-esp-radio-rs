@@ -293,9 +293,9 @@ enum ProjectCommand {
         #[command(subcommand)]
         command: ProjectInputsCommand,
     },
-    /// Validate configuration and report detailed diagnostics.
+    /// Deeply validate configuration, local inputs and reviewed workspaces.
     #[command(
-        after_long_help = "This checks validity, not workflow readiness. Use `project status` for readiness and `project analyze` to refresh evidence."
+        after_long_help = "This intentionally reads large evidence and input inventories. It checks validity, not workflow readiness or generated freshness. Use `project status` for the fast everyday overview, `project check` for reproducibility, and `project analyze` to refresh evidence."
     )]
     Doctor(EmptyArgs),
     /// List every project file with its role, owner, producer and status.

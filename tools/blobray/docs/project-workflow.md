@@ -23,6 +23,14 @@ cargo blobray project research next --project path/to/vendor-project.toml
 - `status` reads the current results without regenerating the whole project.
 - `research next` ranks concrete human-review actions by downstream impact.
 
+`status` is deliberately shallow and reports generated freshness as unknown;
+it does not deserialize every large evidence record. `doctor` is deliberately
+deep but still does not claim reproducible freshness. Its JSON schema 3 report
+includes per-section timings so expensive symbol, register, interface or input
+validation is attributable. Use `project check` when current bytes must be
+reproduced, rather than interpreting either inspection command as a freshness
+proof.
+
 `research next` combines root-cause blockers, the reverse call graph,
 unreviewed MMIO and interface observations, sparse unknown hardware semantics,
 publication scopes and verification surfaces. Its `G/O/M` metrics mean

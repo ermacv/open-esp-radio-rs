@@ -4,6 +4,8 @@ use std::{fmt, path::PathBuf};
 
 use serde::{Serialize, Serializer, ser::SerializeMap as _};
 
+use crate::application::status::model::{EvidenceFreshness, ValidationDepth};
+
 use super::super::{
     project_function_doctor::FunctionDoctorReport, project_ir_doctor::IrDoctorReport,
 };
@@ -13,6 +15,7 @@ pub(super) struct DoctorReport {
     pub(super) schema: u32,
     pub(super) command: &'static str,
     pub(super) status: DoctorStatus,
+    pub(super) validation: DoctorValidation,
     pub(super) project: IdentityReport,
     pub(super) target: IdentityReport,
     pub(super) capabilities: Vec<CapabilityReport>,
@@ -25,6 +28,21 @@ pub(super) struct DoctorReport {
     pub(super) errors: usize,
     pub(super) warnings: usize,
     pub(super) valid_inputs: usize,
+    pub(super) duration_ms: u64,
+    pub(super) timings: Vec<DoctorTiming>,
+}
+
+#[derive(Serialize)]
+pub(super) struct DoctorValidation {
+    pub(super) depth: ValidationDepth,
+    pub(super) freshness: EvidenceFreshness,
+    pub(super) scope: &'static str,
+}
+
+#[derive(Serialize)]
+pub(super) struct DoctorTiming {
+    pub(super) section: &'static str,
+    pub(super) duration_ms: u64,
 }
 
 impl DoctorReport {
@@ -38,9 +56,14 @@ impl DoctorReport {
         run_spec: RunSpecReport,
     ) -> Self {
         Self {
-            schema: 2,
+            schema: 3,
             command: "project doctor",
             status: DoctorStatus::Valid,
+            validation: DoctorValidation {
+                depth: ValidationDepth::Deep,
+                freshness: EvidenceFreshness::Unknown,
+                scope: "configuration-inputs-and-reviewed-workspaces",
+            },
             project: IdentityReport {
                 id: project_id.to_owned(),
                 path: project_path,
@@ -58,6 +81,8 @@ impl DoctorReport {
             errors: 0,
             warnings: 0,
             valid_inputs: 0,
+            duration_ms: 0,
+            timings: Vec::new(),
         }
     }
 
@@ -85,6 +110,13 @@ impl DoctorReport {
 
     pub(super) const fn succeeded(&self) -> bool {
         self.errors == 0
+    }
+
+    pub(super) fn timing(&mut self, section: &'static str, elapsed: std::time::Duration) {
+        self.timings.push(DoctorTiming {
+            section,
+            duration_ms: elapsed.as_millis().try_into().unwrap_or(u64::MAX),
+        });
     }
 }
 

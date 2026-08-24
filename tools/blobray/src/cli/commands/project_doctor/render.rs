@@ -19,6 +19,9 @@ fn human(report: &DoctorReport, context: &ProjectContext<'_>) {
         report.target.id,
         report.target.path.display()
     );
+    outputln!("Validation: deep configuration, input and reviewed-workspace inspection");
+    outputln!("Freshness:  unknown; use project check for reproducibility");
+    outputln!("Duration:   {} ms", report.duration_ms);
 
     let outcome = if report.errors != 0 {
         output::failure(format!(
@@ -128,6 +131,17 @@ fn human(report: &DoctorReport, context: &ProjectContext<'_>) {
     }
 
     if output::details() {
+        outputln!("\n{}", output::heading("Timings"));
+        outputln!(
+            "{}",
+            table::render(
+                ["Section", "Duration"],
+                report.timings.iter().map(|timing| [
+                    timing.section.to_owned(),
+                    format!("{} ms", timing.duration_ms),
+                ]),
+            )
+        );
         outputln!("\n{}", output::heading("Capabilities"));
         outputln!(
             "{}",

@@ -284,6 +284,10 @@ pub enum OrdinaryRetryError {
         initial: TxPhyRate,
         scheduled: TxPhyRate,
     },
+    P2pHtSgiFallbackMismatch {
+        initial: TxPhyRate,
+        scheduled: TxPhyRate,
+    },
 }
 
 /// One validated recovered standard-rate P2P retry record.
@@ -320,6 +324,16 @@ pub enum OrdinaryRetryRatePolicy {
     Normal,
     /// Use one exact recovered P2P record for every retained publication.
     P2p(P2pRetryRateSchedule),
+    /// Publish one explicitly selected HT20 SGI rate, then enter the exact
+    /// same-MCS HT20 LGI P2P record after the first failed attempt.
+    ///
+    /// The recovered P2P arena contains an SGI record only for MCS7. The
+    /// queue formatter nevertheless owns every HT20 SGI MCS0..7 code. This
+    /// source-owned bridge does not invent a missing record: attempt zero is
+    /// the caller's typed SGI rate, while every retry is selected from an
+    /// existing LGI record at the original failure count. Construction below
+    /// proves that the first scheduled retry is the same MCS at LGI.
+    P2pHtSgiFallback(P2pRetryRateSchedule),
 }
 
 /// Driver-owned action after one ordinary MPDU attempt.
@@ -401,13 +415,36 @@ impl OrdinaryMpduRetryState {
         frame_class: OrdinaryFrameClass,
     ) -> Result<Self, OrdinaryRetryError> {
         let mut state = Self::new(queue, initial_rate, mpdu_retry_limit, frame_class)?;
-        if let OrdinaryRetryRatePolicy::P2p(schedule) = rate_policy {
-            let scheduled = select_p2p_retry_rate(schedule, 0)?;
-            if scheduled != initial_rate {
-                return Err(OrdinaryRetryError::P2pInitialRateMismatch {
-                    initial: initial_rate,
-                    scheduled,
-                });
+        match rate_policy {
+            OrdinaryRetryRatePolicy::Normal => {}
+            OrdinaryRetryRatePolicy::P2p(schedule) => {
+                let scheduled = select_p2p_retry_rate(schedule, 0)?;
+                if scheduled != initial_rate {
+                    return Err(OrdinaryRetryError::P2pInitialRateMismatch {
+                        initial: initial_rate,
+                        scheduled,
+                    });
+                }
+            }
+            OrdinaryRetryRatePolicy::P2pHtSgiFallback(schedule) => {
+                let scheduled = select_p2p_retry_rate(schedule, 1)?;
+                let valid = matches!(
+                    (initial_rate, scheduled),
+                    (TxPhyRate::Ht(initial), TxPhyRate::Ht(fallback))
+                        if initial.channel_width == HtChannelWidth::Mhz20
+                            && initial.guard_interval
+                                == crate::tx::HtGuardInterval::Short400Ns
+                            && fallback.channel_width == HtChannelWidth::Mhz20
+                            && fallback.guard_interval
+                                == crate::tx::HtGuardInterval::Long800Ns
+                            && fallback.mcs == initial.mcs
+                );
+                if !valid {
+                    return Err(OrdinaryRetryError::P2pHtSgiFallbackMismatch {
+                        initial: initial_rate,
+                        scheduled,
+                    });
+                }
             }
         }
         state.rate_policy = rate_policy;
@@ -436,6 +473,13 @@ impl OrdinaryMpduRetryState {
                 select_ordinary_retry_rate(self.initial_rate, self.counters)
             }
             OrdinaryRetryRatePolicy::P2p(schedule) => select_p2p_retry_rate(schedule, retry_index),
+            OrdinaryRetryRatePolicy::P2pHtSgiFallback(schedule) => {
+                if retry_index == 0 {
+                    Ok(self.initial_rate)
+                } else {
+                    select_p2p_retry_rate(schedule, retry_index)
+                }
+            }
         }
     }
 
@@ -782,7 +826,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
 mod tests {
     use super::*;
     use crate::{
-        tx::{LegacyRate, TxCompletion, TxCookie},
+        tx::{HtGuardInterval, HtMcs, HtRate, LegacyRate, TxCompletion, TxCookie},
         tx_ampdu::{HtAmpduTxCompletion, HtBlockAckRegisters, TxBlockAckBitmap},
     };
     use open_esp_radio_ieee80211::wmm::parse_wmm_parameter_element;
@@ -1026,6 +1070,80 @@ mod tests {
             )
             .err(),
             Some(OrdinaryRetryError::ZeroMpduRetryLimit)
+        );
+    }
+
+    #[test]
+    fn p2p_ht20_sgi_mcs0_through_mcs6_enter_same_mcs_lgi_retry_records() {
+        for mcs_index in 0..=6 {
+            let mcs = HtMcs::from_index(mcs_index).unwrap();
+            let initial = TxPhyRate::Ht(HtRate::new(
+                mcs,
+                HtGuardInterval::Short400Ns,
+                HtChannelWidth::Mhz20,
+            ));
+            let schedule = RateScheduleRef::new(
+                RateScheduleKind::P2pDot11N,
+                8_u8.checked_sub(mcs_index).unwrap(),
+            )
+            .unwrap();
+            let schedule = P2pRetryRateSchedule::new(schedule).unwrap();
+            let mut retry = OrdinaryMpduRetryState::new_with_rate_policy(
+                LegacyTxQueue::Voice,
+                initial,
+                OrdinaryRetryRatePolicy::P2pHtSgiFallback(schedule),
+                4,
+                OrdinaryFrameClass::Short,
+            )
+            .unwrap();
+            let mut policy = WifiTxRuntimePolicy::vendor_defaults();
+
+            assert_eq!(retry.current_rate(), Ok(initial));
+            assert_eq!(
+                retry.observe_completion(&mut policy, TxCompletionDisposition::AckTimeout),
+                OrdinaryRetryDecision::Retry {
+                    set_retry_bit: true
+                }
+            );
+            assert_eq!(
+                retry.current_rate(),
+                Ok(TxPhyRate::Ht(HtRate::new(
+                    mcs,
+                    HtGuardInterval::Long800Ns,
+                    HtChannelWidth::Mhz20,
+                )))
+            );
+        }
+    }
+
+    #[test]
+    fn p2p_ht_sgi_bridge_rejects_a_different_mcs_retry_record() {
+        let initial = TxPhyRate::Ht(HtRate::new(
+            HtMcs::Mcs4,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz20,
+        ));
+        let wrong = P2pRetryRateSchedule::new(
+            RateScheduleRef::new(RateScheduleKind::P2pDot11N, 3).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            OrdinaryMpduRetryState::new_with_rate_policy(
+                LegacyTxQueue::Voice,
+                initial,
+                OrdinaryRetryRatePolicy::P2pHtSgiFallback(wrong),
+                4,
+                OrdinaryFrameClass::Short,
+            )
+            .err(),
+            Some(OrdinaryRetryError::P2pHtSgiFallbackMismatch {
+                initial,
+                scheduled: TxPhyRate::Ht(HtRate::new(
+                    HtMcs::Mcs5,
+                    HtGuardInterval::Long800Ns,
+                    HtChannelWidth::Mhz20,
+                )),
+            })
         );
     }
 

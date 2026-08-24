@@ -16,7 +16,9 @@ pub use open_esp_radio_esp32s31_wifi::esp_now::{
     Esp32s31EspNowKeySlot,
     Esp32s31EspNowLongRangeMissing, Esp32s31EspNowLongRangeRate,
     Esp32s31EspNowLongRangeReached, Esp32s31EspNowLongRangeUnsupported,
+    Esp32s31EspNowPhySupport, Esp32s31EspNowRxMetadata, Esp32s31EspNowRxRateNormalization,
     Esp32s31EspNowTxConfig, Esp32s31EspNowTxConfigError, Esp32s31EspNowTxError,
+    esp32s31_esp_now_phy_support, normalize_esp_now_rx_metadata,
 };
 pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::{
     Esp32s31EspNowConnectedControl, Esp32s31EspNowConnectedControlConfigError,

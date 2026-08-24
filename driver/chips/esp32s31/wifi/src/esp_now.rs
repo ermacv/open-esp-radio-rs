@@ -12,15 +12,18 @@ use core::fmt;
 
 use open_esp_radio_esp32s31_wifi_mac::{
     low_rate::{MacLowRateGateProbe, MacLowRateTransitionError},
-    rate_schedule::{RateScheduleKind, RateScheduleRef},
+    rate_schedule::{
+        RateScheduleKind, RateScheduleRef, schedule_publication_limit, schedule_rate_after_failures,
+    },
+    rx::{RxBasebandFormat, RxPhyInfo},
     tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxHardware, TxPhyRate},
     tx_runtime::{OrdinaryRetryRatePolicy, P2pRetryRateSchedule},
 };
 use open_esp_radio_ieee80211::{channel::WifiChannel, wmm::WmmAccessCategory};
 use open_esp_radio_wifi_softmac::{
     EspNowEncryptedPeerId, EspNowHtGuardInterval, EspNowHtMcs, EspNowLmk, EspNowOfdmRate,
-    EspNowPhyMode, EspNowPreparedEncryptedV1Tx, EspNowPreparedV1Tx, EspNowPreparedV2Tx, MacTxPlan,
-    interface::BoundVirtualInterface,
+    EspNowPhyMode, EspNowPreparedEncryptedV1Tx, EspNowPreparedV1Tx, EspNowPreparedV2Tx,
+    MacRxEvidence, MacRxMetadata, MacTxPlan, interface::BoundVirtualInterface,
 };
 
 use crate::{
@@ -46,6 +49,14 @@ pub enum Esp32s31EspNowLongRangeRate {
 }
 
 impl Esp32s31EspNowLongRangeRate {
+    pub const fn from_descriptor_rate_code(code: u8) -> Option<Self> {
+        match code {
+            0x2a => Some(Self::RateCode2a),
+            0x29 => Some(Self::RateCode29),
+            _ => None,
+        }
+    }
+
     pub const fn descriptor_rate_code(self) -> u8 {
         match self {
             Self::RateCode2a => 0x2a,
@@ -61,6 +72,22 @@ impl Esp32s31EspNowLongRangeRate {
                 Self::RateCode29 => 1,
             },
         }
+    }
+
+    /// Decode one exact attempt from the reviewed LoRa retry record.
+    ///
+    /// The return value remains a descriptor-code identity. It does not
+    /// authorize LR PLCP or queue-vector publication.
+    pub fn retry_rate_after_failures(self, failed_attempts: u8) -> Option<Self> {
+        Self::from_descriptor_rate_code(schedule_rate_after_failures(
+            self.retry_schedule(),
+            failed_attempts,
+        )?)
+    }
+
+    /// Complete ordinary-MPDU publication budget stored in this LoRa record.
+    pub fn retry_publication_limit(self) -> u8 {
+        schedule_publication_limit(self.retry_schedule())
     }
 }
 
@@ -84,6 +111,103 @@ pub enum Esp32s31EspNowLongRangeMissing {
     /// The five-bit public RX rate field has no reviewed mapping back to the
     /// two LR descriptor codes.
     RxRateNormalization,
+}
+
+/// Honest static PHY surface of the ESP32-S31 ESP-NOW backend.
+///
+/// Standard modes are live through both connected and standalone ordinary-TX
+/// owners. LR identities and retry records are source-owned, but the physical
+/// contract remains unavailable until both missing boundaries below have
+/// reviewed evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31EspNowPhySupport {
+    Live,
+    LongRangeFailClosed {
+        tx_missing: Esp32s31EspNowLongRangeMissing,
+        rx_missing: Esp32s31EspNowLongRangeMissing,
+    },
+}
+
+pub const fn esp32s31_esp_now_phy_support(mode: EspNowPhyMode) -> Esp32s31EspNowPhySupport {
+    match mode {
+        EspNowPhyMode::LegacyDsss1M
+        | EspNowPhyMode::StandardP2pOfdm(_)
+        | EspNowPhyMode::StandardP2pHt20(_) => Esp32s31EspNowPhySupport::Live,
+        EspNowPhyMode::LongRange => Esp32s31EspNowPhySupport::LongRangeFailClosed {
+            tx_missing: Esp32s31EspNowLongRangeMissing::TxPlcpQueueVector,
+            rx_missing: Esp32s31EspNowLongRangeMissing::RxRateNormalization,
+        },
+    }
+}
+
+/// Status of the chip RX-rate field after applying the configured ESP-NOW PHY
+/// context.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31EspNowRxRateNormalization {
+    /// The public RX prefix itself identifies one standard ESP-NOW-capable
+    /// baseband format. This does not claim the configured preferred rate was
+    /// used: a retry may have arrived in another standard format.
+    DecodedStandard { format: RxBasebandFormat },
+    /// No decoded standard baseband-format evidence accompanies this sample.
+    /// Preserve the observation in the diagnostic, but do not publish it as
+    /// a normalized standard rate.
+    StandardUnavailable { observed: MacRxEvidence<RxPhyInfo> },
+    /// LR descriptor codes are wider than the public five-bit RX `rate`
+    /// field. Preserve the raw observation here, but do not expose it as a
+    /// normalized rate where it could alias an ordinary standard code.
+    LongRangeUnavailable {
+        observed: MacRxEvidence<RxPhyInfo>,
+        missing: Esp32s31EspNowLongRangeMissing,
+    },
+}
+
+/// ESP-NOW-specific RX metadata with an explicit LR normalization frontier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31EspNowRxMetadata {
+    pub normalized: MacRxMetadata<RxPhyInfo>,
+    pub rate_normalization: Esp32s31EspNowRxRateNormalization,
+}
+
+/// Normalize one hardware prefix in the configured peer-PHY context.
+///
+/// A preferred peer PHY is not proof of the exact received retry rate. The
+/// configured mode is used only to quarantine LR's truncated five-bit field;
+/// a standard result additionally requires an observed decoded Dot11b, OFDM
+/// or HT baseband format. All non-rate evidence is retained unchanged.
+pub fn normalize_esp_now_rx_metadata(
+    phy_mode: EspNowPhyMode,
+    mut metadata: MacRxMetadata<RxPhyInfo>,
+) -> Esp32s31EspNowRxMetadata {
+    let observed = metadata.rate;
+    let rate_normalization = if phy_mode == EspNowPhyMode::LongRange {
+        metadata.rate = MacRxEvidence::Unavailable;
+        Esp32s31EspNowRxRateNormalization::LongRangeUnavailable {
+            observed,
+            missing: Esp32s31EspNowLongRangeMissing::RxRateNormalization,
+        }
+    } else if let Some(format) = decoded_standard_format(observed) {
+        Esp32s31EspNowRxRateNormalization::DecodedStandard { format }
+    } else {
+        metadata.rate = MacRxEvidence::Unavailable;
+        Esp32s31EspNowRxRateNormalization::StandardUnavailable { observed }
+    };
+    Esp32s31EspNowRxMetadata {
+        normalized: metadata,
+        rate_normalization,
+    }
+}
+
+const fn decoded_standard_format(evidence: MacRxEvidence<RxPhyInfo>) -> Option<RxBasebandFormat> {
+    let format = match evidence {
+        MacRxEvidence::HardwareObserved(info) | MacRxEvidence::ProtocolValidated(info) => {
+            info.baseband_format()
+        }
+        MacRxEvidence::Unavailable => return None,
+    };
+    match format {
+        RxBasebandFormat::Dot11b | RxBasebandFormat::Ofdm | RxBasebandFormat::Ht => Some(format),
+        _ => None,
+    }
 }
 
 /// Precise fail-closed Long Range frontier returned before DMA publication.
@@ -433,23 +557,23 @@ fn plaintext_tx_policy<H: TxHardware>(
         }
         EspNowPhyMode::StandardP2pHt20(rate) => {
             let mcs = esp_now_ht_mcs(rate.mcs());
-            let (guard_interval, schedule_index) = match rate.guard_interval() {
-                EspNowHtGuardInterval::Long800Ns => {
-                    (HtGuardInterval::Long800Ns, 8 - rate.mcs().index())
-                }
-                EspNowHtGuardInterval::Short400Ns if rate.mcs() == EspNowHtMcs::Mcs7 => {
-                    (HtGuardInterval::Short400Ns, 0)
-                }
-                EspNowHtGuardInterval::Short400Ns => {
-                    return Err(Esp32s31EspNowTxError::P2pHtRetryScheduleUnavailable {
-                        mcs: rate.mcs(),
-                        guard_interval: rate.guard_interval(),
-                    });
-                }
+            let (guard_interval, retry_rate_policy) = match rate.guard_interval() {
+                EspNowHtGuardInterval::Long800Ns => (
+                    HtGuardInterval::Long800Ns,
+                    p2p_retry_policy(RateScheduleKind::P2pDot11N, 8 - rate.mcs().index()),
+                ),
+                EspNowHtGuardInterval::Short400Ns if rate.mcs() == EspNowHtMcs::Mcs7 => (
+                    HtGuardInterval::Short400Ns,
+                    p2p_retry_policy(RateScheduleKind::P2pDot11N, 0),
+                ),
+                EspNowHtGuardInterval::Short400Ns => (
+                    HtGuardInterval::Short400Ns,
+                    p2p_ht_sgi_retry_policy(8 - rate.mcs().index()),
+                ),
             };
             (
                 TxPhyRate::Ht(HtRate::new(mcs, guard_interval, HtChannelWidth::Mhz20)),
-                p2p_retry_policy(RateScheduleKind::P2pDot11N, schedule_index),
+                retry_rate_policy,
             )
         }
         EspNowPhyMode::LongRange => {
@@ -530,6 +654,14 @@ fn p2p_retry_policy(kind: RateScheduleKind, index: u8) -> OrdinaryRetryRatePolic
     let schedule = P2pRetryRateSchedule::new(schedule)
         .expect("ESP-NOW selects only a standard P2P retry arena");
     OrdinaryRetryRatePolicy::P2p(schedule)
+}
+
+fn p2p_ht_sgi_retry_policy(index: u8) -> OrdinaryRetryRatePolicy {
+    let schedule = RateScheduleRef::new(RateScheduleKind::P2pDot11N, index)
+        .expect("ESP-NOW HT20 SGI selects an in-range same-MCS LGI record");
+    let schedule = P2pRetryRateSchedule::new(schedule)
+        .expect("ESP-NOW HT20 SGI fallback uses the standard P2P HT arena");
+    OrdinaryRetryRatePolicy::P2pHtSgiFallback(schedule)
 }
 
 const fn p2p_ofdm_rate(rate: EspNowOfdmRate) -> (LegacyRate, u8) {
@@ -635,3 +767,139 @@ impl fmt::Display for Esp32s31EspNowTxError {
 }
 
 impl core::error::Error for Esp32s31EspNowTxError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_range_records_preserve_both_descriptor_identities_and_limits() {
+        let fast = Esp32s31EspNowLongRangeRate::RateCode2a;
+        assert_eq!(fast.descriptor_rate_code(), 0x2a);
+        assert_eq!(fast.retry_publication_limit(), 32);
+        assert_eq!(fast.retry_rate_after_failures(0), Some(fast));
+        assert_eq!(fast.retry_rate_after_failures(17), Some(fast));
+        assert_eq!(
+            fast.retry_rate_after_failures(18),
+            Some(Esp32s31EspNowLongRangeRate::RateCode29)
+        );
+        assert_eq!(
+            fast.retry_rate_after_failures(31),
+            Some(Esp32s31EspNowLongRangeRate::RateCode29)
+        );
+        assert_eq!(fast.retry_rate_after_failures(32), None);
+
+        let robust = Esp32s31EspNowLongRangeRate::RateCode29;
+        assert_eq!(robust.descriptor_rate_code(), 0x29);
+        assert_eq!(robust.retry_publication_limit(), 32);
+        assert_eq!(robust.retry_rate_after_failures(0), Some(robust));
+        assert_eq!(robust.retry_rate_after_failures(31), Some(robust));
+        assert_eq!(robust.retry_rate_after_failures(32), None);
+        assert_eq!(
+            Esp32s31EspNowLongRangeRate::from_descriptor_rate_code(0x28),
+            None
+        );
+    }
+
+    #[test]
+    fn capability_surface_is_live_for_every_standard_phy_and_closed_for_lr() {
+        for mode in [
+            EspNowPhyMode::LegacyDsss1M,
+            EspNowPhyMode::StandardP2pOfdm(EspNowOfdmRate::Mbps6),
+            EspNowPhyMode::StandardP2pOfdm(EspNowOfdmRate::Mbps54),
+            EspNowPhyMode::StandardP2pHt20(open_esp_radio_wifi_softmac::EspNowHt20Rate::new(
+                EspNowHtMcs::Mcs0,
+                EspNowHtGuardInterval::Short400Ns,
+            )),
+            EspNowPhyMode::StandardP2pHt20(open_esp_radio_wifi_softmac::EspNowHt20Rate::new(
+                EspNowHtMcs::Mcs7,
+                EspNowHtGuardInterval::Long800Ns,
+            )),
+        ] {
+            assert_eq!(
+                esp32s31_esp_now_phy_support(mode),
+                Esp32s31EspNowPhySupport::Live
+            );
+        }
+        assert_eq!(
+            esp32s31_esp_now_phy_support(EspNowPhyMode::LongRange),
+            Esp32s31EspNowPhySupport::LongRangeFailClosed {
+                tx_missing: Esp32s31EspNowLongRangeMissing::TxPlcpQueueVector,
+                rx_missing: Esp32s31EspNowLongRangeMissing::RxRateNormalization,
+            }
+        );
+    }
+
+    #[test]
+    fn every_ht20_sgi_gap_rate_selects_its_same_mcs_lgi_record() {
+        for mcs in [
+            EspNowHtMcs::Mcs0,
+            EspNowHtMcs::Mcs1,
+            EspNowHtMcs::Mcs2,
+            EspNowHtMcs::Mcs3,
+            EspNowHtMcs::Mcs4,
+            EspNowHtMcs::Mcs5,
+            EspNowHtMcs::Mcs6,
+        ] {
+            let OrdinaryRetryRatePolicy::P2pHtSgiFallback(schedule) =
+                p2p_ht_sgi_retry_policy(8 - mcs.index())
+            else {
+                panic!("SGI gap must use the typed fallback policy")
+            };
+            assert_eq!(schedule.schedule().index, 8 - mcs.index());
+        }
+    }
+
+    #[test]
+    fn lr_rx_rate_is_quarantined_from_the_truncated_public_field() {
+        let lr_raw = RxPhyInfo {
+            rate: 0x0a,
+            bb_format: 0,
+            he_siga1: 0,
+            he_siga2: 0,
+        };
+        let mut metadata = MacRxMetadata::unavailable();
+        metadata.rate = MacRxEvidence::HardwareObserved(lr_raw);
+
+        let lr = normalize_esp_now_rx_metadata(EspNowPhyMode::LongRange, metadata);
+        assert_eq!(lr.normalized.rate, MacRxEvidence::Unavailable);
+        assert_eq!(
+            lr.rate_normalization,
+            Esp32s31EspNowRxRateNormalization::LongRangeUnavailable {
+                observed: MacRxEvidence::HardwareObserved(lr_raw),
+                missing: Esp32s31EspNowLongRangeMissing::RxRateNormalization,
+            }
+        );
+
+        let standard = normalize_esp_now_rx_metadata(EspNowPhyMode::LegacyDsss1M, metadata);
+        assert_eq!(
+            standard.normalized.rate,
+            MacRxEvidence::HardwareObserved(lr_raw)
+        );
+        assert_eq!(
+            standard.rate_normalization,
+            Esp32s31EspNowRxRateNormalization::DecodedStandard {
+                format: RxBasebandFormat::Dot11b,
+            }
+        );
+
+        let non_standard_raw = RxPhyInfo {
+            rate: 7,
+            bb_format: RxBasebandFormat::HeSu.raw(),
+            he_siga1: 0,
+            he_siga2: 0,
+        };
+        metadata.rate = MacRxEvidence::HardwareObserved(non_standard_raw);
+        let unavailable = normalize_esp_now_rx_metadata(
+            EspNowPhyMode::StandardP2pOfdm(EspNowOfdmRate::Mbps6),
+            metadata,
+        );
+        assert_eq!(unavailable.normalized.rate, MacRxEvidence::Unavailable);
+        assert_eq!(
+            unavailable.rate_normalization,
+            Esp32s31EspNowRxRateNormalization::StandardUnavailable {
+                observed: MacRxEvidence::HardwareObserved(non_standard_raw),
+            }
+        );
+    }
+}

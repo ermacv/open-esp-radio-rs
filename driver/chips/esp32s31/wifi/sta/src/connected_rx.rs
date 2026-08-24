@@ -58,6 +58,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_ampdu::{BlockAckAction, parse_block_ack_action},
 };
 
+use open_esp_radio_esp32s31_wifi::esp_now::normalize_esp_now_rx_metadata;
+
 const TRIGGER_FRAME_CONTROL: u16 = 0x0024;
 const NDPA_FRAME_CONTROL: u16 = 0x0054;
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
@@ -1419,6 +1421,15 @@ impl ConnectedRxDispatcher {
                                 let metadata = decode_normalized_rx_metadata(raw)
                                     .unwrap_or_else(MacRxMetadata::unavailable);
                                 let peer = received.peer();
+                                let phy_mode = self
+                                    .esp_now
+                                    .as_ref()
+                                    .and_then(|epoch| epoch.peer_phy_mode(peer))
+                                    .expect(
+                                        "an admitted ESP-NOW peer retains its configured PHY context",
+                                    );
+                                let metadata =
+                                    normalize_esp_now_rx_metadata(phy_mode, metadata).normalized;
                                 sink.publish(ConnectedRxEvent::EspNow { received, metadata });
                                 ConnectedRxDispatch::EspNow { peer }
                             }
@@ -1447,6 +1458,15 @@ impl ConnectedRxDispatcher {
                                 let metadata = decode_normalized_rx_metadata(raw)
                                     .unwrap_or_else(MacRxMetadata::unavailable);
                                 let peer = received.peer();
+                                let phy_mode = self
+                                    .esp_now
+                                    .as_ref()
+                                    .and_then(|epoch| epoch.peer_phy_mode(peer))
+                                    .expect(
+                                        "an admitted ESP-NOW peer retains its configured PHY context",
+                                    );
+                                let metadata =
+                                    normalize_esp_now_rx_metadata(phy_mode, metadata).normalized;
                                 sink.publish_esp_now_v2(received, metadata);
                                 ConnectedRxDispatch::EspNowV2 { peer }
                             }

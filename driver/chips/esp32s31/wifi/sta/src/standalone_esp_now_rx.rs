@@ -19,6 +19,8 @@ use open_esp_radio_wifi_softmac::{
     EspNowRxOutcome, EspNowV2ReceiveError, EspNowV2RxOutcome, MacRxMetadata,
 };
 
+use open_esp_radio_esp32s31_wifi::esp_now::normalize_esp_now_rx_metadata;
+
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
 
 /// Borrowed application event emitted after strict plaintext admission.
@@ -139,6 +141,11 @@ impl<const PEERS: usize> StandaloneEspNowRxDispatcher<PEERS> {
                     let peer = received.peer();
                     let metadata = decode_normalized_rx_metadata(raw)
                         .unwrap_or_else(MacRxMetadata::unavailable);
+                    let phy_mode = self
+                        .epoch
+                        .peer_phy_mode(peer)
+                        .expect("an admitted ESP-NOW peer retains its configured PHY context");
+                    let metadata = normalize_esp_now_rx_metadata(phy_mode, metadata).normalized;
                     sink.publish(StandaloneEspNowRxEvent { received, metadata });
                     StandaloneEspNowRxDispatch::Received { peer }
                 }
@@ -160,6 +167,11 @@ impl<const PEERS: usize> StandaloneEspNowRxDispatcher<PEERS> {
                         let peer = received.peer();
                         let metadata = decode_normalized_rx_metadata(raw)
                             .unwrap_or_else(MacRxMetadata::unavailable);
+                        let phy_mode = self
+                            .epoch
+                            .peer_phy_mode(peer)
+                            .expect("an admitted ESP-NOW peer retains its configured PHY context");
+                        let metadata = normalize_esp_now_rx_metadata(phy_mode, metadata).normalized;
                         sink.publish_v2(StandaloneEspNowV2RxEvent { received, metadata });
                         StandaloneEspNowRxDispatch::V2Received { peer }
                     }

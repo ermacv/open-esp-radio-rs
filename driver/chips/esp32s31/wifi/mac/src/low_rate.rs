@@ -90,26 +90,31 @@ pub enum MacLowRateGateProbe {
 /// LR mode.
 #[must_use = "the low-rate session must be restored to return its hardware owner"]
 pub struct MacLowRateSession<'hardware, H: MacRuntimeLowRateHardware> {
-    hardware: &'hardware mut H,
+    hardware: Option<&'hardware mut H>,
     previous: MacLowRateState,
 }
 
 impl<'hardware, H: MacRuntimeLowRateHardware> MacLowRateSession<'hardware, H> {
     pub fn activate(hardware: &'hardware mut H) -> Result<Self, MacLowRateTransitionError> {
         let previous = MacLowRateState::from_enabled(hardware.phy_low_rate_enabled());
-        hardware.configure_phy_low_rate(true);
-        let observed = MacLowRateState::from_enabled(hardware.phy_low_rate_enabled());
+        let mut session = Self {
+            hardware: Some(hardware),
+            previous,
+        };
+        session.hardware_mut().configure_phy_low_rate(true);
+        let observed = MacLowRateState::from_enabled(session.hardware_mut().phy_low_rate_enabled());
         if observed != MacLowRateState::Enabled {
-            // The entry state was Disabled whenever activation needed a
-            // transition. Reapply it before returning the failed owner.
-            hardware.configure_phy_low_rate(previous.enabled());
-            return Err(MacLowRateTransitionError {
+            let error = MacLowRateTransitionError {
                 transition: MacLowRateTransition::Activate,
                 expected: MacLowRateState::Enabled,
                 observed,
-            });
+            };
+            // Dropping the still-armed session restores and verifies the
+            // exact entry state before the caller can recover its owner.
+            drop(session);
+            return Err(error);
         }
-        Ok(Self { hardware, previous })
+        Ok(session)
     }
 
     pub const fn previous_state(&self) -> MacLowRateState {
@@ -120,37 +125,64 @@ impl<'hardware, H: MacRuntimeLowRateHardware> MacLowRateSession<'hardware, H> {
     /// requires the low-rate gate. The session remains the restore owner.
     pub fn hardware_mut(&mut self) -> &mut H {
         self.hardware
+            .as_deref_mut()
+            .expect("an armed low-rate session retains its hardware owner")
     }
 
     /// Restore the exact entry state and return the runtime hardware owner.
     /// A failed readback returns the complete session so the caller can retry
     /// restoration or escalate to a radio reset without losing authority.
     #[allow(clippy::result_large_err)]
-    pub fn restore(self) -> Result<&'hardware mut H, (MacLowRateTransitionError, Self)> {
-        self.hardware
-            .configure_phy_low_rate(self.previous.enabled());
-        let observed = MacLowRateState::from_enabled(self.hardware.phy_low_rate_enabled());
-        if observed != self.previous {
-            return Err((
-                MacLowRateTransitionError {
-                    transition: MacLowRateTransition::Restore,
-                    expected: self.previous,
-                    observed,
-                },
-                self,
-            ));
+    pub fn restore(mut self) -> Result<&'hardware mut H, (MacLowRateTransitionError, Self)> {
+        if let Err(error) = self.restore_entry_state() {
+            return Err((error, self));
         }
-        Ok(self.hardware)
+        Ok(self
+            .hardware
+            .take()
+            .expect("a restored low-rate session returns its hardware owner"))
+    }
+
+    fn restore_entry_state(&mut self) -> Result<(), MacLowRateTransitionError> {
+        let previous = self.previous;
+        let hardware = self
+            .hardware
+            .as_deref_mut()
+            .expect("an armed low-rate session retains its hardware owner");
+        hardware.configure_phy_low_rate(previous.enabled());
+        let observed = MacLowRateState::from_enabled(hardware.phy_low_rate_enabled());
+        if observed != previous {
+            Err(MacLowRateTransitionError {
+                transition: MacLowRateTransition::Restore,
+                expected: previous,
+                observed,
+            })
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl<H: MacRuntimeLowRateHardware> Drop for MacLowRateSession<'_, H> {
+    fn drop(&mut self) {
+        if self.hardware.is_none() {
+            return;
+        }
+        if self.restore_entry_state().is_err() && self.restore_entry_state().is_err() {
+            panic!("PHY low-rate rollback failed twice; cannot safely release the TX owner")
+        }
     }
 }
 
 /// Exercise and restore the complete reviewed low-rate gate transaction.
 ///
 /// A first restore readback mismatch is followed by the same exact restore
-/// transaction once more. If that retry also fails, this function panics
-/// instead of returning a hardware owner whose shared PHY state is unknown.
-/// The normal unsupported-LR frontier therefore always returns after the
-/// matching vendor restore leaf and its status readback have completed.
+/// transaction once more. If both explicit attempts fail, the armed drop
+/// guard performs at most two additional restore attempts. A persistent
+/// mismatch reaches a terminal panic after exactly four bounded restore
+/// writes rather than returning with unknown shared PHY state. The normal
+/// unsupported-LR frontier therefore returns only after the matching vendor
+/// restore leaf and its status readback have completed.
 pub fn probe_phy_low_rate_gate<H: MacRuntimeLowRateHardware>(
     hardware: &mut H,
 ) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
@@ -160,9 +192,144 @@ pub fn probe_phy_low_rate_gate<H: MacRuntimeLowRateHardware>(
         Ok(_) => Ok(MacLowRateGateProbe::Restored { previous }),
         Err((error, retry)) => match retry.restore() {
             Ok(_) => Err(error),
-            Err((_retry_error, _restore_obligation)) => {
-                panic!("PHY low-rate rollback failed twice; cannot safely return the TX owner")
+            Err((_retry_error, restore_obligation)) => {
+                // Drop is the terminal verified rollback invariant. It makes
+                // at most two additional attempts and otherwise panics; this
+                // branch does not promise affine owner recovery from panic.
+                drop(restore_obligation);
+                Err(error)
             }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::cell::Cell;
+    use std::rc::Rc;
+
+    use super::*;
+
+    struct Hardware {
+        state: bool,
+        observations: &'static [bool],
+        next_observation: Cell<usize>,
+        writes: std::vec::Vec<bool>,
+    }
+
+    impl Hardware {
+        fn new(state: bool, observations: &'static [bool]) -> Self {
+            Self {
+                state,
+                observations,
+                next_observation: Cell::new(0),
+                writes: std::vec::Vec::new(),
+            }
+        }
+    }
+
+    impl MacRuntimeLowRateHardware for Hardware {
+        fn phy_low_rate_enabled(&self) -> bool {
+            let index = self.next_observation.get();
+            if let Some(observed) = self.observations.get(index) {
+                self.next_observation.set(index + 1);
+                *observed
+            } else {
+                self.state
+            }
+        }
+
+        fn configure_phy_low_rate(&mut self, enabled: bool) {
+            self.state = enabled;
+            self.writes.push(enabled);
+        }
+    }
+
+    #[test]
+    fn dropped_session_restores_the_disabled_entry_state() {
+        let mut hardware = Hardware::new(false, &[]);
+        {
+            let mut session = MacLowRateSession::activate(&mut hardware).unwrap();
+            assert_eq!(session.previous_state(), MacLowRateState::Disabled);
+            assert!(session.hardware_mut().state);
+        }
+        assert!(!hardware.state);
+        assert_eq!(hardware.writes, [true, false]);
+    }
+
+    #[test]
+    fn already_enabled_entry_state_is_preserved() {
+        let mut hardware = Hardware::new(true, &[]);
+        let session = MacLowRateSession::activate(&mut hardware).unwrap();
+        assert_eq!(session.previous_state(), MacLowRateState::Enabled);
+        assert!(session.restore().is_ok());
+        assert!(hardware.state);
+        assert_eq!(hardware.writes, [true, true]);
+    }
+
+    #[test]
+    fn failed_activation_rolls_back_before_returning_the_owner() {
+        let mut hardware = Hardware::new(false, &[false, false, false]);
+        assert_eq!(
+            MacLowRateSession::activate(&mut hardware).err(),
+            Some(MacLowRateTransitionError {
+                transition: MacLowRateTransition::Activate,
+                expected: MacLowRateState::Enabled,
+                observed: MacLowRateState::Disabled,
+            })
+        );
+        assert!(!hardware.state);
+        assert_eq!(hardware.writes, [true, false]);
+    }
+
+    #[test]
+    fn probe_reports_first_restore_mismatch_only_after_retry_restores_state() {
+        let mut hardware = Hardware::new(false, &[false, true, true, false]);
+        assert_eq!(
+            probe_phy_low_rate_gate(&mut hardware),
+            Err(MacLowRateTransitionError {
+                transition: MacLowRateTransition::Restore,
+                expected: MacLowRateState::Disabled,
+                observed: MacLowRateState::Enabled,
+            })
+        );
+        assert!(!hardware.state);
+        assert_eq!(hardware.writes, [true, false, false]);
+    }
+
+    #[test]
+    fn persistent_probe_mismatch_panics_after_four_bounded_restore_attempts() {
+        struct PersistentMismatchHardware {
+            observations: Cell<usize>,
+            writes: Rc<Cell<usize>>,
+        }
+
+        impl MacRuntimeLowRateHardware for PersistentMismatchHardware {
+            fn phy_low_rate_enabled(&self) -> bool {
+                let observation = self.observations.get();
+                self.observations.set(observation + 1);
+                // Disabled at entry; every later readback claims Enabled so
+                // activation succeeds and every restore attempt mismatches.
+                observation != 0
+            }
+
+            fn configure_phy_low_rate(&mut self, _enabled: bool) {
+                self.writes.set(self.writes.get() + 1);
+            }
+        }
+
+        let writes = Rc::new(Cell::new(0));
+        let diagnostic = Rc::clone(&writes);
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let mut hardware = PersistentMismatchHardware {
+                observations: Cell::new(0),
+                writes: diagnostic,
+            };
+            let _ = probe_phy_low_rate_gate(&mut hardware);
+        }));
+
+        assert!(panic.is_err());
+        // One activation write plus two explicit and two Drop restore writes.
+        assert_eq!(writes.get(), 5);
     }
 }

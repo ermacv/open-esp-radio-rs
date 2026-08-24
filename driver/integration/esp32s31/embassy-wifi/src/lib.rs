@@ -78,6 +78,7 @@ pub use esp_now::{
     Esp32s31EspNowCryptoError, Esp32s31EspNowKeyOwner, Esp32s31EspNowKeySlot,
     Esp32s31EspNowLongRangeMissing, Esp32s31EspNowLongRangeRate,
     Esp32s31EspNowLongRangeReached, Esp32s31EspNowLongRangeUnsupported,
+    Esp32s31EspNowPhySupport, Esp32s31EspNowRxMetadata, Esp32s31EspNowRxRateNormalization,
     Esp32s31EspNowRxPublisher, Esp32s31EspNowRxReceiver, Esp32s31EspNowRxResources,
     Esp32s31EspNowTxBinding, Esp32s31EspNowTxConfig, Esp32s31EspNowTxConfigError,
     Esp32s31EspNowTxError, Esp32s31EspNowTxHandle, Esp32s31EspNowTxMailboxOwner,
@@ -114,6 +115,7 @@ pub use esp_now::{
     EspNowWireVersion, StandaloneEspNowPeerError,
     StandaloneEspNowRequest, WifiStandaloneEspNowPlan, attach_esp_now_tx,
     encrypted_peer_destination, esp_now_encrypted_v1_codec_status, esp_now_wire_version,
+    esp32s31_esp_now_phy_support, normalize_esp_now_rx_metadata,
     prepare_esp32s31_standalone_esp_now,
 };
 #[cfg(target_arch = "riscv32")]

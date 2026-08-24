@@ -31,7 +31,12 @@ struct EspNowRxFingerprint {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct EspNowRxPeerSlot {
-    peer: Option<(EspNowPeerId, EspNowUnicastAddress, EspNowPeerCapability)>,
+    peer: Option<(
+        EspNowPeerId,
+        EspNowUnicastAddress,
+        EspNowPeerCapability,
+        EspNowPhyMode,
+    )>,
     history: [Option<EspNowRxFingerprint>; ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY],
     next_history: usize,
 }
@@ -640,7 +645,7 @@ impl<const N: usize> EspNowProtocol<N> {
                 continue;
             };
             slots[peer.index] = EspNowRxPeerSlot {
-                peer: Some((peer, address, config.capability)),
+                peer: Some((peer, address, config.capability, config.phy_mode)),
                 history: [None; ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY],
                 next_history: 0,
             };
@@ -670,6 +675,7 @@ impl<const N: usize> EspNowProtocol<N> {
                     destination: EspNowDestination::Unicast(address),
                     channel: EspNowPeerChannelPolicy::HomeChannel(_),
                     capability,
+                    phy_mode,
                     ..
                 }) => {
                     peer_count += 1;
@@ -680,6 +686,7 @@ impl<const N: usize> EspNowProtocol<N> {
                         },
                         address,
                         capability,
+                        phy_mode,
                     ))
                 }
                 Some(_) | None => None,
@@ -879,6 +886,17 @@ impl<const N: usize> EspNowRxEpoch<N> {
         self.peer_count
     }
 
+    /// Return the configured PHY identity retained beside one admitted peer.
+    ///
+    /// Backends use this only to normalize receive evidence. It does not prove
+    /// that the observed PPDU used the peer's preferred transmit rate.
+    pub fn peer_phy_mode(&self, peer: EspNowPeerId) -> Option<EspNowPhyMode> {
+        self.slots.get(peer.index).and_then(|slot| {
+            slot.peer
+                .and_then(|(configured, _, _, phy_mode)| (configured == peer).then_some(phy_mode))
+        })
+    }
+
     /// Parse, address-check and admit one complete plaintext v1 MPDU.
     ///
     /// Duplicate identity intentionally combines the configured source with
@@ -899,11 +917,11 @@ impl<const N: usize> EspNowRxEpoch<N> {
         let source = frame.source();
         let Some(slot) = self.slots.iter_mut().find(|slot| {
             slot.peer
-                .is_some_and(|(_, configured_source, _)| configured_source == source)
+                .is_some_and(|(_, configured_source, _, _)| configured_source == source)
         }) else {
             return Err(EspNowReceiveError::UnknownPeer(source));
         };
-        let (peer, _, _) = slot
+        let (peer, _, _, _) = slot
             .peer
             .expect("an ESP-NOW RX slot selected by source is occupied");
         let fingerprint = EspNowRxFingerprint {
@@ -940,11 +958,11 @@ impl<const N: usize> EspNowRxEpoch<N> {
         let source = frame.source();
         let Some(slot) = self.slots.iter_mut().find(|slot| {
             slot.peer
-                .is_some_and(|(_, configured_source, _)| configured_source == source)
+                .is_some_and(|(_, configured_source, _, _)| configured_source == source)
         }) else {
             return Err(EspNowV2ReceiveError::UnknownPeer(source));
         };
-        let (peer, _, capability) = slot
+        let (peer, _, capability, _) = slot
             .peer
             .expect("an ESP-NOW RX slot selected by source is occupied");
         if !capability.supports_v2() {

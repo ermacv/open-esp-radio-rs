@@ -8,7 +8,9 @@
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 pub use open_esp_radio_esp32s31_wifi::esp_now::{
-    Esp32s31EspNowTxConfig, Esp32s31EspNowTxConfigError,
+    Esp32s31EspNowLongRangeMissing, Esp32s31EspNowLongRangeRate,
+    Esp32s31EspNowLongRangeReached, Esp32s31EspNowLongRangeUnsupported,
+    Esp32s31EspNowTxConfig, Esp32s31EspNowTxConfigError, Esp32s31EspNowTxError,
 };
 pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::{
     Esp32s31EspNowConnectedControl, Esp32s31EspNowConnectedControlConfigError,

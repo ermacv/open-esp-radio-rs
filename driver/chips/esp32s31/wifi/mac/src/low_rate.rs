@@ -70,6 +70,18 @@ pub struct MacLowRateTransitionError {
     pub observed: MacLowRateState,
 }
 
+/// Result of exercising the reviewed runtime low-rate gate without retaining
+/// it beyond the current synchronous hardware transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacLowRateGateProbe {
+    /// This [`crate::tx::TxHardware`] implementation does not own the PHY
+    /// low-rate registers. No register was touched.
+    OwnerUnavailable,
+    /// The gate transaction was applied and the complete matching vendor leaf
+    /// restored the ROM status observation to its entry value.
+    Restored { previous: MacLowRateState },
+}
+
 /// Exclusive, scoped low-rate activation around one runtime MAC authority.
 ///
 /// The session remembers the entry state instead of assuming cold-start
@@ -129,5 +141,28 @@ impl<'hardware, H: MacRuntimeLowRateHardware> MacLowRateSession<'hardware, H> {
             ));
         }
         Ok(self.hardware)
+    }
+}
+
+/// Exercise and restore the complete reviewed low-rate gate transaction.
+///
+/// A first restore readback mismatch is followed by the same exact restore
+/// transaction once more. If that retry also fails, this function panics
+/// instead of returning a hardware owner whose shared PHY state is unknown.
+/// The normal unsupported-LR frontier therefore always returns after the
+/// matching vendor restore leaf and its status readback have completed.
+pub fn probe_phy_low_rate_gate<H: MacRuntimeLowRateHardware>(
+    hardware: &mut H,
+) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
+    let session = MacLowRateSession::activate(hardware)?;
+    let previous = session.previous_state();
+    match session.restore() {
+        Ok(_) => Ok(MacLowRateGateProbe::Restored { previous }),
+        Err((error, retry)) => match retry.restore() {
+            Ok(_) => Err(error),
+            Err((_retry_error, _restore_obligation)) => {
+                panic!("PHY low-rate rollback failed twice; cannot safely return the TX owner")
+            }
+        },
     }
 }

@@ -26,6 +26,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, replace_sta_group_ccmp},
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
+    low_rate::{MacLowRateGateProbe, MacLowRateTransitionError},
     rate_control::BeamformingReportHardware,
     rx::{
         RxDma, RxDmaBinding, RxDmaCursorObservation, RxDmaReloadSettled, RxDmaWalkerEnabled,
@@ -262,6 +263,12 @@ impl StaNoiseFloorHardware for CooperativeRadioHardware<'_> {
 }
 
 impl TxHardware for CooperativeRadioHardware<'_> {
+    fn probe_phy_low_rate_gate(
+        &mut self,
+    ) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
+        TxHardware::probe_phy_low_rate_gate(&mut self.wifi_mac_hal())
+    }
+
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,

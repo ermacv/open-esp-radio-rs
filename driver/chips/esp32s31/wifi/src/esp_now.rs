@@ -8,6 +8,7 @@
 use core::fmt;
 
 use open_esp_radio_esp32s31_wifi_mac::{
+    low_rate::{MacLowRateGateProbe, MacLowRateTransitionError},
     rate_schedule::{RateScheduleKind, RateScheduleRef},
     tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxHardware, TxPhyRate},
     tx_runtime::{OrdinaryRetryRatePolicy, P2pRetryRateSchedule},
@@ -25,11 +26,75 @@ use crate::{
     tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxProgress, WifiTxTimer},
 };
 
+/// One recovered ESP32-S31 LoRa schedule rate selected without assigning an
+/// unevidenced on-air bitrate or PLCP interpretation.
+///
+/// The reviewed source-owned LoRa callback and schedule reconstruction maps
+/// code `0x2a` to record zero and code `0x29` to record one. These codes remain
+/// chip descriptor values; neither variant authorizes queue-vector
+/// publication.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Esp32s31EspNowLongRangeRate {
+    #[default]
+    RateCode2a,
+    RateCode29,
+}
+
+impl Esp32s31EspNowLongRangeRate {
+    pub const fn descriptor_rate_code(self) -> u8 {
+        match self {
+            Self::RateCode2a => 0x2a,
+            Self::RateCode29 => 0x29,
+        }
+    }
+
+    pub const fn retry_schedule(self) -> RateScheduleRef {
+        RateScheduleRef {
+            kind: RateScheduleKind::Lora,
+            index: match self {
+                Self::RateCode2a => 0,
+                Self::RateCode29 => 1,
+            },
+        }
+    }
+}
+
+/// Deepest completed part of one ESP-NOW Long Range TX attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31EspNowLongRangeReached {
+    RateSelected,
+    /// The complete three-edge PHY gate and matching restore leaf ran, with
+    /// the ROM status observation returned to its entry value before control
+    /// resumed.
+    PhyLowRateGateRestored,
+}
+
+/// First missing ownership boundary in one Long Range attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31EspNowLongRangeMissing {
+    /// The supplied queue backend does not own the runtime PHY-low-rate gate.
+    RuntimeLowRateOwner,
+    /// No reviewed LR-specific PLCP and queue-vector formatter exists.
+    TxPlcpQueueVector,
+    /// The five-bit public RX rate field has no reviewed mapping back to the
+    /// two LR descriptor codes.
+    RxRateNormalization,
+}
+
+/// Precise fail-closed Long Range frontier returned before DMA publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31EspNowLongRangeUnsupported {
+    pub selection: Esp32s31EspNowLongRangeRate,
+    pub reached: Esp32s31EspNowLongRangeReached,
+    pub missing: Esp32s31EspNowLongRangeMissing,
+}
+
 /// Bounded publication policy for one ESP-NOW Action MPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31EspNowTxConfig {
     unicast_publication_limit: u8,
     publication_timeout_micros: u64,
+    long_range_rate: Esp32s31EspNowLongRangeRate,
 }
 
 impl Esp32s31EspNowTxConfig {
@@ -46,6 +111,10 @@ impl Esp32s31EspNowTxConfig {
         Ok(Self {
             unicast_publication_limit,
             publication_timeout_micros,
+            // Complete rcUpdatePhyMode starts the LoRa family at schedule
+            // record zero. This is only a typed selection; LR publication
+            // remains fail-closed below.
+            long_range_rate: Esp32s31EspNowLongRangeRate::RateCode2a,
         })
     }
 
@@ -55,6 +124,17 @@ impl Esp32s31EspNowTxConfig {
 
     pub const fn publication_timeout_micros(self) -> u64 {
         self.publication_timeout_micros
+    }
+
+    pub const fn long_range_rate(self) -> Esp32s31EspNowLongRangeRate {
+        self.long_range_rate
+    }
+
+    /// Select one of the two recovered LR rate-control records. This does not
+    /// bypass the PLCP/queue-vector frontier.
+    pub const fn with_long_range_rate(mut self, rate: Esp32s31EspNowLongRangeRate) -> Self {
+        self.long_range_rate = rate;
+        self
     }
 }
 
@@ -139,10 +219,28 @@ where
                 p2p_retry_policy(RateScheduleKind::P2pDot11N, schedule_index),
             )
         }
-        // The recovered LR schedule and AGC enable leaf do not define the
-        // missing LR PLCP/RX contract. Never reinterpret 0x29/0x2a here.
         EspNowPhyMode::LongRange => {
-            return Err(Esp32s31EspNowTxError::LongRangePlcpUnsupported);
+            let selection = config.long_range_rate();
+            let probe = hardware.probe_phy_low_rate_gate().map_err(|error| {
+                Esp32s31EspNowTxError::LongRangeLowRateTransition { selection, error }
+            })?;
+            let (reached, missing) = match probe {
+                MacLowRateGateProbe::OwnerUnavailable => (
+                    Esp32s31EspNowLongRangeReached::RateSelected,
+                    Esp32s31EspNowLongRangeMissing::RuntimeLowRateOwner,
+                ),
+                MacLowRateGateProbe::Restored { .. } => (
+                    Esp32s31EspNowLongRangeReached::PhyLowRateGateRestored,
+                    Esp32s31EspNowLongRangeMissing::TxPlcpQueueVector,
+                ),
+            };
+            return Err(Esp32s31EspNowTxError::LongRangeUnsupported(
+                Esp32s31EspNowLongRangeUnsupported {
+                    selection,
+                    reached,
+                    missing,
+                },
+            ));
         }
     };
 
@@ -236,7 +334,11 @@ pub enum Esp32s31EspNowTxError {
         mcs: EspNowHtMcs,
         guard_interval: EspNowHtGuardInterval,
     },
-    LongRangePlcpUnsupported,
+    LongRangeLowRateTransition {
+        selection: Esp32s31EspNowLongRangeRate,
+        error: MacLowRateTransitionError,
+    },
+    LongRangeUnsupported(Esp32s31EspNowLongRangeUnsupported),
     Wire(open_esp_radio_ieee80211::esp_now::EspNowV1WireError),
     Tx(OrdinaryTxError),
 }
@@ -259,8 +361,14 @@ impl fmt::Display for Esp32s31EspNowTxError {
                 formatter,
                 "ESP32-S31 has no recovered ESP-NOW P2P retry record for {mcs:?} {guard_interval:?}"
             ),
-            Self::LongRangePlcpUnsupported => formatter.write_str(
-                "ESP32-S31 ESP-NOW LR transmit is unavailable until the LR PLCP contract is owned",
+            Self::LongRangeLowRateTransition { selection, error } => write!(
+                formatter,
+                "ESP32-S31 ESP-NOW LR {selection:?} low-rate gate transition failed: {error:?}"
+            ),
+            Self::LongRangeUnsupported(frontier) => write!(
+                formatter,
+                "ESP32-S31 ESP-NOW LR {:?} reached {:?}; missing {:?}",
+                frontier.selection, frontier.reached, frontier.missing
             ),
             Self::Wire(error) => write!(formatter, "ESP-NOW frame error: {error}"),
             Self::Tx(error) => write!(formatter, "ESP-NOW ordinary TX error: {error:?}"),

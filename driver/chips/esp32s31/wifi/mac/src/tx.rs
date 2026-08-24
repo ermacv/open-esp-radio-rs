@@ -30,6 +30,7 @@ use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 use open_esp_radio_ieee80211::{he::HeDcmConstellation, ht::HtDuplicateMcs32};
 
 use crate::{
+    low_rate::{MacLowRateGateProbe, MacLowRateTransitionError, probe_phy_low_rate_gate},
     rate_control::dot11g_schedule_for_legacy_rate,
     rate_schedule::{
         RateScheduleKind, RateScheduleRef, schedule_publication_limit, schedule_rate_after_failures,
@@ -178,6 +179,18 @@ impl LegacyTxQueue {
 
 /// Finite ordinary-queue hardware authority used by one owned TX slot.
 pub trait TxHardware {
+    /// Exercise the complete reviewed PHY low-rate gate and restore its entry
+    /// state before returning.
+    ///
+    /// Pure queue backends do not implicitly gain a PHY owner. Production
+    /// implementations override this method only when they can serialize the
+    /// three ROM-proved register edges with ordinary TX.
+    fn probe_phy_low_rate_gate(
+        &mut self,
+    ) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
+        Ok(MacLowRateGateProbe::OwnerUnavailable)
+    }
+
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
@@ -236,6 +249,12 @@ fn assert_tx_dma_head(authority_head: u32, plcp0: u32) {
 }
 
 impl TxHardware for WifiMacHal<'_> {
+    fn probe_phy_low_rate_gate(
+        &mut self,
+    ) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
+        probe_phy_low_rate_gate(self)
+    }
+
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
@@ -299,6 +318,12 @@ impl TxHardware for WifiMacHal<'_> {
 }
 
 impl TxHardware for RadioRuntimeOwner {
+    fn probe_phy_low_rate_gate(
+        &mut self,
+    ) -> Result<MacLowRateGateProbe, MacLowRateTransitionError> {
+        TxHardware::probe_phy_low_rate_gate(&mut self.wifi_mac_hal())
+    }
+
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,

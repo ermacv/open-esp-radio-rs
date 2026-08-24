@@ -13,6 +13,7 @@ audited_unsafe_leaves=(
     "driver/common/dma"
     "driver/chips/esp32s31/bluetooth"
     "driver/chips/esp32s31/pac"
+    "driver/chips/esp32s31/ieee802154/dma"
     "driver/chips/esp32s31/wifi/dma"
     "driver/adapters/esp-hal/esp32s31-radio-platform"
     "driver/adapters/embassy/esp32s31-platform"

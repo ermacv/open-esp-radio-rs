@@ -191,9 +191,8 @@ where
             });
         }
     };
-    let calibration_cache = transition.take_calibration_cache();
-    let phy = match transition.into_state() {
-        Ok(phy) => phy,
+    let (phy, calibration_cache) = match transition.into_model_parts() {
+        Ok(parts) => parts,
         Err(transition) => {
             return Err(BluetoothPhyInitializationFailure {
                 _task: task,

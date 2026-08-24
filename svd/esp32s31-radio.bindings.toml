@@ -8616,6 +8616,1390 @@ bit-width = 4
 access = "read-only"
 
 [[registers]]
+address = 537931776
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.COMMAND"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "command"
+
+[[registers.fields]]
+svd-name = "OPCODE"
+method = "opcode"
+bit-offset = 0
+bit-width = 8
+access = "write-only"
+
+[[registers]]
+address = 537931780
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.CONTROL"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "control"
+
+[[registers.fields]]
+svd-name = "AUTO_ACK_TX"
+method = "auto_ack_tx"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENHANCED_ACK_TX"
+method = "enhanced_ack_tx"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "AUTO_ACK_RX"
+method = "auto_ack_rx"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "COORDINATOR"
+method = "coordinator"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PROMISCUOUS"
+method = "promiscuous"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PENDING_ENHANCED"
+method = "pending_enhanced"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MULTIPAN_ENABLE_MASK"
+method = "multipan_enable_mask"
+bit-offset = 28
+bit-width = 4
+access = "read-write"
+
+[[registers]]
+address = 537931784
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN0_SHORT_ADDRESS"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_short_address"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "ADDRESS"
+method = "address"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537931788
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN0_PAN_ID"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_pan_id"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "PAN_ID"
+method = "pan_id"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537931792
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN0_EXTENDED_ADDRESS_LOW"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_extended_address_low"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537931796
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN0_EXTENDED_ADDRESS_HIGH"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_extended_address_high"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537931800
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN1_SHORT_ADDRESS"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_short_address"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "ADDRESS"
+method = "address"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537931804
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN1_PAN_ID"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_pan_id"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "PAN_ID"
+method = "pan_id"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537931808
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN1_EXTENDED_ADDRESS_LOW"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_extended_address_low"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537931812
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN1_EXTENDED_ADDRESS_HIGH"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_extended_address_high"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537931816
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN2_SHORT_ADDRESS"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_short_address"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "ADDRESS"
+method = "address"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537931820
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN2_PAN_ID"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_pan_id"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "PAN_ID"
+method = "pan_id"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537931824
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN2_EXTENDED_ADDRESS_LOW"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_extended_address_low"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537931828
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN2_EXTENDED_ADDRESS_HIGH"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_extended_address_high"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537931832
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN3_SHORT_ADDRESS"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_short_address"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "ADDRESS"
+method = "address"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537931836
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN3_PAN_ID"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_pan_id"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "PAN_ID"
+method = "pan_id"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537931840
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN3_EXTENDED_ADDRESS_LOW"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_extended_address_low"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537931844
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.MULTIPAN3_EXTENDED_ADDRESS_HIGH"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "multipan_extended_address_high"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 537931848
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.CHANNEL"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "channel"
+
+[[registers.fields]]
+svd-name = "FREQUENCY_CODE"
+method = "frequency_code"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537931852
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.TX_POWER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "tx_power"
+
+[[registers.fields]]
+svd-name = "POWER_CODE"
+method = "power_code"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537931856
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.ED_DURATION"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "ed_duration"
+
+[[registers.fields]]
+svd-name = "DURATION"
+method = "duration"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers]]
+address = 537931860
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.ED_CONFIG"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "ed_config"
+
+[[registers.fields]]
+svd-name = "CCA_THRESHOLD_CODE"
+method = "cca_threshold_code"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ED_SAMPLE_RATE"
+method = "ed_sample_rate"
+bit-offset = 11
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ED_SAMPLE_MODE"
+method = "ed_sample_mode"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CCA_MODE"
+method = "cca_mode"
+bit-offset = 14
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ED_RSS_CODE"
+method = "ed_rss_code"
+bit-offset = 16
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "CCA_BUSY"
+method = "cca_busy"
+bit-offset = 24
+bit-width = 1
+access = "read-only"
+
+[[registers]]
+address = 537931868
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.ACK_TIMEOUT"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "ack_timeout"
+
+[[registers.fields]]
+svd-name = "TIMEOUT"
+method = "timeout"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537931872
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.EVENT_ENABLE"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "event_enable"
+
+[[registers.fields]]
+svd-name = "EVENTS"
+method = "events"
+bit-offset = 0
+bit-width = 14
+access = "read-write"
+
+[[registers]]
+address = 537931876
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.EVENT_STATUS"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "event_status"
+
+[[registers.fields]]
+svd-name = "EVENTS"
+method = "events"
+bit-offset = 0
+bit-width = 14
+access = "read-only"
+
+[[registers]]
+address = 537931880
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.RX_ABORT_ENABLE"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rx_abort_enable"
+
+[[registers.fields]]
+svd-name = "EVENTS"
+method = "events"
+bit-offset = 0
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537931884
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.PENDING_CONFIG"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "pending_config"
+
+[[registers.fields]]
+svd-name = "FRAME_PENDING"
+method = "frame_pending"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537931888
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.COEX_PTI"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "coex_pti"
+
+[[registers.fields]]
+svd-name = "TXRX_PTI"
+method = "txrx_pti"
+bit-offset = 0
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ACK_PTI"
+method = "ack_pti"
+bit-offset = 5
+bit-width = 5
+access = "read-write"
+
+[[registers]]
+address = 537931896
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.TX_ABORT_ENABLE"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "tx_abort_enable"
+
+[[registers.fields]]
+svd-name = "EVENTS"
+method = "events"
+bit-offset = 0
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537931900
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.ENHANCED_ACK_NOTIFY"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "enhanced_ack_notify"
+
+[[registers.fields]]
+svd-name = "NOTIFY_IMAGE"
+method = "notify_image"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537931904
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.RX_STATUS"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rx_status"
+
+[[registers.fields]]
+svd-name = "FILTER_FAIL_REASON"
+method = "filter_fail_reason"
+bit-offset = 0
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "ABORT_REASON"
+method = "abort_reason"
+bit-offset = 4
+bit-width = 5
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STATE"
+method = "state"
+bit-offset = 16
+bit-width = 3
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "CURRENT_CHANNEL_INDEX"
+method = "current_channel_index"
+bit-offset = 19
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "PREAMBLE_MATCH"
+method = "preamble_match"
+bit-offset = 20
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SFD_MATCH"
+method = "sfd_match"
+bit-offset = 21
+bit-width = 1
+access = "read-only"
+
+[[registers]]
+address = 537931908
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.TX_STATUS"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "tx_status"
+
+[[registers.fields]]
+svd-name = "STATE"
+method = "state"
+bit-offset = 0
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "ABORT_REASON"
+method = "abort_reason"
+bit-offset = 4
+bit-width = 5
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SECURITY_ERROR"
+method = "security_error"
+bit-offset = 16
+bit-width = 4
+access = "read-only"
+
+[[registers]]
+address = 537931944
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.TIMER0_THRESHOLD"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "timer0_threshold"
+
+[[registers.fields]]
+svd-name = "THRESHOLD"
+method = "threshold"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537931948
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.TIMER0_VALUE"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "timer0_value"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537931952
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.TIMER1_THRESHOLD"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "timer1_threshold"
+
+[[registers.fields]]
+svd-name = "THRESHOLD"
+method = "threshold"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537931956
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.TIMER1_VALUE"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "timer1_value"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 537931984
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.TX_DMA_ADDRESS"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "tx_dma_address"
+
+[[registers.fields]]
+svd-name = "ADDRESS"
+method = "address"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537932000
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.RX_DMA_ADDRESS"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rx_dma_address"
+
+[[registers.fields]]
+svd-name = "ADDRESS"
+method = "address"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537932072
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.SECURITY_CONTROL"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "security_control"
+
+[[registers.fields]]
+svd-name = "TX_ENABLE"
+method = "tx_enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PAYLOAD_OFFSET"
+method = "payload_offset"
+bit-offset = 8
+bit-width = 7
+access = "read-write"
+
+[[registers]]
+address = 537932076
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.SECURITY_ADDRESS_LOW"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "security_address_low"
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537932080
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.SECURITY_ADDRESS_HIGH"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "security_address_high"
+
+[[registers.fields]]
+svd-name = "ADDRESS_WORD"
+method = "address_word"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537932084
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.SECURITY_KEY0"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "security_key"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "KEY_WORD"
+method = "key_word"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537932088
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.SECURITY_KEY1"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "security_key"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "KEY_WORD"
+method = "key_word"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537932092
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.SECURITY_KEY2"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "security_key"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "KEY_WORD"
+method = "key_word"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537932096
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.SECURITY_KEY3"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "security_key"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "KEY_WORD"
+method = "key_word"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537932100
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.SFD_TIMEOUT_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "sfd_timeout_counter"
+
+[[registers.fields]]
+svd-name = "SFD_TIMEOUT_COUNT"
+method = "sfd_timeout_count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "RX_FILTER_NOT_WORK_COUNT"
+method = "rx_filter_not_work_count"
+bit-offset = 16
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932104
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.CRC_ERROR_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "crc_error_counter"
+
+[[registers.fields]]
+svd-name = "CRC_ERROR_COUNT"
+method = "crc_error_count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "RX_PREAMBLE_DETECT_ERROR_COUNT"
+method = "rx_preamble_detect_error_count"
+bit-offset = 16
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932108
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.ED_ABORT_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "ed_abort_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932112
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.CCA_FAIL_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "cca_fail_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932116
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.RX_FILTER_FAIL_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rx_filter_fail_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932120
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.NO_RSS_DETECT_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "no_rss_detect_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932124
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.RX_ABORT_COEX_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rx_abort_coex_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932128
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.RX_RESTART_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rx_restart_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932132
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.TX_ACK_ABORT_COEX_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "tx_ack_abort_coex_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932136
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.ED_SCAN_BREAK_COEX_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "ed_scan_break_coex_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932140
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.RX_ACK_ABORT_COEX_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rx_ack_abort_coex_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932144
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.RX_ACK_TIMEOUT_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rx_ack_timeout_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932148
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.TX_BREAK_COEX_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "tx_break_coex_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932152
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.TX_SECURITY_ERROR_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "tx_security_error_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932156
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.CCA_BUSY_COUNTER"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "cca_busy_counter"
+
+[[registers.fields]]
+svd-name = "COUNT"
+method = "count"
+bit-offset = 0
+bit-width = 16
+access = "read-only"
+
+[[registers]]
+address = 537932160
+width = 32
+access = "write-only"
+identity = "IEEE802154_MAC.DIAGNOSTIC_COUNTER_CLEAR"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "diagnostic_counter_clear"
+
+[[registers.fields]]
+svd-name = "ED_SCAN_BREAK_COEX"
+method = "ed_scan_break_coex"
+bit-offset = 0
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "CCA_BUSY"
+method = "cca_busy"
+bit-offset = 1
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "CCA_FAIL"
+method = "cca_fail"
+bit-offset = 2
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "ED_ABORT"
+method = "ed_abort"
+bit-offset = 3
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TX_SECURITY_ERROR"
+method = "tx_security_error"
+bit-offset = 4
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TX_BREAK_COEX"
+method = "tx_break_coex"
+bit-offset = 5
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TX_ACK_ABORT_COEX"
+method = "tx_ack_abort_coex"
+bit-offset = 6
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "RX_ACK_TIMEOUT"
+method = "rx_ack_timeout"
+bit-offset = 7
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "RX_RESTART"
+method = "rx_restart"
+bit-offset = 8
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "RX_ACK_ABORT_COEX"
+method = "rx_ack_abort_coex"
+bit-offset = 9
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "RX_ABORT_COEX"
+method = "rx_abort_coex"
+bit-offset = 10
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "NO_RSS_DETECT"
+method = "no_rss_detect"
+bit-offset = 11
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "RX_FILTER_FAIL"
+method = "rx_filter_fail"
+bit-offset = 12
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "CRC_ERROR"
+method = "crc_error"
+bit-offset = 13
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "SFD_TIMEOUT"
+method = "sfd_timeout"
+bit-offset = 14
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "RX_FILTER_NOT_WORK"
+method = "rx_filter_not_work"
+bit-offset = 15
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "RX_PREAMBLE_DETECT_ERROR"
+method = "rx_preamble_detect_error"
+bit-offset = 16
+bit-width = 1
+access = "write-only"
+
+[[registers]]
 address = 537935872
 width = 32
 access = "read-write"

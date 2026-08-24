@@ -16,7 +16,8 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, DecodeCounters, Direction, Envelope, Event, EvidenceRecord, Finished,
-    FrameDecoder, FrameEncoder, LinkHealth, NetworkSchedulerEvidence, OperationStatus,
+    FrameDecoder, FrameEncoder, Ieee802154EventStatusProbeEvidence,
+    Ieee802154EventStatusProbeRequest, LinkHealth, NetworkSchedulerEvidence, OperationStatus,
     RadioEvidence, RxDeliveryEvidence, RxRadioEvidence, SessionConfig, SessionLinkRequirements,
     SessionReady, SessionState, StackUsage, StartupArtifactChunk, StartupArtifactStatus,
     StateChange, StationEpochEvidence, StationLifecycleEvent, TimebaseProbeEvidence,
@@ -148,6 +149,17 @@ pub(crate) struct SerialCapture {
     next_host_sequence: AtomicU32,
     next_session_id: AtomicU64,
     worker: Option<thread::JoinHandle<()>>,
+}
+
+fn command_response_matches(
+    message: &Envelope<Event>,
+    boot_id: u64,
+    session_id: u64,
+    request_id: u32,
+) -> bool {
+    message.boot_id == boot_id
+        && message.session_id == session_id
+        && message.request_id == request_id
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -877,7 +889,7 @@ impl SerialCapture {
             .send(Zeroizing::new(frame))
             .map_err(|_| "serial worker stopped before HIL command")?;
         self.wait_for_protocol_after(event_count, timeout, |message| {
-            message.boot_id == boot_id && message.request_id == request_id
+            command_response_matches(message, boot_id, session_id, request_id)
         })
         .ok_or_else(|| self.protocol_failure_or("device did not answer HIL command"))
     }
@@ -1198,6 +1210,24 @@ impl SerialCapture {
                 Err(format!("device rejected timebase probe: {reason:?}").into())
             }
             _ => Err("device returned an invalid timebase-probe response".into()),
+        }
+    }
+
+    pub(crate) fn probe_ieee802154_event_status(
+        &self,
+        request: Ieee802154EventStatusProbeRequest,
+        timeout: Duration,
+    ) -> Result<Ieee802154EventStatusProbeEvidence> {
+        // `send_command` admits only an envelope from this boot, session and
+        // request ID; this match then admits only the probe's typed event.
+        let response =
+            self.send_command(0, Command::ProbeIeee802154EventStatus(request), timeout)?;
+        match response.body {
+            Event::Ieee802154EventStatusProbeCompleted(evidence) => Ok(evidence),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected IEEE 802.15.4 EVENT_STATUS probe: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid IEEE 802.15.4 EVENT_STATUS probe response".into()),
         }
     }
 
@@ -2127,8 +2157,8 @@ mod tests {
     };
 
     use super::{
-        ProtocolHealth, SessionEvidence, beacon_loss_count_in, next_station_lifecycle_event,
-        session_ready_covers, validate_stack_usage,
+        ProtocolHealth, SessionEvidence, beacon_loss_count_in, command_response_matches,
+        next_station_lifecycle_event, session_ready_covers, validate_stack_usage,
     };
 
     fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
@@ -2162,11 +2192,21 @@ mod tests {
                     network_scheduler_evidence: false,
                     data_plane_placement: true,
                     timebase_probe: true,
+                    ieee802154_event_status_probe: false,
                 },
                 maximum_payload_bytes: 1,
                 maximum_wire_frame_bytes: 1,
             }),
         )
+    }
+
+    #[test]
+    fn command_response_requires_boot_session_and_request_identity() {
+        let response = Envelope::new(7, 13, 17, 19, Event::Accepted);
+        assert!(command_response_matches(&response, 7, 17, 19));
+        assert!(!command_response_matches(&response, 8, 17, 19));
+        assert!(!command_response_matches(&response, 7, 18, 19));
+        assert!(!command_response_matches(&response, 7, 17, 20));
     }
 
     fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {

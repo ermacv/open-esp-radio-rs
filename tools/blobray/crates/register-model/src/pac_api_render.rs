@@ -180,6 +180,7 @@ impl PacApiPack {
         self.validate_against_svd(svd)?;
         let device = svd_parser::parse(svd).map_err(|error| Error::message(error.to_string()))?;
         let mut output = String::new();
+        output.push_str(&self.render_feature_modules());
         output.push_str(&self.render_interrupt_snapshots());
         if !self.ownership_partitions.is_empty() {
             output.push_str(&self.render_peripheral_ownership(&device)?);
@@ -196,6 +197,17 @@ impl PacApiPack {
             output.push_str(device_access_api());
         }
         Ok(output)
+    }
+
+    fn render_feature_modules(&self) -> String {
+        let mut output = String::new();
+        for module in &self.feature_modules {
+            output.push_str(&format!(
+                "\n#[cfg(feature = {:?})]\n#[doc(hidden)]\npub mod {};\n",
+                module.feature, module.name,
+            ));
+        }
+        output
     }
 
     fn render_interrupt_snapshots(&self) -> String {
@@ -873,6 +885,24 @@ peripherals = ["INTERRUPT"]
         assert!(!source.contains("InterruptPeripherals"));
         assert!(!source.contains("pub fn split("));
         assert!(!source.contains(".."));
+    }
+
+    #[test]
+    fn feature_modules_are_reproducible_and_feature_gated() {
+        let pack: PacApiPack = toml_edit::de::from_str(
+            r#"schema = 3
+
+[[feature-modules]]
+name = "event_status_validation"
+feature = "validation-probes"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pack.render_feature_modules(),
+            "\n#[cfg(feature = \"validation-probes\")]\n#[doc(hidden)]\npub mod event_status_validation;\n"
+        );
     }
 
     #[test]

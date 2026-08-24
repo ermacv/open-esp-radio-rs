@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 59;
+pub const PROTOCOL_VERSION: u16 = 62;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -195,6 +195,9 @@ pub struct FeatureCapabilities {
     /// This image can compare Embassy alarm deadlines with the target's
     /// monotonic clock before radio initialization.
     pub timebase_probe: bool,
+    /// This image can run the bounded IEEE 802.15.4 `EVENT_STATUS` observation
+    /// probe and return its typed snapshots.
+    pub ieee802154_event_status_probe: bool,
 }
 
 /// Bounded alarm/clock agreement probe. It is intentionally independent of
@@ -223,6 +226,89 @@ pub struct TimebaseProbeEvidence {
     pub minimum_interval_micros: u32,
     pub maximum_interval_micros: u32,
     pub early_intervals: u16,
+}
+
+/// Bounds for one IEEE 802.15.4 `EVENT_STATUS` observation probe.
+///
+/// `poll_limit` bounds every target-side wait loop. `timer_threshold` is the
+/// target-defined timer separation used to make the two timer observations
+/// distinct; it is intentionally a protocol value rather than an MMIO layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154EventStatusProbeRequest {
+    pub poll_limit: u32,
+    pub timer_threshold: u32,
+}
+
+impl Ieee802154EventStatusProbeRequest {
+    /// Returns whether both probe bounds are finite and supported by the wire
+    /// contract.
+    pub const fn validate(self) -> bool {
+        self.poll_limit >= 1
+            && self.poll_limit <= 1_000_000
+            && self.timer_threshold >= 1
+            && self.timer_threshold <= 1_000
+    }
+}
+
+/// Terminal observation reached by an IEEE 802.15.4 `EVENT_STATUS` probe.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154EventStatusProbeStop {
+    Complete,
+    UnsupportedSetup,
+    RouteNotQuiesced,
+    ResetNotClear,
+    EventEnableReadbackMismatch,
+    PostEnableStatusNotClear,
+    TimerActivityTimeout,
+    DualLatchTimeout,
+    SelectiveAcknowledgeMismatch,
+    DistinctFirstLatchTimeout,
+    DistinctSecondLatchTimeout,
+    CleanupNotClear,
+}
+
+/// Raw snapshots from one bounded IEEE 802.15.4 `EVENT_STATUS` probe.
+///
+/// This evidence is observation only. Even a [`Ieee802154EventStatusProbeStop::Complete`]
+/// result does not prove same-bit concurrency, level-triggered retrigger
+/// behavior, or readiness of a production interrupt path.
+/// The three pairs of route words are complete raw readbacks; every nonzero bit
+/// fails the reset-isolation gate. `dual_observed_events` is the union of the
+/// first bounded wait;
+/// `dual_latched_events` is its terminal sample. `cleanup_pending_events` is
+/// the observation after delivery is masked again; it may hide a retained
+/// latch and is therefore not the source of the best-effort cleanup selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154EventStatusProbeEvidence {
+    pub stop: Ieee802154EventStatusProbeStop,
+    pub event_enable_before: u16,
+    pub event_enable_active: u16,
+    pub event_enable_after: u16,
+    pub route_core0_before_enable: u32,
+    pub route_core1_before_enable: u32,
+    pub route_core0_with_events_enabled: u32,
+    pub route_core1_with_events_enabled: u32,
+    pub route_core0_after_cleanup: u32,
+    pub route_core1_after_cleanup: u32,
+    pub post_enable_events: u16,
+    pub timer0_value_before_start: u32,
+    pub timer1_value_before_start: u32,
+    pub timer0_value_min: u32,
+    pub timer0_value_max: u32,
+    pub timer1_value_min: u32,
+    pub timer1_value_max: u32,
+    pub timer0_value_after_stop: u32,
+    pub timer1_value_after_stop: u32,
+    pub reset_events: u16,
+    pub dual_observed_events: u16,
+    pub dual_latched_events: u16,
+    pub after_timer0_ack_events: u16,
+    pub after_timer1_ack_events: u16,
+    pub distinct_snapshot_events: u16,
+    pub distinct_before_ack_events: u16,
+    pub distinct_after_ack_events: u16,
+    pub cleanup_pending_events: u16,
+    pub final_events: u16,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -502,6 +588,8 @@ pub enum Command {
     /// Compare alarm deadlines with the monotonic clock before initializing
     /// the radio/network runtime.
     ProbeTimebase(TimebaseProbeRequest),
+    /// Run one bounded, observation-only IEEE 802.15.4 `EVENT_STATUS` probe.
+    ProbeIeee802154EventStatus(Ieee802154EventStatusProbeRequest),
     UploadStartupArtifact(StartupArtifactChunk),
     /// Initialize calibration and the network stack without materializing a
     /// Wi-Fi role. This command is accepted exactly once per boot.
@@ -1486,6 +1574,11 @@ pub enum Event {
     LinkHealth(LinkHealth),
     /// Correlated response to [`Command::ProbeTimebase`].
     TimebaseProbeCompleted(TimebaseProbeEvidence),
+    /// Correlated observation from [`Command::ProbeIeee802154EventStatus`].
+    ///
+    /// This event does not attest to same-bit concurrency, level-triggered
+    /// retrigger behavior, or production interrupt readiness.
+    Ieee802154EventStatusProbeCompleted(Ieee802154EventStatusProbeEvidence),
     Accepted,
     Rejected(RejectReason),
     State(StateChange),

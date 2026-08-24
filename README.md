@@ -2,9 +2,13 @@
 
 Source-only, `no_std` Embassy radio driver and verification workspace for
 Espressif chips. The current implementation target is ESP32-S31 Wi-Fi STA,
-single-client WPA2 AP and standalone normalized monitor. AP+STA, ESP32-C5,
-Bluetooth/BLE, IEEE 802.15.4 and coexistence are future work, not placeholder
-public APIs. The normal workspace and HIL
+single-client WPA2 AP and standalone normalized monitor. The ESP32-S31
+IEEE 802.15.4 path currently reaches source-reviewed digital clocks, private
+MAC reset, an interrupt-masked static policy, and isolated DMA/IRQ semantic
+leaves plus a pure fail-closed MAC control model; PHY/RF, active IRQ, command
+issue and operational MAC readiness remain incomplete. AP+STA, ESP32-C5 and
+Bluetooth/BLE are future work, not placeholder public APIs. The normal
+workspace and HIL
 do not link `esp-wifi-sys`, vendor Wi-Fi
 archives, or a radio/Wi-Fi ROM ABI. The isolated vendor-oracle workspace is the
 only opt-in exception.
@@ -28,6 +32,9 @@ only opt-in exception.
 | `driver/chips/esp32s31/pac` | Closed typed radio peripheral-access API |
 | `driver/chips/esp32s31/hal` | Finite hardware operations and async boundaries |
 | `driver/chips/esp32s31/phy` | PHY initialization and calibration state machines |
+| `driver/chips/esp32s31/ieee802154/dma` | Fixed-frame storage and RX-buffer ownership for the ESP32-S31 IEEE 802.15.4 MAC |
+| `driver/chips/esp32s31/ieee802154/irq` | Quiesced IRQ masks, source identity and pure dispatch-order contract |
+| `driver/chips/esp32s31/ieee802154/mac` | Pure fail-closed operation plans and sampled-event state transitions |
 | `driver/chips/esp32s31/wifi/dma` | Audited ESP32-S31 descriptor, ring and DMA-storage leaf |
 | `driver/chips/esp32s31/wifi/mac` | Safe ESP32-S31 Wi-Fi MAC backend, IRQ, RX/TX policy and rate control |
 | `driver/chips/esp32s31/wifi` | Role-neutral ESP32-S31 Wi-Fi cold start and device composition |

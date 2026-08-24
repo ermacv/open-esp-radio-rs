@@ -13,9 +13,9 @@ use open_esp_radio_esp32s31_hal::{
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome,
-    PhyRegisterRunError, PhyRegisterTransition, PhyState, PhyTargetObserver, PhyTargetPortCounters,
-    PhyTargetPortError, PhyTxTargetPowerProfile, TargetPhyRegisterPort, run_phy_register,
+    PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome, PhyState,
+    PhyTargetObserver, PhyTargetPortCounters, PhyTargetPortError, PhyTxTargetPowerProfile,
+    TargetPhyRegisterAttempt, TargetPhyRegisterFailure, run_target_phy_register,
     select_phy_channel_with_hal,
 };
 use open_esp_radio_ieee80211::channel::WifiChannel;
@@ -94,18 +94,13 @@ impl<P> Esp32s31WifiColdStart<P> {
 }
 
 /// Failure which always returns the unique radio owner at its exact phase.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the allocation-free failure retains the exact opaque radio/PHY owner"
+)]
 pub enum Esp32s31WifiColdStartFailure<P> {
     Power(PowerUpFailure<P>),
-    Registration {
-        radio: Radio<P, Powered>,
-        transition: PhyRegisterTransition,
-        port_counters: PhyTargetPortCounters,
-        error: PhyRegisterRunError<PhyTargetPortError>,
-    },
-    MissingPhyOwner {
-        radio: Radio<P, Powered>,
-        transition: PhyRegisterTransition,
-    },
+    Registration(TargetPhyRegisterFailure<P>),
     InitialChannel {
         radio: Radio<P, Powered>,
         phy: PhyState,
@@ -117,6 +112,12 @@ pub enum Esp32s31WifiColdStartFailure<P> {
 
 /// Run the common production cold-start sequence without diagnostics or board
 /// allocation policy.
+///
+/// This operation owns the sole radio value across hardware awaits and must run
+/// to completion. Cancelling it after polling is fail-closed: no ready owner or
+/// PHY-registration proof is returned, and the integration must reset the
+/// peripheral or chip before establishing another `Radio` owner.
+#[must_use = "Wi-Fi cold start must be driven to a terminal result"]
 pub async fn start_esp32s31_wifi<P, D, O>(
     radio: Radio<P>,
     config: Esp32s31WifiColdStartConfig,
@@ -134,40 +135,23 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {
-    let mut powered = radio
+    let powered = radio
         .power_up()
         .map_err(Esp32s31WifiColdStartFailure::Power)?;
-    let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
+    let attempt = TargetPhyRegisterAttempt::with_production_config_and_calibration(
+        powered,
         config.calibration_identity,
         calibration_cache,
     );
-    let (platform, registers) = powered.phy_hal_parts();
-    let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(platform, registers, observer.clone());
-    let registration = match run_phy_register(&mut transition, &mut port).await {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            let port_counters = port.counters();
-            drop(port);
-            return Err(Esp32s31WifiColdStartFailure::Registration {
-                radio: powered,
-                transition,
-                port_counters,
-                error,
-            });
-        }
-    };
-    let port_counters = port.counters();
-    drop(port);
-    let calibration_cache = transition.take_calibration_cache();
-    let mut phy = match transition.into_state() {
-        Ok(state) => state,
-        Err(transition) => {
-            return Err(Esp32s31WifiColdStartFailure::MissingPhyOwner {
-                radio: powered,
-                transition,
-            });
-        }
-    };
+    let target_registration = run_target_phy_register::<_, D, _>(attempt, observer.clone())
+        .await
+        .map_err(Esp32s31WifiColdStartFailure::Registration)?;
+    // This legacy Wi-Fi owner still stores `PhyState` directly. The downgrade
+    // is performed inside the PHY crate, so safe callers cannot separate a
+    // target proof from its radio and splice hardware epochs. The following
+    // ownership iteration will retain an opaque coupled owner instead.
+    let (mut powered, mut phy, calibration_cache, registration, port_counters) =
+        target_registration.into_ordinary_parts();
     let report = Esp32s31WifiColdStartReport {
         registration,
         port_counters,

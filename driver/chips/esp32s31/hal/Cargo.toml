@@ -8,15 +8,20 @@ repository.workspace = true
 description = "Ownership and async HAL boundaries for the ESP32-S31 radio"
 
 [features]
-validation-probes = ["open-esp-radio-esp32s31-pac/validation-probes"]
+validation-probes = [
+    "dep:open-esp-radio-esp32s31-ieee802154-irq",
+    "open-esp-radio-esp32s31-pac/validation-probes",
+]
 
 [dependencies]
 open-esp-radio-dma = { path = "../../../common/dma" }
 open-esp-radio-esp32s31-coex = { path = "../coex" }
+open-esp-radio-esp32s31-ieee802154-irq = { path = "../ieee802154/irq", optional = true }
 open-esp-radio-esp32s31-pac = { path = "../pac" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
+open-esp-radio-esp32s31-ieee802154-irq = { path = "../ieee802154/irq" }
 open-esp-radio-esp32s31-pac = { path = "../pac", features = ["validation-probes"] }
 
 [lints]

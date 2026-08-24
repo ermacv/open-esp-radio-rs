@@ -14,5 +14,8 @@ validation-probes = []
 [dependencies]
 open-esp-radio-esp32s31-hal = { path = "../hal" }
 
+[dev-dependencies]
+open-esp-radio-esp32s31-hal = { path = "../hal", features = ["validation-probes"] }
+
 [lints]
 workspace = true

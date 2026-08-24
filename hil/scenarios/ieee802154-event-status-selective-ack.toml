@@ -1,0 +1,12 @@
+schema = 3
+id = "ieee802154-event-status-selective-ack"
+description = "Reset-detached source-132 route readback, exact timer-event enable, bounded stimulus, and selective IEEE 802.15.4 EVENT_STATUS acknowledgement"
+image = "diagnostic-ieee802154-event-status"
+isolation = "reset"
+tags = ["diagnostic", "ieee802154", "event-status", "event-enable", "route-readback", "selective-ack", "timer-counter"]
+
+[workload]
+kind = "ieee802154-event-status"
+boots = 3
+poll_limit = 100000
+timer_threshold = 1000

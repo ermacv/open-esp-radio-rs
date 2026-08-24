@@ -59,6 +59,10 @@ pub enum Esp32s31RadioStartFailure<P> {
 /// Perform cold PHY and common MAC initialization without choosing a Wi-Fi
 /// role. Role topology is validated for each supervisor epoch immediately
 /// before that epoch consumes this stopped owner.
+#[allow(
+    large_assignments,
+    reason = "the unique initialized radio owner graph crosses an explicit poll boundary; the linked-image stack-frame audit independently bounds this reviewed future"
+)]
 pub async fn start_esp32s31_radio<P, D, O>(
     radio: Radio<P>,
     config: Esp32s31RadioStartConfig,

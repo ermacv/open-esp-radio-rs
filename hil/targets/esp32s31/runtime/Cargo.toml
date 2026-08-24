@@ -59,6 +59,13 @@ network-scheduler-telemetry = [
 # Diagnostic overlay proving each UDP RX delivery frontier from software
 # reorder output through network admission and application consumption.
 rx-delivery-telemetry = ["driver-observation"]
+# Diagnostic-only, bounded discriminator for the IEEE 802.15.4 EVENT_STATUS
+# timer bits. It reads both source-132 route controls but never writes a route
+# or attests that the production IRQ path is ready.
+ieee802154-event-status-probe = [
+    "dep:open-esp-radio-esp32s31-hal",
+    "open-esp-radio-esp32s31-hal/validation-probes",
+]
 
 [dependencies]
 embassy-executor.workspace = true
@@ -73,6 +80,7 @@ heapless = { workspace = true, optional = true }
 open-esp-radio = { workspace = true, optional = true }
 open-esp-radio-embassy-net = { workspace = true, optional = true }
 open-esp-radio-esp32s31-embassy-wifi = { workspace = true, optional = true }
+open-esp-radio-esp32s31-hal = { workspace = true, optional = true }
 open-esp-radio-esp32s31-phy = { workspace = true, optional = true }
 open-esp-radio-esp32s31-embassy-runtime.workspace = true
 open-esp-radio-esp32s31-wifi-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }

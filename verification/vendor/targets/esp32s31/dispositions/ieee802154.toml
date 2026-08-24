@@ -1,0 +1,31 @@
+schema = 3
+# Every selected function remains visible as not-yet-ported until an exact
+# production binding and comparison profile is reviewed. Prefix rules classify
+# protocol ownership independently; they do not claim implementation parity.
+default-disposition = "not-yet-ported"
+default-protocol = "unknown"
+
+# Reserved for the matching linked ESP-IDF controller image. There is no
+# mandatory `ieee802154` source role or executable suite in this iteration.
+[[protocol-prefixes]]
+source = "ieee802154"
+prefix = "esp_ieee802154_"
+protocol = "ieee802154"
+
+# Low-level IEEE 802.15.4 and Zigbee-named baseband leaves currently live in
+# the authenticated BTBB artifact.
+[[protocol-prefixes]]
+source = "btbb"
+prefix = "ieee802154_"
+protocol = "ieee802154"
+
+[[protocol-prefixes]]
+source = "btbb"
+prefix = "zb_"
+protocol = "ieee802154"
+
+# Public coexistence client wrappers live in libcoexist, not libbtbb.
+[[protocol-prefixes]]
+source = "coex"
+prefix = "esp_coex_ieee802154_"
+protocol = "ieee802154"

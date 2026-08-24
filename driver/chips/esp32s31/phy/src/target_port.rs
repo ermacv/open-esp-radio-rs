@@ -6,7 +6,9 @@
 
 use core::marker::PhantomData;
 
-use open_esp_radio_esp32s31_hal::{PhyInitializationAccess, SharedPhyAccess, SharedPhyContext};
+use open_esp_radio_esp32s31_hal::{
+    PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext, state::Powered,
+};
 use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl,
     phy_prelude::PhyPreludePlatformControl, phy_temperature::PhyTemperatureSystemControl,
@@ -14,7 +16,7 @@ use open_esp_radio_esp32s31_hal::{
 };
 
 use crate::{
-    HARDWARE_EDGE_LIMIT, PhyRegisterPort,
+    HARDWARE_EDGE_LIMIT, PhyRegisterPort, PhyRegisterRunError,
     phy_bb::{PhyBbExternalBinding, PhyBbInitCompletion},
     phy_bluetooth::{
         PhyBluetoothTxGainInitCompletion, PhyBluetoothTxGainInitExternalBinding,
@@ -34,7 +36,10 @@ use crate::{
     phy_i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixCompletion},
     phy_pbus::PhyPbusHardwareObservation,
     phy_pwdet::{PhyPwdetCompletion, PhyPwdetExternalBinding, PhyPwdetPbusObservation},
-    phy_register::{PhyRegisterCompletion, PhyRegisterExternalBinding},
+    phy_register::{
+        PhyCalibrationIdentity, PhyRegisterCompletion, PhyRegisterExternalBinding,
+        PhyRegisterOutcome, PhyRegisterTransition,
+    },
     phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyExternalBinding},
     phy_rx_dco::{
         PhyRxDcMinimumCompletion, PhyRxDcMinimumExternalBinding, PhyRxDcoCompletion,
@@ -56,7 +61,7 @@ use crate::{
         PhyRxIqInitExternalBinding, PhyRxIqRfCalibrationCompletion,
         PhyRxIqRfCalibrationExternalBinding,
     },
-    phy_state::PhyState,
+    phy_state::{PhyCalibrationCache, PhyState},
     phy_temperature::{PhyTemperatureCompletion, PhyTemperatureExternalBinding},
     phy_tx_cal::{
         PhyPowerAttenuationCompletion, PhyPowerAttenuationExternalBinding, PhyToneSarCompletion,
@@ -79,6 +84,8 @@ use crate::{
         PhyTxIqLinearPowerCompletion, PhyTxIqLinearPowerExternalBinding, PhyTxIqLoopbackCompletion,
         PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion, PhyTxIqMisPowerExternalBinding,
     },
+    registered_radio::RegisteredPhyRadio,
+    run_phy_register,
     target_executor::{
         PhyAsyncDelay, PhyTargetPortError, complete_bluetooth_i2c, complete_bluetooth_pbus,
         complete_channel_i2c, complete_dcode_i2c, complete_final_i2c, complete_masked_i2c,
@@ -151,6 +158,215 @@ pub struct PhyTargetPortCounters {
     pub reset_samples: u16,
     pub rf_operations: u32,
     pub baseband_operations: u32,
+}
+
+/// Opaque fresh target registration attempt.
+///
+/// The powered radio and inner model transition are deliberately inseparable.
+/// Callers can construct only a fresh production attempt and pass it once to
+/// [`run_target_phy_register`]. There is no conversion from a caller-driven
+/// [`PhyRegisterTransition`], because such a transition may already contain
+/// synthetic completions.
+#[must_use = "a target PHY attempt uniquely owns the powered radio"]
+pub struct TargetPhyRegisterAttempt<P> {
+    radio: Radio<P, Powered>,
+    transition: PhyRegisterTransition,
+}
+
+impl<P> TargetPhyRegisterAttempt<P> {
+    /// Start one fresh production registration without calibration persistence.
+    pub const fn with_production_config(radio: Radio<P, Powered>) -> Self {
+        Self {
+            radio,
+            transition: PhyRegisterTransition::with_production_config(),
+        }
+    }
+
+    /// Start one fresh production registration with caller-owned persistence.
+    pub const fn with_production_config_and_calibration(
+        radio: Radio<P, Powered>,
+        identity: PhyCalibrationIdentity,
+        cache: Option<PhyCalibrationCache>,
+    ) -> Self {
+        Self {
+            radio,
+            transition: PhyRegisterTransition::with_production_config_and_calibration(
+                identity, cache,
+            ),
+        }
+    }
+
+    /// Inspect the currently retained ordinary model state.
+    pub fn state(&self) -> Option<&PhyState> {
+        self.transition.state()
+    }
+}
+
+/// Result of one complete source-owned target registration path.
+///
+/// This owner records execution through the concrete ESP32-S31 target port. It
+/// does not claim RF qualification or operational link readiness.
+pub struct TargetPhyRegisterSuccess<P> {
+    registered_radio: RegisteredPhyRadio<P>,
+    calibration_cache: Option<PhyCalibrationCache>,
+    outcome: PhyRegisterOutcome,
+    counters: PhyTargetPortCounters,
+}
+
+impl<P> TargetPhyRegisterSuccess<P> {
+    /// Inspect the coupled powered-radio and target-registration owner.
+    pub const fn registered_radio(&self) -> &RegisteredPhyRadio<P> {
+        &self.registered_radio
+    }
+
+    pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
+        self.calibration_cache.as_ref()
+    }
+
+    pub const fn outcome(&self) -> PhyRegisterOutcome {
+        self.outcome
+    }
+
+    pub const fn counters(&self) -> PhyTargetPortCounters {
+        self.counters
+    }
+
+    /// Preserve target-registration authority for a proof-aware role owner.
+    ///
+    /// The returned [`RegisteredPhyRadio`] keeps the powered radio and proof
+    /// inseparable. The calibration cache is persistable output from the same
+    /// terminally successful registration run.
+    pub fn into_registered_parts(
+        self,
+    ) -> (
+        RegisteredPhyRadio<P>,
+        Option<PhyCalibrationCache>,
+        PhyRegisterOutcome,
+        PhyTargetPortCounters,
+    ) {
+        (
+            self.registered_radio,
+            self.calibration_cache,
+            self.outcome,
+            self.counters,
+        )
+    }
+
+    /// Explicitly discard target-registration authority for a legacy consumer.
+    ///
+    /// The radio and [`crate::RegisteredPhyState`] are never exposed as independent
+    /// values. This prevents safe callers from pairing proof issued for one
+    /// hardware epoch with a different powered radio. Role owners which retain
+    /// the proof must use [`Self::into_registered_parts`] instead.
+    pub fn into_ordinary_parts(
+        self,
+    ) -> (
+        Radio<P, Powered>,
+        PhyState,
+        Option<PhyCalibrationCache>,
+        PhyRegisterOutcome,
+        PhyTargetPortCounters,
+    ) {
+        let (radio, state) = self.registered_radio.into_ordinary_parts();
+        (
+            radio,
+            state,
+            self.calibration_cache,
+            self.outcome,
+            self.counters,
+        )
+    }
+}
+
+/// Failure from the concrete target registration runner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TargetPhyRegisterError {
+    Run(PhyRegisterRunError<PhyTargetPortError>),
+    MissingCompletedModelOwner,
+}
+
+/// Ordinary owners released after a terminal target-registration failure.
+///
+/// This payload contains no registration proof. It is available only through
+/// [`TargetPhyRegisterFailure::into_terminal_parts`], after the transition has
+/// demonstrated its terminal failed phase and completed cleanup.
+pub type TargetPhyRegisterTerminalParts<P> = (
+    Radio<P, Powered>,
+    PhyState,
+    Option<PhyCalibrationCache>,
+    PhyTargetPortCounters,
+    TargetPhyRegisterError,
+);
+
+/// Exact opaque radio/transition owner returned after a target failure.
+///
+/// A port error may follow a partially completed hardware edge, so this owner
+/// deliberately has no public path back to [`TargetPhyRegisterAttempt`]. Safe
+/// code cannot reissue an ambiguous operation or reset per-run safety counters.
+/// Only a transition which completed its failure cleanup can release ordinary
+/// owners through [`Self::into_terminal_parts`].
+pub struct TargetPhyRegisterFailure<P> {
+    attempt: TargetPhyRegisterAttempt<P>,
+    counters: PhyTargetPortCounters,
+    error: TargetPhyRegisterError,
+}
+
+impl<P> TargetPhyRegisterFailure<P> {
+    pub const fn error(&self) -> TargetPhyRegisterError {
+        self.error
+    }
+
+    pub const fn counters(&self) -> PhyTargetPortCounters {
+        self.counters
+    }
+
+    pub fn state(&self) -> Option<&PhyState> {
+        self.attempt.state()
+    }
+
+    /// Recover ordinary owners only after the model reached terminal failure.
+    ///
+    /// Port, transition and target-success invariant errors may still describe
+    /// a partially active hardware epoch. Those paths return this exact opaque
+    /// failure unchanged, so safe code cannot separate or rerun its powered
+    /// radio and transition. A genuine terminal radio failure has completed
+    /// cleanup and may release the ordinary PHY state and caller retry cache.
+    #[allow(
+        clippy::result_large_err,
+        reason = "nonterminal failure must retain the exact allocation-free radio/PHY owner"
+    )]
+    pub fn into_terminal_parts(self) -> Result<TargetPhyRegisterTerminalParts<P>, Self> {
+        let Self {
+            attempt,
+            counters,
+            error,
+        } = self;
+        let TargetPhyRegisterAttempt { radio, transition } = attempt;
+        match transition.into_failed_parts() {
+            Ok((state, calibration_cache)) => {
+                Ok((radio, state, calibration_cache, counters, error))
+            }
+            Err(transition) => Err(Self {
+                attempt: TargetPhyRegisterAttempt { radio, transition },
+                counters,
+                error,
+            }),
+        }
+    }
+}
+
+/// Private witness accepted by the sole [`crate::RegisteredPhyState`] constructor.
+///
+/// The field is private to this module, so no sibling module can mint it even
+/// though the proof constructor can name the type through crate visibility.
+pub(crate) struct TargetRegistrationWitness {
+    _private: (),
+}
+
+impl TargetRegistrationWitness {
+    const fn new() -> Self {
+        Self { _private: () }
+    }
 }
 
 /// Complete target-side implementation of [`PhyRegisterPort`].
@@ -1421,6 +1637,79 @@ impl<
         }
         result
     }
+}
+
+/// Drive one opaque fresh attempt through the concrete ESP32-S31 target port.
+///
+/// Unlike [`crate::run_phy_register`], this function does not accept a caller-
+/// supplied port or a raw caller-driven transition. The exact transition that
+/// receives every concrete target completion and the exact powered radio epoch
+/// remain hidden inside `attempt`. Terminal success produces one result which
+/// retains that radio and [`crate::RegisteredPhyState`]. Any other result retains a
+/// poisoned opaque owner unless the transition completed its failure cleanup.
+///
+/// # Cancellation
+///
+/// Integrations must run this future to completion. Once polled, cancelling or
+/// dropping it may leave a hardware edge partially applied and destroys the
+/// only software owner; it never returns registration proof. The peripheral or
+/// chip must be reset out of band before a new `Radio` owner is established.
+#[must_use = "target PHY registration must be driven to a terminal result"]
+pub async fn run_target_phy_register<P, D, O>(
+    mut attempt: TargetPhyRegisterAttempt<P>,
+    observer: O,
+) -> Result<TargetPhyRegisterSuccess<P>, TargetPhyRegisterFailure<P>>
+where
+    P: PhyPreludePlatformControl
+        + PhyPmuControl
+        + PhyWifiBbControl
+        + PhyPowerDetectorPlatformControl
+        + PhyTemperatureSystemControl
+        + PhyI2cMasterControl,
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    let (result, counters) = {
+        let (platform, registers) = attempt.radio.phy_hal_parts();
+        let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(platform, registers, observer);
+        let result = run_phy_register(&mut attempt.transition, &mut port).await;
+        (result, port.counters())
+    };
+
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return Err(TargetPhyRegisterFailure {
+                attempt,
+                counters,
+                error: TargetPhyRegisterError::Run(error),
+            });
+        }
+    };
+
+    let (state, calibration_cache) = match attempt.transition.into_model_parts() {
+        Ok(parts) => parts,
+        Err(transition) => {
+            return Err(TargetPhyRegisterFailure {
+                attempt: TargetPhyRegisterAttempt {
+                    radio: attempt.radio,
+                    transition,
+                },
+                counters,
+                error: TargetPhyRegisterError::MissingCompletedModelOwner,
+            });
+        }
+    };
+    Ok(TargetPhyRegisterSuccess {
+        registered_radio: RegisteredPhyRadio::from_target_completion(
+            attempt.radio,
+            state,
+            TargetRegistrationWitness::new(),
+        ),
+        calibration_cache,
+        outcome,
+        counters,
+    })
 }
 
 /// Select a PHY channel with the same finite target contract used by cold

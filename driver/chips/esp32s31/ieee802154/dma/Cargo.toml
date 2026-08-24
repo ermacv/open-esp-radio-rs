@@ -1,0 +1,11 @@
+[package]
+name = "open-esp-radio-esp32s31-ieee802154-dma"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pinned frame buffers and ownership tokens for the ESP32-S31 IEEE 802.15.4 MAC DMA"
+
+[lints]
+workspace = true

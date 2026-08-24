@@ -15,7 +15,23 @@ description = "local esp-pacs commit f823dd9de91c0b83c5e8e85cbea4749dbabc4a27, e
 
 [[sources]]
 id = "S31_REG_BASE"
-description = "esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80, c/include/esp32s31/soc/reg_base.h, sha256 24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d; names the HP-system 0x205x, LP-system 0x207x and LP-peripheral 0x208x blocks and IEEE802154_REG_BASE in the 0x201x modem/radio window"
+description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/soc/esp32s31/register/soc/reg_base.h, sha256 24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d. It names IEEE802154_REG_BASE as 0x20103000 and the surrounding HP-system, LP-system and LP-peripheral blocks. The same bytes were previously reviewed from esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80."
+
+[[sources]]
+id = "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"
+description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/soc/esp32s31/register/soc/ieee802154_struct.h, sha256 da13c2bc78cd6ef35a4e54ddddf11ce48fda967746193f1a0ad03578a5881752. The public volatile esp_ieee802154_t declaration fixes register and field geometry through offset 0x1a0, but its TODO ZB-93 says the file still awaits generation from IEEE802154.csv; it therefore supports a selective partial model, not a claim that every word or access policy is complete."
+
+[[sources]]
+id = "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG"
+description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/soc/esp32s31/register/soc/ieee802154_reg.h, sha256 fd3f944ac97634605083031f96c0f942af26a81a9e9a3123281c59e5719f9d9c. The public register macros independently restate the selected offsets and masks, but carry the same TODO ZB-93, omit several struct-only words and disagree with struct/common_ll naming for ED_CONFIG bits 13 and 12:11; they are corroboration for selected geometry only."
+
+[[sources]]
+id = "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"
+description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/esp_hal_ieee802154/include/hal/ieee802154_common_ll.h, sha256 ba4ce294b402df311f25c4d0ce9cb33449e3eb41993aff94a25df5a66142d471. Public inline accessors prove the selected software read/write directions, command/event values and field use; they do not establish reset values or semantics for untouched fields."
+
+[[sources]]
+id = "ESP_IDF_7B9CC1AC_S31_IEEE802154_LL"
+description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/esp_hal_ieee802154/esp32s31/include/hal/ieee802154_ll.h, sha256 a66a3562ff6ef62ffa6dda90bc08e97f0d4509bcf3817cdc57795fd97daeaa30. The ESP32-S31 extension independently reads the two high-half diagnostic counters declared by the public struct."
 
 [[sources]]
 id = "ESP_IDF_25FE69F_S31_PHY_RETENTION"

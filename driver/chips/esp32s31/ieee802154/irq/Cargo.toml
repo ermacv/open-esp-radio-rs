@@ -1,0 +1,11 @@
+[package]
+name = "open-esp-radio-esp32s31-ieee802154-irq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Quiesced ESP32-S31 IEEE 802.15.4 interrupt identities, masks, and pure dispatch"
+
+[lints]
+workspace = true

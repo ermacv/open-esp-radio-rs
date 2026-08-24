@@ -358,10 +358,12 @@ impl Drop for FrameDecoder {
 mod tests {
     use super::*;
     use crate::{
-        Command, Completion, Direction, Envelope, Event, FlowConfig, Ipv4Endpoint, SessionConfig,
-        SessionLinkRequirements, StackUsage, StackWatermark, StartupArtifactChunk,
-        StationAttemptFailureReason, StationDisconnectReason, StationFailureStage,
-        StationLifecycleEvent, Transport, WifiRole, WifiRoleTransitionEvidence, WireKind,
+        Command, Completion, Direction, Envelope, Event, FlowConfig,
+        Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
+        Ieee802154EventStatusProbeStop, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
+        StackUsage, StackWatermark, StartupArtifactChunk, StationAttemptFailureReason,
+        StationDisconnectReason, StationFailureStage, StationLifecycleEvent, Transport, WifiRole,
+        WifiRoleTransitionEvidence, WireKind,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -382,6 +384,119 @@ mod tests {
         // within an explicit embedded budget instead of splitting that
         // ownership across hidden compatibility state.
         assert!(size <= 288, "command envelope occupies {size} bytes");
+    }
+
+    #[test]
+    fn ieee802154_event_status_probe_validation_accepts_only_contract_bounds() {
+        const MINIMUM: Ieee802154EventStatusProbeRequest = Ieee802154EventStatusProbeRequest {
+            poll_limit: 1,
+            timer_threshold: 1,
+        };
+        const MAXIMUM: Ieee802154EventStatusProbeRequest = Ieee802154EventStatusProbeRequest {
+            poll_limit: 1_000_000,
+            timer_threshold: 1_000,
+        };
+        const {
+            assert!(MINIMUM.validate());
+            assert!(MAXIMUM.validate());
+            assert!(
+                !Ieee802154EventStatusProbeRequest {
+                    poll_limit: 0,
+                    timer_threshold: 1,
+                }
+                .validate()
+            );
+            assert!(
+                !Ieee802154EventStatusProbeRequest {
+                    poll_limit: 1_000_001,
+                    timer_threshold: 1,
+                }
+                .validate()
+            );
+            assert!(
+                !Ieee802154EventStatusProbeRequest {
+                    poll_limit: 1,
+                    timer_threshold: 0,
+                }
+                .validate()
+            );
+            assert!(
+                !Ieee802154EventStatusProbeRequest {
+                    poll_limit: 1,
+                    timer_threshold: 1_001,
+                }
+                .validate()
+            );
+        }
+    }
+
+    #[test]
+    fn ieee802154_event_status_probe_command_fits_and_round_trips() {
+        let expected = Envelope::new(
+            7,
+            3,
+            9,
+            2,
+            Command::ProbeIeee802154EventStatus(Ieee802154EventStatusProbeRequest {
+                poll_limit: 1_000_000,
+                timer_threshold: 1_000,
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn ieee802154_event_status_probe_evidence_fits_and_round_trips() {
+        let expected = Envelope::new(
+            7,
+            3,
+            9,
+            2,
+            Event::Ieee802154EventStatusProbeCompleted(Ieee802154EventStatusProbeEvidence {
+                stop: Ieee802154EventStatusProbeStop::Complete,
+                event_enable_before: u16::MAX,
+                event_enable_active: u16::MAX,
+                event_enable_after: u16::MAX,
+                route_core0_before_enable: u32::MAX,
+                route_core1_before_enable: u32::MAX,
+                route_core0_with_events_enabled: u32::MAX,
+                route_core1_with_events_enabled: u32::MAX,
+                route_core0_after_cleanup: u32::MAX,
+                route_core1_after_cleanup: u32::MAX,
+                post_enable_events: u16::MAX,
+                timer0_value_before_start: u32::MAX,
+                timer1_value_before_start: u32::MAX,
+                timer0_value_min: u32::MAX,
+                timer0_value_max: u32::MAX,
+                timer1_value_min: u32::MAX,
+                timer1_value_max: u32::MAX,
+                timer0_value_after_stop: u32::MAX,
+                timer1_value_after_stop: u32::MAX,
+                reset_events: u16::MAX,
+                dual_observed_events: u16::MAX,
+                dual_latched_events: u16::MAX,
+                after_timer0_ack_events: u16::MAX,
+                after_timer1_ack_events: u16::MAX,
+                distinct_snapshot_events: u16::MAX,
+                distinct_before_ack_events: u16::MAX,
+                distinct_after_ack_events: u16::MAX,
+                cleanup_pending_events: u16::MAX,
+                final_events: u16::MAX,
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
     }
 
     #[test]

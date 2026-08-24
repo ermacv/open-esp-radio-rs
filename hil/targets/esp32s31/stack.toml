@@ -44,6 +44,12 @@ max_bytes = 18432
 reason = "one-time radio start future returns the complete initialized radio owner graph"
 
 [[reviewed_frames]]
+function_contains = "::target_port::run_target_phy_register::<"
+source_ends_with = "driver/chips/esp32s31/phy/src/target_port.rs"
+max_bytes = 15360
+reason = "one-time target PHY registration retains the unique powered radio, complete opaque recoverable transition and concrete completion future across bounded hardware awaits; the outer cold-start poll boundary and runtime painting independently bound the complete PSRAM-stack call chain"
+
+[[reviewed_frames]]
 function_contains = "::station::composer::Esp32s31StationEngine<"
 source_ends_with = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/composer.rs"
 max_bytes = 19456

@@ -2234,7 +2234,24 @@ dependencies = [
  "critical-section",
  "open-esp-radio-dma",
  "open-esp-radio-esp32s31-coex",
+ "open-esp-radio-esp32s31-ieee802154-irq",
  "open-esp-radio-esp32s31-pac",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-ieee802154-dma"
+version = "0.1.0"
+
+[[package]]
+name = "open-esp-radio-esp32s31-ieee802154-irq"
+version = "0.1.0"
+
+[[package]]
+name = "open-esp-radio-esp32s31-ieee802154-mac"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-ieee802154-dma",
+ "open-esp-radio-esp32s31-ieee802154-irq",
 ]
 
 [[package]]

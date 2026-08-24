@@ -1066,7 +1066,7 @@ impl PhyState {
         self.bluetooth.tx_power_calibrated = false;
     }
 
-    pub fn mark_phy_registered(&mut self) {
+    pub(crate) fn mark_phy_registered(&mut self) {
         self.common.registered = true;
     }
 

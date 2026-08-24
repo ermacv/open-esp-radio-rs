@@ -33,10 +33,17 @@ pub trait PhyRegisterPort {
 
 /// Failure reported while driving a caller-owned registration transition.
 ///
+/// This generic executor is also the host-model boundary: safe test ports may
+/// synthesize completions without touching hardware. Consequently, completing
+/// this runner never creates target-registration authority. A completed model
+/// transition can recover only ordinary state through
+/// [`PhyRegisterTransition::into_model_parts`].
+///
 /// The transition is borrowed rather than consumed. After any error, the
 /// caller still owns it and can inspect its state. After a terminal radio
-/// failure or success, `PhyRegisterTransition::into_state` recovers the unique
-/// Rust owner of the PHY parameter state.
+/// failure, [`PhyRegisterTransition::into_failed_parts`] recovers the ordinary
+/// PHY owner and retry input. On ESP32-S31 targets, only the concrete opaque
+/// target-attempt runner can yield [`crate::RegisteredPhyState`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRegisterRunError<E> {
     Lowering(PhyRegisterBindingError),
@@ -45,11 +52,14 @@ pub enum PhyRegisterRunError<E> {
     Radio(PhyRegisterFailure),
 }
 
-/// Drive `register_chipv7_phy` as a Rust async state machine.
+/// Drive `register_chipv7_phy` as a Rust async state machine or host model.
 ///
 /// Local arithmetic and ownership transitions run synchronously because they
 /// cannot wait on hardware. Every external edge is first lowered to an
 /// exhaustive source-owned binding and then awaited through `port`.
+///
+/// `port` is a caller-provided completion oracle. This function deliberately
+/// returns only a value outcome and cannot mint hardware-registration proof.
 pub async fn run_phy_register<P: PhyRegisterPort>(
     transition: &mut PhyRegisterTransition,
     port: &mut P,

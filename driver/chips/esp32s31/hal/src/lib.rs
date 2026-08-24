@@ -15,6 +15,13 @@ use open_esp_radio_esp32s31_pac::{
 pub mod analog_i2c;
 pub mod channel;
 pub mod coex;
+pub(crate) mod ieee802154;
+#[cfg(any(test, feature = "validation-probes"))]
+mod ieee802154_event_status_probe;
+pub mod ieee802154_lifecycle;
+mod ieee802154_policy;
+mod ieee802154_role;
+mod modem_clock_planner;
 pub mod pbus;
 pub mod phy_agc;
 pub mod phy_baseband;
@@ -36,6 +43,31 @@ pub mod types;
 pub mod validation;
 pub mod wifi_bb;
 pub mod wifi_mac;
+#[cfg(feature = "validation-probes")]
+pub use ieee802154_event_status_probe::{
+    Ieee802154EventStatusProbeConfig, Ieee802154EventStatusProbeEvidence,
+    Ieee802154EventStatusProbeIsolation, Ieee802154EventStatusProbeStop,
+};
+pub use ieee802154_lifecycle::{
+    IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel, Ieee802154ChannelError,
+    Ieee802154ClockCheckpoint, Ieee802154ClockImages, Ieee802154FoundationCheckpoint,
+    Ieee802154PlatformControl, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
+    Ieee802154ResetImages,
+};
+pub use ieee802154_policy::{
+    IEEE802154_ACK_TIMEOUT_QUANTUM_MICROSECONDS, IEEE802154_MAX_ACK_TIMEOUT_MICROSECONDS,
+    Ieee802154AckTimeout, Ieee802154AckTimeoutError, Ieee802154CcaMode, Ieee802154MacControl,
+    Ieee802154MacPolicy, Ieee802154MacPolicyCheckpoint, Ieee802154PanIdentity,
+};
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub use ieee802154_role::Ieee802154EventStatusProbeFinished;
+pub use ieee802154_role::{
+    Ieee802154ClockTransitionFailure, Ieee802154Clocked, Ieee802154FoundationConfigured,
+    Ieee802154FoundationTransitionFailure, Ieee802154MacPolicyConfigured,
+    Ieee802154MacPolicyRecovery, Ieee802154MacPolicyTransitionFailure, Ieee802154Reset,
+    Ieee802154ResetTransitionFailure,
+};
 pub use power::{PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError};
 pub use types::{
     CfrValue, ForcedRxGain, MacInterruptEvents, MacInterruptMask, MacInterruptSnapshot,
@@ -334,6 +366,14 @@ pub(crate) fn phy_pac(access: &(impl SharedPhyAccess + ?Sized)) -> &RadioPhyRegi
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn phy_pac_mut(access: &mut (impl SharedPhyAccess + ?Sized)) -> &mut RadioPhyRegisters {
     sealed::SharedPhyAccess::pac_mut(access)
+}
+
+/// Borrow the IEEE 802.15.4 MAC partition from the complete powered owner.
+///
+/// Unlike shared-PHY access, this capability is intentionally unavailable on
+/// a Bluetooth-only shared-PHY borrow.
+pub(crate) fn ieee802154_pac_mut(access: &mut PhyHal) -> &mut WifiRadioRegisters {
+    access.registers.radio_mut()
 }
 
 /// Type states for the coarse radio power lifecycle.

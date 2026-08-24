@@ -22,16 +22,18 @@ pub enum ImageClass {
     DiagnosticMacIrq,
     DiagnosticTaskPoll,
     DiagnosticRxDelivery,
+    DiagnosticIeee802154EventStatus,
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
         Self::DiagnosticMacIrq,
         Self::DiagnosticTaskPoll,
         Self::DiagnosticRxDelivery,
+        Self::DiagnosticIeee802154EventStatus,
     ];
 
     pub const fn id(self) -> &'static str {
@@ -42,6 +44,7 @@ impl ImageClass {
             Self::DiagnosticMacIrq => "diagnostic-mac-irq",
             Self::DiagnosticTaskPoll => "diagnostic-task-poll",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
+            Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
         }
     }
 
@@ -61,6 +64,9 @@ impl ImageClass {
             Self::DiagnosticRxDelivery => {
                 "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
             }
+            Self::DiagnosticIeee802154EventStatus => {
+                "open-radio-hil,ieee802154-event-status-probe,psram-task-stack,code-psram,profile-psram-data"
+            }
         }
     }
 
@@ -71,7 +77,8 @@ impl ImageClass {
             | Self::Correctness
             | Self::DiagnosticMacIrq
             | Self::DiagnosticTaskPoll
-            | Self::DiagnosticRxDelivery => "psram-code-psram-data-psram-stack",
+            | Self::DiagnosticRxDelivery
+            | Self::DiagnosticIeee802154EventStatus => "psram-code-psram-data-psram-stack",
         }
     }
 
@@ -192,6 +199,11 @@ pub enum Workload {
         boots: u8,
         intervals: u16,
         period_millis: u16,
+    },
+    Ieee802154EventStatus {
+        boots: u8,
+        poll_limit: u32,
+        timer_threshold: u32,
     },
     Udp {
         direction: Direction,
@@ -358,6 +370,15 @@ impl Scenario {
             )
             .into());
         }
+        let event_status_image = self.image == ImageClass::DiagnosticIeee802154EventStatus;
+        let event_status_workload = matches!(self.workload, Workload::Ieee802154EventStatus { .. });
+        if event_status_image != event_status_workload {
+            return Err(format!(
+                "{}: IEEE 802.15.4 EVENT_STATUS workload and diagnostic image must be selected together",
+                self.source.display()
+            )
+            .into());
+        }
         if self.evidence.openwrt_tx_monitor_rx
             && (self.image != ImageClass::DiagnosticRxDelivery
                 || !matches!(
@@ -444,6 +465,25 @@ impl Scenario {
                 bounded(*boots, 1, 20, self, "boots")?;
                 bounded(*intervals, 2, 100, self, "intervals")?;
                 bounded(*period_millis, 1, 1_000, self, "period_millis")?;
+            }
+            Workload::Ieee802154EventStatus {
+                boots,
+                poll_limit,
+                timer_threshold,
+            } => {
+                bounded(*boots, 1, 20, self, "boots")?;
+                bounded(*poll_limit, 1, 1_000_000, self, "poll_limit")?;
+                bounded(*timer_threshold, 1, 1_000, self, "timer_threshold")?;
+                if self.criteria != Criteria::default() {
+                    return self.criteria_error(
+                        "IEEE 802.15.4 EVENT_STATUS diagnostic does not accept network criteria",
+                    );
+                }
+                if self.evidence != EvidenceConfig::default() {
+                    return self.criteria_error(
+                        "IEEE 802.15.4 EVENT_STATUS diagnostic does not accept external Wi-Fi evidence",
+                    );
+                }
             }
             Workload::Udp {
                 direction,
@@ -916,6 +956,82 @@ mod tests {
             assert_eq!(scenario.repetitions, 5);
             assert_eq!(scenario.criteria.minimum_concurrent_ap_clients, Some(2));
         }
+    }
+
+    #[test]
+    fn ieee802154_event_status_diagnostic_is_exclusive_and_bounded() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let scenario = catalog
+            .get("ieee802154-event-status-selective-ack")
+            .unwrap();
+        assert_eq!(scenario.image, ImageClass::DiagnosticIeee802154EventStatus);
+        assert!(matches!(
+            scenario.workload,
+            Workload::Ieee802154EventStatus {
+                boots: 3,
+                poll_limit: 100_000,
+                timer_threshold: 1_000,
+            }
+        ));
+        assert!(scenario.link.is_none());
+
+        let mut wrong_image = scenario.clone();
+        wrong_image.image = ImageClass::Correctness;
+        assert!(wrong_image.validate().is_err());
+
+        let mut wrong_workload = scenario.clone();
+        wrong_workload.workload = Workload::Timebase {
+            boots: 1,
+            intervals: 2,
+            period_millis: 1,
+        };
+        assert!(wrong_workload.validate().is_err());
+
+        for workload in [
+            Workload::Ieee802154EventStatus {
+                boots: 0,
+                poll_limit: 1,
+                timer_threshold: 1,
+            },
+            Workload::Ieee802154EventStatus {
+                boots: 1,
+                poll_limit: 0,
+                timer_threshold: 1,
+            },
+            Workload::Ieee802154EventStatus {
+                boots: 1,
+                poll_limit: 1,
+                timer_threshold: 0,
+            },
+            Workload::Ieee802154EventStatus {
+                boots: 21,
+                poll_limit: 1,
+                timer_threshold: 1,
+            },
+            Workload::Ieee802154EventStatus {
+                boots: 1,
+                poll_limit: 1_000_001,
+                timer_threshold: 1,
+            },
+            Workload::Ieee802154EventStatus {
+                boots: 1,
+                poll_limit: 1,
+                timer_threshold: 1_001,
+            },
+        ] {
+            let mut out_of_bounds = scenario.clone();
+            out_of_bounds.workload = workload;
+            assert!(out_of_bounds.validate().is_err());
+        }
+
+        let mut with_network_criteria = scenario.clone();
+        with_network_criteria.criteria.exact_delivery = true;
+        assert!(with_network_criteria.validate().is_err());
+
+        let mut with_external_evidence = scenario.clone();
+        with_external_evidence.evidence.openwrt_tx_monitor_rx = true;
+        assert!(with_external_evidence.validate().is_err());
     }
 
     #[test]

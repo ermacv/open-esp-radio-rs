@@ -163,6 +163,38 @@ include-reachable = false
 entry-contract = "none"
 output = "generated/findings/ble-task-lifecycle.ir"
 
+# Focused IEEE 802.15.4 discovery surfaces over the authenticated BTBB and
+# coexistence artifacts. Keep the public esp_ieee802154_ controller family out
+# of executable analysis until its matching linked ESP-IDF image exists. The
+# existing artifact-wide profiles remain the function/register inventory
+# authority; these focused profiles only bound human-sized review scopes.
+[[analysis.ir]]
+id = "ieee802154-btbb"
+sources = ["btbb"]
+roots = "symbol-prefix"
+symbol-prefix = "ieee802154_"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ieee802154-btbb.ir"
+
+[[analysis.ir]]
+id = "ieee802154-zb"
+sources = ["btbb"]
+roots = "symbol-prefix"
+symbol-prefix = "zb_"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ieee802154-zb.ir"
+
+[[analysis.ir]]
+id = "ieee802154-coex"
+sources = ["coex"]
+roots = "symbol-prefix"
+symbol-prefix = "esp_coex_ieee802154_"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/ieee802154-coex.ir"
+
 [registers]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
@@ -592,5 +624,35 @@ roots = [
     "ble-controller:r_btdm_task_disable",
     "ble-controller:r_btdm_task_shutdown",
     "ble-controller:r_btdm_task_deinit",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "ieee802154-baseband-leaves"
+profiles = ["ieee802154-btbb", "ieee802154-zb"]
+roots = [
+    "btbb:ieee802154_ed_trig_tx_rampup_get",
+    "btbb:ieee802154_rx_rampup_get",
+    "btbb:ieee802154_set_rx_sense",
+    "btbb:ieee802154_tx_rampup_get",
+    "btbb:ieee802154_txon_delay_set",
+    "btbb:zb_rx_auto_sel",
+    "btbb:zb_rx_core_set",
+    "btbb:zb_rx_v0_0_set",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "ieee802154-coex-client"
+profiles = ["ieee802154-coex"]
+roots = [
+    "coex:esp_coex_ieee802154_ack_pti_set",
+    "coex:esp_coex_ieee802154_coex_break_notify",
+    "coex:esp_coex_ieee802154_extcoex_rx_stage",
+    "coex:esp_coex_ieee802154_extcoex_tx_stage",
+    "coex:esp_coex_ieee802154_force_rx_enable",
+    "coex:esp_coex_ieee802154_status_disable",
+    "coex:esp_coex_ieee802154_status_enable",
+    "coex:esp_coex_ieee802154_txrx_pti_set",
 ]
 include-reachable = true

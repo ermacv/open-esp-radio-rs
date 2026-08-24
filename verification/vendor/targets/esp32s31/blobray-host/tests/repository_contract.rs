@@ -241,6 +241,11 @@ fn closed_chip_pac_is_the_only_driver_dependency_on_the_raw_pac() {
     let raw = fs::read_to_string(driver.join("chips/esp32s31/pac-raw/src/lib.rs"))
         .expect("read generated raw PAC");
     assert!(!raw.contains("input & 0x00000000"));
+    assert!(raw.contains("EVENT_STATUS (r) register accessor"));
+    assert!(
+        !raw.contains("impl crate::Writable for EventStatusSpec"),
+        "unproved IEEE 802.15.4 event acknowledgement must remain absent"
+    );
 
     let mut closed_files = Vec::new();
     rust_files(&driver.join("chips/esp32s31/pac/src"), &mut closed_files);
@@ -818,6 +823,178 @@ fn analysis_input_builder_owns_every_generated_project_role() {
     .map(str::to_owned)
     .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn ieee802154_vendor_scaffold_is_fail_closed_and_source_scoped() {
+    let target = repository_root().join("verification/vendor/targets/esp32s31");
+
+    let disposition = fs::read_to_string(target.join("dispositions/ieee802154.toml"))
+        .expect("read IEEE 802.15.4 dispositions")
+        .parse::<toml_edit::DocumentMut>()
+        .expect("parse IEEE 802.15.4 dispositions");
+    assert_eq!(
+        disposition["default-disposition"].as_str(),
+        Some("not-yet-ported")
+    );
+    assert_eq!(disposition["default-protocol"].as_str(), Some("unknown"));
+
+    let actual_prefixes = disposition["protocol-prefixes"]
+        .as_array_of_tables()
+        .expect("IEEE 802.15.4 protocol prefixes")
+        .iter()
+        .map(|entry| {
+            (
+                entry["source"].as_str().expect("prefix source").to_owned(),
+                entry["prefix"].as_str().expect("symbol prefix").to_owned(),
+                entry["protocol"]
+                    .as_str()
+                    .expect("prefix protocol")
+                    .to_owned(),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let expected_prefixes = [
+        ("ieee802154", "esp_ieee802154_", "ieee802154"),
+        ("btbb", "ieee802154_", "ieee802154"),
+        ("btbb", "zb_", "ieee802154"),
+        ("coex", "esp_coex_ieee802154_", "ieee802154"),
+    ]
+    .into_iter()
+    .map(|(source, prefix, protocol)| (source.to_owned(), prefix.to_owned(), protocol.to_owned()))
+    .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(actual_prefixes, expected_prefixes);
+
+    let addon = fs::read_to_string(target.join("verification-addon.toml"))
+        .expect("read verification add-on")
+        .parse::<toml_edit::DocumentMut>()
+        .expect("parse verification add-on");
+    let suites = addon["suites"]
+        .as_array_of_tables()
+        .expect("verification suites");
+    for (id, source, vendor_prefix, rust_prefix) in [
+        (
+            "ieee802154-btbb",
+            "btbb",
+            "ieee802154_",
+            "open_ieee802154_btbb_trace_",
+        ),
+        ("ieee802154-zb", "btbb", "zb_", "open_ieee802154_zb_trace_"),
+        (
+            "ieee802154-coex",
+            "coex",
+            "esp_coex_ieee802154_",
+            "open_ieee802154_coex_trace_",
+        ),
+    ] {
+        let suite = suites
+            .iter()
+            .find(|suite| suite["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("missing IEEE 802.15.4 suite {id}"));
+        assert_eq!(suite["gate"].as_str(), Some("completion"));
+        assert_eq!(suite["rust-artifact-role"].as_str(), Some("rust-artifact"));
+        assert_eq!(suite["rust-prefix"].as_str(), Some(rust_prefix));
+        assert!(
+            suite["profiles"]
+                .as_array()
+                .is_some_and(|items| items.is_empty())
+        );
+        assert!(
+            suite["baselines"]
+                .as_array()
+                .is_some_and(|items| items.is_empty())
+        );
+        let dispositions = suite["dispositions"]
+            .as_array()
+            .expect("suite dispositions");
+        assert_eq!(dispositions.len(), 1);
+        assert_eq!(
+            dispositions.get(0).and_then(|value| value.as_str()),
+            Some("dispositions/ieee802154.toml")
+        );
+        let vendor = suite["vendor"]
+            .as_array_of_tables()
+            .expect("suite vendor selection");
+        assert_eq!(vendor.len(), 1);
+        let vendor = vendor.get(0).expect("one suite vendor selection");
+        assert_eq!(vendor["source"].as_str(), Some(source));
+        assert_eq!(vendor["prefix"].as_str(), Some(vendor_prefix));
+        assert!(vendor.get("all").is_none());
+        assert!(vendor.get("symbols").is_none());
+    }
+
+    assert!(suites.iter().all(|suite| {
+        suite["vendor"]
+            .as_array_of_tables()
+            .expect("suite vendor selection")
+            .iter()
+            .all(|vendor| vendor["source"].as_str() != Some("ieee802154"))
+    }));
+
+    let project = fs::read_to_string(target.join("vendor-project.toml"))
+        .expect("read vendor project")
+        .parse::<toml_edit::DocumentMut>()
+        .expect("parse vendor project");
+    let ir_profiles = project["analysis"]["ir"]
+        .as_array_of_tables()
+        .expect("project IR profiles");
+    for (id, source, prefix) in [
+        ("ieee802154-btbb", "btbb", "ieee802154_"),
+        ("ieee802154-zb", "btbb", "zb_"),
+        ("ieee802154-coex", "coex", "esp_coex_ieee802154_"),
+    ] {
+        let profile = ir_profiles
+            .iter()
+            .find(|profile| profile["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("missing IEEE 802.15.4 IR profile {id}"));
+        assert_eq!(profile["roots"].as_str(), Some("symbol-prefix"));
+        assert_eq!(profile["symbol-prefix"].as_str(), Some(prefix));
+        let sources = profile["sources"].as_array().expect("IR profile sources");
+        assert_eq!(sources.len(), 1);
+        assert_eq!(
+            sources.get(0).and_then(|value| value.as_str()),
+            Some(source)
+        );
+    }
+
+    let scopes = project["review"]["scopes"]
+        .as_array_of_tables()
+        .expect("project review scopes");
+    let baseband = scopes
+        .iter()
+        .find(|scope| scope["id"].as_str() == Some("ieee802154-baseband-leaves"))
+        .expect("IEEE 802.15.4 baseband review scope");
+    assert!(
+        baseband["roots"]
+            .as_array()
+            .expect("baseband roots")
+            .iter()
+            .all(|root| root.as_str().is_some_and(|root| {
+                root.strip_prefix("btbb:").is_some_and(|symbol| {
+                    symbol.starts_with("ieee802154_") || symbol.starts_with("zb_")
+                })
+            }))
+    );
+    let coex = scopes
+        .iter()
+        .find(|scope| scope["id"].as_str() == Some("ieee802154-coex-client"))
+        .expect("IEEE 802.15.4 coexistence review scope");
+    assert!(
+        coex["roots"]
+            .as_array()
+            .expect("coexistence roots")
+            .iter()
+            .all(|root| root
+                .as_str()
+                .is_some_and(|root| root.starts_with("coex:esp_coex_ieee802154_")))
+    );
+
+    for input_contract in ["local.example.toml", "build-analysis-inputs"] {
+        let input = fs::read_to_string(target.join(input_contract))
+            .unwrap_or_else(|_| panic!("read {input_contract}"));
+        assert!(!input.contains("source-artifact:ieee802154"));
+        assert!(!input.contains("source-inventory:ieee802154"));
+    }
 }
 
 #[test]

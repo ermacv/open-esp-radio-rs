@@ -14,6 +14,7 @@ pub mod clock;
 mod coex;
 mod frequency;
 mod generated;
+mod ieee802154;
 mod iq_estimator;
 #[cfg(test)]
 #[doc(hidden)]
@@ -80,6 +81,17 @@ pub use generated::{
     MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
     MacTxPtiCount, MacTxQueueIndex,
 };
+#[doc(hidden)]
+pub use ieee802154::Ieee802154RegisterLease;
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub use ieee802154::Ieee802154RouteRawReadback;
+pub use ieee802154::{
+    Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154FoundationSnapshot,
+    Ieee802154FrequencyCode, Ieee802154MacControl, Ieee802154MacPolicySnapshot,
+    Ieee802154PanIdentity, Ieee802154Pti, Ieee802154RxStateCode, Ieee802154StateSnapshot,
+    Ieee802154TxStateCode,
+};
 pub use mac_block_ack::{
     ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, RxBlockAckEntrySnapshot,
     TxBlockAckDiagnosticSnapshot, TxBlockAckPayload, TxBlockAckRegisterImage,
@@ -131,6 +143,7 @@ pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 /// Private Wi-Fi and shared-radio owners used by one exclusive Wi-Fi route.
 struct WifiRadioPeripheralOwners {
     wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
+    ieee802154_mac: svd::Ieee802154Mac,
     radio_phy: RadioPhyRegisters,
     coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
@@ -160,6 +173,7 @@ struct RetainedBluetoothPeripheralOwners {
 struct RetainedWifiPeripheralOwners {
     wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
     wifi_interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
+    ieee802154: svd::peripheral_ownership::Ieee802154Peripherals,
 }
 
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
@@ -186,6 +200,7 @@ pub struct RadioHardware {
     bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
     bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
     shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
+    ieee802154: svd::peripheral_ownership::Ieee802154Peripherals,
 }
 
 impl RadioHardware {
@@ -204,6 +219,7 @@ impl RadioHardware {
             bluetooth,
             bluetooth_interrupts,
             shared_radio,
+            ieee802154,
         } = svd::peripheral_ownership::partition(peripherals);
         Self {
             wifi_mac,
@@ -213,6 +229,7 @@ impl RadioHardware {
             bluetooth,
             bluetooth_interrupts,
             shared_radio,
+            ieee802154,
         }
     }
 
@@ -233,11 +250,13 @@ impl RadioHardware {
             bluetooth,
             bluetooth_interrupts,
             shared_radio,
+            ieee802154,
         } = self;
         WifiColdRegisters {
             registers: WifiRadioRegisters {
                 peripherals: WifiRadioPeripheralOwners {
                     wifi_mac,
+                    ieee802154_mac: ieee802154.ieee802154_mac,
                     radio_phy: RadioPhyRegisters {
                         peripherals: radio_phy,
                     },
@@ -267,6 +286,7 @@ impl RadioHardware {
             bluetooth,
             bluetooth_interrupts,
             shared_radio,
+            ieee802154,
         } = self;
         BluetoothColdRegisters {
             task: BluetoothTaskRegisters {
@@ -279,6 +299,7 @@ impl RadioHardware {
                 retained_wifi: RetainedWifiPeripheralOwners {
                     wifi_mac,
                     wifi_interrupts,
+                    ieee802154,
                 },
             },
             interrupts: BluetoothInterruptSetup {
@@ -646,6 +667,7 @@ impl WifiColdRegisters {
                     peripherals:
                         WifiRadioPeripheralOwners {
                             wifi_mac,
+                            ieee802154_mac,
                             radio_phy,
                             coexistence,
                             shared_radio,
@@ -667,6 +689,7 @@ impl WifiColdRegisters {
             bluetooth,
             bluetooth_interrupts,
             shared_radio,
+            ieee802154: svd::peripheral_ownership::Ieee802154Peripherals { ieee802154_mac },
         }
     }
 
@@ -759,6 +782,7 @@ impl BluetoothTaskRegisters {
                 RetainedWifiPeripheralOwners {
                     wifi_mac,
                     wifi_interrupts,
+                    ieee802154,
                 },
         } = self;
         RadioHardware {
@@ -769,6 +793,7 @@ impl BluetoothTaskRegisters {
             bluetooth,
             bluetooth_interrupts: interrupts.peripherals,
             shared_radio,
+            ieee802154,
         }
     }
 

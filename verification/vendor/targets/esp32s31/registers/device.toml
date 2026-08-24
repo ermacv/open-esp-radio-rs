@@ -97,6 +97,7 @@ fragments = [
     "peripherals/phy-nrx-recovered-gaps.toml",
     "peripherals/phy-bb-recovered-gaps.toml",
     "peripherals/phy-brx-recovered-gaps.toml",
+    "peripherals/ieee802154-mac.toml",
 ]
 
 [device]

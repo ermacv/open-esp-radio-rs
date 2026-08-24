@@ -152,6 +152,22 @@ peripherals = [
     "ZBBB_RADIO_CONTROL",
 ]
 
+[[ownership-partitions]]
+name = "Ieee802154Peripherals"
+member = "ieee802154"
+description = "IEEE 802.15.4 MAC registers owned by the IEEE 802.15.4 hardware lifecycle."
+peripherals = [
+    "IEEE802154_MAC",
+]
+
+[[feature-modules]]
+name = "ieee802154_event_status_validation"
+feature = "validation-probes"
+
+[[feature-modules]]
+name = "ieee802154_route_validation"
+feature = "validation-probes"
+
 [[enum-domains]]
 name = "MacInterface"
 description = "Reviewed ESP32-S31 Wi-Fi MAC interface selector shared by address, BSSID, crypto, TX and ordinary receive-BlockAck transactions."

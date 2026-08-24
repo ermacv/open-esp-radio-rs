@@ -137,6 +137,18 @@ are not treated as ownership or feature evidence. The remaining unmapped
 `libbtbb` words belong only to the explicitly deferred BR/EDR, CTE and IEEE
 802.15.4 paths.
 
+The pinned public-source review for the initial IEEE 802.15.4 clock, reset,
+MAC-foundation and channel-code boundary is recorded in
+[`analysis/ieee802154-lifecycle.md`](analysis/ieee802154-lifecycle.md). Its
+overall verdict is `INCOMPLETE`; in particular it does not qualify RF-ready or
+the unresolved `EVENT_STATUS` clear semantics.
+
+The next source-only boundary for static MAC policy, direct frame storage,
+RX-buffer ownership and the still-quiesced IRQ model is recorded in
+[`analysis/ieee802154-dataplane.md`](analysis/ieee802154-dataplane.md). It also
+remains `INCOMPLETE`: the isolated storage and dispatch contracts do not imply
+live DMA, an active interrupt route, or on-air readiness.
+
 The `rx-done-to-pp-task`, `rx-success-to-pp-task` and
 `tx-complete-to-pp-task` routes execute the concrete queue and counted-latch
 lifecycle and require the selector-specific `ppTask` handler. They establish

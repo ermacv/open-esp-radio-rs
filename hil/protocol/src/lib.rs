@@ -15,11 +15,12 @@ pub use framing::{
 };
 pub use message::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
-    FeatureCapabilities, Finished, FlowConfig, InitializationConfiguration, Ipv4Endpoint,
-    LinkHealth, NetworkCredentials, NetworkCredentialsError, NetworkInfo, NetworkIpv4Configuration,
-    NetworkSchedulerEvidence, OperationStatus, PROTOCOL_VERSION, RadioEvidence, RejectReason,
-    ResultSummary, RxConsumerLedgerEvidence, RxDeliveryEvidence, RxMacOrderEvidence,
-    RxRadioEvidence, RxReorderDeliveryEvidence, RxSequenceStageEvidence,
+    FeatureCapabilities, Finished, FlowConfig, Ieee802154EventStatusProbeEvidence,
+    Ieee802154EventStatusProbeRequest, Ieee802154EventStatusProbeStop, InitializationConfiguration,
+    Ipv4Endpoint, LinkHealth, NetworkCredentials, NetworkCredentialsError, NetworkInfo,
+    NetworkIpv4Configuration, NetworkSchedulerEvidence, OperationStatus, PROTOCOL_VERSION,
+    RadioEvidence, RejectReason, ResultSummary, RxConsumerLedgerEvidence, RxDeliveryEvidence,
+    RxMacOrderEvidence, RxRadioEvidence, RxReorderDeliveryEvidence, RxSequenceStageEvidence,
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, ServiceInfo, SessionConfig, SessionLinkRequirements,
     SessionReady, SessionState, StackUsage, StackWatermark, StartupArtifactChunk,
     StartupArtifactChunkError, StartupArtifactDisposition, StartupArtifactStatus, StateChange,

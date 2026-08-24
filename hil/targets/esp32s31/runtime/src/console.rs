@@ -25,6 +25,8 @@ use esp_hal::{
     peripherals::USB_DEVICE,
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
+#[cfg(feature = "ieee802154-event-status-probe")]
+use open_esp_radio_hil_protocol::Ieee802154EventStatusProbeRequest;
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
     Finished, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials, NetworkIpv4Configuration,
@@ -99,6 +101,13 @@ static EVENTS: Channel<CriticalSectionRawMutex, Envelope<Event>, EVENT_QUEUE_CAP
 #[unsafe(link_section = ".critical.data.logging")]
 static STARTUP_CONFIGURATIONS: Channel<CriticalSectionRawMutex, StartupConfiguration, 1> =
     Channel::new();
+#[cfg(feature = "ieee802154-event-status-probe")]
+#[unsafe(link_section = ".critical.data.logging")]
+static IEEE802154_EVENT_STATUS_PROBES: Channel<
+    CriticalSectionRawMutex,
+    Ieee802154EventStatusProbe,
+    1,
+> = Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
 static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
@@ -161,6 +170,27 @@ pub struct StartupConfiguration {
     pub ipv4: NetworkIpv4Configuration,
     pub data_plane: open_esp_radio_hil_protocol::WifiDataPlanePlacement,
     pub phy_calibration_artifact: Option<StartupArtifact>,
+}
+
+/// The single owner-consuming operation selected before radio initialization.
+///
+/// The IEEE 802.15.4 variant is a bounded diagnostic discriminator only. It
+/// neither enables the CPU interrupt route nor attests production IRQ
+/// readiness, and the target returns after publishing its one completion.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the no-alloc target moves the existing bounded startup artifact through this one-shot owner handoff"
+)]
+pub enum PreInitializationRequest {
+    Startup(StartupConfiguration),
+    #[cfg(feature = "ieee802154-event-status-probe")]
+    Ieee802154EventStatus(Ieee802154EventStatusProbe),
+}
+
+#[cfg(feature = "ieee802154-event-status-probe")]
+pub struct Ieee802154EventStatusProbe {
+    pub request_id: u32,
+    pub request: Ieee802154EventStatusProbeRequest,
 }
 
 #[derive(Clone, Copy)]
@@ -452,10 +482,24 @@ pub fn publish_event(session_id: u64, request_id: u32, body: Event) {
     }
 }
 
-/// Waits without polling until the host provisions this boot's complete
-/// startup configuration.
-pub async fn receive_startup_configuration() -> StartupConfiguration {
-    STARTUP_CONFIGURATIONS.receive().await
+/// Waits without polling until the host chooses the boot's unique radio owner.
+pub async fn receive_pre_initialization_request() -> PreInitializationRequest {
+    #[cfg(feature = "ieee802154-event-status-probe")]
+    {
+        match select(
+            STARTUP_CONFIGURATIONS.receive(),
+            IEEE802154_EVENT_STATUS_PROBES.receive(),
+        )
+        .await
+        {
+            Either::First(configuration) => PreInitializationRequest::Startup(configuration),
+            Either::Second(probe) => PreInitializationRequest::Ieee802154EventStatus(probe),
+        }
+    }
+    #[cfg(not(feature = "ieee802154-event-status-probe"))]
+    {
+        PreInitializationRequest::Startup(STARTUP_CONFIGURATIONS.receive().await)
+    }
 }
 
 /// Publish the role-neutral completion edge for one initialization command.
@@ -654,6 +698,87 @@ async fn queue_event_reliably(session_id: u64, request_id: u32, body: Event) -> 
     message_sequence
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Ieee802154EventStatusProbeAdmission {
+    Admit,
+    Reject(RejectReason),
+}
+
+/// Decide admission without touching the radio owner or any validation MMIO.
+///
+/// Unsupported images take precedence over state and request validation.
+/// Once supported, every owner/state mismatch takes precedence over malformed
+/// bounds so a caller cannot use configuration errors to probe runtime state.
+const fn ieee802154_event_status_probe_admission(
+    supported: bool,
+    initialized: bool,
+    waiting_for_initialization: bool,
+    session_id: u64,
+    already_requested: bool,
+    request_valid: bool,
+) -> Ieee802154EventStatusProbeAdmission {
+    if !supported {
+        Ieee802154EventStatusProbeAdmission::Reject(RejectReason::Unsupported)
+    } else if initialized || !waiting_for_initialization || session_id != 0 || already_requested {
+        Ieee802154EventStatusProbeAdmission::Reject(RejectReason::InvalidState)
+    } else if !request_valid {
+        Ieee802154EventStatusProbeAdmission::Reject(RejectReason::InvalidConfiguration)
+    } else {
+        Ieee802154EventStatusProbeAdmission::Admit
+    }
+}
+
+/// Reserve normal initialization once either initialization itself or the
+/// one-shot owner-consuming IEEE diagnostic has been admitted.
+const fn initialization_owner_rejection(
+    initialized: bool,
+    ieee802154_event_status_probe_requested: bool,
+) -> Option<RejectReason> {
+    if initialized || ieee802154_event_status_probe_requested {
+        Some(RejectReason::InvalidState)
+    } else {
+        None
+    }
+}
+
+// Compile-time regression matrix for the pure pre-initialization admission
+// boundary. These assertions are built in both ordinary and diagnostic target
+// graphs and add no runtime code or validation capability.
+const _: () = {
+    assert!(matches!(
+        ieee802154_event_status_probe_admission(false, true, false, 7, true, false),
+        Ieee802154EventStatusProbeAdmission::Reject(RejectReason::Unsupported)
+    ));
+    assert!(matches!(
+        ieee802154_event_status_probe_admission(true, true, true, 0, false, false),
+        Ieee802154EventStatusProbeAdmission::Reject(RejectReason::InvalidState)
+    ));
+    assert!(matches!(
+        ieee802154_event_status_probe_admission(true, false, false, 0, false, false),
+        Ieee802154EventStatusProbeAdmission::Reject(RejectReason::InvalidState)
+    ));
+    assert!(matches!(
+        ieee802154_event_status_probe_admission(true, false, true, 1, false, false),
+        Ieee802154EventStatusProbeAdmission::Reject(RejectReason::InvalidState)
+    ));
+    assert!(matches!(
+        ieee802154_event_status_probe_admission(true, false, true, 0, true, false),
+        Ieee802154EventStatusProbeAdmission::Reject(RejectReason::InvalidState)
+    ));
+    assert!(matches!(
+        ieee802154_event_status_probe_admission(true, false, true, 0, false, false),
+        Ieee802154EventStatusProbeAdmission::Reject(RejectReason::InvalidConfiguration)
+    ));
+    assert!(matches!(
+        ieee802154_event_status_probe_admission(true, false, true, 0, false, true),
+        Ieee802154EventStatusProbeAdmission::Admit
+    ));
+    assert!(matches!(
+        initialization_owner_rejection(false, true),
+        Some(RejectReason::InvalidState)
+    ));
+};
+
 /// Owns commands while individual benchmark services migrate to
 /// runtime-configured sessions. Unsupported mutations receive an explicit
 /// response instead of being silently ignored.
@@ -675,6 +800,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
     .await;
     let mut initialized = false;
     let mut state = SessionState::WaitingForInitialization;
+    // Once this owner-consuming diagnostic has been queued, normal radio
+    // initialization must not race it. The diagnostic image is one-shot and
+    // publishes its completion before the product task returns.
+    #[cfg(feature = "ieee802154-event-status-probe")]
+    let mut ieee802154_event_status_probe_requested = false;
+    #[cfg(not(feature = "ieee802154-event-status-probe"))]
+    let ieee802154_event_status_probe_requested = false;
     // One slot per physical STA+AP network endpoint. A slot is keyed by its
     // opaque session ID and no two live slots may target the same interface.
     let mut sessions = [None::<ProtocolSession>; 2];
@@ -724,6 +856,54 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
+                    Command::ProbeIeee802154EventStatus(request) => {
+                        let admission = ieee802154_event_status_probe_admission(
+                            capabilities.features.ieee802154_event_status_probe,
+                            initialized,
+                            state == SessionState::WaitingForInitialization,
+                            session_id,
+                            ieee802154_event_status_probe_requested,
+                            request.validate(),
+                        );
+                        match admission {
+                            Ieee802154EventStatusProbeAdmission::Reject(reason) => {
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(reason),
+                                )
+                                .await;
+                            }
+                            Ieee802154EventStatusProbeAdmission::Admit => {
+                                #[cfg(feature = "ieee802154-event-status-probe")]
+                                {
+                                    if IEEE802154_EVENT_STATUS_PROBES
+                                        .try_send(Ieee802154EventStatusProbe {
+                                            request_id,
+                                            request,
+                                        })
+                                        .is_err()
+                                    {
+                                        publish_event_reliably(
+                                            session_id,
+                                            request_id,
+                                            Event::Rejected(RejectReason::Busy),
+                                        )
+                                        .await;
+                                    } else {
+                                        ieee802154_event_status_probe_requested = true;
+                                    }
+                                }
+                                #[cfg(not(feature = "ieee802154-event-status-probe"))]
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(RejectReason::Unsupported),
+                                )
+                                .await;
+                            }
+                        }
+                    }
                     Command::UploadStartupArtifact(chunk) => {
                         let response = if !capabilities.features.startup_artifact {
                             Event::Rejected(RejectReason::Unsupported)
@@ -737,8 +917,12 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::Initialize(configuration) => {
-                        let (response, accepted) = if initialized {
-                            (Event::Rejected(RejectReason::InvalidState), false)
+                        let (response, accepted) = if let Some(reason) =
+                            initialization_owner_rejection(
+                                initialized,
+                                ieee802154_event_status_probe_requested,
+                            ) {
+                            (Event::Rejected(reason), false)
                         } else if !configuration.validate()
                             || startup_artifact.started_but_incomplete()
                         {

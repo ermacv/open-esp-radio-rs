@@ -1,6 +1,7 @@
 //! Reproducible HIL firmware construction and image auditing.
 
 use crate::*;
+use open_esp_radio_hil_protocol::FeatureCapabilities;
 
 pub(crate) const QUALIFIED_PROFILE: &str = "psram-code-psram-data";
 pub(crate) const TARGET: &str = "riscv32imafc-unknown-none-elf";
@@ -9,6 +10,87 @@ const BOOTSTRAP_BIN: &str = "open-esp-radio-hil-esp32s31-bootstrap";
 const RUNTIME_MAGIC: u32 = 0x3247_5453;
 const RUNTIME_CRC_OFFSET: usize = 40;
 const RUNTIME_HEADER_BYTES: usize = 44;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ImageCapabilitySignature {
+    driver_observation: bool,
+    task_poll: bool,
+    rx_delivery: bool,
+    mac_irq: bool,
+    ieee802154_event_status: bool,
+    psram_task_stack: bool,
+}
+
+pub(crate) fn classify_flashed_capabilities(
+    features: &FeatureCapabilities,
+) -> Option<qualification::scenario::ImageClass> {
+    classify_image_signature(ImageCapabilitySignature {
+        driver_observation: features.driver_observation_evidence,
+        task_poll: features.task_poll_evidence,
+        rx_delivery: features.rx_delivery_evidence,
+        mac_irq: features.mac_irq_evidence,
+        ieee802154_event_status: features.ieee802154_event_status_probe,
+        psram_task_stack: features.psram_task_stack,
+    })
+}
+
+fn classify_image_signature(
+    signature: ImageCapabilitySignature,
+) -> Option<qualification::scenario::ImageClass> {
+    use qualification::scenario::ImageClass;
+
+    match signature {
+        ImageCapabilitySignature {
+            driver_observation: false,
+            task_poll: false,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            psram_task_stack: true,
+        } => Some(ImageClass::Performance),
+        ImageCapabilitySignature {
+            driver_observation: true,
+            task_poll: false,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            psram_task_stack: true,
+        } => Some(ImageClass::Correctness),
+        ImageCapabilitySignature {
+            driver_observation: true,
+            task_poll: false,
+            rx_delivery: false,
+            mac_irq: true,
+            ieee802154_event_status: false,
+            psram_task_stack: true,
+        } => Some(ImageClass::DiagnosticMacIrq),
+        ImageCapabilitySignature {
+            driver_observation: true,
+            task_poll: true,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            psram_task_stack: true,
+        } => Some(ImageClass::DiagnosticTaskPoll),
+        ImageCapabilitySignature {
+            driver_observation: true,
+            task_poll: false,
+            rx_delivery: true,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            psram_task_stack: true,
+        } => Some(ImageClass::DiagnosticRxDelivery),
+        ImageCapabilitySignature {
+            driver_observation: false,
+            task_poll: false,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: true,
+            psram_task_stack: true,
+        } => Some(ImageClass::DiagnosticIeee802154EventStatus),
+        _ => None,
+    }
+}
 
 #[derive(Serialize)]
 struct ArtifactReport<'a> {
@@ -677,6 +759,23 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    fn image_signature(
+        driver_observation: bool,
+        task_poll: bool,
+        rx_delivery: bool,
+        mac_irq: bool,
+        ieee802154_event_status: bool,
+    ) -> ImageCapabilitySignature {
+        ImageCapabilitySignature {
+            driver_observation,
+            task_poll,
+            rx_delivery,
+            mac_irq,
+            ieee802154_event_status,
+            psram_task_stack: true,
+        }
+    }
+
     fn scratch_directory(name: &str) -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = env::temp_dir().join(format!(
@@ -704,7 +803,7 @@ mod tests {
 
     #[test]
     fn image_classes_are_stable_and_do_not_use_workload_environment() {
-        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 6);
+        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 7);
         assert!(
             qualification::scenario::ImageClass::ALL
                 .into_iter()
@@ -734,6 +833,60 @@ mod tests {
             qualification::scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
             "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
         );
+        assert_eq!(
+            qualification::scenario::ImageClass::DiagnosticIeee802154EventStatus.runtime_features(),
+            "open-radio-hil,ieee802154-event-status-probe,psram-task-stack,code-psram,profile-psram-data"
+        );
+    }
+
+    #[test]
+    fn image_capability_classifier_preserves_every_exclusive_class() {
+        use qualification::scenario::ImageClass;
+
+        for (signals, expected) in [
+            (
+                image_signature(false, false, false, false, false),
+                ImageClass::Performance,
+            ),
+            (
+                image_signature(true, false, false, false, false),
+                ImageClass::Correctness,
+            ),
+            (
+                image_signature(true, false, false, true, false),
+                ImageClass::DiagnosticMacIrq,
+            ),
+            (
+                image_signature(true, true, false, false, false),
+                ImageClass::DiagnosticTaskPoll,
+            ),
+            (
+                image_signature(true, false, true, false, false),
+                ImageClass::DiagnosticRxDelivery,
+            ),
+            (
+                image_signature(false, false, false, false, true),
+                ImageClass::DiagnosticIeee802154EventStatus,
+            ),
+        ] {
+            assert_eq!(classify_image_signature(signals), Some(expected));
+        }
+    }
+
+    #[test]
+    fn image_capability_classifier_rejects_mixed_or_non_psram_images() {
+        assert_eq!(
+            classify_image_signature(image_signature(true, false, false, false, true)),
+            None
+        );
+        assert_eq!(
+            classify_image_signature(image_signature(false, true, false, false, true)),
+            None
+        );
+
+        let mut performance = image_signature(false, false, false, false, false);
+        performance.psram_task_stack = false;
+        assert_eq!(classify_image_signature(performance), None);
     }
 
     #[test]

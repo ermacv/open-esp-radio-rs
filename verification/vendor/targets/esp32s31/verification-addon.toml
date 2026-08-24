@@ -25,6 +25,45 @@ all = true
 source = "rom"
 prefix = "phy_"
 
+# Each prefix has its own suite because one suite may select a source only
+# once. This keeps BT/BLE neighbors in libbtbb and generic coexistence symbols
+# outside the IEEE 802.15.4 inventory without enumerating a brittle symbol list.
+[[suites]]
+id = "ieee802154-btbb"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_ieee802154_btbb_trace_"
+profiles = []
+dispositions = ["dispositions/ieee802154.toml"]
+baselines = []
+gate = "completion"
+[[suites.vendor]]
+source = "btbb"
+prefix = "ieee802154_"
+
+[[suites]]
+id = "ieee802154-zb"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_ieee802154_zb_trace_"
+profiles = []
+dispositions = ["dispositions/ieee802154.toml"]
+baselines = []
+gate = "completion"
+[[suites.vendor]]
+source = "btbb"
+prefix = "zb_"
+
+[[suites]]
+id = "ieee802154-coex"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_ieee802154_coex_trace_"
+profiles = []
+dispositions = ["dispositions/ieee802154.toml"]
+baselines = []
+gate = "completion"
+[[suites.vendor]]
+source = "coex"
+prefix = "esp_coex_ieee802154_"
+
 [[suites]]
 id = "libpp-interrupt"
 rust-artifact-role = "rust-artifact"

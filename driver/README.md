@@ -29,6 +29,9 @@ module for the former vendor-derived `wdev` naming.
 - `radio`: public requests and typed role lifecycle.
 - `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.
 - `chips/esp32s31/{pac,registers,hal,phy}`: chip RF/register implementation.
+- `chips/esp32s31/ieee802154/{dma,irq,mac}`: non-operational fixed-frame
+  ownership, quiesced interrupt semantics and pure control transitions for the
+  source-reviewed S31 MAC.
 - `chips/esp32s31/wifi/{dma,mac,sta,ap}`: ESP32-S31 Wi-Fi backend.
 - `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
 - `integration/esp32s31/embassy-wifi`: production composition and the only
@@ -75,11 +78,17 @@ same-channel physical RX producer, one physical TX owner and one IRQ epoch;
 the station association owns the channel and its loss tears down the complete
 pair before either role can be reused. AP does not claim group-data TX, HE or
 power save.
-BLE, Bluetooth, IEEE 802.15.4 and coexistence are not public runtime features
-and have no placeholder public owner types. Internal typed PAC/HAL/LMAC
-transactions exist for the reviewed Wi-Fi-side PTI/request leaves and COEX
-hardware timers; they deliberately remain below the public capability boundary
-until scheduler/lifecycle ownership and joint-radio hardware evidence exist.
+BLE, Bluetooth, IEEE 802.15.4 and coexistence are not public runtime features.
+The IEEE 802.15.4 HAL exposes finite whole-radio typestates only through an
+interrupt-masked static MAC policy; it cannot construct an operational radio.
+Its isolated DMA and IRQ leaves likewise own storage and pure semantics, not a
+live hardware route. The isolated MAC leaf describes non-executable start
+intents and validates already sampled event batches; it cannot issue a command
+or acknowledge hardware status. Bluetooth/BLE still have no placeholder
+public owners.
+The remaining typed PAC/HAL/LMAC transactions stay below the runtime capability
+boundary until scheduler/lifecycle ownership and joint-radio hardware evidence
+exist.
 
 ISR handlers are private backend details: they record pending work and wake the
 runner. Examples contain no ISR, PAC, DMA or register assembly.

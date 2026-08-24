@@ -418,26 +418,8 @@ fn validate_flashed_image(
     let capabilities = capabilities?;
     capture_result?;
 
-    let observed = match (
-        capabilities.features.driver_observation_evidence,
-        capabilities.features.task_poll_evidence,
-        capabilities.features.rx_delivery_evidence,
-        capabilities.features.mac_irq_evidence,
-        capabilities.features.psram_task_stack,
-    ) {
-        (false, false, false, false, true) => qualification::scenario::ImageClass::Performance,
-        (true, false, false, false, true) => qualification::scenario::ImageClass::Correctness,
-        (true, false, false, true, true) => qualification::scenario::ImageClass::DiagnosticMacIrq,
-        (true, true, false, false, true) => qualification::scenario::ImageClass::DiagnosticTaskPoll,
-        (true, false, true, false, true) => {
-            qualification::scenario::ImageClass::DiagnosticRxDelivery
-        }
-        _ => {
-            return Err(
-                "flashed image advertises mutually exclusive diagnostic capabilities".into(),
-            );
-        }
-    };
+    let observed = image::classify_flashed_capabilities(&capabilities.features)
+        .ok_or("flashed image advertises mutually exclusive diagnostic capabilities")?;
     if observed != expected {
         return Err(format!(
             "scenario requires `{}` image but flashed target advertises `{}` capabilities",
@@ -493,6 +475,19 @@ fn execute_workload(
                 boots: *boots,
                 intervals: *intervals,
                 period_millis: *period_millis,
+            },
+            output,
+            lab,
+        ),
+        Workload::Ieee802154EventStatus {
+            boots,
+            poll_limit,
+            timer_threshold,
+        } => transport::ieee802154_event_status::run(
+            transport::ieee802154_event_status::Config {
+                boots: *boots,
+                poll_limit: *poll_limit,
+                timer_threshold: *timer_threshold,
             },
             output,
             lab,

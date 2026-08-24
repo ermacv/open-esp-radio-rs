@@ -135,6 +135,13 @@ min = 0
 max = 0x00ff_ffff
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
 
+[[bounded-domains]]
+name = "StationTbttTargetBits35To10"
+description = "Low 26-bit station-TBTT target image formed from station TSF bits 35:10 by complete hal_set_sta_tbtt."
+min = 0
+max = 0x03ff_ffff
+sources = ["BLOB_LIBPP_HAL_TSF"]
+
 [[flag-domains]]
 name = "MacInterruptMask"
 description = "Reviewed writable images for the MAC interrupt-enable register."
@@ -1032,6 +1039,16 @@ name = "clear_tx_gain_compensation_aux"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TX_GAIN_COMPENSATION_AUX"
 sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
+
+[[masked-register-modifies]]
+name = "publish_station_tbtt_target"
+peripheral = "WIFI_MAC_STA_TBTT_TARGET"
+register = "TARGET"
+domain = "StationTbttTargetBits35To10"
+preserve-mask = 0xfc000000
+input-mask = 0x03ffffff
+set-mask = 0x00000000
+sources = ["BLOB_LIBPP_HAL_TSF"]
 
 [[masked-register-modifies]]
 name = "publish_pbus_force_test"

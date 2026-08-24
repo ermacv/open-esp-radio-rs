@@ -445,18 +445,20 @@ impl CooperativeRadioHardware<'_> {
         self.wifi_mac_hal().station_tsf()
     }
 
-    /// Exercise the complete reviewed station-TSF wake-gate prefix and roll it
-    /// back before returning. Success is reached-stage evidence only; it does
-    /// not imply that a target compare or RF/PHY sleep was armed.
+    /// Exercise the complete reviewed station-TBTT target/wake-gate prefix and
+    /// roll it back before returning. Success is reached-stage evidence only;
+    /// it does not imply that a WDEVPWR cause or RF/PHY sleep was armed.
     pub fn probe_station_tbtt_wake_prefix(
         &mut self,
-    ) -> Result<(), open_esp_radio_esp32s31_hal::StaTbttWakePrepareError> {
+        wake_tsf: u64,
+    ) -> Result<u32, open_esp_radio_esp32s31_hal::StaTbttWakePrepareError> {
         let mut hal = self.wifi_mac_hal();
-        let restore = hal.prepare_station_tbtt_wake()?;
+        let restore = hal.prepare_station_tbtt_wake(wake_tsf)?;
+        let programmed_target = restore.programmed_target_bits_35_10();
         if hal.restore_station_tbtt_wake(restore).is_err() {
             unreachable!("a freshly prepared station-TBTT prefix must retain its rollback state");
         }
-        Ok(())
+        Ok(programmed_target)
     }
 
     pub fn program_rx_block_ack(

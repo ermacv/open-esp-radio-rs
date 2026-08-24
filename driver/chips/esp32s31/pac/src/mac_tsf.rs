@@ -23,7 +23,15 @@ pub enum StaTbttWakeRestoreError {
 /// Affine rollback token for the reviewed station-TBTT wake prefix.
 #[must_use = "a prepared station TBTT wake prefix must be restored"]
 pub struct StaTbttWakeRestore {
-    _private: (),
+    previous_target_bits_35_10: u32,
+    programmed_target_bits_35_10: u32,
+}
+
+impl StaTbttWakeRestore {
+    /// Exact low 26-bit image published from `wake_tsf[35:10]`.
+    pub const fn programmed_target_bits_35_10(&self) -> u32 {
+        self.programmed_target_bits_35_10
+    }
 }
 
 /// Failed rollback retaining the unique obligation token.
@@ -124,15 +132,17 @@ impl RadioRegisters {
             .modify(|_, w| w.sta_tsf_wakeup_enable().set_bit());
     }
 
-    /// Enable the dedicated station TSF wake signal, returning the only
-    /// authority to undo that reviewed prefix.
+    /// Publish the reviewed station-TBTT target and enable its dedicated wake
+    /// signal, returning the only authority to undo the prefix.
     ///
-    /// This is exactly `hal_set_sta_tsf_wakeup(true)`. Although the reviewed
-    /// SVD identifies the separate STA TBTT target packing, its generated safe
-    /// API does not yet authorize an arbitrary 26-bit RMW. This transaction
-    /// stops before target programming instead of using raw bits.
+    /// The target packing is the complete `hal_set_sta_tbtt` transaction:
+    /// bits 25:0 receive station TSF bits 35:10 while bits 31:26 are
+    /// preserved. Wake enable then follows the exact two-register
+    /// `hal_set_sta_tsf_wakeup(true)` order. This does not bind a generic TSF
+    /// timer to WDEVPWR or power down RF/PHY.
     pub fn prepare_station_tbtt_wake(
         &mut self,
+        wake_tsf: u64,
     ) -> Result<StaTbttWakeRestore, StaTbttWakePrepareError> {
         if self.station_tbtt_wake_prepared {
             return Err(StaTbttWakePrepareError::AlreadyPrepared);
@@ -148,14 +158,30 @@ impl RadioRegisters {
             return Err(StaTbttWakePrepareError::WakeGateBaselineUnsupported);
         }
 
+        let target = &self.peripherals.wifi_mac_sta_tbtt_target;
+        let previous_target_bits_35_10 = target.target().read().tsf_bits_35_10().bits();
+        let programmed_target_bits_35_10 =
+            ((wake_tsf >> 10) as u32) & super::generated::StationTbttTargetBits35To10::MAX;
+        debug_assert!(
+            programmed_target_bits_35_10 >= super::generated::StationTbttTargetBits35To10::MIN
+        );
+        super::generated::publish_station_tbtt_target(
+            target,
+            super::generated::StationTbttTargetBits35To10::new(programmed_target_bits_35_10)
+                .expect("masked station-TBTT target is a reviewed 26-bit value"),
+        );
         self.set_station_tsf_wakeup(true);
         self.station_tbtt_wake_prepared = true;
         device_fence();
-        Ok(StaTbttWakeRestore { _private: () })
+        Ok(StaTbttWakeRestore {
+            previous_target_bits_35_10,
+            programmed_target_bits_35_10,
+        })
     }
 
     /// Disable the station wake signal using the complete vendor disable
-    /// image. The baseline check guarantees exact restoration without an
+    /// image, then restore the exact target field retained by preparation.
+    /// The baseline check guarantees exact gate restoration without an
     /// invented clear of RTC CONTROL bit 21.
     pub fn restore_station_tbtt_wake(
         &mut self,
@@ -168,6 +194,11 @@ impl RadioRegisters {
             });
         }
         self.set_station_tsf_wakeup(false);
+        super::generated::publish_station_tbtt_target(
+            &self.peripherals.wifi_mac_sta_tbtt_target,
+            super::generated::StationTbttTargetBits35To10::new(restore.previous_target_bits_35_10)
+                .expect("saved station-TBTT target is a reviewed 26-bit value"),
+        );
         self.station_tbtt_wake_prepared = false;
         device_fence();
         Ok(())

@@ -17,18 +17,17 @@ use open_esp_radio_wifi_sta::power_save::StaDozePermit;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationDozeHardwareStage {
     None,
-    /// The two-register station TSF wake gate was programmed and restored
-    /// through the affine PAC token.
-    StationTsfWakeGate,
+    /// The station TBTT target plus two-register wake gate were programmed and
+    /// restored through the affine PAC token.
+    StationTbttWakePrefix {
+        target_bits_35_10: u32,
+    },
 }
 
 /// First hardware boundary whose semantics are not present in reviewed S31
 /// evidence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationDozeUnsupportedStage {
-    /// Target packing is reviewed, but the restricted generated PAC has no
-    /// safe arbitrary 26-bit writer for the STA TBTT target field.
-    StationTbttTargetProgramming,
     /// The four generic TSF timer WDEVPWR causes are known, but the low three
     /// timer-control bits do not identify which compare domain is the STA TSF.
     StationWdevpwrCompareBinding,
@@ -58,8 +57,8 @@ pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
 
     /// Enter modem doze atomically. `Err` must leave every hardware owner in
     /// its awake pre-call state. Production currently exercises and rolls back
-    /// the reviewed wake-gate prefix, then fails closed before target compare,
-    /// WDEVPWR arming or RF/PHY power transition.
+    /// the reviewed target/wake-gate prefix, then fails closed before binding
+    /// it to a WDEVPWR compare cause or entering an RF/PHY power transition.
     fn enter_station_doze(
         &mut self,
         _permit: &StaDozePermit,
@@ -110,12 +109,12 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
         &mut self,
         permit: &StaDozePermit,
     ) -> Result<(), StationDozeHardwareError> {
-        let _ = permit;
-        self.probe_station_tbtt_wake_prefix()
+        let target_bits_35_10 = self
+            .probe_station_tbtt_wake_prefix(permit.wake_tsf)
             .map_err(StationDozeHardwareError::WakePrepare)?;
         Err(StationDozeHardwareError::Unsupported {
-            reached: StationDozeHardwareStage::StationTsfWakeGate,
-            missing: StationDozeUnsupportedStage::StationTbttTargetProgramming,
+            reached: StationDozeHardwareStage::StationTbttWakePrefix { target_bits_35_10 },
+            missing: StationDozeUnsupportedStage::StationWdevpwrCompareBinding,
         })
     }
 

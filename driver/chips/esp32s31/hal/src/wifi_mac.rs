@@ -679,8 +679,9 @@ impl<'registers> WifiMacHal<'registers> {
     /// owns rollback; this operation does not claim RF/PHY sleep entry.
     pub fn prepare_station_tbtt_wake(
         &mut self,
+        wake_tsf: u64,
     ) -> Result<StaTbttWakeRestore, StaTbttWakePrepareError> {
-        self.pac_mut().prepare_station_tbtt_wake()
+        self.pac_mut().prepare_station_tbtt_wake(wake_tsf)
     }
 
     /// Consume the exact rollback obligation created by

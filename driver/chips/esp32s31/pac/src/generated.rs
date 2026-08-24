@@ -371,6 +371,29 @@ impl CoexTimerTickImage {
     }
 }
 
+/// Low 26-bit station-TBTT target image formed from station TSF bits 35:10 by complete hal_set_sta_tbtt.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StationTbttTargetBits35To10(u32);
+
+impl StationTbttTargetBits35To10 {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x03ffffff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x03ffffff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific event image written to the MAC interrupt clear register.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacInterruptClearImage(u32);
@@ -1135,6 +1158,15 @@ pub(crate) fn restore_txiq_tone_control(
     value: TxiqToneControlImage,
 ) {
     crate::svd::register_image_write::restore_txiq_tone_control(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_station_tbtt_target` masked transaction.
+#[inline]
+pub(crate) fn publish_station_tbtt_target(
+    registers: &crate::svd::WifiMacStaTbttTarget,
+    value: StationTbttTargetBits35To10,
+) {
+    crate::svd::masked_register_modify::publish_station_tbtt_target(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `publish_pbus_force_test` masked transaction.

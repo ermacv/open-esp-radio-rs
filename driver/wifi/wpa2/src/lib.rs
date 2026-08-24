@@ -187,6 +187,23 @@ impl Pmk {
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Ptk([u8; WPA2_PTK_LEN]);
 
+/// Connected-state EAPOL authentication authority derived from one PTK.
+///
+/// The temporal key is published to hardware before this value is created.
+/// Keeping the KCK in its own zeroizing owner lets the connected supplicant
+/// authenticate retransmitted Message 3 without retaining a software copy of
+/// the installed CCMP key.
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub(crate) struct Wpa2KeyConfirmationKey([u8; WPA2_KCK_LEN]);
+
+/// Connected-state key-data unwrap authority derived from one PTK.
+///
+/// This is retained only for an authenticated Group Message 1. It is separate
+/// from the completed-Message-3 context so that path owns exactly its KCK and
+/// protocol binding, never the installed temporal key.
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub(crate) struct Wpa2KeyEncryptionKey([u8; WPA2_KEK_LEN]);
+
 impl Ptk {
     pub fn kck(&self) -> &[u8; WPA2_KCK_LEN] {
         self.0[..WPA2_KCK_LEN]
@@ -204,6 +221,29 @@ impl Ptk {
         self.0[32..48]
             .try_into()
             .expect("CCMP temporal key is PTK bytes 32..48")
+    }
+
+    pub(crate) fn into_connected_keys(mut self) -> (Wpa2KeyConfirmationKey, Wpa2KeyEncryptionKey) {
+        let mut kck = [0; WPA2_KCK_LEN];
+        kck.copy_from_slice(self.kck());
+        let mut kek = [0; WPA2_KEK_LEN];
+        kek.copy_from_slice(self.kek());
+        // Do not retain a second software copy of the installed temporal key
+        // until this value happens to leave scope.
+        self.zeroize();
+        (Wpa2KeyConfirmationKey(kck), Wpa2KeyEncryptionKey(kek))
+    }
+}
+
+impl Wpa2KeyConfirmationKey {
+    pub(crate) const fn as_bytes(&self) -> &[u8; WPA2_KCK_LEN] {
+        &self.0
+    }
+}
+
+impl Wpa2KeyEncryptionKey {
+    pub(crate) const fn as_bytes(&self) -> &[u8; WPA2_KEK_LEN] {
+        &self.0
     }
 }
 
@@ -420,8 +460,16 @@ impl<'a> EapolKeyFrame<'a> {
 
     /// Verifies the WPA2 HMAC-SHA1-128 MIC without copying the frame.
     pub fn verify_mic(self, ptk: &Ptk) -> bool {
-        let mut mac = Hmac::<Sha1>::new_from_slice(ptk.kck())
-            .expect("WPA2 KCK length is always accepted by HMAC");
+        self.verify_mic_with_kck(ptk.kck())
+    }
+
+    pub(crate) fn verify_mic_with_confirmation_key(self, key: &Wpa2KeyConfirmationKey) -> bool {
+        self.verify_mic_with_kck(key.as_bytes())
+    }
+
+    fn verify_mic_with_kck(self, kck: &[u8; WPA2_KCK_LEN]) -> bool {
+        let mut mac =
+            Hmac::<Sha1>::new_from_slice(kck).expect("WPA2 KCK length is always accepted by HMAC");
         mac.update(&self.bytes[..EAPOL_KEY_MIC_START]);
         mac.update(&[0; EAPOL_KEY_MIC_END - EAPOL_KEY_MIC_START]);
         mac.update(&self.bytes[EAPOL_KEY_MIC_END..]);

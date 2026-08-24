@@ -7,7 +7,8 @@
 //! frames and the platform-specific key-slot transaction.
 
 use crate::{
-    Pmk, Ptk, PtkContext, Wpa2Interface,
+    EapolKeyFrame, Pmk, Ptk, PtkContext, Wpa2Interface, Wpa2KeyConfirmationKey,
+    Wpa2KeyEncryptionKey,
     aes::AsyncWpa2KeyUnwrap,
     frames::{
         OwnedAssociationSecurityIes, OwnedRsnIe, Wpa2FrameError, Wpa2TxFrame,
@@ -16,6 +17,7 @@ use crate::{
     keys::Wpa2KeyInstall,
     state::{Wpa2StaAction, Wpa2StaPhase, Wpa2StaState, Wpa2StateError, Wpa2Transmit},
 };
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Hardware-qualified open-STA compatibility window for the first EAPOL-Key
 /// message. The numeric value is retained from the pre-transfer HIL policy;
@@ -177,8 +179,12 @@ pub enum Wpa2StaSupplicantAction<const N: usize> {
 pub enum Wpa2ConnectedSupplicantError {
     WrongInterface,
     WrongPeer,
+    ProtocolVersionMismatch,
     UnsupportedDescriptorVersion,
     UnsupportedMessage,
+    ReplayCounterMismatch,
+    AuthenticatorNonceMismatch,
+    RetainedMessage3Mismatch,
     MissingEncryptedKeyData,
     InvalidMic,
     StaleReplayCounter,
@@ -217,13 +223,78 @@ pub enum Wpa2ConnectedAction<const N: usize> {
     Retransmit(Wpa2TxFrame<N>),
 }
 
+/// Bounded binding to the exact authenticated Message 3 which installed the
+/// connected association's keys.
+///
+/// The retained MIC is an HMAC-SHA1-128 commitment to the complete EAPOL-Key
+/// packet with its MIC field cleared. The small explicit protocol prefix lets
+/// descriptor, flag and replay mismatches fail before authentication; after a
+/// candidate MIC verifies under the retained KCK, equality with the completed
+/// MIC binds every remaining field, including ANonce, IV, RSC and encrypted
+/// Key Data, without retaining those handshake bytes after connection.
+#[derive(Zeroize, ZeroizeOnDrop)]
+struct Wpa2CompletedMessage3 {
+    protocol_version: u8,
+    key_info: u16,
+    replay_counter: u64,
+    authenticator_nonce_tag: u32,
+    mic: [u8; 16],
+}
+
+impl Wpa2CompletedMessage3 {
+    fn capture(frame: EapolKeyFrame<'_>) -> Self {
+        Self {
+            protocol_version: frame.protocol_version(),
+            key_info: frame.key_info().raw(),
+            replay_counter: frame.replay_counter(),
+            authenticator_nonce_tag: message3_nonce_tag(frame.nonce()),
+            mic: *frame.mic(),
+        }
+    }
+
+    fn validate_fields(
+        &self,
+        frame: EapolKeyFrame<'_>,
+    ) -> Result<(), Wpa2ConnectedSupplicantError> {
+        if frame.protocol_version() != self.protocol_version {
+            return Err(Wpa2ConnectedSupplicantError::ProtocolVersionMismatch);
+        }
+        if frame.key_info().descriptor_version() != 2 {
+            return Err(Wpa2ConnectedSupplicantError::UnsupportedDescriptorVersion);
+        }
+        if frame.message() != crate::EapolKeyMessage::PairwiseMessage3
+            || frame.key_info().raw() != self.key_info
+        {
+            return Err(Wpa2ConnectedSupplicantError::UnsupportedMessage);
+        }
+        if frame.replay_counter() != self.replay_counter {
+            return Err(Wpa2ConnectedSupplicantError::ReplayCounterMismatch);
+        }
+        // This compact tag is only a diagnostic prefilter over public ANonce;
+        // the verified retained MIC below remains the cryptographic authority
+        // and catches tag collisions as a completed-frame mismatch.
+        if message3_nonce_tag(frame.nonce()) != self.authenticator_nonce_tag {
+            return Err(Wpa2ConnectedSupplicantError::AuthenticatorNonceMismatch);
+        }
+        Ok(())
+    }
+}
+
+fn message3_nonce_tag(nonce: &[u8; 32]) -> u32 {
+    nonce.iter().fold(0x811c_9dc5, |tag, byte| {
+        (tag ^ u32::from(*byte)).wrapping_mul(0x0100_0193)
+    })
+}
+
 /// WPA2 state which must survive for the complete connected association.
 ///
 /// It retains only PTK-derived authentication material and replay state. PMK
 /// and association retry policy remain owned by the outer station lifecycle.
 pub struct Wpa2ConnectedSupplicant {
     authenticator: [u8; 6],
-    ptk: Ptk,
+    key_confirmation: Wpa2KeyConfirmationKey,
+    key_encryption: Wpa2KeyEncryptionKey,
+    completed_message3: Wpa2CompletedMessage3,
     replay_counter: u64,
     last_group_replay: Option<u64>,
     pending: Option<(u32, u64)>,
@@ -233,6 +304,40 @@ pub struct Wpa2ConnectedSupplicant {
 impl Wpa2ConnectedSupplicant {
     pub const fn replay_counter(&self) -> u64 {
         self.replay_counter
+    }
+
+    /// Authenticate an exact retransmission of the Message 3 which completed
+    /// this association and produce a retransmission-marked Message 4.
+    ///
+    /// This path cannot publish key-install work. A frame with a valid MIC but
+    /// any changed completed-handshake field is still rejected, preventing a
+    /// peer from replacing key material or receive sequence state after the
+    /// hardware keys have been installed.
+    pub fn on_duplicate_message3<const N: usize>(
+        &mut self,
+        frame: crate::OwnedEapolFrame<N>,
+    ) -> Result<Wpa2TxFrame<N>, Wpa2ConnectedSupplicantError> {
+        if frame.interface() != Wpa2Interface::Station {
+            return Err(Wpa2ConnectedSupplicantError::WrongInterface);
+        }
+        if frame.peer() != &self.authenticator {
+            return Err(Wpa2ConnectedSupplicantError::WrongPeer);
+        }
+        let key = frame.key_frame();
+        self.completed_message3.validate_fields(key)?;
+        if !key.verify_mic_with_confirmation_key(&self.key_confirmation) {
+            return Err(Wpa2ConnectedSupplicantError::InvalidMic);
+        }
+        if key.mic() != &self.completed_message3.mic {
+            return Err(Wpa2ConnectedSupplicantError::RetainedMessage3Mismatch);
+        }
+        Wpa2TxFrame::message4(self.authenticator, self.completed_message3.replay_counter)
+            .map_err(Wpa2ConnectedSupplicantError::Frame)
+            .map(|frame| {
+                frame
+                    .authenticate_with_confirmation_key(&self.key_confirmation)
+                    .mark_retransmission()
+            })
     }
 
     pub async fn on_group_message1<const N: usize, U: AsyncWpa2KeyUnwrap>(
@@ -278,7 +383,7 @@ impl Wpa2ConnectedSupplicant {
         // A cached Group Message 2 is still an authenticated response. Verify
         // every repeated Group Message 1 before admitting the idempotent path,
         // otherwise a forged frame can elicit a valid MIC-bearing response.
-        if !key.verify_mic(&self.ptk) {
+        if !key.verify_mic_with_confirmation_key(&self.key_confirmation) {
             return Err(Wpa2ConnectedProcessError::Supplicant(
                 Wpa2ConnectedSupplicantError::InvalidMic,
             ));
@@ -290,7 +395,7 @@ impl Wpa2ConnectedSupplicant {
                         error,
                     ))
                 })?
-                .authenticate(&self.ptk);
+                .authenticate_with_confirmation_key(&self.key_confirmation);
             return Ok(Wpa2ConnectedAction::Retransmit(response));
         }
         if !key.key_info().encrypted_key_data() || key.key_data().is_empty() {
@@ -299,7 +404,7 @@ impl Wpa2ConnectedSupplicant {
             ));
         }
         let plain = unwrap
-            .unwrap_key_data(self.ptk.kek(), key.key_data())
+            .unwrap_key_data(self.key_encryption.as_bytes(), key.key_data())
             .await
             .map_err(Wpa2ConnectedProcessError::KeyUnwrap)?;
         let gtk = parse_group_gtk_key_data(plain.as_bytes()).map_err(|error| {
@@ -311,7 +416,7 @@ impl Wpa2ConnectedSupplicant {
             .map_err(|error| {
                 Wpa2ConnectedProcessError::Supplicant(Wpa2ConnectedSupplicantError::Frame(error))
             })?
-            .authenticate(&self.ptk);
+            .authenticate_with_confirmation_key(&self.key_confirmation);
         let ticket = self.next_ticket;
         self.next_ticket = self.next_ticket.wrapping_add(1).max(1);
         self.pending = Some((ticket, replay_counter));
@@ -347,6 +452,7 @@ impl Wpa2ConnectedSupplicant {
 pub struct Wpa2StaSupplicant {
     state: Wpa2StaState,
     ptk: Option<Ptk>,
+    completed_message3: Option<Wpa2CompletedMessage3>,
     association_security_ies: OwnedAssociationSecurityIes,
     authenticator_security_ies: OwnedAssociationSecurityIes,
 }
@@ -374,6 +480,7 @@ impl Wpa2StaSupplicant {
         Ok(Self {
             state,
             ptk: None,
+            completed_message3: None,
             association_security_ies,
             authenticator_security_ies,
         })
@@ -389,9 +496,15 @@ impl Wpa2StaSupplicant {
             .completed_replay_counter()
             .ok_or(Wpa2StaSupplicantError::UnexpectedAction)?;
         let ptk = self.ptk.ok_or(Wpa2StaSupplicantError::MissingPtk)?;
+        let completed_message3 = self
+            .completed_message3
+            .ok_or(Wpa2StaSupplicantError::UnexpectedAction)?;
+        let (key_confirmation, key_encryption) = ptk.into_connected_keys();
         Ok(Wpa2ConnectedSupplicant {
             authenticator: *self.state.peer(),
-            ptk,
+            key_confirmation,
+            key_encryption,
+            completed_message3,
             replay_counter,
             last_group_replay: None,
             pending: None,
@@ -416,6 +529,7 @@ impl Wpa2StaSupplicant {
         match action {
             Wpa2StaAction::None => Ok(Wpa2StaSupplicantAction::None),
             Wpa2StaAction::DerivePtk { ticket, context } => {
+                self.completed_message3 = None;
                 self.ptk = Some(pmk.derive_ptk(PtkContext {
                     authenticator_address: context.authenticator_address,
                     supplicant_address: context.supplicant_address,
@@ -539,6 +653,7 @@ impl Wpa2StaSupplicant {
             self.ptk()?,
         );
         let group = Wpa2KeyInstall::group(Wpa2Interface::Station, &gtk, key_receive_sequence);
+        self.completed_message3 = Some(Wpa2CompletedMessage3::capture(key));
         Ok(Wpa2StaSupplicantAction::InstallKeys(
             Wpa2StaKeyInstallRequest {
                 ticket,
@@ -569,6 +684,7 @@ impl Wpa2StaSupplicant {
 
 #[cfg(test)]
 mod tests {
+    use hmac::Mac;
     use std::{
         boxed::Box,
         future::Future,
@@ -643,14 +759,73 @@ mod tests {
     }
 
     fn connected(ptk: Ptk) -> Wpa2ConnectedSupplicant {
+        let message3 = Wpa2TxFrame::<512>::message3(LOCAL, 2, ANONCE, [0; 8], &[0x55; 24])
+            .unwrap()
+            .authenticate(&ptk);
+        let completed_message3 = Wpa2CompletedMessage3::capture(message3.key_frame());
+        let (key_confirmation, key_encryption) = ptk.into_connected_keys();
         Wpa2ConnectedSupplicant {
             authenticator: AP,
-            ptk,
+            key_confirmation,
+            key_encryption,
+            completed_message3,
             replay_counter: 2,
             last_group_replay: None,
             pending: None,
             next_ticket: 1,
         }
+    }
+
+    fn resign_message3_variant(
+        original: &crate::OwnedEapolFrame<512>,
+        ptk: &Ptk,
+        resign: bool,
+        mutate: impl FnOnce(&mut [u8]),
+    ) -> crate::OwnedEapolFrame<512> {
+        let mut bytes = [0; 512];
+        let len = original.as_bytes().len();
+        bytes[..len].copy_from_slice(original.as_bytes());
+        mutate(&mut bytes[..len]);
+        if resign {
+            bytes[81..97].fill(0);
+            let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(ptk.kck()).unwrap();
+            mac.update(&bytes[..len]);
+            let digest = mac.finalize().into_bytes();
+            bytes[81..97].copy_from_slice(&digest[..16]);
+        }
+        crate::OwnedEapolFrame::try_copy(Wpa2Interface::Station, AP, &bytes[..len]).unwrap()
+    }
+
+    fn completed_connected() -> (Wpa2ConnectedSupplicant, crate::OwnedEapolFrame<512>, Ptk) {
+        let pmk = Pmk::derive(b"password", b"ssid").unwrap();
+        let expected_ptk = pmk.derive_ptk(context());
+        let mut supplicant =
+            Wpa2StaSupplicant::try_new(LOCAL, AP, SNONCE, &RSN, &RSN, &[]).unwrap();
+        let mut aes = Wpa2SoftwareAes::new();
+        let message1 = Wpa2TxFrame::<512>::message1(LOCAL, 1, ANONCE).unwrap();
+        block_on(supplicant.on_frame(owned(&message1), &pmk, &mut aes)).unwrap();
+        let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
+        let gtk = Wpa2Gtk::new(2, false, [0x5a; 16]).unwrap();
+        let plain = Wpa2PlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+        let message3 =
+            encrypted_message3(&expected_ptk, [7, 6, 5, 4, 3, 2, 1, 0], plain.as_bytes());
+        let duplicate = message3.clone();
+        let Wpa2StaSupplicantAction::InstallKeys(request) =
+            block_on(supplicant.on_frame(message3, &pmk, &mut aes)).unwrap()
+        else {
+            panic!("Message 3 must produce one key transaction")
+        };
+        let Wpa2StaSupplicantAction::Transmit(_) = supplicant
+            .complete_key_install::<512>(request, true)
+            .unwrap()
+        else {
+            panic!("installed keys must produce Message 4")
+        };
+        (
+            supplicant.into_connected().unwrap(),
+            duplicate,
+            expected_ptk,
+        )
     }
 
     fn group_kde(key_id: u8, key: u8) -> [u8; 24] {
@@ -752,6 +927,118 @@ mod tests {
         };
         assert_eq!(request.replay_counter(), 2);
         assert_eq!(supplicant.phase(), Wpa2StaPhase::InstallingKeys);
+    }
+
+    #[test]
+    fn connected_exact_duplicate_message3_retransmits_authenticated_m4() {
+        let (mut connected, duplicate, ptk) = completed_connected();
+
+        let message4 = connected.on_duplicate_message3(duplicate).unwrap();
+
+        assert_eq!(
+            message4.key_frame().message(),
+            crate::EapolKeyMessage::PairwiseMessage4
+        );
+        assert_eq!(message4.key_frame().replay_counter(), 2);
+        assert!(message4.retransmission());
+        assert!(message4.key_frame().verify_mic(&ptk));
+    }
+
+    #[test]
+    fn connected_duplicate_message3_rejects_changed_protocol_fields() {
+        let (mut connected, duplicate, ptk) = completed_connected();
+
+        let wrong_interface = crate::OwnedEapolFrame::<512>::try_copy(
+            Wpa2Interface::AccessPoint,
+            AP,
+            duplicate.as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            connected.on_duplicate_message3(wrong_interface),
+            Err(Wpa2ConnectedSupplicantError::WrongInterface)
+        ));
+        let wrong_peer = crate::OwnedEapolFrame::<512>::try_copy(
+            Wpa2Interface::Station,
+            [9; 6],
+            duplicate.as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            connected.on_duplicate_message3(wrong_peer),
+            Err(Wpa2ConnectedSupplicantError::WrongPeer)
+        ));
+
+        let wrong_protocol = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+            bytes[0] ^= 1;
+        });
+        assert!(matches!(
+            connected.on_duplicate_message3(wrong_protocol),
+            Err(Wpa2ConnectedSupplicantError::ProtocolVersionMismatch)
+        ));
+
+        let wrong_descriptor = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+            let key_info = u16::from_be_bytes([bytes[5], bytes[6]]);
+            bytes[5..7].copy_from_slice(&((key_info & !0x0007) | 1).to_be_bytes());
+        });
+        assert!(matches!(
+            connected.on_duplicate_message3(wrong_descriptor),
+            Err(Wpa2ConnectedSupplicantError::UnsupportedDescriptorVersion)
+        ));
+
+        let wrong_flags = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+            let key_info = u16::from_be_bytes([bytes[5], bytes[6]]) ^ (1 << 9);
+            bytes[5..7].copy_from_slice(&key_info.to_be_bytes());
+        });
+        assert!(matches!(
+            connected.on_duplicate_message3(wrong_flags),
+            Err(Wpa2ConnectedSupplicantError::UnsupportedMessage)
+        ));
+
+        let wrong_replay = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+            bytes[9..17].copy_from_slice(&3_u64.to_be_bytes());
+        });
+        assert!(matches!(
+            connected.on_duplicate_message3(wrong_replay),
+            Err(Wpa2ConnectedSupplicantError::ReplayCounterMismatch)
+        ));
+
+        let wrong_anonce = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+            bytes[17] ^= 1;
+        });
+        assert!(matches!(
+            connected.on_duplicate_message3(wrong_anonce),
+            Err(Wpa2ConnectedSupplicantError::AuthenticatorNonceMismatch)
+        ));
+    }
+
+    #[test]
+    fn connected_duplicate_message3_rejects_bad_mic_and_changed_commitment() {
+        let (mut connected, duplicate, ptk) = completed_connected();
+
+        let bad_mic = resign_message3_variant(&duplicate, &ptk, false, |bytes| {
+            bytes[81] ^= 1;
+        });
+        assert!(matches!(
+            connected.on_duplicate_message3(bad_mic),
+            Err(Wpa2ConnectedSupplicantError::InvalidMic)
+        ));
+
+        let changed_rsc = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+            bytes[65] ^= 1;
+        });
+        assert!(matches!(
+            connected.on_duplicate_message3(changed_rsc),
+            Err(Wpa2ConnectedSupplicantError::RetainedMessage3Mismatch)
+        ));
+
+        let changed_key_data = resign_message3_variant(&duplicate, &ptk, true, |bytes| {
+            bytes[99] ^= 1;
+        });
+        assert!(matches!(
+            connected.on_duplicate_message3(changed_key_data),
+            Err(Wpa2ConnectedSupplicantError::RetainedMessage3Mismatch)
+        ));
     }
 
     #[test]

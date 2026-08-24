@@ -6,7 +6,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use crate::state::{Wpa2ApState, Wpa2StaState, Wpa2Transmit, Wpa2TxMessage};
 use crate::{
     EAPOL_KEY_FIXED_LEN, EAPOL_KEY_PACKET_LEN, EAPOL_PACKET_TYPE_KEY, EapolKeyFrame, Ptk,
-    RSN_KEY_DESCRIPTOR_TYPE, Wpa2Interface,
+    RSN_KEY_DESCRIPTOR_TYPE, Wpa2Interface, Wpa2KeyConfirmationKey,
 };
 
 pub const WPA2_RSN_IE_CAPACITY: usize = 64;
@@ -580,8 +580,21 @@ impl<const N: usize> Wpa2TxFrame<N> {
     /// KCK. The builder always initializes the MIC field to zero; clearing it
     /// here as well makes repeated authentication deterministic.
     pub fn authenticate(mut self, ptk: &Ptk) -> Self {
+        self.authenticate_with_kck(ptk.kck());
+        self
+    }
+
+    pub(crate) fn authenticate_with_confirmation_key(
+        mut self,
+        key: &Wpa2KeyConfirmationKey,
+    ) -> Self {
+        self.authenticate_with_kck(key.as_bytes());
+        self
+    }
+
+    fn authenticate_with_kck(&mut self, kck: &[u8; 16]) {
         self.set_mic(&[0; 16]);
-        let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(ptk.kck())
+        let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(kck)
             .expect("WPA2 KCK length is always accepted by HMAC");
         mac.update(self.as_bytes());
         let digest = mac.finalize().into_bytes();
@@ -590,6 +603,10 @@ impl<const N: usize> Wpa2TxFrame<N> {
                 .try_into()
                 .expect("SHA-1 MIC prefix is 16 bytes"),
         );
+    }
+
+    pub(crate) const fn mark_retransmission(mut self) -> Self {
+        self.retransmission = true;
         self
     }
 

@@ -109,7 +109,7 @@ pub struct Esp32s31ConnectedStaPlan {
     pub(super) beacon_loss: StaBeaconLossConfig,
     pub(super) power_save: Option<StaPowerSavePolicy>,
     pub(super) esp_now_rx: Option<EspNowRxEpoch>,
-    pub(super) ccmp_rx_replay: Option<StaCcmpRxReplayEpoch>,
+    pub(super) ccmp_rx_replay: Option<StaCcmpRxReplayRxEndpoint>,
     pub(super) security: open_esp_radio_ieee80211::security::WifiSecurityMode,
 }
 
@@ -117,6 +117,24 @@ pub struct Esp32s31ConnectedStaPlan {
 pub enum Esp32s31ConnectedStaCcmpReplayError {
     RequiresWpa2,
     AlreadyInstalled,
+}
+
+/// Plan rejection which returns the exact shared RX endpoint unchanged.
+#[derive(Debug, Eq, PartialEq)]
+pub struct Esp32s31ConnectedStaCcmpReplayFailure {
+    pub error: Esp32s31ConnectedStaCcmpReplayError,
+    replay: StaCcmpRxReplayRxEndpoint,
+}
+
+impl Esp32s31ConnectedStaCcmpReplayFailure {
+    pub fn into_parts(
+        self,
+    ) -> (
+        Esp32s31ConnectedStaCcmpReplayError,
+        StaCcmpRxReplayRxEndpoint,
+    ) {
+        (self.error, self.replay)
+    }
 }
 
 /// Why a portable ESP-NOW RX epoch cannot join this connected STA plan.
@@ -202,13 +220,19 @@ impl Esp32s31ConnectedStaPlan {
     /// RX plan before the dispatcher is composed.
     pub fn enable_ccmp_rx_replay(
         &mut self,
-        replay: StaCcmpRxReplayEpoch,
-    ) -> Result<(), Esp32s31ConnectedStaCcmpReplayError> {
+        replay: StaCcmpRxReplayRxEndpoint,
+    ) -> Result<(), Esp32s31ConnectedStaCcmpReplayFailure> {
         if self.security != open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal {
-            return Err(Esp32s31ConnectedStaCcmpReplayError::RequiresWpa2);
+            return Err(Esp32s31ConnectedStaCcmpReplayFailure {
+                error: Esp32s31ConnectedStaCcmpReplayError::RequiresWpa2,
+                replay,
+            });
         }
         if self.ccmp_rx_replay.is_some() {
-            return Err(Esp32s31ConnectedStaCcmpReplayError::AlreadyInstalled);
+            return Err(Esp32s31ConnectedStaCcmpReplayFailure {
+                error: Esp32s31ConnectedStaCcmpReplayError::AlreadyInstalled,
+                replay,
+            });
         }
         self.ccmp_rx_replay = Some(replay);
         Ok(())
@@ -218,7 +242,7 @@ impl Esp32s31ConnectedStaPlan {
         self.ccmp_rx_replay.is_some()
     }
 
-    pub(super) fn take_ccmp_rx_replay(&mut self) -> Option<StaCcmpRxReplayEpoch> {
+    pub(super) fn take_ccmp_rx_replay(&mut self) -> Option<StaCcmpRxReplayRxEndpoint> {
         self.ccmp_rx_replay.take()
     }
 

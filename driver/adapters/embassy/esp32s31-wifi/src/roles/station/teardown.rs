@@ -8,12 +8,16 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net::PinnedTxFrame;
 use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::{CcmpKeyHardware, StaCcmpClearReport, StaGroupCcmpSlot, clear_sta_ccmp_slots},
+    crypto::{
+        CcmpKeyHardware, StaCcmpClearReport, StaGroupCcmpKeyMaterial, StaGroupCcmpSlot,
+        clear_sta_ccmp_slots,
+    },
     rx::{RxDma, RxRingError},
 };
 use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::StaCcmpRxReplayControlEndpoint;
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity;
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources;
 
@@ -247,6 +251,14 @@ pub struct Esp32s31ConnectedStaTeardownSuccess<H, R, T, A, C> {
 pub enum Esp32s31ConnectedStaGroupSecurity {
     Open,
     Wpa2Personal(StaGroupCcmpSlot),
+    /// Pre-control owner retaining the secret rollback key and replay-control
+    /// endpoint beside the hardware slot. Once installed into connected
+    /// control, shutdown returns the ordinary slot-only variant above.
+    Wpa2PersonalRekey {
+        group: StaGroupCcmpSlot,
+        material: StaGroupCcmpKeyMaterial,
+        replay: StaCcmpRxReplayControlEndpoint,
+    },
 }
 
 /// Observable result of the security teardown edge.
@@ -357,6 +369,14 @@ impl Esp32s31ConnectedStaTeardownPort {
             )),
             (
                 ConnectedTxSecurity::Wpa2Personal(pairwise),
+                Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey { group, .. },
+            ) => Esp32s31ConnectedStaSecurityStopReport::Wpa2Personal(clear_sta_ccmp_slots(
+                &mut hardware,
+                pairwise,
+                group,
+            )),
+            (
+                ConnectedTxSecurity::Wpa2Personal(pairwise),
                 Esp32s31ConnectedStaGroupSecurity::Open,
             ) => {
                 let pairwise_hardware_index = pairwise.hardware_index();
@@ -367,6 +387,17 @@ impl Esp32s31ConnectedStaTeardownPort {
                 }
             }
             (ConnectedTxSecurity::Open, Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group)) => {
+                let group_hardware_index = group.hardware_index();
+                group.clear(&mut hardware);
+                Esp32s31ConnectedStaSecurityStopReport::ModeMismatchCleared {
+                    pairwise_hardware_index: None,
+                    group_hardware_index: Some(group_hardware_index),
+                }
+            }
+            (
+                ConnectedTxSecurity::Open,
+                Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey { group, .. },
+            ) => {
                 let group_hardware_index = group.hardware_index();
                 group.clear(&mut hardware);
                 Esp32s31ConnectedStaSecurityStopReport::ModeMismatchCleared {

@@ -9,8 +9,8 @@ use core::future::Future;
 
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{
-        CcmpKeyHardware, CcmpTxPacketNumberError, CryptoKeyError, StaGroupCcmpSlot,
-        StaPairwiseCcmpSlot, install_sta_group_ccmp, install_sta_pairwise_ccmp,
+        CcmpKeyHardware, CcmpTxPacketNumberError, CryptoKeyError, StaGroupCcmpKeyMaterial,
+        StaGroupCcmpSlot, StaPairwiseCcmpSlot, install_sta_group_ccmp, install_sta_pairwise_ccmp,
     },
     tx::{LegacyRate, LegacyTxQueue, TxCompletion, TxPhyRate},
 };
@@ -246,12 +246,20 @@ pub enum Esp32s31Wpa2Message4Protection {
 pub struct Esp32s31InstalledWpa2Keys {
     pairwise: StaPairwiseCcmpSlot,
     group: StaGroupCcmpSlot,
+    group_material: StaGroupCcmpKeyMaterial,
     replay: StaCcmpRxReplayEpoch,
 }
 
 impl Esp32s31InstalledWpa2Keys {
-    pub fn into_parts(self) -> (StaPairwiseCcmpSlot, StaGroupCcmpSlot, StaCcmpRxReplayEpoch) {
-        (self.pairwise, self.group, self.replay)
+    pub fn into_parts(
+        self,
+    ) -> (
+        StaPairwiseCcmpSlot,
+        StaGroupCcmpSlot,
+        StaGroupCcmpKeyMaterial,
+        StaCcmpRxReplayEpoch,
+    ) {
+        (self.pairwise, self.group, self.group_material, self.replay)
     }
 }
 
@@ -367,6 +375,8 @@ where
             *group.receive_sequence(),
         )
         .map_err(Esp32s31Wpa2KeyPortError::InvalidReceiveSequence)?;
+        let group_material = StaGroupCcmpKeyMaterial::new(key_id, *group.key().as_bytes())
+            .map_err(Esp32s31Wpa2KeyPortError::Install)?;
         let pairwise = install_sta_pairwise_ccmp(
             self.radio.hardware,
             *pairwise.peer(),
@@ -384,6 +394,7 @@ where
         Ok(Esp32s31InstalledWpa2Keys {
             pairwise,
             group,
+            group_material,
             replay,
         })
     }

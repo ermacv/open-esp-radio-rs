@@ -9,7 +9,9 @@
 
 use core::{future::Future, marker::PhantomData};
 
-use open_esp_radio_esp32s31_wifi_mac::crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot};
+use open_esp_radio_esp32s31_wifi_mac::crypto::{
+    StaGroupCcmpKeyMaterial, StaGroupCcmpSlot, StaPairwiseCcmpSlot,
+};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxCompletion;
 use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelError, WifiChannelWidth},
@@ -207,6 +209,7 @@ pub enum Esp32s31StaInstalledSecurity {
     Wpa2Personal {
         pairwise: StaPairwiseCcmpSlot,
         group: StaGroupCcmpSlot,
+        group_material: StaGroupCcmpKeyMaterial,
         replay: StaCcmpRxReplayEpoch,
     },
 }

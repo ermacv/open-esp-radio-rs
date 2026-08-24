@@ -10,14 +10,21 @@ use open_esp_radio_esp32s31_hal::types::{
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     MacInterface,
-    crypto::{CcmpKeyHardware, install_sta_group_ccmp, install_sta_pairwise_ccmp},
+    crypto::{
+        CcmpKeyHardware, CryptoKeyError, StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError,
+        StaGroupCcmpSlot, install_sta_group_ccmp, install_sta_pairwise_ccmp,
+        replace_sta_group_ccmp_with_rollback,
+    },
     rx_ampdu::{RxBlockAckRequest, RxBlockAckSnapshot},
     rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxHardware, TxSlot},
     tx_ampdu::{BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckSessions},
     tx_runtime::WifiTxRuntimePolicy,
 };
-use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+    ConnectedRxEvent, ConnectedRxSink, StaCcmpRxReplayEpoch, StaCcmpRxReplayResource,
+    StaCcmpRxReplayRxEndpoint,
+};
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     Esp32s31SingleMpduTx, SingleMpduTxConfig, SingleMpduTxOutcome, WifiTxPowerPair,
     WifiTxPowerProfile, WifiTxTimer,
@@ -29,10 +36,10 @@ use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 use open_esp_radio_wifi_softmac::{MacRxMetadata, MacTxPlan};
 use open_esp_radio_wifi_sta::power_save::StaPowerSaveState;
 use open_esp_radio_wpa2::{
-    OwnedEapolFrame, Pmk, PtkContext, Wpa2Interface,
+    OwnedEapolFrame, Pmk, Ptk, PtkContext, Wpa2Interface,
     aes::{Wpa2SoftwareAes, software_aes128_key_wrap},
     frames::{OwnedRsnIe, Wpa2Gtk, Wpa2PlainKeyData, Wpa2TxFrame},
-    supplicant::{Wpa2StaSupplicant, Wpa2StaSupplicantAction},
+    supplicant::{Wpa2ConnectedSupplicant, Wpa2StaSupplicant, Wpa2StaSupplicantAction},
 };
 
 use crate::{
@@ -47,6 +54,86 @@ use super::*;
 
 const STATION: [u8; 6] = [2, 3, 4, 5, 6, 7];
 const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
+const SNONCE: [u8; 32] = [0x33; 32];
+const ANONCE: [u8; 32] = [0x44; 32];
+const RSN: [u8; 22] = [
+    0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
+];
+const INITIAL_GTK: [u8; 16] = [0x11; 16];
+
+fn ptk_context() -> PtkContext {
+    PtkContext {
+        authenticator_address: BSSID,
+        supplicant_address: STATION,
+        authenticator_nonce: ANONCE,
+        supplicant_nonce: SNONCE,
+    }
+}
+
+fn owned_eapol(frame: &Wpa2TxFrame<512>) -> OwnedEapolFrame<512> {
+    OwnedEapolFrame::try_copy(Wpa2Interface::Station, BSSID, frame.as_bytes()).unwrap()
+}
+
+fn established_supplicant() -> (Wpa2ConnectedSupplicant, Ptk) {
+    let pmk = Pmk::from_bytes([0x22; 32]);
+    let peer_ptk = pmk.derive_ptk(ptk_context());
+    let mut supplicant =
+        Wpa2StaSupplicant::try_new(STATION, BSSID, SNONCE, &RSN, &RSN, &[]).unwrap();
+    let mut aes = Wpa2SoftwareAes::new();
+
+    let message1 = Wpa2TxFrame::<512>::message1(STATION, 1, ANONCE).unwrap();
+    assert!(matches!(
+        embassy_futures::block_on(supplicant.on_frame(owned_eapol(&message1), &pmk, &mut aes,)),
+        Ok(Wpa2StaSupplicantAction::Transmit(_))
+    ));
+
+    let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
+    let gtk = Wpa2Gtk::new(1, false, INITIAL_GTK).unwrap();
+    let plain = Wpa2PlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let wrapped = software_aes128_key_wrap(peer_ptk.kek(), plain.as_bytes()).unwrap();
+    let message3 = Wpa2TxFrame::<512>::message3(
+        STATION,
+        2,
+        ANONCE,
+        [5, 0, 0, 0, 0, 0, 0, 0],
+        wrapped.as_bytes(),
+    )
+    .unwrap()
+    .authenticate(&peer_ptk);
+    let Wpa2StaSupplicantAction::InstallKeys(request) =
+        embassy_futures::block_on(supplicant.on_frame(owned_eapol(&message3), &pmk, &mut aes))
+            .unwrap()
+    else {
+        panic!("authenticated Message 3 must establish connected WPA2 state")
+    };
+    assert!(matches!(
+        supplicant.complete_key_install::<512>(request, true),
+        Ok(Wpa2StaSupplicantAction::Transmit(_))
+    ));
+    (supplicant.into_connected().unwrap(), peer_ptk)
+}
+
+fn group_message1(
+    ptk: &Ptk,
+    replay_counter: u64,
+    key_id: u8,
+    key: [u8; 16],
+    receive_sequence: [u8; 8],
+) -> ConnectedSecurityFrame {
+    let mut kde = [0; 24];
+    kde[..8].copy_from_slice(&[0xdd, 22, 0, 0x0f, 0xac, 1, key_id, 0]);
+    kde[8..].copy_from_slice(&key);
+    let wrapped = software_aes128_key_wrap(ptk.kek(), &kde).unwrap();
+    let frame = Wpa2TxFrame::<512>::group_message1(
+        STATION,
+        replay_counter,
+        receive_sequence,
+        wrapped.as_bytes(),
+    )
+    .unwrap()
+    .authenticate(ptk);
+    ConnectedSecurityFrame::Protected(owned_eapol(&frame))
+}
 
 #[derive(Default)]
 struct Hardware {
@@ -59,15 +146,23 @@ struct Hardware {
     he_tid: [Option<(u8, bool)>; 4],
     he_count: usize,
     key_install_count: usize,
+    ccmp_reject_installs: u8,
+    ccmp_clears: usize,
 }
 
 impl CcmpKeyHardware for Hardware {
     fn install_sta_ccmp_entry(&mut self, _index: u8, _words: &[u32; 6]) -> MacKeyInstallOutcome {
+        if self.ccmp_reject_installs != 0 {
+            self.ccmp_reject_installs -= 1;
+            return MacKeyInstallOutcome::Rejected;
+        }
         self.key_install_count += 1;
         MacKeyInstallOutcome::Installed
     }
 
-    fn clear_ccmp_entry(&mut self, _index: u8) {}
+    fn clear_ccmp_entry(&mut self, _index: u8) {
+        self.ccmp_clears += 1;
+    }
 }
 
 impl TxHardware for Hardware {
@@ -202,6 +297,32 @@ impl ConnectedControlHardware for Hardware {
         self.he_count += 1;
         Ok(())
     }
+
+    fn replace_sta_group_ccmp(
+        &mut self,
+        slot: &mut StaGroupCcmpSlot,
+        current: &StaGroupCcmpKeyMaterial,
+        replacement: &StaGroupCcmpKeyMaterial,
+    ) -> Result<(), StaGroupCcmpReplaceError> {
+        replace_sta_group_ccmp_with_rollback(self, slot, current, replacement)
+    }
+}
+
+fn make_connected_security(
+    hardware: &mut Hardware,
+) -> (ConnectedWpa2Security, StaCcmpRxReplayRxEndpoint, Ptk) {
+    let (supplicant, ptk) = established_supplicant();
+    let group = install_sta_group_ccmp(hardware, 1, &INITIAL_GTK).unwrap();
+    let group_material = StaGroupCcmpKeyMaterial::new(1, INITIAL_GTK).unwrap();
+    let replay =
+        StaCcmpRxReplayEpoch::new([7, 0, 0, 0, 0, 0, 0, 0], 1, [5, 0, 0, 0, 0, 0, 0, 0]).unwrap();
+    let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
+    let (rx, control) = resource.start(replay).unwrap();
+    (
+        ConnectedWpa2Security::new(supplicant, group, group_material, control),
+        rx,
+        ptk,
+    )
 }
 
 struct Power;
@@ -343,6 +464,7 @@ fn owned_station_eapol(frame: &Wpa2TxFrame<512>) -> OwnedEapolFrame {
 
 struct CompletedWpa2Fixture {
     security: ConnectedWpa2Security,
+    replay_rx: StaCcmpRxReplayRxEndpoint,
     duplicate_message3: OwnedEapolFrame,
     bad_mic_message3: OwnedEapolFrame,
     wrong_replay_message3: OwnedEapolFrame,
@@ -402,8 +524,13 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
         OwnedEapolFrame::try_copy(Wpa2Interface::Station, BSSID, &forged[..length]).unwrap();
     let connected = supplicant.into_connected().unwrap();
     let group = install_sta_group_ccmp(hardware, 1, &[0x6a; 16]).unwrap();
+    let group_material = StaGroupCcmpKeyMaterial::new(1, [0x6a; 16]).unwrap();
+    let replay = StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap();
+    let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
+    let (replay_rx, replay_control) = resource.start(replay).unwrap();
     CompletedWpa2Fixture {
-        security: ConnectedWpa2Security::new(connected, group),
+        security: ConnectedWpa2Security::new(connected, group, group_material, replay_control),
+        replay_rx,
         duplicate_message3: owned_station_eapol(&message3),
         bad_mic_message3,
         wrong_replay_message3: owned_station_eapol(&wrong_replay),
@@ -419,6 +546,7 @@ fn duplicate_message3_reuses_connected_key_and_pn_while_forged_frames_are_ignore
     };
     let CompletedWpa2Fixture {
         mut security,
+        mut replay_rx,
         duplicate_message3,
         bad_mic_message3,
         wrong_replay_message3,
@@ -472,6 +600,7 @@ fn duplicate_message3_reuses_connected_key_and_pn_while_forged_frames_are_ignore
         [9, 0, 0, 0x20, 0, 0, 0, 0]
     );
     let (_supplicant, group) = security.into_parts();
+    replay_rx.stop().unwrap();
     group.clear(&mut hardware);
     pairwise.clear(&mut hardware);
 }
@@ -1391,4 +1520,233 @@ fn failed_pm_zero_disconnects_instead_of_releasing_queued_data() {
             ..
         })
     ));
+}
+
+#[test]
+fn group_rekey_replaces_different_key_id_before_message2() {
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let installs_before = hardware.key_install_count;
+
+    assert_eq!(
+        embassy_futures::block_on(security.process(
+            &mut hardware,
+            &mut tx,
+            group_message1(&ptk, 3, 2, [0x22; 16], [9, 0, 0, 0, 0, 0, 0, 0],),
+        )),
+        DatapathControlProgress::TxPending
+    );
+    assert_eq!(hardware.ccmp_clears, 1);
+    assert_eq!(hardware.key_install_count, installs_before + 1);
+    assert_eq!(
+        security.evidence(),
+        ConnectedWpa2SecurityEvidence {
+            replay_counter: 3,
+            group_message1: 1,
+            duplicate_message3: 0,
+            ignored_duplicate_message3: 0,
+            last_ignored_duplicate_message3: None,
+            installed: 1,
+            retransmitted: 0,
+            tx_in_flight: true,
+            last_failure: None,
+        }
+    );
+
+    finish_tx(&mut hardware, &mut tx, 0);
+    assert_eq!(security.complete_tx(&mut tx), DatapathControlProgress::More);
+    let (_, group) = security.into_parts();
+    assert_eq!(group.key_id(), 2);
+    replay_rx.stop().unwrap();
+    group.clear(&mut hardware);
+}
+
+#[test]
+fn group_rekey_rejects_a_retired_key_id_before_hardware_mutation() {
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+
+    assert_eq!(
+        embassy_futures::block_on(security.process(
+            &mut hardware,
+            &mut tx,
+            group_message1(&ptk, 3, 2, [0x22; 16], [9, 0, 0, 0, 0, 0, 0, 0],),
+        )),
+        DatapathControlProgress::TxPending
+    );
+    finish_tx(&mut hardware, &mut tx, 0);
+    assert_eq!(security.complete_tx(&mut tx), DatapathControlProgress::More);
+    let clears_after_key_two = hardware.ccmp_clears;
+    let installs_after_key_two = hardware.key_install_count;
+
+    assert_eq!(
+        embassy_futures::block_on(security.process(
+            &mut hardware,
+            &mut tx,
+            group_message1(&ptk, 4, 1, [0x33; 16], [10, 0, 0, 0, 0, 0, 0, 0],),
+        )),
+        DatapathControlProgress::Exit(ConnectedDisconnectReason::GroupKeyHandshakeFailed)
+    );
+    assert_eq!(hardware.ccmp_clears, clears_after_key_two);
+    assert_eq!(hardware.key_install_count, installs_after_key_two);
+    assert_eq!(security.evidence().installed, 1);
+    assert_eq!(security.evidence().replay_counter, 3);
+    assert_eq!(
+        security.evidence().last_failure,
+        Some(ConnectedWpa2SecurityFailure::RetiredKeyIdGenerationUnavailable { key_id: 1 })
+    );
+
+    let (_, group) = security.into_parts();
+    assert_eq!(group.key_id(), 2);
+    replay_rx.stop().unwrap();
+    group.clear(&mut hardware);
+}
+
+#[test]
+fn same_key_id_rekey_is_rsc_only_for_identical_gtk_and_rejects_changed_gtk() {
+    {
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+        let installs_before = hardware.key_install_count;
+
+        assert_eq!(
+            embassy_futures::block_on(security.process(
+                &mut hardware,
+                &mut tx,
+                group_message1(&ptk, 3, 1, INITIAL_GTK, [9, 0, 0, 0, 0, 0, 0, 0],),
+            )),
+            DatapathControlProgress::TxPending
+        );
+        assert_eq!(hardware.ccmp_clears, 0);
+        assert_eq!(hardware.key_install_count, installs_before);
+        assert_eq!(security.evidence().installed, 1);
+        assert_eq!(security.evidence().replay_counter, 3);
+
+        let (_, group) = security.into_parts();
+        assert_eq!(group.key_id(), 1);
+        replay_rx.stop().unwrap();
+        group.clear(&mut hardware);
+    }
+
+    {
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+        let installs_before = hardware.key_install_count;
+
+        assert_eq!(
+            embassy_futures::block_on(security.process(
+                &mut hardware,
+                &mut tx,
+                group_message1(&ptk, 3, 1, [0x33; 16], [9, 0, 0, 0, 0, 0, 0, 0],),
+            )),
+            DatapathControlProgress::Exit(ConnectedDisconnectReason::GroupKeyHandshakeFailed)
+        );
+        assert_eq!(hardware.ccmp_clears, 0);
+        assert_eq!(hardware.key_install_count, installs_before);
+        assert_eq!(security.evidence().installed, 0);
+        assert_eq!(security.evidence().replay_counter, 2);
+        assert_eq!(
+            security.evidence().last_failure,
+            Some(ConnectedWpa2SecurityFailure::SameKeyIdGenerationUnavailable)
+        );
+
+        let (_, group) = security.into_parts();
+        assert_eq!(group.key_id(), 1);
+        replay_rx.stop().unwrap();
+        group.clear(&mut hardware);
+    }
+}
+
+#[test]
+fn group_rekey_hardware_failure_restores_old_epoch_or_quarantines() {
+    {
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+        hardware.ccmp_reject_installs = 1;
+
+        assert_eq!(
+            embassy_futures::block_on(security.process(
+                &mut hardware,
+                &mut tx,
+                group_message1(&ptk, 3, 2, [0x22; 16], [9, 0, 0, 0, 0, 0, 0, 0],),
+            )),
+            DatapathControlProgress::Exit(ConnectedDisconnectReason::GroupKeyHandshakeFailed)
+        );
+        assert_eq!(hardware.ccmp_clears, 1);
+        assert_eq!(
+            security.evidence().last_failure,
+            Some(ConnectedWpa2SecurityFailure::KeyReplace(
+                StaGroupCcmpReplaceError::ReplacementRolledBack(CryptoKeyError::HardwareRejected)
+            ))
+        );
+        assert_eq!(security.evidence().replay_counter, 2);
+        assert_eq!(security.evidence().installed, 0);
+
+        let (_, group) = security.into_parts();
+        assert_eq!(group.key_id(), 1);
+        replay_rx.stop().unwrap();
+        group.clear(&mut hardware);
+    }
+
+    {
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+        hardware.ccmp_reject_installs = 2;
+
+        assert_eq!(
+            embassy_futures::block_on(security.process(
+                &mut hardware,
+                &mut tx,
+                group_message1(&ptk, 3, 2, [0x22; 16], [9, 0, 0, 0, 0, 0, 0, 0],),
+            )),
+            DatapathControlProgress::Exit(ConnectedDisconnectReason::GroupKeyHandshakeFailed)
+        );
+        assert_eq!(hardware.ccmp_clears, 1);
+        assert_eq!(
+            security.evidence().last_failure,
+            Some(ConnectedWpa2SecurityFailure::KeyReplace(
+                StaGroupCcmpReplaceError::RollbackFailed {
+                    replacement: CryptoKeyError::HardwareRejected,
+                    rollback: CryptoKeyError::HardwareRejected,
+                }
+            ))
+        );
+        assert_eq!(security.evidence().replay_counter, 2);
+        assert_eq!(security.evidence().installed, 0);
+
+        let (_, group) = security.into_parts();
+        assert_eq!(group.key_id(), 1);
+        replay_rx.stop().unwrap();
+        group.clear(&mut hardware);
+    }
 }

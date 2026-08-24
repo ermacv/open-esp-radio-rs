@@ -65,8 +65,8 @@ use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::
     Esp32s31ConnectedStaGroupSecurity;
 
 use crate::supervisor::station::{
-    IRQ_RUNTIME, RX_REORDER_COMMANDS, RX_REORDER_STORAGE, RX_STAGE_POOL, STA_AP_STAGED_RX_QUEUE,
-    STAGED_RX_QUEUE,
+    ConnectedStationReplaySetupFailure, IRQ_RUNTIME, RX_REORDER_COMMANDS, RX_REORDER_STORAGE,
+    RX_STAGE_POOL, STA_AP_STAGED_RX_QUEUE, STAGED_RX_QUEUE, STA_CCMP_RX_REPLAY,
 };
 
 /// Result of advancing the finite station lifecycle to its paired cutover
@@ -457,6 +457,134 @@ impl ProductionWifiEpochRunner {
                 );
             }
         };
+        let control_tx = tx_storage
+            .take_control()
+            .unwrap_or_else(|_| unreachable!("paired cutover starts with idle ordinary TX"));
+        let (sequences, mut station_security_material) = security.into_parts();
+        let material_is_open = matches!(
+            &station_security_material,
+            Esp32s31StaAttemptSecurityMaterial::Open
+        );
+        let material_is_wpa2 = matches!(
+            &station_security_material,
+            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { .. }
+        );
+        let (tx_security, mut group_security) = match installed_security {
+            Esp32s31StaInstalledSecurity::Open if material_is_open => (
+                ConnectedTxSecurity::Open,
+                Some(Esp32s31ConnectedStaGroupSecurity::Open),
+            ),
+            Esp32s31StaInstalledSecurity::Wpa2Personal {
+                pairwise,
+                group,
+                group_material,
+                replay,
+            } if material_is_wpa2 => {
+                let (replay_rx, replay_control) = match STA_CCMP_RX_REPLAY.start(replay) {
+                    Ok(endpoints) => endpoints,
+                    Err(failure) => {
+                        endpoint
+                            .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                                WifiStartFailure::faulted(Esp32s31RadioError::HardwareFault),
+                            )))
+                            .await;
+                        return EmbassyWifiRoleEpochOutcome::Faulted(
+                            ProductionWifiFault::PairedConnected {
+                                _fault: ConnectedStationFault::ReplaySetup {
+                                    _runtime: production_station_runtime(
+                                        role,
+                                        interrupt_epoch,
+                                        dma,
+                                        tx_storage,
+                                        scan_table,
+                                        frame,
+                                        ethernet,
+                                        board,
+                                    ),
+                                    _started: Esp32s31ConnectedEpochStarted {
+                                        hardware,
+                                        rx,
+                                        aggregate_tx: aggregate,
+                                        control: control_resources,
+                                    },
+                                    _stack: (),
+                                    _network: network_runner,
+                                    _initial_network_task: initial_network_task,
+                                    _plan: plan,
+                                    _failure: ConnectedStationReplaySetupFailure::Start {
+                                        _failure: failure,
+                                        _pairwise: pairwise,
+                                        _group: group,
+                                        _group_material: group_material,
+                                    },
+                                    _sequences: sequences,
+                                    _material: station_security_material,
+                                    _control_tx: control_tx,
+                                    _task_reservation: None,
+                                },
+                                _station: station,
+                                _access_point: access_point,
+                                _monitor: monitor,
+                            },
+                        );
+                    }
+                };
+                let tx_security = ConnectedTxSecurity::Wpa2Personal(pairwise);
+                let group_security =
+                    Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey {
+                        group,
+                        material: group_material,
+                        replay: replay_control,
+                    };
+                if let Err(failure) = plan.enable_ccmp_rx_replay(replay_rx) {
+                    endpoint
+                        .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                            WifiStartFailure::faulted(Esp32s31RadioError::HardwareFault),
+                        )))
+                        .await;
+                    return EmbassyWifiRoleEpochOutcome::Faulted(
+                        ProductionWifiFault::PairedConnected {
+                            _fault: ConnectedStationFault::ReplaySetup {
+                                _runtime: production_station_runtime(
+                                    role,
+                                    interrupt_epoch,
+                                    dma,
+                                    tx_storage,
+                                    scan_table,
+                                    frame,
+                                    ethernet,
+                                    board,
+                                ),
+                                _started: Esp32s31ConnectedEpochStarted {
+                                    hardware,
+                                    rx,
+                                    aggregate_tx: aggregate,
+                                    control: control_resources,
+                                },
+                                _stack: (),
+                                _network: network_runner,
+                                _initial_network_task: initial_network_task,
+                                _plan: plan,
+                                _failure: ConnectedStationReplaySetupFailure::Plan {
+                                    _failure: failure,
+                                    _tx_security: tx_security,
+                                    _group_security: group_security,
+                                },
+                                _sequences: sequences,
+                                _material: station_security_material,
+                                _control_tx: control_tx,
+                                _task_reservation: None,
+                            },
+                            _station: station,
+                            _access_point: access_point,
+                            _monitor: monitor,
+                        },
+                    );
+                }
+                (tx_security, Some(group_security))
+            }
+            _ => unreachable!("paired security modes were validated before owner split"),
+        };
         let mut live_rx = rx;
         let stopped_rx = loop {
             match live_rx.try_stop(&mut hardware) {
@@ -489,9 +617,6 @@ impl ProductionWifiEpochRunner {
         .unwrap_or_else(|_| unreachable!("new connected RX has no queued standalone leases"));
         let common_rx = Esp32s31StaApRxService::new(paired_rx, paired_consumer);
 
-        let control_tx = tx_storage
-            .take_control()
-            .unwrap_or_else(|_| unreachable!("paired cutover starts with idle ordinary TX"));
         let ProductionStationBoardResources {
             interface,
             rx_protocol_runtime,
@@ -500,32 +625,6 @@ impl ProductionWifiEpochRunner {
             #[cfg(feature = "diagnostics")]
             diagnostics,
         } = board;
-        let (sequences, mut station_security_material) = security.into_parts();
-        let (tx_security, mut group_security) = match (
-            installed_security,
-            &station_security_material,
-        ) {
-            (Esp32s31StaInstalledSecurity::Open, Esp32s31StaAttemptSecurityMaterial::Open) => (
-                ConnectedTxSecurity::Open,
-                Some(Esp32s31ConnectedStaGroupSecurity::Open),
-            ),
-            (
-                Esp32s31StaInstalledSecurity::Wpa2Personal {
-                    pairwise,
-                    group,
-                    replay,
-                },
-                Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { .. },
-            ) => {
-                plan.enable_ccmp_rx_replay(replay)
-                    .unwrap_or_else(|_| unreachable!("fresh WPA2 plan owns no replay epoch"));
-                (
-                    ConnectedTxSecurity::Wpa2Personal(pairwise),
-                    Some(Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group)),
-                )
-            }
-            _ => unreachable!("paired security modes were validated before owner split"),
-        };
         let (control_publisher, control_receiver) = control_resources.split();
         let station_sink = Esp32s31StaApStationRxSink::new(sta_ap_rx_batch, control_publisher);
         let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
@@ -573,7 +672,11 @@ impl ProductionWifiEpochRunner {
         if let Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } =
             &mut station_security_material
         {
-            let Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group) = group_security
+            let Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey {
+                group,
+                material: group_material,
+                replay,
+            } = group_security
                 .take()
                 .expect("paired WPA2 mode retains its group-key owner")
             else {
@@ -585,6 +688,8 @@ impl ProductionWifiEpochRunner {
                         .take()
                         .expect("installed station keys retain supplicant state"),
                     group,
+                    group_material,
+                    replay,
                 ))
                 .unwrap_or_else(|_| unreachable!("fresh station control has no security session"));
         }

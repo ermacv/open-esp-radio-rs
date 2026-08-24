@@ -126,6 +126,10 @@ where
 
     /// Discard reorder/mailbox ownership retained by the protocol processor.
     pub fn shutdown_discard(&mut self) -> ConnectedRxProtocolShutdown {
+        // The task is synchronously quiescent at this boundary, so no replay
+        // publication permit can still exist. An unexpected stale endpoint
+        // remains fail-closed through its Drop quarantine.
+        let _ = self.dispatcher.stop_ccmp_rx_replay();
         let mut shutdown = ConnectedRxProtocolShutdown {
             esp_now_duplicate_entries: self.dispatcher.stop_esp_now_rx_epoch(),
             ..ConnectedRxProtocolShutdown::default()

@@ -63,8 +63,9 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         Esp32s31ConnectedNetworkStartedParts, Esp32s31ConnectedRxProtocol,
         Esp32s31ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocolStorage,
         Esp32s31ConnectedServiceResources, Esp32s31ConnectedStaBlockAckPolicy,
-        Esp32s31ConnectedStaCompositionFailure, Esp32s31ConnectedStaConfig,
-        Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaControlResources,
+        Esp32s31ConnectedStaCcmpReplayFailure, Esp32s31ConnectedStaCompositionFailure,
+        Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaConfigError,
+        Esp32s31ConnectedStaControlResources,
         Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPort,
         Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy,
         Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTeardownFailure,
@@ -88,6 +89,7 @@ use open_esp_radio_esp32s31_wifi_mac::irq::{
     IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
+    crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
     rx::{RxIngressConfig, RxRingError},
     rx_pool::RxStagePool,
     tx::{HeEdcaTxopLimit, HtGuardInterval, HtMcs, LegacyRate},
@@ -98,6 +100,7 @@ use open_esp_radio_esp32s31_wifi_sta::{
         Esp32s31StaAttemptSecurity, Esp32s31StaAttemptSecurityMaterial,
         Esp32s31StaInstalledSecurity,
     },
+    connected_rx::{StaCcmpRxReplayResource, StaCcmpRxReplayStartFailure},
     single_mpdu_tx::ConnectedTxSecurity,
 };
 #[cfg(feature = "diagnostics")]
@@ -505,6 +508,7 @@ static RX_PROTOCOL_RUNTIME: ConstStaticCell<ConnectedRxProtocolStorage> =
     ConstStaticCell::new(Esp32s31ConnectedRxProtocolStorage::new());
 static CONTROL_RESOURCES: ConstStaticCell<ControlResources> =
     ConstStaticCell::new(ControlResources::new());
+pub(super) static STA_CCMP_RX_REPLAY: StaCcmpRxReplayResource = StaCcmpRxReplayResource::new();
 #[cfg(feature = "mac-irq-diagnostics")]
 static MAC_IRQ_OBSERVER: OnceLock<fn(Esp32s31MacIrqObservation)> = OnceLock::new();
 #[cfg(feature = "diagnostics")]
@@ -902,6 +906,22 @@ pub(crate) struct ConnectedDriverAssemblyFault {
     _task_reservation: ConnectedTaskReservationOwner,
 }
 
+/// Exact WPA2 owners retained when the shared replay arena or connected plan
+/// rejects publication before driver composition.
+pub(crate) enum ConnectedStationReplaySetupFailure {
+    Start {
+        _failure: StaCcmpRxReplayStartFailure,
+        _pairwise: StaPairwiseCcmpSlot,
+        _group: StaGroupCcmpSlot,
+        _group_material: StaGroupCcmpKeyMaterial,
+    },
+    Plan {
+        _failure: Esp32s31ConnectedStaCcmpReplayFailure,
+        _tx_security: ConnectedTxSecurity,
+        _group_security: Esp32s31ConnectedStaGroupSecurity,
+    },
+}
+
 /// Non-reusable connected owner retained at the exact failed transition.
 /// No variant exposes the ordinary disconnected owner required for retry.
 pub enum ConnectedStationFault<'state, 'security> {
@@ -940,6 +960,19 @@ pub enum ConnectedStationFault<'state, 'security> {
         _material: Esp32s31StaAttemptSecurityMaterial,
         _control_tx: ControlTx,
         _task_reservation: ConnectedTaskReservationOwner,
+    },
+    ReplaySetup {
+        _runtime: ProductionStationRuntime<'state>,
+        _started: ConnectedDriverStarted,
+        _stack: (),
+        _network: NetworkRunner,
+        _initial_network_task: Option<()>,
+        _plan: open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaPlan,
+        _failure: ConnectedStationReplaySetupFailure,
+        _sequences: StaTxSequenceCounters,
+        _material: Esp32s31StaAttemptSecurityMaterial,
+        _control_tx: ControlTx,
+        _task_reservation: Option<ConnectedTaskReservationOwner>,
     },
     InitialStaticResourcesUnavailable {
         _runtime: ProductionStationRuntime<'state>,
@@ -1419,30 +1452,123 @@ pub(crate) async fn run_connected<'state, 'security>(
         aggregate_tx: aggregate,
         control: control_resources,
     } = started;
-    let (tx_security, group_security) = match (installed_security, &material) {
-        (Esp32s31StaInstalledSecurity::Open, Esp32s31StaAttemptSecurityMaterial::Open) => (
+    let material_is_open = matches!(&material, Esp32s31StaAttemptSecurityMaterial::Open);
+    let material_has_connected_wpa2 = matches!(
+        &material,
+        Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
+            connected: Some(_),
+            ..
+        }
+    );
+    let (tx_security, group_security) = match installed_security {
+        Esp32s31StaInstalledSecurity::Open if material_is_open => (
             ConnectedTxSecurity::Open,
             Esp32s31ConnectedStaGroupSecurity::Open,
         ),
-        (
-            Esp32s31StaInstalledSecurity::Wpa2Personal {
+        Esp32s31StaInstalledSecurity::Wpa2Personal {
                 pairwise,
                 group,
+                group_material,
                 replay,
-            },
-            Esp32s31StaAttemptSecurityMaterial::Wpa2Personal {
-                connected: Some(_),
-                ..
-            },
-        ) => {
-            plan.enable_ccmp_rx_replay(replay)
-                .unwrap_or_else(|_| unreachable!("fresh WPA2 plan owns no replay epoch"));
-            (
-                ConnectedTxSecurity::Wpa2Personal(pairwise),
-                Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group),
-            )
-        }
-        (installed_security, _) => {
+            } if material_has_connected_wpa2 => {
+                let (replay_rx, replay_control) = match STA_CCMP_RX_REPLAY.start(replay) {
+                    Ok(endpoints) => endpoints,
+                    Err(failure) => {
+                        return ConnectedStationRunExit::Faulted(
+                            ConnectedStationFault::ReplaySetup {
+                                _runtime: production_station_runtime(
+                                    role,
+                                    interrupt_epoch,
+                                    dma,
+                                    tx_storage,
+                                    scan_table,
+                                    frame,
+                                    ethernet,
+                                    ProductionStationBoardResources {
+                                        interface,
+                                        rx_protocol_runtime,
+                                        sta_ap_rx_batch,
+                                        initial_connected,
+                                        #[cfg(feature = "diagnostics")]
+                                        diagnostics,
+                                    },
+                                ),
+                                _started: Esp32s31ConnectedEpochStarted {
+                                    hardware,
+                                    rx,
+                                    aggregate_tx: aggregate,
+                                    control: control_resources,
+                                },
+                                _stack: stack,
+                                _network: network_runner,
+                                _initial_network_task: stack_runner,
+                                _plan: plan,
+                                _failure: ConnectedStationReplaySetupFailure::Start {
+                                    _failure: failure,
+                                    _pairwise: pairwise,
+                                    _group: group,
+                                    _group_material: group_material,
+                                },
+                                _sequences: sequences,
+                                _material: material,
+                                _control_tx: control_tx,
+                                _task_reservation: Some(task_reservation),
+                            },
+                        );
+                    }
+                };
+                let tx_security = ConnectedTxSecurity::Wpa2Personal(pairwise);
+                let group_security =
+                    Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey {
+                        group,
+                        material: group_material,
+                        replay: replay_control,
+                    };
+                if let Err(failure) = plan.enable_ccmp_rx_replay(replay_rx) {
+                    return ConnectedStationRunExit::Faulted(
+                        ConnectedStationFault::ReplaySetup {
+                            _runtime: production_station_runtime(
+                                role,
+                                interrupt_epoch,
+                                dma,
+                                tx_storage,
+                                scan_table,
+                                frame,
+                                ethernet,
+                                ProductionStationBoardResources {
+                                    interface,
+                                    rx_protocol_runtime,
+                                    sta_ap_rx_batch,
+                                    initial_connected,
+                                    #[cfg(feature = "diagnostics")]
+                                    diagnostics,
+                                },
+                            ),
+                            _started: Esp32s31ConnectedEpochStarted {
+                                hardware,
+                                rx,
+                                aggregate_tx: aggregate,
+                                control: control_resources,
+                            },
+                            _stack: stack,
+                            _network: network_runner,
+                            _initial_network_task: stack_runner,
+                            _plan: plan,
+                            _failure: ConnectedStationReplaySetupFailure::Plan {
+                                _failure: failure,
+                                _tx_security: tx_security,
+                                _group_security: group_security,
+                            },
+                            _sequences: sequences,
+                            _material: material,
+                            _control_tx: control_tx,
+                            _task_reservation: Some(task_reservation),
+                        },
+                    );
+                }
+                (tx_security, group_security)
+            }
+        installed_security => {
             return ConnectedStationRunExit::Faulted(
                 ConnectedStationFault::SecurityOwnershipMismatch {
                     _runtime: production_station_runtime(
@@ -1596,20 +1722,26 @@ pub(crate) async fn run_connected<'state, 'security>(
         drivers.services,
     );
     if let Esp32s31StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } = &mut material {
-        let Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group) = group_security
+        let Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey {
+            group,
+            material: group_material,
+            replay,
+        } = group_security
             .take()
             .expect("WPA2 composition retains group security")
         else {
-            unreachable!("validated WPA2 composition retains a group key token");
+            unreachable!("validated WPA2 composition retains group rekey owners");
         };
         if radio_runner
             .services_mut()
             .control_mut()
             .install_wpa2_security(ConnectedWpa2Security::new(
                 connected
-                    .take()
-                    .expect("installed WPA2 keys retain connected supplicant state"),
+                        .take()
+                        .expect("installed WPA2 keys retain connected supplicant state"),
                 group,
+                group_material,
+                replay,
             ))
             .is_err()
         {

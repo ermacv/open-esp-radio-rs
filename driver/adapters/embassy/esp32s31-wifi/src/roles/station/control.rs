@@ -18,9 +18,13 @@ use core::future::Future;
 use embassy_futures::select::{Either, select};
 use embassy_time::{Instant, Timer};
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_wifi_mac::crypto::{CryptoKeyError, StaGroupCcmpSlot};
+use open_esp_radio_esp32s31_wifi_mac::crypto::{
+    CryptoKeyError, StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot,
+};
 pub use open_esp_radio_esp32s31_wifi_mac::rx_ampdu::{RxReorderCommand, RxReorderCommandError};
-use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxControlEvent;
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+    ConnectedRxControlEvent, StaCcmpRxReplayControlEndpoint, StaCcmpRxReplayError,
+};
 pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::{
         ConnectedControlError, ConnectedControlPorts, ConnectedControlReorder, ConnectedControlTx,
@@ -49,6 +53,7 @@ use open_esp_radio_wifi_sta::{
 };
 use open_esp_radio_wpa2::{
     aes::{SoftwareAesKeyUnwrapError, Wpa2SoftwareAes},
+    keys::Wpa2KeyKind,
     supplicant::{
         Wpa2ConnectedAction, Wpa2ConnectedProcessError, Wpa2ConnectedSupplicant,
         Wpa2ConnectedSupplicantError,
@@ -103,7 +108,11 @@ pub enum ConnectedWpa2SecurityFailure {
     Protocol(Wpa2ConnectedSupplicantError),
     KeyUnwrap(SoftwareAesKeyUnwrapError),
     InvalidGroupKeyKind,
-    GroupReplayRotationUnavailable,
+    InvalidGroupKeyMaterial(CryptoKeyError),
+    ReplayRotation(StaCcmpRxReplayError),
+    SameKeyIdGenerationUnavailable,
+    RetiredKeyIdGenerationUnavailable { key_id: u8 },
+    KeyReplace(StaGroupCcmpReplaceError),
     KeyInstall(CryptoKeyError),
     TxStart(open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTxError),
     TxOutcome(open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTxOutcome),
@@ -131,6 +140,9 @@ pub struct ConnectedWpa2SecurityEvidence {
 pub struct ConnectedWpa2Security {
     supplicant: Wpa2ConnectedSupplicant,
     group: StaGroupCcmpSlot,
+    group_material: StaGroupCcmpKeyMaterial,
+    used_group_key_ids: u8,
+    replay: StaCcmpRxReplayControlEndpoint,
     unwrap: Wpa2SoftwareAes,
     tx_in_flight: bool,
     group_message1: u32,
@@ -143,10 +155,19 @@ pub struct ConnectedWpa2Security {
 }
 
 impl ConnectedWpa2Security {
-    pub const fn new(supplicant: Wpa2ConnectedSupplicant, group: StaGroupCcmpSlot) -> Self {
+    pub const fn new(
+        supplicant: Wpa2ConnectedSupplicant,
+        group: StaGroupCcmpSlot,
+        group_material: StaGroupCcmpKeyMaterial,
+        replay: StaCcmpRxReplayControlEndpoint,
+    ) -> Self {
+        let used_group_key_ids = 1_u8 << group_material.key_id();
         Self {
             supplicant,
             group,
+            group_material,
+            used_group_key_ids,
+            replay,
             unwrap: Wpa2SoftwareAes::new(),
             tx_in_flight: false,
             group_message1: 0,
@@ -177,7 +198,11 @@ impl ConnectedWpa2Security {
         }
     }
 
-    pub fn into_parts(self) -> (Wpa2ConnectedSupplicant, StaGroupCcmpSlot) {
+    pub fn into_parts(mut self) -> (Wpa2ConnectedSupplicant, StaGroupCcmpSlot) {
+        // Connected lifecycle calls this only after the RX task has returned.
+        // A stale stop still leaves the resource quarantined by its endpoint
+        // Drop implementation and cannot reopen group publication.
+        let _ = self.replay.stop();
         (self.supplicant, self.group)
     }
 
@@ -275,13 +300,116 @@ impl ConnectedWpa2Security {
                 response
             }
             Wpa2ConnectedAction::InstallGroupKey(request) => {
-                // The connected RX task owns the active GTK replay frontier.
-                // Replacing hardware key material without a reserved,
-                // acknowledged replay-epoch handoff creates a window where a
-                // same-KeyID GTK can accept PN reuse. Until that cross-task
-                // transaction exists, reject before touching the key slot.
-                let _ = self.supplicant.complete_group_key_install(request, false);
-                return self.fail(ConnectedWpa2SecurityFailure::GroupReplayRotationUnavailable);
+                let Wpa2KeyKind::Group { key_id, .. } = request.group().kind() else {
+                    let _ = self.supplicant.complete_group_key_install(request, false);
+                    return self.fail(ConnectedWpa2SecurityFailure::InvalidGroupKeyKind);
+                };
+                let replacement =
+                    match StaGroupCcmpKeyMaterial::new(key_id, *request.group().key().as_bytes()) {
+                        Ok(replacement) => replacement,
+                        Err(error) => {
+                            let _ = self.supplicant.complete_group_key_install(request, false);
+                            return self.fail(
+                                ConnectedWpa2SecurityFailure::InvalidGroupKeyMaterial(error),
+                            );
+                        }
+                    };
+                let same_key_id = self.group_material.key_id() == replacement.key_id();
+                let same_temporal_key = self.group_material.same_temporal_key(&replacement);
+                if same_key_id && !same_temporal_key {
+                    // S31 exposes one STA group slot and no RX descriptor key
+                    // generation. A frame authenticated with the old GTK can
+                    // already be staged when control receives Group M1. With
+                    // the same logical KeyID it cannot be distinguished after
+                    // a key replacement, so do not manufacture unsafe support.
+                    let _ = self.supplicant.complete_group_key_install(request, false);
+                    return self.fail(ConnectedWpa2SecurityFailure::SameKeyIdGenerationUnavailable);
+                }
+                let key_id_mask = 1_u8 << replacement.key_id();
+                if !same_key_id && self.used_group_key_ids & key_id_mask != 0 {
+                    // The retired key ID may still label an authenticated
+                    // frame in the RX staging pipeline. Reusing it for a new
+                    // generation would make that frame indistinguishable
+                    // from replacement traffic after hardware installation.
+                    let _ = self.supplicant.complete_group_key_install(request, false);
+                    return self.fail(
+                        ConnectedWpa2SecurityFailure::RetiredKeyIdGenerationUnavailable {
+                            key_id: replacement.key_id(),
+                        },
+                    );
+                }
+                let prepared = match self
+                    .replay
+                    .prepare_group_rotation(key_id, *request.group().receive_sequence())
+                {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        let _ = self.supplicant.complete_group_key_install(request, false);
+                        return self.fail(ConnectedWpa2SecurityFailure::ReplayRotation(error));
+                    }
+                };
+                let installing = match self.replay.begin_group_rotation(prepared) {
+                    Ok(installing) => installing,
+                    Err(error) => {
+                        let _ = self.supplicant.complete_group_key_install(request, false);
+                        return self.fail(ConnectedWpa2SecurityFailure::ReplayRotation(error));
+                    }
+                };
+
+                if same_key_id {
+                    // An authenticated repeat of the exact GTK changes no
+                    // hardware generation. Rotating only the RSC is safe even
+                    // when old frames are staged because they authenticate
+                    // under the still-current key.
+                    if let Err(error) = self.replay.commit_group_rotation(installing) {
+                        let _ = self.supplicant.complete_group_key_install(request, false);
+                        return self.fail(ConnectedWpa2SecurityFailure::ReplayRotation(error));
+                    }
+                } else {
+                    match hardware.replace_sta_group_ccmp(
+                        &mut self.group,
+                        &self.group_material,
+                        &replacement,
+                    ) {
+                        Ok(()) => {
+                            if let Err(error) = self.replay.commit_group_rotation(installing) {
+                                // Hardware now contains the replacement. The
+                                // replay resource quarantines group RX on a
+                                // failed commit; outer disconnect clears the
+                                // slot without publishing a mixed epoch.
+                                let _ = self.supplicant.complete_group_key_install(request, false);
+                                return self
+                                    .fail(ConnectedWpa2SecurityFailure::ReplayRotation(error));
+                            }
+                            self.group_material = replacement;
+                            self.used_group_key_ids |= key_id_mask;
+                        }
+                        Err(error @ StaGroupCcmpReplaceError::ReplacementRolledBack(_)) => {
+                            let abort = self.replay.abort_group_rotation(installing);
+                            let _ = self.supplicant.complete_group_key_install(request, false);
+                            if let Err(replay_error) = abort {
+                                return self.fail(ConnectedWpa2SecurityFailure::ReplayRotation(
+                                    replay_error,
+                                ));
+                            }
+                            return self.fail(ConnectedWpa2SecurityFailure::KeyReplace(error));
+                        }
+                        Err(error) => {
+                            self.replay.quarantine_group_rotation(installing);
+                            let _ = self.supplicant.complete_group_key_install(request, false);
+                            return self.fail(ConnectedWpa2SecurityFailure::KeyReplace(error));
+                        }
+                    }
+                }
+                match self.supplicant.complete_group_key_install(request, true) {
+                    Ok(response) => {
+                        self.installed = self.installed.saturating_add(1);
+                        response
+                    }
+                    Err(error) => {
+                        return self.fail(ConnectedWpa2SecurityFailure::Protocol(error));
+                    }
+                }
             }
         };
         match tx.start_protected_eapol(hardware, response.as_bytes()) {

@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Executor-independent ESP32-S31 Wi-Fi station composition"
 
 [dependencies]
+critical-section = "1.2.0"
 open-esp-radio-esp32s31-hal = { path = "../../hal" }
 open-esp-radio-esp32s31-phy = { path = "../../phy" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../mac" }
@@ -17,6 +18,9 @@ open-esp-radio-ieee80211 = { path = "../../../../wifi/ieee80211" }
 open-esp-radio-wifi-softmac = { path = "../../../../wifi/softmac" }
 open-esp-radio-wpa2 = { path = "../../../../wifi/wpa2" }
 open-esp-radio-wifi-sta = { path = "../../../../wifi/sta" }
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
 
 [lints]
 workspace = true

@@ -125,7 +125,7 @@ impl Esp32s31ConnectedStaPort {
     {
         let mut dispatcher = ConnectedRxDispatcher::new(plan.rx_config());
         if let Some(replay) = plan.take_ccmp_rx_replay() {
-            dispatcher = dispatcher.with_ccmp_rx_replay(replay);
+            dispatcher = dispatcher.with_shared_ccmp_rx_replay(replay);
         }
         if let Some(epoch) = plan.disable_esp_now_rx() {
             dispatcher = dispatcher.with_esp_now_rx_epoch(epoch);

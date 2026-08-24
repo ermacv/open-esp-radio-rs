@@ -2335,6 +2335,7 @@ dependencies = [
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
  "pin-project",
+ "subtle",
  "zeroize",
 ]
 
@@ -2342,6 +2343,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-wifi-sta"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",

@@ -9,7 +9,9 @@ use open_esp_radio_esp32s31_wifi_mac::rate_control::{
     HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
     StaRateControlAssociationInput, StaRateControlPhy,
 };
-use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+    ConnectedRxEvent, ConnectedRxSink, StaCcmpRxReplayEpoch, StaCcmpRxReplayResource,
+};
 use open_esp_radio_wifi_softmac::{
     WifiConfig, WifiMacAddress, WifiMonitorConfig, WifiStationConfig,
     interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},
@@ -130,6 +132,56 @@ fn plan_owns_rate_rx_tx_block_ack_and_beacon_policy() {
     );
     assert!(matches!(plan.aggregate_tx_rate(), TxPhyRate::He(_)));
     assert_eq!(plan.beacon_loss().window_micros(), 1_024_000);
+}
+
+#[test]
+fn ccmp_replay_plan_rejections_return_the_exact_rx_endpoint() {
+    let open_peer = peer();
+    let open_interface = station_interface(&open_peer);
+    let mut open_plan =
+        Esp32s31ConnectedStaPort::prepare_for_interface_with_storage_and_security::<32, 32>(
+            open_peer,
+            config(),
+            open_interface,
+            open_esp_radio_ieee80211::security::WifiSecurityMode::Open,
+        )
+        .unwrap();
+    let open_resource = Box::leak(Box::new(StaCcmpRxReplayResource::new()));
+    let (open_rx, mut open_control) = open_resource
+        .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+        .unwrap();
+    let (error, mut returned_open_rx) = open_plan
+        .enable_ccmp_rx_replay(open_rx)
+        .unwrap_err()
+        .into_parts();
+    assert_eq!(error, Esp32s31ConnectedStaCcmpReplayError::RequiresWpa2);
+    returned_open_rx.stop().unwrap();
+    open_control.stop().unwrap();
+
+    let mut wpa2_plan = prepare::<32, 32>(peer(), config()).unwrap();
+    let installed_resource = Box::leak(Box::new(StaCcmpRxReplayResource::new()));
+    let (installed_rx, mut installed_control) = installed_resource
+        .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
+        .unwrap();
+    wpa2_plan.enable_ccmp_rx_replay(installed_rx).unwrap();
+
+    let returned_resource = Box::leak(Box::new(StaCcmpRxReplayResource::new()));
+    let (second_rx, mut second_control) = returned_resource
+        .start(StaCcmpRxReplayEpoch::new([0; 8], 2, [0; 8]).unwrap())
+        .unwrap();
+    let (error, mut returned_second_rx) = wpa2_plan
+        .enable_ccmp_rx_replay(second_rx)
+        .unwrap_err()
+        .into_parts();
+    assert_eq!(error, Esp32s31ConnectedStaCcmpReplayError::AlreadyInstalled);
+    returned_second_rx.stop().unwrap();
+    second_control.stop().unwrap();
+
+    let mut recovered_installed_rx = wpa2_plan
+        .take_ccmp_rx_replay()
+        .expect("first endpoint remains installed after rejecting the second");
+    recovered_installed_rx.stop().unwrap();
+    installed_control.stop().unwrap();
 }
 
 #[test]

@@ -23,7 +23,10 @@ use open_esp_radio_esp32s31_wifi_mac::sta_ap_registers::StaApRegisterHardware;
 use open_esp_radio_esp32s31_wifi_mac::{
     ap_policy::ApRxPolicyHardware,
     ap_tsf::ApTsfHardware,
-    crypto::{CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, replace_sta_group_ccmp},
+    crypto::{
+        CcmpKeyHardware, CryptoKeyError, StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError,
+        StaGroupCcmpSlot, replace_sta_group_ccmp, replace_sta_group_ccmp_with_rollback,
+    },
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
     low_rate::{MacLowRateGateProbe, MacLowRateTransitionError},
@@ -542,6 +545,15 @@ impl CooperativeRadioHardware<'_> {
         temporal_key: &[u8; 16],
     ) -> Result<(), CryptoKeyError> {
         replace_sta_group_ccmp(&mut self.wifi_mac_hal(), slot, key_id, temporal_key)
+    }
+
+    pub fn replace_sta_group_ccmp_with_rollback(
+        &mut self,
+        slot: &mut StaGroupCcmpSlot,
+        current: &StaGroupCcmpKeyMaterial,
+        replacement: &StaGroupCcmpKeyMaterial,
+    ) -> Result<(), StaGroupCcmpReplaceError> {
+        replace_sta_group_ccmp_with_rollback(&mut self.wifi_mac_hal(), slot, current, replacement)
     }
 }
 

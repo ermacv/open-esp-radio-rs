@@ -7,7 +7,7 @@
 
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::{CryptoKeyError, StaGroupCcmpSlot},
+    crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot},
     rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreementError},
     tx::TxHardware,
 };
@@ -153,10 +153,12 @@ pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
     fn replace_sta_group_ccmp(
         &mut self,
         _slot: &mut StaGroupCcmpSlot,
-        _key_id: u8,
-        _temporal_key: &[u8; 16],
-    ) -> Result<(), CryptoKeyError> {
-        Err(CryptoKeyError::HardwareRejected)
+        _current: &StaGroupCcmpKeyMaterial,
+        _replacement: &StaGroupCcmpKeyMaterial,
+    ) -> Result<(), StaGroupCcmpReplaceError> {
+        Err(StaGroupCcmpReplaceError::InvalidReplacement(
+            open_esp_radio_esp32s31_wifi_mac::crypto::CryptoKeyError::HardwareRejected,
+        ))
     }
 }
 
@@ -202,9 +204,14 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
     fn replace_sta_group_ccmp(
         &mut self,
         slot: &mut StaGroupCcmpSlot,
-        key_id: u8,
-        temporal_key: &[u8; 16],
-    ) -> Result<(), CryptoKeyError> {
-        CooperativeRadioHardware::replace_sta_group_ccmp(self, slot, key_id, temporal_key)
+        current: &StaGroupCcmpKeyMaterial,
+        replacement: &StaGroupCcmpKeyMaterial,
+    ) -> Result<(), StaGroupCcmpReplaceError> {
+        CooperativeRadioHardware::replace_sta_group_ccmp_with_rollback(
+            self,
+            slot,
+            current,
+            replacement,
+        )
     }
 }

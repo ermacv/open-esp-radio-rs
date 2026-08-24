@@ -35,6 +35,10 @@ pub mod types;
 pub mod validation;
 pub mod wifi_bb;
 pub mod wifi_mac;
+pub use open_esp_radio_esp32s31_pac::{
+    MacPowerWakeCause, MacTsfTimerIndex, StaTbttWakePrepareError, StaTbttWakeRestore,
+    StaTbttWakeRestoreError, StaTbttWakeRestoreFailure,
+};
 pub use power::{PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError};
 pub use types::{
     CfrValue, ForcedRxGain, MacInterruptEvents, MacInterruptMask, MacInterruptSnapshot,
@@ -427,6 +431,14 @@ pub struct MacPowerInterruptRegisters {
 }
 
 impl MacPowerInterruptRegisters {
+    pub fn mask_and_acknowledge_wake_cause(&mut self, cause: MacPowerWakeCause) {
+        self.inner.mask_and_acknowledge_wake_cause(cause);
+    }
+
+    pub fn acknowledge_wake_cause(&mut self, cause: MacPowerWakeCause) {
+        self.inner.acknowledge_wake_cause(cause);
+    }
+
     pub fn power_interrupt_status(&self) -> MacPowerInterruptSnapshot {
         self.inner.power_interrupt_status()
     }

@@ -92,7 +92,7 @@ pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
 pub use mac_interrupt::{
     ConnectedStaWithoutPowerSavePrepared, MacInterruptRegisters, MacInterruptSetup,
-    MacPowerInterruptRegisters,
+    MacPowerInterruptRegisters, MacPowerWakeCause, MacTsfTimerIndex,
 };
 pub use mac_modem_wakeup::{
     StaBeaconMissLimit, StaModemSleepLimit, StaModemWakeConfig, StaTbttAutoPeriod,
@@ -106,6 +106,9 @@ pub use mac_rx_statistics::{
     MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxDecodeErrorStatisticsDelta,
     MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics,
     MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
+};
+pub use mac_tsf::{
+    StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError, StaTbttWakeRestoreFailure,
 };
 pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,
@@ -192,6 +195,18 @@ pub struct MacPowerInterruptSnapshot(svd::interrupt_snapshot::MacPowerInterruptS
 impl MacPowerInterruptSnapshot {
     pub fn bits(&self) -> u32 {
         self.0.bits()
+    }
+
+    /// Test one reviewed WDEVPWR cause without assigning names to any other
+    /// bit in the opaque status image.
+    pub const fn contains(&self, cause: MacPowerWakeCause) -> bool {
+        self.0.bits() & cause.event_mask() != 0
+    }
+
+    /// Preserve every cause outside the four reviewed TSF-timer sources as
+    /// opaque evidence for a later qualification slice.
+    pub const fn unknown_bits(&self) -> u32 {
+        self.0.bits() & !MacPowerWakeCause::REVIEWED_MASK
     }
 
     #[cfg(feature = "validation-probes")]
@@ -377,6 +392,7 @@ impl Field32 {
 pub struct RadioRegisters {
     peripherals: svd::peripheral_ownership::RadioPeripherals,
     wifi_baseband_enabled: bool,
+    station_tbtt_wake_prepared: bool,
 }
 
 impl RadioRegisters {
@@ -384,6 +400,7 @@ impl RadioRegisters {
         Self {
             peripherals,
             wifi_baseband_enabled: false,
+            station_tbtt_wake_prepared: false,
         }
     }
 

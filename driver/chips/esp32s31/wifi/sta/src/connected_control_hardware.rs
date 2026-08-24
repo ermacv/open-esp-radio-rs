@@ -13,10 +13,37 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_wifi_sta::power_save::StaDozePermit;
 
-/// Fail-closed result until an audited RF/PHY wake transaction leaf exists.
+/// Deepest completed stage of one hardware doze attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationDozeHardwareStage {
+    None,
+    /// The two-register station TSF wake gate was programmed and restored
+    /// through the affine PAC token.
+    StationTsfWakeGate,
+}
+
+/// First hardware boundary whose semantics are not present in reviewed S31
+/// evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationDozeUnsupportedStage {
+    /// Target packing is reviewed, but the restricted generated PAC has no
+    /// safe arbitrary 26-bit writer for the STA TBTT target field.
+    StationTbttTargetProgramming,
+    /// The four generic TSF timer WDEVPWR causes are known, but the low three
+    /// timer-control bits do not identify which compare domain is the STA TSF.
+    StationWdevpwrCompareBinding,
+    /// No entered transaction exists for the generic default restore method.
+    HardwareSleepEntry,
+}
+
+/// Fail-closed result retaining exact reached-stage evidence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationDozeHardwareError {
-    Unsupported,
+    WakePrepare(open_esp_radio_esp32s31_hal::StaTbttWakePrepareError),
+    Unsupported {
+        reached: StationDozeHardwareStage,
+        missing: StationDozeUnsupportedStage,
+    },
 }
 
 /// ESP32-S31 register operations required by connected BlockAck control.
@@ -30,21 +57,27 @@ pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
     ) -> Result<(), S31RxBlockAckAgreementError>;
 
     /// Enter modem doze atomically. `Err` must leave every hardware owner in
-    /// its awake pre-call state. No ESP32-S31 implementation exists yet:
-    /// WDEVPWR causes, RF/PHY retention and wake ordering are not sufficiently
-    /// owned.
+    /// its awake pre-call state. Production currently exercises and rolls back
+    /// the reviewed wake-gate prefix, then fails closed before target compare,
+    /// WDEVPWR arming or RF/PHY power transition.
     fn enter_station_doze(
         &mut self,
         _permit: &StaDozePermit,
     ) -> Result<(), StationDozeHardwareError> {
-        Err(StationDozeHardwareError::Unsupported)
+        Err(StationDozeHardwareError::Unsupported {
+            reached: StationDozeHardwareStage::None,
+            missing: StationDozeUnsupportedStage::HardwareSleepEntry,
+        })
     }
 
     /// Restore every hardware owner changed by `enter_station_doze`. Failure
     /// retains the affine restore obligation at the caller and must quarantine
     /// normal TX/teardown progress.
     fn restore_station_awake(&mut self) -> Result<(), StationDozeHardwareError> {
-        Err(StationDozeHardwareError::Unsupported)
+        Err(StationDozeHardwareError::Unsupported {
+            reached: StationDozeHardwareStage::None,
+            missing: StationDozeUnsupportedStage::HardwareSleepEntry,
+        })
     }
 
     /// Atomically consume the current association's authority to replace its
@@ -71,6 +104,19 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
         enabled: bool,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         CooperativeRadioHardware::set_he_tid_enabled(self, tid, enabled)
+    }
+
+    fn enter_station_doze(
+        &mut self,
+        permit: &StaDozePermit,
+    ) -> Result<(), StationDozeHardwareError> {
+        let _ = permit;
+        self.probe_station_tbtt_wake_prefix()
+            .map_err(StationDozeHardwareError::WakePrepare)?;
+        Err(StationDozeHardwareError::Unsupported {
+            reached: StationDozeHardwareStage::StationTsfWakeGate,
+            missing: StationDozeUnsupportedStage::StationTbttTargetProgramming,
+        })
     }
 
     fn replace_sta_group_ccmp(

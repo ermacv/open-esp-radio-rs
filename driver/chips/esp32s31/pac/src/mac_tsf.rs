@@ -4,6 +4,34 @@
 
 use super::{RadioRegisters, device_fence, svd};
 
+/// Failure to start the reviewed station-TBTT wake prefix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaTbttWakePrepareError {
+    AlreadyPrepared,
+    /// The complete vendor disable leaf leaves RTC CONTROL bit 21 asserted.
+    /// Entry therefore requires that exact idle image: synthesizing a clear
+    /// during rollback would not be evidence-backed.
+    WakeGateBaselineUnsupported,
+}
+
+/// Failure to consume one station-TBTT rollback obligation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaTbttWakeRestoreError {
+    NotPrepared,
+}
+
+/// Affine rollback token for the reviewed station-TBTT wake prefix.
+#[must_use = "a prepared station TBTT wake prefix must be restored"]
+pub struct StaTbttWakeRestore {
+    _private: (),
+}
+
+/// Failed rollback retaining the unique obligation token.
+pub struct StaTbttWakeRestoreFailure {
+    pub error: StaTbttWakeRestoreError,
+    pub restore: StaTbttWakeRestore,
+}
+
 /// Snapshot either or both station TSF words using the complete ROM leaf's
 /// conditional-output semantics.
 #[inline(always)]
@@ -94,6 +122,55 @@ impl RadioRegisters {
         });
         rtc.control()
             .modify(|_, w| w.sta_tsf_wakeup_enable().set_bit());
+    }
+
+    /// Enable the dedicated station TSF wake signal, returning the only
+    /// authority to undo that reviewed prefix.
+    ///
+    /// This is exactly `hal_set_sta_tsf_wakeup(true)`. Although the reviewed
+    /// SVD identifies the separate STA TBTT target packing, its generated safe
+    /// API does not yet authorize an arbitrary 26-bit RMW. This transaction
+    /// stops before target programming instead of using raw bits.
+    pub fn prepare_station_tbtt_wake(
+        &mut self,
+    ) -> Result<StaTbttWakeRestore, StaTbttWakePrepareError> {
+        if self.station_tbtt_wake_prepared {
+            return Err(StaTbttWakePrepareError::AlreadyPrepared);
+        }
+        let rtc = &self.peripherals.wifi_mac_rtc_timer_update;
+        if rtc
+            .sta_tsf_control()
+            .read()
+            .sta_tsf_wakeup_enable()
+            .bit_is_set()
+            || rtc.control().read().sta_tsf_wakeup_enable().bit_is_clear()
+        {
+            return Err(StaTbttWakePrepareError::WakeGateBaselineUnsupported);
+        }
+
+        self.set_station_tsf_wakeup(true);
+        self.station_tbtt_wake_prepared = true;
+        device_fence();
+        Ok(StaTbttWakeRestore { _private: () })
+    }
+
+    /// Disable the station wake signal using the complete vendor disable
+    /// image. The baseline check guarantees exact restoration without an
+    /// invented clear of RTC CONTROL bit 21.
+    pub fn restore_station_tbtt_wake(
+        &mut self,
+        restore: StaTbttWakeRestore,
+    ) -> Result<(), StaTbttWakeRestoreFailure> {
+        if !self.station_tbtt_wake_prepared {
+            return Err(StaTbttWakeRestoreFailure {
+                error: StaTbttWakeRestoreError::NotPrepared,
+                restore,
+            });
+        }
+        self.set_station_tsf_wakeup(false);
+        self.station_tbtt_wake_prepared = false;
+        device_fence();
+        Ok(())
     }
 
     /// Return the complete shared STA TSF control image for HIL comparison.

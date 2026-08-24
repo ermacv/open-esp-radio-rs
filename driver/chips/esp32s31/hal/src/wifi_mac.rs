@@ -24,7 +24,10 @@ use crate::types::{
     MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
-use open_esp_radio_esp32s31_pac::{ColdRadioRegisters, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{
+    ColdRadioRegisters, RadioRegisters, StaTbttWakePrepareError, StaTbttWakeRestore,
+    StaTbttWakeRestoreFailure,
+};
 
 /// Complete identity of one hardware MAC interface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -670,6 +673,23 @@ impl<'registers> WifiMacHal<'registers> {
 
     pub fn station_tsf(&mut self) -> u64 {
         self.pac_mut().station_tsf()
+    }
+
+    /// Program only the reviewed station-TBTT wake prefix. The returned token
+    /// owns rollback; this operation does not claim RF/PHY sleep entry.
+    pub fn prepare_station_tbtt_wake(
+        &mut self,
+    ) -> Result<StaTbttWakeRestore, StaTbttWakePrepareError> {
+        self.pac_mut().prepare_station_tbtt_wake()
+    }
+
+    /// Consume the exact rollback obligation created by
+    /// [`Self::prepare_station_tbtt_wake`].
+    pub fn restore_station_tbtt_wake(
+        &mut self,
+        restore: StaTbttWakeRestore,
+    ) -> Result<(), StaTbttWakeRestoreFailure> {
+        self.pac_mut().restore_station_tbtt_wake(restore)
     }
 
     pub fn program_rx_block_ack_entry(

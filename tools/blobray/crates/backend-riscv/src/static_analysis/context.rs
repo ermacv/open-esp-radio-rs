@@ -155,6 +155,10 @@ pub struct StructuralProjectedRelocation {
 
 #[derive(Clone, Debug, Default)]
 pub struct StructuralPointerContext {
+    /// Stable harness/summary semantic revision used by persistent caches.
+    /// An empty value denotes synthetic/default context with no registered
+    /// summary hooks.
+    pub semantic_cache_domain: &'static str,
     pub reviewed_external_pointer_cells: BTreeMap<u32, String>,
     pub function_pointer_cells: BTreeMap<u32, FunctionTableRef>,
     pub data_pointer_cells: BTreeMap<u32, SymbolicValue>,
@@ -183,7 +187,10 @@ pub struct StructuralPointerContext {
 impl StructuralPointerContext {
     pub fn from_harness(harness: &'static RiscvHarnessSpec) -> Self {
         let contracts = harness.contracts;
-        let mut context = Self::default();
+        let mut context = Self {
+            semantic_cache_domain: harness.semantic_cache_domain,
+            ..Self::default()
+        };
         context.diagnostic_calls.extend(
             contracts
                 .diagnostic_calls

@@ -656,6 +656,158 @@ fn reachable_callees_are_loaded_as_one_late_cache_batch() {
 }
 
 #[test]
+fn changing_one_function_reuses_unrelated_persistent_facts() {
+    let symbols = vec![
+        symbol("cache_locality_a", 0x1000, vec![0x67, 0x80, 0x00, 0x00]),
+        symbol("cache_locality_b", 0x2000, vec![0x67, 0x80, 0x00, 0x00]),
+        symbol("cache_locality_c", 0x3000, vec![0x67, 0x80, 0x00, 0x00]),
+    ];
+    let mut resolver = empty_resolver();
+    resolver.symbols = symbols.clone();
+    resolver.symbol_ids = symbols
+        .iter()
+        .enumerate()
+        .map(|(index, symbol)| {
+            (
+                (symbol.member.clone(), symbol.name.clone(), symbol.address),
+                0x8000_0000 + index as u32,
+            )
+        })
+        .collect();
+    let map = MmioMap {
+        registers: Vec::new(),
+        regions: Vec::new(),
+    };
+    let options = LinkedIrSourceOptions {
+        symbol_prefix: "",
+        source: "primary",
+        namespace_identities: false,
+        include_reachable: false,
+        jobs: 1,
+        compact_projected_actions: false,
+    };
+    let mut store = CountingFunctionFactStore::default();
+
+    let cold = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
+    assert_eq!(cold.functions.len(), symbols.len());
+    assert_eq!(
+        store.store_batches.iter().map(Vec::len).collect::<Vec<_>>(),
+        [symbols.len()],
+        "the cold run should persist one fact per independent function"
+    );
+
+    store.load_batches.get_mut().clear();
+    store.store_batches.clear();
+    let warm = build_linked_ir_for_source_with_cache(&resolver, &map, options, Some(&mut store));
+    assert_eq!(warm, cold, "cache reuse changed linked-IR completeness");
+    assert!(
+        store.store_batches.is_empty(),
+        "the unchanged run should reuse every persistent function fact"
+    );
+
+    let mut changed = empty_resolver();
+    changed.symbols = symbols;
+    changed.symbols[0].bytes = vec![0x13, 0x00, 0x00, 0x00];
+    changed.symbol_ids = resolver.symbol_ids.clone();
+    store.load_batches.get_mut().clear();
+    store.store_batches.clear();
+    let changed_report =
+        build_linked_ir_for_source_with_cache(&changed, &map, options, Some(&mut store));
+
+    assert_eq!(changed_report.functions.len(), changed.symbols.len());
+    assert_eq!(
+        store.store_batches.iter().map(Vec::len).collect::<Vec<_>>(),
+        [1],
+        "changing one function body should not invalidate unrelated direct facts"
+    );
+}
+
+#[test]
+fn linked_base_shift_does_not_reuse_stale_pc_relative_mmio_facts() {
+    let resolver_at = |address| {
+        let owner = symbol(
+            "pc_relative_store",
+            address,
+            vec![
+                0x97, 0x02, 0x00, 0x00, // auipc t0, 0
+                0x23, 0xa0, 0x02, 0x00, // sw zero, 0(t0)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+        );
+        let mut resolver = empty_resolver();
+        resolver.symbol_ids.insert(
+            (owner.member.clone(), owner.name.clone(), owner.address),
+            address as u32,
+        );
+        resolver.symbols = vec![owner];
+        resolver
+    };
+    let original_address = 0x2010_0000;
+    let shifted_address = 0x2010_1000;
+    let original = resolver_at(original_address);
+    let shifted = resolver_at(shifted_address);
+    let map = MmioMap {
+        registers: vec![
+            crate::Register {
+                address: original_address as u32,
+                name: "RADIO.ORIGINAL".to_owned(),
+            },
+            crate::Register {
+                address: shifted_address as u32,
+                name: "RADIO.SHIFTED".to_owned(),
+            },
+        ],
+        regions: vec![crate::MmioRegion {
+            name: "radio".to_owned(),
+            start: original_address as u32,
+            end: shifted_address as u32 + 4,
+            readable: true,
+            writable: true,
+        }],
+    };
+    let options = LinkedIrSourceOptions {
+        symbol_prefix: "pc_relative_store",
+        source: "primary",
+        namespace_identities: false,
+        include_reachable: false,
+        jobs: 1,
+        compact_projected_actions: false,
+    };
+    let mut warm_store = CountingFunctionFactStore::default();
+
+    let cold =
+        build_linked_ir_for_source_with_cache(&original, &map, options, Some(&mut warm_store));
+    assert_eq!(
+        cold.functions[0].mmio_accesses[0].address,
+        original_address as u32
+    );
+    warm_store.store_batches.clear();
+    let warm =
+        build_linked_ir_for_source_with_cache(&shifted, &map, options, Some(&mut warm_store));
+
+    let mut fresh_store = CountingFunctionFactStore::default();
+    let fresh =
+        build_linked_ir_for_source_with_cache(&shifted, &map, options, Some(&mut fresh_store));
+    assert_eq!(
+        fresh.functions[0].mmio_accesses[0].address,
+        shifted_address as u32
+    );
+    assert_eq!(
+        warm, fresh,
+        "a linked-base shift reused stale PC-relative MMIO facts"
+    );
+    assert_eq!(
+        warm_store
+            .store_batches
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        [1],
+        "a linked-base shift must miss the old persistent function fact"
+    );
+}
+
+#[test]
 fn lossless_relocation_call_survives_an_earlier_semantic_stop() {
     let parent = symbol("vendor_parent", 0x1000, vec![0x73, 0, 0, 0]);
     let child = symbol("vendor_child", 0x2000, vec![0x67, 0x80, 0, 0]);

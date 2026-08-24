@@ -41,23 +41,31 @@ verification-policy requirement makes a production trace a Blobray gate.
 
 Focused inspection, a selected IR profile and `project analyze` use the same
 recovery engine. Full project analysis enumerates all configured roots; it
-does not switch to a second bulk algorithm. The current persistent cutover
-reuses a complete immutable profile/stage projection, including explicit
-incomplete/blocker results, and restores its generated files from CAS. Reuse
-between only partially overlapping root sets requires the remaining
-function-granular query cutover and is not reported as a cache hit today.
-All stale IR profiles selected by one `project analyze` invocation enter the
-builder together, so shared catalogs and reviewed interface knowledge are
-loaded once. Cache-current profiles are not rebuilt.
+does not switch to a second bulk algorithm. The persistent store reuses a
+complete immutable profile/stage projection, including explicit
+incomplete/blocker results, and restores its generated files from CAS. It also
+stores direct-function facts, so partially overlapping root sets can reuse the
+functions they share. All stale IR profiles selected by one `project analyze`
+invocation enter the builder together, so shared catalogs and reviewed
+interface knowledge are loaded once. Cache-current profiles are not rebuilt.
+
+Each direct-function fact is bound to its exact owner identity and body and to
+conservative resolver, MMIO and harness-semantic fingerprints. Other function
+bodies are excluded from that resolver fingerprint: changing one body can
+reuse unchanged facts for the other functions. Resolver layout, MMIO or
+harness changes may conservatively invalidate a wider set; the cache does not
+claim an exact per-function dependency DAG. A provider with summary hooks must
+publish a stable, versioned semantic cache domain. Missing domain identity
+fails closed to cold analysis instead of reusing a potentially stale fact.
 
 The local persistent store lives below `generated/.blobray-cache/`. Removing
 that directory only causes a cold recomputation. It never removes reviewed
 knowledge or generated publication artifacts. Profile IDs and output paths
 are bindings, so renaming an otherwise identical investigation does not change
 its analysis query key. Changing artifact bytes, provenance, ABI/backend
-revision or a semantic input read by the current stage creates a new key. Once
-function-granular persistence is enabled, that invalidation narrows to the
-affected query dependency closure.
+revision or a semantic input covered by the current query domain creates a new
+key. Direct-function reuse remains intentionally conservative across resolver,
+MMIO and harness-semantic changes.
 
 Inspect the store before deciding whether cache growth needs investigation:
 

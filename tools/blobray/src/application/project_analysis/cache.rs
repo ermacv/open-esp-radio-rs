@@ -250,13 +250,13 @@ impl ProjectAnalysisCache {
 /// hashes continue to protect project and caller-owned state.
 fn stage_revision(stage: &str) -> Result<u32> {
     if stage.starts_with("linked-ir:") {
-        return Ok(35);
+        return Ok(36);
     }
     match stage {
         "symbol-inventory" => Ok(2),
         "mmio-discovery" => Ok(4),
         "interface-discovery" => Ok(6),
-        "linked-ir" => Ok(35),
+        "linked-ir" => Ok(36),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(5),
         "navigation-index" => Ok(2),
@@ -518,6 +518,8 @@ mod tests {
             assert!(stage_revision(stage).unwrap() > 0);
         }
         assert!(stage_revision("new-unversioned-stage").is_err());
+        assert_eq!(stage_revision("linked-ir").unwrap(), 36);
+        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 36);
     }
 
     #[test]
@@ -549,6 +551,40 @@ mod tests {
             .unwrap();
 
         assert_eq!(focused, full);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn linked_ir_harness_domain_changes_the_outer_stage_query_key() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-linked-ir-domain-query-key-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("artifact.elf");
+        fs::write(&input, "same-artifact").unwrap();
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+
+        let first = cache
+            .signature(
+                "linked-ir:rom-all",
+                "roots=all;riscv-semantic-cache-domain=provider/riscv/v1",
+                std::slice::from_ref(&input),
+            )
+            .unwrap();
+        let second = cache
+            .signature(
+                "linked-ir:rom-all",
+                "roots=all;riscv-semantic-cache-domain=provider/riscv/v2",
+                std::slice::from_ref(&input),
+            )
+            .unwrap();
+
+        assert_ne!(first, second);
         fs::remove_dir_all(directory).unwrap();
     }
 }

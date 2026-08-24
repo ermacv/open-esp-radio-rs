@@ -618,6 +618,7 @@ pub(crate) fn build_linked_ir_for_source_with_cache(
         roots.iter().copied(),
         svd,
         source,
+        namespace_identities,
         fact_store.as_deref(),
     );
     let functions = if jobs > 1 && symbol_prefix.is_empty() {

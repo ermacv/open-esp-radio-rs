@@ -232,6 +232,13 @@ impl ResolvedProjectAnalysisOperations<'_> {
         if check {
             return Ok(false);
         }
+        if self.is_unversioned_linked_ir_stage(stage) {
+            tracing::warn!(
+                cache_stage = stage,
+                "persistent linked-IR stage cache disabled: the selected RISC-V harness has no stable semantic cache domain"
+            );
+            return Ok(false);
+        }
         let configuration = self.stage_configuration(stage);
         let current = self
             .cache
@@ -249,11 +256,21 @@ impl ResolvedProjectAnalysisOperations<'_> {
         inputs: &[std::path::PathBuf],
         outputs: &[std::path::PathBuf],
     ) -> Result<()> {
-        if !check {
+        if !check && !self.is_unversioned_linked_ir_stage(stage) {
             let configuration = self.stage_configuration(stage);
             self.cache.record(stage, &configuration, inputs, outputs)?;
         }
         Ok(())
+    }
+
+    fn linked_ir_semantic_cache_domain(&self) -> Option<&'static str> {
+        crate::harnesses::riscv_or_neutral(self.session.target.knowledge_provider.as_deref())
+            .ok()
+            .map(|harness| harness.semantic_cache_domain)
+    }
+
+    fn is_unversioned_linked_ir_stage(&self, stage: &str) -> bool {
+        !linked_ir_stage_cacheable(stage, self.linked_ir_semantic_cache_domain())
     }
 
     /// Stable, stage-owned project configuration included in the cache key.
@@ -270,8 +287,12 @@ impl ResolvedProjectAnalysisOperations<'_> {
                 .find(|profile| profile.id == profile_id)
                 .expect("linked-IR cache stage must name a configured profile");
             return format!(
-                "sources={:?};roots={:?};include-reachable={};entry-contract={:?}",
-                profile.sources, profile.roots, profile.include_reachable, profile.entry_contract
+                "sources={:?};roots={:?};include-reachable={};entry-contract={:?};riscv-semantic-cache-domain={:?}",
+                profile.sources,
+                profile.roots,
+                profile.include_reachable,
+                profile.entry_contract,
+                self.linked_ir_semantic_cache_domain(),
             );
         }
         match stage.split_once(':').map_or(stage, |(owner, _)| owner) {
@@ -287,7 +308,11 @@ impl ResolvedProjectAnalysisOperations<'_> {
                     .as_ref()
                     .map(|interfaces| &interfaces.facts)
             ),
-            "linked-ir" => format!("{:?}", project.ir_profiles),
+            "linked-ir" => format!(
+                "profiles={:?};riscv-semantic-cache-domain={:?}",
+                project.ir_profiles,
+                self.linked_ir_semantic_cache_domain(),
+            ),
             "event-replays" => format!("{:?}", project.functions),
             "review-scopes" => format!(
                 "review={:?};policy={:?}",
@@ -821,6 +846,11 @@ fn validation_key(stage: &str, deny_unreviewed: bool) -> String {
     format!("{stage}:deny-unreviewed={deny_unreviewed}")
 }
 
+fn linked_ir_stage_cacheable(stage: &str, semantic_domain: Option<&str>) -> bool {
+    let is_linked_ir = stage == "linked-ir" || stage.starts_with("linked-ir:");
+    !is_linked_ir || semantic_domain.is_some_and(|domain| !domain.trim().is_empty())
+}
+
 pub(crate) fn build_symbol_inventory(
     project: &ProjectSpec,
     run_spec: &RunSpec,
@@ -1056,4 +1086,20 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
     )?;
     super::super::generated_file::write_or_check(output, &contents, check, "register review")?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod cache_domain_tests {
+    use super::linked_ir_stage_cacheable;
+
+    #[test]
+    fn linked_ir_stage_cache_requires_a_stable_semantic_domain() {
+        for stage in ["linked-ir", "linked-ir:rom-all"] {
+            assert!(!linked_ir_stage_cacheable(stage, None));
+            assert!(!linked_ir_stage_cacheable(stage, Some("")));
+            assert!(!linked_ir_stage_cacheable(stage, Some("  \t")));
+            assert!(linked_ir_stage_cacheable(stage, Some("provider/riscv/v2")));
+        }
+        assert!(linked_ir_stage_cacheable("symbol-inventory", None));
+    }
 }

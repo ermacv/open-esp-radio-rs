@@ -518,16 +518,16 @@ fn root_help_is_project_first_and_project_files_is_typed() {
     ]);
     assert!(files.status.success());
     let report: serde_json::Value = serde_json::from_slice(&files.stdout).unwrap();
-    assert_eq!(report["schema"], 2);
+    assert_eq!(report["schema"], 3);
     assert_eq!(report["project_id"], "generic-rv32-fixture");
     assert_eq!(report["workflow_state"], "blocked");
     assert!(report["required_missing"].is_u64());
     assert!(report["next_actions"].is_array());
-    assert!(
-        report["files"].as_array().unwrap().iter().any(|file| {
-            file["role"] == "project-manifest" && file["ownership"] == "entrypoint"
-        })
-    );
+    assert!(report["files"].as_array().unwrap().iter().any(|file| {
+        file["role"] == "project-manifest"
+            && file["ownership"] == "entrypoint"
+            && file["layer"] == "composition"
+    }));
 }
 
 #[test]
@@ -537,7 +537,7 @@ fn fresh_project_files_exposes_only_the_executable_bootstrap_frontier() {
     let machine = run_project_command(&manifest, &["project", "files"]);
     assert!(machine.status.success());
     let document: serde_json::Value = serde_json::from_slice(&machine.stdout).unwrap();
-    assert_eq!(document["schema"], 2);
+    assert_eq!(document["schema"], 3);
     assert_eq!(document["workflow_state"], "blocked");
     assert!(document["required_missing"].as_u64().unwrap() > 0);
     let actions = document["next_actions"].as_array().unwrap();

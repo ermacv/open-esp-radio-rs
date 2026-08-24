@@ -67,9 +67,11 @@ fn render_human(report: &project_files::ProjectFilesReport, next_actions: &[Stri
     };
     outputln!("\n{outcome}");
 
-    let mut ownership = BTreeMap::<&str, (usize, usize, usize)>::new();
+    let mut ownership = BTreeMap::<(&str, &str), (usize, usize, usize)>::new();
     for file in &report.files {
-        let counts = ownership.entry(file.ownership.label()).or_default();
+        let counts = ownership
+            .entry((file.layer.label(), file.ownership.label()))
+            .or_default();
         match file.state {
             project_files::ProjectFileState::Present => counts.0 += 1,
             project_files::ProjectFileState::Missing => counts.1 += 1,
@@ -106,8 +108,9 @@ fn render_human(report: &project_files::ProjectFilesReport, next_actions: &[Stri
     outputln!(
         "{}",
         table::render(
-            ["Ownership", "Present", "Missing", "Pending"],
-            ownership.into_iter().map(|(owner, counts)| [
+            ["Layer", "Ownership", "Present", "Missing", "Pending"],
+            ownership.into_iter().map(|((layer, owner), counts)| [
+                layer.to_owned(),
                 owner.to_owned(),
                 counts.0.to_string(),
                 counts.1.to_string(),
@@ -121,8 +124,9 @@ fn render_human(report: &project_files::ProjectFilesReport, next_actions: &[Stri
         outputln!(
             "{}",
             table::render(
-                ["Ownership", "Role", "State", "Path"],
+                ["Layer", "Ownership", "Role", "State", "Path"],
                 report.files.iter().map(|file| [
+                    file.layer.label().to_owned(),
                     file.ownership.label().to_owned(),
                     file.role.clone(),
                     file.state.label().to_owned(),

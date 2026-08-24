@@ -4,7 +4,7 @@
 schema = 3
 id = "esp32c5-review-bootstrap"
 target-spec = "target.toml"
-ecosystem-packs = ["ecosystem.toml"]
+ecosystem-packs = ["../../knowledge/espressif/radio.toml"]
 
 [analysis.symbols]
 output = "generated/findings/symbols.json"

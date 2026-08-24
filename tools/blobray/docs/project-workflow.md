@@ -31,6 +31,17 @@ validation is attributable. Use `project check` when current bytes must be
 reproduced, rather than interpreting either inspection command as a freshness
 proof.
 
+`project files` reports both `ownership` and `layer`. They answer different
+questions: a chip register model and a project disposition are both reviewed,
+but the former is reusable `chip` knowledge while the latter is an
+`investigation` decision. The layers are composition, architecture,
+ecosystem, chip, investigation, local binding, external artifact and
+generated. Generic Blobray code does not appear as a project-data layer: move
+reusable vendor vocabulary to an ecosystem add-on and reusable addresses or
+register geometry to a chip add-on, not into the generic crate. Keep binary
+profiles, review scopes, dispositions, verification policy and sparse
+artifact-bounded conclusions in the investigation.
+
 `research next` combines root-cause blockers, the reverse call graph,
 unreviewed MMIO and interface observations, sparse unknown hardware semantics,
 publication scopes and verification surfaces. Its `G/O/M` metrics mean

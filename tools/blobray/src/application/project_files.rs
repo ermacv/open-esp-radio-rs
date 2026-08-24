@@ -21,6 +21,38 @@ pub(crate) enum ProjectFileOwnership {
     Generated,
 }
 
+/// Portability/knowledge boundary, independent from who edits the file.
+///
+/// For example, a chip register model and a project disposition are both
+/// reviewed inputs, but only the first is reusable across investigations.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ProjectFileLayer {
+    Composition,
+    Architecture,
+    Ecosystem,
+    Chip,
+    Investigation,
+    LocalBinding,
+    ExternalArtifact,
+    Generated,
+}
+
+impl ProjectFileLayer {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Composition => "composition",
+            Self::Architecture => "architecture",
+            Self::Ecosystem => "ecosystem",
+            Self::Chip => "chip",
+            Self::Investigation => "investigation",
+            Self::LocalBinding => "local-binding",
+            Self::ExternalArtifact => "external-artifact",
+            Self::Generated => "generated",
+        }
+    }
+}
+
 impl ProjectFileOwnership {
     pub(crate) const fn label(self) -> &'static str {
         match self {
@@ -55,6 +87,7 @@ impl ProjectFileState {
 pub(crate) struct ProjectFileEntry {
     pub(crate) role: String,
     pub(crate) ownership: ProjectFileOwnership,
+    pub(crate) layer: ProjectFileLayer,
     pub(crate) state: ProjectFileState,
     pub(crate) path: PathBuf,
     pub(crate) producer: Option<String>,
@@ -721,12 +754,46 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
         }
     }
 
+    let ecosystem_resources = project
+        .ecosystem_packs
+        .iter()
+        .flat_map(|pack| pack.knowledge_packs.iter())
+        .collect::<BTreeSet<_>>();
+    let chip_resources = project
+        .chip_pack
+        .iter()
+        .flat_map(|pack| {
+            pack.memory_map
+                .iter()
+                .chain(&pack.svd_paths)
+                .chain(pack.register_model.iter())
+                .chain(&pack.knowledge_packs)
+        })
+        .collect::<BTreeSet<_>>();
+    for file in &mut files {
+        if file.ownership == ProjectFileOwnership::Reviewed {
+            if ecosystem_resources.contains(&file.path) {
+                file.layer = ProjectFileLayer::Ecosystem;
+            }
+            if chip_resources.contains(&file.path) {
+                file.layer = ProjectFileLayer::Chip;
+            }
+        }
+    }
+
     files.sort_by(|left, right| {
-        (left.ownership, left.role.as_str(), left.path.as_os_str()).cmp(&(
-            right.ownership,
-            right.role.as_str(),
-            right.path.as_os_str(),
-        ))
+        (
+            left.layer,
+            left.ownership,
+            left.role.as_str(),
+            left.path.as_os_str(),
+        )
+            .cmp(&(
+                right.layer,
+                right.ownership,
+                right.role.as_str(),
+                right.path.as_os_str(),
+            ))
     });
     let present = files
         .iter()
@@ -741,7 +808,7 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
         .filter(|file| file.state == ProjectFileState::Pending)
         .count();
     Ok(ProjectFilesReport {
-        schema: 2,
+        schema: 3,
         project_id: project.id.clone(),
         manifest: context.project_path.to_owned(),
         files,
@@ -809,6 +876,7 @@ fn push(
     required: bool,
     next_action: Option<&str>,
 ) {
+    let role = role.into();
     let state = if path.exists() {
         ProjectFileState::Present
     } else if ownership == ProjectFileOwnership::Generated {
@@ -817,7 +885,8 @@ fn push(
         ProjectFileState::Missing
     };
     files.push(ProjectFileEntry {
-        role: role.into(),
+        layer: default_layer(&role, ownership),
+        role,
         ownership,
         state,
         path: path.to_owned(),
@@ -828,6 +897,21 @@ fn push(
             .then(|| next_action.map(str::to_owned))
             .flatten(),
     });
+}
+
+fn default_layer(role: &str, ownership: ProjectFileOwnership) -> ProjectFileLayer {
+    match ownership {
+        ProjectFileOwnership::Entrypoint => ProjectFileLayer::Composition,
+        ProjectFileOwnership::Local => ProjectFileLayer::LocalBinding,
+        ProjectFileOwnership::External => ProjectFileLayer::ExternalArtifact,
+        ProjectFileOwnership::Generated => ProjectFileLayer::Generated,
+        ProjectFileOwnership::Reviewed if role == "target-spec" => ProjectFileLayer::Architecture,
+        ProjectFileOwnership::Reviewed if role.starts_with("ecosystem-pack") => {
+            ProjectFileLayer::Ecosystem
+        }
+        ProjectFileOwnership::Reviewed if role.starts_with("chip-pack") => ProjectFileLayer::Chip,
+        ProjectFileOwnership::Reviewed => ProjectFileLayer::Investigation,
+    }
 }
 
 #[cfg(test)]
@@ -844,6 +928,7 @@ mod tests {
         ProjectFileEntry {
             role: role.to_owned(),
             ownership,
+            layer: default_layer(role, ownership),
             state,
             path: PathBuf::from(role),
             producer: producer.map(str::to_owned),
@@ -855,7 +940,7 @@ mod tests {
 
     fn report(files: Vec<ProjectFileEntry>) -> ProjectFilesReport {
         ProjectFilesReport {
-            schema: 2,
+            schema: 3,
             project_id: "fixture".to_owned(),
             manifest: PathBuf::from("vendor-project.toml"),
             present: files
@@ -896,6 +981,29 @@ mod tests {
         );
 
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn file_layers_separate_portability_from_review_ownership() {
+        assert_eq!(
+            default_layer(
+                "ecosystem-pack[0].knowledge[0]",
+                ProjectFileOwnership::Reviewed
+            ),
+            ProjectFileLayer::Ecosystem
+        );
+        assert_eq!(
+            default_layer("chip-pack", ProjectFileOwnership::Reviewed),
+            ProjectFileLayer::Chip
+        );
+        assert_eq!(
+            default_layer("reviewed-knowledge[0]", ProjectFileOwnership::Reviewed),
+            ProjectFileLayer::Investigation
+        );
+        assert_eq!(
+            default_layer("register-facts", ProjectFileOwnership::Generated),
+            ProjectFileLayer::Generated
+        );
     }
 
     #[test]

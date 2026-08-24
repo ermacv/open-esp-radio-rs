@@ -1,0 +1,9 @@
+# Reusable ESP-IDF/OSI vocabulary shared by radio investigations. This pack
+# must not contain chip addresses, table slots, compiled providers or product
+# verification policy.
+schema = 3
+id = "espressif-esp-idf-radio-v1"
+knowledge-packs = [
+    "../../../../tools/blobray/catalogs/neutral-embedded.toml",
+    "esp-idf.toml",
+]

@@ -64,6 +64,12 @@ The schema-3 composition is deliberately layered:
 
 Pack order is not an override mechanism. Conflicting definitions fail closed.
 Two projects may reference the same chip pack without copying its address map.
+Likewise, projects for different chips may reference one ecosystem pack. A
+generic algorithm or schema belongs in Blobray source; generic is not a dump
+for reusable vendor data. ESP-IDF vocabulary, for example, is a data-only
+ecosystem add-on, while ESP32-S31 addresses and compiled summary hooks remain
+chip knowledge. Wi-Fi/BLE/802.15.4 artifact profiles and review scope roots
+remain investigation-local because they describe the exact supplied blob.
 
 ## Demand-driven analysis and persistent ownership
 

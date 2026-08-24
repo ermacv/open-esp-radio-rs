@@ -97,7 +97,8 @@ fn checked_in_project_and_target_owned_review_packs_pass_doctor() {
         String::from_utf8_lossy(&output.stderr)
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(document["schema"], 2);
+    assert_eq!(document["schema"], 3);
+    assert_eq!(document["validation"]["depth"], "deep");
     assert_eq!(document["command"], "project doctor");
     assert!(matches!(
         document["status"].as_str(),

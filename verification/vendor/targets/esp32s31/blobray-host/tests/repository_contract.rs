@@ -1002,11 +1002,13 @@ fn ieee802154_vendor_scaffold_is_fail_closed_and_source_scoped() {
 fn ecosystem_pack_composes_the_shared_espressif_family_knowledge() {
     let vendor = repository_root().join("verification/vendor");
     let target = vendor.join("targets/esp32s31");
-    let ecosystem = fs::read_to_string(target.join("ecosystem.toml")).expect("read ecosystem pack");
+    let shared = vendor.join("knowledge/espressif/radio.toml");
+    let ecosystem = fs::read_to_string(&shared).expect("read shared ecosystem pack");
     assert!(ecosystem.contains("knowledge-packs"));
     assert!(ecosystem.contains("neutral-embedded.toml"));
-    assert!(ecosystem.contains("../../knowledge/espressif/esp-idf.toml"));
+    assert!(ecosystem.contains("esp-idf.toml"));
     assert!(vendor.join("knowledge/espressif/esp-idf.toml").is_file());
+    assert!(!target.join("ecosystem.toml").exists());
     assert!(!target.join("semantics/embedded-platform.toml").exists());
 }
 
@@ -1300,10 +1302,14 @@ fn radio_arena_escape_surface_is_frozen() {
 #[test]
 fn esp32c5_fixture_composes_only_neutral_and_family_knowledge() {
     let target = repository_root().join("verification/vendor/targets/esp32c5");
-    let ecosystem = fs::read_to_string(target.join("ecosystem.toml")).unwrap();
-    assert!(ecosystem.contains("../../knowledge/espressif/esp-idf.toml"));
+    let ecosystem = fs::read_to_string(
+        repository_root().join("verification/vendor/knowledge/espressif/radio.toml"),
+    )
+    .unwrap();
+    assert!(ecosystem.contains("esp-idf.toml"));
     assert!(!ecosystem.contains("knowledge-provider"));
     assert!(!ecosystem.contains("esp32s31"));
+    assert!(!target.join("ecosystem.toml").exists());
 
     let target_spec = fs::read_to_string(target.join("target.toml")).unwrap();
     assert!(!target_spec.contains("memory-map"));

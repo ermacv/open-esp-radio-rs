@@ -18,6 +18,10 @@ unknown fields.
   records with stable IDs, evidence, provenance and applicability;
 - local run specification: ignored bindings to caller-owned private artifacts.
 
+`project files` schema 3 exposes the resolved portability layer separately
+from edit ownership, so a reviewed file can still be identified as reusable
+ecosystem/chip knowledge or as investigation-local review.
+
 The schema-3 project, target, ecosystem, and chip formats are a clean break.
 Old inline `memory-map`, `svd`, `platform-pack`, `harness`, and
 `semantic-catalogs` keys fail closed; no compatibility shim reinterprets them.

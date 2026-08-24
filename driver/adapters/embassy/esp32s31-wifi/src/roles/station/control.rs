@@ -37,6 +37,8 @@ pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control_hardware::{
         ConnectedControlHardware, StationDozeHardwareError, StationIndividualTwtHardwareError,
         StationIndividualTwtHardwareStage, StationIndividualTwtUnsupportedStage,
+        StationLowPowerFrontierStatus, StationLowPowerHardwareFrontier,
+        station_low_power_hardware_frontier,
     },
 };
 use open_esp_radio_ieee80211::twt::IndividualTwtFlowId;
@@ -629,6 +631,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
 
     pub const fn last_doze_boundary_failure(&self) -> Option<StationDozeBoundaryFailure> {
         self.last_doze_boundary_failure
+    }
+
+    /// Report the reviewed source frontier without entering modem, RF, PHY,
+    /// baseband or clock sleep and without reading or writing hardware.
+    pub const fn low_power_hardware_frontier(&self) -> StationLowPowerHardwareFrontier {
+        station_low_power_hardware_frontier()
     }
 
     pub fn queue_initial_tx_block_ack(&mut self, attempt_limit: u8) {

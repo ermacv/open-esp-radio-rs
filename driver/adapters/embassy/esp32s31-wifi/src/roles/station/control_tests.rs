@@ -32,6 +32,10 @@ use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
 use open_esp_radio_ieee80211::station::{StaDisconnect, StaDisconnectKind, StaTxSequenceCounters};
 use open_esp_radio_ieee80211::station_beacon::{StaBeaconObservation, StaTimObservation};
 use open_esp_radio_ieee80211::station_power_save::StaPowerManagement;
+use open_esp_radio_ieee80211::twt::{
+    IndividualTwtAction, IndividualTwtControl, IndividualTwtFlowId, IndividualTwtFlowType,
+    IndividualTwtParameterSet, IndividualTwtSetup, IndividualTwtSetupCommand,
+};
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 use open_esp_radio_wifi_softmac::{MacRxMetadata, MacTxPlan};
 use open_esp_radio_wifi_sta::power_save::StaPowerSaveState;
@@ -148,6 +152,8 @@ struct Hardware {
     key_install_count: usize,
     ccmp_reject_installs: u8,
     ccmp_clears: usize,
+    twt_admit: bool,
+    twt_install_count: usize,
 }
 
 impl CcmpKeyHardware for Hardware {
@@ -295,6 +301,28 @@ impl ConnectedControlHardware for Hardware {
         }
         self.he_tid[self.he_count] = Some((tid, enabled));
         self.he_count += 1;
+        Ok(())
+    }
+
+    fn admit_station_individual_twt(
+        &mut self,
+        _proposal: &IndividualTwtProposal,
+    ) -> Result<(), StationIndividualTwtHardwareError> {
+        if self.twt_admit {
+            Ok(())
+        } else {
+            Err(StationIndividualTwtHardwareError::Unsupported {
+                reached: StationIndividualTwtHardwareStage::None,
+                missing: StationIndividualTwtUnsupportedStage::ItwtCoexistenceAdmission,
+            })
+        }
+    }
+
+    fn install_station_individual_twt(
+        &mut self,
+        _agreement: &open_esp_radio_wifi_sta::twt::IndividualTwtAgreement,
+    ) -> Result<(), StationIndividualTwtHardwareError> {
+        self.twt_install_count += 1;
         Ok(())
     }
 
@@ -450,6 +478,129 @@ fn beacon_event(observation: StaBeaconObservation) -> ConnectedRxEvent<'static> 
 
 fn power_save_policy() -> StaPowerSavePolicy {
     StaPowerSavePolicy::new(100, 2_000).unwrap()
+}
+
+fn individual_twt_parameters(implicit: bool) -> IndividualTwtParameterSet {
+    IndividualTwtParameterSet {
+        requesting_sta: true,
+        setup_command: IndividualTwtSetupCommand::Request,
+        trigger: false,
+        implicit,
+        flow_type: IndividualTwtFlowType::Announced,
+        flow_id: IndividualTwtFlowId::new(2).unwrap(),
+        wake_interval_exponent: 0,
+        protection: false,
+        target_wake_time_tsf: 10_000,
+        nominal_minimum_wake_duration: 1,
+        wake_interval_mantissa: 1_024,
+        twt_channel: 0,
+    }
+}
+
+#[test]
+fn connected_low_power_diagnostic_stays_before_physical_sleep() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+    let (_publisher, receiver) = resources.split();
+    let control = Esp32s31ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    let frontier = control.low_power_hardware_frontier();
+
+    assert_eq!(
+        frontier.station_tbtt_tsf_wake_prefix,
+        StationLowPowerFrontierStatus::ReachableRollbackProbe
+    );
+    assert_eq!(
+        frontier.station_wdevpwr_cause_binding,
+        StationLowPowerFrontierStatus::MissingReviewedSemantics
+    );
+    assert_eq!(
+        frontier.rf_phy_baseband_clock_sleep_wake,
+        StationLowPowerFrontierStatus::MissingReviewedSemantics
+    );
+}
+
+#[test]
+fn peer_accepted_explicit_twt_kicks_teardown_into_connected_tx() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let (mut publisher, receiver) = resources.split();
+    let mut control = Esp32s31ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    control.enable_individual_twt_requester(
+        IndividualTwtRequesterConfig::new(1_000, 100, 1, 1).unwrap(),
+    );
+    control
+        .queue_individual_twt_setup(
+            IndividualTwtProposal {
+                control: IndividualTwtControl::REQUEST,
+                parameters: individual_twt_parameters(true),
+            },
+            0,
+        )
+        .unwrap();
+
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        twt_admit: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::TxPending)
+    );
+    finish_tx(&mut hardware, &mut tx, 0);
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::More)
+    );
+
+    let mut accepted = individual_twt_parameters(false);
+    accepted.requesting_sta = false;
+    accepted.setup_command = IndividualTwtSetupCommand::Accept;
+    publisher.publish(ConnectedRxEvent::IndividualTwt {
+        action: IndividualTwtAction::Setup(IndividualTwtSetup {
+            dialog_token: 1,
+            control: IndividualTwtControl::REQUEST,
+            parameters: accepted,
+        }),
+        body: &[],
+    });
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::More)
+    );
+    assert_eq!(hardware.twt_install_count, 0);
+
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::TxPending),
+        "the explicit-information frontier must immediately reach teardown TX"
+    );
+    assert_eq!(
+        control
+            .individual_twt_requester()
+            .unwrap()
+            .status(IndividualTwtFlowId::new(2).unwrap()),
+        open_esp_radio_wifi_sta::twt::IndividualTwtFlowStatus::TeardownTransmitting
+    );
+    finish_tx(&mut hardware, &mut tx, 0);
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::More)
+    );
+    assert_eq!(
+        control.individual_twt_runtime_evidence().actions_published,
+        2
+    );
 }
 
 const WPA2_RSN: [u8; 22] = [

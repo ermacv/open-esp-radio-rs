@@ -90,9 +90,40 @@ impl IndividualTwtProposal {
         }
         self.parameters.validate(self.control)?;
         if !self.parameters.implicit {
-            return Err(IndividualTwtRequesterError::ExplicitTwtInformationUnsupported);
+            return Err(
+                IndividualTwtRequesterError::ExplicitTwtInformationUnsupported(
+                    IndividualTwtInformationFrontier::from_fields(self.control, self.parameters),
+                ),
+            );
         }
         Ok(self)
+    }
+}
+
+/// Exact protocol state missing before an explicit agreement can be live.
+///
+/// Explicit agreements need subsequent TWT Information actions to move or
+/// suspend their next service edge. The current codec/runtime owns neither
+/// that action body nor its schedule-update semantics. Retaining the accepted
+/// fields makes the missing frontier observable without treating the initial
+/// target as an implicit periodic schedule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IndividualTwtInformationFrontier {
+    pub flow_id: IndividualTwtFlowId,
+    pub initial_target_wake_time_tsf: u64,
+    pub information_frames_disabled: bool,
+}
+
+impl IndividualTwtInformationFrontier {
+    const fn from_fields(
+        control: IndividualTwtControl,
+        parameters: IndividualTwtParameterSet,
+    ) -> Self {
+        Self {
+            flow_id: parameters.flow_id,
+            initial_target_wake_time_tsf: parameters.target_wake_time_tsf,
+            information_frames_disabled: control.information_frames_disabled,
+        }
     }
 }
 
@@ -124,6 +155,19 @@ impl IndividualTwtAgreement {
             wake_interval_micros: parameters.wake_interval_micros()?,
             wake_duration_micros: parameters.wake_duration_micros(response.control)?,
         })
+    }
+
+    /// Return the explicit-information frontier for a non-periodic agreement.
+    pub const fn information_frontier(self) -> Option<IndividualTwtInformationFrontier> {
+        if self.implicit {
+            None
+        } else {
+            Some(IndividualTwtInformationFrontier {
+                flow_id: self.flow_id,
+                initial_target_wake_time_tsf: self.target_wake_time_tsf,
+                information_frames_disabled: self.control.information_frames_disabled,
+            })
+        }
     }
 }
 
@@ -220,6 +264,13 @@ pub enum IndividualTwtSetupDisposition {
         generation: u32,
         agreement: IndividualTwtAgreement,
     },
+    /// The AP accepted an explicit agreement that this requester cannot keep
+    /// synchronized. A teardown is already queued; no hardware install or
+    /// wake-plan publication is permitted.
+    ExplicitInformationUnsupported {
+        flow_id: IndividualTwtFlowId,
+        frontier: IndividualTwtInformationFrontier,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -228,7 +279,11 @@ pub enum IndividualTwtRequesterError {
     /// Explicit agreements require TWT Information updates before another
     /// wake can be derived; this requester currently supports periodic
     /// implicit agreements only.
-    ExplicitTwtInformationUnsupported,
+    ExplicitTwtInformationUnsupported(IndividualTwtInformationFrontier),
+    /// Every nonzero generation has been issued. Reuse would let a stale
+    /// completion alias a new TX/install obligation, so this requester stays
+    /// fail-closed until it is replaced by a new owner with a wider epoch.
+    GenerationExhausted,
     DeadlineOverflow,
     FlowBusy(IndividualTwtFlowId),
     NoAgreement(IndividualTwtFlowId),
@@ -435,8 +490,8 @@ impl IndividualTwtRequester {
                     attempts_remaining,
                     ready_at_micros,
                 } if now_micros >= ready_at_micros => {
+                    let generation = self.take_generation()?;
                     let dialog_token = self.take_dialog_token();
-                    let generation = self.take_generation();
                     let setup = IndividualTwtSetup {
                         dialog_token,
                         control: proposal.control,
@@ -461,8 +516,8 @@ impl IndividualTwtRequester {
                     attempts_remaining,
                     ready_at_micros,
                 } if now_micros >= ready_at_micros => {
-                    let generation = self.take_generation();
                     let body = IndividualTwtTeardown::one(flow_id).encode_body()?;
+                    let generation = self.take_generation()?;
                     let attempts_remaining = attempts_remaining - 1;
                     self.flows[index] = FlowPhase::TeardownTransmitting {
                         generation,
@@ -612,8 +667,20 @@ impl IndividualTwtRequester {
         if response.parameters.setup_command == IndividualTwtSetupCommand::Accept
             && !response.parameters.implicit
         {
-            self.flows[index] = FlowPhase::Idle;
-            return Err(IndividualTwtRequesterError::ExplicitTwtInformationUnsupported);
+            let frontier = IndividualTwtInformationFrontier::from_fields(
+                response.control,
+                response.parameters,
+            );
+            self.flows[index] = FlowPhase::TeardownQueued {
+                attempts_remaining: self.config.teardown_attempt_limit,
+                // A response has already crossed the wire. Zero is due in
+                // every monotonic runtime domain without inventing a new
+                // timestamp parameter at this protocol edge.
+                ready_at_micros: 0,
+            };
+            return Ok(
+                IndividualTwtSetupDisposition::ExplicitInformationUnsupported { flow_id, frontier },
+            );
         }
 
         match response.parameters.setup_command {
@@ -774,7 +841,9 @@ impl IndividualTwtRequester {
             *phase = FlowPhase::Idle;
         }
         self.next_dialog_token = 1;
-        self.generation = next_generation(self.generation);
+        // Never wrap an affine identity. Saturation permanently prevents a
+        // stale generation from being reissued after enough reconnects.
+        self.generation = self.generation.saturating_add(1);
         removed
     }
 
@@ -851,9 +920,12 @@ impl IndividualTwtRequester {
         token
     }
 
-    fn take_generation(&mut self) -> u32 {
-        self.generation = next_generation(self.generation);
-        self.generation
+    fn take_generation(&mut self) -> Result<u32, IndividualTwtRequesterError> {
+        self.generation = self
+            .generation
+            .checked_add(1)
+            .ok_or(IndividualTwtRequesterError::GenerationExhausted)?;
+        Ok(self.generation)
     }
 }
 
@@ -972,6 +1044,12 @@ fn plan_agreement_wake(
         (agreement.target_wake_time_tsf, false)
     };
     let service_end_tsf = service_start_tsf.wrapping_add(duration);
+    if !service_open && service_end_tsf.wrapping_sub(station_tsf) > i64::MAX as u64 {
+        // The start is in the comparable future half, but the complete
+        // service window is not. Publishing a partial window would make
+        // merge/end ordering ambiguous across TSF wrap.
+        return Err(IndividualTwtWakePlanError::AmbiguousTsfDistance);
+    }
     let wake_tsf = if service_open {
         station_tsf
     } else {
@@ -996,11 +1074,6 @@ fn later_future_tsf(now_tsf: u64, left: u64, right: u64) -> u64 {
 }
 
 const fn next_dialog_token(current: u8) -> u8 {
-    let next = current.wrapping_add(1);
-    if next == 0 { 1 } else { next }
-}
-
-const fn next_generation(current: u32) -> u32 {
     let next = current.wrapping_add(1);
     if next == 0 { 1 } else { next }
 }
@@ -1030,5 +1103,160 @@ pub const fn individual_twt_control(
         responder_power_save,
         information_frames_disabled,
         wake_duration_unit,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use open_esp_radio_ieee80211::twt::IndividualTwtFlowType;
+
+    const CONFIG: IndividualTwtRequesterConfig =
+        match IndividualTwtRequesterConfig::new(1_000, 100, 2, 2) {
+            Ok(config) => config,
+            Err(_) => panic!("valid requester config"),
+        };
+
+    fn parameters(implicit: bool) -> IndividualTwtParameterSet {
+        IndividualTwtParameterSet {
+            requesting_sta: true,
+            setup_command: IndividualTwtSetupCommand::Request,
+            trigger: false,
+            implicit,
+            flow_type: IndividualTwtFlowType::Announced,
+            flow_id: IndividualTwtFlowId::new(2).unwrap(),
+            wake_interval_exponent: 0,
+            protection: false,
+            target_wake_time_tsf: 10_000,
+            nominal_minimum_wake_duration: 1,
+            wake_interval_mantissa: 1_024,
+            twt_channel: 0,
+        }
+    }
+
+    fn proposal(implicit: bool) -> IndividualTwtProposal {
+        IndividualTwtProposal {
+            control: IndividualTwtControl::REQUEST,
+            parameters: parameters(implicit),
+        }
+    }
+
+    #[test]
+    fn generation_exhaustion_never_reissues_a_stale_identity() {
+        let mut requester = IndividualTwtRequester::new(CONFIG);
+        requester.generation = u32::MAX;
+        requester.queue_setup(proposal(true), 0).unwrap();
+
+        assert_eq!(
+            requester.service(0),
+            Err(IndividualTwtRequesterError::GenerationExhausted)
+        );
+        assert_eq!(
+            requester.status(IndividualTwtFlowId::new(2).unwrap()),
+            IndividualTwtFlowStatus::SetupQueued
+        );
+        assert_eq!(requester.next_dialog_token, 1);
+
+        requester.reset_for_reconnect();
+        assert_eq!(requester.generation, u32::MAX);
+    }
+
+    #[test]
+    fn explicit_proposal_reports_the_exact_information_frontier() {
+        assert_eq!(
+            proposal(false).validate(),
+            Err(
+                IndividualTwtRequesterError::ExplicitTwtInformationUnsupported(
+                    IndividualTwtInformationFrontier {
+                        flow_id: IndividualTwtFlowId::new(2).unwrap(),
+                        initial_target_wake_time_tsf: 10_000,
+                        information_frames_disabled: false,
+                    }
+                )
+            )
+        );
+    }
+
+    #[test]
+    fn peer_accepted_explicit_agreement_is_torn_down_not_installed() {
+        let mut requester = IndividualTwtRequester::new(CONFIG);
+        requester.queue_setup(proposal(true), 0).unwrap();
+        let IndividualTwtService::Transmit(transmission) = requester.service(0).unwrap() else {
+            panic!("setup must be ready");
+        };
+        requester
+            .complete_transmission(transmission, true, 10)
+            .unwrap();
+
+        let mut response_parameters = parameters(false);
+        response_parameters.requesting_sta = false;
+        response_parameters.setup_command = IndividualTwtSetupCommand::Accept;
+        let disposition = requester
+            .on_setup_response(IndividualTwtSetup {
+                dialog_token: 1,
+                control: IndividualTwtControl::REQUEST,
+                parameters: response_parameters,
+            })
+            .unwrap();
+        assert_eq!(
+            disposition,
+            IndividualTwtSetupDisposition::ExplicitInformationUnsupported {
+                flow_id: IndividualTwtFlowId::new(2).unwrap(),
+                frontier: IndividualTwtInformationFrontier {
+                    flow_id: IndividualTwtFlowId::new(2).unwrap(),
+                    initial_target_wake_time_tsf: 10_000,
+                    information_frames_disabled: false,
+                },
+            }
+        );
+        assert_eq!(requester.next_deadline_micros(), Some(0));
+        let IndividualTwtService::Transmit(teardown) = requester.service(10).unwrap() else {
+            panic!("rollback teardown must be ready immediately");
+        };
+        assert_eq!(teardown.kind, IndividualTwtTxKind::Teardown);
+    }
+
+    #[test]
+    fn wake_plan_rejects_a_window_crossing_the_comparable_tsf_half() {
+        let agreement = IndividualTwtAgreement {
+            flow_id: IndividualTwtFlowId::new(0).unwrap(),
+            control: IndividualTwtControl::REQUEST,
+            trigger: false,
+            implicit: true,
+            flow_type: IndividualTwtFlowType::Announced,
+            protection: false,
+            target_wake_time_tsf: i64::MAX as u64,
+            wake_interval_micros: i64::MAX as u64,
+            wake_duration_micros: 256,
+        };
+        assert_eq!(
+            plan_agreement_wake(agreement, 0, 10),
+            Err(IndividualTwtWakePlanError::AmbiguousTsfDistance)
+        );
+    }
+
+    #[test]
+    fn wake_plan_preserves_a_future_window_across_tsf_wrap() {
+        let agreement = IndividualTwtAgreement {
+            flow_id: IndividualTwtFlowId::new(0).unwrap(),
+            control: IndividualTwtControl::REQUEST,
+            trigger: false,
+            implicit: true,
+            flow_type: IndividualTwtFlowType::Announced,
+            protection: false,
+            target_wake_time_tsf: 50,
+            wake_interval_micros: 1_000,
+            wake_duration_micros: 256,
+        };
+        assert_eq!(
+            plan_agreement_wake(agreement, u64::MAX - 100, 10),
+            Ok(IndividualTwtWakePlan {
+                flow_bitmap: 1,
+                wake_tsf: 40,
+                service_start_tsf: 50,
+                service_end_tsf: 306,
+                service_open: false,
+            })
+        );
     }
 }

@@ -46,6 +46,48 @@ pub enum StationDozeHardwareError {
     },
 }
 
+/// Source status for one low-power hardware boundary.
+///
+/// None of these values means that RF, PHY, baseband or clocks entered sleep.
+/// The report is intentionally static: it exposes the reviewed implementation
+/// frontier without probing an unqualified register at runtime.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationLowPowerFrontierStatus {
+    /// A field-exact source transaction exists, but connected control does not
+    /// activate it because its raw counter units are not proven.
+    SourceTransaction,
+    /// Connected control may program and roll back this prefix solely to
+    /// report the next missing semantic boundary.
+    ReachableRollbackProbe,
+    /// Reviewed SVD/vendor-comparison inputs do not define this contract.
+    MissingReviewedSemantics,
+}
+
+/// Exact ESP32-S31 connected-station low-power implementation frontier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StationLowPowerHardwareFrontier {
+    pub modem_wakeup_field_transaction: StationLowPowerFrontierStatus,
+    pub modem_counter_unit_conversion: StationLowPowerFrontierStatus,
+    pub station_tbtt_tsf_wake_prefix: StationLowPowerFrontierStatus,
+    pub station_wdevpwr_cause_binding: StationLowPowerFrontierStatus,
+    pub rf_phy_baseband_clock_sleep_wake: StationLowPowerFrontierStatus,
+    pub automatic_hardware_beacon_filter: StationLowPowerFrontierStatus,
+    pub concurrent_role_channel_quiescence: StationLowPowerFrontierStatus,
+}
+
+/// Publish the source-only frontier without touching hardware.
+pub const fn station_low_power_hardware_frontier() -> StationLowPowerHardwareFrontier {
+    StationLowPowerHardwareFrontier {
+        modem_wakeup_field_transaction: StationLowPowerFrontierStatus::SourceTransaction,
+        modem_counter_unit_conversion: StationLowPowerFrontierStatus::MissingReviewedSemantics,
+        station_tbtt_tsf_wake_prefix: StationLowPowerFrontierStatus::ReachableRollbackProbe,
+        station_wdevpwr_cause_binding: StationLowPowerFrontierStatus::MissingReviewedSemantics,
+        rf_phy_baseband_clock_sleep_wake: StationLowPowerFrontierStatus::MissingReviewedSemantics,
+        automatic_hardware_beacon_filter: StationLowPowerFrontierStatus::MissingReviewedSemantics,
+        concurrent_role_channel_quiescence: StationLowPowerFrontierStatus::MissingReviewedSemantics,
+    }
+}
+
 /// Deepest source-proven stage of one S31 individual-TWT handoff.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationIndividualTwtHardwareStage {

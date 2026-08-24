@@ -1420,6 +1420,14 @@ impl Esp32s31ConnectedControlCore {
                 let disposition = requester.on_setup_response(setup)?;
                 self.observations.individual_twt.last_outcome =
                     Some(ConnectedIndividualTwtRuntimeOutcome::Response(disposition));
+                if matches!(
+                    disposition,
+                    IndividualTwtSetupDisposition::ExplicitInformationUnsupported { .. }
+                ) {
+                    // The portable owner already queued a fail-closed
+                    // teardown for the peer-accepted explicit agreement.
+                    self.individual_twt_kick = true;
+                }
                 if let IndividualTwtSetupDisposition::InstallRequired {
                     flow_id,
                     generation,

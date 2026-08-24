@@ -19,8 +19,10 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
 };
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
     ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink,
+    StaCcmpRxReplayEpoch,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_ieee80211::vif::StaApRxAddresses;
 use std::boxed::Box;
 
@@ -733,7 +735,10 @@ fn dispatcher() -> ConnectedRxDispatcher {
             csi_config: 0,
             flags: 0,
         },
+        security: WifiSecurityMode::Wpa2Personal,
+        peer_qos: true,
     })
+    .with_ccmp_rx_replay(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
 }
 
 #[test]
@@ -1297,7 +1302,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
         frame[16..22].copy_from_slice(&[14, 15, 16, 17, 18, 19]);
         frame[22..24].copy_from_slice(&(sequence << 4).to_le_bytes());
         frame[24] = 0;
-        frame[26..34].copy_from_slice(&[3, 0, 0, 0x20, 0, 0, 0, 0]);
+        frame[26..34].copy_from_slice(&[sequence as u8, 0, 0, 0x20, 0, 0, 0, 0]);
         frame[34..42].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
         frame[42..46].copy_from_slice(&sequence.to_be_bytes().repeat(2));
         storage

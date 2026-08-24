@@ -459,7 +459,9 @@ mod tests {
             }
             Ok(Esp32s31ConnectedTxTeardownParts {
                 resources: 5,
-                pairwise_key: self.key.take().expect("test TX owns pairwise key"),
+                security: ConnectedTxSecurity::Wpa2Personal(
+                    self.key.take().expect("test TX owns pairwise key"),
+                ),
                 sequences: StaTxSequenceCounters::new(6),
                 aggregate: 7,
             })
@@ -473,7 +475,7 @@ mod tests {
         tx_active: bool,
     ) -> (
         SingleRoleServices<Hardware, Rx, Tx, Control>,
-        StaGroupCcmpSlot,
+        Esp32s31ConnectedStaGroupSecurity,
     ) {
         let pairwise =
             install_sta_pairwise_ccmp(hardware, [1, 2, 3, 4, 5, 6], &[0x11; 16]).unwrap();
@@ -488,7 +490,7 @@ mod tests {
                 },
                 Control(control_failure),
             ),
-            group,
+            Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group),
         )
     }
 

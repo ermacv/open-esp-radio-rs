@@ -1,6 +1,7 @@
 use open_esp_radio_embassy_net::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxConfig;
+use open_esp_radio_ieee80211::security::WifiSecurityMode;
 use open_esp_radio_wifi_embassy::connected_tasks::{
     ConnectedTaskControlResources, ConnectedTaskGroup,
 };
@@ -20,6 +21,21 @@ impl<const CAPACITY: usize, const SLOTS: usize> ConnectedRxProtocolSink<CAPACITY
     }
 }
 
+fn open_config() -> ConnectedRxConfig {
+    ConnectedRxConfig {
+        station_address: [2, 3, 4, 5, 6, 7],
+        bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+        association_id: 1,
+        ingress: RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: 0,
+        },
+        security: WifiSecurityMode::Open,
+        peer_qos: false,
+    }
+}
+
 #[test]
 fn empty_standalone_queue_can_be_replaced_without_rebuilding_station_protocol() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
@@ -31,16 +47,7 @@ fn empty_standalone_queue_can_be_replaced_without_rebuilding_station_protocol() 
     let protocol = Esp32s31ConnectedRxProtocol::new(
         receiver,
         &irq,
-        ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        }),
+        ConnectedRxDispatcher::new(open_config()),
         Sink,
         &mut mpdu,
         &mut ethernet,
@@ -70,16 +77,7 @@ fn paired_processor_returns_the_same_stopped_protocol_owner() {
     let protocol = Esp32s31ConnectedRxProtocol::new(
         receiver,
         &irq,
-        ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        }),
+        ConnectedRxDispatcher::new(open_config()),
         Sink,
         &mut mpdu,
         &mut ethernet,
@@ -101,16 +99,7 @@ fn stop_edge_returns_an_empty_reusable_protocol_epoch() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
     let (_sender, receiver) = queue.split();
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
-    let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-        station_address: [2, 3, 4, 5, 6, 7],
-        bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-        association_id: 1,
-        ingress: RxIngressConfig {
-            ring_entry_limit: 1,
-            csi_config: 0,
-            flags: 0,
-        },
-    });
+    let dispatcher = ConnectedRxDispatcher::new(open_config());
     let mut mpdu = [0_u8; 64];
     let mut ethernet = [0_u8; 64];
     // Host tests leak the arena to model the static lifetime required by an
@@ -149,16 +138,7 @@ fn controlled_task_observes_shutdown_before_returning_exact_scratch() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
     let (_sender, receiver) = queue.split();
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
-    let dispatcher = ConnectedRxDispatcher::new(ConnectedRxConfig {
-        station_address: [2, 3, 4, 5, 6, 7],
-        bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-        association_id: 1,
-        ingress: RxIngressConfig {
-            ring_entry_limit: 1,
-            csi_config: 0,
-            flags: 0,
-        },
-    });
+    let dispatcher = ConnectedRxDispatcher::new(open_config());
     let mut mpdu = [0_u8; 64];
     let mut ethernet = [0_u8; 64];
     // Host tests leak the arena to model the static lifetime required by an
@@ -207,16 +187,7 @@ fn stopped_protocol_arena_starts_a_second_epoch_without_reinitialization() {
     let first = Esp32s31ConnectedRxProtocol::new(
         receiver,
         &irq,
-        ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        }),
+        ConnectedRxDispatcher::new(open_config()),
         Sink,
         &mut mpdu,
         &mut ethernet,
@@ -229,16 +200,7 @@ fn stopped_protocol_arena_starts_a_second_epoch_without_reinitialization() {
     let second = Esp32s31ConnectedRxProtocol::new(
         receiver,
         &irq,
-        ConnectedRxDispatcher::new(ConnectedRxConfig {
-            station_address: [2, 3, 4, 5, 6, 7],
-            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            association_id: 1,
-            ingress: RxIngressConfig {
-                ring_entry_limit: 1,
-                csi_config: 0,
-                flags: 0,
-            },
-        }),
+        ConnectedRxDispatcher::new(open_config()),
         Sink,
         mpdu,
         ethernet,

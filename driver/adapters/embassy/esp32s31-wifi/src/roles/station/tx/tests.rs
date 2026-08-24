@@ -28,7 +28,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::ConnectedControlTx,
-    single_mpdu_tx::{ActionTxConfig, ConnectedTxHandoff, SingleMpduTxConfig},
+    single_mpdu_tx::{ActionTxConfig, ConnectedTxHandoff, ConnectedTxSecurity, SingleMpduTxConfig},
 };
 use open_esp_radio_ieee80211::station::{
     STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaTxSequenceCounters,
@@ -294,7 +294,7 @@ fn make_ordinary<'a, const BUFFER_SIZE: usize>(
             timer: Timer::default(),
         },
         ConnectedTxHandoff {
-            key,
+            security: ConnectedTxSecurity::Wpa2Personal(key),
             sequences: StaTxSequenceCounters::new(7),
             config: SingleMpduTxConfig {
                 station_address: STATION,
@@ -379,7 +379,10 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
     assert_eq!(returned.aggregate.primary().state(), TxSlotState::Free);
     assert_eq!(returned.resources.slot.state(), TxSlotState::Free);
     assert_eq!(returned.sequences.peek_non_qos(), 7);
-    returned.pairwise_key.clear(&mut hardware);
+    let ConnectedTxSecurity::Wpa2Personal(key) = returned.security else {
+        panic!("WPA2 test owner must return its pairwise key");
+    };
+    key.clear(&mut hardware);
 }
 
 #[test]
@@ -470,7 +473,10 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
         .try_into_station_parts()
         .unwrap_or_else(|_| panic!("resumed station TX remains cleanly reclaimable"));
     assert_eq!(returned.sequences.peek_non_qos(), 8);
-    returned.pairwise_key.clear(&mut hardware);
+    let ConnectedTxSecurity::Wpa2Personal(key) = returned.security else {
+        panic!("WPA2 test owner must return its pairwise key");
+    };
+    key.clear(&mut hardware);
 }
 
 #[test]
@@ -903,7 +909,10 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
         returned.aggregate.standby().map(|arena| arena.state()),
         Some(TxSlotState::Free)
     );
-    returned.pairwise_key.clear(&mut hardware);
+    let ConnectedTxSecurity::Wpa2Personal(key) = returned.security else {
+        panic!("WPA2 test owner must return its pairwise key");
+    };
+    key.clear(&mut hardware);
 }
 
 #[test]

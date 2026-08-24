@@ -1148,7 +1148,7 @@ mod tests {
                 timer: TestTimer::default(),
             },
             ConnectedTxHandoff {
-                key,
+                security: ConnectedTxSecurity::Wpa2Personal(key),
                 sequences: StaTxSequenceCounters::new(7),
                 config: SingleMpduTxConfig {
                     station_address: [2, 3, 4, 5, 6, 7],
@@ -1207,7 +1207,6 @@ mod tests {
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware::default();
         let tx = make_tx(slot.as_mut(), &mut hardware, 4);
-        let key_index = tx.key.hardware_index();
 
         let (resources, handoff) = match tx.try_into_parts() {
             Ok(parts) => parts,
@@ -1215,9 +1214,12 @@ mod tests {
         };
 
         assert_eq!(resources.slot.state(), TxSlotState::Free);
-        assert_eq!(handoff.key.hardware_index(), key_index);
         assert_eq!(handoff.sequences.peek_non_qos(), 7);
-        handoff.key.clear(&mut hardware);
+        let ConnectedTxSecurity::Wpa2Personal(key) = handoff.security else {
+            panic!("WPA2 test owner must return its pairwise key");
+        };
+        let key_index = key.hardware_index();
+        key.clear(&mut hardware);
         assert_eq!(hardware.cleared_key, Some(key_index));
     }
 

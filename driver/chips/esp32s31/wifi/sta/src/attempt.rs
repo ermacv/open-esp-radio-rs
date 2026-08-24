@@ -841,6 +841,7 @@ mod tests {
             station_address: [0; 6],
             access_point,
             association_preference: StaAssociationPreference::Automatic,
+            security: WifiSecurityMode::Open,
         };
         assert_eq!(
             station.selected_channel(),

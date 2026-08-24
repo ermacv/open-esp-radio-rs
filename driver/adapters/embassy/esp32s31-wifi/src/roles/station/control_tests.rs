@@ -258,7 +258,10 @@ fn make_tx<'a>(
             timer: Timer::default(),
         },
         open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxHandoff {
-            key,
+            security:
+                open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(
+                    key,
+                ),
             sequences: StaTxSequenceCounters::new(7),
             config: SingleMpduTxConfig {
                 station_address: STATION,

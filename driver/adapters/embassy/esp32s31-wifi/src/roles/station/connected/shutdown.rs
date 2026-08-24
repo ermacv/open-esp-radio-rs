@@ -421,7 +421,9 @@ mod tests {
             }
             Ok(Esp32s31ConnectedTxTeardownParts {
                 resources: 5,
-                pairwise_key: self.pairwise.take().expect("test TX owns its pairwise key"),
+                security: open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(
+                    self.pairwise.take().expect("test TX owns its pairwise key"),
+                ),
                 sequences: open_esp_radio_ieee80211::station::StaTxSequenceCounters::new(6),
                 aggregate: 7,
             })
@@ -437,7 +439,7 @@ mod tests {
         tx_active: bool,
     ) -> (
         Esp32s31ConnectedEpochQuiesced<u8, u32, TeardownServices, u16>,
-        StaGroupCcmpSlot,
+        Esp32s31ConnectedStaGroupSecurity,
     ) {
         let mut hardware = TeardownHardware::default();
         let pairwise = install_sta_pairwise_ccmp(&mut hardware, [1, 2, 3, 4, 5, 6], &[0x11; 16])
@@ -463,7 +465,7 @@ mod tests {
                 services,
                 tasks: 18,
             },
-            group,
+            Esp32s31ConnectedStaGroupSecurity::Wpa2Personal(group),
         )
     }
 

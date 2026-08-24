@@ -70,6 +70,7 @@ impl Esp32s31ScanReceivePort<Hardware> for Receive {
         hardware.actions.push(Action::Observe);
         let mut beacon = [0_u8; 47];
         beacon[0] = 0x80;
+        beacon[34] = 0x10;
         beacon[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
         beacon[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
         beacon[42..45].copy_from_slice(&[3, 1, 11]);
@@ -154,7 +155,13 @@ fn concrete_port_returns_every_owner_after_selected_candidate() {
     let port = Esp32s31ScanPort::new(
         Esp32s31ScanRadio::new(Phy(11), Hardware::default(), Receive(22), Transmit(33)),
         Esp32s31ScanStorage::new(&mut table, &mut frame, Observer::default(), &mut sequence),
-        Esp32s31ScanStation::new([7; 6], b"test", &[0x82, 0x84]).with_descriptor_capacity(88),
+        Esp32s31ScanStation::new(
+            [7; 6],
+            b"test",
+            &[0x82, 0x84],
+            WifiSecurityMode::Wpa2Personal,
+        )
+        .with_descriptor_capacity(88),
         DwellTimer::default(),
     );
     let backend = Esp32s31StaScanBackend::new(Esp32s31StaScanConfig::new(2).unwrap());
@@ -216,9 +223,14 @@ fn standalone_scan_records_matching_bss_without_selecting_it() {
     let port = Esp32s31ScanPort::new(
         Esp32s31ScanRadio::new(Phy(11), Hardware::default(), Receive(22), Transmit(33)),
         Esp32s31ScanStorage::new(&mut table, &mut frame, Observer::default(), &mut sequence),
-        Esp32s31ScanStation::new([7; 6], b"test", &[0x82, 0x84])
-            .with_descriptor_capacity(88)
-            .with_candidate_selection(false),
+        Esp32s31ScanStation::new(
+            [7; 6],
+            b"test",
+            &[0x82, 0x84],
+            WifiSecurityMode::Wpa2Personal,
+        )
+        .with_descriptor_capacity(88)
+        .with_candidate_selection(false),
         DwellTimer::default(),
     );
     let backend = Esp32s31StaScanBackend::new(Esp32s31StaScanConfig::new(2).unwrap());

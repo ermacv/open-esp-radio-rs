@@ -622,7 +622,7 @@ mod tests {
     use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
     use super::*;
-    use crate::single_mpdu_tx::SingleMpduTxConfig;
+    use crate::single_mpdu_tx::{ConnectedTxSecurity, SingleMpduTxConfig};
     use open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
 
     #[derive(Default)]
@@ -919,7 +919,7 @@ mod tests {
 
         let connected = tx
             .try_into_connected(ConnectedTxHandoff {
-                key,
+                security: ConnectedTxSecurity::Wpa2Personal(key),
                 sequences: StaTxSequenceCounters::new(9),
                 config: SingleMpduTxConfig {
                     station_address: [2, 3, 4, 5, 6, 7],
@@ -983,7 +983,7 @@ mod tests {
         .unwrap();
         let key_index = key.hardware_index();
         let handoff = ConnectedTxHandoff {
-            key,
+            security: ConnectedTxSecurity::Wpa2Personal(key),
             sequences: StaTxSequenceCounters::new(9),
             config: SingleMpduTxConfig {
                 station_address: [2, 3, 4, 5, 6, 7],
@@ -1003,7 +1003,10 @@ mod tests {
             Ok(_) => panic!("hardware-owned descriptor must reject handoff"),
         };
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::HardwareOwned);
-        assert_eq!(handoff.key.hardware_index(), key_index);
+        assert!(matches!(
+            &handoff.security,
+            ConnectedTxSecurity::Wpa2Personal(key) if key.hardware_index() == key_index
+        ));
 
         hardware.completions[0] = Some(completion(0));
         assert_eq!(

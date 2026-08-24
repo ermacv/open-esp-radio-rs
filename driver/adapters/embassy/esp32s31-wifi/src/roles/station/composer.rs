@@ -903,6 +903,7 @@ mod tests {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_ieee80211::{
         scan::ScanRecord,
+        security::WifiSecurityMode,
         station::{StaAssociationPreference, StaTxSequenceCounters},
     };
     use open_esp_radio_wifi_sta::request::{StationScanChannels, StationScanPolicy, WifiSsid};
@@ -1300,6 +1301,7 @@ mod tests {
             station_address: [2, 0, 0, 0, 0, 1],
             access_point: ScanRecord::EMPTY,
             association_preference: StaAssociationPreference::Automatic,
+            security: WifiSecurityMode::Wpa2Personal,
         };
         let owner = Esp32s31StationServiceOwner::new(
             7_u8,
@@ -1329,7 +1331,13 @@ mod tests {
         };
         assert_eq!((hardware, receive, network), (11, 12, 13));
         assert_eq!(returned_station.station_address, station.station_address);
-        assert_eq!(security.supplicant_nonce, [0x5a; 32]);
+        assert_eq!(
+            security
+                .wpa2_material()
+                .expect("test owner retains WPA2 material")
+                .1,
+            [0x5a; 32]
+        );
         assert_eq!(security.sequences.peek_non_qos(), 9);
     }
 
@@ -1341,6 +1349,7 @@ mod tests {
             station_address: [2, 0, 0, 0, 0, 2],
             access_point: ScanRecord::EMPTY,
             association_preference: StaAssociationPreference::Automatic,
+            security: WifiSecurityMode::Wpa2Personal,
         };
         let owner = Esp32s31StationServiceOwner::new(
             7_u8,
@@ -1396,6 +1405,7 @@ mod tests {
         let identity = Esp32s31StaIdentity {
             station_address: [2, 0, 0, 0, 0, 4],
             association_preference: StaAssociationPreference::Automatic,
+            security: WifiSecurityMode::Wpa2Personal,
         };
         let owner = Esp32s31StationServiceOwner::new(
             7_u8,
@@ -1454,6 +1464,7 @@ mod tests {
             station_address: [2, 0, 0, 0, 0, 3],
             access_point: ScanRecord::EMPTY,
             association_preference: StaAssociationPreference::Automatic,
+            security: WifiSecurityMode::Wpa2Personal,
         };
         let owner = Esp32s31StationServiceOwner::new(
             7_u8,
@@ -1519,6 +1530,7 @@ mod tests {
             station_address: [2, 0, 0, 0, 0, 8],
             access_point: ScanRecord::EMPTY,
             association_preference: StaAssociationPreference::Automatic,
+            security: WifiSecurityMode::Wpa2Personal,
         };
         let candidate = ScanRecord {
             bssid: [0x02, 1, 2, 3, 4, 9],

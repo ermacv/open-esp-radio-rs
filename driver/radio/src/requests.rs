@@ -1335,8 +1335,10 @@ mod tests {
             AccessPointInactiveTimeout::new(30).expect("valid inactivity timeout"),
         );
         assert_eq!(request.inactive_timeout().seconds(), 30);
-        let (_, _, _, _, timeout) = request.into_parts();
+        let (_, _, _, _, timeout, beacon_interval, dtim_period) = request.into_parts();
         assert_eq!(timeout.seconds(), 30);
+        assert_eq!(beacon_interval.tu(), AccessPointRequest::BEACON_INTERVAL_TU);
+        assert_eq!(dtim_period.get(), AccessPointRequest::DTIM_PERIOD);
     }
 
     #[test]

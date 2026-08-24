@@ -32,7 +32,8 @@ module for the former vendor-derived `wdev` naming.
 - `chips/esp32s31/wifi/{dma,mac,sta,ap}`: ESP32-S31 Wi-Fi backend.
 - `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
 - `integration/esp32s31/embassy-wifi`: production composition and the only
-  place applications enter the current ESP32-S31 station/AP/monitor service.
+  place applications enter the current ESP32-S31 station/AP/monitor service
+  or its explicit ESP-NOW composition hooks.
 - `common/dma`: audited generic pinned-memory foundation.
 
 `embassy-net::Stack`, DHCP, sockets and network tasks are application-owned.
@@ -53,6 +54,7 @@ Wi-Fi:        Idle -> Station -> Idle
               Idle -> AccessPoint -> Idle
               Idle -> Station+AccessPoint -> Idle
               Idle -> Monitor -> Idle
+              Idle -> Standalone ESP-NOW -> Idle  (explicit composition hook)
 ```
 
 `WifiIdle`, `WifiStation`, `WifiAccessPoint` and `WifiMonitor` are affine.
@@ -66,15 +68,35 @@ idle owner is fabricated.
 requested channels, returns a bounded value-only report and restores idle.
 It cannot associate. Station owns its separate candidate scan plus
 authentication, association, WPA2, connected and reconnect policy. Monitor is
-an exclusive capture role. The production STA API is deliberately always
-awake. AP owns one validated HT20 or HT40 ERP/HT BSS, a bounded peer table,
-WPA2-PSK/CCMP, per-peer Block Ack and pairwise HT A-MPDU unicast Ethernet.
+an exclusive capture role. Station defaults to `AlwaysAwake`; its optional
+legacy power-save policy owns PM transitions, TIM/DTIM/listen scheduling and a
+reviewed TBTT wake-programming prefix, but S31 RF/PHY modem-sleep entry remains
+fail-closed before the unreviewed WDEVPWR binding. AP owns one validated HT20
+or HT40 ERP/HT BSS, a bounded peer table, WPA2-PSK/CCMP, per-peer Block Ack,
+pairwise HT A-MPDU unicast Ethernet, sleeping-peer queues and DTIM-gated group
+traffic.
 Each aggregate width and guard interval is bounded by the BSS geometry and the
 associated peer's observed HT capabilities. The combined STA+AP role owns one
 same-channel physical RX producer, one physical TX owner and one IRQ epoch;
 the station association owns the channel and its loss tears down the complete
-pair before either role can be reused. AP does not claim group-data TX, HE or
-power save.
+pair before either role can be reused. AP does not claim HE operation.
+
+ESP-NOW v1 plaintext has strict portable framing, fixed-capacity peers,
+connected normal-RX/TX ownership and an explicit standalone same-channel role
+hook. Standard P2P OFDM/HT20 rates are selectable. Long Range executes and
+restores only the reviewed low-rate PHY gate before rejecting the missing LR
+PLCP/queue-vector contract. Encrypted-peer PMK/LMK, PN and replay ownership is
+implemented and zeroizes secrets, while on-air encryption remains fail-closed
+because the S31 ESP-NOW key selector and Action-frame AAD are not reviewed.
+
+Ordinary station HE20 SU S-MPDU publication is implemented. Trigger and NDPA
+events reach typed bounded handoffs but reject the unreviewed HE-TB vector and
+feedback formatter before publication. MCS32 is modeled separately as HT
+duplicate mode and flows through STA/AP selection diagnostics; S31 encoding
+remains fail-closed instead of assigning an unevidenced selector. These source
+boundaries are not additions to the qualification ledger without dated HIL
+evidence.
+
 BLE, Bluetooth, IEEE 802.15.4 and coexistence are not public runtime features
 and have no placeholder public owner types. Internal typed PAC/HAL/LMAC
 transactions exist for the reviewed Wi-Fi-side PTI/request leaves and COEX

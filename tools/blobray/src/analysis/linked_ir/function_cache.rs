@@ -24,16 +24,41 @@ const MAX_CACHED_CALL_VARIANTS: usize = 1_024;
 const MAX_COMPRESSED_FACT_BYTES: usize = 4 * 1024 * 1024;
 
 pub(super) struct FunctionCacheRun {
-    cache_enabled: bool,
+    state: FunctionCacheState,
+}
+
+enum FunctionCacheState {
+    DisabledStoreAbsent,
+    DisabledUnsafeSemanticDomain,
+    Enabled(Box<FunctionCacheEnabled>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FunctionCacheDisabledReason {
+    StoreAbsent,
+    UnsafeSemanticDomain,
+}
+
+struct FunctionCacheEnabled {
     hits: Mutex<BTreeMap<String, Vec<u8>>>,
     loaded: AtomicUsize,
-    looked_up: Mutex<BTreeSet<String>>,
+    keys: Mutex<FunctionCacheKeys>,
     pending: Mutex<BTreeMap<String, Vec<u8>>>,
     mmio_fingerprint: [u8; 32],
     namespace_identities: bool,
     resolver_fingerprint: [u8; 32],
     namespace: String,
     reused: AtomicUsize,
+}
+
+#[derive(Default)]
+struct FunctionCacheKeys {
+    by_symbol: BTreeMap<SymbolKey, FunctionCacheKey>,
+}
+
+struct FunctionCacheKey {
+    value: String,
+    looked_up: bool,
 }
 
 impl FunctionCacheRun {
@@ -45,32 +70,35 @@ impl FunctionCacheRun {
         namespace_identities: bool,
         store: Option<&dyn FunctionFactStore>,
     ) -> Self {
-        let mmio_fingerprint = mmio_fingerprint(svd);
-        let resolver_fingerprint = resolver_fingerprint(resolver);
-        let cache_enabled = semantic_cache_domain_is_safe(
-            resolver.pointer_context.summary_hooks.is_some(),
-            resolver.pointer_context.semantic_cache_domain,
-        );
-        if !cache_enabled {
+        let state = match store {
+            None => FunctionCacheState::DisabledStoreAbsent,
+            Some(_)
+                if !semantic_cache_domain_is_safe(
+                    resolver.pointer_context.summary_hooks.is_some(),
+                    resolver.pointer_context.semantic_cache_domain,
+                ) =>
+            {
+                FunctionCacheState::DisabledUnsafeSemanticDomain
+            }
+            Some(_) => FunctionCacheState::Enabled(Box::new(FunctionCacheEnabled {
+                hits: Mutex::new(BTreeMap::new()),
+                loaded: AtomicUsize::new(0),
+                keys: Mutex::new(FunctionCacheKeys::default()),
+                pending: Mutex::new(BTreeMap::new()),
+                mmio_fingerprint: mmio_fingerprint(svd),
+                namespace_identities,
+                resolver_fingerprint: resolver_fingerprint(resolver),
+                namespace: namespace.to_owned(),
+                reused: AtomicUsize::new(0),
+            })),
+        };
+        let cache = Self { state };
+        if cache.disabled_reason() == Some(FunctionCacheDisabledReason::UnsafeSemanticDomain) {
             tracing::warn!(
                 "persistent function facts disabled: registered summary hooks have no stable semantic cache domain"
             );
         }
-        let cache = Self {
-            cache_enabled,
-            hits: Mutex::new(BTreeMap::new()),
-            loaded: AtomicUsize::new(0),
-            looked_up: Mutex::new(BTreeSet::new()),
-            pending: Mutex::new(BTreeMap::new()),
-            mmio_fingerprint,
-            namespace_identities,
-            resolver_fingerprint,
-            namespace: namespace.to_owned(),
-            reused: AtomicUsize::new(0),
-        };
-        if cache_enabled {
-            cache.load_symbols(symbols, store);
-        }
+        cache.load_symbols(symbols, store);
         cache
     }
 
@@ -85,42 +113,39 @@ impl FunctionCacheRun {
         symbols: impl IntoIterator<Item = &'a artifact::ArtifactSymbolDefinition>,
         store: Option<&dyn FunctionFactStore>,
     ) {
-        if !self.cache_enabled {
+        let FunctionCacheState::Enabled(cache) = &self.state else {
             return;
-        }
+        };
         let Some(store) = store else {
             return;
         };
-        let keys = symbols
-            .into_iter()
-            .map(|symbol| {
-                function_fact_key(
-                    symbol,
-                    &self.mmio_fingerprint,
-                    &self.resolver_fingerprint,
-                    self.namespace_identities,
-                )
-            })
-            .collect::<BTreeSet<_>>();
         let keys = {
-            let mut looked_up = self.looked_up.lock().expect("function cache lookup lock");
-            keys.into_iter()
-                .filter(|key| looked_up.insert(key.clone()))
-                .collect::<Vec<_>>()
+            let mut keys = cache.keys.lock().expect("function cache key lock");
+            let mut lookup = Vec::new();
+            for symbol in symbols {
+                let key = cache.key_for_locked(&mut keys, symbol);
+                if !key.looked_up {
+                    key.looked_up = true;
+                    lookup.push(key.value.clone());
+                }
+            }
+            lookup.sort();
+            lookup
         };
         if keys.is_empty() {
             return;
         }
         match store.load_function_facts(&keys) {
             Ok(values) => {
-                let mut hits = self.hits.lock().expect("function cache hit lock");
+                let mut hits = cache.hits.lock().expect("function cache hit lock");
                 let before = hits.len();
                 for (key, value) in values {
                     if keys.binary_search(&key).is_ok() {
                         hits.entry(key).or_insert(value);
                     }
                 }
-                self.loaded
+                cache
+                    .loaded
                     .fetch_add(hits.len().saturating_sub(before), Ordering::Relaxed);
             }
             Err(error) => {
@@ -134,36 +159,32 @@ impl FunctionCacheRun {
         symbol: &artifact::ArtifactSymbolDefinition,
         analyze: impl FnOnce() -> DirectCallGraph,
     ) -> DirectCallGraph {
-        if !self.cache_enabled {
+        let FunctionCacheState::Enabled(cache) = &self.state else {
             return analyze();
-        }
-        let key = function_fact_key(
-            symbol,
-            &self.mmio_fingerprint,
-            &self.resolver_fingerprint,
-            self.namespace_identities,
-        );
-        let cached = self
+        };
+        let key = cache.key_for(symbol);
+        let cached = cache
             .hits
             .lock()
             .expect("function cache hit lock")
             .remove(&key);
         if let Some(value) = cached
             && let Ok(fact) = decode_fact(&value)
-            && let Some(graph) = fact.materialize(symbol, &self.namespace)
+            && let Some(graph) = fact.materialize(symbol, &cache.namespace)
         {
-            self.reused.fetch_add(1, Ordering::Relaxed);
+            cache.reused.fetch_add(1, Ordering::Relaxed);
             tracing::trace!(symbol = symbol.name, "reused persistent function fact");
             return graph;
         }
         let started = std::time::Instant::now();
         let graph = analyze();
         let elapsed = started.elapsed();
-        if let Some(fact) = PortableDirectFacts::capture(symbol, &graph, &self.namespace)
+        if let Some(fact) = PortableDirectFacts::capture(symbol, &graph, &cache.namespace)
             && let Ok(value) = encode_fact(&fact)
             && value.len() <= MAX_COMPRESSED_FACT_BYTES
         {
-            self.pending
+            cache
+                .pending
                 .lock()
                 .expect("function cache pending lock")
                 .entry(key)
@@ -203,23 +224,80 @@ impl FunctionCacheRun {
     }
 
     pub(super) fn persist(&self, store: &mut dyn FunctionFactStore) {
-        if !self.cache_enabled {
+        let FunctionCacheState::Enabled(cache) = &self.state else {
             return;
-        }
-        let facts = std::mem::take(&mut *self.pending.lock().expect("function cache pending lock"))
-            .into_iter()
-            .collect::<Vec<_>>();
+        };
+        let facts =
+            std::mem::take(&mut *cache.pending.lock().expect("function cache pending lock"))
+                .into_iter()
+                .collect::<Vec<_>>();
         if !facts.is_empty()
             && let Err(error) = store.store_function_facts(&facts)
         {
             tracing::warn!(%error, facts = facts.len(), "function-fact cache write failed");
         }
         tracing::debug!(
-            loaded = self.loaded.load(Ordering::Relaxed),
-            reused = self.reused.load(Ordering::Relaxed),
+            loaded = cache.loaded.load(Ordering::Relaxed),
+            reused = cache.reused.load(Ordering::Relaxed),
             stored = facts.len(),
             "completed persistent function-fact cache session"
         );
+    }
+
+    fn disabled_reason(&self) -> Option<FunctionCacheDisabledReason> {
+        match &self.state {
+            FunctionCacheState::DisabledStoreAbsent => {
+                Some(FunctionCacheDisabledReason::StoreAbsent)
+            }
+            FunctionCacheState::DisabledUnsafeSemanticDomain => {
+                Some(FunctionCacheDisabledReason::UnsafeSemanticDomain)
+            }
+            FunctionCacheState::Enabled(_) => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn computed_key_count(&self) -> usize {
+        match &self.state {
+            FunctionCacheState::DisabledStoreAbsent
+            | FunctionCacheState::DisabledUnsafeSemanticDomain => 0,
+            FunctionCacheState::Enabled(cache) => cache
+                .keys
+                .lock()
+                .expect("function cache key lock")
+                .by_symbol
+                .len(),
+        }
+    }
+}
+
+impl FunctionCacheEnabled {
+    /// One resolver run treats `(member, name, address)` as the unique symbol
+    /// identity everywhere else in linked IR. Cache the expensive body-bound
+    /// digest under that same immutable identity so initial lookup and direct
+    /// analysis cannot hash one body twice, even when the catalog supplies a
+    /// cloned definition.
+    fn key_for(&self, symbol: &artifact::ArtifactSymbolDefinition) -> String {
+        let mut keys = self.keys.lock().expect("function cache key lock");
+        self.key_for_locked(&mut keys, symbol).value.clone()
+    }
+
+    fn key_for_locked<'a>(
+        &self,
+        keys: &'a mut FunctionCacheKeys,
+        symbol: &artifact::ArtifactSymbolDefinition,
+    ) -> &'a mut FunctionCacheKey {
+        keys.by_symbol
+            .entry(symbol_key(symbol))
+            .or_insert_with(|| FunctionCacheKey {
+                value: function_fact_key(
+                    symbol,
+                    &self.mmio_fingerprint,
+                    &self.resolver_fingerprint,
+                    self.namespace_identities,
+                ),
+                looked_up: false,
+            })
     }
 }
 
@@ -1491,6 +1569,10 @@ mod tests {
         let mut store = CountingStore::default();
         let cache =
             FunctionCacheRun::prepare(&resolver, [&owner], &mmio, "test", true, Some(&store));
+        assert_eq!(
+            cache.disabled_reason(),
+            Some(FunctionCacheDisabledReason::UnsafeSemanticDomain)
+        );
 
         cache.load_symbols([&owner], Some(&store));
         let analyses = Cell::new(0);
@@ -1504,5 +1586,64 @@ mod tests {
         assert_eq!(analyses.get(), 1);
         assert_eq!(store.loads.get(), 0);
         assert_eq!(store.stores, 0);
+    }
+
+    #[test]
+    fn absent_store_disables_initial_late_and_persistent_cache_work() {
+        let owner = symbol(0x4000);
+        let resolver = resolver(vec![owner.clone()]);
+        let mmio = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        let cache = FunctionCacheRun::prepare(&resolver, [&owner], &mmio, "test", true, None);
+        assert_eq!(
+            cache.disabled_reason(),
+            Some(FunctionCacheDisabledReason::StoreAbsent)
+        );
+        assert_eq!(cache.computed_key_count(), 0);
+
+        let mut late_store = CountingStore::default();
+        cache.load_symbols([&owner], Some(&late_store));
+        let analyses = Cell::new(0);
+        let graph = cache.direct_graph(&owner, || {
+            analyses.set(analyses.get() + 1);
+            DirectCallGraph::default()
+        });
+        assert!(graph.calls.is_empty());
+        cache.persist(&mut late_store);
+
+        assert_eq!(analyses.get(), 1);
+        assert_eq!(cache.computed_key_count(), 0);
+        assert_eq!(late_store.loads.get(), 0);
+        assert_eq!(late_store.stores, 0);
+    }
+
+    #[test]
+    fn initial_lookup_and_direct_analysis_share_one_precomputed_symbol_key() {
+        let owner = symbol(0x4000);
+        let cloned_definition = owner.clone();
+        let resolver = resolver(vec![owner.clone()]);
+        let mmio = MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        };
+        let store = CountingStore::default();
+        let cache =
+            FunctionCacheRun::prepare(&resolver, [&owner], &mmio, "test", true, Some(&store));
+        assert_eq!(cache.disabled_reason(), None);
+        assert_eq!(cache.computed_key_count(), 1);
+        assert_eq!(store.loads.get(), 1);
+
+        cache.load_symbols([&cloned_definition], Some(&store));
+        let analyses = Cell::new(0);
+        cache.direct_graph(&cloned_definition, || {
+            analyses.set(analyses.get() + 1);
+            DirectCallGraph::default()
+        });
+
+        assert_eq!(analyses.get(), 1);
+        assert_eq!(cache.computed_key_count(), 1);
+        assert_eq!(store.loads.get(), 1);
     }
 }

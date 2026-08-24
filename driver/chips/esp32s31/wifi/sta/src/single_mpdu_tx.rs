@@ -70,12 +70,17 @@ pub struct ActionTxConfig {
 }
 
 impl ActionTxConfig {
-    /// Profile used by ordinary management frames recovered from the vendor
-    /// queue-zero path.
-    pub const VENDOR_MANAGEMENT: Self = Self {
+    /// Neutral profile for standards-defined unprotected management actions.
+    /// It intentionally retains the ordinary queue-zero priorities without
+    /// implying that a vendor-specific wire format is being sent.
+    pub const STANDARD_MANAGEMENT: Self = Self {
         scheduler_priority: 1,
         packet_priority: 1,
     };
+
+    /// Profile used by ordinary management frames recovered from the vendor
+    /// queue-zero path.
+    pub const VENDOR_MANAGEMENT: Self = Self::STANDARD_MANAGEMENT;
 
     /// Profile retained by the recovered connected RX ADDBA response path.
     pub const RX_ADDBA_RESPONSE: Self = Self {

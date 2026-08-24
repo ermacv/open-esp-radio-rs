@@ -26,16 +26,25 @@ pub use open_esp_radio_esp32s31_wifi_sta::{
         ConnectedControlError, ConnectedControlPorts, ConnectedControlReorder, ConnectedControlTx,
         ConnectedControlTxFailure, ConnectedControlTxKind, ConnectedDisconnectReason,
         ConnectedHeControlRuntimeEvidence, ConnectedHeControlRuntimeOutcome,
-        ConnectedHeControlRuntimeRejection, Esp32s31ConnectedControlCore, HeNdpaRuntimeRequest,
+        ConnectedHeControlRuntimeRejection, ConnectedIndividualTwtRuntimeEvidence,
+        ConnectedIndividualTwtRuntimeOutcome, Esp32s31ConnectedControlCore, HeNdpaRuntimeRequest,
         HeTriggerRuntimeRequest,
     },
-    connected_control_hardware::{ConnectedControlHardware, StationDozeHardwareError},
+    connected_control_hardware::{
+        ConnectedControlHardware, StationDozeHardwareError, StationIndividualTwtHardwareError,
+        StationIndividualTwtHardwareStage, StationIndividualTwtUnsupportedStage,
+    },
 };
+use open_esp_radio_ieee80211::twt::IndividualTwtFlowId;
 use open_esp_radio_wifi_sta::{
     link_monitor::{StaBeaconLossConfig, StaBeaconMonitor},
     power_save::{
         StaDozePermit, StaDozePrepareError, StaDozeRestore, StaDozeRestoreFailure, StaDozeRestored,
         StaPowerSavePlanner, StaPowerSavePolicy, StaPowerSaveState, StaPreparedDoze,
+    },
+    twt::{
+        IndividualTwtProposal, IndividualTwtRequester, IndividualTwtRequesterConfig,
+        IndividualTwtWakePlan,
     },
 };
 use open_esp_radio_wpa2::{
@@ -272,15 +281,20 @@ pub enum StationDozeBoundaryFailure {
 const fn control_event_requires_active(event: ConnectedRxControlEvent) -> bool {
     matches!(
         event,
-        ConnectedRxControlEvent::BlockAck(_)
-            | ConnectedRxControlEvent::Trigger {
-                schedule: Ok(_),
-                ..
-            }
-            | ConnectedRxControlEvent::Ndpa {
-                addressed_to_station: true,
-                ..
-            }
+        ConnectedRxControlEvent::BlockAck(_) | ConnectedRxControlEvent::IndividualTwt(_)
+    )
+}
+
+const fn he_control_event_requires_active(event: ConnectedRxControlEvent) -> bool {
+    matches!(
+        event,
+        ConnectedRxControlEvent::Trigger {
+            schedule: Ok(_),
+            ..
+        } | ConnectedRxControlEvent::Ndpa {
+            addressed_to_station: true,
+            ..
+        }
     )
 }
 
@@ -400,6 +414,28 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.enable_ps_poll(association_id);
     }
 
+    pub fn enable_individual_twt_requester(&mut self, config: IndividualTwtRequesterConfig) {
+        self.core.enable_individual_twt_requester(config);
+    }
+
+    pub fn queue_individual_twt_setup(
+        &mut self,
+        proposal: IndividualTwtProposal,
+        now_micros: u64,
+    ) -> Result<(), ConnectedControlError> {
+        self.core.queue_individual_twt_setup(proposal, now_micros)
+    }
+
+    pub fn queue_individual_twt_teardown<H: ConnectedControlHardware>(
+        &mut self,
+        hardware: &mut H,
+        flow_id: IndividualTwtFlowId,
+        now_micros: u64,
+    ) -> Result<(), ConnectedControlError> {
+        self.core
+            .queue_individual_twt_teardown(hardware, flow_id, now_micros)
+    }
+
     pub fn with_he_trigger_based(
         mut self,
         config: Option<open_esp_radio_esp32s31_wifi_mac::tx::HeTriggerBasedTxConfig>,
@@ -461,6 +497,23 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
 
     pub const fn he_control_runtime_evidence(&self) -> ConnectedHeControlRuntimeEvidence {
         self.core.he_control_runtime_evidence()
+    }
+
+    pub const fn individual_twt_runtime_evidence(&self) -> ConnectedIndividualTwtRuntimeEvidence {
+        self.core.individual_twt_runtime_evidence()
+    }
+
+    pub const fn individual_twt_requester(&self) -> Option<&IndividualTwtRequester> {
+        self.core.individual_twt_requester()
+    }
+
+    pub fn individual_twt_wake_plan(
+        &self,
+        station_tsf: u64,
+        wake_guard_micros: u32,
+    ) -> Result<Option<IndividualTwtWakePlan>, ConnectedControlError> {
+        self.core
+            .individual_twt_wake_plan(station_tsf, wake_guard_micros)
     }
 
     pub fn dropped_he_observations(&self) -> u32 {
@@ -794,12 +847,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             .or_else(|| self.receiver.try_receive_power_save_delivery())
             .or_else(|| self.receiver.try_receive_control())
             .or_else(|| self.receiver.try_receive_he_observation());
-        if event.is_some_and(control_event_requires_active)
-            && self.core.he_trigger_runtime_enabled()
-            && self
-                .core
-                .power_save()
-                .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
+        if event.is_some_and(|event| {
+            control_event_requires_active(event)
+                || (self.core.he_trigger_runtime_enabled()
+                    && he_control_event_requires_active(event))
+        }) && self
+            .core
+            .power_save()
+            .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
         {
             self.deferred_control_event = event;
             return self.service_core_step(hardware, tx, None, true, context);

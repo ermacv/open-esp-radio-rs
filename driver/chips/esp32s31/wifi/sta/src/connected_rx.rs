@@ -18,6 +18,10 @@ use open_esp_radio_ieee80211::{
     station::{StaDisconnect, parse_sta_disconnect},
     station_beacon::{StaBeaconError, StaBeaconObservation, parse_sta_beacon},
     trigger::{TriggerCommonInfo, TriggerParseError, parse_trigger_frame},
+    twt::{
+        IndividualTwtAction, TwtWireError, is_individual_twt_action_candidate,
+        parse_individual_twt_action,
+    },
 };
 use open_esp_radio_wifi_softmac::{
     EspNowPeerId, EspNowReceiveError, EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch,
@@ -124,6 +128,12 @@ pub enum ConnectedRxEvent<'frame> {
         action: BlockAckAction,
         body: &'frame [u8],
     },
+    /// Strictly decoded individual TWT Setup or Teardown action from the
+    /// associated AP. The fixed action body is copied into the control lane.
+    IndividualTwt {
+        action: IndividualTwtAction,
+        body: &'frame [u8],
+    },
     /// Strictly decoded plaintext ESP-NOW datagram from one configured peer.
     ///
     /// `received` borrows the normalized MPDU and must be copied by a sink
@@ -169,6 +179,7 @@ pub enum ConnectedRxControlEvent {
         runtime_received_at_micros: Option<u64>,
     },
     BlockAck(BlockAckAction),
+    IndividualTwt(IndividualTwtAction),
     PeerDisconnect(StaDisconnect),
     PowerSaveDelivery(StaPsPollDelivery),
     /// More than one delivery crossed the single outstanding PS-Poll lane.
@@ -209,6 +220,9 @@ impl ConnectedRxEvent<'_> {
                 runtime_received_at_micros,
             }),
             Self::BlockAck { action, .. } => Some(ConnectedRxControlEvent::BlockAck(action)),
+            Self::IndividualTwt { action, .. } => {
+                Some(ConnectedRxControlEvent::IndividualTwt(action))
+            }
             Self::EspNow { .. } => None,
             Self::PeerDisconnect(disconnect) => {
                 Some(ConnectedRxControlEvent::PeerDisconnect(disconnect))
@@ -247,6 +261,7 @@ pub enum ConnectedRxError {
     Trigger(TriggerParseError),
     Ndpa(HeNdpaError),
     Beacon(StaBeaconError),
+    IndividualTwt(TwtWireError),
     EspNow(EspNowReceiveError),
     EspNowV2(EspNowV2ReceiveError),
     EspNowVersion(EspNowVersionError),
@@ -262,6 +277,7 @@ pub enum ConnectedRxDispatch {
     Trigger,
     Ndpa,
     BlockAck,
+    IndividualTwt,
     EspNow {
         peer: EspNowPeerId,
     },
@@ -551,6 +567,16 @@ impl ConnectedRxDispatcher {
                 if is_associated_peer_action && let Some(action) = parse_block_ack_action(body) {
                     sink.publish(ConnectedRxEvent::BlockAck { action, body });
                     return ConnectedRxDispatch::BlockAck;
+                }
+                if is_associated_peer_action && is_individual_twt_action_candidate(body) {
+                    let action = match parse_individual_twt_action(body) {
+                        Ok(action) => action,
+                        Err(error) => {
+                            return rejected(protection, ConnectedRxError::IndividualTwt(error));
+                        }
+                    };
+                    sink.publish(ConnectedRxEvent::IndividualTwt { action, body });
+                    return ConnectedRxDispatch::IndividualTwt;
                 }
 
                 // Do not turn every vendor Action frame into an ESP-NOW

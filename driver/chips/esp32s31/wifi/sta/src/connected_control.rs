@@ -27,6 +27,7 @@ use open_esp_radio_ieee80211::station_power_save::{StaAssociationId, StaPowerMan
 use open_esp_radio_ieee80211::{
     station::{StaDisconnect, StaDisconnectKind},
     trigger::TriggerCommonInfo,
+    twt::{INDIVIDUAL_TWT_FLOW_CAPACITY, IndividualTwtAction, IndividualTwtFlowId},
 };
 use open_esp_radio_wifi_sta::{
     link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError, StaBeaconMonitor},
@@ -36,10 +37,18 @@ use open_esp_radio_wifi_sta::{
         StaPowerSaveState, StaPsPollServiceState, StaPsPollTxCompletion, StaPsPollTxOutcome,
         StaTrafficState, UnexpectedStaPowerManagementCompletion,
     },
+    twt::{
+        IndividualTwtAgreement, IndividualTwtProposal, IndividualTwtRequester,
+        IndividualTwtRequesterConfig, IndividualTwtRequesterError, IndividualTwtRequesterEvent,
+        IndividualTwtService, IndividualTwtSetupDisposition, IndividualTwtTransmission,
+        IndividualTwtTxKind, IndividualTwtWakePlan, IndividualTwtWakePlanError,
+    },
 };
 
 use crate::{
-    connected_control_hardware::{ConnectedControlHardware, StationDozeHardwareError},
+    connected_control_hardware::{
+        ConnectedControlHardware, StationDozeHardwareError, StationIndividualTwtHardwareError,
+    },
     single_mpdu_tx::{
         ActionTxConfig, Esp32s31SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome,
     },
@@ -97,11 +106,41 @@ impl From<StaDisconnect> for ConnectedDisconnectReason {
 /// Control frame currently owning the shared ordinary TX transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedControlTxKind {
-    RxAddbaResponse { tid: u8 },
-    TxAddbaRequest { tid: u8 },
+    RxAddbaResponse {
+        tid: u8,
+    },
+    TxAddbaRequest {
+        tid: u8,
+    },
     BeaconProbe,
     PowerManagement(StaPowerManagement),
     PsPoll,
+    IndividualTwt {
+        flow_id: IndividualTwtFlowId,
+        kind: IndividualTwtTxKind,
+    },
+}
+
+/// Association-scoped observable outcome of the portable TWT requester.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectedIndividualTwtRuntimeOutcome {
+    Protocol(IndividualTwtRequesterEvent),
+    Response(IndividualTwtSetupDisposition),
+    AgreementInstalled(IndividualTwtAgreement),
+    PeerTeardown,
+    HardwareRejected {
+        flow_id: IndividualTwtFlowId,
+        error: StationIndividualTwtHardwareError,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConnectedIndividualTwtRuntimeEvidence {
+    pub actions_received: u32,
+    pub actions_published: u32,
+    pub agreements_installed: u32,
+    pub hardware_rejections: u32,
+    pub last_outcome: Option<ConnectedIndividualTwtRuntimeOutcome>,
 }
 
 /// Validated Basic-Trigger request crossing from connected control into the
@@ -193,6 +232,7 @@ enum ControlInFlight {
     BeaconProbe,
     PowerManagement(StaPowerManagement),
     PsPoll,
+    IndividualTwt(IndividualTwtTransmission),
 }
 
 impl ControlInFlight {
@@ -205,6 +245,10 @@ impl ControlInFlight {
             Self::BeaconProbe => ConnectedControlTxKind::BeaconProbe,
             Self::PowerManagement(mode) => ConnectedControlTxKind::PowerManagement(*mode),
             Self::PsPoll => ConnectedControlTxKind::PsPoll,
+            Self::IndividualTwt(transmission) => ConnectedControlTxKind::IndividualTwt {
+                flow_id: transmission.flow_id,
+                kind: transmission.kind,
+            },
         }
     }
 }
@@ -386,6 +430,10 @@ pub enum ConnectedControlError {
     MissingPowerSavePlanner,
     PowerSaveDeadlineOverflow,
     DozeHardware(StationDozeHardwareError),
+    IndividualTwt(IndividualTwtRequesterError),
+    IndividualTwtWake(IndividualTwtWakePlanError),
+    IndividualTwtHardware(StationIndividualTwtHardwareError),
+    MissingIndividualTwtRequester,
     RxReorderCommand(RxReorderCommandError),
 }
 
@@ -431,6 +479,24 @@ impl From<StationDozeHardwareError> for ConnectedControlError {
     }
 }
 
+impl From<IndividualTwtRequesterError> for ConnectedControlError {
+    fn from(error: IndividualTwtRequesterError) -> Self {
+        Self::IndividualTwt(error)
+    }
+}
+
+impl From<IndividualTwtWakePlanError> for ConnectedControlError {
+    fn from(error: IndividualTwtWakePlanError) -> Self {
+        Self::IndividualTwtWake(error)
+    }
+}
+
+impl From<StationIndividualTwtHardwareError> for ConnectedControlError {
+    fn from(error: StationIndividualTwtHardwareError) -> Self {
+        Self::IndividualTwtHardware(error)
+    }
+}
+
 impl From<RxReorderCommandError> for ConnectedControlError {
     fn from(error: RxReorderCommandError) -> Self {
         Self::RxReorderCommand(error)
@@ -445,6 +511,7 @@ struct ConnectedControlObservations {
     stale_tx_block_ack_responses: u32,
     last_stale_tx_block_ack_token: Option<u8>,
     he_control: ConnectedHeControlRuntimeEvidence,
+    individual_twt: ConnectedIndividualTwtRuntimeEvidence,
 }
 
 /// Complete protocol state for one ESP32-S31 station association.
@@ -464,6 +531,8 @@ pub struct Esp32s31ConnectedControlCore {
     pending_doze_permit: Option<StaDozePermit>,
     power_save_wake_deadline_micros: Option<u64>,
     ps_poll_delivery_deadline_micros: Option<u64>,
+    individual_twt: Option<IndividualTwtRequester>,
+    individual_twt_kick: bool,
     observations: ConnectedControlObservations,
 }
 
@@ -485,6 +554,8 @@ impl Esp32s31ConnectedControlCore {
             pending_doze_permit: None,
             power_save_wake_deadline_micros: None,
             ps_poll_delivery_deadline_micros: None,
+            individual_twt: None,
+            individual_twt_kick: false,
             observations: ConnectedControlObservations::default(),
         }
     }
@@ -513,6 +584,45 @@ impl Esp32s31ConnectedControlCore {
     /// through the existing acknowledged PM=0 transition.
     pub fn enable_ps_poll(&mut self, association_id: StaAssociationId) {
         self.ps_poll_association_id = Some(association_id);
+    }
+
+    /// Enable the portable requester owner without changing association
+    /// capabilities. Production S31 still rejects every setup at the explicit
+    /// hardware-admission boundary before an Action frame is published.
+    pub fn enable_individual_twt_requester(&mut self, config: IndividualTwtRequesterConfig) {
+        self.individual_twt = Some(IndividualTwtRequester::new(config));
+    }
+
+    pub fn queue_individual_twt_setup(
+        &mut self,
+        proposal: IndividualTwtProposal,
+        now_micros: u64,
+    ) -> Result<(), ConnectedControlError> {
+        self.individual_twt
+            .as_mut()
+            .ok_or(ConnectedControlError::MissingIndividualTwtRequester)?
+            .queue_setup(proposal, now_micros)?;
+        self.individual_twt_kick = true;
+        Ok(())
+    }
+
+    /// Remove the installed chip schedule first, then queue the wire teardown.
+    pub fn queue_individual_twt_teardown<H: ConnectedControlHardware>(
+        &mut self,
+        hardware: &mut H,
+        flow_id: IndividualTwtFlowId,
+        now_micros: u64,
+    ) -> Result<(), ConnectedControlError> {
+        let requester = self
+            .individual_twt
+            .as_mut()
+            .ok_or(ConnectedControlError::MissingIndividualTwtRequester)?;
+        if let Some(agreement) = requester.agreement(flow_id) {
+            hardware.remove_station_individual_twt(&agreement)?;
+        }
+        requester.queue_teardown(flow_id, now_micros)?;
+        self.individual_twt_kick = true;
+        Ok(())
     }
 
     /// Queue a bounded number of ADDBA publications for each recovered STA
@@ -550,6 +660,25 @@ impl Esp32s31ConnectedControlCore {
 
     pub const fn he_control_runtime_evidence(&self) -> ConnectedHeControlRuntimeEvidence {
         self.observations.he_control
+    }
+
+    pub const fn individual_twt_runtime_evidence(&self) -> ConnectedIndividualTwtRuntimeEvidence {
+        self.observations.individual_twt
+    }
+
+    pub const fn individual_twt_requester(&self) -> Option<&IndividualTwtRequester> {
+        self.individual_twt.as_ref()
+    }
+
+    pub fn individual_twt_wake_plan(
+        &self,
+        station_tsf: u64,
+        wake_guard_micros: u32,
+    ) -> Result<Option<IndividualTwtWakePlan>, ConnectedControlError> {
+        match self.individual_twt.as_ref() {
+            Some(requester) => Ok(requester.plan_next_wake(station_tsf, wake_guard_micros)?),
+            None => Ok(None),
+        }
     }
 
     pub const fn he_trigger_runtime_enabled(&self) -> bool {
@@ -602,6 +731,7 @@ impl Esp32s31ConnectedControlCore {
     pub fn has_immediate_work(&self, control_event_pending: bool) -> bool {
         self.in_flight.is_some()
             || control_event_pending
+            || self.individual_twt_kick
             || self.initial_tx_block_ack.into_iter().any(|pending| pending)
     }
 
@@ -615,12 +745,19 @@ impl Esp32s31ConnectedControlCore {
             .beacon_monitor
             .as_ref()
             .and_then(StaBeaconMonitor::deadline_micros);
+        let individual_twt = self
+            .individual_twt
+            .as_ref()
+            .and_then(IndividualTwtRequester::next_deadline_micros);
         earliest_deadline(
             earliest_deadline(
-                earliest_deadline(block_ack, link),
-                self.power_save_wake_deadline_micros,
+                earliest_deadline(
+                    earliest_deadline(block_ack, link),
+                    self.power_save_wake_deadline_micros,
+                ),
+                self.ps_poll_delivery_deadline_micros,
             ),
-            self.ps_poll_delivery_deadline_micros,
+            individual_twt,
         )
     }
 
@@ -653,6 +790,12 @@ impl Esp32s31ConnectedControlCore {
                 ControlInFlight::BeaconProbe => {}
                 ControlInFlight::PowerManagement(_) => {}
                 ControlInFlight::PsPoll => {}
+                ControlInFlight::IndividualTwt(transmission) => {
+                    self.individual_twt
+                        .as_mut()
+                        .ok_or(ConnectedControlError::MissingIndividualTwtRequester)?
+                        .abort_transmission(transmission)?;
+                }
             }
         }
 
@@ -684,6 +827,19 @@ impl Esp32s31ConnectedControlCore {
         }
         self.initial_tx_block_ack.fill(false);
         self.tx_block_ack_attempts_remaining.fill(0);
+        if let Some(requester) = self.individual_twt.as_mut() {
+            for value in 0..INDIVIDUAL_TWT_FLOW_CAPACITY as u8 {
+                let flow_id = IndividualTwtFlowId::new(value)
+                    .expect("the fixed flow range is wire-representable");
+                if let Some(agreement) = requester.agreement(flow_id) {
+                    hardware.remove_station_individual_twt(&agreement)?;
+                    requester.commit_hardware_remove(agreement)?;
+                }
+            }
+            requester.reset_for_reconnect();
+        }
+        self.individual_twt = None;
+        self.individual_twt_kick = false;
         self.beacon_monitor = None;
         self.beacon_probe_attempts = 0;
         self.beacon_lost = false;
@@ -827,6 +983,23 @@ impl Esp32s31ConnectedControlCore {
                     }
                     return self.apply_power_save_decision(hardware, tx, decision);
                 }
+                ControlInFlight::IndividualTwt(transmission) => {
+                    let event = self
+                        .individual_twt
+                        .as_mut()
+                        .ok_or(ConnectedControlError::MissingIndividualTwtRequester)?
+                        .complete_transmission(transmission, success, tx.now_micros())?;
+                    if success {
+                        self.observations.individual_twt.actions_published = self
+                            .observations
+                            .individual_twt
+                            .actions_published
+                            .saturating_add(1);
+                    }
+                    self.observations.individual_twt.last_outcome =
+                        Some(ConnectedIndividualTwtRuntimeOutcome::Protocol(event));
+                    return Ok(DatapathControlProgress::More);
+                }
             }
             return Ok(DatapathControlProgress::More);
         }
@@ -880,6 +1053,12 @@ impl Esp32s31ConnectedControlCore {
             );
         }
 
+        if self.individual_twt.is_some()
+            && let Some(progress) = self.service_individual_twt(hardware, tx)?
+        {
+            return Ok(progress);
+        }
+
         if let Some(tid) = self.tx_block_ack.expire_next(now_micros) {
             tx.set_tx_block_ack_agreement(tid, None);
             self.observations.last_expired_tid = Some(tid);
@@ -929,6 +1108,100 @@ impl Esp32s31ConnectedControlCore {
         }
 
         Ok(DatapathControlProgress::Idle)
+    }
+
+    fn service_individual_twt<H, X>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+    ) -> Result<Option<DatapathControlProgress<ConnectedDisconnectReason>>, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+    {
+        self.individual_twt_kick = false;
+        let now_micros = tx.now_micros();
+        let twt_due = self
+            .individual_twt
+            .as_ref()
+            .and_then(IndividualTwtRequester::next_deadline_micros)
+            .is_some_and(|deadline| now_micros >= deadline);
+        if twt_due
+            && self
+                .power_save
+                .as_ref()
+                .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
+        {
+            let decision = self
+                .power_save
+                .as_mut()
+                .expect("power-save state was checked above")
+                .request_active();
+            return self
+                .apply_power_save_decision(hardware, tx, decision)
+                .map(Some);
+        }
+        let service = self
+            .individual_twt
+            .as_mut()
+            .ok_or(ConnectedControlError::MissingIndividualTwtRequester)?
+            .service(now_micros)?;
+        match service {
+            IndividualTwtService::Idle => Ok(None),
+            IndividualTwtService::Event(event) => {
+                self.observations.individual_twt.last_outcome =
+                    Some(ConnectedIndividualTwtRuntimeOutcome::Protocol(event));
+                Ok(Some(DatapathControlProgress::More))
+            }
+            IndividualTwtService::Transmit(transmission) => {
+                if transmission.kind == IndividualTwtTxKind::Setup {
+                    let proposal = self
+                        .individual_twt
+                        .as_ref()
+                        .and_then(|requester| requester.transmitting_proposal(transmission.flow_id))
+                        .ok_or(ConnectedControlError::IndividualTwt(
+                            IndividualTwtRequesterError::StaleTransmission,
+                        ))?;
+                    if let Err(error) = hardware.admit_station_individual_twt(&proposal) {
+                        self.individual_twt
+                            .as_mut()
+                            .expect("requester produced this transmission")
+                            .abort_transmission(transmission)?;
+                        self.observations.individual_twt.hardware_rejections = self
+                            .observations
+                            .individual_twt
+                            .hardware_rejections
+                            .saturating_add(1);
+                        self.observations.individual_twt.last_outcome =
+                            Some(ConnectedIndividualTwtRuntimeOutcome::HardwareRejected {
+                                flow_id: transmission.flow_id,
+                                error,
+                            });
+                        return Ok(Some(DatapathControlProgress::More));
+                    }
+                }
+
+                if tx
+                    .start_action(
+                        hardware,
+                        transmission.body.as_slice(),
+                        ActionTxConfig::STANDARD_MANAGEMENT,
+                    )
+                    .is_err()
+                {
+                    let event = self
+                        .individual_twt
+                        .as_mut()
+                        .expect("requester produced this transmission")
+                        .complete_transmission(transmission, false, tx.now_micros())?;
+                    self.observations.individual_twt.last_outcome =
+                        Some(ConnectedIndividualTwtRuntimeOutcome::Protocol(event));
+                    return Ok(Some(DatapathControlProgress::More));
+                }
+                self.in_flight = Some(ControlInFlight::IndividualTwt(transmission));
+                Ok(Some(DatapathControlProgress::TxPending))
+            }
+        }
     }
 
     fn apply_event<H, X, R, const PEER_CAPACITY: usize>(
@@ -1029,6 +1302,9 @@ impl Esp32s31ConnectedControlCore {
         ) {
             return Ok(self.apply_he_control_event(hardware, tx, event));
         }
+        if let ConnectedRxControlEvent::IndividualTwt(action) = event {
+            return self.apply_individual_twt_action(hardware, tx, action);
+        }
         let ConnectedRxControlEvent::BlockAck(action) = event else {
             return Ok(DatapathControlProgress::More);
         };
@@ -1111,6 +1387,85 @@ impl Esp32s31ConnectedControlCore {
                 Ok(DatapathControlProgress::More)
             }
         }
+    }
+
+    fn apply_individual_twt_action<H, X>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        action: IndividualTwtAction,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+    {
+        let Some(requester) = self.individual_twt.as_mut() else {
+            // The association still advertises no requester capability. A
+            // stray peer action cannot implicitly create an owner.
+            return Ok(DatapathControlProgress::More);
+        };
+        self.observations.individual_twt.actions_received = self
+            .observations
+            .individual_twt
+            .actions_received
+            .saturating_add(1);
+        match action {
+            IndividualTwtAction::Setup(setup) => {
+                let disposition = requester.on_setup_response(setup)?;
+                self.observations.individual_twt.last_outcome =
+                    Some(ConnectedIndividualTwtRuntimeOutcome::Response(disposition));
+                if let IndividualTwtSetupDisposition::InstallRequired {
+                    flow_id,
+                    generation,
+                    agreement,
+                } = disposition
+                {
+                    match hardware.install_station_individual_twt(&agreement) {
+                        Ok(()) => {
+                            let agreement =
+                                requester.commit_hardware_install(flow_id, generation)?;
+                            self.observations.individual_twt.agreements_installed = self
+                                .observations
+                                .individual_twt
+                                .agreements_installed
+                                .saturating_add(1);
+                            self.observations.individual_twt.last_outcome = Some(
+                                ConnectedIndividualTwtRuntimeOutcome::AgreementInstalled(agreement),
+                            );
+                        }
+                        Err(error) => {
+                            requester.reject_hardware_install(
+                                flow_id,
+                                generation,
+                                tx.now_micros(),
+                            )?;
+                            self.individual_twt_kick = true;
+                            self.observations.individual_twt.hardware_rejections = self
+                                .observations
+                                .individual_twt
+                                .hardware_rejections
+                                .saturating_add(1);
+                            self.observations.individual_twt.last_outcome =
+                                Some(ConnectedIndividualTwtRuntimeOutcome::HardwareRejected {
+                                    flow_id,
+                                    error,
+                                });
+                        }
+                    }
+                }
+            }
+            IndividualTwtAction::Teardown(teardown) => {
+                let installed = requester.installed_for_teardown(teardown);
+                for agreement in installed.into_iter().flatten() {
+                    hardware.remove_station_individual_twt(&agreement)?;
+                    requester.commit_hardware_remove(agreement)?;
+                }
+                requester.on_peer_teardown(teardown);
+                self.observations.individual_twt.last_outcome =
+                    Some(ConnectedIndividualTwtRuntimeOutcome::PeerTeardown);
+            }
+        }
+        Ok(DatapathControlProgress::More)
     }
 
     fn apply_he_control_event<H, X>(
@@ -1319,6 +1674,7 @@ impl Esp32s31ConnectedControlCore {
             ConnectedRxControlEvent::Beacon(_)
             | ConnectedRxControlEvent::ProbeResponse
             | ConnectedRxControlEvent::BlockAck(_)
+            | ConnectedRxControlEvent::IndividualTwt(_)
             | ConnectedRxControlEvent::PeerDisconnect(_)
             | ConnectedRxControlEvent::PowerSaveDelivery(_)
             | ConnectedRxControlEvent::PowerSaveDeliveryRace => DatapathControlProgress::Idle,

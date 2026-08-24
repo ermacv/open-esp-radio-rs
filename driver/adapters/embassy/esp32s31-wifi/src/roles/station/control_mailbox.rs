@@ -44,6 +44,7 @@ fn scheduled_connected_control(event: ConnectedRxEvent<'_>) -> Option<ConnectedR
         event @ (ConnectedRxControlEvent::Beacon(_)
         | ConnectedRxControlEvent::ProbeResponse
         | ConnectedRxControlEvent::BlockAck(_)
+        | ConnectedRxControlEvent::IndividualTwt(_)
         | ConnectedRxControlEvent::PowerSaveDelivery(_)) => Some(event),
         event @ ConnectedRxControlEvent::PeerDisconnect(_) => Some(event),
         ConnectedRxControlEvent::Trigger { .. }
@@ -61,6 +62,7 @@ fn scheduled_he_observation(event: ConnectedRxEvent<'_>) -> Option<ConnectedRxCo
         ConnectedRxControlEvent::Beacon(_)
         | ConnectedRxControlEvent::ProbeResponse
         | ConnectedRxControlEvent::BlockAck(_)
+        | ConnectedRxControlEvent::IndividualTwt(_)
         | ConnectedRxControlEvent::PeerDisconnect(_)
         | ConnectedRxControlEvent::PowerSaveDelivery(_)
         | ConnectedRxControlEvent::PowerSaveDeliveryRace => None,

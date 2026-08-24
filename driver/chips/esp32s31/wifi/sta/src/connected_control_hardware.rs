@@ -12,6 +12,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx::TxHardware,
 };
 use open_esp_radio_wifi_sta::power_save::StaDozePermit;
+use open_esp_radio_wifi_sta::twt::{IndividualTwtAgreement, IndividualTwtProposal};
 
 /// Deepest completed stage of one hardware doze attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,6 +43,36 @@ pub enum StationDozeHardwareError {
     Unsupported {
         reached: StationDozeHardwareStage,
         missing: StationDozeUnsupportedStage,
+    },
+}
+
+/// Deepest source-proven stage of one S31 individual-TWT handoff.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationIndividualTwtHardwareStage {
+    None,
+}
+
+/// First hardware semantic missing from reviewed S31 source/SVD evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationIndividualTwtUnsupportedStage {
+    /// The MAC exposes an ITWT/PTI leaf, but reviewed evidence does not map
+    /// individual flow IDs and accepted TSF schedules onto that register or
+    /// prove coexistence admission ordering.
+    ItwtCoexistenceAdmission,
+    /// No reviewed source binds an accepted TWT service period to a station
+    /// TSF wake compare plus RF/PHY/BB retention transaction.
+    WakeScheduleProgramming,
+    /// No successful installation exists whose exact register image can be
+    /// restored while preserving another flow.
+    WakeScheduleRestore,
+}
+
+/// Typed fail-closed S31 boundary; no variant implies that RF sleep occurred.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationIndividualTwtHardwareError {
+    Unsupported {
+        reached: StationIndividualTwtHardwareStage,
+        missing: StationIndividualTwtUnsupportedStage,
     },
 }
 
@@ -76,6 +107,43 @@ pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
         Err(StationDozeHardwareError::Unsupported {
             reached: StationDozeHardwareStage::None,
             missing: StationDozeUnsupportedStage::HardwareSleepEntry,
+        })
+    }
+
+    /// Prove that this exact proposal can be represented before the shared TX
+    /// owner is allowed to publish a TWT Setup request. An error must not
+    /// change MAC, coexistence, clock, RF, PHY or BB state.
+    fn admit_station_individual_twt(
+        &mut self,
+        _proposal: &IndividualTwtProposal,
+    ) -> Result<(), StationIndividualTwtHardwareError> {
+        Err(StationIndividualTwtHardwareError::Unsupported {
+            reached: StationIndividualTwtHardwareStage::None,
+            missing: StationIndividualTwtUnsupportedStage::ItwtCoexistenceAdmission,
+        })
+    }
+
+    /// Install one peer-accepted agreement atomically. Failure must retain the
+    /// awake pre-call state so connected control can send a teardown.
+    fn install_station_individual_twt(
+        &mut self,
+        _agreement: &IndividualTwtAgreement,
+    ) -> Result<(), StationIndividualTwtHardwareError> {
+        Err(StationIndividualTwtHardwareError::Unsupported {
+            reached: StationIndividualTwtHardwareStage::None,
+            missing: StationIndividualTwtUnsupportedStage::WakeScheduleProgramming,
+        })
+    }
+
+    /// Remove an installed agreement before local teardown, stop or
+    /// reconnect. Failure requires the outer owner to quarantine the epoch.
+    fn remove_station_individual_twt(
+        &mut self,
+        _agreement: &IndividualTwtAgreement,
+    ) -> Result<(), StationIndividualTwtHardwareError> {
+        Err(StationIndividualTwtHardwareError::Unsupported {
+            reached: StationIndividualTwtHardwareStage::None,
+            missing: StationIndividualTwtUnsupportedStage::WakeScheduleRestore,
         })
     }
 
@@ -115,6 +183,19 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
         Err(StationDozeHardwareError::Unsupported {
             reached: StationDozeHardwareStage::StationTbttWakePrefix { target_bits_35_10 },
             missing: StationDozeUnsupportedStage::StationWdevpwrCompareBinding,
+        })
+    }
+
+    fn admit_station_individual_twt(
+        &mut self,
+        _proposal: &IndividualTwtProposal,
+    ) -> Result<(), StationIndividualTwtHardwareError> {
+        // The reviewed SVD names MAC_COEX ITWT/PTI registers but does not
+        // define their per-flow encoding, ownership or relation to the STA
+        // TSF wake transaction. Do not probe or guess those bits.
+        Err(StationIndividualTwtHardwareError::Unsupported {
+            reached: StationIndividualTwtHardwareStage::None,
+            missing: StationIndividualTwtUnsupportedStage::ItwtCoexistenceAdmission,
         })
     }
 

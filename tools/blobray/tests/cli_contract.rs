@@ -140,13 +140,48 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
-    assert_eq!(document["schema"], 6);
+    assert_eq!(document["schema"], 7);
     assert_eq!(document["scope"], "blobray-pipeline");
     assert_eq!(document["command"], "project status");
+    assert_eq!(document["validation"]["depth"], "shallow");
+    assert_eq!(document["validation"]["freshness"], "unknown");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !stderr.contains("Missing description for register"),
         "dependency warnings leaked to stderr: {stderr}"
+    );
+}
+
+#[test]
+fn project_status_human_details_explain_shallow_validation_and_render_fields() {
+    let output = run(&[
+        "project",
+        "status",
+        "--project",
+        GENERIC_PROJECT,
+        "--details",
+        "--color",
+        "never",
+    ]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "Validation: shallow project-status inspection",
+        "Freshness:  unknown unless a component states otherwise",
+        "Deep check:",
+        "Component details",
+        "Field",
+        "Value",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected:?}: {stdout}");
+    }
+    assert!(
+        !stdout.contains("CONFIGURED GATES READY"),
+        "stdout: {stdout}"
     );
 }
 
@@ -1070,7 +1105,7 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     assert_eq!(output.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 2);
+    assert_eq!(document["schema"], 3);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["mode"], "check");
     assert_eq!(document["status"], "failed");
@@ -1086,6 +1121,59 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
             .iter()
             .any(|stage| { stage["name"] == "symbol-inventory" && stage["status"] == "blocked" })
     );
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-nothing-configured-contract-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 3\nid = \"nothing-configured\"\ntarget-spec = {:?}\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+
+    let human = blobray()
+        .current_dir(repository_root())
+        .args(["project", "analyze", "--project"])
+        .arg(&manifest)
+        .args(["--color", "never"])
+        .output()
+        .expect("run nothing-configured project analysis");
+    assert_eq!(human.status.code(), Some(2));
+    let stdout = String::from_utf8_lossy(&human.stdout);
+    assert!(stdout.contains("NOTHING CONFIGURED"), "stdout: {stdout}");
+    assert!(!stdout.contains("READY"), "stdout: {stdout}");
+
+    let json = blobray()
+        .current_dir(repository_root())
+        .args(["project", "analyze", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("run typed nothing-configured project analysis");
+    assert_eq!(json.status.code(), Some(2));
+    let document: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("analysis stdout must be valid JSON");
+    assert_eq!(document["schema"], 3);
+    assert_eq!(document["command"], "project analyze");
+    assert_eq!(document["status"], "nothing-configured");
+    assert_eq!(document["not-configured"], 14);
+    assert_eq!(document["written"], 0);
+    assert_eq!(document["verified"], 0);
+    assert_eq!(document["up-to-date"], 0);
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1146,6 +1234,71 @@ fn project_inputs_validate_elf_and_archive_roles_before_writing() {
     assert!(!invalid.status.success());
     assert!(invalid.stdout.is_empty());
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("requires elf32"));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn project_analyze_check_does_not_create_persistent_query_store() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-read-only-analysis-contract-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 3\nid = \"read-only-analysis\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+    let artifact = directory.join("vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+
+    let inputs = blobray()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--project"])
+        .arg(&manifest)
+        .arg("--bind")
+        .arg(format!("source-artifact:fixture={}", artifact.display()))
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("initialize project inputs");
+    assert!(
+        inputs.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&inputs.stderr)
+    );
+
+    let generated = run_project_command(&manifest, &["project", "analyze"]);
+    assert!(
+        generated.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let cache = directory.join("generated/.blobray-cache");
+    assert!(
+        cache.is_dir(),
+        "write mode should initialize the query store"
+    );
+    std::fs::remove_dir_all(&cache).unwrap();
+
+    let checked = run_project_command(&manifest, &["project", "analyze", "--check"]);
+    assert!(
+        checked.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+    assert!(
+        !cache.exists(),
+        "project analyze --check created persistent query-store state"
+    );
 
     std::fs::remove_dir_all(directory).unwrap();
 }
@@ -1228,8 +1381,14 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         );
         let document: serde_json::Value = serde_json::from_slice(&output.stdout)
             .expect("project analysis stdout must be valid JSON");
+        assert_eq!(document["schema"], 3);
         assert_eq!(document["command"], "project analyze");
         assert_eq!(document["status"], "ok");
+        if expected_stage_status == "up-to-date" {
+            assert_eq!(document["written"], 0);
+            assert_eq!(document["verified"], 0);
+            assert!(document["up-to-date"].as_u64().unwrap() > 0);
+        }
         let symbol_stage = document["stages"]
             .as_array()
             .unwrap()
@@ -1424,6 +1583,8 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .expect("symbol_inventory component");
     assert_eq!(symbol_component["status"], "ready");
     assert!(symbol_component["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(symbol_component["validation_depth"], "shallow");
+    assert_eq!(symbol_component["freshness"], "unknown");
     assert_eq!(
         symbol_component["deep_validation"],
         "project doctor / project check"
@@ -1436,6 +1597,8 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .expect("navigation_index component");
     assert_eq!(navigation_component["status"], "ready");
     assert!(navigation_component["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(navigation_component["validation_depth"], "shallow");
+    assert_eq!(navigation_component["freshness"], "unknown");
     assert_eq!(
         navigation_component["deep_validation"],
         "project doctor / project check"
@@ -1463,6 +1626,8 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .find(|component| component["name"] == "navigation_index")
         .expect("stale navigation_index component");
     assert_eq!(navigation_component["status"], "ready");
+    assert_eq!(navigation_component["validation_depth"], "shallow");
+    assert_eq!(navigation_component["freshness"], "unknown");
     assert_eq!(
         navigation_component["deep_validation"],
         "project doctor / project check"

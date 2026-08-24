@@ -309,6 +309,10 @@ mod tests {
                     calling_convention: "ilp32".to_owned(),
                     knowledge_provider: None,
                 },
+                validation: crate::StatusValidation {
+                    depth: crate::ValidationDepth::Shallow,
+                    freshness: crate::EvidenceFreshness::Unknown,
+                },
                 overall: Readiness::Incomplete,
                 phases: (0..phases)
                     .map(|index| ProjectStatusPhase {

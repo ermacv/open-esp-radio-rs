@@ -105,6 +105,8 @@ fn output(
         Component::new(name, Readiness::Ready)
             .detail("path", path.display().to_string())
             .detail("file_status", "published")
+            .detail("validation_depth", "shallow")
+            .detail("freshness", "unknown")
             .detail("deep_validation", "project publish --check / project check")
     } else {
         Component::new(name, Readiness::Incomplete)

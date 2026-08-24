@@ -23,9 +23,10 @@ pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
 pub(crate) use resolve::{ProjectContext, ProjectSession, ProjectSessionOptions};
 pub use status::model::{
-    ArtifactDetail, Component as ProjectStatusComponent, DetailValue, LinkedIrProfileDetail,
-    MmioRegionDetail, Phase as ProjectStatusPhase, ProjectStatusReport, Readiness,
-    ReviewScopeDetail, TargetIdentity as ProjectTargetIdentity,
+    ArtifactDetail, Component as ProjectStatusComponent, DetailValue, EvidenceFreshness,
+    LinkedIrProfileDetail, MmioRegionDetail, Phase as ProjectStatusPhase, ProjectStatusReport,
+    Readiness, ReviewScopeDetail, StatusValidation, TargetIdentity as ProjectTargetIdentity,
+    ValidationDepth,
 };
 
 /// Resolved project state and reload-scoped analysis caches.

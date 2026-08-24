@@ -44,7 +44,11 @@ pub(crate) fn analyze_project(
     };
     let mut operations = ResolvedProjectAnalysisOperations {
         session,
-        cache: ProjectAnalysisCache::load(&session.manifest),
+        cache: if request.check {
+            ProjectAnalysisCache::disabled()
+        } else {
+            ProjectAnalysisCache::load(&session.manifest)
+        },
         check: request.check,
         functions: None,
         interfaces: None,

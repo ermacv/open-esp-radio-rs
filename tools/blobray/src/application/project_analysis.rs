@@ -28,6 +28,15 @@ pub(crate) struct ProjectAnalysisInputs {
     pub(crate) event_replays: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ProjectAnalysisStatus {
+    #[serde(rename = "ok")]
+    Complete,
+    NothingConfigured,
+    Failed,
+}
+
 /// Operations required by the project analysis coordinator.
 ///
 /// The coordinator owns ordering and dependency policy. Implementations own
@@ -54,7 +63,7 @@ pub(crate) struct ProjectAnalysisReport {
     pub(crate) schema: u32,
     pub(crate) command: &'static str,
     pub(crate) mode: &'static str,
-    pub(crate) status: &'static str,
+    pub(crate) status: ProjectAnalysisStatus,
     pub(crate) stages: Vec<super::pipeline::StageReport>,
     pub(crate) written: usize,
     pub(crate) verified: usize,
@@ -68,7 +77,7 @@ pub(crate) struct ProjectAnalysisReport {
 
 impl ProjectAnalysisReport {
     pub(crate) const fn succeeded(&self) -> bool {
-        self.failed == 0 && self.blocked == 0
+        matches!(self.status, ProjectAnalysisStatus::Complete)
     }
 }
 
@@ -280,11 +289,18 @@ pub(crate) fn run(
     };
     summary.record("interface-validation", &interface_validation);
 
+    let status = if !summary.succeeded() {
+        ProjectAnalysisStatus::Failed
+    } else if summary.written + summary.verified + summary.current == 0 {
+        ProjectAnalysisStatus::NothingConfigured
+    } else {
+        ProjectAnalysisStatus::Complete
+    };
     ProjectAnalysisReport {
-        schema: 2,
+        schema: 3,
         command: "project analyze",
         mode: mode.label(),
-        status: if summary.succeeded() { "ok" } else { "failed" },
+        status,
         stages: summary.stages().to_vec(),
         written: summary.written,
         verified: summary.verified,
@@ -404,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn optional_absence_does_not_run_operations_or_fail_the_workflow() {
+    fn optional_absence_is_a_typed_non_successful_noop() {
         let mut operations = FakeOperations::default();
         let report = run(
             &empty_project(),
@@ -413,8 +429,13 @@ mod tests {
             &mut operations,
         );
         assert!(operations.calls.is_empty());
-        assert!(report.succeeded());
+        assert_eq!(report.status, ProjectAnalysisStatus::NothingConfigured);
+        assert!(!report.succeeded());
         assert_eq!(report.not_configured, 14);
+        assert_eq!(
+            serde_json::to_value(&report).unwrap()["status"],
+            "nothing-configured"
+        );
     }
 
     #[test]
@@ -457,6 +478,7 @@ mod tests {
             &mut operations,
         );
         assert!(report.succeeded());
+        assert_eq!(report.status, ProjectAnalysisStatus::Complete);
         assert_eq!(report.written, 0);
         assert_eq!(report.current, 1);
         assert_eq!(report.stages[0].status, "up-to-date");

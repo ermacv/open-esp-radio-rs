@@ -128,6 +128,9 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
             Component::new("scopes", Readiness::Ready)
                 .detail("report", workspace.output.display().to_string())
                 .detail("count", reports.len())
+                .detail("validation_depth", "shallow")
+                .detail("freshness", "unknown")
+                .detail("deep_validation", "project doctor / project check")
                 .detail("publication_count", gate.publication_count)
                 .detail(
                     "replacement_coverage_complete",
@@ -263,6 +266,8 @@ fn inventory_ready<'a>(
 ) -> Component {
     let mut component = Component::new(name, Readiness::Inventory)
         .detail("gating", false)
+        .detail("validation_depth", "shallow")
+        .detail("freshness", "unknown")
         .detail("deep_validation", "project doctor / project check");
     for (key, path) in paths {
         component = component.detail(key, path.display().to_string());

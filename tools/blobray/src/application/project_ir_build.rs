@@ -69,8 +69,12 @@ pub(crate) fn build_project_ir<'a>(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<BuildDocument<'a>> {
-    let mut function_fact_store =
-        crate::application::query_store::QueryStore::open(project_manifest)?;
+    // Check mode must reproduce evidence without creating, migrating or
+    // updating persistent query-cache state. It intentionally performs
+    // uncached function analysis; write mode keeps the normal fact-store path.
+    let mut function_fact_store = (!request.check)
+        .then(|| crate::application::query_store::QueryStore::open(project_manifest))
+        .transpose()?;
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
     // Resolve and validate every selected input before loading catalogs or
     // beginning expensive analysis. A missing generated ELF must name its
@@ -102,7 +106,9 @@ pub(crate) fn build_project_ir<'a>(
                 interfaces: interfaces.as_ref(),
                 interface_origins: &interface_origins,
                 jobs: request.jobs,
-                function_fact_store: Some(&mut function_fact_store),
+                function_fact_store: function_fact_store
+                    .as_mut()
+                    .map(|store| store as &mut dyn crate::analysis::FunctionFactStore),
             })?;
         let ProjectIrDocuments {
             bundle,

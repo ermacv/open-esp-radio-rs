@@ -1,6 +1,6 @@
 //! CLI presentation for the application-owned project analysis report.
 
-use crate::application::project_analysis::ProjectAnalysisReport;
+use crate::application::project_analysis::{ProjectAnalysisReport, ProjectAnalysisStatus};
 
 pub(super) fn render(document: &ProjectAnalysisReport) {
     crate::cli::output::render_report(document, || print_human(document));
@@ -11,16 +11,18 @@ fn print_human(document: &ProjectAnalysisReport) {
 
     outputln!("{}", output::heading("Project analysis"));
     outputln!("Mode: {}", document.mode);
-    let outcome = if document.failed == 0 && document.blocked == 0 {
-        output::success(format!(
+    let outcome = match document.status {
+        ProjectAnalysisStatus::Complete => output::success(format!(
             "READY — {} written, {} verified, {} up to date",
             document.written, document.verified, document.current
-        ))
-    } else {
-        output::failure(format!(
+        )),
+        ProjectAnalysisStatus::NothingConfigured => {
+            output::warning("NOTHING CONFIGURED — no project analysis stage ran")
+        }
+        ProjectAnalysisStatus::Failed => output::failure(format!(
             "BLOCKED — {} failed, {} blocked",
             document.failed, document.blocked
-        ))
+        )),
     };
     outputln!("\n{outcome}");
 
@@ -74,6 +76,11 @@ fn print_human(document: &ProjectAnalysisReport) {
             outputln!("- blobray advanced interfaces init-pack");
         }
         outputln!("Then rerun `blobray project analyze`.");
+    } else if document.status == ProjectAnalysisStatus::NothingConfigured {
+        outputln!("\n{}", output::heading("Next"));
+        outputln!(
+            "Configure at least one analysis, validation, or review stage, then rerun `blobray project analyze`."
+        );
     }
 }
 
@@ -85,10 +92,10 @@ mod tests {
     #[test]
     fn analysis_document_keeps_stage_states_and_counts_typed() {
         let document = ProjectAnalysisReport {
-            schema: 2,
+            schema: 3,
             command: "project analyze",
             mode: "check",
-            status: "failed",
+            status: ProjectAnalysisStatus::Failed,
             stages: vec![StageReport {
                 name: "linked-ir".to_owned(),
                 status: "blocked",

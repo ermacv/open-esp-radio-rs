@@ -27,6 +27,19 @@ struct DigestMemo {
 }
 
 impl ProjectAnalysisCache {
+    /// Construct a cache boundary that cannot touch persistent state.
+    ///
+    /// Check mode never asks this value for a lookup or record. Keeping the
+    /// disabled value explicit makes an accidental cache access fail closed
+    /// instead of silently opening SQLite or creating a cache directory.
+    pub(super) fn disabled() -> Self {
+        Self {
+            store: None,
+            store_error: Some("disabled for read-only analysis".to_owned()),
+            digests: BTreeMap::new(),
+        }
+    }
+
     pub(super) fn load(project_manifest: &Path) -> Self {
         let (store, store_error) =
             match crate::application::query_store::QueryStore::open(project_manifest) {

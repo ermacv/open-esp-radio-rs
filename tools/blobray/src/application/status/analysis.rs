@@ -97,7 +97,10 @@ fn event_replays(context: &ProjectContext<'_>) -> Component {
     )
     .detail("pack", functions.pack.display().to_string())
     .detail("count", replays.len())
-    .detail("routes", outputs);
+    .detail("routes", outputs)
+    .detail("validation_depth", "shallow")
+    .detail("freshness", "unknown")
+    .detail("deep_validation", "project doctor / project check");
     for problem in problems {
         component = component.diagnostic(problem);
     }
@@ -216,6 +219,9 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
         },
     )
     .detail("profiles", profiles)
+    .detail("validation_depth", "shallow")
+    .detail("freshness", "unknown")
+    .detail("deep_validation", "project doctor / project check")
 }
 
 fn mmio_facts(context: &ProjectContext<'_>) -> Component {
@@ -248,6 +254,8 @@ fn generated_output(name: &'static str, path: &std::path::Path) -> Component {
             Component::new(name, Readiness::Ready)
                 .detail("path", path.display().to_string())
                 .detail("bytes", metadata.len())
+                .detail("validation_depth", "shallow")
+                .detail("freshness", "unknown")
                 .detail("deep_validation", "project doctor / project check")
         }
         Ok(_) => Component::new(name, Readiness::Invalid)

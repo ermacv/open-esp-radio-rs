@@ -24,6 +24,16 @@ struct BufferedUnicastRelease<B> {
     release: ApBufferedUnicastRelease,
 }
 
+struct BufferedGroup<B> {
+    order: u64,
+    frame: B,
+}
+
+struct BufferedGroupRelease<B> {
+    buffered: BufferedGroup<B>,
+    release: ApBufferedGroupRelease,
+}
+
 struct ApPowerSaveFrameQueue<B> {
     slots: [Option<BufferedUnicast<B>>; AP_POWER_SAVE_FRAME_CAPACITY],
     next_order: u64,
@@ -97,6 +107,69 @@ impl<B> ApPowerSaveFrameQueue<B> {
                 self.len -= 1;
             }
         }
+    }
+}
+
+/// Bounded caller-owned group queue. Entries are pinned network leases, not
+/// payload copies; the portable AP owns only the matching advertised count.
+struct ApGroupFrameQueue<B> {
+    slots: [Option<BufferedGroup<B>>; AP_POWER_SAVE_FRAME_CAPACITY],
+    next_order: u64,
+    len: usize,
+}
+
+impl<B> ApGroupFrameQueue<B> {
+    const fn new() -> Self {
+        Self {
+            slots: [const { None }; AP_POWER_SAVE_FRAME_CAPACITY],
+            next_order: 0,
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, frame: B) -> Result<usize, B> {
+        let Some(index) = self.slots.iter().position(Option::is_none) else {
+            return Err(frame);
+        };
+        let order = self.next_order;
+        self.next_order = self.next_order.wrapping_add(1);
+        self.slots[index] = Some(BufferedGroup { order, frame });
+        self.len += 1;
+        Ok(index)
+    }
+
+    fn take_at(&mut self, index: usize) -> Option<BufferedGroup<B>> {
+        let buffered = self.slots.get_mut(index)?.take()?;
+        self.len -= 1;
+        Some(buffered)
+    }
+
+    fn restore(&mut self, buffered: BufferedGroup<B>) {
+        let slot = self
+            .slots
+            .iter_mut()
+            .find(|slot| slot.is_none())
+            .expect("a released AP group lease always leaves one queue slot");
+        *slot = Some(buffered);
+        self.len += 1;
+    }
+
+    fn oldest_index(&self) -> Option<usize> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| entry.as_ref().map(|entry| (index, entry.order)))
+            .min_by_key(|(_, order)| *order)
+            .map(|(index, _)| index)
+    }
+
+    fn clear(&mut self) -> usize {
+        let discarded = self.len;
+        for slot in &mut self.slots {
+            let _ = slot.take();
+        }
+        self.len = 0;
+        discarded
     }
 }
 
@@ -174,8 +247,14 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B> {
     prepared_second: Option<B>,
     prepared_standby: Option<PreparedStandby>,
     buffered_unicast: ApPowerSaveFrameQueue<B>,
+    buffered_group: ApGroupFrameQueue<B>,
     prepared_buffered_release: Option<BufferedUnicastRelease<B>>,
     active_buffered_release: Option<BufferedUnicastRelease<B>>,
+    prepared_group_release: Option<BufferedGroupRelease<B>>,
+    active_group_release: Option<BufferedGroupRelease<B>>,
+    /// Remaining prefix authorized by one successful DTIM beacon. Frames
+    /// retained after that beacon can never join this release window.
+    dtim_group_release_remaining: u16,
     last_started_frames: usize,
 }
 
@@ -204,8 +283,12 @@ where
             prepared_second: None,
             prepared_standby: None,
             buffered_unicast: ApPowerSaveFrameQueue::new(),
+            buffered_group: ApGroupFrameQueue::new(),
             prepared_buffered_release: None,
             active_buffered_release: None,
+            prepared_group_release: None,
+            active_group_release: None,
+            dtim_group_release_remaining: 0,
             last_started_frames: 1,
         }
     }
@@ -219,9 +302,13 @@ where
             || self.prepared_second.is_some()
             || self.prepared_standby.is_some()
             || self.prepared_buffered_release.is_some()
+            || self.prepared_group_release.is_some()
     }
 
     pub(super) fn prepared_frame_count(&self) -> usize {
+        if self.prepared_group_release.is_some() || self.prepared_buffered_release.is_some() {
+            return 1;
+        }
         self.prepared_standby.as_ref().map_or(
             usize::from(self.prepared_first.is_some())
                 + usize::from(self.prepared_second.is_some())
@@ -276,6 +363,12 @@ where
         if self.prepared_buffered_release.is_some() {
             return false;
         }
+        if self.prepared_group_release.is_some()
+            || self.active_group_release.is_some()
+            || self.dtim_group_release_remaining != 0
+        {
+            return false;
+        }
         match self.prepared_standby.as_ref() {
             Some(batch) => {
                 self.prepared_first.is_none()
@@ -315,28 +408,14 @@ impl<
 where
     M: RawMutex,
 {
-    fn retain_sleeping_unicast<P, E, T, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>(
+    fn retain_power_save(
         &mut self,
-        control: &mut Esp32s31AccessPointProtocolProcessor<
-            '_,
-            '_,
-            '_,
-            P,
-            E,
-            T,
-            DMA_BUFFER_SIZE,
-            TX_BUFFER_SIZE,
-        >,
+        engine: &mut Esp32s31ApEngine<'_>,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     ) -> Result<
         Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>,
         Esp32s31AccessPointDatapathError,
-    >
-    where
-        P: WifiTxPowerProfile,
-        E: WifiTxEntropy,
-        T: WifiTxTimer,
-    {
+    > {
         let Some(peer) = frame
             .as_slice()
             .get(..6)
@@ -345,9 +424,27 @@ where
             return Ok(Some(frame));
         };
         if peer[0] & 1 != 0 {
-            return Ok(Some(frame));
+            if engine.group_downlink_disposition() == ApDownlinkDisposition::TransmitNow {
+                return Ok(Some(frame));
+            }
+            let Ok(index) = self.buffered_group.push(frame) else {
+                // The caller-owned queue is deliberately bounded. Releasing
+                // this excess lease applies backpressure at the producer pool
+                // without claiming a TIM entry for payload we did not retain.
+                return Ok(None);
+            };
+            if let Err(error) = engine.commit_buffered_group() {
+                let _ = self
+                    .buffered_group
+                    .take_at(index)
+                    .expect("the just-inserted AP group lease is still owned");
+                return Err(Esp32s31AccessPointDatapathError::Control(
+                    Esp32s31AccessPointControlError::from(error),
+                ));
+            }
+            return Ok(None);
         }
-        let disposition = match control.mac.engine().downlink_disposition(peer) {
+        let disposition = match engine.downlink_disposition(peer) {
             Ok(disposition) => disposition,
             // Preserve the ordinary admission path for an unknown or
             // unauthorized destination so its existing rejection accounting
@@ -364,7 +461,7 @@ where
             // unbounded retention path; its excess lease is released here.
             return Ok(None);
         };
-        if let Err(error) = control.mac.engine_mut().commit_buffered_unicast(peer) {
+        if let Err(error) = engine.commit_buffered_unicast(peer) {
             let _ = self
                 .buffered_unicast
                 .take_at(index)
@@ -610,6 +707,285 @@ where
         }
     }
 
+    /// Bind the exact queue prefix announced by a successfully transmitted
+    /// DTIM beacon to the oldest caller-owned group lease.
+    fn stage_dtim_group_release<
+        P,
+        E,
+        T,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+    ) -> Result<bool, Esp32s31AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+    {
+        if let Some(advertised_frames) = control.take_pending_dtim_group_frames() {
+            if self.dtim_group_release_remaining != 0
+                || self.prepared_group_release.is_some()
+                || self.active_group_release.is_some()
+            {
+                return Err(Esp32s31AccessPointDatapathError::Control(
+                    Esp32s31AccessPointControlError::DtimGroupReleaseAlreadyPending,
+                ));
+            }
+            self.dtim_group_release_remaining = advertised_frames;
+        }
+        if self.dtim_group_release_remaining == 0
+            || self.prepared_group_release.is_some()
+            || self.active_group_release.is_some()
+        {
+            return Ok(false);
+        }
+
+        let Some(release) = control
+            .mac
+            .engine_mut()
+            .begin_buffered_group_release()
+            .map_err(Esp32s31AccessPointControlError::from)
+            .map_err(Esp32s31AccessPointDatapathError::Control)?
+        else {
+            self.dtim_group_release_remaining = 0;
+            return Err(Esp32s31AccessPointDatapathError::Control(
+                Esp32s31AccessPointControlError::GroupBufferOwnershipMismatch,
+            ));
+        };
+        let Some(index) = self.buffered_group.oldest_index() else {
+            let rollback = control
+                .mac
+                .engine_mut()
+                .complete_buffered_group_release(release, false)
+                .map_err(Esp32s31AccessPointControlError::from)
+                .map_err(Esp32s31AccessPointDatapathError::Control);
+            self.dtim_group_release_remaining = 0;
+            rollback?;
+            return Err(Esp32s31AccessPointDatapathError::Control(
+                Esp32s31AccessPointControlError::GroupBufferOwnershipMismatch,
+            ));
+        };
+        let buffered = self
+            .buffered_group
+            .take_at(index)
+            .expect("the selected AP group lease remains retained");
+        self.prepared_group_release = Some(BufferedGroupRelease { buffered, release });
+        Ok(true)
+    }
+
+    fn rollback_prepared_group_release<
+        P,
+        E,
+        T,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+    ) -> Result<(), Esp32s31AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+    {
+        let Some(prepared) = self.prepared_group_release.take() else {
+            self.dtim_group_release_remaining = 0;
+            return Ok(());
+        };
+        let result = control
+            .mac
+            .engine_mut()
+            .complete_buffered_group_release(prepared.release, false);
+        self.buffered_group.restore(prepared.buffered);
+        self.dtim_group_release_remaining = 0;
+        result
+            .map(|_| ())
+            .map_err(Esp32s31AccessPointControlError::from)
+            .map_err(Esp32s31AccessPointDatapathError::Control)
+    }
+
+    fn complete_active_group_release<
+        P,
+        E,
+        T,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        published: bool,
+    ) -> Result<(), Esp32s31AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+    {
+        let Some(active) = self.active_group_release.take() else {
+            return Ok(());
+        };
+        let result = control
+            .mac
+            .engine_mut()
+            .complete_buffered_group_release(active.release, published);
+        if !published || result.is_err() {
+            self.buffered_group.restore(active.buffered);
+            self.dtim_group_release_remaining = 0;
+        } else {
+            self.dtim_group_release_remaining = self
+                .dtim_group_release_remaining
+                .checked_sub(1)
+                .ok_or(Esp32s31AccessPointDatapathError::Control(
+                    Esp32s31AccessPointControlError::GroupBufferOwnershipMismatch,
+                ))?;
+        }
+        result
+            .map(|_| ())
+            .map_err(Esp32s31AccessPointControlError::from)
+            .map_err(Esp32s31AccessPointDatapathError::Control)?;
+        if self.dtim_group_release_remaining != 0 {
+            let _ = self.stage_dtim_group_release(control)?;
+        }
+        Ok(())
+    }
+
+    fn start_prepared_group_release<
+        P,
+        E,
+        T,
+        H,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        hardware: &mut H,
+    ) -> Result<WifiTxProgress, Esp32s31AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+        H: TxHardware,
+    {
+        let prepared = self
+            .prepared_group_release
+            .take()
+            .expect("checked prepared AP DTIM group release");
+        let result = control.start_network_tx_with_more_data(
+            hardware,
+            prepared.buffered.frame.as_slice(),
+            prepared.release.more_data(),
+        );
+        match result {
+            Ok(WifiTxProgress::Pending) => {
+                self.active_group_release = Some(prepared);
+                Ok(WifiTxProgress::Pending)
+            }
+            Ok(WifiTxProgress::Complete) => {
+                self.prepared_group_release = Some(prepared);
+                self.rollback_prepared_group_release(control)?;
+                // The control owner returns Complete without publication when
+                // no authorized receiver remains. Drop both the retained
+                // leases and their TIM accounting instead of advertising an
+                // undeliverable queue forever.
+                self.discard_group_buffer(control)?;
+                Ok(WifiTxProgress::Complete)
+            }
+            Err(error) => {
+                self.prepared_group_release = Some(prepared);
+                let rollback = self.rollback_prepared_group_release(control);
+                if let Err(rollback) = rollback {
+                    return Err(rollback);
+                }
+                Err(Esp32s31AccessPointDatapathError::Control(error))
+            }
+        }
+    }
+
+    pub(super) fn discard_group_buffer<
+        P,
+        E,
+        T,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+    ) -> Result<(), Esp32s31AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+    {
+        if self.active_group_release.is_some() {
+            return Err(Esp32s31AccessPointDatapathError::Control(
+                Esp32s31AccessPointControlError::GroupBufferOwnershipMismatch,
+            ));
+        }
+        self.rollback_prepared_group_release(control)?;
+        let _ = control.take_pending_dtim_group_frames();
+        let portable = control
+            .mac
+            .engine_mut()
+            .discard_buffered_groups()
+            .map_err(Esp32s31AccessPointControlError::from)
+            .map_err(Esp32s31AccessPointDatapathError::Control)?;
+        let retained = self.buffered_group.clear();
+        self.dtim_group_release_remaining = 0;
+        if usize::from(portable) != retained {
+            return Err(Esp32s31AccessPointDatapathError::Control(
+                Esp32s31AccessPointControlError::GroupBufferOwnershipMismatch,
+            ));
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn start<
         P,
@@ -663,9 +1039,22 @@ where
         if let Some(observer) = self.observer {
             observer.observe_access_point_network_claim(frame.as_slice());
         }
+        let _ = self.stage_dtim_group_release(control)?;
+        if self.prepared_group_release.is_some() {
+            if let Some(frame) = self.retain_power_save(control.mac.engine_mut(), frame)? {
+                if self.prepared_first.is_none() {
+                    self.prepared_first = Some(frame);
+                } else if self.prepared_second.is_none() {
+                    self.prepared_second = Some(frame);
+                } else {
+                    drop(frame);
+                }
+            }
+            return self.start_prepared_group_release(control, hardware);
+        }
         let _ = self.stage_awake_buffered_release(control)?;
         if self.prepared_buffered_release.is_some() {
-            if let Some(frame) = self.retain_sleeping_unicast(control, frame)? {
+            if let Some(frame) = self.retain_power_save(control.mac.engine_mut(), frame)? {
                 if self.prepared_first.is_none() {
                     self.prepared_first = Some(frame);
                 } else if self.prepared_second.is_none() {
@@ -680,7 +1069,7 @@ where
             }
             return self.start_prepared_buffered_release(control, hardware);
         }
-        let Some(mut frame) = self.retain_sleeping_unicast(control, frame)? else {
+        let Some(mut frame) = self.retain_power_save(control.mac.engine_mut(), frame)? else {
             return Ok(WifiTxProgress::Complete);
         };
         let admission = control.mac.aggregate_admission(frame.as_slice());
@@ -693,7 +1082,7 @@ where
             if let Some(observer) = self.observer {
                 observer.observe_access_point_network_claim(second.as_slice());
             }
-            let Some(mut second) = self.retain_sleeping_unicast(control, second)? else {
+            let Some(mut second) = self.retain_power_save(control.mac.engine_mut(), second)? else {
                 return control
                     .start_network_tx(hardware, frame.as_slice())
                     .map_err(Esp32s31AccessPointDatapathError::Control);
@@ -776,29 +1165,9 @@ where
                 if let Some(observer) = self.observer {
                     observer.observe_access_point_network_claim(next.as_slice());
                 }
-                let next_peer = next
-                    .as_slice()
-                    .get(..6)
-                    .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-                if let Some(next_peer) = next_peer
-                    && next_peer[0] & 1 == 0
-                    && engine.downlink_disposition(next_peer).ok()
-                        == Some(ApDownlinkDisposition::Buffer)
-                {
-                    if let Ok(index) = self.buffered_unicast.push(next_peer, next) {
-                        if let Err(error) = engine.commit_buffered_unicast(next_peer) {
-                            let _ = self
-                                .buffered_unicast
-                                .take_at(index)
-                                .expect("the just-inserted aggregate-tail lease remains retained");
-                            return Err(Esp32s31AccessPointDatapathError::Control(
-                                Esp32s31AccessPointControlError::from(error),
-                            ));
-                        }
-                    }
+                let Some(mut next) = self.retain_power_save(engine, next)? else {
                     continue;
-                }
-                let mut next = next;
+                };
                 if !admission.accepts_ethernet(next.as_slice()) {
                     debug_assert!(self.prepared_first.is_none());
                     self.prepared_first = Some(next);
@@ -919,7 +1288,7 @@ where
             observer.observe_access_point_network_claim(frame.as_slice());
         }
 
-        let Some(mut frame) = self.retain_sleeping_unicast(control, frame)? else {
+        let Some(mut frame) = self.retain_power_save(control.mac.engine_mut(), frame)? else {
             return Ok(());
         };
 
@@ -1099,6 +1468,10 @@ where
             .prepared_scheduler_trace
             .take()
             .and_then(PreparedSchedulerTraceBuilder::complete);
+        let _ = self.stage_dtim_group_release(control)?;
+        if self.prepared_group_release.is_some() {
+            return self.start_prepared_group_release(control, hardware);
+        }
         if self.prepared_buffered_release.is_some() {
             return self.start_prepared_buffered_release(control, hardware);
         }
@@ -1114,7 +1487,7 @@ where
                     return Ok(WifiTxProgress::Complete);
                 };
                 self.prepared_first = self.prepared_second.take();
-                let Some(frame) = self.retain_sleeping_unicast(control, frame)? else {
+                let Some(frame) = self.retain_power_save(control.mac.engine_mut(), frame)? else {
                     continue;
                 };
                 return control
@@ -1196,6 +1569,7 @@ where
         T: WifiTxTimer,
     {
         self.rollback_prepared_buffered_release(control)?;
+        self.discard_group_buffer(control)?;
         control
             .rollback_pending_buffered_releases()
             .map_err(Esp32s31AccessPointDatapathError::Control)?;
@@ -1292,15 +1666,30 @@ where
             let progress = match control.service_tx(hardware, wake).await {
                 Ok(progress) => progress,
                 Err(error) => {
+                    if self.active_group_release.is_some() {
+                        self.complete_active_group_release(control, false)?;
+                    }
                     if self.active_buffered_release.is_some() {
                         self.complete_active_buffered_release(control, false)?;
                     }
                     return Err(Esp32s31AccessPointDatapathError::Control(error));
                 }
             };
-            if progress == WifiTxProgress::Complete && self.active_buffered_release.is_some() {
-                let delivered = control.take_last_terminal_tx_delivered().unwrap_or(false);
-                self.complete_active_buffered_release(control, delivered)?;
+            if progress == WifiTxProgress::Complete {
+                let succeeded = control.take_last_terminal_tx_succeeded().unwrap_or(false);
+                if self.active_group_release.is_some() {
+                    // A group MPDU has no ACK. `succeeded` is only terminal
+                    // hardware publication success for the one-attempt basic-
+                    // rate transaction.
+                    self.complete_active_group_release(control, succeeded)?;
+                }
+                if self.active_buffered_release.is_some() {
+                    self.complete_active_buffered_release(control, succeeded)?;
+                }
+                let _ = self.stage_dtim_group_release(control)?;
+                if self.prepared_group_release.is_none() {
+                    let _ = self.stage_awake_buffered_release(control)?;
+                }
             }
             return Ok(progress);
         }
@@ -1515,6 +1904,20 @@ pub(super) trait AccessPointPowerSaveNetworkTx<
     ) -> Result<bool, Esp32s31AccessPointDatapathError>;
 
     fn has_power_save_release(&self) -> bool;
+
+    fn discard_group_power_save(
+        &mut self,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+    ) -> Result<(), Esp32s31AccessPointDatapathError>;
 }
 
 impl<
@@ -1559,6 +1962,25 @@ where
 
     fn has_power_save_release(&self) -> bool {
         self.prepared_buffered_release.is_some()
+            || self.prepared_group_release.is_some()
+            || self.active_group_release.is_some()
+            || self.dtim_group_release_remaining != 0
+    }
+
+    fn discard_group_power_save(
+        &mut self,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+    ) -> Result<(), Esp32s31AccessPointDatapathError> {
+        self.discard_group_buffer(control)
     }
 }
 

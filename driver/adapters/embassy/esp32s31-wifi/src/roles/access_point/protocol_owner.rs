@@ -67,14 +67,17 @@ pub struct Esp32s31AccessPointProtocolProcessor<
     rx_addba_in_flight: Option<RxBlockAckActivation>,
     protocol_actions: Esp32s31AccessPointProtocolMailbox<AP_PROTOCOL_ACTION_CAPACITY>,
     pending_buffered_releases: PendingApBufferedReleases,
+    /// Exact caller-owned group prefix advertised by the last successfully
+    /// published DTIM beacon. Only the network-TX owner may consume it.
+    pending_dtim_group_frames: Option<u16>,
     rx_batch_used: usize,
     rx_batch_offset: usize,
     serviced_rx_frames: u64,
     serviced_rx_descriptors: u64,
     /// Terminal success bit for the most recently completed ordinary TX.
-    /// The network owner consumes it only while it owns a buffered-unicast
-    /// release transaction.
-    last_terminal_tx_delivered: Option<bool>,
+    /// The network owner consumes it while it owns a buffered release. For a
+    /// group MPDU this is publication success only; no ACK exists.
+    last_terminal_tx_succeeded: Option<bool>,
     #[cfg(feature = "diagnostics")]
     observer: &'static mut AccessPointObservationStorage,
     #[cfg(all(test, not(feature = "diagnostics")))]
@@ -104,11 +107,12 @@ pub struct Esp32s31AccessPointProtocolProcessorParked<
     rx_addba_in_flight: Option<RxBlockAckActivation>,
     protocol_actions: Esp32s31AccessPointProtocolMailbox<AP_PROTOCOL_ACTION_CAPACITY>,
     pending_buffered_releases: PendingApBufferedReleases,
+    pending_dtim_group_frames: Option<u16>,
     rx_batch_used: usize,
     rx_batch_offset: usize,
     serviced_rx_frames: u64,
     serviced_rx_descriptors: u64,
-    last_terminal_tx_delivered: Option<bool>,
+    last_terminal_tx_succeeded: Option<bool>,
     #[cfg(feature = "diagnostics")]
     observer: &'static mut AccessPointObservationStorage,
     #[cfg(all(test, not(feature = "diagnostics")))]

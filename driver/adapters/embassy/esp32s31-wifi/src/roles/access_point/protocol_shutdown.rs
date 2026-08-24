@@ -144,7 +144,7 @@ where
             .service_tx(hardware, wake, Instant::now().as_micros())
             .await?;
         if progress == WifiTxProgress::Complete {
-            self.last_terminal_tx_delivered = Some(
+            self.last_terminal_tx_succeeded = Some(
                 action != Esp32s31ApTxCompletionAction::PublicationFailed,
             );
         }
@@ -161,6 +161,14 @@ where
             }
         }
         match action {
+            Esp32s31ApTxCompletionAction::DtimGroupRelease { advertised_frames } => {
+                if self.pending_dtim_group_frames.is_some() {
+                    return Err(
+                        Esp32s31AccessPointControlError::DtimGroupReleaseAlreadyPending,
+                    );
+                }
+                self.pending_dtim_group_frames = Some(advertised_frames);
+            }
             Esp32s31ApTxCompletionAction::BeginWpa2 { peer } => {
                 let message1 = self.mac.engine().begin_wpa2::<EAPOL_CAPACITY>(peer)?;
                 let processor = &mut *self;
@@ -395,8 +403,12 @@ where
         Ok(WifiTxProgress::Pending)
     }
 
-    fn take_last_terminal_tx_delivered(&mut self) -> Option<bool> {
-        self.last_terminal_tx_delivered.take()
+    fn take_last_terminal_tx_succeeded(&mut self) -> Option<bool> {
+        self.last_terminal_tx_succeeded.take()
+    }
+
+    fn take_pending_dtim_group_frames(&mut self) -> Option<u16> {
+        self.pending_dtim_group_frames.take()
     }
 
     fn role_status_revision(&self) -> u32 {
@@ -528,6 +540,7 @@ where
             || self.rx_addba_in_flight.is_some()
             || !self.protocol_actions.is_empty()
             || !self.pending_buffered_releases.is_empty()
+            || self.pending_dtim_group_frames.is_some()
             || self.rx_reorder.has_pending_release()
             || self
                 .rx_block_ack
@@ -548,11 +561,12 @@ where
             rx_addba_in_flight: _,
             protocol_actions,
             pending_buffered_releases,
+            pending_dtim_group_frames,
             rx_batch_used: _,
             rx_batch_offset: _,
             serviced_rx_frames,
             serviced_rx_descriptors,
-            last_terminal_tx_delivered,
+            last_terminal_tx_succeeded,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -578,11 +592,12 @@ where
                     rx_addba_in_flight: None,
                     protocol_actions,
                     pending_buffered_releases,
+                    pending_dtim_group_frames,
                     rx_batch_used: 0,
                     rx_batch_offset: 0,
                     serviced_rx_frames,
                     serviced_rx_descriptors,
-                    last_terminal_tx_delivered,
+                    last_terminal_tx_succeeded,
                     #[cfg(any(feature = "diagnostics", test))]
                     observer,
                     #[cfg(any(feature = "diagnostics", test))]

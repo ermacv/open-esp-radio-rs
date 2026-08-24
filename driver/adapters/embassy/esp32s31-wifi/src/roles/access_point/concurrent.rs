@@ -151,6 +151,7 @@ pub enum Esp32s31StaApAccessPointPairedRxError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31StaApAccessPointPairedControlError {
     Role(Esp32s31AccessPointControlError),
+    PowerSave(Esp32s31AccessPointDatapathError),
     Ownership(Esp32s31StaApAccessPointTxOwnershipError),
 }
 
@@ -1516,6 +1517,7 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
     B: StableDmaBacking + 'ampdu,
+    NetworkTx: network_tx::AccessPointPowerSaveNetworkTx<P, E, T, DMA_BUFFER_SIZE, TX_BUFFER_SIZE>,
 {
     type Error = Esp32s31StaApAccessPointPairedControlError;
 
@@ -1601,6 +1603,16 @@ where
         if self.protocol.is_parked() {
             self.activate_tx(physical_tx)
                 .map_err(Esp32s31StaApAccessPointPairedControlError::Ownership)?;
+        }
+        {
+            let processor = &mut self
+                .protocol
+                .active_mut()
+                .expect("AP stop activated the physical TX owner")
+                .processor;
+            self.network_tx
+                .discard_group_power_save(processor)
+                .map_err(Esp32s31StaApAccessPointPairedControlError::PowerSave)?;
         }
         match self
             .protocol

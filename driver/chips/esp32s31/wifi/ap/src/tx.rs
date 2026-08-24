@@ -44,12 +44,15 @@ pub enum Esp32s31ApTxClass {
     Eapol,
     /// Pairwise protected Ethernet data after the controlled port opens.
     Data,
+    /// GTK-protected multicast/broadcast data. Hardware may report terminal
+    /// publication success, but there is no receiver ACK and no retry series.
+    GroupData,
 }
 
 impl Esp32s31ApTxClass {
     fn publication_limit(self, rate: LegacyRate) -> u8 {
         match self {
-            Self::Beacon => 1,
+            Self::Beacon | Self::GroupData => 1,
             Self::Management | Self::Eapol | Self::Data => rate
                 .vendor_retry_publication_limit()
                 .expect("every AP legacy rate has a recovered Dot11G schedule"),
@@ -62,7 +65,7 @@ impl Esp32s31ApTxClass {
         // controlled port opens.
         match self {
             Self::Beacon | Self::Management | Self::Eapol => LegacyTxQueue::Voice,
-            Self::Data => LegacyTxQueue::BestEffort,
+            Self::Data | Self::GroupData => LegacyTxQueue::BestEffort,
         }
     }
 
@@ -73,6 +76,7 @@ impl Esp32s31ApTxClass {
             // discovery and controlled-port setup on the maximally compatible
             // 1 Mbit/s path, but do not serialize ordinary data at that rate.
             Self::Data => LegacyRate::Ofdm24M,
+            Self::GroupData => LegacyRate::Dsss1MLong,
             Self::Beacon | Self::Management | Self::Eapol => LegacyRate::Dsss1MLong,
         }
     }
@@ -254,6 +258,25 @@ where
             TX_CCMP_MIC_SIZE,
             hardware_key_selector,
             Some(rate),
+        )
+    }
+
+    /// Publish one GTK-protected group MPDU through the ordinary basic-rate
+    /// owner. The transaction has exactly one hardware publication and does
+    /// not interpret completion as an acknowledgement.
+    pub fn start_group_protected_encoded<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        frame: &[u8],
+        hardware_key_selector: u8,
+    ) -> Result<WifiTxProgress, Esp32s31ApTxError> {
+        self.start_encoded_with_key(
+            hardware,
+            Esp32s31ApTxClass::GroupData,
+            frame,
+            TX_CCMP_MIC_SIZE,
+            hardware_key_selector,
+            Some(LegacyRate::Dsss1MLong),
         )
     }
 

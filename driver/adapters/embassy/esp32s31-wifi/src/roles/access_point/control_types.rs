@@ -99,6 +99,12 @@ pub enum Esp32s31AccessPointControlError {
     ProtocolActionCapacity,
     /// A non-data frame reached the protocol-only active-TX consumer.
     ProtocolFrameRequiresHardware,
+    /// A second successful DTIM beacon edge arrived before the caller-owned
+    /// group queue consumed the first exact advertised prefix.
+    DtimGroupReleaseAlreadyPending,
+    /// Portable TIM accounting and caller-owned pinned leases diverged. The
+    /// adapter drops/rolls back both sides and refuses to guess a release.
+    GroupBufferOwnershipMismatch,
     InvalidBeaconSchedule,
     RxBlockAckSession(RxBlockAckSessionsError),
     RxBlockAckHardware(S31RxBlockAckAgreementError),

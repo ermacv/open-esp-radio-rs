@@ -23,14 +23,15 @@ use open_esp_radio_ieee80211::{
         write_ap_peer_disconnect, write_ht_association_response_frame,
         write_open_authentication_response,
     },
-    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, write_wpa2_ht_beacon},
+    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, dtim, write_wpa2_ht_beacon},
     channel::WifiChannel,
     ssid::WifiSsid,
 };
 use open_esp_radio_wifi_ap::{
-    AccessPointService, ApAssociationCapabilities, ApBufferedUnicastRelease, ApDownlinkDisposition,
-    ApMlmeAction, ApPeerBinding, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerStatus,
-    ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    AccessPointService, ApAssociationCapabilities, ApBufferedGroupRelease,
+    ApBufferedUnicastRelease, ApDownlinkDisposition, ApMlmeAction, ApPeerBinding, ApPeerClose,
+    ApPeerCloseKind, ApPeerPhase, ApPeerStatus, ApPowerSaveAction, ApServiceError, ApWpa2Error,
+    ApWpa2Progress, ApWpa2RetryProgress,
 };
 use open_esp_radio_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
 
@@ -78,6 +79,17 @@ impl From<ApWpa2Error> for Esp32s31ApEngineError {
     fn from(error: ApWpa2Error) -> Self {
         Self::Wpa2(error)
     }
+}
+
+/// One executor-stamped beacon and the exact group queue prefix it advertised.
+///
+/// `dtim_group_frames` is nonzero only when this concrete frame carries
+/// DTIM-count zero and TIM bitmap-control bit zero. It is still only a
+/// publication candidate: the MAC must wait for terminal beacon TX success
+/// before handing this count to the caller-owned group queue.
+pub struct Esp32s31ApBeaconPublication<'frame> {
+    pub frame: &'frame mut [u8],
+    pub dtim_group_frames: u16,
 }
 
 pub struct Esp32s31ApEngineStartFailure<'storage> {
@@ -372,7 +384,19 @@ impl<'storage> Esp32s31ApEngine<'storage> {
     }
 
     pub fn prepare_beacon(&mut self, executor_timestamp_micros: u64) -> Option<&mut [u8]> {
+        self.prepare_beacon_publication(executor_timestamp_micros)
+            .map(|publication| publication.frame)
+    }
+
+    /// Prepare one beacon together with the exact DTIM group prefix encoded in
+    /// that frame. The returned count must not be released until terminal
+    /// beacon publication succeeds.
+    pub fn prepare_beacon_publication(
+        &mut self,
+        executor_timestamp_micros: u64,
+    ) -> Option<Esp32s31ApBeaconPublication<'_>> {
         let group_pending = self.service.group_traffic_pending();
+        let buffered_group_frames = self.service.buffered_group_frames();
         let unicast_tim_bitmap = self.service.unicast_tim_bitmap();
         let management_sequence = self.service.next_management_sequence();
         let beacon = self.beacon.prepare(
@@ -386,7 +410,17 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             self.observer
                 .observe(Esp32s31ApEngineObservationEvent::BeaconPrepared);
         }
-        beacon
+        let frame = beacon?;
+        let (tim_offset, dtim_count, _) = dtim(frame)?;
+        let group_indicated = dtim_count == 0 && frame.get(tim_offset + 4).copied()? & 1 != 0;
+        Some(Esp32s31ApBeaconPublication {
+            frame,
+            dtim_group_frames: if group_indicated {
+                buffered_group_frames
+            } else {
+                0
+            },
+        })
     }
 
     pub const fn next_beacon_delay(&self, now_micros: u32) -> Option<(u32, u32)> {
@@ -961,6 +995,10 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         Ok(self.service.downlink_disposition(peer)?)
     }
 
+    pub fn group_downlink_disposition(&self) -> ApDownlinkDisposition {
+        self.service.group_downlink_disposition()
+    }
+
     pub fn commit_buffered_unicast(&mut self, peer: [u8; 6]) -> Result<u16, Esp32s31ApEngineError> {
         Ok(self.service.commit_buffered_unicast(peer)?)
     }
@@ -1007,11 +1045,31 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         Ok(self.service.commit_buffered_group()?)
     }
 
+    pub fn begin_buffered_group_release(
+        &mut self,
+    ) -> Result<Option<ApBufferedGroupRelease>, Esp32s31ApEngineError> {
+        Ok(self.service.begin_buffered_group_release()?)
+    }
+
+    pub fn complete_buffered_group_release(
+        &mut self,
+        release: ApBufferedGroupRelease,
+        delivered: bool,
+    ) -> Result<u16, Esp32s31ApEngineError> {
+        Ok(self
+            .service
+            .complete_buffered_group_release(release, delivered)?)
+    }
+
     pub fn complete_buffered_group(
         &mut self,
         delivered: bool,
     ) -> Result<u16, Esp32s31ApEngineError> {
         Ok(self.service.complete_buffered_group(delivered)?)
+    }
+
+    pub fn discard_buffered_groups(&mut self) -> Result<u16, Esp32s31ApEngineError> {
+        Ok(self.service.discard_buffered_groups()?)
     }
 
     #[inline(always)]

@@ -33,7 +33,9 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingPublication {
-    Beacon,
+    Beacon {
+        dtim_group_frames: u16,
+    },
     Authentication,
     Association {
         peer: [u8; 6],
@@ -161,6 +163,11 @@ struct Esp32s31ApMacObserver {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApTxCompletionAction {
     None,
+    /// A concrete DTIM beacon advertising this caller-owned queue prefix
+    /// reached terminal hardware publication success.
+    DtimGroupRelease {
+        advertised_frames: u16,
+    },
     BeginWpa2 {
         peer: [u8; 6],
     },
@@ -341,15 +348,16 @@ where
         H: TxHardware,
     {
         self.require_idle()?;
-        let frame = self
-            .engine
-            .prepare_beacon(now_micros)
-            .ok_or(Esp32s31ApMacError::Engine(Esp32s31ApEngineError::Beacon(
+        let publication = self.engine.prepare_beacon_publication(now_micros).ok_or(
+            Esp32s31ApMacError::Engine(Esp32s31ApEngineError::Beacon(
                 open_esp_radio_ieee80211::beacon::ApBeaconBuildError::InvalidSequenceNumber,
-            )))?;
+            )),
+        )?;
         self.transmit
-            .start_encoded(hardware, Esp32s31ApTxClass::Beacon, frame)?;
-        self.pending = Some(PendingPublication::Beacon);
+            .start_encoded(hardware, Esp32s31ApTxClass::Beacon, publication.frame)?;
+        self.pending = Some(PendingPublication::Beacon {
+            dtim_group_frames: publication.dtim_group_frames,
+        });
         Ok(())
     }
 
@@ -568,12 +576,20 @@ where
                     ApServiceError::UnknownPeer,
                 )))?
         };
-        self.transmit.start_protected_encoded(
-            hardware,
-            &scratch[..encoded.length],
-            encoded.hardware_key_selector,
-            rate,
-        )?;
+        if peer[0] & 1 != 0 {
+            self.transmit.start_group_protected_encoded(
+                hardware,
+                &scratch[..encoded.length],
+                encoded.hardware_key_selector,
+            )?;
+        } else {
+            self.transmit.start_protected_encoded(
+                hardware,
+                &scratch[..encoded.length],
+                encoded.hardware_key_selector,
+                rate,
+            )?;
+        }
         self.pending = Some(PendingPublication::Data { peer });
         Ok(())
     }
@@ -722,7 +738,7 @@ where
             ));
         }
         let action = match pending {
-            PendingPublication::Beacon => {
+            PendingPublication::Beacon { dtim_group_frames } => {
                 #[cfg(any(feature = "diagnostics", test))]
                 {
                     self.observer.observation.beacons_transmitted = self
@@ -731,7 +747,13 @@ where
                         .beacons_transmitted
                         .saturating_add(1);
                 }
-                Esp32s31ApTxCompletionAction::None
+                if dtim_group_frames == 0 {
+                    Esp32s31ApTxCompletionAction::None
+                } else {
+                    Esp32s31ApTxCompletionAction::DtimGroupRelease {
+                        advertised_frames: dtim_group_frames,
+                    }
+                }
             }
             PendingPublication::Authentication => {
                 #[cfg(any(feature = "diagnostics", test))]

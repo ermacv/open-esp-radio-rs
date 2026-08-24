@@ -19,7 +19,7 @@ pub use service::{
     AP_WPA2_SUBSEQUENT_RETRY_INTERVAL_MICROS, AccessPointClientLimit, AccessPointClientLimitError,
     AccessPointInactiveTimeout, AccessPointInactiveTimeoutError, AccessPointPeerStorage,
     AccessPointService, AccessPointServiceStatus, ApAssociationCapabilities,
-    ApBufferedUnicastRelease, ApDownlinkDisposition, ApMlmeAction, ApPeerBinding, ApPeerClose,
-    ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus, ApPowerSaveAction,
-    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    ApBufferedGroupRelease, ApBufferedUnicastRelease, ApDownlinkDisposition, ApMlmeAction,
+    ApPeerBinding, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus,
+    ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
 };

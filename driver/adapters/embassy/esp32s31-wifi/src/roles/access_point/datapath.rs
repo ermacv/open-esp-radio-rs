@@ -625,6 +625,7 @@ where
     }
 
     fn service_stop(&mut self) -> Result<DatapathStopProgress, Self::Error> {
+        self.network_tx.discard_group_buffer(self.control)?;
         let progress = self
             .control
             .service_stop(self.hardware)

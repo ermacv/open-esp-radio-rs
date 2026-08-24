@@ -217,6 +217,25 @@ impl ApBufferedUnicastRelease {
     }
 }
 
+/// Affine reservation for one caller-owned buffered group frame.
+///
+/// The AP service owns only the advertised count. The caller must retain the
+/// exact multicast/broadcast payload before committing it, then bind the
+/// oldest retained payload to this token after a successfully published DTIM
+/// beacon. Dropping the token deliberately leaves the release blocked.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ApBufferedGroupRelease {
+    generation: u32,
+    more_data: bool,
+}
+
+impl ApBufferedGroupRelease {
+    /// Value for the 802.11 More Data bit on this group-addressed MPDU.
+    pub const fn more_data(&self) -> bool {
+        self.more_data
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApPeerCloseKind {
     AuthenticationTimeout,
@@ -500,6 +519,8 @@ pub struct AccessPointService<'peers> {
     associated_count: u8,
     authorized_count: u8,
     buffered_group_frames: u16,
+    buffered_group_release_generation: u32,
+    buffered_group_release_in_flight: bool,
     smallest_operational_tx_block_ack_window: Option<u16>,
 }
 
@@ -531,6 +552,8 @@ impl<'peers> AccessPointService<'peers> {
             associated_count: 0,
             authorized_count: 0,
             buffered_group_frames: 0,
+            buffered_group_release_generation: 0,
+            buffered_group_release_in_flight: false,
             smallest_operational_tx_block_ack_window: None,
         }
     }
@@ -835,6 +858,22 @@ impl<'peers> AccessPointService<'peers> {
         self.buffered_group_frames != 0
     }
 
+    /// Decide ownership of a newly arrived multicast/broadcast frame.
+    ///
+    /// Group traffic is retained whenever at least one authorized station has
+    /// announced PM=1. The caller must retain the payload first and call
+    /// [`Self::commit_buffered_group`] only after that ownership transfer
+    /// succeeds.
+    pub fn group_downlink_disposition(&self) -> ApDownlinkDisposition {
+        if self.storage().peers.iter().flatten().any(|peer| {
+            peer.phase == ApPeerPhase::Authorized && peer.power_state == ApPeerPowerState::Sleeping
+        }) {
+            ApDownlinkDisposition::Buffer
+        } else {
+            ApDownlinkDisposition::TransmitNow
+        }
+    }
+
     /// Commit one multicast/broadcast frame already retained by the caller.
     pub fn commit_buffered_group(&mut self) -> Result<u16, ApServiceError> {
         self.buffered_group_frames = self
@@ -845,9 +884,64 @@ impl<'peers> AccessPointService<'peers> {
         Ok(self.buffered_group_frames)
     }
 
+    /// Reserve the oldest caller-owned group frame after a successful DTIM
+    /// beacon publication advertised group traffic.
+    ///
+    /// The DTIM publication edge is intentionally owned by the caller. This
+    /// service cannot infer it from a timer or from the current TIM phase.
+    pub fn begin_buffered_group_release(
+        &mut self,
+    ) -> Result<Option<ApBufferedGroupRelease>, ApServiceError> {
+        if self.buffered_group_release_in_flight {
+            return Err(ApServiceError::BufferedReleaseInFlight);
+        }
+        if self.buffered_group_frames == 0 {
+            return Ok(None);
+        }
+        self.buffered_group_release_generation = self
+            .buffered_group_release_generation
+            .checked_add(1)
+            .ok_or(ApServiceError::BufferedTrafficOverflow)?;
+        self.buffered_group_release_in_flight = true;
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(Some(ApBufferedGroupRelease {
+            generation: self.buffered_group_release_generation,
+            more_data: self.buffered_group_frames > 1,
+        }))
+    }
+
+    /// Resolve one affine group release after its exact retained payload
+    /// reached terminal hardware publication or was restored to the queue.
+    ///
+    /// `delivered` means terminal publication success. Group-addressed MPDUs
+    /// have no acknowledgement, so this API never manufactures ACK evidence.
+    pub fn complete_buffered_group_release(
+        &mut self,
+        release: ApBufferedGroupRelease,
+        delivered: bool,
+    ) -> Result<u16, ApServiceError> {
+        if !self.buffered_group_release_in_flight
+            || release.generation != self.buffered_group_release_generation
+        {
+            return Err(ApServiceError::StaleBufferedRelease);
+        }
+        if delivered {
+            self.buffered_group_frames = self
+                .buffered_group_frames
+                .checked_sub(1)
+                .ok_or(ApServiceError::NoBufferedTraffic)?;
+        }
+        self.buffered_group_release_in_flight = false;
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(self.buffered_group_frames)
+    }
+
     /// Account one group frame only after its DTIM-scoped publication has
     /// reached a terminal success. Failed frames remain advertised.
     pub fn complete_buffered_group(&mut self, delivered: bool) -> Result<u16, ApServiceError> {
+        if self.buffered_group_release_in_flight {
+            return Err(ApServiceError::BufferedReleaseInFlight);
+        }
         if delivered {
             self.buffered_group_frames = self
                 .buffered_group_frames
@@ -856,6 +950,24 @@ impl<'peers> AccessPointService<'peers> {
             self.status_revision = self.status_revision.wrapping_add(1);
         }
         Ok(self.buffered_group_frames)
+    }
+
+    /// Clear the portable advertisement count at a caller-owned queue-drop
+    /// boundary such as AP stop.
+    ///
+    /// The returned count tells the caller exactly how many retained payload
+    /// owners it must drop. An in-flight affine release must be rolled back
+    /// before this operation is legal.
+    pub fn discard_buffered_groups(&mut self) -> Result<u16, ApServiceError> {
+        if self.buffered_group_release_in_flight {
+            return Err(ApServiceError::BufferedReleaseInFlight);
+        }
+        let discarded = self.buffered_group_frames;
+        if discarded != 0 {
+            self.buffered_group_frames = 0;
+            self.status_revision = self.status_revision.wrapping_add(1);
+        }
+        Ok(discarded)
     }
 
     pub fn status(&self) -> AccessPointServiceStatus {

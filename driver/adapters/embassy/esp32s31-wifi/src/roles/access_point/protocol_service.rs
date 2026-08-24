@@ -59,11 +59,12 @@ where
             rx_addba_in_flight: None,
             protocol_actions: Esp32s31AccessPointProtocolMailbox::new(),
             pending_buffered_releases: PendingApBufferedReleases::new(),
+            pending_dtim_group_frames: None,
             rx_batch_used: 0,
             rx_batch_offset: 0,
             serviced_rx_frames: 0,
             serviced_rx_descriptors: 0,
-            last_terminal_tx_delivered: None,
+            last_terminal_tx_succeeded: None,
             #[cfg(feature = "diagnostics")]
             observer: observation_storage,
             #[cfg(all(test, not(feature = "diagnostics")))]
@@ -107,11 +108,12 @@ where
             rx_addba_in_flight,
             protocol_actions,
             pending_buffered_releases,
+            pending_dtim_group_frames,
             rx_batch_used,
             rx_batch_offset,
             serviced_rx_frames,
             serviced_rx_descriptors,
-            last_terminal_tx_delivered,
+            last_terminal_tx_succeeded,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -131,11 +133,12 @@ where
                     rx_addba_in_flight,
                     protocol_actions,
                     pending_buffered_releases,
+                    pending_dtim_group_frames,
                     rx_batch_used,
                     rx_batch_offset,
                     serviced_rx_frames,
                     serviced_rx_descriptors,
-                    last_terminal_tx_delivered,
+                    last_terminal_tx_succeeded,
                     #[cfg(any(feature = "diagnostics", test))]
                     observer,
                     #[cfg(any(feature = "diagnostics", test))]
@@ -153,11 +156,12 @@ where
                 rx_addba_in_flight,
                 protocol_actions,
                 pending_buffered_releases,
+                pending_dtim_group_frames,
                 rx_batch_used,
                 rx_batch_offset,
                 serviced_rx_frames,
                 serviced_rx_descriptors,
-                last_terminal_tx_delivered,
+                last_terminal_tx_succeeded,
                 #[cfg(any(feature = "diagnostics", test))]
                 observer,
                 #[cfg(any(feature = "diagnostics", test))]
@@ -183,11 +187,12 @@ where
             rx_addba_in_flight,
             protocol_actions,
             pending_buffered_releases,
+            pending_dtim_group_frames,
             rx_batch_used,
             rx_batch_offset,
             serviced_rx_frames,
             serviced_rx_descriptors,
-            last_terminal_tx_delivered,
+            last_terminal_tx_succeeded,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]
@@ -204,11 +209,12 @@ where
             rx_addba_in_flight,
             protocol_actions,
             pending_buffered_releases,
+            pending_dtim_group_frames,
             rx_batch_used,
             rx_batch_offset,
             serviced_rx_frames,
             serviced_rx_descriptors,
-            last_terminal_tx_delivered,
+            last_terminal_tx_succeeded,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(any(feature = "diagnostics", test))]

@@ -98,6 +98,16 @@ pub struct Esp32s31ConnectedStaPlan {
     pub(super) rate_control: Option<StaRateControlAssociation>,
     pub(super) beacon_loss: StaBeaconLossConfig,
     pub(super) power_save: Option<StaPowerSavePolicy>,
+    pub(super) esp_now_rx: Option<EspNowRxEpoch>,
+}
+
+/// Why a portable ESP-NOW RX epoch cannot join this connected STA plan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31ConnectedStaEspNowRxError {
+    StationBinding {
+        connected: BoundVirtualInterface,
+        esp_now: BoundVirtualInterface,
+    },
 }
 
 impl Esp32s31ConnectedStaPlan {
@@ -128,6 +138,36 @@ impl Esp32s31ConnectedStaPlan {
 
     pub const fn power_save(&self) -> Option<StaPowerSavePolicy> {
         self.power_save
+    }
+
+    /// Install peer/duplicate ownership created while this exact STA VIF and
+    /// home channel were active.
+    pub fn enable_esp_now_rx(
+        &mut self,
+        epoch: EspNowRxEpoch,
+    ) -> Result<(), Esp32s31ConnectedStaEspNowRxError> {
+        if epoch.config().station() != self.interface {
+            return Err(Esp32s31ConnectedStaEspNowRxError::StationBinding {
+                connected: self.interface,
+                esp_now: epoch.config().station(),
+            });
+        }
+        self.esp_now_rx = Some(epoch);
+        Ok(())
+    }
+
+    pub const fn esp_now_rx_enabled(&self) -> bool {
+        self.esp_now_rx.is_some()
+    }
+
+    pub const fn esp_now_rx_epoch(&self) -> Option<&EspNowRxEpoch> {
+        self.esp_now_rx.as_ref()
+    }
+
+    /// Remove a not-yet-composed epoch without changing connected Wi-Fi
+    /// policy. A running dispatcher revokes its copy during RX shutdown.
+    pub fn disable_esp_now_rx(&mut self) -> Option<EspNowRxEpoch> {
+        self.esp_now_rx.take()
     }
 
     pub const fn rx_config(&self) -> ConnectedRxConfig {
@@ -376,6 +416,7 @@ impl Esp32s31ConnectedStaPort {
             rate_control: Some(rate_control),
             beacon_loss,
             power_save,
+            esp_now_rx: None,
         })
     }
 }

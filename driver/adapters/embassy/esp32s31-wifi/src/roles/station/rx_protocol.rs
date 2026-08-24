@@ -66,6 +66,8 @@ pub struct ConnectedRxProtocolShutdown {
     pub retained_frames: usize,
     pub reorder_commands: usize,
     pub active_reorders: usize,
+    /// ESP-NOW peer fingerprints explicitly cleared before owner return.
+    pub esp_now_duplicate_entries: usize,
 }
 
 /// Scratch and runtime-arena ownership returned only after a staged RX

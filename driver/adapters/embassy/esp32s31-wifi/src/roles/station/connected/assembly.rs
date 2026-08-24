@@ -202,6 +202,7 @@ where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
+    H: open_esp_radio_esp32s31_wifi_mac::init::StaEspNowRxPolicyHardware,
     F: FnOnce(
         crate::datapath::services::SingleRoleServices<
             H,

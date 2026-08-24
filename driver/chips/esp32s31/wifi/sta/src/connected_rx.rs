@@ -10,12 +10,16 @@ use open_esp_radio_esp32s31_wifi::protected_data_rx::view_protected_data;
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
 use open_esp_radio_ieee80211::{
     data::{DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter},
+    esp_now::{ESP_NOW_ACTION_CATEGORY, ESP_NOW_ORGANIZATION_IDENTIFIER},
     ndpa::{HeNdpa, HeNdpaError},
     station::{StaDisconnect, parse_sta_disconnect},
     station_beacon::{StaBeaconError, StaBeaconObservation, parse_sta_beacon},
     trigger::{TriggerCommonInfo, TriggerParseError, parse_trigger_frame},
 };
-use open_esp_radio_wifi_softmac::MacRxMetadata;
+use open_esp_radio_wifi_softmac::{
+    EspNowPeerId, EspNowReceiveError, EspNowReceivedV1, EspNowRxEpoch, EspNowRxOutcome,
+    MacRxMetadata,
+};
 #[cfg(test)]
 use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence};
 
@@ -85,6 +89,14 @@ pub enum ConnectedRxEvent<'frame> {
         action: BlockAckAction,
         body: &'frame [u8],
     },
+    /// Strictly decoded plaintext ESP-NOW datagram from one configured peer.
+    ///
+    /// `received` borrows the normalized MPDU and must be copied by a sink
+    /// which retains it after [`ConnectedRxSink::publish`] returns.
+    EspNow {
+        received: EspNowReceivedV1<'frame>,
+        metadata: MacRxMetadata<RxPhyInfo>,
+    },
     PeerDisconnect(StaDisconnect),
     Ethernet {
         frame: EthernetFrameParts<'frame>,
@@ -142,6 +154,7 @@ impl ConnectedRxEvent<'_> {
                 addressed_to_station,
             }),
             Self::BlockAck { action, .. } => Some(ConnectedRxControlEvent::BlockAck(action)),
+            Self::EspNow { .. } => None,
             Self::PeerDisconnect(disconnect) => {
                 Some(ConnectedRxControlEvent::PeerDisconnect(disconnect))
             }
@@ -164,6 +177,7 @@ pub enum ConnectedRxError {
     Trigger(TriggerParseError),
     Ndpa(HeNdpaError),
     Beacon(StaBeaconError),
+    EspNow(EspNowReceiveError),
     Data(DataDecapError),
 }
 
@@ -175,6 +189,12 @@ pub enum ConnectedRxDispatch {
     Trigger,
     Ndpa,
     BlockAck,
+    EspNow {
+        peer: EspNowPeerId,
+    },
+    EspNowDuplicate {
+        peer: EspNowPeerId,
+    },
     PeerDisconnect,
     Data {
         ethernet_frames: u8,
@@ -192,6 +212,7 @@ pub enum ConnectedRxDispatch {
 pub struct ConnectedRxDispatcher {
     config: ConnectedRxConfig,
     duplicate_filter: RxDuplicateFilter,
+    esp_now: Option<EspNowRxEpoch>,
 }
 
 impl ConnectedRxDispatcher {
@@ -199,7 +220,35 @@ impl ConnectedRxDispatcher {
         Self {
             config,
             duplicate_filter: RxDuplicateFilter::new(),
+            esp_now: None,
         }
+    }
+
+    /// Attach one already station/channel-qualified ESP-NOW receive epoch.
+    ///
+    /// Hardware receive-policy ownership remains at the connected composition
+    /// boundary. This method only installs portable peer and duplicate state.
+    pub fn with_esp_now_rx_epoch(mut self, epoch: EspNowRxEpoch) -> Self {
+        assert_eq!(
+            epoch.config().station().interface.address,
+            self.config.station_address,
+            "ESP-NOW RX epoch must belong to the connected station"
+        );
+        self.esp_now = Some(epoch);
+        self
+    }
+
+    pub const fn esp_now_rx_epoch(&self) -> Option<&EspNowRxEpoch> {
+        self.esp_now.as_ref()
+    }
+
+    /// Revoke receive authority and clear all duplicate fingerprints before
+    /// this connected owner is returned across a stop/restart boundary.
+    pub fn stop_esp_now_rx_epoch(&mut self) -> usize {
+        let Some(mut epoch) = self.esp_now.take() else {
+            return 0;
+        };
+        epoch.reset_duplicate_history()
     }
 
     pub const fn config(&self) -> ConnectedRxConfig {
@@ -374,19 +423,48 @@ impl ConnectedRxDispatcher {
                     Ok(management) => management,
                     Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
                 };
-                if management.length < 24
-                    || mpdu[4..10] != self.config.station_address
-                    || mpdu[10..16] != self.config.bssid
-                    || mpdu[16..22] != self.config.bssid
-                {
+                if management.length < 24 {
                     return ConnectedRxDispatch::Ignored;
                 }
                 let body = &mpdu[24..management.length];
-                let Some(action) = parse_block_ack_action(body) else {
+                let is_associated_peer_action = mpdu[4..10] == self.config.station_address
+                    && mpdu[10..16] == self.config.bssid
+                    && mpdu[16..22] == self.config.bssid;
+                if is_associated_peer_action && let Some(action) = parse_block_ack_action(body) {
+                    sink.publish(ConnectedRxEvent::BlockAck { action, body });
+                    return ConnectedRxDispatch::BlockAck;
+                }
+
+                // Do not turn every vendor Action frame into an ESP-NOW
+                // rejection. Once the category/OUI identify ESP-NOW, however,
+                // the strict codec owns all remaining bounds, address, BSSID,
+                // type and version failures.
+                if self.esp_now.is_none() || !is_esp_now_action_candidate(body) {
                     return ConnectedRxDispatch::Ignored;
+                }
+                let outcome = match self
+                    .esp_now
+                    .as_mut()
+                    .expect("candidate admission checked ESP-NOW epoch presence")
+                    .receive_v1(&mpdu[..management.length])
+                {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        return rejected(protection, ConnectedRxError::EspNow(error));
+                    }
                 };
-                sink.publish(ConnectedRxEvent::BlockAck { action, body });
-                ConnectedRxDispatch::BlockAck
+                match outcome {
+                    EspNowRxOutcome::Received(received) => {
+                        let metadata = decode_normalized_rx_metadata(raw)
+                            .unwrap_or_else(MacRxMetadata::unavailable);
+                        let peer = received.peer();
+                        sink.publish(ConnectedRxEvent::EspNow { received, metadata });
+                        ConnectedRxDispatch::EspNow { peer }
+                    }
+                    EspNowRxOutcome::Duplicate { peer } => {
+                        ConnectedRxDispatch::EspNowDuplicate { peer }
+                    }
+                }
             }
             DISASSOCIATION_FRAME_CONTROL | DEAUTHENTICATION_FRAME_CONTROL => {
                 let management = match extract_management(
@@ -482,6 +560,13 @@ fn rejected(protection: ConnectedRxProtection, error: ConnectedRxError) -> Conne
     ConnectedRxDispatch::Rejected { protection, error }
 }
 
+fn is_esp_now_action_candidate(body: &[u8]) -> bool {
+    if body.first() != Some(&ESP_NOW_ACTION_CATEGORY) {
+        return false;
+    }
+    body.len() < 4 || body[1..4] == ESP_NOW_ORGANIZATION_IDENTIFIER
+}
+
 fn public_frame_control(raw: &[u8]) -> Option<u16> {
     Some(u16::from_le_bytes([
         *raw.get(PUBLIC_HEADER_SIZE)?,
@@ -557,7 +642,9 @@ mod tests {
                 ConnectedRxEvent::PeerDisconnect(disconnect) => {
                     self.peer_disconnects.push(disconnect);
                 }
-                ConnectedRxEvent::Trigger { .. } | ConnectedRxEvent::Ndpa { .. } => {}
+                ConnectedRxEvent::Trigger { .. }
+                | ConnectedRxEvent::Ndpa { .. }
+                | ConnectedRxEvent::EspNow { .. } => {}
             }
         }
     }

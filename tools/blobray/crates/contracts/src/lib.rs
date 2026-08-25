@@ -3,7 +3,21 @@
 //! The analysis layers carry opaque references to these immutable specs. They
 //! does not know which chip, SDK revision, or runtime lifecycle produced them.
 
+#![forbid(unsafe_code)]
+
 use std::cmp::Ordering;
+
+mod fact;
+mod identity;
+
+pub use fact::{
+    Applicability, ApplicabilityContext, EffectiveFactMetadata, EvidenceReference,
+    FactClassification, FactValidationError, RecordMetadata,
+};
+pub use identity::{
+    ArtifactIdentity, EntityDomain, IdentityError, RevisionOccurrenceId, SemanticEntityId,
+    SemanticPath,
+};
 
 /// Origin of one asserted fact. A hint is navigation metadata only and must
 /// never be promoted to a reviewed hardware meaning by generic analysis.

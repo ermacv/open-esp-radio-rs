@@ -17,9 +17,9 @@ pub struct PhyTxPowerTrackingParameters {
     pub current_temperature: i16,
     pub reference_temperature: i16,
     pub previous_tracking_temperature: i16,
-    pub previous_tracking_adjustment: i8,
-    pub wifi_adjustment: i8,
-    pub bluetooth_ieee802154_adjustment: i8,
+    pub previous_tracking_gain_base: i8,
+    pub wifi_gain_base: i8,
+    pub bluetooth_ieee802154_gain_base: i8,
     pub relaxed_threshold: bool,
 }
 
@@ -38,7 +38,7 @@ pub struct PhyTxPowerTrackingRequest {
 pub struct PhyTxPowerTrackingDecision {
     pub bounded_temperature: i16,
     pub threshold: u8,
-    pub adjustment: i8,
+    pub gain_base: i8,
     pub recomputed: bool,
     pub update_required: bool,
 }
@@ -66,26 +66,26 @@ pub const fn decide_tx_power_tracking(
     let tracking_delta =
         (bounded_temperature as i32).wrapping_sub(parameters.previous_tracking_temperature as i32);
     let recomputed = absolute_temperature(tracking_delta) >= threshold as u32;
-    let adjustment = if recomputed {
+    let gain_base = if recomputed {
         temperature_to_tracking_power(
             bounded_temperature,
             parameters.reference_temperature,
             request.class,
         )
     } else {
-        parameters.previous_tracking_adjustment
+        parameters.previous_tracking_gain_base
     };
-    let published_adjustment = match request.class {
-        PhyCalibrationTrackClass::Wifi => parameters.wifi_adjustment,
-        PhyCalibrationTrackClass::BluetoothIeee802154 => parameters.bluetooth_ieee802154_adjustment,
+    let published_gain_base = match request.class {
+        PhyCalibrationTrackClass::Wifi => parameters.wifi_gain_base,
+        PhyCalibrationTrackClass::BluetoothIeee802154 => parameters.bluetooth_ieee802154_gain_base,
     };
 
     PhyTxPowerTrackingDecision {
         bounded_temperature,
         threshold,
-        adjustment,
+        gain_base,
         recomputed,
-        update_required: request.enabled && adjustment != published_adjustment,
+        update_required: request.enabled && gain_base != published_gain_base,
     }
 }
 
@@ -95,24 +95,24 @@ pub struct PhyTxPowerTrackingOutcome {
     pub class: PhyCalibrationTrackClass,
     pub gain_updated: bool,
     pub tracking_temperature: i16,
-    pub tracking_adjustment: i8,
-    pub wifi_adjustment: i8,
-    pub bluetooth_ieee802154_adjustment: i8,
+    pub tracking_gain_base: i8,
+    pub wifi_gain_base: i8,
+    pub bluetooth_ieee802154_gain_base: i8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxPowerTrackingAction {
     SetBbpllCalibration { enabled: bool },
-    PublishWifiGain { channel: u16, adjustment: i8 },
-    PublishBluetoothIeee802154Gain { adjustment: i8 },
+    PublishWifiGain { channel: u16, gain_base: i8 },
+    PublishBluetoothIeee802154Gain { gain_base: i8 },
     Complete(PhyTxPowerTrackingOutcome),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxPowerTrackingCompletion {
     BbpllCalibrationSet { enabled: bool },
-    WifiGainPublished { channel: u16, adjustment: i8 },
-    BluetoothIeee802154GainPublished { adjustment: i8 },
+    WifiGainPublished { channel: u16, gain_base: i8 },
+    BluetoothIeee802154GainPublished { gain_base: i8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -148,19 +148,19 @@ impl PhyTxPowerTrackingTransition {
             class: request.class,
             gain_updated: decision.update_required,
             tracking_temperature: parameters.previous_tracking_temperature,
-            tracking_adjustment: parameters.previous_tracking_adjustment,
-            wifi_adjustment: parameters.wifi_adjustment,
-            bluetooth_ieee802154_adjustment: parameters.bluetooth_ieee802154_adjustment,
+            tracking_gain_base: parameters.previous_tracking_gain_base,
+            wifi_gain_base: parameters.wifi_gain_base,
+            bluetooth_ieee802154_gain_base: parameters.bluetooth_ieee802154_gain_base,
         };
         let step = if decision.update_required {
             outcome.tracking_temperature = parameters.current_temperature;
-            outcome.tracking_adjustment = decision.adjustment;
+            outcome.tracking_gain_base = decision.gain_base;
             match request.class {
                 PhyCalibrationTrackClass::Wifi => {
-                    outcome.wifi_adjustment = decision.adjustment;
+                    outcome.wifi_gain_base = decision.gain_base;
                 }
                 PhyCalibrationTrackClass::BluetoothIeee802154 => {
-                    outcome.bluetooth_ieee802154_adjustment = decision.adjustment;
+                    outcome.bluetooth_ieee802154_gain_base = decision.gain_base;
                 }
             }
             PhyTxPowerTrackingStep::BbpllOn
@@ -188,11 +188,11 @@ impl PhyTxPowerTrackingTransition {
             PhyTxPowerTrackingStep::PublishGain => match self.request.class {
                 PhyCalibrationTrackClass::Wifi => PhyTxPowerTrackingAction::PublishWifiGain {
                     channel: self.request.wifi_channel,
-                    adjustment: self.decision.adjustment,
+                    gain_base: self.decision.gain_base,
                 },
                 PhyCalibrationTrackClass::BluetoothIeee802154 => {
                     PhyTxPowerTrackingAction::PublishBluetoothIeee802154Gain {
-                        adjustment: self.decision.adjustment,
+                        gain_base: self.decision.gain_base,
                     }
                 }
             },
@@ -214,21 +214,18 @@ impl PhyTxPowerTrackingTransition {
             ) => PhyTxPowerTrackingStep::PublishGain,
             (
                 PhyTxPowerTrackingStep::PublishGain,
-                PhyTxPowerTrackingCompletion::WifiGainPublished {
-                    channel,
-                    adjustment,
-                },
+                PhyTxPowerTrackingCompletion::WifiGainPublished { channel, gain_base },
             ) if self.request.class == PhyCalibrationTrackClass::Wifi
                 && channel == self.request.wifi_channel
-                && adjustment == self.decision.adjustment =>
+                && gain_base == self.decision.gain_base =>
             {
                 PhyTxPowerTrackingStep::BbpllOff
             }
             (
                 PhyTxPowerTrackingStep::PublishGain,
-                PhyTxPowerTrackingCompletion::BluetoothIeee802154GainPublished { adjustment },
+                PhyTxPowerTrackingCompletion::BluetoothIeee802154GainPublished { gain_base },
             ) if self.request.class == PhyCalibrationTrackClass::BluetoothIeee802154
-                && adjustment == self.decision.adjustment =>
+                && gain_base == self.decision.gain_base =>
             {
                 PhyTxPowerTrackingStep::BbpllOff
             }
@@ -253,9 +250,9 @@ mod tests {
         current_temperature: 25,
         reference_temperature: 0,
         previous_tracking_temperature: 0,
-        previous_tracking_adjustment: -3,
-        wifi_adjustment: 1,
-        bluetooth_ieee802154_adjustment: 2,
+        previous_tracking_gain_base: -3,
+        wifi_gain_base: 1,
+        bluetooth_ieee802154_gain_base: 2,
         relaxed_threshold: false,
     };
 
@@ -295,7 +292,7 @@ mod tests {
         assert_eq!(decision.bounded_temperature, 105);
         assert_eq!(decision.threshold, 10);
         assert!(!decision.recomputed);
-        assert_eq!(decision.adjustment, PARAMETERS.previous_tracking_adjustment);
+        assert_eq!(decision.gain_base, PARAMETERS.previous_tracking_gain_base);
 
         let decision = decide_tx_power_tracking(
             request(PhyCalibrationTrackClass::Wifi),
@@ -311,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn disabled_or_equal_adjustment_commits_nothing() {
+    fn disabled_or_equal_gain_base_commits_nothing() {
         let mut disabled = request(PhyCalibrationTrackClass::BluetoothIeee802154);
         disabled.enabled = false;
         let transition = PhyTxPowerTrackingTransition::new(disabled, PARAMETERS);
@@ -322,14 +319,14 @@ mod tests {
                 class: PhyCalibrationTrackClass::BluetoothIeee802154,
                 gain_updated: false,
                 tracking_temperature: PARAMETERS.previous_tracking_temperature,
-                tracking_adjustment: PARAMETERS.previous_tracking_adjustment,
-                wifi_adjustment: PARAMETERS.wifi_adjustment,
-                bluetooth_ieee802154_adjustment: PARAMETERS.bluetooth_ieee802154_adjustment,
+                tracking_gain_base: PARAMETERS.previous_tracking_gain_base,
+                wifi_gain_base: PARAMETERS.wifi_gain_base,
+                bluetooth_ieee802154_gain_base: PARAMETERS.bluetooth_ieee802154_gain_base,
             })
         );
 
         let same = PhyTxPowerTrackingParameters {
-            bluetooth_ieee802154_adjustment: 5,
+            bluetooth_ieee802154_gain_base: 5,
             ..PARAMETERS
         };
         assert_eq!(
@@ -342,9 +339,9 @@ mod tests {
                 class: PhyCalibrationTrackClass::BluetoothIeee802154,
                 gain_updated: false,
                 tracking_temperature: same.previous_tracking_temperature,
-                tracking_adjustment: same.previous_tracking_adjustment,
-                wifi_adjustment: same.wifi_adjustment,
-                bluetooth_ieee802154_adjustment: same.bluetooth_ieee802154_adjustment,
+                tracking_gain_base: same.previous_tracking_gain_base,
+                wifi_gain_base: same.wifi_gain_base,
+                bluetooth_ieee802154_gain_base: same.bluetooth_ieee802154_gain_base,
             })
         );
     }
@@ -355,7 +352,7 @@ mod tests {
             request(PhyCalibrationTrackClass::BluetoothIeee802154),
             PARAMETERS,
         );
-        assert_eq!(transition.decision().adjustment, 5);
+        assert_eq!(transition.decision().gain_base, 5);
         assert_eq!(
             transition.action(),
             PhyTxPowerTrackingAction::SetBbpllCalibration { enabled: true }
@@ -365,11 +362,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             transition.action(),
-            PhyTxPowerTrackingAction::PublishBluetoothIeee802154Gain { adjustment: 5 }
+            PhyTxPowerTrackingAction::PublishBluetoothIeee802154Gain { gain_base: 5 }
         );
         transition
             .advance(
-                PhyTxPowerTrackingCompletion::BluetoothIeee802154GainPublished { adjustment: 5 },
+                PhyTxPowerTrackingCompletion::BluetoothIeee802154GainPublished { gain_base: 5 },
             )
             .unwrap();
         assert_eq!(
@@ -385,9 +382,9 @@ mod tests {
                 class: PhyCalibrationTrackClass::BluetoothIeee802154,
                 gain_updated: true,
                 tracking_temperature: PARAMETERS.current_temperature,
-                tracking_adjustment: 5,
-                wifi_adjustment: PARAMETERS.wifi_adjustment,
-                bluetooth_ieee802154_adjustment: 5,
+                tracking_gain_base: 5,
+                wifi_gain_base: PARAMETERS.wifi_gain_base,
+                bluetooth_ieee802154_gain_base: 5,
             })
         );
     }
@@ -402,7 +399,7 @@ mod tests {
         assert_eq!(
             transition.advance(PhyTxPowerTrackingCompletion::WifiGainPublished {
                 channel: 6,
-                adjustment: 5,
+                gain_base: 5,
             }),
             Err(PhyTxPowerTrackingTransitionError::WrongCompletion)
         );
@@ -410,7 +407,7 @@ mod tests {
             transition.action(),
             PhyTxPowerTrackingAction::PublishWifiGain {
                 channel: 11,
-                adjustment: 5,
+                gain_base: 5,
             }
         );
     }

@@ -215,12 +215,12 @@ identity = "rom::phy_temp_to_power"
 status = "reviewed"
 name = "temperature_to_tracking_power"
 role = "phy.periodic-power-tracking"
-summary = "Converts a wrapping signed 16-bit temperature delta to a signed 8-bit power adjustment using the exact Wi-Fi or Bluetooth/IEEE divisor branches."
+summary = "Converts a wrapping signed 16-bit temperature delta to the signed 8-bit gain base consumed by Wi-Fi or Bluetooth/IEEE gain-table regeneration."
 accept-incomplete = true
 
 [functions.signature]
 return-abi = "i8"
-return-role = "power-adjustment"
+return-role = "tracking-gain-base"
 
 [[functions.signature.arguments]]
 index = 0
@@ -299,7 +299,7 @@ identity = "archive::phy_txpwr_cal_track_new"
 status = "reviewed"
 name = "track_tx_power"
 role = "phy.periodic-power-tracking"
-summary = "Applies the exact temperature hysteresis, retained correction decision, BBPLL boundary and protocol-specific TX-gain publication order; diagnostic formatting is omitted."
+summary = "Applies the exact temperature hysteresis, retained gain-base decision, BBPLL boundary and protocol-specific TX-gain publication order; diagnostic formatting is omitted."
 accept-incomplete = true
 
 [functions.signature]

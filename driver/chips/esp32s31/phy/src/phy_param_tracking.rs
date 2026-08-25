@@ -73,7 +73,8 @@ impl PhyCalibrationTrackClass {
 /// The ROM first truncates the temperature subtraction to a signed 16-bit
 /// delta. Positive deltas use divisor five for both classes; zero and negative
 /// deltas use divisor three for Wi-Fi and four for Bluetooth/IEEE 802.15.4.
-/// The quotient is finally truncated and sign-extended from eight bits.
+/// The quotient becomes the protocol gain-base byte and is finally truncated
+/// and sign-extended from eight bits.
 pub const fn temperature_to_tracking_power(
     current_temperature: i16,
     reference_temperature: i16,

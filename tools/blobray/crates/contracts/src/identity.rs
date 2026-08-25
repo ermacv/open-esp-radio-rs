@@ -709,16 +709,39 @@ mod tests {
     #[test]
     fn every_semantic_entity_has_one_canonical_string_and_serde_form() {
         let values = [
-            SemanticEntityId::function("esp-idf/wifi/rx").unwrap(),
-            SemanticEntityId::register("esp32s31", "radio", 0x600a_0034, 32).unwrap(),
-            SemanticEntityId::register_field("esp32s31", "radio", 0x600a_0034, 32, 8, 3).unwrap(),
-            SemanticEntityId::interface("esp-idf/wifi-osi-v9").unwrap(),
-            SemanticEntityId::interface_slot("esp-idf/wifi-osi-v9", 0x18, 32).unwrap(),
-            SemanticEntityId::logical_type("esp-idf/wifi-buffer").unwrap(),
-            SemanticEntityId::event_route("esp32s31/radio/rx-done").unwrap(),
+            (
+                SemanticEntityId::function("esp-idf/wifi/rx").unwrap(),
+                "function:esp-idf/wifi/rx",
+            ),
+            (
+                SemanticEntityId::register("esp32s31", "radio", 0x600a_0034, 32).unwrap(),
+                "register:esp32s31/radio/0x600a0034/32",
+            ),
+            (
+                SemanticEntityId::register_field("esp32s31", "radio", 0x600a_0034, 32, 8, 3)
+                    .unwrap(),
+                "register-field:esp32s31/radio/0x600a0034/32/8/3",
+            ),
+            (
+                SemanticEntityId::interface("esp-idf/wifi-osi-v9").unwrap(),
+                "interface:esp-idf/wifi-osi-v9",
+            ),
+            (
+                SemanticEntityId::interface_slot("esp-idf/wifi-osi-v9", 0x18, 32).unwrap(),
+                "interface-slot:esp-idf/wifi-osi-v9/0x18/32",
+            ),
+            (
+                SemanticEntityId::logical_type("esp-idf/wifi-buffer").unwrap(),
+                "logical-type:esp-idf/wifi-buffer",
+            ),
+            (
+                SemanticEntityId::event_route("esp32s31/radio/rx-done").unwrap(),
+                "event-route:esp32s31/radio/rx-done",
+            ),
         ];
-        for value in values {
+        for (value, expected) in values {
             let encoded = value.to_string();
+            assert_eq!(encoded, expected);
             assert_eq!(encoded.parse::<SemanticEntityId>().unwrap(), value);
             let json = serde_json::to_string(&value).unwrap();
             assert_eq!(
@@ -800,6 +823,10 @@ mod tests {
             RevisionOccurrenceId::derive(EntityDomain::Function, &[right, left], "text+0x18")
                 .unwrap();
         assert_eq!(first, reversed);
+        assert_eq!(
+            first.sha256(),
+            "f26a87113f30a110f0f75fd9e229cac2ff7feb9ed6878b3dfbbbc15dfb225c15"
+        );
         assert_eq!(
             first.to_string().parse::<RevisionOccurrenceId>().unwrap(),
             first

@@ -44,20 +44,14 @@ const INTERNAL_D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6
 const LOOPBACK_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x67, 0);
 const TXIQ_COVER_ITERATIONS: u8 = 7;
 
-const fn clamp_i16(value: i16, low: i16, high: i16) -> i16 {
-    if value < low {
-        low
-    } else if value > high {
-        high
-    } else {
-        value
-    }
-}
-
 const fn txiq_coefficient(value: i16, kind: PhyTxIqCoefficientKind) -> i8 {
     match kind {
-        PhyTxIqCoefficientKind::Gain => clamp_i16(value, -31, 31) as i8,
-        PhyTxIqCoefficientKind::Phase => clamp_i16(value, -63, 63) as i8,
+        PhyTxIqCoefficientKind::Gain => {
+            crate::phy_math::saturate_signed(value as i32, 31, -31) as i8
+        }
+        PhyTxIqCoefficientKind::Phase => {
+            crate::phy_math::saturate_signed(value as i32, 63, -63) as i8
+        }
     }
 }
 
@@ -1342,7 +1336,8 @@ pub struct PhyTxIqInitTransition {
 
 impl PhyTxIqInitTransition {
     pub const fn new(parameters: PhyTxIqInitParameters) -> Self {
-        let attenuation = clamp_i16(parameters.initial_attenuation as i16, 0, 0x78) as u8;
+        let attenuation =
+            crate::phy_math::saturate_signed(parameters.initial_attenuation as i32, 0x78, 0) as u8;
         let step = if parameters.already_calibrated {
             InitStep::Complete
         } else {

@@ -1637,7 +1637,7 @@ pub extern "C" fn open_phy_trace_save_pbus_reg(
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_ret_abs_temp(input: u32) -> u32 {
-    open_esp_radio_esp32s31_phy::phy_rxiq::phy_abs_temp(input as i32)
+    open_esp_radio_esp32s31_phy::phy_math::absolute_temperature(input as i32)
 }
 
 #[unsafe(no_mangle)]

@@ -94,16 +94,6 @@ const fn select_bluetooth_tx_gain_index(mut index: u8, target: i16) -> u8 {
     index
 }
 
-const fn clamp_i16(value: i16, low: i16, high: i16) -> i16 {
-    if value < low {
-        low
-    } else if value > high {
-        high
-    } else {
-        value
-    }
-}
-
 /// Pure Rust translation of archive `phy_bt_get_tx_tab_new` and complete ROM
 /// children `phy_bt_get_tx_gain`, `phy_get_data_sat` and
 /// `phy_get_tx_gain_value`.
@@ -128,7 +118,7 @@ pub const fn calculate_bluetooth_tx_gain(
     while output_index != 16 {
         let target = base_delta
             .wrapping_sub(parameters.correction as i16)
-            .wrapping_add(clamp_i16(driver, -72, 80));
+            .wrapping_add(crate::phy_math::saturate_signed(driver as i32, 80, -72) as i16);
         table_index = select_bluetooth_tx_gain_index(table_index, target);
         let table_index = table_index as usize;
         image.output_72[output_index] = BLUETOOTH_TX_GAIN_TABLE_LOW[table_index];
@@ -136,7 +126,8 @@ pub const fn calculate_bluetooth_tx_gain(
         let residual = target
             .wrapping_sub(BLUETOOTH_TX_GAIN_TABLE_HIGH[table_index] as i16)
             .wrapping_sub(interpolation);
-        image.output_32[output_index] = clamp_i16(residual, -60, 24) as u8;
+        image.output_32[output_index] =
+            crate::phy_math::saturate_signed(residual as i32, 24, -60) as u8;
         driver = driver.wrapping_add(12);
         output_index += 1;
     }

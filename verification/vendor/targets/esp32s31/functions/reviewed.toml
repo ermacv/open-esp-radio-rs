@@ -241,6 +241,58 @@ abi = "bool"
 role = "tracking-class"
 
 [[functions]]
+profile = "rom-all"
+source = "rom"
+identity = "rom::phy_abs_temp"
+status = "reviewed"
+name = "absolute_temperature"
+role = "phy.shared-arithmetic"
+summary = "Computes the exact wrapping RV32 absolute value used by PHY temperature decisions."
+accept-incomplete = true
+
+[functions.signature]
+return-abi = "u32"
+return-role = "absolute-value"
+
+[[functions.signature.arguments]]
+index = 0
+name = "value"
+abi = "i32"
+role = "signed-value"
+
+[[functions]]
+profile = "rom-all"
+source = "rom"
+identity = "rom::phy_get_data_sat"
+status = "reviewed"
+name = "saturate_signed"
+role = "phy.shared-arithmetic"
+summary = "Selects a signed value inside caller-provided upper and lower bounds while retaining the ROM comparison order."
+accept-incomplete = true
+
+[functions.signature]
+return-abi = "i32"
+return-role = "bounded-value"
+
+[[functions.signature.arguments]]
+index = 0
+name = "value"
+abi = "i32"
+role = "value"
+
+[[functions.signature.arguments]]
+index = 1
+name = "upper"
+abi = "i32"
+role = "upper-bound"
+
+[[functions.signature.arguments]]
+index = 2
+name = "lower"
+abi = "i32"
+role = "lower-bound"
+
+[[functions]]
 profile = "libpp-all"
 source = "libpp"
 identity = "libpp::wdev_record_rx_linked_list"

@@ -153,16 +153,6 @@ const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 const CHANNEL_CODES: [u16; 3] = [1, 6, 11];
 const POWER_CONTROL_MAX_ITERATIONS: u8 = 10;
 
-const fn clamp_i16(value: i16, low: i16, high: i16) -> i16 {
-    if value < low {
-        low
-    } else if value > high {
-        high
-    } else {
-        value
-    }
-}
-
 const fn average_measured_power(first: i16, second: i16) -> i16 {
     let average = first.wrapping_add(second).wrapping_add(4) >> 3;
     if average < 0 { 0 } else { average }
@@ -281,12 +271,12 @@ impl PhyPowerControlPointTransition {
     }
 
     const fn requested_attenuation(&self) -> u8 {
-        clamp_i16(
+        crate::phy_math::saturate_signed(
             self.request
                 .base_attenuation
-                .wrapping_add(self.serial_error),
-            0,
+                .wrapping_add(self.serial_error) as i32,
             100,
+            0,
         ) as u8
     }
 
@@ -346,7 +336,11 @@ impl PhyPowerControlPointTransition {
 
     fn finish_measurement(&mut self, second_power: i16) {
         let measured = average_measured_power(self.first_power, second_power);
-        let error = clamp_i16(measured.wrapping_sub(self.request.target), -24, 24);
+        let error = crate::phy_math::saturate_signed(
+            measured.wrapping_sub(self.request.target) as i32,
+            24,
+            -24,
+        ) as i16;
         let requested = self.requested_attenuation();
         self.attenuation = requested;
 
@@ -719,7 +713,11 @@ impl PhyTxPowerTransition {
     fn finish_points(&mut self) {
         let first = self.power_curve[0] as i16;
         let adjustment = if !self.mode.accepted_first_power().contains(&first) {
-            clamp_i16(first - self.mode.adjustment_center(), -40, 40) as i8
+            crate::phy_math::saturate_signed(
+                (first - self.mode.adjustment_center()) as i32,
+                40,
+                -40,
+            ) as i8
         } else {
             0
         };

@@ -31,16 +31,6 @@ const INTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x12);
 const EXTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x13);
 const EXTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x14);
 
-const fn clamp_i32(value: i32, low: i32, high: i32) -> i32 {
-    if value < low {
-        low
-    } else if value > high {
-        high
-    } else {
-        value
-    }
-}
-
 const fn channel_to_frequency(channel: u16) -> u16 {
     if channel > 14 {
         channel
@@ -478,11 +468,6 @@ fn decode_txiq_coefficient(value: u16) -> [i8; 2] {
     [gain, phase]
 }
 
-/// Exact non-I/O arithmetic of complete rev0 ROM `phy_abs_temp`.
-pub const fn phy_abs_temp(value: i32) -> u32 {
-    value.wrapping_abs() as u32
-}
-
 /// Exact non-I/O arithmetic from `phy_get_txiq_set`.
 pub fn adjusted_txiq_coefficient(
     parameters: PhyRxIqAdjustedTxParameters,
@@ -492,7 +477,8 @@ pub fn adjusted_txiq_coefficient(
     let temperature_delta = parameters
         .current_temperature
         .wrapping_sub(parameters.calibration_temperature) as i16;
-    let absolute_temperature = phy_abs_temp(i32::from(temperature_delta)) as i32;
+    let absolute_temperature =
+        crate::phy_math::absolute_temperature(i32::from(temperature_delta)) as i32;
     let temperature_correction = if absolute_temperature < 20 {
         temperature_delta / -3
     } else {
@@ -524,7 +510,7 @@ pub fn adjusted_txiq_coefficient(
         .wrapping_add(second_high)
         .wrapping_add(i32::from(temperature_correction))
         .wrapping_add(first) as i16 as i32;
-    coefficient[1] = clamp_i32(phase, -60, 60) as i8;
+    coefficient[1] = crate::phy_math::saturate_signed(phase, 60, -60) as i8;
     coefficient
 }
 
@@ -643,8 +629,12 @@ pub enum PhyRxIqCoefficientKind {
 
 const fn bounded_rxiq_coefficient(value: i8, kind: PhyRxIqCoefficientKind) -> i8 {
     match kind {
-        PhyRxIqCoefficientKind::Gain => clamp_i32(value as i32, -31, 31) as i8,
-        PhyRxIqCoefficientKind::Phase => clamp_i32(value as i32, -63, 63) as i8,
+        PhyRxIqCoefficientKind::Gain => {
+            crate::phy_math::saturate_signed(value as i32, 31, -31) as i8
+        }
+        PhyRxIqCoefficientKind::Phase => {
+            crate::phy_math::saturate_signed(value as i32, 63, -63) as i8
+        }
     }
 }
 
@@ -3058,13 +3048,6 @@ impl PhyRxIqInitExternalBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn absolute_temperature_matches_rv32_wrapping_abs() {
-        assert_eq!(phy_abs_temp(0), 0);
-        assert_eq!(phy_abs_temp(-123), 123);
-        assert_eq!(phy_abs_temp(i32::MIN), 0x8000_0000);
-    }
 
     const POWER_REQUEST: PhyRxIqEstimatorRequest = PhyRxIqEstimatorRequest {
         identity: 7,

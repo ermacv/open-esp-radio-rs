@@ -166,6 +166,20 @@ protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_param_tracking::temperature_to_tracking_power"
 
 [[functions]]
+source = "rom"
+symbol = "phy_abs_temp"
+disposition = "direct"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_math::absolute_temperature"
+
+[[functions]]
+source = "rom"
+symbol = "phy_get_data_sat"
+disposition = "direct"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_math::saturate_signed"
+
+[[functions]]
 source = "archive"
 symbol = "phy_bt_txdc_cal_new"
 disposition = "state-transition"

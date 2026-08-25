@@ -541,6 +541,7 @@ pub(crate) fn next(
         scopes.clone()
     };
     let (direct_diagnostic_owners, graphs) = load_research_graphs(session, &graph_scopes)?;
+    let (interface_context, capability_diagnostic) = interface_research_context(session);
     let mut candidates = BTreeMap::new();
     for scope in &scopes {
         add_blockers(
@@ -586,10 +587,24 @@ pub(crate) fn next(
     } else {
         resolve_exact_without_register_workspace(options.finding)
     };
-    add_interfaces(session, &scopes, &graphs, &mut candidates)?;
+    if !exact_register_or_semantic_lookup(options.finding)
+        && let Some(context) = interface_context.as_ref()
+    {
+        add_interfaces(
+            session,
+            &context.observations,
+            &scopes,
+            &graphs,
+            &mut candidates,
+        )?;
+    }
     attach_candidate_co_blockers(&mut candidates);
     let finding_query = apply_finding_query(&mut candidates, options.finding, exact_resolution)?;
-    let (capabilities, capability_diagnostic) = capability_contexts(session);
+    let capabilities = interface_context
+        .as_ref()
+        .map_or_else(CapabilityContexts::new, |context| {
+            capability_contexts(&context.links)
+        });
     let (surfaces, verification_diagnostic) = verification_contexts(&session.project);
     let context = session.context();
     let ranked = candidates
@@ -2026,15 +2041,13 @@ fn parse_register(subject: &str) -> Option<(String, u32, u8)> {
 
 fn add_interfaces(
     session: &ProjectSession,
+    observations: &[crate::application::capability_context::InterfaceResearchObservation],
     scopes: &[&ReviewScopeReport],
     graphs: &BTreeMap<String, ScopeGraph>,
     candidates: &mut BTreeMap<String, Accumulator>,
 ) -> Result<()> {
-    let Some(workspace) = session.interface_workspace()? else {
-        return Ok(());
-    };
-    for observation in workspace.unreviewed_observations() {
-        let id = interface_finding_id(observation);
+    for observation in observations {
+        let id = interface_finding_id(&observation.id);
         for scope in scopes {
             let graph = &graphs[&scope.id];
             let direct = observation
@@ -2064,7 +2077,7 @@ fn add_interfaces(
                         selector: observation.selector.clone(),
                         call_sites: observation.call_sites.clone(),
                     },
-                    consumers: vec![interface_consumer(session, workspace, observation)],
+                    consumers: vec![interface_consumer(session, observation)],
                     evidence_sites: observation.call_sites.iter().copied().collect(),
                     evidence_channels: ["interface".to_owned()].into(),
                     inspection: direct.clone(),
@@ -2082,59 +2095,43 @@ fn add_interfaces(
     Ok(())
 }
 
-fn interface_finding_id(observation: &crate::interfaces::UnreviewedInterfaceObservation) -> String {
-    stable_id("interface", &observation.id)
+fn interface_finding_id(observation_id: &str) -> String {
+    stable_id("interface", observation_id)
 }
 
 fn interface_consumer(
     session: &ProjectSession,
-    workspace: &crate::interfaces::InterfaceWorkspace,
-    observation: &crate::interfaces::UnreviewedInterfaceObservation,
+    observation: &crate::application::capability_context::InterfaceResearchObservation,
 ) -> ResearchConsumer {
     let path = session
         .project
         .interfaces
         .as_ref()
         .and_then(|paths| paths.pack.clone());
-    let contract = workspace
-        .contracts()
-        .iter()
-        .find(|contract| contract.id == observation.contract);
-    let (resolution, anchor, template, diagnostic) = match (path.as_ref(), contract) {
-        (None, _) => (
-            ResearchConsumerResolution::NeedsDestination,
-            None,
-            None,
-            Some("project has no reviewed interface pack".to_owned()),
-        ),
-        (Some(_), None) => (
-            ResearchConsumerResolution::NeedsAnchor,
-            None,
-            None,
-            Some("observation is not bound to a reviewed interface anchor".to_owned()),
-        ),
-        (Some(_), Some(contract)) if contract.template.is_some() => (
-            ResearchConsumerResolution::NeedsAnchor,
-            Some(contract.anchor.clone()),
-            contract.template.clone(),
-            Some("templated anchors cannot accept an unreviewed additive project slot".to_owned()),
-        ),
-        (Some(_), Some(contract)) => (
-            ResearchConsumerResolution::Ready,
-            Some(contract.anchor.clone()),
-            None,
-            None,
-        ),
+    interface_consumer_with_path(path, observation)
+}
+
+fn interface_consumer_with_path(
+    path: Option<PathBuf>,
+    observation: &crate::application::capability_context::InterfaceResearchObservation,
+) -> ResearchConsumer {
+    let resolution = match observation.resolution {
+        crate::application::capability_context::InterfaceObservationResolution::Ready => {
+            ResearchConsumerResolution::Ready
+        }
+        crate::application::capability_context::InterfaceObservationResolution::NeedsAnchor => {
+            ResearchConsumerResolution::NeedsAnchor
+        }
     };
     ResearchConsumer::InterfacePackSlot {
         resolution,
         path,
         contract: observation.contract.clone(),
-        anchor,
-        template,
+        anchor: observation.anchor.clone(),
+        template: observation.template.clone(),
         offset: observation.offset,
         width: observation.width,
-        diagnostic,
+        diagnostic: observation.diagnostic.clone(),
     }
 }
 
@@ -2763,50 +2760,49 @@ fn candidate_domain(kind: &str) -> &'static str {
     }
 }
 
-fn capability_contexts(session: &ProjectSession) -> (CapabilityContexts, Option<String>) {
+fn interface_research_context(
+    session: &ProjectSession,
+) -> (
+    Option<crate::application::capability_context::InterfaceResearchContext>,
+    Option<String>,
+) {
     let Some(paths) = session.project.interfaces.as_ref() else {
-        return (BTreeMap::new(), None);
+        return (None, None);
     };
-    if paths.capability_packs.is_empty() {
-        return (BTreeMap::new(), None);
+    if paths.pack.is_none() {
+        return (None, None);
     }
-    let workspace = match session.interface_workspace() {
-        Ok(Some(workspace)) => workspace,
-        Ok(None) => return (BTreeMap::new(), None),
-        Err(error) => return (BTreeMap::new(), Some(error.to_string())),
-    };
-    let report = match workspace.evaluate_capabilities(&paths.capability_packs) {
-        Ok(report) => report,
-        Err(error) => return (BTreeMap::new(), Some(error.to_string())),
-    };
+    match crate::application::capability_context::load(session) {
+        Ok(context) => (Some(context), None),
+        Err(error) => (None, Some(error.to_string())),
+    }
+}
+
+fn exact_register_or_semantic_lookup(requested: Option<&str>) -> bool {
+    requested.is_some_and(|finding| {
+        parse_register_finding_id(finding).is_some() || finding.starts_with("semantic-")
+    })
+}
+
+fn capability_contexts(
+    links: &[crate::application::capability_context::CapabilityContextLink],
+) -> CapabilityContexts {
     let mut by_function = CapabilityContexts::new();
-    for rule in report.rules {
-        for requirement in rule.requirements {
-            let requirement_kind = match requirement.kind {
-                crate::interfaces::CapabilityMatcherKind::Operation => "operation",
-                crate::interfaces::CapabilityMatcherKind::Effect => "effect",
-                crate::interfaces::CapabilityMatcherKind::Call => "call",
-            };
-            for evidence in requirement.matches {
-                let Some(function) = evidence.function else {
-                    continue;
-                };
-                by_function
-                    .entry(function.clone())
-                    .or_default()
-                    .insert(ResearchCapabilityLink {
-                        rule: rule.id.clone(),
-                        status: rule.status.label().to_owned(),
-                        requirement_kind: requirement_kind.to_owned(),
-                        requirement: requirement.value.clone(),
-                        function,
-                        evidence_site: evidence.site,
-                        relation: ResearchLinkRelation::ExistingEvidenceContext,
-                    });
-            }
-        }
+    for link in links {
+        by_function
+            .entry(link.function.clone())
+            .or_default()
+            .insert(ResearchCapabilityLink {
+                rule: link.rule.clone(),
+                status: link.status.label().to_owned(),
+                requirement_kind: link.requirement_kind.label().to_owned(),
+                requirement: link.requirement.clone(),
+                function: link.function.clone(),
+                evidence_site: link.evidence_site,
+                relation: ResearchLinkRelation::ExistingEvidenceContext,
+            });
     }
-    (by_function, None)
+    by_function
 }
 
 fn verification_contexts(project: &crate::ProjectSpec) -> (VerificationContexts, Option<String>) {
@@ -3474,6 +3470,25 @@ fn next_command(candidate: &Accumulator) -> String {
 mod tests {
     use super::*;
 
+    fn persisted_observation(
+        resolution: crate::application::capability_context::InterfaceObservationResolution,
+    ) -> crate::application::capability_context::InterfaceResearchObservation {
+        crate::application::capability_context::InterfaceResearchObservation {
+            id: "fixture-observation".to_owned(),
+            contract: "fixture-contract".to_owned(),
+            source: "fixture".to_owned(),
+            offset: 4,
+            width: 32,
+            selector: Some("slot".to_owned()),
+            functions: vec!["archive::leaf".to_owned()],
+            call_sites: vec![0x1000],
+            resolution,
+            anchor: Some("fixture-anchor".to_owned()),
+            template: None,
+            diagnostic: None,
+        }
+    }
+
     fn accumulator(id: &str, kind: &str) -> Accumulator {
         Accumulator {
             id: id.to_owned(),
@@ -3496,6 +3511,75 @@ mod tests {
             scopes: ["radio".to_owned()].into(),
             publication_scopes: BTreeSet::new(),
         }
+    }
+
+    #[test]
+    fn persisted_capability_links_project_without_live_evaluation() {
+        use crate::application::capability_context::{
+            CapabilityContextLink, CapabilityContextRequirementKind, CapabilityContextStatus,
+        };
+
+        let call = CapabilityContextLink {
+            function: "archive::leaf".to_owned(),
+            rule: "fixture.radio.ready".to_owned(),
+            status: CapabilityContextStatus::Matched,
+            requirement_kind: CapabilityContextRequirementKind::Call,
+            requirement: "runtime.call".to_owned(),
+            evidence_site: Some(0x1000),
+        };
+        let contexts = capability_contexts(&[call.clone(), call]);
+        let links = &contexts["archive::leaf"];
+        assert_eq!(links.len(), 1);
+        let link = links.first().unwrap();
+        assert_eq!(link.status, "matched");
+        assert_eq!(link.requirement_kind, "call");
+        assert_eq!(link.relation, ResearchLinkRelation::ExistingEvidenceContext);
+    }
+
+    #[test]
+    fn persisted_observation_owns_the_consumer_resolution() {
+        use crate::application::capability_context::InterfaceObservationResolution;
+
+        let ready = interface_consumer_with_path(
+            Some(PathBuf::from("interfaces.toml")),
+            &persisted_observation(InterfaceObservationResolution::Ready),
+        );
+        assert!(matches!(
+            ready,
+            ResearchConsumer::InterfacePackSlot {
+                resolution: ResearchConsumerResolution::Ready,
+                anchor: Some(anchor),
+                diagnostic: None,
+                ..
+            } if anchor == "fixture-anchor"
+        ));
+
+        let mut needs_anchor = persisted_observation(InterfaceObservationResolution::NeedsAnchor);
+        needs_anchor.diagnostic = Some("review anchor".to_owned());
+        let consumer =
+            interface_consumer_with_path(Some(PathBuf::from("interfaces.toml")), &needs_anchor);
+        assert!(matches!(
+            consumer,
+            ResearchConsumer::InterfacePackSlot {
+                resolution: ResearchConsumerResolution::NeedsAnchor,
+                diagnostic: Some(diagnostic),
+                ..
+            } if diagnostic == "review anchor"
+        ));
+    }
+
+    #[test]
+    fn exact_register_queries_skip_unrelated_interface_materialization() {
+        assert!(exact_register_or_semantic_lookup(Some(
+            "register-0x20103100-32"
+        )));
+        assert!(exact_register_or_semantic_lookup(Some(
+            "semantic-ieee802154.event-status.write-semantics"
+        )));
+        assert!(!exact_register_or_semantic_lookup(Some(
+            "research-0123456789abcdef"
+        )));
+        assert!(!exact_register_or_semantic_lookup(None));
     }
 
     fn ranked_candidate(id: &str, benefit: u64, effort: u64, cost: u64) -> ResearchAction {
@@ -4705,20 +4789,9 @@ locator = "RADIO.STATUS"
 
     #[test]
     fn interface_finding_identity_distinguishes_same_slot_in_different_tables() {
-        let observation = |id: &str| crate::interfaces::UnreviewedInterfaceObservation {
-            id: id.to_owned(),
-            contract: "unmatched:btbb:relocated-symbol".to_owned(),
-            source: "btbb".to_owned(),
-            offset: 0x10,
-            width: 32,
-            selector: None,
-            functions: vec!["btbb::worker".to_owned()],
-            call_sites: vec![0x1000],
-        };
-
         assert_ne!(
-            interface_finding_id(&observation("fact-0@+0x10/32")),
-            interface_finding_id(&observation("fact-1@+0x10/32"))
+            interface_finding_id("fact-0@+0x10/32"),
+            interface_finding_id("fact-1@+0x10/32")
         );
     }
 

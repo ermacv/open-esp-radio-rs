@@ -67,7 +67,17 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
         project.ecosystem_packs.first().map(|pack| pack.id.as_str()),
         Some("radio-ecosystem")
     );
-    assert!(project.interfaces.is_some());
+    assert_eq!(
+        project
+            .interfaces
+            .as_ref()
+            .and_then(|interfaces| interfaces.capability_context.as_deref()),
+        Some(
+            directory
+                .join("generated/findings/capability-context.json")
+                .as_path()
+        )
+    );
     assert!(project.functions.is_some());
     assert!(project.code.is_some());
     assert_eq!(project.registers.as_ref().unwrap().owned_ranges, ["radio"]);

@@ -189,6 +189,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         interfaces: Some(InterfaceWorkspacePaths {
             facts: interfaces_path,
             pack: None,
+            capability_context: None,
             semantic_catalogs: Vec::new(),
             capability_packs: Vec::new(),
             interface_template_packs: Vec::new(),

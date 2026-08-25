@@ -95,6 +95,37 @@ remain `incomplete` and unknown vocabulary remains `unknown`. `protocol` and
 qualification claims. Capability packs are tracked project inputs, so editing
 one invalidates interface-dependent analysis/cache generations.
 
+A project that selects a reviewed interface pack must also select exactly one
+generated research projection:
+
+```toml
+[interfaces]
+facts = "generated/findings/interfaces.json"
+pack = "interfaces/reviewed.toml"
+
+[interfaces.capability-context]
+output = "generated/findings/capability-context.json"
+```
+
+This is a hard-cut contract: a reviewed interface pack without
+`[interfaces.capability-context]`, or a capability-context output without that
+pack, is invalid. `project analyze` writes the compact projection only after
+interface validation succeeds; `project analyze --check` reproduces and checks
+the same bytes. The file contains the unresolved interface observations needed
+to form research actions and the existing capability links needed to annotate
+them. It does not replace interface facts, reviewed anchors, semantic catalogs,
+templates, or capability rules, and must not be hand-edited.
+
+The projection carries a freshness digest over the project identity, calling
+convention, compiled-knowledge identity and every relevant interface fact or
+reviewed pack. `research next` rejects a missing, malformed, wrong-project or
+stale projection and does not silently rebuild it from live reviewed inputs.
+It continues with register and other available research domains, emits a
+partial-prioritization diagnostic, and omits interface observations and
+capability links until `project analyze` succeeds. This keeps a fast everyday
+research query from repeatedly loading and evaluating the complete interface
+workspace while preserving a fail-closed knowledge boundary.
+
 Public interface templates use the same composition boundary. The ecosystem
 template owns the versioned layout, slot ABI and semantic IDs; the project
 anchor owns the exact artifact/source/root/container, digest/runtime guards,

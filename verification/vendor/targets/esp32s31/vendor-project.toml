@@ -304,6 +304,9 @@ catalogs = [
 facts = "generated/findings/interfaces.json"
 pack = "interfaces/reviewed.toml"
 
+[interfaces.capability-context]
+output = "generated/findings/capability-context.json"
+
 [functions]
 pack = "functions/reviewed.toml"
 profiles = [

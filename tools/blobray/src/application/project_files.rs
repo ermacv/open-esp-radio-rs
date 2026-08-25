@@ -726,6 +726,15 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
         if let Some(path) = &interfaces.pack {
             push_reviewed(&mut files, "interface-pack", path, &["linked IR"]);
         }
+        if let Some(path) = &interfaces.capability_context {
+            push_generated(
+                &mut files,
+                "interface-capability-context",
+                path,
+                "project analyze",
+                &["research next"],
+            );
+        }
         for (index, path) in interfaces.semantic_catalogs.iter().enumerate() {
             push_reviewed(
                 &mut files,

@@ -299,6 +299,9 @@ catalogs = ["registers/evidence.toml"]
 facts = "generated/interfaces.json"
 pack = "interfaces/reviewed.toml"
 
+[interfaces.capability-context]
+output = "generated/capability-context.json"
+
 [functions]
 pack = "functions/reviewed.toml"
 profiles = ["vendor"]
@@ -456,6 +459,7 @@ locator = "review"
         Some(InterfaceWorkspacePaths {
             facts: directory.join("generated/interfaces.json"),
             pack: Some(directory.join("interfaces/reviewed.toml")),
+            capability_context: Some(directory.join("generated/capability-context.json")),
             semantic_catalogs: vec![],
             capability_packs: vec![],
             interface_template_packs: vec![],
@@ -577,6 +581,37 @@ fn nested_project_errors_retain_the_exact_manifest_value_span() {
         );
         assert_eq!(length, needle.len(), "case {name}: {message}");
         assert!(message.contains(expected_message), "case {name}: {message}");
+    }
+}
+
+#[test]
+fn capability_context_is_an_exact_reviewed_interface_contract() {
+    let cases = [
+        (
+            "missing-capability-context.toml",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\npack = \"reviewed.toml\"\n",
+            "requires [interfaces.capability-context]",
+        ),
+        (
+            "context-without-pack.toml",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\n[interfaces.capability-context]\noutput = \"context.json\"\n",
+            "invalid without a reviewed interface pack",
+        ),
+        (
+            "unknown-context-key.toml",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\npack = \"reviewed.toml\"\n[interfaces.capability-context]\noutput = \"context.json\"\nlegacy = true\n",
+            "unknown project interfaces.capability-context key",
+        ),
+        (
+            "context-output-collision.toml",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\npack = \"reviewed.toml\"\n[interfaces.capability-context]\noutput = \"interfaces.json\"\n",
+            "reuses interface facts path",
+        ),
+    ];
+
+    for (name, input, expected) in cases {
+        let (_, _, error) = invalid_project_span(input, name);
+        assert!(error.contains(expected), "case {name}: {error}");
     }
 }
 

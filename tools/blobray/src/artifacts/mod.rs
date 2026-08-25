@@ -77,6 +77,11 @@ pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
     command: "interfaces discover",
 };
 
+pub(crate) const CAPABILITY_CONTEXT: ArtifactSchema = ArtifactSchema {
+    version: 1,
+    command: "interfaces capability-context",
+};
+
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
     version: 61,
     command: "ir export",
@@ -129,6 +134,13 @@ mod tests {
             ArtifactSchema {
                 version: 7,
                 command: "interfaces discover",
+            }
+        );
+        assert_eq!(
+            CAPABILITY_CONTEXT,
+            ArtifactSchema {
+                version: 1,
+                command: "interfaces capability-context",
             }
         );
         assert_eq!(

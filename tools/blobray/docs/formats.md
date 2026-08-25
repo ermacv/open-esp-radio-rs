@@ -21,6 +21,10 @@ unknown fields.
   `[applicability].artifact-lineages` declares the selected blob lineage and
   `[applicability].artifacts` may bind facts to exact `{ source, sha256 }`
   identities for one vendor revision;
+- `[interfaces.capability-context].output`: the required generated destination
+  whenever `[interfaces].pack` selects reviewed interface knowledge. Declaring
+  either side without the other is invalid; no legacy implicit destination or
+  live-evaluation fallback exists;
 - `[reviewed-knowledge].packs`: sparse accepted assertions and vendor-bug
   records with stable IDs, evidence, provenance and applicability;
   `default-pack` is mandatory for a non-empty list and exactly selects the one
@@ -142,6 +146,17 @@ a fresh schema-2 baseline from the live typed vendor bindings.
 ## Generated outputs
 
 - symbol, MMIO, and interface observations;
+- interface capability context (`schema_version = 1`, command `interfaces
+  capability-context`): a compact, deterministically sorted projection of
+  unresolved interface observations and existing capability links for
+  `research next`. Its `input_digest` covers project identity, calling
+  convention, compiled-knowledge identity, generated interface facts, the
+  reviewed interface pack, and configured semantic, capability and interface
+  template packs. `project analyze` writes it after interface validation and
+  `project analyze --check` verifies it. It is disposable derived state, never
+  reviewed authority; a missing, malformed, wrong-project or stale document is
+  omitted with an explicit partial-prioritization diagnostic rather than being
+  reconstructed from live inputs;
 - canonical derived linked-IR bundles and indexes, including structural loop
   regions, explicitly non-proving counted-loop candidates, and raw-bit
   floating value-flow nodes whose operation and rounding mode remain explicit;

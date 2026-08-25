@@ -332,6 +332,15 @@ pub(super) fn stage_dependencies(
         "interface-validation" => {
             configured("interface-discovery", project.interfaces.is_some());
         }
+        "interface-capability-context" => {
+            configured(
+                "interface-validation",
+                project
+                    .interfaces
+                    .as_ref()
+                    .is_some_and(|interfaces| interfaces.capability_context.is_some()),
+            );
+        }
         _ => {}
     }
     dependencies
@@ -453,5 +462,27 @@ mod tests {
             Some("second profile input is unavailable")
         );
         assert_eq!(report.stages[0].work_items.len(), 1);
+    }
+
+    #[test]
+    fn capability_context_depends_on_reviewed_interface_validation() {
+        let mut project = project();
+        project.interfaces = Some(crate::project::InterfaceWorkspacePaths {
+            facts: "interfaces.json".into(),
+            pack: Some("interfaces.toml".into()),
+            capability_context: Some("capability-context.json".into()),
+            semantic_catalogs: Vec::new(),
+            capability_packs: Vec::new(),
+            interface_template_packs: Vec::new(),
+        });
+
+        assert_eq!(
+            stage_dependencies(
+                &project,
+                ProjectAnalysisInputs::default(),
+                "interface-capability-context",
+            ),
+            ["interface-validation"]
+        );
     }
 }

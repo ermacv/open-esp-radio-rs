@@ -99,6 +99,7 @@ pub(crate) trait ProjectAnalysisOperations {
     fn validate_functions(&mut self, deny_unreviewed: bool) -> Result<StageRun>;
     fn review_functions(&mut self, check: bool) -> Result<StageRun>;
     fn validate_interfaces(&mut self, deny_unreviewed: bool) -> Result<StageRun>;
+    fn build_capability_context(&mut self, check: bool) -> Result<StageRun>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -343,6 +344,21 @@ pub(crate) fn run(
     };
     summary.record("interface-validation", &interface_validation);
 
+    let capability_context = match project.interfaces.as_ref() {
+        None => StageExecution::not_configured("[interfaces] is absent"),
+        Some(paths) if paths.capability_context.is_none() => {
+            StageExecution::not_configured("[interfaces].pack is absent")
+        }
+        Some(_) if interface_validation.blocks_dependants() => {
+            StageExecution::blocked("interface-validation did not complete")
+        }
+        Some(_) => execute("interface-capability-context", generated, || {
+            operations.validate_pipeline_inputs()?;
+            operations.build_capability_context(mode.is_check())
+        }),
+    };
+    summary.record("interface-capability-context", &capability_context);
+
     if summary.succeeded()
         && let Err(error) = operations.validate_pipeline_inputs()
     {
@@ -515,6 +531,10 @@ mod tests {
         fn validate_interfaces(&mut self, _: bool) -> Result<StageRun> {
             self.called("interface-validation")
         }
+
+        fn build_capability_context(&mut self, _: bool) -> Result<StageRun> {
+            self.called("interface-capability-context")
+        }
     }
 
     fn empty_project() -> ProjectSpec {
@@ -584,7 +604,7 @@ mod tests {
         assert!(operations.calls.is_empty());
         assert_eq!(report.status, ProjectAnalysisStatus::NothingConfigured);
         assert!(!report.succeeded());
-        assert_eq!(report.not_configured, 14);
+        assert_eq!(report.not_configured, 15);
         assert_eq!(report.duration_ms, None);
         assert!(
             report
@@ -664,6 +684,7 @@ mod tests {
         project.interfaces = Some(crate::project::InterfaceWorkspacePaths {
             facts: "interfaces.json".into(),
             pack: Some("interfaces.toml".into()),
+            capability_context: Some("capability-context.json".into()),
             semantic_catalogs: Vec::new(),
             capability_packs: Vec::new(),
             interface_template_packs: Vec::new(),
@@ -729,6 +750,7 @@ mod tests {
         project.interfaces = Some(crate::project::InterfaceWorkspacePaths {
             facts: "interfaces.json".into(),
             pack: Some("interfaces.toml".into()),
+            capability_context: Some("capability-context.json".into()),
             semantic_catalogs: Vec::new(),
             capability_packs: Vec::new(),
             interface_template_packs: Vec::new(),
@@ -788,11 +810,52 @@ mod tests {
     }
 
     #[test]
+    fn capability_context_is_blocked_by_failed_interface_validation() {
+        let mut project = empty_project();
+        project.interfaces = Some(crate::project::InterfaceWorkspacePaths {
+            facts: "interfaces.json".into(),
+            pack: Some("interfaces.toml".into()),
+            capability_context: Some("capability-context.json".into()),
+            semantic_catalogs: Vec::new(),
+            capability_packs: Vec::new(),
+            interface_template_packs: Vec::new(),
+        });
+        let mut operations = FakeOperations {
+            fail: Some("interface-validation"),
+            ..FakeOperations::default()
+        };
+
+        let report = run(
+            &project,
+            ProjectAnalysisRequest::default(),
+            ProjectAnalysisInputs {
+                run_spec: true,
+                ..ProjectAnalysisInputs::default()
+            },
+            &mut operations,
+        );
+
+        assert!(operations.calls.contains(&"interface-validation"));
+        assert!(!operations.calls.contains(&"interface-capability-context"));
+        let stage = report
+            .stages
+            .iter()
+            .find(|stage| stage.name == "interface-capability-context")
+            .unwrap();
+        assert_eq!(stage.status, "blocked");
+        assert_eq!(
+            stage.reason.as_deref(),
+            Some("interface-validation did not complete")
+        );
+    }
+
+    #[test]
     fn table_free_event_replay_is_independent_of_interface_and_ir_failures() {
         let mut project = empty_project();
         project.interfaces = Some(crate::project::InterfaceWorkspacePaths {
             facts: "interfaces.json".into(),
             pack: Some("interfaces.toml".into()),
+            capability_context: Some("capability-context.json".into()),
             semantic_catalogs: Vec::new(),
             capability_packs: Vec::new(),
             interface_template_packs: Vec::new(),

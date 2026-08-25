@@ -1,6 +1,7 @@
 //! Stateful, CLI-independent application facade for interactive frontends.
 
 pub(crate) mod artifact_store;
+pub(crate) mod capability_context;
 mod comparison;
 mod error;
 pub(crate) mod event_replay;

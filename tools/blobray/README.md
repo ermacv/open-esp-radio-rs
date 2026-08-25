@@ -105,7 +105,8 @@ launcher below skips Cargo entirely.
    ```
 
 4. When `project files` reports `READY TO ANALYZE`, generate symbol, MMIO,
-   interface, linked-IR, navigation, and review evidence:
+   interface, compact interface research context, linked-IR, navigation, and
+   review evidence:
 
    ```console
    tools/blobray/scripts/run-limited \
@@ -168,6 +169,15 @@ concrete case shows one canonical ordered effect trace with separate vendor
 and Rust instruction provenance; use `--case ID` to select a case and
 `--details` to show all matching cases. `project browse` is the supplementary
 read-only TUI. Both consume the same typed application reports.
+
+Projects with a reviewed interface pack must configure
+`[interfaces.capability-context].output`. `project analyze` generates this
+compact, freshness-bound projection of unresolved interface observations and
+existing capability links so repeated research queries do not reload and
+reevaluate the complete interface workspace. Reviewed packs remain the source
+of truth. If the projection is missing, stale or invalid, `research next`
+reports partial prioritization and omits that interface context; it never falls
+back to live evaluation.
 
 Low-level engines are grouped under `advanced` and are intended for focused
 backend development or debugging, for example:

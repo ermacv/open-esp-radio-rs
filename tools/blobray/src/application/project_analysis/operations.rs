@@ -732,7 +732,9 @@ fn stage_configuration(
             project.functions,
             function_profile_bindings(project)
         ),
-        "interface-validation" => format!("{:?}", project.interfaces),
+        "interface-validation" | "interface-capability-context" => {
+            format!("{:?}", project.interfaces)
+        }
         _ => unreachable!("cache stage revision rejects unknown stage {stage:?}"),
     }
 }
@@ -1436,6 +1438,44 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         self.cache_record(&stage, self.check, &inputs, &[])?;
         Ok(StageRun::Executed)
     }
+
+    fn build_capability_context(&mut self, check: bool) -> Result<StageRun> {
+        let inputs = self.interface_workspace_inputs();
+        let output = self
+            .session
+            .project
+            .interfaces
+            .as_ref()
+            .and_then(|paths| paths.capability_context.as_ref())
+            .ok_or_else(|| crate::Error::invalid("[interfaces.capability-context] is absent"))?
+            .clone();
+        let outputs = vec![output.clone()];
+        if let Some(run) = self.plan_stage(
+            "interface-capability-context",
+            "interface-capability-context",
+            check,
+            &inputs,
+            &outputs,
+        )? {
+            return Ok(run);
+        }
+        if let Some(run) =
+            self.cache_hit("interface-capability-context", check, &inputs, &outputs)?
+        {
+            return Ok(run);
+        }
+        self.ensure_interface_workspace()?;
+        crate::application::capability_context::build_and_publish(
+            self.session,
+            self.interfaces
+                .as_ref()
+                .expect("interface workspace was loaded"),
+            &output,
+            check,
+        )?;
+        self.cache_record("interface-capability-context", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
+    }
 }
 
 fn ensure_stage_input(input: &std::path::Path) -> Result<()> {
@@ -1981,6 +2021,7 @@ mod cache_domain_tests {
         let interfaces = crate::project::InterfaceWorkspacePaths {
             facts: facts.clone(),
             pack: Some(pack.clone()),
+            capability_context: Some(directory.join("capability-context.json")),
             semantic_catalogs: vec![semantics.clone()],
             capability_packs: vec![capabilities.clone()],
             interface_template_packs: vec![templates.clone()],

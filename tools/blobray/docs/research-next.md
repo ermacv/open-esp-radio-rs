@@ -6,6 +6,14 @@ research actions. It does not infer capability evidence or mutate reviewed
 knowledge. Existing reusable-capability matches and verification surfaces are
 reported as context, but never counted as new evidence or as ranking benefit.
 
+Interface observations and capability links come only from the compact
+generated file selected by `[interfaces.capability-context].output`. They are
+not recomputed from live interface facts or reviewed packs during this command.
+The projection is derived, disposable state; its input digest is checked against
+the current interface facts, reviewed interface/semantic/capability/template
+packs, calling convention and compiled-knowledge identity before use. The
+reviewed inputs remain the authority.
+
 Always select the project explicitly when a command is copied outside its
 project directory:
 
@@ -81,6 +89,15 @@ durable consumer remain honestly `inspection-only`. `coverage-blocked` is
 reserved for a typed producer cause and is never inferred from diagnostic
 text. The report never turns a suggested consumer or a revalidation command
 into a completion claim; `completion_claim` is always `false`.
+
+If the configured interface capability context is missing, malformed, belongs
+to another project or has a stale input digest, the report fails closed only
+for that context. It contains no interface-observation actions and no
+capability links derived from those inputs, sets `capability_diagnostic`, and
+the human view prints `PARTIAL PRIORITIZATION`. Register, replacement and other
+available findings remain usable. There is deliberately no live evaluation
+fallback: rerun `project analyze` to regenerate the context before comparing a
+complete cross-domain ranking.
 
 Selection uses explicit lanes: prerequisites first, then ready actions, then
 inspection-only actions, with blocked actions last for machine/detail audit.
@@ -187,3 +204,8 @@ Reproduce the measurements with `--format json` and inspect
 `selection.steps`, `selection.consumed_budget`, prerequisite benefit objects
 and action `score_explanation` objects. Results intentionally change when the
 project's generated analysis or reviewed facts change.
+
+These measurements predate the generated capability-context projection. The
+projection removes repeated full interface-workspace loading and capability
+evaluation from the interactive `research next` path; remeasure the current
+project rather than using the historical timings as a performance target.

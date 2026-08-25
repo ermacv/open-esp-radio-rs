@@ -2,6 +2,7 @@
 
 use std::{
     fs,
+    io::{BufReader, Read},
     path::{Path, PathBuf},
 };
 
@@ -10,8 +11,17 @@ use sha2::{Digest, Sha256};
 use crate::Result;
 
 pub(crate) fn artifact_sha256(path: &Path) -> Result<String> {
-    let bytes = fs::read(path)?;
-    Ok(format!("{:x}", Sha256::digest(&bytes)))
+    let mut input = BufReader::new(fs::File::open(path)?);
+    let mut bytes = [0_u8; 64 * 1024];
+    let mut digest = Sha256::new();
+    loop {
+        let read = input.read(&mut bytes)?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&bytes[..read]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 /// Content identity for either one artifact or a deterministic generated tree.
@@ -59,4 +69,26 @@ fn collect_files(root: &Path, directory: &Path, output: &mut Vec<PathBuf>) -> Re
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_digest_is_stable_across_streaming_boundaries() {
+        let path =
+            std::env::temp_dir().join(format!("blobray-streaming-digest-{}", std::process::id()));
+        let bytes = (0..(64 * 1024 + 17))
+            .map(|index| (index % 251) as u8)
+            .collect::<Vec<_>>();
+        fs::write(&path, &bytes).unwrap();
+
+        assert_eq!(
+            artifact_sha256(&path).unwrap(),
+            format!("{:x}", Sha256::digest(&bytes))
+        );
+
+        fs::remove_file(path).unwrap();
+    }
 }

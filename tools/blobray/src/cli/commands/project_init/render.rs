@@ -68,6 +68,8 @@ output = \"generated/pac/src/generated.rs\"\n\
 \n[interfaces]\n\
 facts = \"generated/findings/interfaces.json\"\n\
 pack = \"interfaces/reviewed.toml\"\n\
+\n[interfaces.capability-context]\n\
+output = \"generated/findings/capability-context.json\"\n\
 \n[functions]\n\
 pack = \"functions/reviewed.toml\"\n\
 profiles = [{profiles}]\n\

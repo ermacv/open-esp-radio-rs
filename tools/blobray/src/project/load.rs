@@ -378,17 +378,59 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             }
             reject_unknown_keys(
                 table,
-                &["facts", "pack"],
+                &["facts", "pack", "capability-context"],
                 "project interfaces",
                 source,
             )?;
+            let pack = optional_table_string(table, "pack", "project interfaces", source)?
+                .map(|path| resolve_path(base, &path));
+            let capability_context = table
+                .get("capability-context")
+                .map(|item| -> Result<PathBuf> {
+                    let context = item.as_table().ok_or_else(|| {
+                        source.item(
+                            Some(item),
+                            "project interfaces.capability-context must be a table",
+                        )
+                    })?;
+                    reject_unknown_keys(
+                        context,
+                        &["output"],
+                        "project interfaces.capability-context",
+                        source,
+                    )?;
+                    Ok(resolve_path(
+                        base,
+                        &table_string(
+                            context,
+                            "output",
+                            "project interfaces.capability-context",
+                            source,
+                        )?,
+                    ))
+                })
+                .transpose()?;
+            if pack.is_none() && capability_context.is_some() {
+                return Err(source.table_key(
+                    table,
+                    "capability-context",
+                    "project interfaces.capability-context is invalid without a reviewed interface pack",
+                ));
+            }
+            if pack.is_some() && capability_context.is_none() {
+                return Err(source.table_key(
+                    table,
+                    "capability-context",
+                    "project interfaces with a reviewed pack requires [interfaces.capability-context]",
+                ));
+            }
             Ok(InterfaceWorkspacePaths {
                 facts: resolve_path(
                     base,
                     &table_string(table, "facts", "project interfaces", source)?,
                 ),
-                pack: optional_table_string(table, "pack", "project interfaces", source)?
-                    .map(|path| resolve_path(base, &path)),
+                pack,
+                capability_context,
                 semantic_catalogs: semantic_catalogs.clone(),
                 capability_packs: capability_packs.clone(),
                 interface_template_packs: interface_template_packs.clone(),
@@ -482,6 +524,110 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     let verification = optional_string(&document, "verification-addon", source)?
         .map(|value| load_verification_addon(&resolve_path(base, &value)))
         .transpose()?;
+    if let Some((interfaces, output)) = interfaces.as_ref().and_then(|paths| {
+        paths
+            .capability_context
+            .as_ref()
+            .map(|output| (paths, output))
+    }) {
+        let mut occupied = Vec::<(&str, &Path)>::new();
+        occupied.push(("interface facts", &interfaces.facts));
+        occupied.extend(
+            interfaces
+                .pack
+                .iter()
+                .map(|path| ("reviewed interface pack", path.as_path())),
+        );
+        occupied.extend(
+            interfaces
+                .semantic_catalogs
+                .iter()
+                .map(|path| ("interface semantic catalog", path.as_path())),
+        );
+        occupied.extend(
+            interfaces
+                .capability_packs
+                .iter()
+                .map(|path| ("interface capability pack", path.as_path())),
+        );
+        occupied.extend(
+            interfaces
+                .interface_template_packs
+                .iter()
+                .map(|path| ("interface template pack", path.as_path())),
+        );
+        if let Some(symbols) = &symbol_inventory {
+            occupied.push(("symbol inventory", &symbols.output));
+        }
+        if let Some(navigation) = &navigation_index {
+            occupied.push(("navigation index", &navigation.output));
+        }
+        if let Some(code) = &code
+            && let Some(path) = &code.review_output
+        {
+            occupied.push(("code review", path));
+        }
+        for profile in &ir_profiles {
+            occupied.push(("linked-IR report", &profile.output));
+        }
+        if let Some(registers) = &registers {
+            occupied.push(("register facts", &registers.facts));
+            occupied.extend(
+                registers
+                    .review_output
+                    .iter()
+                    .map(|path| ("register review", path.as_path())),
+            );
+            occupied.extend(
+                registers
+                    .svd_output
+                    .iter()
+                    .map(|path| ("generated SVD", path.as_path())),
+            );
+            occupied.extend(
+                registers
+                    .pac_raw
+                    .iter()
+                    .map(|spec| ("generated raw PAC", spec.output.as_path())),
+            );
+            occupied.extend(
+                registers
+                    .bindings
+                    .iter()
+                    .map(|spec| ("generated PAC bindings", spec.output.as_path())),
+            );
+            occupied.extend(
+                registers
+                    .api_output
+                    .iter()
+                    .map(|path| ("generated closed PAC domains", path.as_path())),
+            );
+        }
+        if let Some(functions) = &functions
+            && let Some(path) = &functions.review_output
+        {
+            occupied.push(("function review", path));
+        }
+        if let Some(review) = &review {
+            occupied.push(("review scope report", &review.output));
+        }
+        if let Some((owner, _)) = occupied
+            .into_iter()
+            .find(|(_, candidate)| *candidate == output.as_path())
+        {
+            let item = document
+                .get("interfaces")
+                .and_then(Item::as_table)
+                .and_then(|table| table.get("capability-context"));
+            return Err(source.item(
+                item,
+                format!(
+                    "generated interface capability context {} reuses {owner} path",
+                    output.display()
+                ),
+            ));
+        }
+    }
     if let Some(symbols) = &symbol_inventory {
         let conflicting_fact = registers
             .as_ref()

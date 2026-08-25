@@ -1031,7 +1031,12 @@ fn same_file_version(before: &fs::Metadata, after: &fs::Metadata) -> bool {
 }
 
 fn stage_uses_compiled_knowledge(stage: &str) -> bool {
-    stage == "linked-ir" || stage.starts_with("linked-ir:") || stage == "event-replays"
+    stage == "linked-ir"
+        || stage.starts_with("linked-ir:")
+        || stage == "event-replays"
+        || stage == "function-review"
+        || stage == "interface-capability-context"
+        || stage.starts_with("interface-validation:")
 }
 
 fn stage_artifact_schema(stage: &str) -> Option<crate::artifacts::ArtifactSchema> {
@@ -1040,6 +1045,7 @@ fn stage_artifact_schema(stage: &str) -> Option<crate::artifacts::ArtifactSchema
         "symbol-inventory" => Some(crate::artifacts::SYMBOL_INVENTORY),
         "mmio-discovery" => Some(crate::artifacts::MMIO_FACTS),
         "interface-discovery" => Some(crate::artifacts::INTERFACE_FACTS),
+        "interface-capability-context" => Some(crate::artifacts::CAPABILITY_CONTEXT),
         "linked-ir" => Some(crate::artifacts::LINKED_IR),
         "event-replays" => Some(crate::artifacts::REPLAY_EVIDENCE),
         _ => None,
@@ -1060,6 +1066,7 @@ fn stage_revision(stage: &str) -> Result<u32> {
         "symbol-inventory" => Ok(2),
         "mmio-discovery" => Ok(4),
         "interface-discovery" => Ok(7),
+        "interface-capability-context" => Ok(1),
         "linked-ir" => Ok(42),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(5),
@@ -1745,6 +1752,7 @@ mod tests {
             "symbol-inventory",
             "mmio-discovery",
             "interface-discovery",
+            "interface-capability-context",
             "linked-ir",
             "event-replays",
             "review-scopes",
@@ -1781,6 +1789,10 @@ mod tests {
         assert_eq!(
             stage_artifact_schema("interface-discovery"),
             Some(crate::artifacts::INTERFACE_FACTS)
+        );
+        assert_eq!(
+            stage_artifact_schema("interface-capability-context"),
+            Some(crate::artifacts::CAPABILITY_CONTEXT)
         );
         assert_eq!(
             stage_artifact_schema("linked-ir:focused"),
@@ -1893,6 +1905,17 @@ mod tests {
                 .signature("event-replays", "cases=a", inputs)
                 .unwrap()
         );
+        for stage in [
+            "function-review",
+            "interface-validation:deny-unreviewed=false",
+            "interface-capability-context",
+        ] {
+            assert_ne!(
+                first.signature(stage, "interfaces=a", inputs).unwrap(),
+                second.signature(stage, "interfaces=a", inputs).unwrap(),
+                "compiled knowledge did not invalidate {stage}"
+            );
+        }
         assert_eq!(
             first
                 .signature("symbol-inventory", "sources=a", inputs)

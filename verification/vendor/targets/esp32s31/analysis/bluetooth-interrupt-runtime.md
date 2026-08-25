@@ -1,10 +1,12 @@
 # ESP32-S31 Bluetooth interrupt runtime
 
-Verdict: **PARTIAL**. The dynamic suffix of the primary source-124 handler is
-now structurally classified, including its two temporally distinct scheduler
-state observations and the coalesced deferred-work contract. Baseline primary
-bits, NRT bit meanings and the scheduler-list consumer are still unresolved,
-so neither CPU route may yet form a live production interrupt epoch.
+Verdict: **PARTIAL**. The primary source-124 handler now has a lossless typed
+prefix and disposition: its four baseline groups are fatal assertion lanes,
+including the two conditional diagnostic captures, while its dynamic suffix
+retains two temporally distinct scheduler-state observations and a coalesced
+deferred-work contract. NRT source meanings, shared live ISR ownership and the
+scheduler-list consumer remain unresolved, so neither CPU route may yet form a
+live production interrupt epoch.
 
 This review separates silicon behavior from the internal callback and RTOS
 architecture of the reference Controller. The Rust driver does not reproduce
@@ -30,6 +32,7 @@ inputs. The table below records only the distilled control and MMIO facts.
 | Body | Size | Recovered contract |
 | --- | ---: | --- |
 | `r_sym_bt_R9GZfnUbtn7k6mHtoZbv` | 166 bytes | Primary ISR: masked sample, shared W1C acknowledgement, selector 0, dynamic scheduler suffix, selector 1. |
+| `r_sym_bt_hkluARKZBNTcJqMeSNys` | 190 bytes | Primary fault prefix: tests exactly bank-zero source 15 and bank-one sources 9, 8 and 12 in that order; source 9 reads `0x2010_11c8/11cc` and source 12 reads `0x2010_1070` before asserting. |
 | `r_sym_bt_3DcjgYC1ikQrP7jNyXGR` | 58 bytes | Walks a linked callback list in registration order and stops when one callback returns nonzero. |
 | `r_sym_bt_MDZbajeLxsB0cvuBOREd` / `r_sym_bt_2VbAPsx8lRNZdbVZTEOe` | complete leaves | Read `0x2010_105c/1068`, then copy both images to `0x2010_1058/1064`. |
 | `r_sym_bt_6lAYUFKOuBLyOZ6Kvsv5` / `r_sym_bt_Ak3CRkSbyZRhUlneqclG` / `r_sym_bt_DOVkQWJHjeuid8jcS9Bq` | 24 / 24 / 16 bytes | Enable, disable and W1C the exact dynamic images `0x1820_0000` and `0x0000_0008`. |
@@ -40,10 +43,28 @@ inputs. The table below records only the distilled control and MMIO facts.
 
 ## Exact primary suffix
 
-The complete primary handler first preserves the already-implemented
-sample/sample/ack/ack order. After diagnostics it dispatches selector 0 with
-the two-word snapshot, executes the following dynamic branch, then dispatches
-selector 1 with the same snapshot.
+The complete primary handler first preserves the implemented
+sample/sample/ack/ack order. Its next complete function treats precisely the
+baseline enable groups as fault/assert paths:
+
+| Pending source | Diagnostic capture before assertion |
+| --- | --- |
+| bank 0 source 15 | none |
+| bank 1 source 9 | complete words `IRQ_DIAGNOSTIC_DETAIL_0/1` at `0x2010_11c8/11cc` |
+| bank 1 source 8 | none |
+| bank 1 source 12 | complete `IRQ_DIAGNOSTIC_STATE` at `0x2010_1070` |
+
+This is not a Link-Layer completion group. The restricted PAC therefore
+returns one `BluetoothPrimaryInterruptEpoch` containing the lossless masked
+observation plus conditional `BluetoothPrimaryFaultEvidence`. The Bluetooth
+classifier gives any fault lane precedence over simultaneous dynamic bits and
+returns `BluetoothPrimaryControllerFault`; a future live owner must retain it,
+skip ordinary LL work and enter fail-stop/quiesce. Rust does not reproduce the
+vendor assert routine in hard-interrupt context.
+
+Only after that prefix does the reference handler dispatch selector 0 with the
+two-word snapshot, execute the following dynamic branch, then dispatch selector
+1 with the same snapshot.
 
 Dynamic classification is positional because Link-Layer names are not yet
 proven:
@@ -92,11 +113,26 @@ typed events. It must nevertheless preserve every proven MMIO ordering edge,
 the sticky marked-work distinction, and any behavior later shown to be
 required by the scheduler-list consumer.
 
+## NRT default-lifecycle result
+
+The NRT ISR belongs to callback-manager ID `0x4003` and synchronously dispatches
+selector `0x8000_0000` after raw sample/sample/ack/ack. Complete relocation and
+caller review across the pinned BLE, common and classic Controller archives
+found no registration into manager `0x4003`; the manager is initialized with
+an empty list in the default lifecycle. Other managers do have concrete
+registrations, so absence here is not inferred merely from stripped names.
+
+This establishes an acknowledge-only NRT path for the pinned default software
+lifecycle, not a silicon guarantee that source 133 can be removed or that its
+raw bits have no meaning under future features. The open ISR must retain the
+opaque observation and shared-clear ordering. It must not invent LL wakes from
+those bits until a feature-specific producer/consumer path or HIL establishes
+them.
+
 ## Remaining publication blockers
 
-- meanings and required handling of the baseline primary groups
-  `0x0000_8000` / `0x0000_1300`;
-- meanings and mask/re-arm policy for NRT raw status;
+- feature-specific meanings and mask/re-arm policy for NRT raw status beyond
+  the pinned default lifecycle's acknowledge-only callback graph;
 - shared same-core storage that combines the interrupt-bank owner with narrow
   scheduler reference/state access without exposing concurrent PAC aliases;
 - exact scheduler-list drain, abort and completion behavior behind the static

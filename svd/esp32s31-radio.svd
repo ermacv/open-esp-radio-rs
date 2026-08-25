@@ -15601,7 +15601,7 @@ also exposing scheduler, sleep or memory-management state.
         </register>
         <register>
           <name>IRQ_DIAGNOSTIC_STATE</name>
-          <description>Read only on an NRT interrupt error/assert path. Inner state encoding remains unknown.</description>
+          <description>Complete word read by the primary source-124 fault prefix when masked bank-one source 12 is pending. Inner state encoding remains unknown.</description>
           <addressOffset>0x70</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -15615,7 +15615,7 @@ also exposing scheduler, sleep or memory-management state.
         </register>
         <register>
           <name>IRQ_DIAGNOSTIC_DETAIL_0</name>
-          <description>Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown.</description>
+          <description>First complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown.</description>
           <addressOffset>0x1C8</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -15629,7 +15629,7 @@ also exposing scheduler, sleep or memory-management state.
         </register>
         <register>
           <name>IRQ_DIAGNOSTIC_DETAIL_1</name>
-          <description>Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown.</description>
+          <description>Second complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown.</description>
           <addressOffset>0x1CC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>

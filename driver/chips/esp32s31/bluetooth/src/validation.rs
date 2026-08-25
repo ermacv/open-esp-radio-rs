@@ -17,7 +17,7 @@ pub use open_esp_radio_esp32s31_pac::{
 #[inline(always)]
 pub fn capture_and_acknowledge_interrupts() -> [u32; 2] {
     let mut registers = open_esp_radio_esp32s31_pac::validation::bluetooth_interrupt_registers();
-    let observation = registers.capture_and_acknowledge();
+    let observation = registers.capture_nrt_and_acknowledge();
     [observation.bank_0_bits(), observation.bank_1_bits()]
 }
 
@@ -25,7 +25,7 @@ pub fn capture_and_acknowledge_interrupts() -> [u32; 2] {
 #[inline(always)]
 pub fn capture_primary_and_acknowledge_interrupts() -> [u32; 2] {
     let mut registers = open_esp_radio_esp32s31_pac::validation::bluetooth_interrupt_registers();
-    let observation = registers.capture_primary_and_acknowledge();
+    let observation = registers.capture_primary_and_acknowledge().observation();
     [observation.bank_0_bits(), observation.bank_1_bits()]
 }
 

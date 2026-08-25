@@ -18,7 +18,7 @@ The pinned ESP32-S31 PAC names the primary and NRT Controller sources as
 `BT_MAC` and `BT_MAC_INT1`. This adapter compile-checks those identities
 against the reviewed source-124/source-133 policies and contains a
 same-core, level-three bind/disable pair. The primitives remain crate-private:
-shared ISR register storage, baseline/NRT dispatch and scheduler-list drain
+shared ISR register storage, NRT dispatch and scheduler-list drain
 must exist before a public live interrupt epoch can safely enable either
 route. The chip crate already owns the positional dynamic-scheduler classifier
 and RTOS-free coalesced wake state; this adapter does not duplicate them.

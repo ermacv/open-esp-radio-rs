@@ -9,7 +9,7 @@
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
 //! state and shared-register staging are also represented. They are
 //! deliberately not connected across the missing event/list, LP, BLE,
-//! shared-ISR, baseline/NRT classification and live-route prerequisites. No
+//! shared-ISR, NRT feature classification and live-route prerequisites. No
 //! current finite state claims that the complete controller lifecycle, HCI
 //! transport, task or live interrupt epoch has completed.
 
@@ -50,11 +50,11 @@ pub use interrupt::{
 };
 pub use interrupt_classifier::{
     BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
-    BluetoothPrimaryInterruptClassification, BluetoothPrimarySchedulerTrigger,
-    BluetoothSchedulerReferenceAction, BluetoothSchedulerReferenceGate,
-    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkClassifier,
-    BluetoothSchedulerWorkObservation, BluetoothSchedulerWorkerWake,
-    BluetoothSchedulerWorkerWakeClass,
+    BluetoothPrimaryControllerFault, BluetoothPrimaryInterruptClassification,
+    BluetoothPrimarySchedulerTrigger, BluetoothSchedulerReferenceAction,
+    BluetoothSchedulerReferenceGate, BluetoothSchedulerReferenceGateObservation,
+    BluetoothSchedulerWorkClassifier, BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerWorkerWake, BluetoothSchedulerWorkerWakeClass,
 };
 pub use interrupt_wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,

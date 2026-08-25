@@ -170,7 +170,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IRQ_DIAGNOSTIC_STATE"
-description = "Read only on an NRT interrupt error/assert path. Inner state encoding remains unknown."
+description = "Complete word read by the primary source-124 fault prefix when masked bank-one source 12 is pending. Inner state encoding remains unknown."
 addressOffset = 0x70
 size = 32
 access = "read-only"
@@ -181,7 +181,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IRQ_DIAGNOSTIC_DETAIL_0"
-description = "Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown."
+description = "First complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown."
 addressOffset = 0x1C8
 size = 32
 access = "read-only"
@@ -192,7 +192,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IRQ_DIAGNOSTIC_DETAIL_1"
-description = "Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown."
+description = "Second complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown."
 addressOffset = 0x1CC
 size = 32
 access = "read-only"

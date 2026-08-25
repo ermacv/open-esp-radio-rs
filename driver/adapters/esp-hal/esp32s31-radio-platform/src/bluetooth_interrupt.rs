@@ -2,7 +2,7 @@
 //!
 //! This module deliberately stops below a live interrupt epoch. The caller
 //! must first publish the unique Bluetooth interrupt-register owner in stable
-//! ISR storage; baseline primary and raw NRT handling plus the scheduler-list
+//! ISR storage; primary fault/dynamic and raw NRT dispatch plus the scheduler-list
 //! drain remain incomplete. Keeping these primitives crate-private makes the
 //! PAC-to-ESP-HAL mapping compile checked without exposing a safe API that
 //! could enable either route prematurely.

@@ -68,7 +68,8 @@ pub use bluetooth_controller_hal_init::{
 pub use bluetooth_interrupt::{
     BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
     BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
-    BluetoothInterruptObservation, BluetoothInterruptOutputPrepared,
+    BluetoothInterruptOutputPrepared, BluetoothNrtInterruptObservation,
+    BluetoothPrimaryFaultEvidence, BluetoothPrimaryInterruptEpoch,
     BluetoothPrimaryInterruptObservation,
 };
 pub use bluetooth_memory_lists::{

@@ -46,8 +46,8 @@ are recorded in
 | Capability | Status | Current production boundary |
 | --- | --- | --- |
 | Controller interrupt output | PARTIAL | The restricted PAC consumes inactive IRQ ownership, clears and enables the exact primary baseline groups (`0x00008000`, `0x00001300`), publishes the setup strobe at `0x2010_100c`, and reverses the two release strobes before masking those groups. The owner can be staged once for shared primary/NRT ISR storage, but no CPU route is live. |
-| Interrupt observation | PARTIAL | Separate restricted transactions preserve the vendor distinction: primary samples the two masked status banks, NRT samples the two raw banks, and both acknowledge through the shared W1C clear banks. The primary dynamic scheduler groups are positionally classified without assigning LL names; baseline and NRT bits remain opaque. |
-| Interrupt masks and CPU route | PARTIAL | Primary source 124 and NRT source 133 are typed policies on the configured Controller core at level 3; primary requests IRAM residency and NRT does not. The pinned PAC exposes `BT_MAC`/`BT_MAC_INT1`, and the ESP-HAL adapter compile-checks their numbers and binds/disables the pair on one core without raw casts. Baseline and dynamic masks are exact. Shared ISR storage, baseline/NRT meanings and the public live-route lifecycle remain absent. |
+| Interrupt observation | PARTIAL | Separate restricted transactions preserve the vendor distinction: primary samples the two masked status banks, NRT samples the two raw banks, and both acknowledge through the shared W1C clear banks. One primary epoch conditionally captures all diagnostic words for the exact baseline fault lanes before dynamic classification; NRT remains an opaque acknowledge-only observation in the pinned default lifecycle. |
+| Interrupt masks and CPU route | PARTIAL | Primary source 124 and NRT source 133 are typed policies on the configured Controller core at level 3; primary requests IRAM residency and NRT does not. The pinned PAC exposes `BT_MAC`/`BT_MAC_INT1`, and the ESP-HAL adapter compile-checks their numbers and binds/disables the pair on one core without raw casts. Baseline fault and dynamic scheduler masks are exact. Shared ISR storage, feature-specific NRT policy and the public live-route lifecycle remain absent. |
 | Controller timer/scheduler | FAIL-CLOSED | The sixteen-entry scheduler-table prefix is live and the later HAL-init register body is implemented but disconnected. Radio epochs, deadlines, command/status semantics and completion handling are absent. |
 | Controller memory lists | FAIL-CLOSED | Three selectors, two pointer slots and the compressed SRAM address format are reviewed. RX, TX, free and ready meanings, element layouts and lifetimes are unassigned. |
 | In-process HCI handoff | LIVE | An affine split provides a `bt-hci::ExternalController` Host transport and one Controller-worker endpoint. Both bounded directions validate complete packets, apply async backpressure, wake on capacity/data, retain packets across short buffers and leave queues unchanged when waits are cancelled. Packet kinds remain typed; no UART/H4 framing or allocator is used. |
@@ -102,7 +102,7 @@ phone or Trouble is interoperability evidence, not Bluetooth qualification.
 The next on-air transition is blocked by synchronous evidence for:
 
 1. software event/list initialization and the exact static storage layout;
-2. baseline/NRT interrupt meanings, shared same-core ISR ownership, typed
+2. feature-specific NRT interrupt policy, shared same-core ISR ownership, typed
    primary/NRT routing and bounded acknowledgement/wake/re-arm without lost
    work;
 3. RX/TX/free/ready memory-list roles and element ownership;

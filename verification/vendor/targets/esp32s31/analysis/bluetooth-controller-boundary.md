@@ -84,8 +84,12 @@ pinned `esp-pacs` revision now names source 124 as `BT_MAC` and source 133 as
 `BT_MAC_INT1`. The ESP-HAL adapter compile-checks both identities against the
 chip policy, requires level-three handlers, binds the complete pair on one
 core and disables both through the same retained core identity. Those
-primitives stay crate-private until shared ISR storage, baseline/NRT
-classification and the scheduler-list consumer can make a lossless live epoch.
+primitives stay crate-private until shared ISR storage, feature-specific NRT
+policy and the scheduler-list consumer can make a lossless live epoch. The
+baseline groups are no longer opaque completion candidates: the complete
+source-124 prefix proves four fault/assert lanes, and the restricted PAC
+atomically retains their conditional diagnostic words before Bluetooth policy
+selects fail-stop over any simultaneous scheduler wake.
 
 ## Reference Controller implementations
 
@@ -193,7 +197,7 @@ shared hardware lease can be dropped.
 | `btdm_coex_enable` | profile-optional for standalone | A no-op success is source-correct only while the product contract excludes simultaneous Wi-Fi. |
 | `ble_stack_enable` | unresolved composite | Replace protocol activation; recover any remaining radio-engine activation transaction separately. |
 | `r_btdm_hci_fc_enable` | open-controller replacement | Start a fresh bounded HCI credit epoch in Rust. |
-| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline interrupt masks, controller-output strobes, typed two-route ESP-HAL primitives, dynamic scheduler classifier and RTOS-free coalesced wake cell are recovered as separate contracts. Replace the RTOS task with one affine async Controller owner; shared ISR storage, baseline/NRT meanings, live-route composition, scheduler-list drain and timer/scheduler activation remain unresolved. |
+| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline fault masks and diagnostic capture, controller-output strobes, typed two-route ESP-HAL primitives, dynamic scheduler classifier and RTOS-free coalesced wake cell are recovered as separate contracts. Replace the RTOS task with one affine async Controller owner; shared ISR storage, feature-specific NRT policy, live-route composition, scheduler-list drain and timer/scheduler activation remain unresolved. |
 | `r_btdm_task_disable` and `ble_stack_disable` | unresolved composite | Define a stop barrier: mask sources, cancel/abort commands, acknowledge residual status, reclaim every packet, then expose a quiesced owner. |
 
 The public OSAL demonstrates that the vendor implementation uses FreeRTOS
@@ -240,7 +244,7 @@ The implementation order is:
    timer and memory-list pointer geometry; both interrupt snapshot modes,
    baseline setup/teardown masks, route identities, policies and typed ESP-HAL
    pair binding, dynamic scheduler classification and sticky coalesced wake
-   state are finite components, but shared ISR storage, baseline/NRT meanings
+   state are finite components, but shared ISR storage, feature-specific NRT policy
    and scheduler-list drain are still absent, so this is not a live interrupt
    epoch;
 2. recover a hardware-only init transition from the composite task/BLE init
@@ -274,10 +278,11 @@ live.
 
 The decisive gaps are not HCI packet syntax. They are:
 
-- baseline primary and raw NRT interrupt meanings plus their mask/re-arm
-  ordering; the dynamic scheduler branch, source identities, level-3 policy,
-  exact masks, coalesced marker contract and shared clear-bank prefix are no
-  longer unknown, but shared live ISR storage remains absent;
+- feature-specific raw NRT meanings plus their mask/re-arm ordering; the
+  primary fault disposition and diagnostics, dynamic scheduler branch, source
+  identities, level-3 policy, exact masks, coalesced marker contract and shared
+  clear-bank prefix are no longer unknown, but shared live ISR storage remains
+  absent;
 - scheduler command opcodes, completion/error status and timebase semantics;
 - the roles and element layouts of the three compressed-pointer memory-list
   pairs, including alignment and ownership barriers;

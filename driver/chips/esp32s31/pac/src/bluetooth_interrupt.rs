@@ -22,6 +22,11 @@ pub const BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK: u32 = 0x1820_0000;
 /// Second-bank source controlled by the complete dynamic scheduler helper.
 pub const BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK: u32 = 0x0000_0008;
 
+const BLUETOOTH_PRIMARY_FAULT_BANK_0_SOURCE_15: u32 = 1 << 15;
+const BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_8: u32 = 1 << 8;
+const BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_9: u32 = 1 << 9;
+const BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_12: u32 = 1 << 12;
+
 trait BluetoothInterruptControl {
     fn clear_primary_baseline_bank_0(&mut self);
     fn clear_primary_baseline_bank_1(&mut self);
@@ -113,6 +118,62 @@ impl BluetoothInterruptControl for HardwareInterruptControl<'_> {
                 .source_12()
                 .clear_bit()
         });
+    }
+}
+
+trait BluetoothPrimaryInterruptControl {
+    type Bank0Snapshot;
+    type Bank1Snapshot;
+
+    fn sample_bank_0(&mut self) -> Self::Bank0Snapshot;
+    fn sample_bank_1(&mut self) -> Self::Bank1Snapshot;
+    fn bank_0_bits(&self, snapshot: &Self::Bank0Snapshot) -> u32;
+    fn bank_1_bits(&self, snapshot: &Self::Bank1Snapshot) -> u32;
+    fn acknowledge_bank_0(&mut self, snapshot: Self::Bank0Snapshot);
+    fn acknowledge_bank_1(&mut self, snapshot: Self::Bank1Snapshot);
+    fn read_diagnostic_detail_0(&mut self) -> u32;
+    fn read_diagnostic_detail_1(&mut self) -> u32;
+    fn read_diagnostic_state(&mut self) -> u32;
+}
+
+impl BluetoothPrimaryInterruptControl for HardwareInterruptControl<'_> {
+    type Bank0Snapshot = interrupt_snapshot::BluetoothPrimaryInterruptBank0Snapshot;
+    type Bank1Snapshot = interrupt_snapshot::BluetoothPrimaryInterruptBank1Snapshot;
+
+    fn sample_bank_0(&mut self) -> Self::Bank0Snapshot {
+        interrupt_snapshot::sample_bluetooth_primary_interrupt_bank_0(self.bank)
+    }
+
+    fn sample_bank_1(&mut self) -> Self::Bank1Snapshot {
+        interrupt_snapshot::sample_bluetooth_primary_interrupt_bank_1(self.bank)
+    }
+
+    fn bank_0_bits(&self, snapshot: &Self::Bank0Snapshot) -> u32 {
+        snapshot.bits()
+    }
+
+    fn bank_1_bits(&self, snapshot: &Self::Bank1Snapshot) -> u32 {
+        snapshot.bits()
+    }
+
+    fn acknowledge_bank_0(&mut self, snapshot: Self::Bank0Snapshot) {
+        interrupt_snapshot::acknowledge_bluetooth_primary_interrupt_bank_0(self.bank, snapshot);
+    }
+
+    fn acknowledge_bank_1(&mut self, snapshot: Self::Bank1Snapshot) {
+        interrupt_snapshot::acknowledge_bluetooth_primary_interrupt_bank_1(self.bank, snapshot);
+    }
+
+    fn read_diagnostic_detail_0(&mut self) -> u32 {
+        self.bank.irq_diagnostic_detail_0().read().bits()
+    }
+
+    fn read_diagnostic_detail_1(&mut self) -> u32 {
+        self.bank.irq_diagnostic_detail_1().read().bits()
+    }
+
+    fn read_diagnostic_state(&mut self) -> u32 {
+        self.bank.irq_diagnostic_state().read().bits()
     }
 }
 
@@ -216,7 +277,8 @@ impl BluetoothInterruptRegisters {
 /// inferred bit semantics. They are value-only evidence for later event
 /// classification and diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothInterruptObservation {
+#[must_use = "an NRT observation must be retained or explicitly classified"]
+pub struct BluetoothNrtInterruptObservation {
     bank_0: u32,
     bank_1: u32,
 }
@@ -240,7 +302,7 @@ impl BluetoothPrimaryInterruptObservation {
     }
 }
 
-impl BluetoothInterruptObservation {
+impl BluetoothNrtInterruptObservation {
     /// Complete first-bank image observed at `0x2010_1340`.
     pub const fn bank_0_bits(self) -> u32 {
         self.bank_0
@@ -252,26 +314,171 @@ impl BluetoothInterruptObservation {
     }
 }
 
+/// Lossless evidence for every source handled by the primary fault prefix.
+///
+/// Source names remain positional because the complete handler proves their
+/// assertion behavior and conditional diagnostic reads, but not the silicon's
+/// undocumented fault names. The optional words distinguish a pending source
+/// whose captured diagnostic image is zero from a source that was not pending.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPrimaryFaultEvidence {
+    bank_0_sources: u32,
+    bank_1_sources: u32,
+    source_9_details: Option<[u32; 2]>,
+    source_12_state: Option<u32>,
+}
+
+impl BluetoothPrimaryFaultEvidence {
+    const fn from_parts(
+        observation: BluetoothPrimaryInterruptObservation,
+        source_9_details: Option<[u32; 2]>,
+        source_12_state: Option<u32>,
+    ) -> Self {
+        Self {
+            bank_0_sources: observation.bank_0_bits() & BLUETOOTH_PRIMARY_FAULT_BANK_0_SOURCE_15,
+            bank_1_sources: observation.bank_1_bits()
+                & (BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_8
+                    | BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_9
+                    | BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_12),
+            source_9_details,
+            source_12_state,
+        }
+    }
+
+    /// Whether at least one reviewed primary fault source was pending.
+    pub const fn is_fault(self) -> bool {
+        self.bank_0_sources != 0 || self.bank_1_sources != 0
+    }
+
+    /// Pending reviewed fault sources from masked status bank zero.
+    pub const fn bank_0_source_bits(self) -> u32 {
+        self.bank_0_sources
+    }
+
+    /// Pending reviewed fault sources from masked status bank one.
+    pub const fn bank_1_source_bits(self) -> u32 {
+        self.bank_1_sources
+    }
+
+    /// Diagnostic words captured when bank-one source 9 was pending.
+    pub const fn source_9_details(self) -> Option<[u32; 2]> {
+        self.source_9_details
+    }
+
+    /// Diagnostic state captured when bank-one source 12 was pending.
+    pub const fn source_12_state(self) -> Option<u32> {
+        self.source_12_state
+    }
+}
+
+/// One complete primary source-124 sample, acknowledgement and fault capture.
+///
+/// Keeping the observation and fault evidence in one affine value prevents a
+/// live handler from acknowledging baseline fault bits without also retaining
+/// the diagnostic words that are only meaningful in that interrupt epoch.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "a primary interrupt epoch must be classified before returning from the handler"]
+pub struct BluetoothPrimaryInterruptEpoch {
+    observation: BluetoothPrimaryInterruptObservation,
+    fault_evidence: BluetoothPrimaryFaultEvidence,
+}
+
+impl BluetoothPrimaryInterruptEpoch {
+    /// Complete masked status image captured before acknowledgement.
+    pub const fn observation(&self) -> BluetoothPrimaryInterruptObservation {
+        self.observation
+    }
+
+    /// Source and diagnostic evidence captured by the fault prefix.
+    pub const fn fault_evidence(&self) -> BluetoothPrimaryFaultEvidence {
+        self.fault_evidence
+    }
+
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn for_validation(
+        bank_0: u32,
+        bank_1: u32,
+        diagnostic_detail_0: u32,
+        diagnostic_detail_1: u32,
+        diagnostic_state: u32,
+    ) -> Self {
+        let observation = BluetoothPrimaryInterruptObservation { bank_0, bank_1 };
+        let source_9_details = if bank_1 & BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_9 != 0 {
+            Some([diagnostic_detail_0, diagnostic_detail_1])
+        } else {
+            None
+        };
+        let source_12_state = if bank_1 & BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_12 != 0 {
+            Some(diagnostic_state)
+        } else {
+            None
+        };
+        Self {
+            observation,
+            fault_evidence: BluetoothPrimaryFaultEvidence::from_parts(
+                observation,
+                source_9_details,
+                source_12_state,
+            ),
+        }
+    }
+}
+
+fn execute_primary_interrupt_epoch(
+    control: &mut impl BluetoothPrimaryInterruptControl,
+) -> BluetoothPrimaryInterruptEpoch {
+    let bank_0 = control.sample_bank_0();
+    let bank_1 = control.sample_bank_1();
+    let observation = BluetoothPrimaryInterruptObservation {
+        bank_0: control.bank_0_bits(&bank_0),
+        bank_1: control.bank_1_bits(&bank_1),
+    };
+    control.acknowledge_bank_0(bank_0);
+    control.acknowledge_bank_1(bank_1);
+
+    let source_9_details =
+        if observation.bank_1_bits() & BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_9 != 0 {
+            Some([
+                control.read_diagnostic_detail_0(),
+                control.read_diagnostic_detail_1(),
+            ])
+        } else {
+            None
+        };
+    let source_12_state =
+        if observation.bank_1_bits() & BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_12 != 0 {
+            Some(control.read_diagnostic_state())
+        } else {
+            None
+        };
+
+    BluetoothPrimaryInterruptEpoch {
+        observation,
+        fault_evidence: BluetoothPrimaryFaultEvidence::from_parts(
+            observation,
+            source_9_details,
+            source_12_state,
+        ),
+    }
+}
+
 impl BluetoothInterruptRegisters {
     /// Capture and acknowledge one complete primary BT MAC interrupt image.
     ///
     /// This is the exact prefix of the source-124 handler: read masked status
     /// bank zero, read masked status bank one, copy the first image to clear
-    /// bank zero, then copy the second image to clear bank one. Callback
-    /// dispatch, diagnostics and the special scheduler-event suffix remain a
-    /// higher-layer responsibility and are not claimed by this transaction.
-    pub fn capture_primary_and_acknowledge(&mut self) -> BluetoothPrimaryInterruptObservation {
-        let bank = &self.peripherals.bluetooth_interrupt_bank;
-        let bank_0 = interrupt_snapshot::sample_bluetooth_primary_interrupt_bank_0(bank);
-        let bank_1 = interrupt_snapshot::sample_bluetooth_primary_interrupt_bank_1(bank);
-        let observation = BluetoothPrimaryInterruptObservation {
-            bank_0: bank_0.bits(),
-            bank_1: bank_1.bits(),
+    /// bank zero, then copy the second image to clear bank one. The transaction
+    /// then preserves the complete diagnostic prefix: source 9 captures both
+    /// detail words and source 12 captures the state word. Callback dispatch
+    /// and the special scheduler-event suffix remain higher-layer work.
+    pub fn capture_primary_and_acknowledge(&mut self) -> BluetoothPrimaryInterruptEpoch {
+        let mut control = HardwareInterruptControl {
+            bank: &self.peripherals.bluetooth_interrupt_bank,
         };
-        interrupt_snapshot::acknowledge_bluetooth_primary_interrupt_bank_0(bank, bank_0);
-        interrupt_snapshot::acknowledge_bluetooth_primary_interrupt_bank_1(bank, bank_1);
+        let epoch = execute_primary_interrupt_epoch(&mut control);
         device_fence();
-        observation
+        epoch
     }
 
     /// Capture and acknowledge one complete controller interrupt epoch.
@@ -285,14 +492,14 @@ impl BluetoothInterruptRegisters {
     ///
     /// Separate sample or acknowledgement methods are deliberately absent:
     /// the reviewed vendor body does not authorize another ordering.
-    pub fn capture_and_acknowledge(&mut self) -> BluetoothInterruptObservation {
+    pub fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptObservation {
         let bank_0 = interrupt_snapshot::sample_bluetooth_interrupt_bank_0(
             &self.peripherals.bluetooth_interrupt_bank,
         );
         let bank_1 = interrupt_snapshot::sample_bluetooth_interrupt_bank_1(
             &self.peripherals.bluetooth_interrupt_bank,
         );
-        let observation = BluetoothInterruptObservation {
+        let observation = BluetoothNrtInterruptObservation {
             bank_0: bank_0.bits(),
             bank_1: bank_1.bits(),
         };
@@ -316,8 +523,9 @@ mod tests {
     use super::{
         BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
         BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
-        BluetoothInterruptControl, BluetoothInterruptObservation, BluetoothInterruptSetup,
-        BluetoothPrimaryInterruptObservation, execute_primary_prepare, execute_primary_release,
+        BluetoothInterruptControl, BluetoothInterruptSetup, BluetoothNrtInterruptObservation,
+        BluetoothPrimaryInterruptControl, BluetoothPrimaryInterruptObservation,
+        execute_primary_interrupt_epoch, execute_primary_prepare, execute_primary_release,
     };
     use crate::RadioHardware;
 
@@ -335,11 +543,11 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct Recorder {
+    struct SetupRecorder {
         operations: Vec<Operation>,
     }
 
-    impl BluetoothInterruptControl for Recorder {
+    impl BluetoothInterruptControl for SetupRecorder {
         fn clear_primary_baseline_bank_0(&mut self) {
             self.operations.push(Operation::ClearBank0);
         }
@@ -377,9 +585,84 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum EpochOperation {
+        SampleBank0,
+        SampleBank1,
+        AcknowledgeBank0(u32),
+        AcknowledgeBank1(u32),
+        ReadDiagnosticDetail0,
+        ReadDiagnosticDetail1,
+        ReadDiagnosticState,
+    }
+
+    struct EpochRecorder {
+        bank_0: u32,
+        bank_1: u32,
+        operations: Vec<EpochOperation>,
+    }
+
+    impl EpochRecorder {
+        fn new(bank_0: u32, bank_1: u32) -> Self {
+            Self {
+                bank_0,
+                bank_1,
+                operations: Vec::new(),
+            }
+        }
+    }
+
+    impl BluetoothPrimaryInterruptControl for EpochRecorder {
+        type Bank0Snapshot = u32;
+        type Bank1Snapshot = u32;
+
+        fn sample_bank_0(&mut self) -> Self::Bank0Snapshot {
+            self.operations.push(EpochOperation::SampleBank0);
+            self.bank_0
+        }
+
+        fn sample_bank_1(&mut self) -> Self::Bank1Snapshot {
+            self.operations.push(EpochOperation::SampleBank1);
+            self.bank_1
+        }
+
+        fn bank_0_bits(&self, snapshot: &Self::Bank0Snapshot) -> u32 {
+            *snapshot
+        }
+
+        fn bank_1_bits(&self, snapshot: &Self::Bank1Snapshot) -> u32 {
+            *snapshot
+        }
+
+        fn acknowledge_bank_0(&mut self, snapshot: Self::Bank0Snapshot) {
+            self.operations
+                .push(EpochOperation::AcknowledgeBank0(snapshot));
+        }
+
+        fn acknowledge_bank_1(&mut self, snapshot: Self::Bank1Snapshot) {
+            self.operations
+                .push(EpochOperation::AcknowledgeBank1(snapshot));
+        }
+
+        fn read_diagnostic_detail_0(&mut self) -> u32 {
+            self.operations.push(EpochOperation::ReadDiagnosticDetail0);
+            0x1111_0000
+        }
+
+        fn read_diagnostic_detail_1(&mut self) -> u32 {
+            self.operations.push(EpochOperation::ReadDiagnosticDetail1);
+            0x2222_0000
+        }
+
+        fn read_diagnostic_state(&mut self) -> u32 {
+            self.operations.push(EpochOperation::ReadDiagnosticState);
+            0x3333_0000
+        }
+    }
+
     #[test]
-    fn observation_preserves_both_opaque_banks() {
-        let observation = BluetoothInterruptObservation {
+    fn nrt_observation_preserves_both_opaque_banks() {
+        let observation = BluetoothNrtInterruptObservation {
             bank_0: 0xa55a_00f0,
             bank_1: 0x5aa5_f00f,
         };
@@ -418,8 +701,63 @@ mod tests {
     }
 
     #[test]
+    fn primary_epoch_acknowledges_before_conditional_fault_capture() {
+        let mut recorder = EpochRecorder::new(
+            BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK,
+            BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
+        );
+        let epoch = execute_primary_interrupt_epoch(&mut recorder);
+
+        assert_eq!(
+            recorder.operations,
+            [
+                EpochOperation::SampleBank0,
+                EpochOperation::SampleBank1,
+                EpochOperation::AcknowledgeBank0(BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK),
+                EpochOperation::AcknowledgeBank1(BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK),
+                EpochOperation::ReadDiagnosticDetail0,
+                EpochOperation::ReadDiagnosticDetail1,
+                EpochOperation::ReadDiagnosticState,
+            ]
+        );
+        assert_eq!(
+            epoch.fault_evidence().bank_0_source_bits(),
+            BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK
+        );
+        assert_eq!(
+            epoch.fault_evidence().bank_1_source_bits(),
+            BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK
+        );
+        assert_eq!(
+            epoch.fault_evidence().source_9_details(),
+            Some([0x1111_0000, 0x2222_0000])
+        );
+        assert_eq!(epoch.fault_evidence().source_12_state(), Some(0x3333_0000));
+    }
+
+    #[test]
+    fn primary_epoch_skips_diagnostic_reads_without_matching_sources() {
+        let dynamic_only = BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK;
+        let mut recorder = EpochRecorder::new(dynamic_only, 0);
+        let epoch = execute_primary_interrupt_epoch(&mut recorder);
+
+        assert_eq!(
+            recorder.operations,
+            [
+                EpochOperation::SampleBank0,
+                EpochOperation::SampleBank1,
+                EpochOperation::AcknowledgeBank0(dynamic_only),
+                EpochOperation::AcknowledgeBank1(0),
+            ]
+        );
+        assert!(!epoch.fault_evidence().is_fault());
+        assert_eq!(epoch.fault_evidence().source_9_details(), None);
+        assert_eq!(epoch.fault_evidence().source_12_state(), None);
+    }
+
+    #[test]
     fn primary_prepare_preserves_clear_enable_strobe_order() {
-        let mut recorder = Recorder::default();
+        let mut recorder = SetupRecorder::default();
         execute_primary_prepare(&mut recorder);
 
         assert_eq!(
@@ -436,7 +774,7 @@ mod tests {
 
     #[test]
     fn primary_release_preserves_strobe_then_mask_order() {
-        let mut recorder = Recorder::default();
+        let mut recorder = SetupRecorder::default();
         execute_primary_release(&mut recorder);
 
         assert_eq!(

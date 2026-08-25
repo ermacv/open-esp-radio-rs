@@ -37775,17 +37775,17 @@ pub mod bluetooth_interrupt_bank {
         pub const fn irq_status_1(&self) -> &IrqStatus1 {
             &self.irq_status_1
         }
-        #[doc = "0x70 - Read only on an NRT interrupt error/assert path. Inner state encoding remains unknown."]
+        #[doc = "0x70 - Complete word read by the primary source-124 fault prefix when masked bank-one source 12 is pending. Inner state encoding remains unknown."]
         #[inline(always)]
         pub const fn irq_diagnostic_state(&self) -> &IrqDiagnosticState {
             &self.irq_diagnostic_state
         }
-        #[doc = "0x1c8 - Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown."]
+        #[doc = "0x1c8 - First complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown."]
         #[inline(always)]
         pub const fn irq_diagnostic_detail_0(&self) -> &IrqDiagnosticDetail0 {
             &self.irq_diagnostic_detail_0
         }
-        #[doc = "0x1cc - Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown."]
+        #[doc = "0x1cc - Second complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown."]
         #[inline(always)]
         pub const fn irq_diagnostic_detail_1(&self) -> &IrqDiagnosticDetail1 {
             &self.irq_diagnostic_detail_1
@@ -38255,10 +38255,10 @@ pub mod bluetooth_interrupt_bank {
         #[doc = "`read()` method returns [`irq_status_1::R`](R) reader structure"]
         impl crate::Readable for IrqStatus1Spec {}
     }
-    #[doc = "IRQ_DIAGNOSTIC_STATE (r) register accessor: Read only on an NRT interrupt error/assert path. Inner state encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_diagnostic_state`] module"]
+    #[doc = "IRQ_DIAGNOSTIC_STATE (r) register accessor: Complete word read by the primary source-124 fault prefix when masked bank-one source 12 is pending. Inner state encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_diagnostic_state`] module"]
     #[doc(alias = "IRQ_DIAGNOSTIC_STATE")]
     pub type IrqDiagnosticState = crate::Reg<irq_diagnostic_state::IrqDiagnosticStateSpec>;
-    #[doc = "Read only on an NRT interrupt error/assert path. Inner state encoding remains unknown."]
+    #[doc = "Complete word read by the primary source-124 fault prefix when masked bank-one source 12 is pending. Inner state encoding remains unknown."]
     pub mod irq_diagnostic_state {
         #[doc = "Register `IRQ_DIAGNOSTIC_STATE` reader"]
         pub type R = crate::R<IrqDiagnosticStateSpec>;
@@ -38271,7 +38271,7 @@ pub mod bluetooth_interrupt_bank {
                 ImageR::new(self.bits)
             }
         }
-        #[doc = "Read only on an NRT interrupt error/assert path. Inner state encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete word read by the primary source-124 fault prefix when masked bank-one source 12 is pending. Inner state encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IrqDiagnosticStateSpec;
         impl crate::RegisterSpec for IrqDiagnosticStateSpec {
             type Ux = u32;
@@ -38279,10 +38279,10 @@ pub mod bluetooth_interrupt_bank {
         #[doc = "`read()` method returns [`irq_diagnostic_state::R`](R) reader structure"]
         impl crate::Readable for IrqDiagnosticStateSpec {}
     }
-    #[doc = "IRQ_DIAGNOSTIC_DETAIL_0 (r) register accessor: Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_diagnostic_detail_0`] module"]
+    #[doc = "IRQ_DIAGNOSTIC_DETAIL_0 (r) register accessor: First complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_diagnostic_detail_0`] module"]
     #[doc(alias = "IRQ_DIAGNOSTIC_DETAIL_0")]
     pub type IrqDiagnosticDetail0 = crate::Reg<irq_diagnostic_detail_0::IrqDiagnosticDetail0Spec>;
-    #[doc = "Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown."]
+    #[doc = "First complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown."]
     pub mod irq_diagnostic_detail_0 {
         #[doc = "Register `IRQ_DIAGNOSTIC_DETAIL_0` reader"]
         pub type R = crate::R<IrqDiagnosticDetail0Spec>;
@@ -38295,7 +38295,7 @@ pub mod bluetooth_interrupt_bank {
                 ImageR::new(self.bits)
             }
         }
-        #[doc = "Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "First complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IrqDiagnosticDetail0Spec;
         impl crate::RegisterSpec for IrqDiagnosticDetail0Spec {
             type Ux = u32;
@@ -38303,10 +38303,10 @@ pub mod bluetooth_interrupt_bank {
         #[doc = "`read()` method returns [`irq_diagnostic_detail_0::R`](R) reader structure"]
         impl crate::Readable for IrqDiagnosticDetail0Spec {}
     }
-    #[doc = "IRQ_DIAGNOSTIC_DETAIL_1 (r) register accessor: Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_diagnostic_detail_1`] module"]
+    #[doc = "IRQ_DIAGNOSTIC_DETAIL_1 (r) register accessor: Second complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_diagnostic_detail_1`] module"]
     #[doc(alias = "IRQ_DIAGNOSTIC_DETAIL_1")]
     pub type IrqDiagnosticDetail1 = crate::Reg<irq_diagnostic_detail_1::IrqDiagnosticDetail1Spec>;
-    #[doc = "Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown."]
+    #[doc = "Second complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown."]
     pub mod irq_diagnostic_detail_1 {
         #[doc = "Register `IRQ_DIAGNOSTIC_DETAIL_1` reader"]
         pub type R = crate::R<IrqDiagnosticDetail1Spec>;
@@ -38319,7 +38319,7 @@ pub mod bluetooth_interrupt_bank {
                 ImageR::new(self.bits)
             }
         }
-        #[doc = "Complete word read only on an NRT interrupt error/assert path. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Second complete detail word read by the primary source-124 fault prefix when masked bank-one source 9 is pending. Inner encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_diagnostic_detail_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IrqDiagnosticDetail1Spec;
         impl crate::RegisterSpec for IrqDiagnosticDetail1Spec {
             type Ux = u32;

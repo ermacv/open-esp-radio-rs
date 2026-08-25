@@ -29,7 +29,7 @@ pub use pac_api::{
     BoundedDomain, EnumDomain, EnumValue, FeatureModule, FixedRegisterImage, FixedRegisterWrite,
     FlagDomain, FlagValue, FullRegisterWrite, InterruptSnapshot, MaskedRegisterModify,
     OpaqueDomain, OwnershipPartition, PacApiOptions, PacApiPack, RegisterImageWrite,
-    ZeroBasedFieldWrite, ZeroRegisterWrite,
+    SelectedRegisterWrite, ZeroBasedFieldWrite, ZeroRegisterWrite,
 };
 pub use pac_bindings::{generate_pac_binding_index, validate_pac_crate_name};
 pub use register_evidence::{

@@ -359,6 +359,7 @@ mod tests {
     use super::*;
     use crate::{
         Command, Completion, Direction, Envelope, Event, FlowConfig,
+        Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
         Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
         Ieee802154EventStatusProbeStop, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
         StackUsage, StackWatermark, StartupArtifactChunk, StationAttemptFailureReason,
@@ -497,6 +498,114 @@ mod tests {
         let mut observed = None;
         decoder.feed(frame, |result| observed = Some(result.unwrap()));
         assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn ieee802154_ed_event_probe_validation_accepts_only_contract_bounds() {
+        for request in [
+            Ieee802154EdEventProbeRequest {
+                poll_limit: 1,
+                timer_threshold: 1,
+            },
+            Ieee802154EdEventProbeRequest {
+                poll_limit: 1_000_000,
+                timer_threshold: 1_000,
+            },
+        ] {
+            assert!(request.validate());
+        }
+        for request in [
+            Ieee802154EdEventProbeRequest {
+                poll_limit: 0,
+                timer_threshold: 1,
+            },
+            Ieee802154EdEventProbeRequest {
+                poll_limit: 1_000_001,
+                timer_threshold: 1,
+            },
+            Ieee802154EdEventProbeRequest {
+                poll_limit: 1,
+                timer_threshold: 0,
+            },
+            Ieee802154EdEventProbeRequest {
+                poll_limit: 1,
+                timer_threshold: 1_001,
+            },
+        ] {
+            assert!(!request.validate());
+        }
+    }
+
+    #[test]
+    fn ieee802154_ed_event_probe_command_and_evidence_fit_and_round_trip() {
+        let command = Envelope::new(
+            7,
+            3,
+            9,
+            2,
+            Command::ProbeIeee802154EdEvent(Ieee802154EdEventProbeRequest {
+                poll_limit: 1_000_000,
+                timer_threshold: 1_000,
+            }),
+        );
+        let evidence = Envelope::new(
+            7,
+            3,
+            9,
+            2,
+            Event::Ieee802154EdEventProbeCompleted(Ieee802154EdEventProbeEvidence {
+                stop: Ieee802154EdEventProbeStop::Complete,
+                event_enable_before: u16::MAX,
+                event_enable_active: u16::MAX,
+                event_enable_after: u16::MAX,
+                rx_abort_enable_before: u32::MAX,
+                rx_abort_enable_active: u32::MAX,
+                rx_abort_enable_after: u32::MAX,
+                route_core0_before_enable: u32::MAX,
+                route_core1_before_enable: u32::MAX,
+                route_core0_with_events_enabled: u32::MAX,
+                route_core1_with_events_enabled: u32::MAX,
+                route_core0_after_cleanup: u32::MAX,
+                route_core1_after_cleanup: u32::MAX,
+                ed_duration_before: u32::MAX,
+                ed_duration_active: u32::MAX,
+                ed_duration_after: u32::MAX,
+                timer0_value_before_start: u32::MAX,
+                timer0_value_min: u32::MAX,
+                timer0_value_max: u32::MAX,
+                timer0_value_after_stop: u32::MAX,
+                reset_events: u16::MAX,
+                post_enable_events: u16::MAX,
+                observed_events: u16::MAX,
+                terminal_events: u16::MAX,
+                after_ed_done_write_events: u16::MAX,
+                after_timer0_write_events: u16::MAX,
+                cleanup_pending_events: u16::MAX,
+                final_events: u16::MAX,
+                rx_status_at_abort: Some(u32::MAX),
+                stop_command_issued: true,
+                cleanup_clear: true,
+            }),
+        );
+
+        {
+            let mut encoder = FrameEncoder::new();
+            let frame = encoder.encode(&command).unwrap();
+            assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+            let mut decoder = FrameDecoder::new();
+            let mut observed = None;
+            decoder.feed(frame, |result| observed = Some(result.unwrap()));
+            assert_eq!(observed, Some(command));
+        }
+        {
+            let mut encoder = FrameEncoder::new();
+            let frame = encoder.encode(&evidence).unwrap();
+            assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+            let mut decoder = FrameDecoder::new();
+            let mut observed = None;
+            decoder.feed(frame, |result| observed = Some(result.unwrap()));
+            assert_eq!(observed, Some(evidence));
+        }
     }
 
     #[test]

@@ -188,6 +188,7 @@ impl PacApiPack {
         output.push_str(&self.render_full_register_writes());
         output.push_str(&self.render_fixed_register_writes());
         output.push_str(&self.render_fixed_register_images(&device)?);
+        output.push_str(&self.render_selected_register_writes(&device)?);
         output.push_str(&self.render_register_image_writes(&device)?);
         output.push_str(&self.render_zero_based_field_writes(&device)?);
         output.push_str(&self.render_zero_register_writes(&device)?);
@@ -464,6 +465,47 @@ impl PacApiPack {
                      unsafe {{\n\
                          registers.{register}({index_argument}).write_with_zero(|writer|\n\
                              writer.bits(0x{:08x})\n\
+                         );\n\
+                     }}\n\
+                 }}\n",
+                binding.value, binding.peripheral, binding.register, binding.name, binding.value,
+            ));
+        }
+        output.push_str("}\n");
+        Ok(output)
+    }
+
+    fn render_selected_register_writes(&self, device: &Device) -> Result<String> {
+        if self.selected_register_writes.is_empty() {
+            return Ok(String::new());
+        }
+        let mut output = String::from(
+            "\n/// Exact selected-image writes to reviewed SVD read-only registers.\n\
+             pub mod selected_register_write {\n",
+        );
+        for binding in &self.selected_register_writes {
+            let peripheral_type = type_binding_name(&binding.peripheral);
+            let register = member_binding_name(&binding.register);
+            // Keep this lookup here even though validation already rejected
+            // arrays: rendering must remain tied to the same exact SVD target.
+            let register_binding = pac_api_svd::register(
+                device,
+                &binding.name,
+                &binding.peripheral,
+                &binding.register,
+            )?;
+            debug_assert!(!register_binding.is_array);
+            output.push_str(&format!(
+                "\n    /// Publish the reviewed image `0x{:08x}` to `{}`.`{}`.\n\
+                 #[inline]\n\
+                 pub fn {}(registers: &mut crate::{peripheral_type}) {{\n\
+                     // SAFETY: generator validation binds this selected operation\n\
+                     // to one read-only 32-bit SVD register. Reviewed evidence qualifies\n\
+                     // only this literal complete image; no writable PAC API is created.\n\
+                     unsafe {{\n\
+                         core::ptr::write_volatile(\n\
+                             registers.{register}().as_ptr(),\n\
+                             0x{:08x},\n\
                          );\n\
                      }}\n\
                  }}\n",
@@ -841,7 +883,7 @@ mod tests {
     #[test]
     fn renders_target_declared_n_way_ownership_without_legacy_split() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 3
+            r#"schema = 4
 
 [[ownership-partitions]]
 name = "TaskPeripherals"
@@ -890,7 +932,7 @@ peripherals = ["INTERRUPT"]
     #[test]
     fn feature_modules_are_reproducible_and_feature_gated() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 3
+            r#"schema = 4
 
 [[feature-modules]]
 name = "event_status_validation"
@@ -903,6 +945,60 @@ feature = "validation-probes"
             pack.render_feature_modules(),
             "\n#[cfg(feature = \"validation-probes\")]\n#[doc(hidden)]\npub mod event_status_validation;\n"
         );
+    }
+
+    #[test]
+    fn selected_register_write_renders_only_one_literal_volatile_image() {
+        let pack: PacApiPack = toml_edit::de::from_str(
+            r#"schema = 4
+
+[[selected-register-writes]]
+name = "write_event_status_selected_image"
+peripheral = "RADIO"
+register = "EVENT_STATUS"
+value = 64
+sources = ["HIL_EVENT_STATUS_SELECTED_IMAGE"]
+"#,
+        )
+        .unwrap();
+        let svd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name>
+  <version>1</version>
+  <description>selected write fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>RADIO</name>
+      <description>radio</description>
+      <baseAddress>0x40000000</baseAddress>
+      <registers>
+        <register>
+          <name>EVENT_STATUS</name>
+          <description>event status</description>
+          <addressOffset>0</addressOffset>
+          <size>32</size>
+          <access>read-only</access>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>
+"#;
+
+        let source = pack.render_rust(svd).unwrap();
+        assert!(source.contains("pub mod selected_register_write"));
+        assert!(
+            source
+                .contains("pub fn write_event_status_selected_image(registers: &mut crate::Radio)")
+        );
+        assert!(!source.contains("#[cfg(feature"));
+        assert!(source.contains("registers.event_status().as_ptr()"));
+        assert!(source.contains("0x00000040,"));
+        assert!(!source.contains("image: u32"));
+        assert!(!source.contains("write_with_zero"));
+        assert!(!source.contains("writer.bits"));
     }
 
     #[test]
@@ -928,7 +1024,7 @@ feature = "validation-probes"
     #[test]
     fn facade_flags_have_no_public_integer_constructor() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 3
+            r#"schema = 4
 
 [[flag-domains]]
 name = "InterruptMask"

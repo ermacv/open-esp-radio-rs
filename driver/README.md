@@ -45,10 +45,13 @@ module for the former vendor-derived `wdev` naming.
 - `radio`: public requests and typed role lifecycle.
 - `bluetooth/hci`: portable allocation-free async typed HCI transport, closed
   pre-Link-Layer Host bootstrap and cancellation-safe bootstrap worker.
+- `ieee802154`: portable allocation-free frames, normalized metadata,
+  capabilities and finite command/event state transitions.
 - `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.
 - `chips/esp32s31/{pac,registers,hal,phy}`: chip RF/register implementation.
-- `chips/esp32s31/ieee802154/{dma,irq,mac}`: non-operational fixed-frame
-  ownership, quiesced interrupt semantics and pure control transitions for the
+- `chips/esp32s31/ieee802154/{dma,irq,mac,runtime}`: non-operational
+  fixed-frame ownership, quiesced interrupt semantics, pure control
+  transitions and an affine executor-neutral composition boundary for the
   source-reviewed S31 MAC.
 - `chips/esp32s31/wifi/{dma,mac,sta,ap}`: ESP32-S31 Wi-Fi backend.
 - `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
@@ -150,9 +153,11 @@ Bluetooth/BLE and IEEE 802.15.4 are not operational public runtime features.
 The IEEE 802.15.4 HAL exposes finite whole-radio typestates only through an
 interrupt-masked static MAC policy; it cannot construct an operational radio.
 Its isolated DMA and IRQ leaves likewise own storage and pure semantics, not a
-live hardware route. The isolated MAC leaf describes non-executable start
-intents and validates already sampled event batches; it cannot issue a command
-or acknowledge hardware status. Bluetooth/BLE likewise have no operational
+live hardware route. The isolated MAC leaf describes start intents and
+validates already sampled event batches. Its executor-neutral runtime can
+execute those intents only through a sealed semantic backend; no ESP32-S31
+production backend can yet construct that capability, issue a command or
+acknowledge hardware status. Bluetooth/BLE likewise have no operational
 runtime service. Its source-owned affine HCI transport provides bounded async
 Host/Controller handoff. Its closed bootstrap table handles only non-radio Host
 configuration and rejects Link-Layer commands; neither is ESP32-S31 Controller

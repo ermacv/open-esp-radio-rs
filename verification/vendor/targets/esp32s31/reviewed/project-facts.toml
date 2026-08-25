@@ -31,8 +31,16 @@ id = "ieee802154.event-status.write-semantics"
 subject = "register:esp32s31/cpu/0x20103064/32"
 kind = "hardware-write-semantics"
 value = "unknown"
-note = "The vendor accessor performs a masked self-write; W1C or another clear contract is not proven."
+note = "The complete fourteen-bit register remains unknown. The 2026-08-25 reset-isolated timer record qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-event-status.md observed on three boots that writing TIMER0 mask 0x0100 cleared only TIMER0 while retaining latched TIMER1 0x0200, and that writing TIMER1 mask 0x0200 then cleared TIMER1. The independent ED record qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-ed-event.md observed on three boots that ED_START terminated with ED_DONE, writing ED_DONE mask 0x0040 retained TIMER0 0x0100, and writing TIMER0 then produced zero. No semantics are assigned to other event bits or concurrent same-bit arrival."
 
 [[assertions.evidence]]
 source = "esp-idf-7b9cc1ac-ieee802154-common-ll"
 locator = "ieee802154_ll_clear_events"
+
+[[assertions.evidence]]
+source = "hil-open-ieee802154-ed-done-selected-write-2026-08-25"
+locator = "EVENT_STATUS 0x0140 -- write 0x0040 --> 0x0100"
+
+[[assertions.evidence]]
+source = "hil-open-ieee802154-generated-ed-done-write-2026-08-25"
+locator = "generated selected-register-write: EVENT_STATUS 0x0140 -- write 0x0040 --> 0x0100"

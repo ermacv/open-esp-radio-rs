@@ -492,6 +492,19 @@ fn execute_workload(
             output,
             lab,
         ),
+        Workload::Ieee802154EdEvent {
+            boots,
+            poll_limit,
+            timer_threshold,
+        } => transport::ieee802154_ed_event::run(
+            transport::ieee802154_ed_event::Config {
+                boots: *boots,
+                poll_limit: *poll_limit,
+                timer_threshold: *timer_threshold,
+            },
+            output,
+            lab,
+        ),
         Workload::Udp {
             direction,
             duration_seconds,

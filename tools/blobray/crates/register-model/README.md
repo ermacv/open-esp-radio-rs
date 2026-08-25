@@ -16,6 +16,12 @@
 - generic physical-layout and write-semantics invariants;
 - reviewed PAC transaction, binding-index and evidence-catalog schemas.
 
+The closed-PAC transaction pack is schema 4 only. Its
+`selected-register-writes` operation is an evidence-backed escape hatch for one
+exact `u32` volatile image to one non-array 32-bit register which the SVD keeps
+read-only. It never rewrites SVD access or accepts a dynamic image; sequencing
+and hardware qualification stay above the generated raw helper.
+
 It does not know about ELF files, discovery facts, ESP32-S31, PAC helper
 contents or output paths. The vendor validator composes it with observed MMIO
 facts, the project memory map and target-owned reviewed packs. RTOS, NVS,

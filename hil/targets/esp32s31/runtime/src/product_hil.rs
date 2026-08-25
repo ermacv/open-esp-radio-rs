@@ -45,12 +45,24 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31AccessPointObservation, Esp32s31DiagnosticObservers, Esp32s31DiagnosticSnapshot,
     Esp32s31StationAttemptObservation,
 };
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+use open_esp_radio_esp32s31_hal::Radio;
+#[cfg(feature = "ieee802154-ed-event-probe")]
+use open_esp_radio_esp32s31_hal::{
+    Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154Channel, Ieee802154EdEventProbeConfig,
+    Ieee802154EdEventProbeEvidence as HalIeee802154EdEventProbeEvidence,
+    Ieee802154EdEventProbeIsolation, Ieee802154EdEventProbeStop as HalIeee802154EdEventProbeStop,
+    Ieee802154MacControl, Ieee802154MacPolicy, Ieee802154PanIdentity,
+};
 #[cfg(feature = "ieee802154-event-status-probe")]
 use open_esp_radio_esp32s31_hal::{
     Ieee802154EventStatusProbeConfig,
     Ieee802154EventStatusProbeEvidence as HalIeee802154EventStatusProbeEvidence,
     Ieee802154EventStatusProbeIsolation,
-    Ieee802154EventStatusProbeStop as HalIeee802154EventStatusProbeStop, Radio,
+    Ieee802154EventStatusProbeStop as HalIeee802154EventStatusProbeStop,
 };
 use open_esp_radio_esp32s31_phy::{
     PhyCalibrationIdentity, PhyCalibrationPath, phy_rfpll::phy_get_rf_cal_version,
@@ -80,6 +92,10 @@ use open_esp_radio_hil_protocol::{
     WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRole,
     WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
     WifiScanEvidence, WifiStationAccessPointStopEvidence,
+};
+#[cfg(feature = "ieee802154-ed-event-probe")]
+use open_esp_radio_hil_protocol::{
+    Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
 };
 #[cfg(feature = "ieee802154-event-status-probe")]
 use open_esp_radio_hil_protocol::{
@@ -1045,6 +1061,7 @@ pub const fn hil_capabilities() -> Capabilities {
             data_plane_placement: true,
             timebase_probe: true,
             ieee802154_event_status_probe: cfg!(feature = "ieee802154-event-status-probe"),
+            ieee802154_ed_event_probe: cfg!(feature = "ieee802154-ed-event-probe"),
         },
         maximum_payload_bytes: OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
         maximum_wire_frame_bytes: MAX_WIRE_FRAME_BYTES as u16,
@@ -1593,6 +1610,168 @@ fn run_ieee802154_event_status_probe(
     map_ieee802154_event_status_probe(*finished.evidence())
 }
 
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn unsupported_ieee802154_ed_event_probe() -> Ieee802154EdEventProbeEvidence {
+    Ieee802154EdEventProbeEvidence {
+        stop: Ieee802154EdEventProbeStop::UnsupportedSetup,
+        event_enable_before: 0,
+        event_enable_active: 0,
+        event_enable_after: 0,
+        rx_abort_enable_before: 0,
+        rx_abort_enable_active: 0,
+        rx_abort_enable_after: 0,
+        route_core0_before_enable: 0,
+        route_core1_before_enable: 0,
+        route_core0_with_events_enabled: 0,
+        route_core1_with_events_enabled: 0,
+        route_core0_after_cleanup: 0,
+        route_core1_after_cleanup: 0,
+        ed_duration_before: 0,
+        ed_duration_active: 0,
+        ed_duration_after: 0,
+        timer0_value_before_start: 0,
+        timer0_value_min: 0,
+        timer0_value_max: 0,
+        timer0_value_after_stop: 0,
+        reset_events: 0,
+        post_enable_events: 0,
+        observed_events: 0,
+        terminal_events: 0,
+        after_ed_done_write_events: 0,
+        after_timer0_write_events: 0,
+        cleanup_pending_events: 0,
+        final_events: 0,
+        rx_status_at_abort: None,
+        stop_command_issued: false,
+        cleanup_clear: false,
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_ed_event_probe(
+    evidence: HalIeee802154EdEventProbeEvidence,
+) -> Ieee802154EdEventProbeEvidence {
+    let stop = match evidence.stop {
+        HalIeee802154EdEventProbeStop::Complete => Ieee802154EdEventProbeStop::Complete,
+        HalIeee802154EdEventProbeStop::UnsupportedSetup => {
+            Ieee802154EdEventProbeStop::UnsupportedSetup
+        }
+        HalIeee802154EdEventProbeStop::RouteNotQuiesced => {
+            Ieee802154EdEventProbeStop::RouteNotQuiesced
+        }
+        HalIeee802154EdEventProbeStop::ResetNotClear => Ieee802154EdEventProbeStop::ResetNotClear,
+        HalIeee802154EdEventProbeStop::EdDurationReadbackMismatch => {
+            Ieee802154EdEventProbeStop::EdDurationReadbackMismatch
+        }
+        HalIeee802154EdEventProbeStop::EventEnableReadbackMismatch => {
+            Ieee802154EdEventProbeStop::EventEnableReadbackMismatch
+        }
+        HalIeee802154EdEventProbeStop::RxAbortEnableReadbackMismatch => {
+            Ieee802154EdEventProbeStop::RxAbortEnableReadbackMismatch
+        }
+        HalIeee802154EdEventProbeStop::PostEnableStatusNotClear => {
+            Ieee802154EdEventProbeStop::PostEnableStatusNotClear
+        }
+        HalIeee802154EdEventProbeStop::TimerActivityTimeout => {
+            Ieee802154EdEventProbeStop::TimerActivityTimeout
+        }
+        HalIeee802154EdEventProbeStop::PairLatchTimeout => {
+            Ieee802154EdEventProbeStop::PairLatchTimeout
+        }
+        HalIeee802154EdEventProbeStop::EdAborted => Ieee802154EdEventProbeStop::EdAborted,
+        HalIeee802154EdEventProbeStop::UnexpectedEvent => {
+            Ieee802154EdEventProbeStop::UnexpectedEvent
+        }
+        HalIeee802154EdEventProbeStop::SelectiveWriteMismatch => {
+            Ieee802154EdEventProbeStop::SelectiveWriteMismatch
+        }
+        HalIeee802154EdEventProbeStop::CleanupNotClear => {
+            Ieee802154EdEventProbeStop::CleanupNotClear
+        }
+    };
+    Ieee802154EdEventProbeEvidence {
+        stop,
+        event_enable_before: evidence.event_enable_before,
+        event_enable_active: evidence.event_enable_active,
+        event_enable_after: evidence.event_enable_after,
+        rx_abort_enable_before: evidence.rx_abort_enable_before,
+        rx_abort_enable_active: evidence.rx_abort_enable_active,
+        rx_abort_enable_after: evidence.rx_abort_enable_after,
+        route_core0_before_enable: evidence.route_core0_before_enable,
+        route_core1_before_enable: evidence.route_core1_before_enable,
+        route_core0_with_events_enabled: evidence.route_core0_with_events_enabled,
+        route_core1_with_events_enabled: evidence.route_core1_with_events_enabled,
+        route_core0_after_cleanup: evidence.route_core0_after_cleanup,
+        route_core1_after_cleanup: evidence.route_core1_after_cleanup,
+        ed_duration_before: evidence.ed_duration_before,
+        ed_duration_active: evidence.ed_duration_active,
+        ed_duration_after: evidence.ed_duration_after,
+        timer0_value_before_start: evidence.timer0_value_before_start,
+        timer0_value_min: evidence.timer0_value_min,
+        timer0_value_max: evidence.timer0_value_max,
+        timer0_value_after_stop: evidence.timer0_value_after_stop,
+        reset_events: evidence.reset_events,
+        post_enable_events: evidence.post_enable_events,
+        observed_events: evidence.observed_events,
+        terminal_events: evidence.terminal_events,
+        after_ed_done_write_events: evidence.after_ed_done_write_events,
+        after_timer0_write_events: evidence.after_timer0_write_events,
+        cleanup_pending_events: evidence.cleanup_pending_events,
+        final_events: evidence.final_events,
+        rx_status_at_abort: evidence.rx_status_at_abort,
+        stop_command_issued: evidence.stop_command_issued,
+        cleanup_clear: evidence.cleanup_clear,
+    }
+}
+
+/// Run the bounded ED-DONE/TIMER0 discriminator without installing a CPU IRQ
+/// route or exposing validation-only status writes to production code.
+#[cfg(feature = "ieee802154-ed-event-probe")]
+fn run_ieee802154_ed_event_probe(
+    platform: EspHalRadioPeripheral,
+    request: Ieee802154EdEventProbeRequest,
+) -> Ieee802154EdEventProbeEvidence {
+    let Some(config) =
+        Ieee802154EdEventProbeConfig::new(request.poll_limit, request.timer_threshold)
+    else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let Some(isolation) = Ieee802154EdEventProbeIsolation::claim_for_reset_isolated_image() else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let Ok(owned) = Radio::claim(platform) else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let Ok(powered) = owned.power_up() else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let Ok(clocked) = powered.into_ieee802154_clocked() else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let Ok(reset) = clocked.reset_mac() else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let Ok(foundation) = reset.configure_foundation() else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let Ok(channel) = Ieee802154Channel::new(11) else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let policy = Ieee802154MacPolicy::new(
+        channel,
+        Ieee802154CcaMode::EnergyDetection,
+        0,
+        Ieee802154AckTimeout::from_units(0),
+        Ieee802154MacControl::new(false, false, false, false, false, false),
+        Ieee802154PanIdentity::new(0, 0, [0; 8]),
+    );
+    let Ok(policy_configured) = foundation.configure_mac_policy(policy) else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let finished = policy_configured.validation_probe_ed_event_status(config, isolation);
+    map_ieee802154_ed_event_probe(*finished.evidence())
+}
+
 pub async fn run(
     spawner: Spawner,
     _secondary_core_spawner: SendSpawner,
@@ -1600,18 +1779,36 @@ pub async fn run(
     trng: Trng,
 ) {
     DIAGNOSTIC_STAGE.store(10, Ordering::Release);
-    #[cfg(not(feature = "ieee802154-event-status-probe"))]
+    #[cfg(not(any(
+        feature = "ieee802154-event-status-probe",
+        feature = "ieee802154-ed-event-probe"
+    )))]
     let PreInitializationRequest::Startup(startup) =
         crate::console::receive_pre_initialization_request().await;
-    #[cfg(feature = "ieee802154-event-status-probe")]
+    #[cfg(any(
+        feature = "ieee802154-event-status-probe",
+        feature = "ieee802154-ed-event-probe"
+    ))]
     let startup = match crate::console::receive_pre_initialization_request().await {
         PreInitializationRequest::Startup(configuration) => configuration,
+        #[cfg(feature = "ieee802154-event-status-probe")]
         PreInitializationRequest::Ieee802154EventStatus(probe) => {
             let evidence = run_ieee802154_event_status_probe(platform, probe.request);
             publish_event_reliably(
                 0,
                 probe.request_id,
                 HilEvent::Ieee802154EventStatusProbeCompleted(evidence),
+            )
+            .await;
+            return;
+        }
+        #[cfg(feature = "ieee802154-ed-event-probe")]
+        PreInitializationRequest::Ieee802154EdEvent(probe) => {
+            let evidence = run_ieee802154_ed_event_probe(platform, probe.request);
+            publish_event_reliably(
+                0,
+                probe.request_id,
+                HilEvent::Ieee802154EdEventProbeCompleted(evidence),
             )
             .await;
             return;

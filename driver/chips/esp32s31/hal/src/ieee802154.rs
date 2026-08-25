@@ -250,6 +250,96 @@ impl<'registers> Ieee802154PacHal<'registers> {
     pub(crate) fn validation_write_event_timer1(&mut self) {
         self.backend.validation_write_event_timer1();
     }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_ed_event_enable_events(&mut self) -> u16 {
+        self.backend.validation_ed_event_enable_events()
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_enable_ed_timer_abort_events(&mut self) {
+        self.backend.validation_enable_ed_timer_abort_events();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_disable_ed_events(&mut self) {
+        self.backend.validation_disable_ed_events();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_ed_rx_abort_enable_events(&mut self) -> u32 {
+        self.backend.validation_ed_rx_abort_enable_events()
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_enable_ed_abort_reasons(&mut self) {
+        self.backend.validation_enable_ed_abort_reasons();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_disable_ed_abort_reasons(&mut self) {
+        self.backend.validation_disable_ed_abort_reasons();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_ed_event_status_events(&mut self) -> u16 {
+        self.backend.validation_ed_event_status_events()
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_ed_rx_status_raw(&mut self) -> u32 {
+        self.backend.validation_ed_rx_status_raw()
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_ed_duration(&mut self) -> u32 {
+        self.backend.validation_ed_duration()
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_set_ed_duration_eight(&mut self) {
+        self.backend.validation_set_ed_duration_eight();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_ed_timer0_value(&mut self) -> u32 {
+        self.backend.validation_ed_timer0_value()
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_set_ed_timer0_threshold(&mut self, threshold: u32) {
+        self.backend.validation_set_ed_timer0_threshold(threshold);
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_start_ed_timer0(&mut self) {
+        self.backend.validation_start_ed_timer0();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_stop_ed_timer0(&mut self) {
+        self.backend.validation_stop_ed_timer0();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_start_ed(&mut self) {
+        self.backend.validation_start_ed();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_stop_ed_operation(&mut self) {
+        self.backend.validation_stop_ed_operation();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_write_ed_done_event(&mut self) {
+        self.backend.validation_write_ed_done_event();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn validation_write_ed_timer0_event(&mut self) {
+        self.backend.validation_write_ed_timer0_event();
+    }
 }
 
 impl<B: Ieee802154RegisterBackend> Ieee802154Hal<B> {

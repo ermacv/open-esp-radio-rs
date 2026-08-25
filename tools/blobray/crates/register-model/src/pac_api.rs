@@ -33,6 +33,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fixed_register_images: Vec<FixedRegisterImage>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected_register_writes: Vec<SelectedRegisterWrite>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub register_image_writes: Vec<RegisterImageWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zero_based_field_writes: Vec<ZeroBasedFieldWrite>,
@@ -166,7 +168,7 @@ pub struct FullRegisterWrite {
     pub field: String,
     /// Reviewed value domain accepted by the closed-PAC bridge.
     ///
-    /// Schema 3 intentionally has no untyped compatibility path: every
+    /// Schema 4 intentionally has no untyped compatibility path: every
     /// complete-register write crossing from the closed PAC into the raw PAC
     /// must carry a register-specific or otherwise reviewed value type.
     pub domain: String,
@@ -181,6 +183,21 @@ common_operation!(FixedRegisterImage {
     register: String,
     value: u32,
 });
+/// One reviewed exact image write to a register which the SVD keeps read-only.
+///
+/// This is a deliberately narrow, evidence-backed operation boundary. It
+/// neither changes the register's SVD access class nor accepts a
+/// caller-provided image.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct SelectedRegisterWrite {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    /// The only complete image this operation may publish.
+    pub value: u32,
+    pub sources: Vec<String>,
+}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RegisterImageWrite {
@@ -234,9 +251,9 @@ impl PacApiPack {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.schema != 3 {
+        if self.schema != 4 {
             return Err(Error::message(format!(
-                "PAC API pack requires schema = 3, got {}",
+                "PAC API pack requires schema = 4, got {}",
                 self.schema
             )));
         }
@@ -268,6 +285,7 @@ impl PacApiPack {
         validate_operations("full-register-write", &self.full_register_writes)?;
         validate_operations("fixed-register-write", &self.fixed_register_writes)?;
         validate_operations("fixed-register-image", &self.fixed_register_images)?;
+        validate_operations("selected-register-write", &self.selected_register_writes)?;
         validate_operations("register-image-write", &self.register_image_writes)?;
         validate_operations("zero-based-field-write", &self.zero_based_field_writes)?;
         validate_operations("zero-register-write", &self.zero_register_writes)?;
@@ -489,6 +507,7 @@ impl PacApiPack {
             + self.full_register_writes.len()
             + self.fixed_register_writes.len()
             + self.fixed_register_images.len()
+            + self.selected_register_writes.len()
             + self.register_image_writes.len()
             + self.zero_based_field_writes.len()
             + self.zero_register_writes.len()
@@ -539,6 +558,7 @@ impl PacApiPack {
                     .chain(self.full_register_writes.iter().map(Operation::sources))
                     .chain(self.fixed_register_writes.iter().map(Operation::sources))
                     .chain(self.fixed_register_images.iter().map(Operation::sources))
+                    .chain(self.selected_register_writes.iter().map(Operation::sources))
                     .chain(self.register_image_writes.iter().map(Operation::sources))
                     .chain(self.zero_based_field_writes.iter().map(Operation::sources))
                     .chain(self.zero_register_writes.iter().map(Operation::sources))
@@ -773,6 +793,7 @@ impl Operation for InterruptSnapshot {
 impl_register_operation!(FullRegisterWrite);
 impl_register_operation!(FixedRegisterWrite);
 impl_register_operation!(FixedRegisterImage);
+impl_register_operation!(SelectedRegisterWrite);
 impl_register_operation!(RegisterImageWrite);
 impl_register_operation!(ZeroBasedFieldWrite);
 impl_register_operation!(ZeroRegisterWrite);
@@ -925,7 +946,7 @@ mod tests {
 
     fn empty_pack() -> PacApiPack {
         PacApiPack {
-            schema: 3,
+            schema: 4,
             options: PacApiOptions::default(),
             ownership_partitions: Vec::new(),
             feature_modules: Vec::new(),
@@ -937,6 +958,7 @@ mod tests {
             full_register_writes: Vec::new(),
             fixed_register_writes: Vec::new(),
             fixed_register_images: Vec::new(),
+            selected_register_writes: Vec::new(),
             register_image_writes: Vec::new(),
             zero_based_field_writes: Vec::new(),
             zero_register_writes: Vec::new(),
@@ -1086,25 +1108,44 @@ mod tests {
     }
 
     #[test]
-    fn rejects_removed_schema_two_without_compatibility() {
+    fn rejects_schema_three_without_compatibility() {
         let mut pack = empty_pack();
-        pack.schema = 2;
+        pack.schema = 3;
         assert!(
             pack.validate()
                 .unwrap_err()
                 .to_string()
-                .contains("requires schema = 3")
+                .contains("requires schema = 4")
         );
     }
 
     #[test]
     fn rejects_removed_inferred_ownership_option() {
-        let input = r#"schema = 3
+        let input = r#"schema = 4
 
 [options]
 peripheral-ownership = true
 "#;
         assert!(toml_edit::de::from_str::<PacApiPack>(input).is_err());
+    }
+
+    #[test]
+    fn selected_register_write_is_exact_and_evidenced() {
+        let mut pack = empty_pack();
+        pack.selected_register_writes.push(SelectedRegisterWrite {
+            name: "write_event_status_selected_image".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "EVENT_STATUS".to_owned(),
+            value: 1 << 6,
+            sources: vec!["HIL_EVENT_STATUS_SELECTED_IMAGE".to_owned()],
+        });
+
+        assert!(pack.validate().is_ok());
+        assert_eq!(pack.operation_count(), 1);
+        assert_eq!(
+            pack.source_ids(),
+            BTreeSet::from(["HIL_EVENT_STATUS_SELECTED_IMAGE"])
+        );
     }
 
     #[test]

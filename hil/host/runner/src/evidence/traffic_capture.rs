@@ -16,15 +16,15 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, DecodeCounters, Direction, Envelope, Event, EvidenceRecord, Finished,
-    FrameDecoder, FrameEncoder, Ieee802154EventStatusProbeEvidence,
-    Ieee802154EventStatusProbeRequest, LinkHealth, NetworkSchedulerEvidence, OperationStatus,
-    RadioEvidence, RxDeliveryEvidence, RxRadioEvidence, SessionConfig, SessionLinkRequirements,
-    SessionReady, SessionState, StackUsage, StartupArtifactChunk, StartupArtifactStatus,
-    StateChange, StationEpochEvidence, StationLifecycleEvent, TimebaseProbeEvidence,
-    TimebaseProbeRequest, Transport, TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence,
-    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
-    WifiNetworkInterface, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
-    evidence_crc32c,
+    FrameDecoder, FrameEncoder, Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest,
+    Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest, LinkHealth,
+    NetworkSchedulerEvidence, OperationStatus, RadioEvidence, RxDeliveryEvidence, RxRadioEvidence,
+    SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StackUsage,
+    StartupArtifactChunk, StartupArtifactStatus, StateChange, StationEpochEvidence,
+    StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
+    TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest,
+    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiNetworkInterface,
+    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -1231,6 +1231,21 @@ impl SerialCapture {
         }
     }
 
+    pub(crate) fn probe_ieee802154_ed_event(
+        &self,
+        request: Ieee802154EdEventProbeRequest,
+        timeout: Duration,
+    ) -> Result<Ieee802154EdEventProbeEvidence> {
+        let response = self.send_command(0, Command::ProbeIeee802154EdEvent(request), timeout)?;
+        match response.body {
+            Event::Ieee802154EdEventProbeCompleted(evidence) => Ok(evidence),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected IEEE 802.15.4 ED event probe: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid IEEE 802.15.4 ED event probe response".into()),
+        }
+    }
+
     pub(crate) fn request_station_start(&self, lab: &LabConfig) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
             Command::StartStation(lab.station.protocol_credentials()?),
@@ -2193,6 +2208,7 @@ mod tests {
                     data_plane_placement: true,
                     timebase_probe: true,
                     ieee802154_event_status_probe: false,
+                    ieee802154_ed_event_probe: false,
                 },
                 maximum_payload_bytes: 1,
                 maximum_wire_frame_bytes: 1,

@@ -17,6 +17,11 @@ compile_error!("select profile-psram-data or profile-sram-data");
     not(all(feature = "code-psram", feature = "profile-psram-data"))
 ))]
 compile_error!("psram-task-stack requires code-psram and profile-psram-data");
+#[cfg(all(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+compile_error!("IEEE 802.15.4 reset-isolated probe images are mutually exclusive");
 
 #[cfg(feature = "open-radio-hil")]
 use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};

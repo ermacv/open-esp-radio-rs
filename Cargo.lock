@@ -2335,6 +2335,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-ieee802154-runtime"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-ieee802154-dma",
+ "open-esp-radio-esp32s31-ieee802154-irq",
+ "open-esp-radio-esp32s31-ieee802154-mac",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-pac"
 version = "0.1.0"
 dependencies = [
@@ -2503,6 +2512,10 @@ dependencies = [
 
 [[package]]
 name = "open-esp-radio-ieee80211"
+version = "0.1.0"
+
+[[package]]
+name = "open-esp-radio-ieee802154"
 version = "0.1.0"
 
 [[package]]

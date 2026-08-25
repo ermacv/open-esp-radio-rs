@@ -12,6 +12,11 @@ use core::fmt;
 use open_esp_radio_esp32s31_pac::{Ieee802154FoundationSnapshot, Ieee802154Pti};
 
 #[cfg(feature = "validation-probes")]
+use crate::ieee802154_ed_event_probe::{
+    Ieee802154EdEventProbeConfig, Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeIsolation,
+    run_ieee802154_ed_event_probe,
+};
+#[cfg(feature = "validation-probes")]
 use crate::ieee802154_event_status_probe::{
     Ieee802154EventStatusProbeConfig, Ieee802154EventStatusProbeEvidence,
     Ieee802154EventStatusProbeIsolation, run_ieee802154_event_status_probe,
@@ -158,10 +163,13 @@ pub struct Ieee802154FoundationConfigured<P> {
 
 /// Terminal whole-radio owner after the validation-only status experiment.
 ///
-/// Experimental raw status writes and masked cleanup cannot preserve a normal
-/// lifecycle proof. This type exposes only evidence and deliberately provides
-/// no route back to foundation, policy, or operational transitions. The
-/// reset-isolation capability remains consumed for the rest of the process.
+/// The experiment exercises register-wide behavior that remains unqualified;
+/// it is distinct from the HIL-qualified fixed `ED_DONE = 0x0040` selected
+/// image used by a serialized ED transaction. Its experimental status writes
+/// and masked cleanup cannot preserve a normal lifecycle proof. This type
+/// exposes only evidence and deliberately provides no route back to foundation,
+/// policy, or operational transitions. The reset-isolation capability remains
+/// consumed for the rest of the process.
 #[cfg(feature = "validation-probes")]
 #[must_use = "the terminal validation owner retains the radio and isolation capability"]
 pub struct Ieee802154EventStatusProbeFinished<P> {
@@ -174,6 +182,28 @@ pub struct Ieee802154EventStatusProbeFinished<P> {
 impl<P> Ieee802154EventStatusProbeFinished<P> {
     /// Borrow the complete raw evidence retained by the terminal owner.
     pub const fn evidence(&self) -> &Ieee802154EventStatusProbeEvidence {
+        &self.evidence
+    }
+}
+
+/// Terminal whole-radio owner after the validation-only ED event experiment.
+///
+/// The probe rechecks the HIL-qualified fixed `ED_DONE = 0x0040` selected image,
+/// but its additional experimental TIMER0 write and best-effort cleanup still
+/// end the normal lifecycle. Evidence can be inspected, but the radio cannot be
+/// recovered or promoted to a production operational state.
+#[cfg(feature = "validation-probes")]
+#[must_use = "the terminal validation owner retains the radio and isolation capability"]
+pub struct Ieee802154EdEventProbeFinished<P> {
+    evidence: Ieee802154EdEventProbeEvidence,
+    _policy: Ieee802154MacPolicyConfigured<P>,
+    _isolation: Ieee802154EdEventProbeIsolation,
+}
+
+#[cfg(feature = "validation-probes")]
+impl<P> Ieee802154EdEventProbeFinished<P> {
+    /// Borrow the complete raw evidence retained by the terminal owner.
+    pub const fn evidence(&self) -> &Ieee802154EdEventProbeEvidence {
         &self.evidence
     }
 }
@@ -416,7 +446,8 @@ impl<P> Ieee802154FoundationConfigured<P> {
     /// zero `EVENT_ENABLE` image and the dedicated image's unique route-
     /// isolation capability. It returns a terminal owner with raw evidence;
     /// even a `Complete` stop cannot re-enter the normal lifecycle or create a
-    /// production acknowledge or IRQ capability.
+    /// general/register-wide acknowledgement or active IRQ capability. The
+    /// separately qualified ED_DONE selected image does not broaden this probe.
     #[cfg(feature = "validation-probes")]
     pub fn validation_probe_event_status(
         mut self,
@@ -453,6 +484,29 @@ impl<P> Ieee802154FoundationConfigured<P> {
 }
 
 impl<P> Ieee802154MacPolicyConfigured<P> {
+    /// Run the closed ED-DONE/TIMER0 event discriminator.
+    ///
+    /// Requiring this state proves that an explicit IEEE channel and the
+    /// reviewed static MAC policy read back before ED starts. The transition
+    /// still starts no DMA and installs no CPU interrupt route. It returns a
+    /// terminal evidence owner even on success. It rechecks the exact serialized
+    /// ED_DONE selected image, but creates no general/register-wide event
+    /// acknowledgement, active IRQ, concurrency, or RF-readiness claim.
+    #[cfg(feature = "validation-probes")]
+    pub fn validation_probe_ed_event_status(
+        mut self,
+        config: Ieee802154EdEventProbeConfig,
+        isolation: Ieee802154EdEventProbeIsolation,
+    ) -> Ieee802154EdEventProbeFinished<P> {
+        let mut hal = self.foundation.inner.backend_mut().mac_hal();
+        let evidence = run_ieee802154_ed_event_probe(&mut hal, config);
+        Ieee802154EdEventProbeFinished {
+            evidence,
+            _policy: self,
+            _isolation: isolation,
+        }
+    }
+
     /// Return the semantically proved static policy.
     pub const fn policy(&self) -> Ieee802154MacPolicy {
         self.policy

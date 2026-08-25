@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 62;
+pub const PROTOCOL_VERSION: u16 = 63;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -198,6 +198,9 @@ pub struct FeatureCapabilities {
     /// This image can run the bounded IEEE 802.15.4 `EVENT_STATUS` observation
     /// probe and return its typed snapshots.
     pub ieee802154_event_status_probe: bool,
+    /// This image can run the bounded ED-DONE/TIMER0 selective-write
+    /// discriminator and retain RX-ABORT diagnostics.
+    pub ieee802154_ed_event_probe: bool,
 }
 
 /// Bounded alarm/clock agreement probe. It is intentionally independent of
@@ -309,6 +312,83 @@ pub struct Ieee802154EventStatusProbeEvidence {
     pub distinct_after_ack_events: u16,
     pub cleanup_pending_events: u16,
     pub final_events: u16,
+}
+
+/// Bounds for one IEEE 802.15.4 ED-DONE/TIMER0 discriminator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154EdEventProbeRequest {
+    pub poll_limit: u32,
+    pub timer_threshold: u32,
+}
+
+impl Ieee802154EdEventProbeRequest {
+    /// Return whether both target-side bounds are finite and supported.
+    pub const fn validate(self) -> bool {
+        self.poll_limit >= 1
+            && self.poll_limit <= 1_000_000
+            && self.timer_threshold >= 1
+            && self.timer_threshold <= 1_000
+    }
+}
+
+/// Terminal classification from the ED-DONE/TIMER0 discriminator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154EdEventProbeStop {
+    Complete,
+    UnsupportedSetup,
+    RouteNotQuiesced,
+    ResetNotClear,
+    EdDurationReadbackMismatch,
+    EventEnableReadbackMismatch,
+    RxAbortEnableReadbackMismatch,
+    PostEnableStatusNotClear,
+    TimerActivityTimeout,
+    PairLatchTimeout,
+    EdAborted,
+    UnexpectedEvent,
+    SelectiveWriteMismatch,
+    CleanupNotClear,
+}
+
+/// Complete raw evidence from one bounded ED-DONE/TIMER0 discriminator.
+///
+/// The event fields preserve complete fourteen-bit images. A successful result
+/// proves only the selected ED-DONE/TIMER0 relation in this reset-isolated
+/// transaction; it is not a register-wide W1C or production ED-readiness
+/// claim. `rx_status_at_abort` is present only when RX-ABORT was observed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154EdEventProbeEvidence {
+    pub stop: Ieee802154EdEventProbeStop,
+    pub event_enable_before: u16,
+    pub event_enable_active: u16,
+    pub event_enable_after: u16,
+    pub rx_abort_enable_before: u32,
+    pub rx_abort_enable_active: u32,
+    pub rx_abort_enable_after: u32,
+    pub route_core0_before_enable: u32,
+    pub route_core1_before_enable: u32,
+    pub route_core0_with_events_enabled: u32,
+    pub route_core1_with_events_enabled: u32,
+    pub route_core0_after_cleanup: u32,
+    pub route_core1_after_cleanup: u32,
+    pub ed_duration_before: u32,
+    pub ed_duration_active: u32,
+    pub ed_duration_after: u32,
+    pub timer0_value_before_start: u32,
+    pub timer0_value_min: u32,
+    pub timer0_value_max: u32,
+    pub timer0_value_after_stop: u32,
+    pub reset_events: u16,
+    pub post_enable_events: u16,
+    pub observed_events: u16,
+    pub terminal_events: u16,
+    pub after_ed_done_write_events: u16,
+    pub after_timer0_write_events: u16,
+    pub cleanup_pending_events: u16,
+    pub final_events: u16,
+    pub rx_status_at_abort: Option<u32>,
+    pub stop_command_issued: bool,
+    pub cleanup_clear: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -590,6 +670,8 @@ pub enum Command {
     ProbeTimebase(TimebaseProbeRequest),
     /// Run one bounded, observation-only IEEE 802.15.4 `EVENT_STATUS` probe.
     ProbeIeee802154EventStatus(Ieee802154EventStatusProbeRequest),
+    /// Run the bounded ED-DONE/TIMER0 selective-write discriminator.
+    ProbeIeee802154EdEvent(Ieee802154EdEventProbeRequest),
     UploadStartupArtifact(StartupArtifactChunk),
     /// Initialize calibration and the network stack without materializing a
     /// Wi-Fi role. This command is accepted exactly once per boot.
@@ -1579,6 +1661,8 @@ pub enum Event {
     /// This event does not attest to same-bit concurrency, level-triggered
     /// retrigger behavior, or production interrupt readiness.
     Ieee802154EventStatusProbeCompleted(Ieee802154EventStatusProbeEvidence),
+    /// Correlated observation from [`Command::ProbeIeee802154EdEvent`].
+    Ieee802154EdEventProbeCompleted(Ieee802154EdEventProbeEvidence),
     Accepted,
     Rejected(RejectReason),
     State(StateChange),

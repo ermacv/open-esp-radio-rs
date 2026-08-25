@@ -2,6 +2,7 @@ pub(crate) mod controlled_ap;
 pub(crate) mod controlled_client;
 pub(crate) mod controlled_openwrt_client;
 pub(crate) mod fixture_lock;
+pub(crate) mod ieee802154_ed_event;
 pub(crate) mod ieee802154_event_status;
 pub(crate) mod lab_config;
 pub(crate) mod local_air_monitor;

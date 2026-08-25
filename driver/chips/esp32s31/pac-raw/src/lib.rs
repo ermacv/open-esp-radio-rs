@@ -49437,6 +49437,10 @@ pub mod ieee802154_event_status_validation;
 
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
+pub mod ieee802154_ed_event_validation;
+
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
 pub mod ieee802154_route_validation;
 
 /// Safe, SVD-declared read-and-acknowledge interrupt transactions.
@@ -50337,6 +50341,32 @@ pub mod fixed_register_image {
         }
     }
 
+    /// Publish the SVD-qualified image `0x00000044` to `IEEE802154_MAC`.`COMMAND`.
+    #[inline]
+    pub fn start_ieee802154_energy_detection(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .command()
+                .write_with_zero(|writer| writer.bits(0x00000044));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000045` to `IEEE802154_MAC`.`COMMAND`.
+    #[inline]
+    pub fn stop_ieee802154_energy_detection(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .command()
+                .write_with_zero(|writer| writer.bits(0x00000045));
+        }
+    }
+
     /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CONTROL_1`.
     #[inline]
     pub fn release_bluetooth_interrupt_output_0(registers: &crate::BluetoothInterruptBank) {
@@ -50568,6 +50598,21 @@ pub mod fixed_register_image {
             registers
                 .power_detector_table_1()
                 .write_with_zero(|writer| writer.bits(0x00ff0f64));
+        }
+    }
+}
+
+/// Exact selected-image writes to reviewed SVD read-only registers.
+pub mod selected_register_write {
+
+    /// Publish the reviewed image `0x00000040` to `IEEE802154_MAC`.`EVENT_STATUS`.
+    #[inline]
+    pub fn write_ieee802154_ed_done_selected_image(registers: &mut crate::Ieee802154Mac) {
+        // SAFETY: generator validation binds this selected operation
+        // to one read-only 32-bit SVD register. Reviewed evidence qualifies
+        // only this literal complete image; no writable PAC API is created.
+        unsafe {
+            core::ptr::write_volatile(registers.event_status().as_ptr(), 0x00000040);
         }
     }
 }
@@ -51613,6 +51658,17 @@ pub mod masked_register_modify {
     pub fn publish_station_tbtt_target(registers: &crate::WifiMacStaTbttTarget, input: u32) {
         registers.target().modify(|reader, writer| {
             let image = (reader.bits() & 0xfc000000) | (input & 0x03ffffff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xff000000, accept input mask 0x00ffffff, and set 0x00000000 in IEEE802154_MAC.ED_DURATION.
+    #[inline]
+    pub fn set_ieee802154_ed_duration(registers: &crate::Ieee802154Mac, input: u32) {
+        registers.ed_duration().modify(|reader, writer| {
+            let image = (reader.bits() & 0xff000000) | (input & 0x00ffffff);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

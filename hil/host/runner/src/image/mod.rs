@@ -18,6 +18,7 @@ struct ImageCapabilitySignature {
     rx_delivery: bool,
     mac_irq: bool,
     ieee802154_event_status: bool,
+    ieee802154_ed_event: bool,
     psram_task_stack: bool,
 }
 
@@ -30,6 +31,7 @@ pub(crate) fn classify_flashed_capabilities(
         rx_delivery: features.rx_delivery_evidence,
         mac_irq: features.mac_irq_evidence,
         ieee802154_event_status: features.ieee802154_event_status_probe,
+        ieee802154_ed_event: features.ieee802154_ed_event_probe,
         psram_task_stack: features.psram_task_stack,
     })
 }
@@ -46,6 +48,7 @@ fn classify_image_signature(
             rx_delivery: false,
             mac_irq: false,
             ieee802154_event_status: false,
+            ieee802154_ed_event: false,
             psram_task_stack: true,
         } => Some(ImageClass::Performance),
         ImageCapabilitySignature {
@@ -54,6 +57,7 @@ fn classify_image_signature(
             rx_delivery: false,
             mac_irq: false,
             ieee802154_event_status: false,
+            ieee802154_ed_event: false,
             psram_task_stack: true,
         } => Some(ImageClass::Correctness),
         ImageCapabilitySignature {
@@ -62,6 +66,7 @@ fn classify_image_signature(
             rx_delivery: false,
             mac_irq: true,
             ieee802154_event_status: false,
+            ieee802154_ed_event: false,
             psram_task_stack: true,
         } => Some(ImageClass::DiagnosticMacIrq),
         ImageCapabilitySignature {
@@ -70,6 +75,7 @@ fn classify_image_signature(
             rx_delivery: false,
             mac_irq: false,
             ieee802154_event_status: false,
+            ieee802154_ed_event: false,
             psram_task_stack: true,
         } => Some(ImageClass::DiagnosticTaskPoll),
         ImageCapabilitySignature {
@@ -78,6 +84,7 @@ fn classify_image_signature(
             rx_delivery: true,
             mac_irq: false,
             ieee802154_event_status: false,
+            ieee802154_ed_event: false,
             psram_task_stack: true,
         } => Some(ImageClass::DiagnosticRxDelivery),
         ImageCapabilitySignature {
@@ -86,8 +93,18 @@ fn classify_image_signature(
             rx_delivery: false,
             mac_irq: false,
             ieee802154_event_status: true,
+            ieee802154_ed_event: false,
             psram_task_stack: true,
         } => Some(ImageClass::DiagnosticIeee802154EventStatus),
+        ImageCapabilitySignature {
+            driver_observation: false,
+            task_poll: false,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            ieee802154_ed_event: true,
+            psram_task_stack: true,
+        } => Some(ImageClass::DiagnosticIeee802154EdEvent),
         _ => None,
     }
 }
@@ -765,6 +782,7 @@ mod tests {
         rx_delivery: bool,
         mac_irq: bool,
         ieee802154_event_status: bool,
+        ieee802154_ed_event: bool,
     ) -> ImageCapabilitySignature {
         ImageCapabilitySignature {
             driver_observation,
@@ -772,6 +790,7 @@ mod tests {
             rx_delivery,
             mac_irq,
             ieee802154_event_status,
+            ieee802154_ed_event,
             psram_task_stack: true,
         }
     }
@@ -803,7 +822,7 @@ mod tests {
 
     #[test]
     fn image_classes_are_stable_and_do_not_use_workload_environment() {
-        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 7);
+        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 8);
         assert!(
             qualification::scenario::ImageClass::ALL
                 .into_iter()
@@ -837,6 +856,10 @@ mod tests {
             qualification::scenario::ImageClass::DiagnosticIeee802154EventStatus.runtime_features(),
             "open-radio-hil,ieee802154-event-status-probe,psram-task-stack,code-psram,profile-psram-data"
         );
+        assert_eq!(
+            qualification::scenario::ImageClass::DiagnosticIeee802154EdEvent.runtime_features(),
+            "open-radio-hil,ieee802154-ed-event-probe,psram-task-stack,code-psram,profile-psram-data"
+        );
     }
 
     #[test]
@@ -845,28 +868,32 @@ mod tests {
 
         for (signals, expected) in [
             (
-                image_signature(false, false, false, false, false),
+                image_signature(false, false, false, false, false, false),
                 ImageClass::Performance,
             ),
             (
-                image_signature(true, false, false, false, false),
+                image_signature(true, false, false, false, false, false),
                 ImageClass::Correctness,
             ),
             (
-                image_signature(true, false, false, true, false),
+                image_signature(true, false, false, true, false, false),
                 ImageClass::DiagnosticMacIrq,
             ),
             (
-                image_signature(true, true, false, false, false),
+                image_signature(true, true, false, false, false, false),
                 ImageClass::DiagnosticTaskPoll,
             ),
             (
-                image_signature(true, false, true, false, false),
+                image_signature(true, false, true, false, false, false),
                 ImageClass::DiagnosticRxDelivery,
             ),
             (
-                image_signature(false, false, false, false, true),
+                image_signature(false, false, false, false, true, false),
                 ImageClass::DiagnosticIeee802154EventStatus,
+            ),
+            (
+                image_signature(false, false, false, false, false, true),
+                ImageClass::DiagnosticIeee802154EdEvent,
             ),
         ] {
             assert_eq!(classify_image_signature(signals), Some(expected));
@@ -876,15 +903,19 @@ mod tests {
     #[test]
     fn image_capability_classifier_rejects_mixed_or_non_psram_images() {
         assert_eq!(
-            classify_image_signature(image_signature(true, false, false, false, true)),
+            classify_image_signature(image_signature(true, false, false, false, true, false)),
             None
         );
         assert_eq!(
-            classify_image_signature(image_signature(false, true, false, false, true)),
+            classify_image_signature(image_signature(false, true, false, false, true, false)),
+            None
+        );
+        assert_eq!(
+            classify_image_signature(image_signature(false, false, false, false, true, true)),
             None
         );
 
-        let mut performance = image_signature(false, false, false, false, false);
+        let mut performance = image_signature(false, false, false, false, false, false);
         performance.psram_task_stack = false;
         assert_eq!(classify_image_signature(performance), None);
     }

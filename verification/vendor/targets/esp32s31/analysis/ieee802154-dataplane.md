@@ -8,8 +8,11 @@ extracted table is an input.
 The overall verdict remains **INCOMPLETE**. Static MAC fields, direct frame
 storage, RX-buffer ownership, interrupt-source identity, and interrupt dispatch
 order are source-confirmed. RF/BTBB initialization, TX-power conversion,
-`EVENT_STATUS` acknowledgement, active IRQ routing, and live command sequencing
-are not qualified by this slice.
+general `EVENT_STATUS` acknowledgement, active IRQ routing, and live RX/TX
+command sequencing are not qualified by this slice. A later HIL record
+qualifies exactly the generated `ED_DONE = 0x0040` selected write for one
+serialized detached-route ED transaction; it does not change this dataplane
+verdict.
 
 ## Source ledger
 
@@ -156,14 +159,21 @@ snapshot, then dispatches in this order:
 4. one deferred `next_operation` decision.
 
 That order can be represented and exhaustively tested as pure logic. It does
-not authorize a live route or a status write.
+not authorize a live route or an arbitrary status write.
 
-`EVENT_STATUS` remains the blocker. The public LL performs
-`event_status.events &= events`, which is operationally compatible with W1C,
-but the S31 register and struct headers provide no access class, reset value,
-or concurrent-arrival rule. The reviewed SVD therefore publishes this register
-as observation-only. The production API has no acknowledgement capability and
-the IRQ route must remain disabled.
+The complete `EVENT_STATUS` access class remains a blocker. The public LL
+performs `event_status.events &= events`, which is operationally compatible
+with W1C, but the S31 register and struct headers provide no access class,
+reset value, or concurrent-arrival rule. The reviewed SVD therefore publishes
+this register as observation-only, and the IRQ route must remain disabled.
+
+There is now one deliberately narrower production-capable PAC operation: the
+literal-only Blobray-generated `ED_DONE = 0x0040` selected write qualified in
+[`2026-08-25-esp32s31-ieee802154-generated-ed-done.md`](../../../../../qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-generated-ed-done.md).
+It accepts no caller image and is valid only for lone ED-DONE inside the
+serialized detached-route finite ED/CCA contract. It does not acknowledge an
+IRQ snapshot or qualify another event bit, same-bit concurrency, active route,
+or whole-register W1C semantics.
 
 ## 5. Strongest honest endpoint
 
@@ -176,24 +186,32 @@ TxFrameStoragePrepared
 RxPool: Free -> Armed -> Delivered -> Free, with Stub on exhaustion
 
 QuiescedIrqPlan -> pure ordered dispatch model
+
+SerializedPolledEdCca -> reusable model owner only after exact ED-DONE write
+                         and complete zero status readback
 ```
 
-It cannot yet connect them into receive/transmit operations. In particular,
-none of these types proves RF, BTBB, coexistence, interrupt acknowledgement,
-command completion, or on-air behavior.
+The finite ED/CCA engine is currently a pure semantic-backend boundary; its
+concrete PAC/backend and source-132 route guard remain pending. The project
+cannot yet connect the storage and dispatch pieces into receive/transmit
+operations. In particular, none of these types proves RF, BTBB, coexistence,
+active-IRQ acknowledgement, RX/TX command completion, or on-air behavior.
 
 ## Next research and HIL gates
 
-1. Prove `EVENT_STATUS` with two independently latched bits, selective
-   acknowledgement, distinct-bit and same-bit concurrent arrival, level-line
-   retrigger, and reset/stale-state cases.
-2. Verify source `132` delivery and teardown on both cores without hard-coding
+1. Preserve the exact ED-DONE selected write as the only qualified production
+   image; prove every other required event class, same-bit concurrent arrival,
+   level-line retrigger, and reset/stale-state cases before widening it.
+2. Bind the finite ED/CCA engine to a concrete PAC backend and complete
+   detached-route guard, then qualify two back-to-back ED operations on real
+   hardware.
+3. Verify source `132` delivery and teardown on both cores without hard-coding
    a CPU vector.
-3. Measure whether `STOP` is synchronous in every MAC state; if not, recover a
+4. Measure whether `STOP` is synchronous in every MAC state; if not, recover a
    bounded completion predicate before publishing new DMA addresses.
-4. Prove direct TX/RX address alignment and full-range requirements on real
+5. Prove direct TX/RX address alignment and full-range requirements on real
    internal SRAM, including maximum-length frames and an exhausted RX pool.
-5. Replace or bound `bt_bb_v2_init_cmplx(1)`, PHY calibration/wakeup/PLL
+6. Replace or bound `bt_bb_v2_init_cmplx(1)`, PHY calibration/wakeup/PLL
    tracking, `ieee802154_txon_delay_set()`, and the TX-power table dependency.
-6. Only after those gates, connect command issue, active IRQ ownership, and
+7. Only after those gates, connect command issue, active IRQ ownership, and
    DMA leases into one operational MAC state machine.

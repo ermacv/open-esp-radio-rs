@@ -394,6 +394,29 @@ impl StationTbttTargetBits35To10 {
     }
 }
 
+/// Sixteen-bit energy-detection duration subset accepted by the reviewed public IEEE 802.15.4 common LL setter; physical units remain outside the PAC.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154EdDurationUnits(u32);
+
+impl Ieee802154EdDurationUnits {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000ffff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000ffff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific event image written to the MAC interrupt clear register.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacInterruptClearImage(u32);
@@ -1167,6 +1190,15 @@ pub(crate) fn publish_station_tbtt_target(
     value: StationTbttTargetBits35To10,
 ) {
     crate::svd::masked_register_modify::publish_station_tbtt_target(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_ed_duration` masked transaction.
+#[inline]
+pub(crate) fn set_ieee802154_ed_duration(
+    registers: &crate::svd::Ieee802154Mac,
+    value: Ieee802154EdDurationUnits,
+) {
+    crate::svd::masked_register_modify::set_ieee802154_ed_duration(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `publish_pbus_force_test` masked transaction.

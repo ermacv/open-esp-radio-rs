@@ -7,6 +7,8 @@ record are therefore evidence, not current usage instructions.
 
 Current records:
 
+- [ESP32-S31 IEEE 802.15.4 ED completion and selected status write](2026-08-25-esp32s31-ieee802154-ed-event.md);
+- [ESP32-S31 IEEE 802.15.4 EVENT_STATUS selective acknowledgement](2026-08-25-esp32s31-ieee802154-event-status.md);
 - [ESP32-S31 FTM requester source frontier](2026-08-24-esp32s31-ftm-requester-frontier.md);
 - [ESP32-S31 hardware beacon-monitor source frontier](2026-08-24-esp32s31-hardware-beacon-monitor-frontier.md);
 - [ESP32-S31 HT Duplicate MCS32 source frontier](2026-08-24-esp32s31-ht-duplicate-mcs32-frontier.md);

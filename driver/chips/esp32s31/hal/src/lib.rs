@@ -17,8 +17,11 @@ pub mod channel;
 pub mod coex;
 pub(crate) mod ieee802154;
 #[cfg(any(test, feature = "validation-probes"))]
+mod ieee802154_ed_event_probe;
+#[cfg(any(test, feature = "validation-probes"))]
 mod ieee802154_event_status_probe;
 pub mod ieee802154_lifecycle;
+mod ieee802154_operation;
 mod ieee802154_policy;
 mod ieee802154_role;
 mod modem_clock_planner;
@@ -44,6 +47,11 @@ pub mod validation;
 pub mod wifi_bb;
 pub mod wifi_mac;
 #[cfg(feature = "validation-probes")]
+pub use ieee802154_ed_event_probe::{
+    Ieee802154EdEventProbeConfig, Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeIsolation,
+    Ieee802154EdEventProbeStop,
+};
+#[cfg(feature = "validation-probes")]
 pub use ieee802154_event_status_probe::{
     Ieee802154EventStatusProbeConfig, Ieee802154EventStatusProbeEvidence,
     Ieee802154EventStatusProbeIsolation, Ieee802154EventStatusProbeStop,
@@ -59,15 +67,15 @@ pub use ieee802154_policy::{
     Ieee802154AckTimeout, Ieee802154AckTimeoutError, Ieee802154CcaMode, Ieee802154MacControl,
     Ieee802154MacPolicy, Ieee802154MacPolicyCheckpoint, Ieee802154PanIdentity,
 };
-#[cfg(feature = "validation-probes")]
-#[doc(hidden)]
-pub use ieee802154_role::Ieee802154EventStatusProbeFinished;
 pub use ieee802154_role::{
     Ieee802154ClockTransitionFailure, Ieee802154Clocked, Ieee802154FoundationConfigured,
     Ieee802154FoundationTransitionFailure, Ieee802154MacPolicyConfigured,
     Ieee802154MacPolicyRecovery, Ieee802154MacPolicyTransitionFailure, Ieee802154Reset,
     Ieee802154ResetTransitionFailure,
 };
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub use ieee802154_role::{Ieee802154EdEventProbeFinished, Ieee802154EventStatusProbeFinished};
 pub use open_esp_radio_esp32s31_pac::{
     MacPowerWakeCause, MacTsfTimerIndex, StaBeaconMissLimit, StaBeaconMissTimeoutRaw,
     StaModemSleepLimit, StaModemWakeConfig, StaModemWakePrepareError, StaModemWakeRestore,

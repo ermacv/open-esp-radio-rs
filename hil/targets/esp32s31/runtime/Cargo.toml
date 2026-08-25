@@ -66,6 +66,12 @@ ieee802154-event-status-probe = [
     "dep:open-esp-radio-esp32s31-hal",
     "open-esp-radio-esp32s31-hal/validation-probes",
 ]
+# Diagnostic-only ED-DONE/TIMER0 selective-write discriminator.
+# RX-ABORT is retained explicitly when PHY/RF/BTBB readiness is absent.
+ieee802154-ed-event-probe = [
+    "dep:open-esp-radio-esp32s31-hal",
+    "open-esp-radio-esp32s31-hal/validation-probes",
+]
 
 [dependencies]
 embassy-executor.workspace = true

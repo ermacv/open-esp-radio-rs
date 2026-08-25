@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 use super::WifiRadioRegisters;
+pub use crate::generated::Ieee802154EdDurationUnits;
 
 /// Opaque eight-bit value accepted by the MAC frequency-code register.
 ///
@@ -102,6 +103,306 @@ impl Ieee802154AckTimeoutUnits {
 
     pub const fn value(self) -> u16 {
         self.0
+    }
+}
+
+impl Ieee802154EdDurationUnits {
+    const fn from_field(value: u32) -> Option<Self> {
+        Self::new(value)
+    }
+}
+
+/// One finite energy-detection command accepted by the narrow PAC lease.
+///
+/// `Stop` maps to the source-confirmed common MAC `STOP` opcode, but this type
+/// grants no generic STOP operation to callers outside the ED transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Ieee802154EdCommand {
+    /// Start one configured energy-detection/CCA sampling transaction.
+    Start,
+    /// Stop the active energy-detection transaction.
+    Stop,
+}
+
+/// Named `EVENT_ENABLE` bits accepted by the typed PAC API.
+///
+/// Physical bits seven and thirteen are intentionally absent because the
+/// pinned public LL assigns them no meaning. The private image prevents those
+/// bits or bits outside the fourteen-bit field from reaching production
+/// `EVENT_ENABLE` writes.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154EventEnableMask(u16);
+
+impl Ieee802154EventEnableMask {
+    /// Every event bit named by the pinned public LL.
+    pub const NAMED_BITS: u16 = 0x1f7f;
+
+    /// Empty event-enable set.
+    pub const NONE: Self = Self(0);
+    /// Transmission completed, bit zero.
+    pub const TX_DONE: Self = Self(1 << 0);
+    /// Reception completed, bit one.
+    pub const RX_DONE: Self = Self(1 << 1);
+    /// Automatic ACK transmission completed, bit two.
+    pub const ACK_TX_DONE: Self = Self(1 << 2);
+    /// ACK reception completed, bit three.
+    pub const ACK_RX_DONE: Self = Self(1 << 3);
+    /// Receive processing aborted, bit four.
+    pub const RX_ABORT: Self = Self(1 << 4);
+    /// Transmit processing aborted, bit five.
+    pub const TX_ABORT: Self = Self(1 << 5);
+    /// Energy detection completed, bit six.
+    pub const ED_DONE: Self = Self(1 << 6);
+    /// The complete event window owned by one finite polled ED/CCA operation.
+    pub const ED_DONE_AND_RX_ABORT: Self = Self(Self::ED_DONE.0 | Self::RX_ABORT.0);
+    /// Timer zero overflowed, bit eight.
+    pub const TIMER0_OVERFLOW: Self = Self(1 << 8);
+    /// Timer one overflowed, bit nine.
+    pub const TIMER1_OVERFLOW: Self = Self(1 << 9);
+    /// MAC clock count matched, bit ten.
+    pub const CLOCK_COUNT_MATCH: Self = Self(1 << 10);
+    /// Transmission SFD processing completed, bit eleven.
+    pub const TX_SFD_DONE: Self = Self(1 << 11);
+    /// Reception SFD processing completed, bit twelve.
+    pub const RX_SFD_DONE: Self = Self(1 << 12);
+    /// Every source-confirmed named event.
+    pub const ALL_NAMED: Self = Self(Self::NAMED_BITS);
+
+    /// Validate a complete caller-supplied event field image.
+    pub const fn from_named_bits(bits: u16) -> Option<Self> {
+        if bits & !Self::NAMED_BITS == 0 {
+            Some(Self(bits))
+        } else {
+            None
+        }
+    }
+
+    /// Return the exact named field image.
+    pub const fn bits(self) -> u16 {
+        self.0
+    }
+
+    /// Combine two already validated named-event sets.
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    /// Return whether every event selected by `required` is enabled.
+    pub const fn contains(self, required: Self) -> bool {
+        self.0 & required.0 == required.0
+    }
+}
+
+/// Closed `RX_ABORT_ENABLE` field image for one finite ED/CCA operation.
+///
+/// The public LL identifies receive-abort reasons 24, 25, and 26 as ED abort,
+/// ED stop, and ED coexistence rejection. Their enable positions are bits
+/// 23, 24, and 25. No constructor accepts a caller-provided image, so this
+/// type can represent only a fully masked field or that exact three-reason
+/// operation set.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154RxAbortEnableMask(u32);
+
+impl Ieee802154RxAbortEnableMask {
+    /// Every receive-abort reason masked.
+    pub const NONE: Self = Self(0);
+    /// Exactly ED abort, ED stop, and ED coexistence rejection.
+    pub const ED_OPERATION_REASONS: Self = Self(0x0380_0000);
+
+    /// Return the exact closed field image.
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+}
+
+/// Semantic readback of the event-enable field owned by a polled ED/CCA
+/// operation.
+///
+/// `Unexpected` deliberately combines every other fourteen-bit image. It
+/// never projects an unexpected image into a writable mask.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154OperationEventEnableObservation {
+    /// Every event is masked.
+    AllMasked,
+    /// Exactly `ED_DONE` and `RX_ABORT` are enabled.
+    EdDoneAndRxAbortOnly,
+    /// A required event is missing or at least one other event is enabled.
+    Unexpected,
+}
+
+impl Ieee802154OperationEventEnableObservation {
+    const fn from_field(bits: u16) -> Self {
+        match bits {
+            0 => Self::AllMasked,
+            bits if bits == Ieee802154EventEnableMask::ED_DONE_AND_RX_ABORT.bits() => {
+                Self::EdDoneAndRxAbortOnly
+            }
+            _ => Self::Unexpected,
+        }
+    }
+}
+
+/// Semantic readback of the receive-abort-enable field owned by a polled
+/// ED/CCA operation.
+///
+/// The observation has no conversion to [`Ieee802154RxAbortEnableMask`], so
+/// unexpected hardware state cannot accidentally become a writable image.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154OperationRxAbortEnableObservation {
+    /// Every receive-abort reason is masked.
+    AllMasked,
+    /// Exactly the three ED-operation reasons are enabled.
+    EdOperationReasonsOnly,
+    /// A required reason is missing or at least one other reason is enabled.
+    Unexpected,
+}
+
+impl Ieee802154OperationRxAbortEnableObservation {
+    const fn from_field(bits: u32) -> Self {
+        match bits {
+            0 => Self::AllMasked,
+            bits if bits == Ieee802154RxAbortEnableMask::ED_OPERATION_REASONS.bits() => {
+                Self::EdOperationReasonsOnly
+            }
+            _ => Self::Unexpected,
+        }
+    }
+}
+
+/// Read-only fourteen-bit `EVENT_ENABLE` or `EVENT_STATUS` observation.
+///
+/// Unlike [`Ieee802154EventEnableMask`], this type preserves unnamed physical
+/// bits because observations must not erase unexpected hardware state. It has
+/// no public constructor and cannot be passed to the production enable write.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154EventObservation(u16);
+
+impl Ieee802154EventObservation {
+    const FIELD_MASK: u16 = 0x3fff;
+
+    const fn from_field(bits: u16) -> Self {
+        Self(bits & Self::FIELD_MASK)
+    }
+
+    /// Return the complete observed fourteen-bit field image.
+    pub const fn bits(self) -> u16 {
+        self.0
+    }
+
+    /// Return whether the complete observed event field is clear.
+    pub const fn is_clear(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Return every observed bit without a source-confirmed event name.
+    pub const fn unnamed_bits(self) -> u16 {
+        self.0 & !Ieee802154EventEnableMask::NAMED_BITS
+    }
+
+    /// Return whether every named event in `required` was observed.
+    pub const fn contains(self, required: Ieee802154EventEnableMask) -> bool {
+        self.0 & required.bits() == required.bits()
+    }
+
+    /// Project only source-confirmed event bits into a writable mask.
+    pub const fn named(self) -> Ieee802154EventEnableMask {
+        Ieee802154EventEnableMask(self.0 & Ieee802154EventEnableMask::NAMED_BITS)
+    }
+
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub const fn for_validation(bits: u16) -> Option<Self> {
+        if bits & !Self::FIELD_MASK == 0 {
+            Some(Self(bits))
+        } else {
+            None
+        }
+    }
+}
+
+/// Complete read-only `RX_STATUS` register observation.
+///
+/// Abort evidence must retain the whole word, including fields whose
+/// semantics are not yet classified. The private image cannot be used for a
+/// register write or converted into an enable mask.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154RxStatusObservation(u32);
+
+impl Ieee802154RxStatusObservation {
+    const fn from_register(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    /// Return the complete observed register word for retained evidence.
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    #[cfg(test)]
+    const fn for_validation(bits: u32) -> Self {
+        Self(bits)
+    }
+}
+
+/// One ordered DMA-free energy-detection/CCA register sample.
+///
+/// `EVENT_STATUS` is observation only. This value has no acknowledge or write
+/// operation because HIL has not established a production access class for
+/// the complete fourteen-bit register.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ieee802154EdCcaSnapshot {
+    duration: Option<Ieee802154EdDurationUnits>,
+    enabled_events: Ieee802154EventObservation,
+    pending_events: Ieee802154EventObservation,
+    rss_code: i8,
+    cca_busy: bool,
+}
+
+impl Ieee802154EdCcaSnapshot {
+    #[doc(hidden)]
+    pub const fn new(
+        duration: Option<Ieee802154EdDurationUnits>,
+        enabled_events: Ieee802154EventObservation,
+        pending_events: Ieee802154EventObservation,
+        rss_code: i8,
+        cca_busy: bool,
+    ) -> Self {
+        Self {
+            duration,
+            enabled_events,
+            pending_events,
+            rss_code,
+            cca_busy,
+        }
+    }
+
+    /// Return the configured finite LL duration field.
+    /// `None` means the observed twenty-four-bit field is outside the strict
+    /// public-LL `uint16_t` subset; no truncation is performed.
+    pub const fn duration(self) -> Option<Ieee802154EdDurationUnits> {
+        self.duration
+    }
+
+    /// Return the complete observed `EVENT_ENABLE` field.
+    pub const fn enabled_events(self) -> Ieee802154EventObservation {
+        self.enabled_events
+    }
+
+    /// Return the complete read-only `EVENT_STATUS` observation.
+    pub const fn pending_events(self) -> Ieee802154EventObservation {
+        self.pending_events
+    }
+
+    /// Return the signed source-defined ED RSS code.
+    ///
+    /// Conversion to dBm remains a HAL/radio-policy responsibility.
+    pub const fn rss_code(self) -> i8 {
+        self.rss_code
+    }
+
+    /// Return the sampled generated `CCA_BUSY` bit.
+    pub const fn cca_busy(self) -> bool {
+        self.cca_busy
     }
 }
 
@@ -507,6 +808,130 @@ impl Ieee802154RegisterLease<'_> {
             .modify(|_, writer| writer.ed_sample_mode().average());
     }
 
+    /// Replace the complete named `EVENT_ENABLE` set exactly.
+    ///
+    /// This is a full field replacement, not a union operation. Unnamed bits
+    /// seven and thirteen cannot be represented by the input type.
+    pub fn set_event_enable(&mut self, events: Ieee802154EventEnableMask) {
+        self.registers
+            .peripherals
+            .ieee802154_mac
+            .event_enable()
+            .modify(|_, writer| writer.events().set(events.bits()));
+    }
+
+    /// Replace the complete receive-abort-enable field with one closed image.
+    ///
+    /// Callers can select only [`Ieee802154RxAbortEnableMask::NONE`] or the
+    /// exact three-reason ED/CCA operation set. The generated field update
+    /// preserves the unowned high bit of the backing word.
+    pub fn set_rx_abort_enable(&mut self, reasons: Ieee802154RxAbortEnableMask) {
+        self.registers
+            .peripherals
+            .ieee802154_mac
+            .rx_abort_enable()
+            .modify(|_, writer| writer.events().set(reasons.bits()));
+    }
+
+    /// Classify the complete `EVENT_ENABLE` field for a finite polled ED/CCA
+    /// operation.
+    ///
+    /// This samples the backing word once and never reads or acknowledges
+    /// `EVENT_STATUS`.
+    pub fn operation_event_enable_observation(&self) -> Ieee802154OperationEventEnableObservation {
+        let bits = self
+            .registers
+            .peripherals
+            .ieee802154_mac
+            .event_enable()
+            .read()
+            .events()
+            .bits();
+        Ieee802154OperationEventEnableObservation::from_field(bits)
+    }
+
+    /// Classify the complete `RX_ABORT_ENABLE` field for a finite polled
+    /// ED/CCA operation.
+    ///
+    /// Every image other than the two values expressible by
+    /// [`Ieee802154RxAbortEnableMask`] is retained semantically as
+    /// `Unexpected`, never projected into a writable mask.
+    pub fn operation_rx_abort_enable_observation(
+        &self,
+    ) -> Ieee802154OperationRxAbortEnableObservation {
+        let bits = self
+            .registers
+            .peripherals
+            .ieee802154_mac
+            .rx_abort_enable()
+            .read()
+            .events()
+            .bits();
+        Ieee802154OperationRxAbortEnableObservation::from_field(bits)
+    }
+
+    /// Observe the complete fourteen-bit `EVENT_STATUS` field without
+    /// acknowledging any event.
+    pub fn event_status_observation(&self) -> Ieee802154EventObservation {
+        let bits = self
+            .registers
+            .peripherals
+            .ieee802154_mac
+            .event_status()
+            .read()
+            .events()
+            .bits();
+        Ieee802154EventObservation::from_field(bits)
+    }
+
+    /// Observe the complete `RX_STATUS` word for terminal abort evidence.
+    pub fn rx_status_observation(&self) -> Ieee802154RxStatusObservation {
+        let bits = self
+            .registers
+            .peripherals
+            .ieee802154_mac
+            .rx_status()
+            .read()
+            .bits();
+        Ieee802154RxStatusObservation::from_register(bits)
+    }
+
+    /// Replace the source-confirmed sixteen-bit ED-duration subset.
+    ///
+    /// The generated masked transaction clears unused bits 23:16 exactly as
+    /// the public `uint16_t` bitfield assignment does and preserves the
+    /// adjacent unowned high byte.
+    pub fn set_ed_duration(&mut self, duration: Ieee802154EdDurationUnits) {
+        crate::generated::set_ieee802154_ed_duration(
+            &self.registers.peripherals.ieee802154_mac,
+            duration,
+        );
+    }
+
+    /// Issue one finite ED command through a generated fixed-image bridge.
+    ///
+    /// `Stop` remains scoped to the finite ED/CCA transaction. This method
+    /// does not establish that STOP is synchronous in another MAC state.
+    pub fn issue_ed_command(&mut self, command: Ieee802154EdCommand) {
+        let mac = &self.registers.peripherals.ieee802154_mac;
+        match command {
+            Ieee802154EdCommand::Start => {
+                crate::svd::fixed_register_image::start_ieee802154_energy_detection(mac);
+            }
+            Ieee802154EdCommand::Stop => {
+                crate::svd::fixed_register_image::stop_ieee802154_energy_detection(mac);
+            }
+        }
+    }
+
+    /// Issue exactly the source-confirmed finite `ED_START` command.
+    ///
+    /// This operation-specific entry point prevents a polled backend from
+    /// selecting `STOP` while still reusing the same generated command leaf.
+    pub fn request_ed_start(&mut self) {
+        self.issue_ed_command(Ieee802154EdCommand::Start);
+    }
+
     /// Replace only the generated eight-bit MAC frequency-code field.
     pub fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode) {
         self.registers
@@ -680,6 +1105,42 @@ impl Ieee802154RegisterLease<'_> {
         Ieee802154StateSnapshot::new(rx, tx)
     }
 
+    /// Sample the DMA-free energy-detection and CCA surface.
+    ///
+    /// Each backing word is read once. This snapshot only observes
+    /// `EVENT_STATUS`; it never invokes the separate fixed selected-image
+    /// operation.
+    pub fn ed_cca_snapshot(&self) -> Ieee802154EdCcaSnapshot {
+        let mac = &self.registers.peripherals.ieee802154_mac;
+        let duration = mac.ed_duration().read();
+        let event_enable = mac.event_enable().read();
+        let event_status = mac.event_status().read();
+        let ed_config = mac.ed_config().read();
+
+        Ieee802154EdCcaSnapshot::new(
+            Ieee802154EdDurationUnits::from_field(duration.duration().bits()),
+            Ieee802154EventObservation::from_field(event_enable.events().bits()),
+            Ieee802154EventObservation::from_field(event_status.events().bits()),
+            ed_config.ed_rss_code().bits() as i8,
+            ed_config.cca_busy().bit_is_set(),
+        )
+    }
+
+    /// Publish the single HIL-qualified ED-DONE selected image.
+    ///
+    /// This is not a general `EVENT_STATUS` acknowledgement API. The raw PAC
+    /// operation fixes the complete image to ED-DONE (`0x0000_0040`), while
+    /// this lease supplies the unique IEEE 802.15.4 peripheral borrow and
+    /// orders device accesses on both sides of that exact write.
+    #[doc(hidden)]
+    pub fn write_ed_done_selected_image(&mut self) {
+        self.registers.order_device_accesses();
+        crate::svd::selected_register_write::write_ieee802154_ed_done_selected_image(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+        self.registers.order_device_accesses();
+    }
+
     /// Observe whether MAC event delivery is still masked for the closed
     /// `EVENT_STATUS` validation transaction.
     #[cfg(feature = "validation-probes")]
@@ -815,6 +1276,167 @@ impl Ieee802154RegisterLease<'_> {
         );
     }
 
+    /// Observe the complete event-enable field for the closed ED validation.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_ed_event_enable_events(&self) -> u16 {
+        crate::svd::ieee802154_ed_event_validation::event_enable_events(
+            &self.registers.peripherals.ieee802154_mac,
+        )
+    }
+
+    /// Enable only RX-ABORT, ED-DONE and TIMER0 for the closed ED validation.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_enable_ed_timer_abort_events(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::enable_ed_timer_abort_events(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
+    /// Mask all event delivery during ED validation cleanup.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_disable_ed_events(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::disable_all_events(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
+    /// Observe the complete RX-abort-enable field for the ED discriminator.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_ed_rx_abort_enable_events(&self) -> u32 {
+        crate::svd::ieee802154_ed_event_validation::rx_abort_enable_events(
+            &self.registers.peripherals.ieee802154_mac,
+        )
+    }
+
+    /// Enable only the three source-confirmed ED abort reasons.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_enable_ed_abort_reasons(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::enable_ed_abort_reasons(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
+    /// Mask every RX-abort reason during terminal cleanup.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_disable_ed_abort_reasons(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::disable_all_rx_abort_reasons(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
+    /// Observe the complete event-status field for the ED discriminator.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_ed_event_status_events(&self) -> u16 {
+        crate::svd::ieee802154_ed_event_validation::event_status_events(
+            &self.registers.peripherals.ieee802154_mac,
+        )
+    }
+
+    /// Observe the complete RX status when ED terminates through RX-ABORT.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_ed_rx_status_raw(&self) -> u32 {
+        crate::svd::ieee802154_ed_event_validation::rx_status_raw(
+            &self.registers.peripherals.ieee802154_mac,
+        )
+    }
+
+    /// Observe the complete public ED-duration field.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_ed_duration(&self) -> u32 {
+        crate::svd::ieee802154_ed_event_validation::ed_duration(
+            &self.registers.peripherals.ieee802154_mac,
+        )
+    }
+
+    /// Program the fixed public standalone-CCA ED duration, exactly eight.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_set_ed_duration_eight(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::set_ed_duration_eight(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
+    /// Observe TIMER0 while it supplies the independent event latch.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_ed_timer0_value(&self) -> u32 {
+        crate::svd::ieee802154_ed_event_validation::timer0_value(
+            &self.registers.peripherals.ieee802154_mac,
+        )
+    }
+
+    /// Program TIMER0's threshold for the ED event discriminator.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_set_ed_timer0_threshold(&mut self, threshold: u32) {
+        crate::svd::ieee802154_ed_event_validation::set_timer0_threshold(
+            &mut self.registers.peripherals.ieee802154_mac,
+            threshold,
+        );
+    }
+
+    /// Start TIMER0 before the ED stimulus.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_start_ed_timer0(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::start_timer0(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
+    /// Stop TIMER0 during terminal cleanup.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_stop_ed_timer0(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::stop_timer0(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
+    /// Start the fixed-duration energy-detection stimulus.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_start_ed(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::start_ed(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
+    /// Issue best-effort STOP after a bounded ED timeout.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_stop_ed_operation(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::stop_operation(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
+    /// Exercise the production selected-image boundary for ED-DONE.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_write_ed_done_event(&mut self) {
+        self.write_ed_done_selected_image();
+    }
+
+    /// Write only TIMER0 in the ED validation-only raw status vocabulary.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_write_ed_timer0_event(&mut self) {
+        crate::svd::ieee802154_ed_event_validation::write_timer0_event(
+            &mut self.registers.peripherals.ieee802154_mac,
+        );
+    }
+
     /// Order memory and device accesses at a descriptor/MMIO boundary.
     pub fn order_device_accesses(&mut self) {
         self.registers.order_device_accesses();
@@ -834,10 +1456,13 @@ impl WifiRadioRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
-        Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154FoundationSnapshot,
-        Ieee802154FrequencyCode, Ieee802154MacControl, Ieee802154MacPolicySnapshot,
-        Ieee802154PanIdentity, Ieee802154Pti, Ieee802154RxStateCode, Ieee802154StateSnapshot,
-        Ieee802154TxStateCode,
+        Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdCcaSnapshot, Ieee802154EdCommand,
+        Ieee802154EdDurationUnits, Ieee802154EventEnableMask, Ieee802154EventObservation,
+        Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154MacControl,
+        Ieee802154MacPolicySnapshot, Ieee802154OperationEventEnableObservation,
+        Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154Pti,
+        Ieee802154RegisterLease, Ieee802154RxAbortEnableMask, Ieee802154RxStateCode,
+        Ieee802154RxStatusObservation, Ieee802154StateSnapshot, Ieee802154TxStateCode,
     };
     use crate::RadioHardware;
 
@@ -907,6 +1532,166 @@ mod tests {
     }
 
     #[test]
+    fn ed_duration_never_truncates_the_wider_physical_field() {
+        assert_eq!(
+            Ieee802154EdDurationUnits::new(0).map(|value| value.get()),
+            Some(0)
+        );
+        assert_eq!(
+            Ieee802154EdDurationUnits::new(u32::from(u16::MAX)).map(|value| value.get()),
+            Some(u32::from(u16::MAX))
+        );
+        assert_eq!(
+            Ieee802154EdDurationUnits::from_field(u16::MAX as u32),
+            Ieee802154EdDurationUnits::new(u16::MAX as u32)
+        );
+        assert_eq!(
+            Ieee802154EdDurationUnits::from_field(u16::MAX as u32 + 1),
+            None
+        );
+    }
+
+    #[test]
+    fn event_enable_mask_accepts_only_named_finite_bits() {
+        let ed_and_timers = Ieee802154EventEnableMask::ED_DONE
+            .union(Ieee802154EventEnableMask::TIMER0_OVERFLOW)
+            .union(Ieee802154EventEnableMask::TIMER1_OVERFLOW);
+        assert_eq!(ed_and_timers.bits(), (1 << 6) | (1 << 8) | (1 << 9));
+        assert!(ed_and_timers.contains(Ieee802154EventEnableMask::ED_DONE));
+        assert_eq!(
+            Ieee802154EventEnableMask::from_named_bits(Ieee802154EventEnableMask::ALL_NAMED.bits()),
+            Some(Ieee802154EventEnableMask::ALL_NAMED)
+        );
+        for unsupported in [1 << 7, 1 << 13, 1 << 14, u16::MAX] {
+            assert_eq!(
+                Ieee802154EventEnableMask::from_named_bits(unsupported),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn polled_event_enable_readback_classifies_every_fourteen_bit_image() {
+        let operation_bits = Ieee802154EventEnableMask::ED_DONE
+            .union(Ieee802154EventEnableMask::RX_ABORT)
+            .bits();
+        assert_eq!(
+            Ieee802154EventEnableMask::ED_DONE_AND_RX_ABORT.bits(),
+            operation_bits
+        );
+
+        for bits in 0..=Ieee802154EventObservation::FIELD_MASK {
+            let expected = match bits {
+                0 => Ieee802154OperationEventEnableObservation::AllMasked,
+                bits if bits == operation_bits => {
+                    Ieee802154OperationEventEnableObservation::EdDoneAndRxAbortOnly
+                }
+                _ => Ieee802154OperationEventEnableObservation::Unexpected,
+            };
+            assert_eq!(
+                Ieee802154OperationEventEnableObservation::from_field(bits),
+                expected,
+                "misclassified EVENT_ENABLE field {bits:#06x}"
+            );
+        }
+    }
+
+    #[test]
+    fn rx_abort_enable_domain_has_only_the_two_operation_images() {
+        assert_eq!(Ieee802154RxAbortEnableMask::NONE.bits(), 0);
+        assert_eq!(
+            Ieee802154RxAbortEnableMask::ED_OPERATION_REASONS.bits(),
+            0x0380_0000
+        );
+        assert_eq!(
+            Ieee802154OperationRxAbortEnableObservation::from_field(
+                Ieee802154RxAbortEnableMask::NONE.bits()
+            ),
+            Ieee802154OperationRxAbortEnableObservation::AllMasked
+        );
+        assert_eq!(
+            Ieee802154OperationRxAbortEnableObservation::from_field(
+                Ieee802154RxAbortEnableMask::ED_OPERATION_REASONS.bits()
+            ),
+            Ieee802154OperationRxAbortEnableObservation::EdOperationReasonsOnly
+        );
+    }
+
+    #[test]
+    fn rx_abort_enable_readback_rejects_every_single_bit_divergence() {
+        let expected = Ieee802154RxAbortEnableMask::ED_OPERATION_REASONS.bits();
+
+        // The generated RX_ABORT_ENABLE field owns bits 0 through 30. Bit 31
+        // is outside the field and is preserved by the masked setter.
+        for bit in 0..31 {
+            let singleton = 1_u32 << bit;
+            assert_eq!(
+                Ieee802154OperationRxAbortEnableObservation::from_field(singleton),
+                Ieee802154OperationRxAbortEnableObservation::Unexpected,
+                "accepted singleton RX_ABORT_ENABLE bit {bit}"
+            );
+
+            let divergent = expected ^ singleton;
+            assert_eq!(
+                Ieee802154OperationRxAbortEnableObservation::from_field(divergent),
+                Ieee802154OperationRxAbortEnableObservation::Unexpected,
+                "accepted one-bit RX_ABORT_ENABLE divergence at bit {bit}"
+            );
+        }
+    }
+
+    #[test]
+    fn event_observation_preserves_unnamed_bits_but_projects_only_named_writes() {
+        let bits = Ieee802154EventEnableMask::ED_DONE.bits() | (1 << 7) | (1 << 13);
+        let observation =
+            Ieee802154EventObservation::for_validation(bits).expect("fourteen-bit field");
+        assert_eq!(observation.bits(), bits);
+        assert_eq!(observation.unnamed_bits(), (1 << 7) | (1 << 13));
+        assert!(observation.contains(Ieee802154EventEnableMask::ED_DONE));
+        assert!(!observation.is_clear());
+        assert_eq!(observation.named(), Ieee802154EventEnableMask::ED_DONE);
+        assert!(
+            Ieee802154EventObservation::for_validation(0)
+                .expect("clear fourteen-bit field")
+                .is_clear()
+        );
+        assert_eq!(Ieee802154EventObservation::for_validation(1 << 14), None);
+    }
+
+    #[test]
+    fn rx_status_observation_preserves_the_complete_word() {
+        for bits in [0, 1, 0x0380_0000, 0x8000_0000, u32::MAX] {
+            assert_eq!(
+                Ieee802154RxStatusObservation::for_validation(bits).bits(),
+                bits
+            );
+        }
+    }
+
+    #[test]
+    fn ed_cca_snapshot_keeps_status_observational_and_codes_uninterpreted() {
+        let enabled =
+            Ieee802154EventObservation::for_validation(1 << 6).expect("fourteen-bit field");
+        let pending = Ieee802154EventObservation::for_validation((1 << 6) | (1 << 7))
+            .expect("fourteen-bit field");
+        let snapshot = Ieee802154EdCcaSnapshot::new(
+            Ieee802154EdDurationUnits::new(128),
+            enabled,
+            pending,
+            -91,
+            true,
+        );
+
+        assert_eq!(snapshot.duration().map(|value| value.get()), Some(128));
+        assert_eq!(snapshot.enabled_events(), enabled);
+        assert_eq!(snapshot.pending_events(), pending);
+        assert_eq!(snapshot.pending_events().unnamed_bits(), 1 << 7);
+        assert_eq!(snapshot.rss_code(), -91);
+        assert!(snapshot.cca_busy());
+        assert_ne!(Ieee802154EdCommand::Start, Ieee802154EdCommand::Stop);
+    }
+
+    #[test]
     fn state_codes_are_bounded_and_expose_only_reviewed_predicates() {
         let zero_rx = Ieee802154RxStateCode::for_validation(0).expect("three-bit state");
         let zero_tx = Ieee802154TxStateCode::for_validation(0).expect("four-bit state");
@@ -951,14 +1736,49 @@ mod tests {
     }
 
     #[test]
+    fn selected_ed_done_boundary_accepts_no_caller_supplied_image() {
+        let _write: fn(&mut Ieee802154RegisterLease<'static>) =
+            Ieee802154RegisterLease::write_ed_done_selected_image;
+    }
+
+    #[test]
+    fn polled_operation_pac_surface_uses_only_closed_typed_writes() {
+        let _set_events: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154EventEnableMask) =
+            Ieee802154RegisterLease::set_event_enable;
+        let _set_rx_aborts: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154RxAbortEnableMask) =
+            Ieee802154RegisterLease::set_rx_abort_enable;
+        let _event_enable: fn(
+            &Ieee802154RegisterLease<'static>,
+        ) -> Ieee802154OperationEventEnableObservation =
+            Ieee802154RegisterLease::operation_event_enable_observation;
+        let _rx_abort_enable: fn(
+            &Ieee802154RegisterLease<'static>,
+        ) -> Ieee802154OperationRxAbortEnableObservation =
+            Ieee802154RegisterLease::operation_rx_abort_enable_observation;
+        let _event_status: fn(&Ieee802154RegisterLease<'static>) -> Ieee802154EventObservation =
+            Ieee802154RegisterLease::event_status_observation;
+        let _rx_status: fn(&Ieee802154RegisterLease<'static>) -> Ieee802154RxStatusObservation =
+            Ieee802154RegisterLease::rx_status_observation;
+        let _set_duration: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154EdDurationUnits) =
+            Ieee802154RegisterLease::set_ed_duration;
+        let _sample_ed: fn(&Ieee802154RegisterLease<'static>) -> Ieee802154EdCcaSnapshot =
+            Ieee802154RegisterLease::ed_cca_snapshot;
+        let _start: fn(&mut Ieee802154RegisterLease<'static>) =
+            Ieee802154RegisterLease::request_ed_start;
+    }
+
+    #[test]
     fn generated_mac_geometry_is_owned_by_the_radio_partition() {
         let cold = RadioHardware::for_validation().into_wifi();
         let mac = &cold.radio().peripherals.ieee802154_mac;
 
         // Pointer inspection performs no volatile access on the host.
         assert_eq!(mac.channel().as_ptr() as usize, 0x2010_3048);
+        assert_eq!(mac.command().as_ptr() as usize, 0x2010_3000);
+        assert_eq!(mac.ed_duration().as_ptr() as usize, 0x2010_3050);
         assert_eq!(mac.ed_config().as_ptr() as usize, 0x2010_3054);
         assert_eq!(mac.event_enable().as_ptr() as usize, 0x2010_3060);
+        assert_eq!(mac.event_status().as_ptr() as usize, 0x2010_3064);
         assert_eq!(mac.rx_abort_enable().as_ptr() as usize, 0x2010_3068);
         assert_eq!(mac.coex_pti().as_ptr() as usize, 0x2010_3070);
         assert_eq!(mac.tx_abort_enable().as_ptr() as usize, 0x2010_3078);

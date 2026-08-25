@@ -23,10 +23,11 @@ pub enum ImageClass {
     DiagnosticTaskPoll,
     DiagnosticRxDelivery,
     DiagnosticIeee802154EventStatus,
+    DiagnosticIeee802154EdEvent,
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
@@ -34,6 +35,7 @@ impl ImageClass {
         Self::DiagnosticTaskPoll,
         Self::DiagnosticRxDelivery,
         Self::DiagnosticIeee802154EventStatus,
+        Self::DiagnosticIeee802154EdEvent,
     ];
 
     pub const fn id(self) -> &'static str {
@@ -45,6 +47,7 @@ impl ImageClass {
             Self::DiagnosticTaskPoll => "diagnostic-task-poll",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
+            Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
         }
     }
 
@@ -67,6 +70,9 @@ impl ImageClass {
             Self::DiagnosticIeee802154EventStatus => {
                 "open-radio-hil,ieee802154-event-status-probe,psram-task-stack,code-psram,profile-psram-data"
             }
+            Self::DiagnosticIeee802154EdEvent => {
+                "open-radio-hil,ieee802154-ed-event-probe,psram-task-stack,code-psram,profile-psram-data"
+            }
         }
     }
 
@@ -78,7 +84,8 @@ impl ImageClass {
             | Self::DiagnosticMacIrq
             | Self::DiagnosticTaskPoll
             | Self::DiagnosticRxDelivery
-            | Self::DiagnosticIeee802154EventStatus => "psram-code-psram-data-psram-stack",
+            | Self::DiagnosticIeee802154EventStatus
+            | Self::DiagnosticIeee802154EdEvent => "psram-code-psram-data-psram-stack",
         }
     }
 
@@ -201,6 +208,11 @@ pub enum Workload {
         period_millis: u16,
     },
     Ieee802154EventStatus {
+        boots: u8,
+        poll_limit: u32,
+        timer_threshold: u32,
+    },
+    Ieee802154EdEvent {
         boots: u8,
         poll_limit: u32,
         timer_threshold: u32,
@@ -379,6 +391,15 @@ impl Scenario {
             )
             .into());
         }
+        let ed_event_image = self.image == ImageClass::DiagnosticIeee802154EdEvent;
+        let ed_event_workload = matches!(self.workload, Workload::Ieee802154EdEvent { .. });
+        if ed_event_image != ed_event_workload {
+            return Err(format!(
+                "{}: IEEE 802.15.4 ED event workload and diagnostic image must be selected together",
+                self.source.display()
+            )
+            .into());
+        }
         if self.evidence.openwrt_tx_monitor_rx
             && (self.image != ImageClass::DiagnosticRxDelivery
                 || !matches!(
@@ -482,6 +503,25 @@ impl Scenario {
                 if self.evidence != EvidenceConfig::default() {
                     return self.criteria_error(
                         "IEEE 802.15.4 EVENT_STATUS diagnostic does not accept external Wi-Fi evidence",
+                    );
+                }
+            }
+            Workload::Ieee802154EdEvent {
+                boots,
+                poll_limit,
+                timer_threshold,
+            } => {
+                bounded(*boots, 1, 20, self, "boots")?;
+                bounded(*poll_limit, 1, 1_000_000, self, "poll_limit")?;
+                bounded(*timer_threshold, 1, 1_000, self, "timer_threshold")?;
+                if self.criteria != Criteria::default() {
+                    return self.criteria_error(
+                        "IEEE 802.15.4 ED event diagnostic does not accept network criteria",
+                    );
+                }
+                if self.evidence != EvidenceConfig::default() {
+                    return self.criteria_error(
+                        "IEEE 802.15.4 ED event diagnostic does not accept external Wi-Fi evidence",
                     );
                 }
             }
@@ -1032,6 +1072,39 @@ mod tests {
         let mut with_external_evidence = scenario.clone();
         with_external_evidence.evidence.openwrt_tx_monitor_rx = true;
         assert!(with_external_evidence.validate().is_err());
+    }
+
+    #[test]
+    fn ieee802154_ed_event_diagnostic_is_exclusive_and_bounded() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let scenario = catalog.get("ieee802154-ed-event-selective-write").unwrap();
+        assert_eq!(scenario.image, ImageClass::DiagnosticIeee802154EdEvent);
+        assert!(matches!(
+            scenario.workload,
+            Workload::Ieee802154EdEvent {
+                boots: 3,
+                poll_limit: 100_000,
+                timer_threshold: 1_000,
+            }
+        ));
+        assert!(scenario.link.is_none());
+
+        let mut wrong_image = scenario.clone();
+        wrong_image.image = ImageClass::Correctness;
+        assert!(wrong_image.validate().is_err());
+
+        let mut out_of_bounds = scenario.clone();
+        out_of_bounds.workload = Workload::Ieee802154EdEvent {
+            boots: 1,
+            poll_limit: 1_000_001,
+            timer_threshold: 1,
+        };
+        assert!(out_of_bounds.validate().is_err());
+
+        let mut with_network_criteria = scenario.clone();
+        with_network_criteria.criteria.exact_delivery = true;
+        assert!(with_network_criteria.validate().is_err());
     }
 
     #[test]

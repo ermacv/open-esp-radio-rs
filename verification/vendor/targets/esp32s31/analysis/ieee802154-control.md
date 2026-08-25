@@ -8,9 +8,11 @@ private oracle, or extracted proprietary table is an input.
 The overall verdict is **INCOMPLETE**. The private software-state vocabulary,
 public-state projection, state-dependent stop paths, interrupt dispatch order,
 and a bounded subset of terminal transitions are source-confirmed. Live command
-execution is not qualified: `EVENT_STATUS` acknowledgement, `STOP` completion,
-DMA quiescence, Timer1 races, RF/BTBB/PLL bring-up, and on-air behavior remain
-open.
+execution through a concrete production backend is not qualified. One exact
+detached-route `ED_DONE = 0x0040` selected write and the recovery order of a
+pure finite ED/CCA engine are now implemented, but generalized `EVENT_STATUS`
+acknowledgement, active IRQ routing, `STOP` completion, DMA quiescence, Timer1
+races, RF/BTBB/PLL bring-up, and on-air behavior remain open.
 
 ## Source ledger
 
@@ -76,7 +78,9 @@ not equate that enum with instantaneous RF or MAC hardware state.
 The ISR enters the driver spinlock, samples the event image plus both abort
 reasons, passes the complete snapshot to the LL helper named `clear_events`,
 and then visits the local snapshot in this exact order. Whether that helper is
-an effective, race-safe acknowledgement remains an explicit gap.
+an effective, race-safe acknowledgement for a full live-IRQ snapshot remains
+an explicit gap. The separately qualified lone-ED-DONE selected write does not
+establish that broader property.
 
 1. RX-abort phase one;
 2. RX SFD;
@@ -197,11 +201,15 @@ the old engine has stopped touching DMA before a new address is published. Nor
 does it prove that the event sample after `STOP` contains every terminal edge
 that races with the request.
 
-The event reconciliation also depends on the unresolved `EVENT_STATUS` access
-class. The LL helper's write pattern is compatible with W1C, but neither S31
-register header states acknowledgement or concurrent-arrival semantics. A live
-open implementation must not turn this source sequence into an ordinary RW
-modify operation.
+The event reconciliation also depends on the unresolved complete
+`EVENT_STATUS` access class. The LL helper's write pattern is compatible with
+W1C, but neither S31 register header states acknowledgement or
+concurrent-arrival semantics. A live open implementation must not turn this
+source sequence into an ordinary RW modify operation. The narrow exception is
+the generated literal `ED_DONE = 0x0040` write qualified by
+[`2026-08-25-esp32s31-ieee802154-generated-ed-done.md`](../../../../../qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-generated-ed-done.md):
+it applies only after lone ED-DONE in the serialized detached-route ED/CCA
+transaction and creates no general acknowledgement API.
 
 ## 5. Timer1 callback context and the unhandled clock event
 
@@ -251,7 +259,7 @@ unconditional boolean enable or release. Clock acquisition and MAC foundation
 writes do not imply calibrated RF, a locked/tracked PLL, valid TX timing, or
 on-air capability.
 
-## 7. Strongest honest Iteration 4 endpoint
+## 7. Strongest honest current endpoint
 
 The source can justify a conservative, **non-operational** pure control model
 with this boundary:
@@ -270,7 +278,18 @@ The ordered intent may name only the reviewed subset: receive, direct transmit,
 CCA-gated transmit, standalone CCA, and standalone ED. Its steps are
 requirements for state-specific quiescence, static-policy refresh, typed DMA
 address publication, optional ED-duration configuration, and a command name.
-There is no execute method and no target constructor justified by this review.
+There is still no concrete target executor or constructor justified for this
+DMA/IRQ actor boundary.
+
+A separate DMA-free finite ED/CCA engine now implements a narrower closed
+sequence against a semantic backend: require a detached CPU route and clear
+status before `ED_START`, poll without acknowledging, accept only lone
+`ED_DONE`, sample the result, write the fixed selected ED-DONE image, require a
+complete zero status readback, close and verify the event masks, and only then
+return a reusable owner. Abort, timeout, conflicting or residual status, and
+backend failure are non-recoverable. This is host-tested logic; the concrete
+PAC/backend binding, physical route guard, and back-to-back hardware proof are
+still pending.
 
 The pure batch boundary may require abort reasons and CCA/ED sidebands up front,
 reject `CLOCK_COUNT_MATCH` and all unsupported bits transactionally, retain the
@@ -279,11 +298,12 @@ withhold its unique ready state until one deferred-next choice and external DMA
 reclamation have completed. This is stronger ownership than an untyped event
 callback, but narrower behavior than the vendor ISR.
 
-It must not:
+The broad DMA/IRQ actor boundary must not:
 
-- read, acknowledge, or enable `EVENT_STATUS`;
-- route an interrupt, issue `STOP` or an operation command, or write DMA
-  addresses;
+- expose arbitrary `EVENT_STATUS` writes or acknowledge any event other than
+  the finite engine's exact lone-ED-DONE selection;
+- route an interrupt, issue `STOP`, claim concrete target command execution, or
+  write DMA addresses;
 - manufacture target DMA completion from an event name;
 - claim the full twelve-state state machine, automatic/Enhanced ACK TX, test
   mode, security, coexistence, sleep, timed TX/RX, or Timer1 behavior;
@@ -292,11 +312,13 @@ It must not:
 
 ## Research and HIL gates
 
-1. **Event acknowledgement:** obtain an authoritative S31 access class or use
-   HIL to latch two independent bits, acknowledge one, and verify selected-bit
-   clearing, preservation of the other bit, distinct-bit and same-bit
-   concurrent arrival, level-line retrigger, reset image, and stale-event
-   teardown. Only then may the IRQ route become active.
+1. **Event acknowledgement and finite ED binding:** retain the exact generated
+   ED-DONE write as the only production-capable selected image, bind the finite
+   engine to a concrete PAC backend with a complete source-132 detached-route
+   guard, and qualify back-to-back ED on hardware. Obtain an authoritative S31
+   access class or additional HIL for same-bit arrival, every other required
+   event class, level-line retrigger, reset image, and stale-event teardown
+   before any generalized acknowledgement or active IRQ route.
 2. **State-by-state stop:** exercise `RX`, `TX_ACK`, `TX_ENH_ACK`, `TX_CCA`,
    `TX`, `RX_ACK`, `ED`, and `CCA`, with a terminal edge immediately before,
    during, and after `STOP`. Measure a bounded hardware-idle predicate and prove
@@ -324,5 +346,7 @@ It must not:
    hardware before any TX-ready claim.
 8. **Operational binding:** only after gates 1, 2, and 6, add a single owner
    that joins command issue, active IRQ acknowledgement, and DMA leases. Require
-   real maximum-length RX/TX, ACK/no-ACK, CCA busy/clear, ED, abort, recovery,
-   and repeated-operation HIL before upgrading this **INCOMPLETE** verdict.
+   real maximum-length RX/TX, ACK/no-ACK, CCA busy/clear, abort, recovery, and
+   repeated-operation HIL before upgrading this **INCOMPLETE** verdict. The
+   narrower polled ED path may advance independently only after its concrete
+   backend, route guard, and repeated-operation HIL from gate 1 are complete.

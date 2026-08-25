@@ -1,0 +1,12 @@
+schema = 3
+id = "ieee802154-ed-event-selective-write"
+description = "Reset-detached ED-DONE plus TIMER0 latch, exact ED abort visibility, and selected ED-DONE status write"
+image = "diagnostic-ieee802154-ed-event"
+isolation = "reset"
+tags = ["diagnostic", "ieee802154", "event-status", "ed-done", "rx-abort", "selective-write", "timer-counter"]
+
+[workload]
+kind = "ieee802154-ed-event"
+boots = 3
+poll_limit = 100000
+timer_threshold = 1000

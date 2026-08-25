@@ -1,0 +1,13 @@
+[package]
+name = "open-esp-radio-ieee802154"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Allocation-free hardware-independent IEEE 802.15.4 radio contracts"
+
+[dependencies]
+
+[lints]
+workspace = true

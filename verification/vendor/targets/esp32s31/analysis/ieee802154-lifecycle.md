@@ -6,8 +6,10 @@ observations from real ESP32-S31 hardware. It is a research input, not a
 production-equivalence decision. The overall lifecycle verdict remains
 **INCOMPLETE**: clock/reset order, MAC foundation writes, and channel coding are
 source-confirmed, but RF/BB initialization contains opaque calls and the
-`EVENT_STATUS` access class is not stated by the reviewed register headers or
-resolved by the HIL observation below.
+complete `EVENT_STATUS` access class is not stated by the reviewed register
+headers and remains unresolved. Separately, bounded HIL evidence now qualifies
+one exact selected write of `ED_DONE = 0x0040` in a serialized transaction with
+both CPU routes detached; that fact does not widen the register access class.
 
 No vendor-artifact-derived values are used here. Unless a section explicitly
 identifies a dated HIL observation, numeric results below are either literal
@@ -224,14 +226,17 @@ Consequently:
 - lifecycle status for event clearing is **INCOMPLETE**;
 - the PAC must not expose or use an ordinary `modify`-based clear as if RW were
   proven;
-- IRQ ownership and event acknowledgement must remain outside the completed
-  foundation state until a public TRM/SVD access annotation or controlled HIL
-  experiment confirms the semantics.
+- general IRQ ownership and snapshot acknowledgement must remain outside the
+  completed foundation state. The only production-capable exception is the
+  generated literal `ED_DONE = 0x0040` selected write described below; it is
+  valid only inside its detached-route finite-operation contract.
 
-A minimal HIL discriminator should latch at least two independent event bits,
-acknowledge exactly one, and verify that the selected bit clears while the
-unselected bit remains set. It should also inject an event between read and
-write to check that acknowledgement does not lose a concurrent event.
+The first HIL discriminator needed to latch at least two independent event
+bits, write exactly one, and verify that the selected bit cleared while the
+unselected bit remained set. The timer and ED observations below now establish
+that distinct-bit relation for their exact selected images. A remaining
+discriminator must inject the same event between observation and write to test
+whether that arrival can be lost.
 
 The repository contains a validation-only target transaction and the
 `ieee802154-event-status-selective-ack` HIL scenario for that discriminator.
@@ -307,9 +312,10 @@ This is positive evidence that the two selected raw writes are compatible with
 selective W1C behavior under the exact detached-route experiment. It still
 does not classify same-bit concurrent arrival, level-line retrigger, status
 generation versus visibility gating, or whether a zero read after masking
-proves the underlying latch physically clear. The production PAC therefore
-keeps `EVENT_STATUS` observation-only, the active IRQ route remains absent, and
-the overall access-class verdict remains **INCOMPLETE**.
+proves the underlying latch physically clear. The generated register remains
+observation-only, both timer writes remain validation-only, the active IRQ
+route remains absent, and the overall access-class verdict remains
+**INCOMPLETE**.
 
 The validation API consumes a process-lifetime reset-isolation capability and
 the complete foundation owner. Its result is terminal: it exposes evidence but
@@ -317,7 +323,32 @@ cannot return to policy configuration or any operational transition. The
 `EVENT_ENABLE` updates preserve every unreviewed upper register bit, while the
 route safety gate rejects every nonzero bit in either complete raw route word.
 These ownership constraints bound the experiment; they do not promote its raw
-status writes into a production acknowledgement API.
+timer-status writes into a production acknowledgement API.
+
+### Generated ED-DONE integration observation: 2026-08-25
+
+The later reset-isolated run recorded in
+[`2026-08-25-esp32s31-ieee802154-generated-ed-done.md`](../../../../../qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-generated-ed-done.md)
+passed three of three boots through the schema-4 Blobray selected-write path.
+With both source-132 route words zero, the exact generated image `0x0040`
+changed `EVENT_STATUS` from `0x0140` (`ED_DONE` plus TIMER0) to `0x0100`; the
+separate validation-only TIMER0 write then produced zero. No RX abort or
+`STOP` occurred.
+
+This qualifies only the TOML-to-generated-PAC-to-hardware path for the literal
+ED-DONE image in that closed serialized transaction. It does not qualify a
+caller-provided mask, another event bit, same-bit arrival, active or
+level-triggered IRQ routing, `STOP`, calibrated RF readiness, or a second ED
+transaction without reset.
+
+The pure finite ED/CCA engine now reflects this narrow result. It may return a
+reusable model owner only after observing lone `ED_DONE`, rechecking the
+detached route and exact active masks, issuing the fixed selected write,
+observing the complete status as exactly zero, and closing and rechecking both
+masks. Abort, timeout, conflicting status, residual status, or backend failure
+retains a non-reusable quarantine owner. A concrete production backend and its
+source-132 route guard are still pending, and the engine's back-to-back host
+test is not repeated-operation HIL evidence.
 
 ## 5. Opaque calls that block an RF-ready claim
 
@@ -388,26 +419,30 @@ It must not be named `RfReady`, `ReceiveReady`, or `TransmitReady`.
 
 ## Next research gates
 
-1. Extend the reviewed validation boundary to same-bit arrival during
-   acknowledgement and active level-line interrupt retrigger. Separately
+1. Extend the reviewed validation boundary beyond the exact ED-DONE image to
+   same-bit arrival during acknowledgement, other required event classes, and
+   active level-line interrupt retrigger. Separately
    distinguish event generation from masked visibility and prove whether a
    zero masked read establishes physical latch cleanup, or obtain an
    authoritative public `EVENT_STATUS` access classification for those
    semantics.
-2. Establish a reviewed BTBB initialization contract for
+2. Bind the finite ED/CCA engine to a concrete PAC backend with a complete
+   source-132 detached-route guard, then qualify two back-to-back ED operations
+   on hardware before treating recovered ownership as repeatedly reusable.
+3. Establish a reviewed BTBB initialization contract for
    `bt_bb_v2_init_cmplx(1)`, including ownership and required postconditions.
-3. Recover or replace the RF calibration/wakeup and `phy_param_track_tot`
+4. Recover or replace the RF calibration/wakeup and `phy_param_track_tot`
    hardware effects behind the public PHY client manager. Reproduce the
    reviewed client-mask and tracking-scheduler protocol with explicit timer
    failure ownership, and test cold-start, warm-start, and already-owned paths
    separately.
-4. Determine the exact registers and timing rule set by
+5. Determine the exact registers and timing rule set by
    `ieee802154_txon_delay_set()`.
-5. Establish a source-legal TX-power capability contract without copying an
+6. Establish a source-legal TX-power capability contract without copying an
    extracted vendor table; validate channel-specific dBm-to-index behavior on
    hardware.
-6. Resolve coexistence-enabled PTI register effects, or explicitly qualify only
+7. Resolve coexistence-enabled PTI register effects, or explicitly qualify only
    the non-coexistence `3/3` path.
-7. Before IRQ work, split task-owned MAC configuration from ISR-owned event
+8. Before IRQ work, split task-owned MAC configuration from ISR-owned event
    status/enable access so one peripheral lease cannot silently cross ownership
    domains.

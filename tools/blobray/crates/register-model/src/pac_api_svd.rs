@@ -140,6 +140,21 @@ impl PacApiPack {
                 &operation.register,
             )?;
         }
+        for operation in &self.selected_register_writes {
+            let binding = register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            require_size_access(&operation.name, binding, Access::ReadOnly, "read-only")?;
+            if binding.is_array {
+                return Err(Error::message(format!(
+                    "PAC API selected-register-write {:?} requires one exact non-array register",
+                    operation.name
+                )));
+            }
+        }
         for operation in &self.register_image_writes {
             ordinary_writable_register(
                 &device,
@@ -733,9 +748,74 @@ mod tests {
 </device>
 "#;
 
+    const SELECTED_REGISTER_WRITE_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name>
+  <version>1</version>
+  <description>selected register write fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>RADIO</name>
+      <description>radio</description>
+      <baseAddress>0x40000000</baseAddress>
+      <registers>
+        <register>
+          <name>EVENT_STATUS</name>
+          <description>read-only event status view</description>
+          <addressOffset>0</addressOffset>
+          <size>32</size>
+          <access>read-only</access>
+        </register>
+        <register>
+          <name>CONTROL</name>
+          <description>writable control</description>
+          <addressOffset>4</addressOffset>
+          <size>32</size>
+          <access>read-write</access>
+        </register>
+        <register>
+          <name>SHORT_STATUS</name>
+          <description>narrow read-only status</description>
+          <addressOffset>8</addressOffset>
+          <size>16</size>
+          <access>read-only</access>
+        </register>
+        <register>
+          <dim>2</dim>
+          <dimIncrement>4</dimIncrement>
+          <dimIndex>0-1</dimIndex>
+          <name>STATUS%s</name>
+          <description>read-only status array</description>
+          <addressOffset>12</addressOffset>
+          <size>32</size>
+          <access>read-only</access>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>
+"#;
+
+    fn selected_register_write_pack(register: &str) -> PacApiPack {
+        toml_edit::de::from_str(&format!(
+            r#"schema = 4
+
+[[selected-register-writes]]
+name = "write_event_status_selected_image"
+peripheral = "RADIO"
+register = "{register}"
+value = 64
+sources = ["HIL_EVENT_STATUS_SELECTED_IMAGE"]
+"#
+        ))
+        .unwrap()
+    }
+
     fn ownership_pack(peripherals: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
-            r#"schema = 3
+            r#"schema = 4
 
 [[ownership-partitions]]
 name = "FixturePeripherals"
@@ -749,7 +829,7 @@ peripherals = [{peripherals}]
 
     fn separated_ownership_pack() -> PacApiPack {
         toml_edit::de::from_str(
-            r#"schema = 3
+            r#"schema = 4
 
 [[ownership-partitions]]
 name = "RadioPeripherals"
@@ -771,6 +851,26 @@ peripherals = ["INTERRUPT"]
     fn accepts_an_exact_exhaustive_ownership_partition() {
         let pack = ownership_pack("\"RADIO\", \"INTERRUPT\"");
         assert!(pack.validate_against_svd(TWO_PERIPHERAL_SVD).is_ok());
+    }
+
+    #[test]
+    fn selected_register_write_requires_one_read_only_32_bit_target() {
+        assert!(
+            selected_register_write_pack("EVENT_STATUS")
+                .validate_against_svd(SELECTED_REGISTER_WRITE_SVD)
+                .is_ok()
+        );
+
+        for register in ["CONTROL", "SHORT_STATUS", "STATUS%s"] {
+            let error = selected_register_write_pack(register)
+                .validate_against_svd(SELECTED_REGISTER_WRITE_SVD)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("read-only") || error.contains("non-array"),
+                "unexpected rejection for {register}: {error}"
+            );
+        }
     }
 
     #[test]

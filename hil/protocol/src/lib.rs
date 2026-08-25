@@ -15,7 +15,8 @@ pub use framing::{
 };
 pub use message::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
-    FeatureCapabilities, Finished, FlowConfig, Ieee802154EventStatusProbeEvidence,
+    FeatureCapabilities, Finished, FlowConfig, Ieee802154EdEventProbeEvidence,
+    Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop, Ieee802154EventStatusProbeEvidence,
     Ieee802154EventStatusProbeRequest, Ieee802154EventStatusProbeStop, InitializationConfiguration,
     Ipv4Endpoint, LinkHealth, NetworkCredentials, NetworkCredentialsError, NetworkInfo,
     NetworkIpv4Configuration, NetworkSchedulerEvidence, OperationStatus, PROTOCOL_VERSION,

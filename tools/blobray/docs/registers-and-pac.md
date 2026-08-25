@@ -148,6 +148,39 @@ The ESP32-S31 project configures these outputs under `[registers.svd]`,
 `[registers.pac-raw]`, `[registers.bindings]` and `[registers.api]` in its
 project manifest.
 
+### Selected writes to SVD read-only registers
+
+The closed-PAC API pack uses schema 4. Schema 3 is rejected; there is no
+compatibility or migration path. Schema 4 adds one intentionally exceptional
+operation for a hardware write which has exact reviewed evidence while the SVD
+must remain read-only:
+
+```toml
+schema = 4
+
+[[selected-register-writes]]
+name = "write_event_status_selected_image"
+peripheral = "RADIO"
+register = "EVENT_STATUS"
+value = 0x00000040
+sources = ["HIL_EVENT_STATUS_SELECTED_IMAGE"]
+```
+
+A selected register write is accepted only for one non-array, readable but
+SVD-nonwritable 32-bit register. Its evidence sources are resolved through the
+same reviewed evidence catalog as every other PAC operation. The generated raw
+helper requires a mutable peripheral owner and performs exactly:
+
+```rust,ignore
+core::ptr::write_volatile(registers.event_status().as_ptr(), 0x00000040);
+```
+
+The generator does not change the register access class, create a `Writable`
+implementation, or accept a caller-supplied image. The review qualifies only
+the named target and literal image. Ordering, isolation, event sampling,
+acknowledgement checks and recovery remain responsibilities of the closed PAC
+wrapper and HAL; this declaration alone is not a production-readiness claim.
+
 ## Existing SVDs
 
 An existing SVD may bootstrap the model, but it does not bypass review.

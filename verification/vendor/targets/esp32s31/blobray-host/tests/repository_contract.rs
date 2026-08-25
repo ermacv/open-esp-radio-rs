@@ -83,7 +83,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
     let api_path = target.join("registers/api.toml");
     let api_source = fs::read_to_string(&api_path).expect("read target PAC API pack");
     let api = toml_document(&api_path);
-    assert_eq!(api["schema"].as_integer(), Some(3));
+    assert_eq!(api["schema"].as_integer(), Some(4));
     assert!(
         !api_source.contains("peripheral-ownership"),
         "the removed inferred-ownership option must not return"
@@ -91,7 +91,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
 
     let partitions = api["ownership-partitions"]
         .as_array_of_tables()
-        .expect("schema-3 target pack must declare ownership partitions");
+        .expect("schema-4 target pack must declare ownership partitions");
     let expected = [
         ("WifiMacPeripherals", "wifi_mac", 50_usize),
         ("WifiInterruptPeripherals", "wifi_interrupts", 2),
@@ -246,7 +246,7 @@ fn closed_chip_pac_is_the_only_driver_dependency_on_the_raw_pac() {
     assert!(raw.contains("EVENT_STATUS (r) register accessor"));
     assert!(
         !raw.contains("impl crate::Writable for EventStatusSpec"),
-        "unproved IEEE 802.15.4 event acknowledgement must remain absent"
+        "EVENT_STATUS must not gain register-wide Writable access; only the fixed serialized ED_DONE selected image is HIL-qualified"
     );
 
     let mut closed_files = Vec::new();

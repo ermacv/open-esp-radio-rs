@@ -190,7 +190,13 @@ The pinned public-source review for the initial IEEE 802.15.4 clock, reset,
 MAC-foundation and channel-code boundary is recorded in
 [`analysis/ieee802154-lifecycle.md`](analysis/ieee802154-lifecycle.md). Its
 overall verdict is `INCOMPLETE`; in particular it does not qualify RF-ready or
-the unresolved `EVENT_STATUS` clear semantics.
+the complete `EVENT_STATUS` access class. The narrower generated
+`ED_DONE = 0x0040` selected write is HIL-qualified by
+[`2026-08-25-esp32s31-ieee802154-generated-ed-done.md`](../../../../qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-generated-ed-done.md)
+for one serialized transaction with both CPU routes detached. The pure finite
+ED/CCA engine returns reusable ownership only after that exact write and a full
+zero status readback; its concrete production backend, route guard, and
+back-to-back hardware qualification remain pending.
 
 The next source-only boundary for static MAC policy, direct frame storage,
 RX-buffer ownership and the still-quiesced IRQ model is recorded in

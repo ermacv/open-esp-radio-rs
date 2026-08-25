@@ -1,16 +1,18 @@
 //! Quiesced interrupt planning for the ESP32-S31 IEEE 802.15.4 MAC.
 //!
 //! This crate deliberately contains no concrete MMIO, interrupt binding,
-//! route-enable, or interrupt-status acknowledgement operation. Public code can
-//! inspect the source-confirmed OR-operation order and apply a pure subset
-//! readback predicate, but it cannot supply a backend or mint an execution
-//! result. A consuming transaction exists only in unit tests and has no
-//! production backend until a target ownership split is reviewed.
+//! route-enable, or general interrupt-status acknowledgement operation. Public
+//! code can inspect the source-confirmed OR-operation order and apply a pure
+//! subset readback predicate, but it cannot supply a backend or mint an
+//! execution result. A consuming IRQ transaction exists only in unit tests and
+//! has no production backend until a target ownership split is reviewed.
 //!
-//! `EVENT_STATUS` remains inaccessible: the pinned public ESP-IDF source uses a
-//! masked self-write, but does not authoritatively classify the register as W1C
-//! or define its concurrent-arrival behavior. An active IRQ owner must not be
-//! added until HIL establishes that contract.
+//! `EVENT_STATUS` is available through one deliberately narrow boundary outside
+//! this crate: a fixed `ED_DONE = 0x0040` selected image is HIL-qualified for a
+//! serialized, route-detached ED completion transaction. That result does not
+//! classify the register as generally W1C, authorize acknowledgement of any
+//! other event, define concurrent-arrival behavior, or establish an active IRQ
+//! owner. Those broader capabilities remain unavailable.
 //!
 //! Register identities and values below are audited against ESP-IDF commit
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`:

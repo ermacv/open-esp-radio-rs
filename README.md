@@ -49,6 +49,8 @@ only opt-in exception.
 | `driver/chips/esp32s31/ieee802154/dma` | Fixed-frame storage and RX-buffer ownership for the ESP32-S31 IEEE 802.15.4 MAC |
 | `driver/chips/esp32s31/ieee802154/irq` | Quiesced IRQ masks, source identity and pure dispatch-order contract |
 | `driver/chips/esp32s31/ieee802154/mac` | Pure fail-closed operation plans and sampled-event state transitions |
+| `driver/chips/esp32s31/ieee802154/runtime` | Executor-neutral affine owner that executes typed MAC plans through a sealed hardware boundary |
+| `driver/ieee802154` | Allocation-free, chip-independent IEEE 802.15.4 frame, command, event and capability contracts |
 | `driver/chips/esp32s31/wifi/dma` | Audited ESP32-S31 descriptor, ring and DMA-storage leaf |
 | `driver/chips/esp32s31/wifi/mac` | Safe ESP32-S31 Wi-Fi MAC backend, IRQ, RX/TX policy and rate control |
 | `driver/chips/esp32s31/wifi` | Role-neutral ESP32-S31 Wi-Fi cold start and device composition |

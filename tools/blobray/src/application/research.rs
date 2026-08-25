@@ -12,7 +12,10 @@ use super::ProjectSession;
 use crate::{
     Result,
     artifacts::LinkedIrReader,
-    registers::{RegisterFacts, load_effective_register_model},
+    registers::{
+        RegisterFacts, RegisterPublicationOwnership, classify_register_publication,
+        load_effective_register_model,
+    },
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
@@ -977,6 +980,18 @@ fn add_registers(
         if identities.contains_key(&(u64::from(fact.address), u32::from(fact.width))) {
             continue;
         }
+        let ownership =
+            classify_register_publication(&facts, &paths.owned_ranges, fact.address, fact.width)?;
+        let message = match ownership {
+            RegisterPublicationOwnership::Owned(_) => format!(
+                "name and review MMIO {:#010x}/{} before publication",
+                fact.address, fact.width
+            ),
+            RegisterPublicationOwnership::External(range) => format!(
+                "inspect external MMIO {:#010x}/{} in range {:?}; the range is outside [registers].owned-ranges and cannot be published to project default reviewed facts",
+                fact.address, fact.width, range.name
+            ),
+        };
         add_register_seed(
             scopes,
             graphs,
@@ -986,20 +1001,16 @@ fn add_registers(
                 id: format!("register-{:#010x}-{}", fact.address, fact.width),
                 kind: "register-model".to_owned(),
                 severity: "warning".to_owned(),
-                message: format!(
-                    "name and review MMIO {:#010x}/{} before publication",
-                    fact.address, fact.width
-                ),
+                message,
                 subject: ResearchSubject::MmioRegister {
                     address_space: address_space.clone(),
                     address: fact.address,
                     width: fact.width,
                     assertion: None,
                 },
-                consumers: vec![reviewed_knowledge_consumer(
-                    session,
-                    &["register-declaration", "register-name"],
-                )],
+                consumers: register_publication_consumers(ownership, || {
+                    reviewed_knowledge_consumer(session, &["register-declaration", "register-name"])
+                }),
             },
         )?;
     }
@@ -1046,6 +1057,17 @@ fn reviewed_knowledge_consumer(
             .map(|kind| (*kind).to_owned())
             .collect(),
         diagnostic,
+    }
+}
+
+fn register_publication_consumers(
+    ownership: RegisterPublicationOwnership<'_>,
+    consumer: impl FnOnce() -> ResearchConsumer,
+) -> Vec<ResearchConsumer> {
+    if ownership.is_owned() {
+        vec![consumer()]
+    } else {
+        Vec::new()
     }
 }
 
@@ -1136,6 +1158,21 @@ fn add_unknown_semantics(
         else {
             continue;
         };
+        let ownership = classify_register_publication(
+            &facts,
+            &paths.owned_ranges,
+            fact.address,
+            fact.width,
+        )?;
+        let message = match ownership {
+            RegisterPublicationOwnership::Owned(_) => format!(
+                "prove write semantics for {address:#010x}/{width}; software access cannot prove W1C/self-clear"
+            ),
+            RegisterPublicationOwnership::External(range) => format!(
+                "inspect unknown write semantics for external MMIO {address:#010x}/{width} in range {:?}; the range is outside [registers].owned-ranges and cannot update project default reviewed facts",
+                range.name
+            ),
+        };
         add_register_seed(
             scopes,
             graphs,
@@ -1145,19 +1182,16 @@ fn add_unknown_semantics(
                 id: format!("semantic-{}", assertion.id),
                 kind: "register-write-semantics".to_owned(),
                 severity: "warning".to_owned(),
-                message: format!(
-                    "prove write semantics for {address:#010x}/{width}; software access cannot prove W1C/self-clear"
-                ),
+                message,
                 subject: ResearchSubject::MmioRegister {
                     address_space,
                     address,
                     width,
                     assertion: Some(assertion.id.clone()),
                 },
-                consumers: vec![reviewed_knowledge_consumer(
-                    session,
-                    &["hardware-write-semantics"],
-                )],
+                consumers: register_publication_consumers(ownership, || {
+                    reviewed_knowledge_consumer(session, &["hardware-write-semantics"])
+                }),
             },
         )?;
     }
@@ -2564,6 +2598,65 @@ mod tests {
         };
 
         assert_eq!(next_command(&candidate), "inspect register 0x60001000");
+    }
+
+    #[test]
+    fn external_registers_cannot_route_declarations_or_write_semantics() {
+        let facts = RegisterFacts {
+            artifacts: Vec::new(),
+            ranges: vec![
+                crate::registers::FactRange {
+                    name: "coex-hw-timer".to_owned(),
+                    start: 0x2010_f400,
+                    end: 0x2010_f450,
+                },
+                crate::registers::FactRange {
+                    name: "modem-lpcon-platform-high".to_owned(),
+                    start: 0x2010_f450,
+                    end: 0x2010_f800,
+                },
+                crate::registers::FactRange {
+                    name: "lp-peripheral".to_owned(),
+                    start: 0x2080_0000,
+                    end: 0x2090_0000,
+                },
+            ],
+            registers: Vec::new(),
+        };
+        let owned = vec!["coex-hw-timer".to_owned()];
+        let owned_control = classify_register_publication(&facts, &owned, 0x2010_f420, 32).unwrap();
+        let external_coex = classify_register_publication(&facts, &owned, 0x2010_f4a0, 32).unwrap();
+        let external_tsens =
+            classify_register_publication(&facts, &owned, 0x2081_8000, 32).unwrap();
+        let consumer = || ResearchConsumer::ReviewedKnowledgeAssertions {
+            resolution: ResearchConsumerResolution::Ready,
+            configured_paths: vec![PathBuf::from("reviewed/project-facts.toml")],
+            selected_path: Some(PathBuf::from("reviewed/project-facts.toml")),
+            assertion_kinds: vec!["register-declaration".to_owned()],
+            diagnostic: None,
+        };
+
+        assert_eq!(
+            register_publication_consumers(owned_control, consumer).len(),
+            1
+        );
+        assert!(register_publication_consumers(external_coex, consumer).is_empty());
+        assert!(register_publication_consumers(external_tsens, consumer).is_empty());
+
+        let write_semantics = register_publication_consumers(external_coex, || {
+            ResearchConsumer::ReviewedKnowledgeAssertions {
+                resolution: ResearchConsumerResolution::Ready,
+                configured_paths: vec![PathBuf::from("reviewed/project-facts.toml")],
+                selected_path: Some(PathBuf::from("reviewed/project-facts.toml")),
+                assertion_kinds: vec!["hardware-write-semantics".to_owned()],
+                diagnostic: None,
+            }
+        });
+        assert!(write_semantics.is_empty());
+        assert_eq!(
+            finding_actionability(&write_semantics),
+            ResearchActionability::InspectionOnly
+        );
     }
 
     #[test]

@@ -41,6 +41,73 @@ pub(crate) struct RegisterWorkspaceSummary {
     pub(crate) fields: usize,
 }
 
+/// Project publication ownership for one complete physical MMIO access.
+///
+/// Discovery deliberately retains observations from platform/system ranges.
+/// Those observations remain useful evidence, but only an access wholly
+/// contained by a range selected in `[registers].owned-ranges` may contribute
+/// register assertions to project-owned reviewed knowledge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RegisterPublicationOwnership<'a> {
+    Owned(&'a super::FactRange),
+    External(&'a super::FactRange),
+}
+
+impl RegisterPublicationOwnership<'_> {
+    pub(crate) const fn is_owned(self) -> bool {
+        matches!(self, Self::Owned(_))
+    }
+}
+
+/// Classify whether a complete MMIO access is authorized for publication by
+/// the project register workspace.
+///
+/// Missing/stale range configuration and accesses that do not fit wholly in a
+/// single discovery range fail closed. A valid external range is not an error:
+/// it is retained for inspection without becoming project publication debt.
+pub(crate) fn classify_register_publication<'a>(
+    facts: &'a RegisterFacts,
+    owned_ranges: &[String],
+    address: u32,
+    width: u8,
+) -> Result<RegisterPublicationOwnership<'a>> {
+    let available = facts
+        .ranges
+        .iter()
+        .map(|range| range.name.as_str())
+        .collect::<BTreeSet<_>>();
+    if let Some(missing) = owned_ranges
+        .iter()
+        .find(|name| !available.contains(name.as_str()))
+    {
+        return Err(crate::Error::invalid(format!(
+            "register owned range {missing:?} is absent from MMIO discovery facts"
+        )));
+    }
+    if !matches!(width, 8 | 16 | 32) {
+        return Err(crate::Error::invalid(format!(
+            "register publication candidate at {address:#010x} has unsupported width {width}"
+        )));
+    }
+    let end = u64::from(address)
+        .checked_add(u64::from(width).div_ceil(8))
+        .ok_or_else(|| crate::Error::invalid("register publication candidate address overflow"))?;
+    let range = facts
+        .ranges
+        .iter()
+        .find(|range| range.contains(address) && end <= u64::from(range.end))
+        .ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "register publication candidate {address:#010x}/{width} does not fit wholly in one MMIO discovery range"
+            ))
+        })?;
+    Ok(if owned_ranges.contains(&range.name) {
+        RegisterPublicationOwnership::Owned(range)
+    } else {
+        RegisterPublicationOwnership::External(range)
+    })
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ProjectRegisterWorkspace {
     facts: Option<RegisterFacts>,
@@ -310,6 +377,81 @@ mod tests {
             observation_keys(&facts, &["radio".to_owned()].into(), &BTreeSet::new()).unwrap();
         assert_eq!(observations.owned, [(0x1010, 32)].into());
         assert_eq!(observations.outside_scope, [(0x3010, 32)].into());
+    }
+
+    #[test]
+    fn publication_ownership_distinguishes_radio_and_platform_ranges() {
+        let facts = RegisterFacts {
+            artifacts: Vec::new(),
+            ranges: vec![
+                FactRange {
+                    name: "coex-hw-timer".to_owned(),
+                    start: 0x2010_f400,
+                    end: 0x2010_f450,
+                },
+                FactRange {
+                    name: "modem-lpcon-platform-high".to_owned(),
+                    start: 0x2010_f450,
+                    end: 0x2010_f800,
+                },
+                FactRange {
+                    name: "lp-peripheral".to_owned(),
+                    start: 0x2080_0000,
+                    end: 0x2090_0000,
+                },
+            ],
+            registers: Vec::new(),
+        };
+        let owned = vec!["coex-hw-timer".to_owned()];
+
+        let owned_control = classify_register_publication(&facts, &owned, 0x2010_f420, 32).unwrap();
+        let external_coex = classify_register_publication(&facts, &owned, 0x2010_f4a0, 32).unwrap();
+        let external_tsens =
+            classify_register_publication(&facts, &owned, 0x2081_8000, 32).unwrap();
+
+        assert_eq!(
+            owned_control,
+            RegisterPublicationOwnership::Owned(&facts.ranges[0])
+        );
+        assert_eq!(
+            external_coex,
+            RegisterPublicationOwnership::External(&facts.ranges[1])
+        );
+        assert_eq!(
+            external_tsens,
+            RegisterPublicationOwnership::External(&facts.ranges[2])
+        );
+    }
+
+    #[test]
+    fn publication_ownership_fails_closed_on_crossing_or_stale_ranges() {
+        let facts = RegisterFacts {
+            artifacts: Vec::new(),
+            ranges: vec![FactRange {
+                name: "coex-hw-timer".to_owned(),
+                start: 0x2010_f400,
+                end: 0x2010_f450,
+            }],
+            registers: Vec::new(),
+        };
+
+        let crossing =
+            classify_register_publication(&facts, &["coex-hw-timer".to_owned()], 0x2010_f44f, 32)
+                .unwrap_err();
+        assert!(crossing.to_string().contains("does not fit wholly"));
+
+        let stale = classify_register_publication(
+            &facts,
+            &["renamed-owned-range".to_owned()],
+            0x2010_f420,
+            32,
+        )
+        .unwrap_err();
+        assert!(
+            stale
+                .to_string()
+                .contains("absent from MMIO discovery facts")
+        );
     }
 
     #[test]

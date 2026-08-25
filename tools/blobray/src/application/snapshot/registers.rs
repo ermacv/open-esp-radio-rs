@@ -10,8 +10,8 @@ use crate::{
         RegisterWorkspaceReport, RegisterWritePatternSummary,
     },
     registers::{
-        RegisterFacts, RegisterModel, RegisterReviewIr, load_effective_register_model,
-        physical_register_identity,
+        RegisterFacts, RegisterModel, RegisterPublicationOwnership, RegisterReviewIr,
+        classify_register_publication, load_effective_register_model, physical_register_identity,
     },
 };
 
@@ -156,13 +156,16 @@ pub(crate) fn detail(
             .as_ref()
             .and_then(|model| model.review().iter().find(|item| item.entity == *identity))
     });
-    let outside_publication_scope = fact.is_some_and(|fact| {
-        facts.as_ref().is_some_and(|facts| {
-            facts.ranges.iter().any(|range| {
-                range.contains(fact.address) && !paths.owned_ranges.contains(&range.name)
-            })
+    let publication_ownership = fact
+        .zip(facts.as_ref())
+        .map(|(fact, facts)| {
+            classify_register_publication(facts, &paths.owned_ranges, fact.address, fact.width)
         })
-    });
+        .transpose()?;
+    let outside_publication_scope = matches!(
+        publication_ownership,
+        Some(RegisterPublicationOwnership::External(_))
+    );
     let non_operational_only = fact.is_some_and(|fact| {
         let configured = paths
             .non_operational_functions

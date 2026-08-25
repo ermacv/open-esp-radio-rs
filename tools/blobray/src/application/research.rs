@@ -11,6 +11,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use super::ProjectSession;
+use super::{ExecutableAction, ProjectContextRequirement};
 use crate::{
     Result,
     registers::{
@@ -19,7 +20,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 10;
+pub(crate) const RESEARCH_SCHEMA: u32 = 11;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -329,7 +330,8 @@ pub(crate) struct ResearchFinding {
     pub(crate) publication_scopes: Vec<String>,
     pub(crate) knowledge_required: String,
     pub(crate) evidence_required: Vec<String>,
-    pub(crate) revalidation_commands: Vec<String>,
+    pub(crate) revalidation_actions: Vec<ExecutableAction>,
+    pub(crate) requery_action: ExecutableAction,
     pub(crate) summary: String,
 }
 
@@ -357,7 +359,7 @@ pub(crate) struct ResearchAction {
     pub(crate) publication_scopes: Vec<String>,
     pub(crate) estimated_cost: String,
     pub(crate) confidence: String,
-    pub(crate) inspect_command: String,
+    pub(crate) inspect_action: ExecutableAction,
     pub(crate) actionability: ResearchActionabilitySummary,
     pub(crate) prerequisite_ids: Vec<String>,
     pub(crate) findings: Vec<ResearchFinding>,
@@ -370,7 +372,7 @@ pub(crate) struct ResearchActionCatalogEntry {
     pub(crate) id: String,
     pub(crate) kinds: Vec<String>,
     pub(crate) score: u64,
-    pub(crate) inspect_command: String,
+    pub(crate) inspect_action: ExecutableAction,
     pub(crate) estimated_cost: String,
     pub(crate) confidence: String,
     pub(crate) score_breakdown: ResearchScoreBreakdown,
@@ -610,21 +612,32 @@ pub(crate) fn next(
     let ranked = candidates
         .into_values()
         .map(|candidate| {
-            let inspect_command = context.follow_up_command(
-                &next_command(&candidate),
-                super::FollowUpRequirements::ANALYSIS,
-            );
-            let revalidation_command =
-                context.follow_up_command("project analyze", super::FollowUpRequirements::ANALYSIS);
-            finalize(
+            let requery_action = context.follow_up_action(
+                [
+                    "project".to_owned(),
+                    "research".to_owned(),
+                    "next".to_owned(),
+                    "--finding".to_owned(),
+                    candidate.id.clone(),
+                ],
+                ProjectContextRequirement::Analysis,
+            )?;
+            let inspect_action = context.follow_up_action(
+                next_action_tokens(&candidate),
+                ProjectContextRequirement::Analysis,
+            )?;
+            let revalidation_action = context
+                .follow_up_action(["project", "analyze"], ProjectContextRequirement::Analysis)?;
+            Ok(finalize(
                 candidate,
                 &capabilities,
                 &surfaces,
-                inspect_command,
-                revalidation_command,
-            )
+                inspect_action,
+                revalidation_action,
+                requery_action,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
     let actions = coalesce_actions(ranked);
     let prerequisites = build_prerequisites(&actions);
     let prerequisite_indices = ranked_prerequisite_indices(&prerequisites, options.strategy);
@@ -711,7 +724,7 @@ fn build_inventory(
             id: action.id,
             kinds: action.kinds,
             score: action.score,
-            inspect_command: action.inspect_command,
+            inspect_action: action.inspect_action,
             estimated_cost: action.estimated_cost,
             confidence: action.confidence,
             score_breakdown: action.score_breakdown,
@@ -3132,8 +3145,9 @@ fn finalize(
     candidate: Accumulator,
     capabilities_by_function: &CapabilityContexts,
     surfaces_by_scope: &VerificationContexts,
-    inspect_command: String,
-    revalidation_command: String,
+    inspect_action: ExecutableAction,
+    revalidation_action: ExecutableAction,
+    requery_action: ExecutableAction,
 ) -> ResearchAction {
     let capability_links = candidate
         .direct
@@ -3181,12 +3195,13 @@ fn finalize(
         publication_scopes: candidate.publication_scopes.into_iter().collect(),
         knowledge_required: knowledge_required(&kind).to_owned(),
         evidence_required: evidence_required(&kind),
-        revalidation_commands: vec![revalidation_command],
+        revalidation_actions: vec![revalidation_action],
+        requery_action,
         summary: candidate.message,
     };
     let mut result = ResearchAction {
         rank: 0,
-        id: stable_id("action", &inspect_command),
+        id: stable_id("action", &inspect_action.canonical_execution_key()),
         kinds: vec![kind],
         score: 0,
         inspection_function_ids: finding.inspection_function_ids.clone(),
@@ -3207,7 +3222,7 @@ fn finalize(
         publication_scopes: finding.publication_scopes.clone(),
         estimated_cost: String::new(),
         confidence: String::new(),
-        inspect_command,
+        inspect_action,
         actionability: summarize_actionability(std::slice::from_ref(&finding)),
         prerequisite_ids: finding.prerequisite_ids.clone(),
         findings: vec![finding],
@@ -3234,9 +3249,9 @@ fn finalize(
 
 fn coalesce_actions(candidates: Vec<ResearchAction>) -> Vec<ResearchAction> {
     let mut actions = Vec::<ResearchAction>::new();
-    let mut by_command = BTreeMap::<String, usize>::new();
+    let mut by_action = BTreeMap::<ExecutableAction, usize>::new();
     for candidate in candidates {
-        if let Some(index) = by_command.get(&candidate.inspect_command).copied() {
+        if let Some(index) = by_action.get(&candidate.inspect_action).copied() {
             let action = &mut actions[index];
             action.findings.extend(candidate.findings);
             action
@@ -3284,7 +3299,7 @@ fn coalesce_actions(candidates: Vec<ResearchAction>) -> Vec<ResearchAction> {
             action.prerequisite_ids = collect_prerequisite_ids(&action.findings);
             refresh_action_score(action);
         } else {
-            by_command.insert(candidate.inspect_command.clone(), actions.len());
+            by_action.insert(candidate.inspect_action.clone(), actions.len());
             actions.push(candidate);
         }
     }
@@ -3435,9 +3450,13 @@ fn evidence_required(kind: &str) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
-fn next_command(candidate: &Accumulator) -> String {
+fn next_action_tokens(candidate: &Accumulator) -> Vec<String> {
     if let ResearchSubject::MmioRegister { address, .. } = &candidate.subject {
-        return format!("inspect register {address:#010x}");
+        return vec![
+            "inspect".to_owned(),
+            "register".to_owned(),
+            format!("{address:#010x}"),
+        ];
     }
     let function = candidate.inspection.first().or_else(|| {
         (!candidate
@@ -3452,23 +3471,45 @@ fn next_command(candidate: &Accumulator) -> String {
             || function.clone(),
             |(source, symbol)| format!("{source}:{symbol}"),
         );
-        format!(
-            "inspect function {}",
-            crate::shell::arg(std::ffi::OsStr::new(&selector))
-        )
+        vec!["inspect".to_owned(), "function".to_owned(), selector]
     } else if let Some(scope) = candidate.scopes.first() {
-        format!(
-            "inspect scope {}",
-            crate::shell::arg(std::ffi::OsStr::new(scope))
-        )
+        vec!["inspect".to_owned(), "scope".to_owned(), scope.clone()]
     } else {
-        "project status".to_owned()
+        vec!["project".to_owned(), "status".to_owned()]
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_action(command: &str) -> ExecutableAction {
+        ExecutableAction::new(
+            command.split_whitespace().map(str::to_owned).collect(),
+            std::env::current_dir().unwrap(),
+            ProjectContextRequirement::Analysis,
+        )
+        .unwrap()
+    }
+
+    fn finalize_test(
+        candidate: Accumulator,
+        capabilities: &CapabilityContexts,
+        surfaces: &VerificationContexts,
+        inspect_command: &str,
+    ) -> ResearchAction {
+        let finding_id = candidate.id.clone();
+        finalize(
+            candidate,
+            capabilities,
+            surfaces,
+            test_action(inspect_command),
+            test_action("blobray project analyze --project project.toml"),
+            test_action(&format!(
+                "blobray project research next --finding {finding_id} --project project.toml"
+            )),
+        )
+    }
 
     fn persisted_observation(
         resolution: crate::application::capability_context::InterfaceObservationResolution,
@@ -3585,12 +3626,11 @@ mod tests {
     fn ranked_candidate(id: &str, benefit: u64, effort: u64, cost: u64) -> ResearchAction {
         let mut accumulator = accumulator(id, "unresolved-call");
         accumulator.direct.insert(id.to_owned());
-        let mut candidate = finalize(
+        let mut candidate = finalize_test(
             accumulator,
             &BTreeMap::new(),
             &BTreeMap::new(),
-            format!("blobray inspect function {id} --project project.toml"),
-            "blobray project analyze --project project.toml".to_owned(),
+            &format!("blobray inspect function {id} --project project.toml"),
         );
         candidate.id = id.to_owned();
         candidate.score = benefit.saturating_mul(100) / effort;
@@ -4053,7 +4093,10 @@ mod tests {
         let mut candidate = accumulator("missing-cause", "call-result-model");
         candidate.direct = ["libpp::impacted_caller".to_owned()].into();
         candidate.evidence_channels = ["reference".to_owned()].into();
-        assert_eq!(next_command(&candidate), "inspect scope radio");
+        assert_eq!(
+            next_action_tokens(&candidate),
+            ["inspect", "scope", "radio"]
+        );
     }
 
     #[test]
@@ -4083,12 +4126,11 @@ mod tests {
             closed: true,
             relation: ResearchLinkRelation::ReviewScopeContext,
         };
-        let result = finalize(
+        let result = finalize_test(
             candidate,
             &BTreeMap::from([("leaf".to_owned(), [capability].into())]),
             &BTreeMap::from([("radio".to_owned(), [surface].into())]),
-            "blobray inspect function leaf --project project.toml".to_owned(),
-            "blobray project analyze --project project.toml".to_owned(),
+            "blobray inspect function leaf --project project.toml",
         );
         assert_eq!(result.guaranteed_unlock, 1);
         assert_eq!(result.optimistic_unlock, 2);
@@ -4105,7 +4147,7 @@ mod tests {
         assert_eq!(result.score, 234);
         assert!(result.score > 100);
         assert_eq!(
-            result.inspect_command,
+            result.inspect_action.render_posix(),
             "blobray inspect function leaf --project project.toml"
         );
     }
@@ -4160,7 +4202,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 10);
+        assert_eq!(report.schema_version, 11);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -4561,12 +4603,11 @@ locator = "RADIO.STATUS"
             assertion_kinds: vec!["register-identity".to_owned()],
             diagnostic: Some("select default-pack".to_owned()),
         }];
-        let action = finalize(
+        let action = finalize_test(
             candidate,
             &BTreeMap::new(),
             &BTreeMap::new(),
-            "blobray inspect register 0x60001000 --project project.toml".to_owned(),
-            "blobray project analyze --project project.toml".to_owned(),
+            "blobray inspect register 0x60001000 --project project.toml",
         );
         let mut second = action.clone();
         second.id = "second-action".to_owned();
@@ -4657,19 +4698,17 @@ locator = "RADIO.STATUS"
         }
 
         let actions = coalesce_actions(vec![
-            finalize(
+            finalize_test(
                 candidate("slot-a", "review slot A", None),
                 &BTreeMap::new(),
                 &BTreeMap::new(),
-                "blobray inspect function ble-controller:logger --project project.toml".to_owned(),
-                "blobray project analyze --project project.toml".to_owned(),
+                "blobray inspect function ble-controller:logger --project project.toml",
             ),
-            finalize(
+            finalize_test(
                 candidate("slot-b", "review slot B", Some("ble-controller::worker")),
                 &BTreeMap::new(),
                 &BTreeMap::new(),
-                "blobray inspect function ble-controller:logger --project project.toml".to_owned(),
-                "blobray project analyze --project project.toml".to_owned(),
+                "blobray inspect function ble-controller:logger --project project.toml",
             ),
         ]);
 
@@ -4693,24 +4732,24 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn next_command_converts_internal_identity_to_cli_selector() {
+    fn next_action_preserves_cli_selector_as_one_argument() {
         let mut candidate = accumulator("candidate", "unresolved-call");
         candidate.direct = ["archive::function".to_owned()].into();
         assert_eq!(
-            next_command(&candidate),
-            "inspect function archive:function"
+            next_action_tokens(&candidate),
+            ["inspect", "function", "archive:function"]
         );
     }
 
     #[test]
-    fn next_command_prefers_the_causal_function_over_an_impacted_caller() {
+    fn next_action_prefers_the_causal_function_over_an_impacted_caller() {
         let mut candidate = accumulator("candidate", "call-boundary");
         candidate.direct = ["libpp::caller".to_owned()].into();
         candidate.inspection = ["libpp::causal_callee@0x10001000".to_owned()].into();
 
         assert_eq!(
-            next_command(&candidate),
-            "inspect function libpp:causal_callee@0x10001000"
+            next_action_tokens(&candidate),
+            ["inspect", "function", "libpp:causal_callee@0x10001000"]
         );
     }
 
@@ -4725,7 +4764,10 @@ locator = "RADIO.STATUS"
             assertion: Some("write-semantics".to_owned()),
         };
 
-        assert_eq!(next_command(&candidate), "inspect register 0x60001000");
+        assert_eq!(
+            next_action_tokens(&candidate),
+            ["inspect", "register", "0x60001000"]
+        );
     }
 
     #[test]
@@ -4833,7 +4875,7 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn schema_ten_serializes_query_and_one_typed_finding_catalog() {
+    fn schema_eleven_serializes_query_and_executable_actions() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -4848,17 +4890,16 @@ locator = "RADIO.STATUS"
             assertion_kinds: vec!["register-identity".to_owned()],
             diagnostic: Some("select one pack".to_owned()),
         }];
-        let action = finalize(
+        let action = finalize_test(
             candidate,
             &BTreeMap::new(),
             &BTreeMap::new(),
-            "blobray inspect register 0x60001000 --project project.toml".to_owned(),
-            "blobray project analyze --project project.toml".to_owned(),
+            "blobray inspect register 0x60001000 --project project.toml",
         );
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 10);
+        assert_eq!(value["schema_version"], 11);
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);
         assert_eq!(
@@ -4885,6 +4926,28 @@ locator = "RADIO.STATUS"
             1
         );
         assert!(value["inventory"]["actions"][0].get("findings").is_none());
+        assert_eq!(
+            value["inventory"]["actions"][0]["inspect_action"]["argv"][0],
+            "blobray"
+        );
+        assert_eq!(
+            value["inventory"]["actions"][0]["inspect_action"]["context"],
+            "analysis"
+        );
+        assert!(
+            value["inventory"]["actions"][0]
+                .get("inspect_command")
+                .is_none()
+        );
+        assert_eq!(
+            value["inventory"]["findings"][0]["requery_action"]["argv"][1],
+            "project"
+        );
+        assert!(
+            value["inventory"]["findings"][0]
+                .get("revalidation_commands")
+                .is_none()
+        );
         assert!(value["inventory"]["prerequisites"][0].get("rank").is_none());
         assert_eq!(value["selection"]["steps"][0]["kind"], "prerequisite");
     }
@@ -4900,17 +4963,10 @@ locator = "RADIO.STATUS"
     #[test]
     fn mixed_kind_action_cost_and_findings_are_order_independent() {
         let command = "blobray inspect function radio:worker --project project.toml";
-        let revalidate = "blobray project analyze --project project.toml";
         let action_for = |id: &str, kind: &str| {
             let mut candidate = accumulator(id, kind);
             candidate.direct = ["radio::worker".to_owned()].into();
-            finalize(
-                candidate,
-                &BTreeMap::new(),
-                &BTreeMap::new(),
-                command.to_owned(),
-                revalidate.to_owned(),
-            )
+            finalize_test(candidate, &BTreeMap::new(), &BTreeMap::new(), command)
         };
         let analysis = action_for("analysis", "unresolved-call");
         let semantics = action_for("semantics", "register-write-semantics");

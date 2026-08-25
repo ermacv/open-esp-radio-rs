@@ -2,7 +2,7 @@
 
 use super::model::{Component, Phase, Readiness};
 use crate::{
-    application::{FollowUpRequirements, ProjectContext},
+    application::{ProjectContext, ProjectContextRequirement},
     registers::ProjectRegisterWorkspace,
 };
 
@@ -35,7 +35,7 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                             "refresh review scopes with `{}`",
                             context.follow_up_command(
                                 "project analyze",
-                                FollowUpRequirements::ANALYSIS,
+                                ProjectContextRequirement::Analysis,
                             )
                         )),
                 ],
@@ -56,7 +56,7 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                             "resolve register review findings, then run `{}`",
                             context.follow_up_command(
                                 "project publish --check",
-                                FollowUpRequirements::PROJECT_ONLY,
+                                ProjectContextRequirement::ProjectOnly,
                             )
                         )),
                 ],
@@ -84,7 +84,7 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                         paths.model.display(),
                         context.follow_up_command(
                             "project publish --check",
-                            FollowUpRequirements::PROJECT_ONLY,
+                            ProjectContextRequirement::ProjectOnly,
                         )
                     )),
             ],
@@ -130,7 +130,8 @@ fn output(
             .detail("file_status", "missing")
             .next_action(format!(
                 "generate the configured outputs with `{}`",
-                context.follow_up_command("project publish", FollowUpRequirements::PROJECT_ONLY,)
+                context
+                    .follow_up_command("project publish", ProjectContextRequirement::ProjectOnly,)
             ))
     }
 }

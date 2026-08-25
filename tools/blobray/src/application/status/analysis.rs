@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use super::model::{AnalysisSurfaceDetail, Component, LinkedIrProfileDetail, Phase, Readiness};
-use crate::application::{FollowUpRequirements, ProjectContext};
+use crate::application::{ProjectContext, ProjectContextRequirement};
 use crate::{artifacts::inspect_linked_ir, harnesses, run_spec::InputRole};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
@@ -471,7 +471,7 @@ fn event_replays(context: &ProjectContext<'_>) -> Component {
     }
     if incomplete {
         component = component.next_action(
-            context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS),
+            context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
         );
     }
     component
@@ -486,7 +486,7 @@ fn navigation_index(context: &ProjectContext<'_>) -> Component {
             .detail("path", spec.output.display().to_string())
             .diagnostic("navigation index has not been generated")
             .next_action(
-                context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS),
+                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
             );
     }
     generated_output("navigation_index", &spec.output)

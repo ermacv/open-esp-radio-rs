@@ -2,7 +2,7 @@
 
 use super::model::{CapabilityReport, DoctorReport};
 use crate::{
-    application::{FollowUpRequirements, ProjectContext},
+    application::{ProjectContext, ProjectContextRequirement},
     cli::{output, table},
 };
 
@@ -92,7 +92,7 @@ fn human(report: &DoctorReport, context: &ProjectContext<'_>) {
             outputln!("1. {}", context.inputs_init_help_command());
             outputln!(
                 "2. {} --details",
-                context.follow_up_command("project files", FollowUpRequirements::TARGET)
+                context.follow_up_command("project files", ProjectContextRequirement::Target)
             );
         } else if report.inputs.iter().any(|input| input.status == "missing") {
             outputln!("1. rebuild or restore these already-bound artifacts:");
@@ -112,20 +112,20 @@ fn human(report: &DoctorReport, context: &ProjectContext<'_>) {
             }
             outputln!(
                 "3. {}",
-                context.follow_up_command("project status", FollowUpRequirements::RUN_SPEC)
+                context.follow_up_command("project status", ProjectContextRequirement::RunSpec)
             );
         } else {
             outputln!(
                 "1. {} --details",
-                context.follow_up_command("project files", FollowUpRequirements::TARGET)
+                context.follow_up_command("project files", ProjectContextRequirement::Target)
             );
             outputln!(
                 "2. {}",
-                context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS)
+                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis)
             );
             outputln!(
                 "3. {}",
-                context.follow_up_command("project status", FollowUpRequirements::RUN_SPEC)
+                context.follow_up_command("project status", ProjectContextRequirement::RunSpec)
             );
         }
     }

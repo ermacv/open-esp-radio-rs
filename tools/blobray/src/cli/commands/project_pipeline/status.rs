@@ -1,7 +1,7 @@
 //! CLI presentation for the application-owned project analysis report.
 
 use crate::application::{
-    FollowUpRequirements, ProjectContext,
+    ProjectContext, ProjectContextRequirement,
     project_analysis::{ProjectAnalysisReport, ProjectAnalysisStatus},
 };
 
@@ -84,7 +84,8 @@ fn next_lines(document: &ProjectAnalysisReport, context: &ProjectContext<'_>) ->
     };
     let missing_function_pack = missing_pack("cannot read function pack");
     let missing_interface_pack = missing_pack("cannot read interface pack");
-    let analyze = || context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS);
+    let analyze =
+        || context.follow_up_command("project analyze", ProjectContextRequirement::Analysis);
     if missing_function_pack || missing_interface_pack {
         let mut lines = Vec::new();
         if missing_function_pack {
@@ -92,7 +93,7 @@ fn next_lines(document: &ProjectAnalysisReport, context: &ProjectContext<'_>) ->
                 "- {}",
                 context.follow_up_command(
                     "advanced functions init-pack",
-                    FollowUpRequirements::TARGET,
+                    ProjectContextRequirement::Target,
                 )
             ));
         }
@@ -101,7 +102,7 @@ fn next_lines(document: &ProjectAnalysisReport, context: &ProjectContext<'_>) ->
                 "- {}",
                 context.follow_up_command(
                     "advanced interfaces init-pack",
-                    FollowUpRequirements::TARGET,
+                    ProjectContextRequirement::Target,
                 )
             ));
         }
@@ -193,6 +194,7 @@ mod tests {
             svd_paths: &[],
             svd: &svd,
             explicit_context: &explicit_context,
+            invocation_directory: Path::new("/tmp"),
         };
         let document = ProjectAnalysisReport {
             schema: 5,

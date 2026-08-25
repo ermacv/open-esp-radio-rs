@@ -36,7 +36,7 @@ struct RegisterReviewDraft {
     finding_id: String,
     destination: String,
     raw_toml: String,
-    validation_commands: Vec<String>,
+    validation_actions: Vec<crate::application::ExecutableAction>,
 }
 
 #[derive(Serialize)]
@@ -79,7 +79,7 @@ pub(super) fn run(
         reviewed_assertions: reviewed_assertions(session, &detail)?,
         review_draft: review_draft(session, &detail)?,
         conclusion: conclusion(&detail),
-        schema_version: 5,
+        schema_version: 6,
         command: "inspect register",
         register: detail,
     };
@@ -159,19 +159,25 @@ fn review_draft(
         finding_id: finding_id.clone(),
         destination: destination.display().to_string(),
         raw_toml: render_sparse_review_draft(fact, model.address_space()),
-        validation_commands: vec![
-            context.follow_up_command(
-                "registers validate",
-                crate::application::FollowUpRequirements::TARGET,
-            ),
-            context.follow_up_command(
-                "project analyze",
-                crate::application::FollowUpRequirements::ANALYSIS,
-            ),
-            context.follow_up_command(
-                &format!("project research next --finding {finding_id}"),
-                crate::application::FollowUpRequirements::ANALYSIS,
-            ),
+        validation_actions: vec![
+            context.follow_up_action(
+                ["registers", "validate"],
+                crate::application::ProjectContextRequirement::Target,
+            )?,
+            context.follow_up_action(
+                ["project", "analyze"],
+                crate::application::ProjectContextRequirement::Analysis,
+            )?,
+            context.follow_up_action(
+                [
+                    "project".to_owned(),
+                    "research".to_owned(),
+                    "next".to_owned(),
+                    "--finding".to_owned(),
+                    finding_id,
+                ],
+                crate::application::ProjectContextRequirement::Analysis,
+            )?,
         ],
     }))
 }
@@ -414,8 +420,8 @@ fn render_human(report: &RegisterInvestigationReport) {
         outputln!("Destination:  {}", draft.destination);
         outputln!("\n```toml\n{}```", draft.raw_toml);
         outputln!("After editing and manually reviewing every placeholder:");
-        for command in &draft.validation_commands {
-            outputln!("  {command}");
+        for action in &draft.validation_actions {
+            outputln!("  {}", action.render_posix());
         }
         outputln!(
             "A not-present finding after reanalysis means only that the ID is absent from current analyzed inputs; it is not proof of correctness or completion."

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     Result,
-    application::{FollowUpRequirements, ProjectContext, project_files},
+    application::{ProjectContext, ProjectContextRequirement, project_files},
     cli::{output, table},
 };
 
@@ -153,21 +153,21 @@ fn contextualize_action(action: &str, context: &ProjectContext<'_>) -> String {
     match command {
         "project inputs init --help" => context.inputs_init_help_command(),
         "project doctor" | "project analyze" | "project verify" | "advanced ir build" => {
-            context.follow_up_command(command, FollowUpRequirements::ANALYSIS)
+            context.follow_up_command(command, ProjectContextRequirement::Analysis)
         }
         "advanced symbols inventory" | "advanced interfaces discover" | "project status" => {
-            context.follow_up_command(command, FollowUpRequirements::RUN_SPEC)
+            context.follow_up_command(command, ProjectContextRequirement::RunSpec)
         }
         "advanced functions init-pack"
         | "advanced interfaces init-pack"
         | "advanced functions review" => {
-            context.follow_up_command(command, FollowUpRequirements::TARGET)
+            context.follow_up_command(command, ProjectContextRequirement::Target)
         }
         "advanced code init-pack"
         | "advanced code review"
         | "registers review"
         | "project publish --check" => {
-            context.follow_up_command(command, FollowUpRequirements::PROJECT_ONLY)
+            context.follow_up_command(command, ProjectContextRequirement::ProjectOnly)
         }
         _ => action.to_owned(),
     }
@@ -209,6 +209,7 @@ mod tests {
             svd_paths: &[],
             svd: &svd,
             explicit_context: &explicit_context,
+            invocation_directory: Path::new("/tmp"),
         };
         let arg = |path: &Path| crate::shell::arg(path.as_os_str());
 

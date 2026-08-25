@@ -64,20 +64,21 @@ For an exact register lookup, interpret the states in this order:
 - `not-present`: no typed attribution supports a stronger conclusion. A
   base-model identity or an unknown arbitrary ID is not resolution proof.
 
-An action is one copyable `inspect_command` and may coalesce several findings
+An action is one typed `inspect_action` and may coalesce several findings
 without duplicating them. A finding retains its typed `subject`, typed
 executable `consumers`, exact evidence sites/channels, causal inspection
 functions, impacted functions, context links, required knowledge,
-finding-level `actionability`, prerequisite IDs and post-review revalidation
-commands.
+finding-level `actionability`, prerequisite IDs, an exact `requery_action` and
+post-review `revalidation_actions`.
 
 `inventory.sha256` hashes the project ID, analyzed scope IDs and canonical
 ID-sorted catalogs. It is independent of strategy, limit and budget, so two
-selections over the same backlog share one identity. The digest is currently
-invocation-path-bound: action IDs hash copyable commands and findings retain
-copyable revalidation commands, both of which include the caller's resolved
-project path. Use the same project-path spelling for reproducible `--check`
-output. The digest identifies inventory content; it never replaces full report
+selections over the same backlog share one identity. The digest is
+invocation-context-bound: action IDs hash a canonical execution key containing
+exact argv boundaries, absolute working directory, context level and resolved
+project overrides. Use the same invocation directory and project-path spelling
+for reproducible `--check` output. Human output renders argv only at the
+presentation boundary. The digest identifies inventory content; it never replaces full report
 validation or byte comparison.
 
 Reviewed-knowledge consumers are `ready` only through the explicit
@@ -161,9 +162,11 @@ inventory is unchanged. `not-present` means only that the exact ID is absent
 from the current analyzed inputs selected by `--scope`/`--protocol`; it is not
 proof that a review was correct or that research is complete.
 
-Every returned `inspect_command` includes the resolved `--project` path and
-remains directly actionable. Finding-level `revalidation_commands` describe
-what to rerun after human review; they do not assert that the work is done.
+Every returned `inspect_action` includes the resolved `--project` path, exact
+argument vector, absolute working directory and required project context.
+Finding-level `revalidation_actions` describe what to rerun after human review;
+`requery_action` addresses the exact finding without parsing another command.
+These actions do not assert that the work is done.
 `--output PATH --check` retains the normal generated-file contract for
 reproducible machine plans. File generation and checking stream serialization
 against the destination and do not allocate a second full JSON document.

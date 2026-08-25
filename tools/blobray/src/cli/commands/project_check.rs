@@ -5,7 +5,7 @@ use serde::Serialize;
 use super::Result;
 use crate::{
     application::{
-        FollowUpRequirements, ProjectContext, ProjectSession,
+        ProjectContext, ProjectContextRequirement, ProjectSession,
         pipeline::StageReport,
         project_analysis::ProjectAnalysisRequest,
         project_publication::{ProjectPublicationRequest, execute as publish},
@@ -52,16 +52,20 @@ struct ProjectCheckFollowUps {
 impl ProjectCheckFollowUps {
     fn new(context: &ProjectContext<'_>) -> Self {
         Self {
-            check: context.follow_up_command("project check", FollowUpRequirements::ANALYSIS),
+            check: context.follow_up_command("project check", ProjectContextRequirement::Analysis),
             audit_bindings: context
-                .follow_up_command("project audit bindings", FollowUpRequirements::TARGET),
-            analyze_check: context
-                .follow_up_command("project analyze --check", FollowUpRequirements::ANALYSIS),
-            verify_check: context
-                .follow_up_command("project verify --check", FollowUpRequirements::ANALYSIS),
+                .follow_up_command("project audit bindings", ProjectContextRequirement::Target),
+            analyze_check: context.follow_up_command(
+                "project analyze --check",
+                ProjectContextRequirement::Analysis,
+            ),
+            verify_check: context.follow_up_command(
+                "project verify --check",
+                ProjectContextRequirement::Analysis,
+            ),
             publish_check: context.follow_up_command(
                 "project publish --check",
-                FollowUpRequirements::PROJECT_ONLY,
+                ProjectContextRequirement::ProjectOnly,
             ),
         }
     }
@@ -550,6 +554,7 @@ mod tests {
             svd_paths: &[],
             svd: &svd,
             explicit_context: &explicit_context,
+            invocation_directory: Path::new("/tmp"),
         };
         let arg = |path: &Path| crate::shell::arg(path.as_os_str());
         let follow_ups = ProjectCheckFollowUps::new(&context);

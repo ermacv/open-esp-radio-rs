@@ -195,6 +195,7 @@ pub(super) fn resolve_from(
                 load_run_spec: needs.run_spec,
                 load_memory_map: needs.memory_map,
                 load_register_catalog: needs.register_catalog,
+                invocation_directory: Some(current_dir.to_owned()),
             },
         )?;
         (
@@ -259,6 +260,7 @@ pub(super) fn resolve_from(
     resolve_command(
         command,
         ResolvedEnvironment {
+            invocation_directory: current_dir.to_owned(),
             project_path,
             project,
             target_path,

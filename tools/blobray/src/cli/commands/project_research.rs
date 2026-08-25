@@ -144,7 +144,7 @@ fn render(report: &research::ResearchNextReport) {
             ],
             actions.iter().map(|candidate| [
                 candidate.rank.to_string(),
-                compact_middle(&action_label(&candidate.action.inspect_command), 34),
+                compact_middle(&candidate.action.inspect_action.inspect_label(), 34),
                 format!(
                     "{} · {} ({})",
                     action_lane_label(&candidate.findings),
@@ -211,9 +211,12 @@ fn render(report: &research::ResearchNextReport) {
         outputln!("Blocked by prerequisites: {}", prerequisite_ids.join(", "));
     }
     render_findings(&first.findings);
-    outputln!("Next inspection: {}", first.action.inspect_command);
-    for command in revalidation_commands(&first.findings) {
-        outputln!("Revalidate after human review: {command}");
+    outputln!(
+        "Next inspection: {}",
+        first.action.inspect_action.render_posix()
+    );
+    for action in revalidation_actions(&first.findings) {
+        outputln!("Revalidate after human review: {}", action.render_posix());
     }
 
     if output::details() {
@@ -228,7 +231,7 @@ fn render(report: &research::ResearchNextReport) {
                 candidate.action.kinds.join(", "),
                 direct.join(", "),
                 co_blockers.join(", "),
-                candidate.action.inspect_command
+                candidate.action.inspect_action.render_posix()
             );
             render_findings(&candidate.findings);
         }
@@ -447,20 +450,19 @@ fn prerequisite_lines(prerequisite: &SelectedPrerequisite<'_>, details: bool) ->
             prerequisite
                 .actions
                 .iter()
-                .map(|action| format!("Inspection path: {}", action.inspect_command)),
+                .map(|action| format!("Inspection path: {}", action.inspect_action.render_posix())),
         );
     } else {
         lines.push(format!(
             "Next inspection: {}",
-            prerequisite.actions[0].inspect_command
+            prerequisite.actions[0].inspect_action.render_posix()
         ));
     }
-    if let (Some(action), Some(finding_id)) = (
-        prerequisite.actions.first(),
-        entry.satisfies_finding_ids.first(),
-    ) && let Some(command) = exact_research_command(&action.inspect_command, finding_id)
-    {
-        lines.push(format!("Re-query exact finding: {command}"));
+    if let Some(finding) = prerequisite.findings.first() {
+        lines.push(format!(
+            "Re-query exact finding: {}",
+            finding.requery_action.render_posix()
+        ));
     }
     lines.push(
         "Boundary: this prerequisite is a manual setup step, not evidence and not a completion claim; inspect the linked evidence, reanalyze, and re-query the finding."
@@ -521,14 +523,6 @@ fn list_or_none(values: &[String]) -> String {
     } else {
         values.join(", ")
     }
-}
-
-fn exact_research_command(inspect_command: &str, finding_id: &str) -> Option<String> {
-    let (_, context) = inspect_command.split_once(" --project ")?;
-    Some(format!(
-        "blobray project research next --finding {} --project {context}",
-        crate::shell::arg(std::ffi::OsStr::new(finding_id))
-    ))
 }
 
 fn prerequisite_kind_label(kind: research::ResearchPrerequisiteKind) -> &'static str {
@@ -877,22 +871,16 @@ fn consumer_label(consumer: &research::ResearchConsumer) -> String {
     }
 }
 
-fn revalidation_commands<'a>(findings: &[&'a research::ResearchFinding]) -> Vec<&'a str> {
-    let mut commands = findings
+fn revalidation_actions<'a>(
+    findings: &[&'a research::ResearchFinding],
+) -> Vec<&'a crate::application::ExecutableAction> {
+    let mut actions = findings
         .iter()
-        .flat_map(|finding| finding.revalidation_commands.iter().map(String::as_str))
+        .flat_map(|finding| finding.revalidation_actions.iter())
         .collect::<Vec<_>>();
-    commands.sort_unstable();
-    commands.dedup();
-    commands
-}
-
-fn action_label(command: &str) -> String {
-    command
-        .strip_prefix("blobray inspect ")
-        .and_then(|value| value.split_once(" --project").map(|(target, _)| target))
-        .unwrap_or(command)
-        .to_owned()
+    actions.sort_unstable();
+    actions.dedup();
+    actions
 }
 
 fn compact_middle(value: &str, max_chars: usize) -> String {
@@ -921,6 +909,15 @@ fn compact_middle(value: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
 
+    fn action(argv: &[&str]) -> crate::application::ExecutableAction {
+        crate::application::ExecutableAction::new(
+            argv.iter().map(|value| (*value).to_owned()).collect(),
+            "/workspace".into(),
+            crate::application::ProjectContextRequirement::Analysis,
+        )
+        .unwrap()
+    }
+
     fn finding(id: &str, kind: &str, summary: &str) -> research::ResearchFinding {
         research::ResearchFinding {
             id: id.to_owned(),
@@ -947,20 +944,38 @@ mod tests {
             publication_scopes: Vec::new(),
             knowledge_required: "reviewed semantic model".to_owned(),
             evidence_required: Vec::new(),
-            revalidation_commands: Vec::new(),
+            revalidation_actions: Vec::new(),
+            requery_action: action(&[
+                "blobray",
+                "project",
+                "research",
+                "next",
+                "--finding",
+                id,
+                "--project",
+                "project.toml",
+            ]),
             summary: summary.to_owned(),
         }
     }
 
     #[test]
-    fn action_label_removes_copyable_command_boilerplate() {
+    fn typed_action_label_removes_copyable_command_boilerplate() {
         assert_eq!(
-            action_label("blobray inspect function ble:controller_init --project <project>"),
+            action(&[
+                "blobray",
+                "inspect",
+                "function",
+                "ble:controller_init",
+                "--project",
+                "project.toml",
+            ])
+            .inspect_label(),
             "function ble:controller_init"
         );
         assert_eq!(
-            action_label("blobray project status --project <project>"),
-            "blobray project status --project <project>"
+            action(&["blobray", "project", "status", "--project", "project.toml",]).inspect_label(),
+            "blobray project status --project project.toml"
         );
     }
 
@@ -1047,14 +1062,33 @@ mod tests {
         first.optimistic_function_ids =
             vec!["btbb::guaranteed".to_owned(), "btbb::optimistic".to_owned()];
         first.publication_scopes = vec!["ieee-publication".to_owned()];
+        first.requery_action = action(&[
+            "blobray",
+            "project",
+            "research",
+            "next",
+            "--finding",
+            "finding-a",
+            "--project",
+            "project.toml",
+            "--run-spec",
+            "local.toml",
+        ]);
         let findings = [first];
         let action = research::ResearchActionCatalogEntry {
             id: "action-a".to_owned(),
             kinds: vec!["interface-layout".to_owned()],
             score: 10,
-            inspect_command:
-                "blobray inspect function btbb:worker --project project.toml --run-spec local.toml"
-                    .to_owned(),
+            inspect_action: action(&[
+                "blobray",
+                "inspect",
+                "function",
+                "btbb:worker",
+                "--project",
+                "project.toml",
+                "--run-spec",
+                "local.toml",
+            ]),
             estimated_cost: "low".to_owned(),
             confidence: "medium".to_owned(),
             score_breakdown: research::ResearchScoreBreakdown {
@@ -1142,8 +1176,14 @@ mod tests {
             id: "action-a".to_owned(),
             kinds: vec!["interface-layout".to_owned()],
             score: 1,
-            inspect_command: "blobray inspect function btbb:consumer --project projects/radio.toml"
-                .to_owned(),
+            inspect_action: action(&[
+                "blobray",
+                "inspect",
+                "function",
+                "btbb:consumer",
+                "--project",
+                "projects/radio.toml",
+            ]),
             estimated_cost: "low".to_owned(),
             confidence: "medium".to_owned(),
             score_breakdown: research::ResearchScoreBreakdown {

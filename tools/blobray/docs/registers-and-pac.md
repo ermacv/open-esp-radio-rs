@@ -74,7 +74,7 @@ cargo blobray project publish --project path/to/vendor-project.toml
 ```
 
 `research next` ranks blockers by transitive benefit and co-blocking structure.
-`inspect register` schema 5 prints the stable sparse-fact subject, configured
+`inspect register` schema 6 prints the stable sparse-fact subject, configured
 review pack and supported assertion kinds. It also lists every selected
 reviewed assertion for the exact physical subject, including its pack, ID,
 kind, value and evidence; that list has `completion_claim = false`. For an owned, unreviewed discovery
@@ -83,8 +83,9 @@ fact it also emits a raw TOML draft whose state is `review-required` and whose
 non-operational-only, and model/catalog-only addresses receive no draft. A
 reviewer replaces every `REVIEW_REQUIRED` value and adds only manually proven
 facts with durable evidence to the exact destination. The draft lists
-copyable commands to validate the register workspace, rerun project analysis,
-and query the exact current finding ID. A later `not-present` finding only
+typed executable actions to validate the register workspace, rerun project
+analysis, and query the exact current finding ID. Each action preserves argv
+boundaries, absolute working directory and required project context. A later `not-present` finding only
 means the ID is absent from current analyzed inputs; it is not proof of
 correctness or completion. Generated review reports and MMIO inventory remain
 disposable rather than hand-authored knowledge. Promote a conclusion from a

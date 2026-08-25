@@ -478,10 +478,36 @@ fn explicit_target_run_spec_and_svd_override_project_defaults() {
     );
 
     let context = session.context();
+    let action = context
+        .follow_up_action(
+            [
+                "inspect",
+                "function",
+                "fixture:has space;$(touch must-not-run)",
+            ],
+            crate::application::ProjectContextRequirement::Analysis,
+        )
+        .unwrap();
+    assert_eq!(action.working_directory, directory);
+    assert_eq!(
+        &action.argv[..4],
+        [
+            "blobray",
+            "inspect",
+            "function",
+            "fixture:has space;$(touch must-not-run)",
+        ]
+    );
+    assert!(
+        action
+            .argv
+            .windows(2)
+            .any(|pair| pair == ["--svd", "cli.svd"])
+    );
     assert_eq!(
         context.follow_up_command(
             "project analyze",
-            crate::application::FollowUpRequirements::ANALYSIS,
+            crate::application::ProjectContextRequirement::Analysis,
         ),
         format!(
             "blobray project analyze --project {} --target-spec {} --run-spec {} --svd cli.svd",
@@ -501,7 +527,7 @@ fn explicit_target_run_spec_and_svd_override_project_defaults() {
     assert_eq!(
         context.follow_up_command(
             "project files",
-            crate::application::FollowUpRequirements::TARGET,
+            crate::application::ProjectContextRequirement::Target,
         ),
         format!(
             "blobray project files --project {} --target-spec {}",

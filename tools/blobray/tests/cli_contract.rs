@@ -1540,7 +1540,7 @@ fn project_analysis_plan_is_deterministic_and_read_only_when_blocked() {
     assert_eq!(document["read_only"], true);
     assert_eq!(document["status"], "failed");
     let stages = document["stages"].as_array().unwrap();
-    assert_eq!(stages.len(), 14);
+    assert_eq!(stages.len(), 15);
     assert_eq!(stages[0]["order"], 1);
     assert_eq!(stages[0]["name"], "symbol-inventory");
     assert_eq!(stages[0]["action"], "blocked");
@@ -1981,7 +1981,7 @@ fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
     assert_eq!(document["schema"], 5);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["status"], "nothing-configured");
-    assert_eq!(document["not-configured"], 14);
+    assert_eq!(document["not-configured"], 15);
     assert_eq!(document["written"], 0);
     assert_eq!(document["verified"], 0);
     assert_eq!(document["up-to-date"], 0);
@@ -2292,7 +2292,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
 
     let manifest_contents = std::fs::read_to_string(&manifest).unwrap().replace(
         "[interfaces]\nfacts = \"generated/interfaces.json\"\n",
-        "[interfaces]\nfacts = \"generated/interfaces.json\"\npack = \"interfaces/reviewed.toml\"\n\n[functions]\npack = \"functions/reviewed.toml\"\nprofiles = [\"fixture\"]\n",
+        "[interfaces]\nfacts = \"generated/interfaces.json\"\npack = \"interfaces/reviewed.toml\"\n\n[interfaces.capability-context]\noutput = \"generated/interface-capability-context.json\"\n\n[functions]\npack = \"functions/reviewed.toml\"\nprofiles = [\"fixture\"]\n",
     );
     std::fs::write(&manifest, manifest_contents).unwrap();
     std::fs::create_dir_all(directory.join("interfaces")).unwrap();

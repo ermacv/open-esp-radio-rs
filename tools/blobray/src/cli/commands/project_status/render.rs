@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::{
     Result,
     application::{
-        FollowUpRequirements, ProjectContext,
+        ProjectContext, ProjectContextRequirement,
         status::model::{
             DetailValue, EvidenceFreshness, ProjectStatusReport, Readiness, ResearchProgress,
             StatusValidation, TargetIdentity, ValidationDepth,
@@ -85,11 +85,11 @@ pub(super) fn print_text(report: &ProjectStatusReport, context: &ProjectContext<
     outputln!("Deep validation:");
     outputln!(
         "  {}",
-        context.follow_up_command("project doctor", FollowUpRequirements::ANALYSIS)
+        context.follow_up_command("project doctor", ProjectContextRequirement::Analysis)
     );
     outputln!(
         "  {}",
-        context.follow_up_command("project check", FollowUpRequirements::ANALYSIS)
+        context.follow_up_command("project check", ProjectContextRequirement::Analysis)
     );
     let outcome = match report.overall {
         Readiness::Ready => output::success(

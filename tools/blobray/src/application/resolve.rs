@@ -7,6 +7,7 @@ use std::{
 
 use crate::{MemoryMap, MmioMap, ProjectSpec, Result, TargetSpec, run_spec::RunSpec};
 
+use super::action::{ExecutableAction, ProjectContextRequirement};
 use super::artifact_store::ProjectArtifactStore;
 
 pub(crate) struct ProjectContext<'a> {
@@ -20,6 +21,7 @@ pub(crate) struct ProjectContext<'a> {
     pub(crate) svd_paths: &'a [PathBuf],
     pub(crate) svd: &'a MmioMap,
     pub(crate) explicit_context: &'a ExplicitProjectContext,
+    pub(crate) invocation_directory: &'a Path,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -29,49 +31,49 @@ pub(crate) struct ExplicitProjectContext {
     pub(crate) svd_paths: Vec<PathBuf>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct FollowUpRequirements {
-    target_spec: bool,
-    run_spec: bool,
-    register_catalog: bool,
-}
-
-impl FollowUpRequirements {
-    pub(crate) const PROJECT_ONLY: Self = Self {
-        target_spec: false,
-        run_spec: false,
-        register_catalog: false,
-    };
-    pub(crate) const TARGET: Self = Self {
-        target_spec: true,
-        run_spec: false,
-        register_catalog: false,
-    };
-    pub(crate) const RUN_SPEC: Self = Self {
-        target_spec: true,
-        run_spec: true,
-        register_catalog: false,
-    };
-    pub(crate) const ANALYSIS: Self = Self {
-        target_spec: true,
-        run_spec: true,
-        register_catalog: true,
-    };
-}
-
 impl ProjectContext<'_> {
+    pub(crate) fn follow_up_action<I, S>(
+        &self,
+        command: I,
+        requirement: ProjectContextRequirement,
+    ) -> Result<ExecutableAction>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut argv = vec!["blobray".to_owned()];
+        argv.extend(command.into_iter().map(Into::into));
+        push_path_argument(&mut argv, "--project", self.project_path)?;
+        if requirement.target_spec()
+            && let Some(path) = self.explicit_context.target_spec.as_deref()
+        {
+            push_path_argument(&mut argv, "--target-spec", path)?;
+        }
+        if requirement.run_spec()
+            && let Some(path) = self.explicit_context.run_spec.as_deref()
+        {
+            push_path_argument(&mut argv, "--run-spec", path)?;
+        }
+        if requirement.register_catalog() {
+            for path in &self.explicit_context.svd_paths {
+                push_path_argument(&mut argv, "--svd", path)?;
+            }
+        }
+        ExecutableAction::new(argv, self.invocation_directory.to_owned(), requirement)
+    }
+
     /// Render a copy/paste follow-up command with every explicit resolution
     /// override that the destination command consumes.
     pub(crate) fn follow_up_command(
         &self,
         command: &str,
-        requirements: FollowUpRequirements,
+        requirements: ProjectContextRequirement,
     ) -> String {
         let mut rendered = format!(
             "blobray {command} --project {}",
             crate::shell::arg(self.project_path.as_os_str())
         );
-        if requirements.target_spec
+        if requirements.target_spec()
             && let Some(path) = self.explicit_context.target_spec.as_deref()
         {
             rendered.push_str(&format!(
@@ -79,7 +81,7 @@ impl ProjectContext<'_> {
                 crate::shell::arg(path.as_os_str())
             ));
         }
-        if requirements.run_spec
+        if requirements.run_spec()
             && let Some(path) = self.explicit_context.run_spec.as_deref()
         {
             rendered.push_str(&format!(
@@ -87,7 +89,7 @@ impl ProjectContext<'_> {
                 crate::shell::arg(path.as_os_str())
             ));
         }
-        if requirements.register_catalog {
+        if requirements.register_catalog() {
             for path in &self.explicit_context.svd_paths {
                 rendered.push_str(&format!(" --svd {}", crate::shell::arg(path.as_os_str())));
             }
@@ -99,8 +101,10 @@ impl ProjectContext<'_> {
     /// An explicit run-spec override is an output destination for this command,
     /// not a resolution root: omitting it would silently edit `local.toml`.
     pub(crate) fn inputs_init_help_command(&self) -> String {
-        let mut rendered =
-            self.follow_up_command("project inputs init", FollowUpRequirements::PROJECT_ONLY);
+        let mut rendered = self.follow_up_command(
+            "project inputs init",
+            ProjectContextRequirement::ProjectOnly,
+        );
         if let Some(path) = self.explicit_context.run_spec.as_deref() {
             rendered.push_str(&format!(
                 " --output {}",
@@ -112,6 +116,17 @@ impl ProjectContext<'_> {
     }
 }
 
+fn push_path_argument(argv: &mut Vec<String>, option: &str, path: &Path) -> Result<()> {
+    let value = path.to_str().ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "executable action {option} path is not valid UTF-8 and cannot be serialized"
+        ))
+    })?;
+    argv.push(option.to_owned());
+    argv.push(value.to_owned());
+    Ok(())
+}
+
 pub(crate) struct ProjectSessionOptions {
     pub(crate) target_spec: Option<PathBuf>,
     pub(crate) run_spec: Option<PathBuf>,
@@ -119,6 +134,7 @@ pub(crate) struct ProjectSessionOptions {
     pub(crate) load_run_spec: bool,
     pub(crate) load_memory_map: bool,
     pub(crate) load_register_catalog: bool,
+    pub(crate) invocation_directory: Option<PathBuf>,
 }
 
 impl Default for ProjectSessionOptions {
@@ -130,6 +146,7 @@ impl Default for ProjectSessionOptions {
             load_run_spec: true,
             load_memory_map: true,
             load_register_catalog: true,
+            invocation_directory: None,
         }
     }
 }
@@ -145,6 +162,7 @@ pub(crate) struct ProjectSession {
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) mmio: MmioMap,
     pub(crate) explicit_context: ExplicitProjectContext,
+    pub(crate) invocation_directory: PathBuf,
     pub(crate) function_workspace:
         OnceLock<std::result::Result<Option<crate::function_workspace::FunctionWorkspace>, String>>,
     pub(crate) code_workspace:
@@ -162,6 +180,10 @@ impl ProjectSession {
     }
 
     pub(crate) fn open_with(manifest: &Path, options: ProjectSessionOptions) -> Result<Self> {
+        let invocation_directory = options
+            .invocation_directory
+            .clone()
+            .map_or_else(std::env::current_dir, Ok)?;
         let manifest = manifest.to_owned();
         let project = ProjectSpec::load(&manifest)?;
         let explicit_context = ExplicitProjectContext {
@@ -224,6 +246,7 @@ impl ProjectSession {
             svd_paths,
             mmio,
             explicit_context,
+            invocation_directory,
             function_workspace: OnceLock::new(),
             code_workspace: OnceLock::new(),
             register_workspace: OnceLock::new(),
@@ -244,6 +267,7 @@ impl ProjectSession {
             svd_paths: &self.svd_paths,
             svd: &self.mmio,
             explicit_context: &self.explicit_context,
+            invocation_directory: &self.invocation_directory,
         }
     }
 

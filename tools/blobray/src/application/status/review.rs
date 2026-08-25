@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use super::model::{Component, Phase, Readiness, ReviewScopeDetail};
-use crate::application::{FollowUpRequirements, ProjectContext};
+use crate::application::{ProjectContext, ProjectContextRequirement};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ScopeGate {
@@ -65,7 +65,7 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
             .detail("report", workspace.output.display().to_string())
             .diagnostic("review scope report has not been generated")
             .next_action(
-                context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS),
+                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
             );
     }
     match crate::review_scopes::load_for_project(context.project) {
@@ -162,8 +162,10 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
             if recommend_research(research_root_causes.len(), gate.replacement_coverage_gaps) {
                 component = component.next_action(format!(
                     "run `{}`",
-                    context
-                        .follow_up_command("project research next", FollowUpRequirements::TARGET,)
+                    context.follow_up_command(
+                        "project research next",
+                        ProjectContextRequirement::Target,
+                    )
                 ));
             }
             component
@@ -189,7 +191,7 @@ fn code(context: &ProjectContext<'_>) -> Component {
             .detail("facts", inventory.output.display().to_string())
             .diagnostic("symbol inventory has not been generated")
             .next_action(
-                context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS),
+                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
             );
     }
     if !paths.pack.is_file() {
@@ -198,7 +200,7 @@ fn code(context: &ProjectContext<'_>) -> Component {
             .diagnostic("reviewed code-boundary pack has not been initialized")
             .next_action(context.follow_up_command(
                 "advanced code init-pack",
-                FollowUpRequirements::PROJECT_ONLY,
+                ProjectContextRequirement::ProjectOnly,
             ));
     }
     inventory_ready(
@@ -218,10 +220,10 @@ fn registers(context: &ProjectContext<'_>) -> Component {
         return Component::new("registers", Readiness::Incomplete)
             .detail("model", paths.model.display().to_string())
             .diagnostic("register model has not been initialized")
-            .next_action(
-                context
-                    .follow_up_command("registers init-model", FollowUpRequirements::PROJECT_ONLY),
-            );
+            .next_action(context.follow_up_command(
+                "registers init-model",
+                ProjectContextRequirement::ProjectOnly,
+            ));
     }
     inventory_ready(
         "registers",
@@ -246,7 +248,7 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
             .detail("facts", paths.facts.display().to_string())
             .diagnostic("interface facts have not been generated")
             .next_action(
-                context.follow_up_command("project analyze", FollowUpRequirements::ANALYSIS),
+                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
             );
     }
     let Some(pack) = paths.pack.as_deref() else {
@@ -263,7 +265,7 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
             .diagnostic("interface pack has not been initialized")
             .next_action(context.follow_up_command(
                 "advanced interfaces init-pack",
-                FollowUpRequirements::TARGET,
+                ProjectContextRequirement::Target,
             ));
     }
     inventory_ready(
@@ -292,7 +294,7 @@ fn functions(context: &ProjectContext<'_>) -> Component {
             .detail("missing_reports", missing)
             .diagnostic("linked-IR function facts have not been generated")
             .next_action(
-                context.follow_up_command("advanced ir build", FollowUpRequirements::ANALYSIS),
+                context.follow_up_command("advanced ir build", ProjectContextRequirement::Analysis),
             );
     }
     if !paths.pack.is_file() {
@@ -301,7 +303,7 @@ fn functions(context: &ProjectContext<'_>) -> Component {
             .diagnostic("function pack has not been initialized")
             .next_action(context.follow_up_command(
                 "advanced functions init-pack",
-                FollowUpRequirements::PROJECT_ONLY,
+                ProjectContextRequirement::ProjectOnly,
             ));
     }
     inventory_ready("functions", [("pack", paths.pack.as_path())]).detail("profiles", reports.len())

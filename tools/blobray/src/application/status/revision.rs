@@ -2,7 +2,7 @@
 
 use super::{ProjectContext, model};
 use crate::application::{
-    FollowUpRequirements,
+    ProjectContextRequirement,
     revision::{self, RevisionLedgerHealth},
 };
 
@@ -33,22 +33,22 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> model::Phase {
                 "review revision diff/rebase; then run {} --accept-current",
                 context.follow_up_command(
                     "project revision prepare-update",
-                    FollowUpRequirements::RUN_SPEC,
+                    ProjectContextRequirement::RunSpec,
                 )
             ),
             RevisionLedgerHealth::Invalid => context.follow_up_command(
                 "project revision snapshot CURRENT",
-                FollowUpRequirements::RUN_SPEC,
+                ProjectContextRequirement::RunSpec,
             ),
             _ => format!(
                 "{}; before replacing bindings run {}",
                 context.follow_up_command(
                     "project revision snapshot BASELINE",
-                    FollowUpRequirements::PROJECT_ONLY,
+                    ProjectContextRequirement::ProjectOnly,
                 ),
                 context.follow_up_command(
                     "project revision prepare-update",
-                    FollowUpRequirements::RUN_SPEC,
+                    ProjectContextRequirement::RunSpec,
                 )
             ),
         };

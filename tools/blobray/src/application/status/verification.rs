@@ -11,7 +11,7 @@ use serde::Deserialize;
 use super::model::{Component, Phase, Readiness};
 use crate::verification::PROJECT_VERIFICATION_REPORT_SCHEMA;
 use crate::{
-    application::{FollowUpRequirements, ProjectContext},
+    application::{ProjectContext, ProjectContextRequirement},
     project::VerificationWorkspacePaths,
     run_spec::InputRole,
     verification::{dispositions, load_evidence_baseline, profiles},
@@ -246,7 +246,7 @@ fn last_report(
             .diagnostic("project verification has not been executed")
             .next_action(format!(
                 "run `{}`",
-                context.follow_up_command("project verify", FollowUpRequirements::ANALYSIS)
+                context.follow_up_command("project verify", ProjectContextRequirement::Analysis)
             ));
     }
     let input = match fs::read_to_string(&workspace.report) {
@@ -274,7 +274,7 @@ fn last_report(
             .diagnostic("project verification report is stale for the current identity or schema")
             .next_action(format!(
                 "run `{}`",
-                context.follow_up_command("project verify", FollowUpRequirements::ANALYSIS)
+                context.follow_up_command("project verify", ProjectContextRequirement::Analysis)
             ));
     }
     let expected_suite_ids = workspace
@@ -297,7 +297,7 @@ fn last_report(
             )
             .next_action(format!(
                 "run `{}`",
-                context.follow_up_command("project verify", FollowUpRequirements::ANALYSIS)
+                context.follow_up_command("project verify", ProjectContextRequirement::Analysis)
             ));
     }
     let currency = match artifact_currency(&report.suites) {
@@ -319,7 +319,7 @@ fn last_report(
             .diagnostic("project verification report no longer matches its recorded inputs")
             .next_action(format!(
                 "run `{}`",
-                context.follow_up_command("project verify", FollowUpRequirements::ANALYSIS)
+                context.follow_up_command("project verify", ProjectContextRequirement::Analysis)
             ));
     }
     let failed_suites = report
@@ -451,7 +451,7 @@ fn last_report(
                             "replay verification with `{}`",
                             context.follow_up_command(
                                 "project verify",
-                                FollowUpRequirements::ANALYSIS,
+                                ProjectContextRequirement::Analysis,
                             )
                         )
                     },
@@ -460,7 +460,7 @@ fn last_report(
                             "replay the first failing suite with `{}`",
                             context.follow_up_command(
                                 &format!("project verify --suite {first}"),
-                                FollowUpRequirements::ANALYSIS,
+                                ProjectContextRequirement::Analysis,
                             )
                         )
                     },
@@ -471,7 +471,7 @@ fn last_report(
                     "generate and review candidate evidence for {first} with `{}`",
                     context.follow_up_command(
                         &format!("project verify --suite {first} --candidate-evidence-dir DIR"),
-                        FollowUpRequirements::ANALYSIS,
+                        ProjectContextRequirement::Analysis,
                     )
                 )
             },

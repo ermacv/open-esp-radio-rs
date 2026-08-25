@@ -48,6 +48,7 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
         svd_paths: &svd_paths,
         svd: &svd,
         explicit_context: &explicit_context,
+        invocation_directory: &root,
     };
     assert!(
         run(

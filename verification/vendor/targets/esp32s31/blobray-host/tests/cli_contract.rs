@@ -77,7 +77,7 @@ fn checked_register_publications_are_typed_reports() {
 }
 
 #[test]
-fn inspect_register_schema_five_exposes_assertions_and_drafts_only_owned_unreviewed_facts() {
+fn inspect_register_schema_six_exposes_typed_validation_actions() {
     let inspect = |address: &str| {
         let output = blobray()
             .args(["inspect", "register", address, "--project"])
@@ -94,7 +94,7 @@ fn inspect_register_schema_five_exposes_assertions_and_drafts_only_owned_unrevie
     };
 
     let owned = inspect("0x20103100");
-    assert_eq!(owned["schema_version"], 5);
+    assert_eq!(owned["schema_version"], 6);
     assert_eq!(owned["register"]["review_status"], "unreviewed");
     assert_eq!(owned["review_draft"]["state"], "review-required");
     assert_eq!(owned["review_draft"]["completion_claim"], false);
@@ -126,23 +126,41 @@ fn inspect_register_schema_five_exposes_assertions_and_drafts_only_owned_unrevie
             .iter()
             .any(|kind| kind == "register-declaration" || kind == "register-name")
     );
-    let commands = owned["review_draft"]["validation_commands"]
+    let actions = owned["review_draft"]["validation_actions"]
         .as_array()
         .unwrap();
-    assert_eq!(commands.len(), 3);
-    assert!(commands[0].as_str().unwrap().contains("registers validate"));
-    assert!(commands[1].as_str().unwrap().contains("project analyze"));
-    assert!(
-        commands[2]
-            .as_str()
+    assert_eq!(actions.len(), 3);
+    assert_eq!(
+        &actions[0]["argv"].as_array().unwrap()[..3],
+        serde_json::json!(["blobray", "registers", "validate"])
+            .as_array()
             .unwrap()
-            .contains("project research next --finding register-0x20103100-32")
+    );
+    assert_eq!(actions[0]["context"], "target");
+    assert_eq!(
+        &actions[1]["argv"].as_array().unwrap()[..3],
+        serde_json::json!(["blobray", "project", "analyze"])
+            .as_array()
+            .unwrap()
+    );
+    assert_eq!(actions[1]["context"], "analysis");
+    assert!(
+        actions[2]["argv"]
+            .as_array()
+            .unwrap()
+            .windows(2)
+            .any(|pair| pair == ["--finding", "register-0x20103100-32"])
     );
     assert!(
-        commands
-            .iter()
-            .all(|command| command.as_str().unwrap().contains("vendor-project.toml"))
+        actions.iter().all(
+            |action| action["argv"].as_array().unwrap().iter().any(|argument| {
+                argument
+                    .as_str()
+                    .is_some_and(|value| value.ends_with("vendor-project.toml"))
+            })
+        )
     );
+    assert!(owned["review_draft"].get("validation_commands").is_none());
 
     for (address, expected_state) in [
         ("0x2010f4a0", "ignored"),
@@ -151,13 +169,13 @@ fn inspect_register_schema_five_exposes_assertions_and_drafts_only_owned_unrevie
         ("0x2010fcb0", "manual"),
     ] {
         let report = inspect(address);
-        assert_eq!(report["schema_version"], 5);
+        assert_eq!(report["schema_version"], 6);
         assert_eq!(report["register"]["review_status"], expected_state);
         assert!(report["review_draft"].is_null());
     }
 
     let event_status = inspect("0x20103064");
-    assert_eq!(event_status["schema_version"], 5);
+    assert_eq!(event_status["schema_version"], 6);
     assert_eq!(
         event_status["reviewed_assertions"]["subject"],
         "mmio:cpu:0x20103064/32"
@@ -197,7 +215,7 @@ fn inspect_register_schema_five_exposes_assertions_and_drafts_only_owned_unrevie
 }
 
 #[test]
-fn research_schema_ten_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
+fn research_schema_eleven_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
     let lookup = |scope: &str, finding: &str| {
         let output = blobray()
             .args([
@@ -230,7 +248,7 @@ fn research_schema_ten_exact_finding_resolution_is_current_and_not_a_completion_
     };
 
     let open = lookup("ieee802154-baseband-leaves", "register-0x20103100-32");
-    assert_eq!(open["schema_version"], 10);
+    assert_eq!(open["schema_version"], 11);
     assert_eq!(open["completion_claim"], false);
     assert_eq!(open["finding_query"]["state"], "open");
     assert_eq!(open["finding_query"]["completion_claim"], false);
@@ -243,6 +261,19 @@ fn research_schema_ten_exact_finding_resolution_is_current_and_not_a_completion_
     assert_eq!(
         open["inventory"]["findings"][0]["consumers"][0]["assertion_kinds"],
         serde_json::json!(["register-identity"])
+    );
+    assert_eq!(
+        open["inventory"]["actions"][0]["inspect_action"]["argv"][0],
+        "blobray"
+    );
+    assert!(
+        open["inventory"]["actions"][0]
+            .get("inspect_command")
+            .is_none()
+    );
+    assert_eq!(
+        open["inventory"]["findings"][0]["requery_action"]["context"],
+        "analysis"
     );
 
     let input_not_observed = lookup("ieee802154-baseband-leaves", "register-0x20103064-32");
@@ -271,7 +302,7 @@ fn research_schema_ten_exact_finding_resolution_is_current_and_not_a_completion_
     );
 
     let missing = lookup("ieee802154-baseband-leaves", "register-not-current");
-    assert_eq!(missing["schema_version"], 10);
+    assert_eq!(missing["schema_version"], 11);
     assert_eq!(missing["completion_claim"], false);
     assert_eq!(missing["finding_query"]["state"], "not-present");
     assert_eq!(missing["finding_query"]["completion_claim"], false);

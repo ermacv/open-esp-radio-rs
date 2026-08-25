@@ -15,6 +15,7 @@ use super::model::{
 };
 
 pub(super) struct ResolvedEnvironment {
+    pub(super) invocation_directory: PathBuf,
     pub(super) project_path: Option<PathBuf>,
     pub(super) project: Option<ProjectSpec>,
     pub(super) target_path: PathBuf,
@@ -44,6 +45,7 @@ impl ResolvedEnvironment {
             svd_paths: self.svd_paths,
             mmio: self.svd,
             explicit_context: self.explicit_context,
+            invocation_directory: self.invocation_directory,
             function_workspace: OnceLock::new(),
             code_workspace: OnceLock::new(),
             register_workspace: OnceLock::new(),

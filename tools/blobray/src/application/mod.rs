@@ -1,5 +1,6 @@
 //! Stateful, CLI-independent application facade for interactive frontends.
 
+pub(crate) mod action;
 pub(crate) mod artifact_store;
 pub(crate) mod capability_context;
 mod comparison;
@@ -22,6 +23,7 @@ pub(crate) mod status;
 
 use std::{collections::BTreeMap, path::Path};
 
+pub(crate) use action::{ExecutableAction, ProjectContextRequirement};
 pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
 pub use pipeline::StageReport as ProjectAnalysisStageReport;
@@ -38,8 +40,7 @@ pub(crate) use query_store::{
     QueryStoreStatistics as ProjectCacheStatistics,
 };
 pub(crate) use resolve::{
-    ExplicitProjectContext, FollowUpRequirements, ProjectContext, ProjectSession,
-    ProjectSessionOptions,
+    ExplicitProjectContext, ProjectContext, ProjectSession, ProjectSessionOptions,
 };
 pub use status::model::{
     AnalysisSurfaceDetail, ArtifactDetail, Component as ProjectStatusComponent, DetailValue,

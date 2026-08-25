@@ -116,6 +116,9 @@ readiness authority. Unqualified implementations remain reported as coverage
 debt in review-scope details but do not make `project status` incomplete and
 are not silently promoted into mandatory verification claims. Only an explicit
 verification-policy requirement makes a production trace a Blobray gate.
+Large JSON outputs are serialized directly against their existing bytes with
+bounded buffers in check mode; verification does not need a second copy in
+`/tmp` and does not write a staging file into the project.
 
 ## Focused and full analysis
 

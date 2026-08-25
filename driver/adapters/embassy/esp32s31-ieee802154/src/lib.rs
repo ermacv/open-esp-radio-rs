@@ -34,7 +34,7 @@ pub use owner::{
     EmbassyIeee802154NoDmaResolved, EmbassyIeee802154Ready,
 };
 
-/// The hard IRQ acknowledged more snapshots than the bounded handoff retained.
+/// The hard IRQ acknowledged more snapshots than the bounded queue retained.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Ieee802154IrqOverflow;
 
@@ -43,7 +43,8 @@ pub struct Ieee802154IrqOverflow;
 pub struct Ieee802154IrqDrain {
     /// Number of acknowledged values discarded from the bounded queue.
     pub acknowledged_events: usize,
-    /// Whether at least one already-acknowledged value was lost to overflow.
+    /// Whether at least one already-acknowledged value was rejected by the
+    /// bounded queue.
     pub overflowed: bool,
 }
 
@@ -51,8 +52,9 @@ pub struct Ieee802154IrqDrain {
 ///
 /// Unlike the Wi-Fi wake signal, this queue preserves every acknowledged MAC
 /// value: IEEE 802.15.4 event status is no longer durable after the hard ISR
-/// clears it. Queue overflow is therefore a fail-closed operation fault, not a
-/// coalesced wake.
+/// clears it. Queue overflow returns the exact rejected token to the hard IRQ
+/// and marks the async operation failed; it is never treated as a coalesced
+/// wake.
 pub struct EmbassyIeee802154IrqRuntime<M: RawMutex, const DEPTH: usize> {
     acknowledged: Channel<M, Ieee802154AcknowledgedInterrupt, DEPTH>,
     overflowed: AtomicBool,
@@ -108,9 +110,16 @@ impl<M: RawMutex, const DEPTH: usize> EmbassyIeee802154IrqRuntime<M, DEPTH> {
 impl<M: RawMutex, const DEPTH: usize> Ieee802154AcknowledgedInterruptSink
     for EmbassyIeee802154IrqRuntime<M, DEPTH>
 {
-    fn post(&self, acknowledged: Ieee802154AcknowledgedInterrupt) {
-        if let Err(TrySendError::Full(_)) = self.acknowledged.try_send(acknowledged) {
-            self.overflowed.store(true, Ordering::Release);
+    fn post(
+        &self,
+        acknowledged: Ieee802154AcknowledgedInterrupt,
+    ) -> Result<(), Ieee802154AcknowledgedInterrupt> {
+        match self.acknowledged.try_send(acknowledged) {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(rejected)) => {
+                self.overflowed.store(true, Ordering::Release);
+                Err(rejected)
+            }
         }
     }
 }
@@ -283,10 +292,10 @@ mod tests {
         irq: &EmbassyIeee802154IrqRuntime<M, DEPTH>,
         events: u16,
         ed_rss: i8,
-    ) {
+    ) -> Result<(), Ieee802154AcknowledgedInterrupt> {
         irq.post(acknowledged_interrupt_for_validation(
             events, 0, 0, ed_rss, false,
-        ));
+        ))
     }
 
     fn active_cca() -> MacRuntimeActive<MacNoDmaResources, ValidationMacCommandExecutor> {
@@ -298,8 +307,8 @@ mod tests {
     #[test]
     fn acknowledged_values_cross_the_async_handoff_in_order() {
         let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 2>::new();
-        publish(&irq, Ieee802154Event::TxSfdDone.bit(), -20);
-        publish(&irq, Ieee802154Event::TxDone.bit(), -21);
+        publish(&irq, Ieee802154Event::TxSfdDone.bit(), -20).unwrap();
+        publish(&irq, Ieee802154Event::TxDone.bit(), -21).unwrap();
 
         let first = block_on(irq.wait()).unwrap();
         let second = block_on(irq.wait()).unwrap();
@@ -312,8 +321,10 @@ mod tests {
     #[test]
     fn overflow_is_a_fail_closed_operation_error() {
         let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        publish(&irq, Ieee802154Event::TxSfdDone.bit(), 0);
-        publish(&irq, Ieee802154Event::TxDone.bit(), 0);
+        publish(&irq, Ieee802154Event::TxSfdDone.bit(), 0).unwrap();
+        let rejected = publish(&irq, Ieee802154Event::TxDone.bit(), 0)
+            .expect_err("the full handoff returns the exact rejected token");
+        assert_eq!(rejected.raw_event_bits(), Ieee802154Event::TxDone.bit());
 
         assert!(matches!(block_on(irq.wait()), Err(Ieee802154IrqOverflow)));
         assert_eq!(irq.drain(), Ieee802154IrqDrain::default());
@@ -336,8 +347,10 @@ mod tests {
     #[test]
     fn consumed_overflow_decode_and_rejection_errors_quarantine_the_owner() {
         let overflow_irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        publish(&overflow_irq, Ieee802154Event::TxSfdDone.bit(), 0);
-        publish(&overflow_irq, Ieee802154Event::TxDone.bit(), 0);
+        publish(&overflow_irq, Ieee802154Event::TxSfdDone.bit(), 0).unwrap();
+        let rejected = publish(&overflow_irq, Ieee802154Event::TxDone.bit(), 0)
+            .expect_err("the full handoff returns the exact rejected token");
+        assert_eq!(rejected.raw_event_bits(), Ieee802154Event::TxDone.bit());
         let mut overflow = EmbassyIeee802154Operation::new(active_cca());
         assert!(matches!(
             block_on(overflow.advance(&overflow_irq)),
@@ -348,7 +361,7 @@ mod tests {
         assert!(overflow.into_active().is_none());
 
         let decode_irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        publish(&decode_irq, 1 << 7, 0);
+        publish(&decode_irq, 1 << 7, 0).unwrap();
         let mut decode = EmbassyIeee802154Operation::new(active_cca());
         assert!(matches!(
             block_on(decode.advance(&decode_irq)),
@@ -361,7 +374,7 @@ mod tests {
         assert!(decode.into_active().is_none());
 
         let rejected_irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        publish(&rejected_irq, Ieee802154Event::TxDone.bit(), 0);
+        publish(&rejected_irq, Ieee802154Event::TxDone.bit(), 0).unwrap();
         let mut rejected = EmbassyIeee802154Operation::new(active_cca());
         assert!(matches!(
             block_on(rejected.advance(&rejected_irq)),
@@ -375,8 +388,8 @@ mod tests {
     #[test]
     fn quiesced_epoch_drain_reports_every_stale_value() {
         let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 2>::new();
-        publish(&irq, Ieee802154Event::RxSfdDone.bit(), 0);
-        publish(&irq, Ieee802154Event::RxDone.bit(), 0);
+        publish(&irq, Ieee802154Event::RxSfdDone.bit(), 0).unwrap();
+        publish(&irq, Ieee802154Event::RxDone.bit(), 0).unwrap();
 
         assert_eq!(
             irq.drain(),

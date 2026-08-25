@@ -569,7 +569,14 @@ impl Ieee802154AcknowledgedInterrupt {
 /// Executor-side receiver of one acknowledged interrupt observation.
 pub trait Ieee802154AcknowledgedInterruptSink {
     /// Post a non-replayable observation after hard-IRQ acknowledgement.
-    fn post(&self, acknowledged: Ieee802154AcknowledgedInterrupt);
+    ///
+    /// A saturated sink must return the exact rejected value. A hard IRQ can
+    /// therefore quarantine acknowledged evidence instead of silently losing
+    /// the affine token after hardware status has already been cleared.
+    fn post(
+        &self,
+        acknowledged: Ieee802154AcknowledgedInterrupt,
+    ) -> Result<(), Ieee802154AcknowledgedInterrupt>;
 }
 
 /// Construct acknowledged evidence for explicit non-target validation probes.
@@ -592,10 +599,13 @@ pub const fn acknowledged_interrupt_for_validation(
 }
 
 /// Outcome of one finite hard-IRQ invocation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Ieee802154InterruptDisposition {
     /// A nonzero event snapshot was acknowledged and posted.
     Posted,
+    /// Hardware status was acknowledged, but the sink returned the exact
+    /// value it could not retain.
+    HandoffRejected(Ieee802154AcknowledgedInterrupt),
     /// The sampled raw event image was zero, so nothing was acknowledged or
     /// posted.
     Spurious,
@@ -636,7 +646,12 @@ pub enum Ieee802154InterruptDisposition {
 ///
 /// struct Sink;
 /// impl Ieee802154AcknowledgedInterruptSink for Sink {
-///     fn post(&self, _: Ieee802154AcknowledgedInterrupt) {}
+///     fn post(
+///         &self,
+///         acknowledged: Ieee802154AcknowledgedInterrupt,
+///     ) -> Result<(), Ieee802154AcknowledgedInterrupt> {
+///         Ok(())
+///     }
 /// }
 ///
 /// let _ = handle_ieee802154_interrupt(&mut FakePort, &Sink);
@@ -664,14 +679,17 @@ fn handle_interrupt<Port: InterruptPort, Sink: Ieee802154AcknowledgedInterruptSi
     let cca_busy = snapshot.cca_busy();
 
     port.acknowledge(snapshot);
-    sink.post(Ieee802154AcknowledgedInterrupt::new(
+    let acknowledged = Ieee802154AcknowledgedInterrupt::new(
         raw_event_bits,
         raw_rx_abort_reason_code,
         raw_tx_abort_reason_code,
         ed_rss_code,
         cca_busy,
-    ));
-    Ieee802154InterruptDisposition::Posted
+    );
+    match sink.post(acknowledged) {
+        Ok(()) => Ieee802154InterruptDisposition::Posted,
+        Err(rejected) => Ieee802154InterruptDisposition::HandoffRejected(rejected),
+    }
 }
 
 const NAMED_RX_ABORT_BITS: u32 = 0x0387_81ff;
@@ -1750,9 +1768,27 @@ mod tests {
     }
 
     impl Ieee802154AcknowledgedInterruptSink for ModelAcknowledgedSink {
-        fn post(&self, acknowledged: Ieee802154AcknowledgedInterrupt) {
+        fn post(
+            &self,
+            acknowledged: Ieee802154AcknowledgedInterrupt,
+        ) -> Result<(), Ieee802154AcknowledgedInterrupt> {
             self.operations.borrow_mut().push(HardIrqOperation::Post);
             assert!(self.posted.replace(Some(acknowledged)).is_none());
+            Ok(())
+        }
+    }
+
+    struct RejectingAcknowledgedSink {
+        operations: Rc<RefCell<Vec<HardIrqOperation>>>,
+    }
+
+    impl Ieee802154AcknowledgedInterruptSink for RejectingAcknowledgedSink {
+        fn post(
+            &self,
+            acknowledged: Ieee802154AcknowledgedInterrupt,
+        ) -> Result<(), Ieee802154AcknowledgedInterrupt> {
+            self.operations.borrow_mut().push(HardIrqOperation::Post);
+            Err(acknowledged)
         }
     }
 
@@ -1811,6 +1847,36 @@ mod tests {
                 HardIrqOperation::ReadEdRss,
                 HardIrqOperation::ReadCcaBusy,
                 HardIrqOperation::Acknowledge(0xa5),
+                HardIrqOperation::Post,
+            ]
+        );
+    }
+
+    #[test]
+    fn hard_irq_returns_the_exact_acknowledged_token_rejected_by_the_sink() {
+        let raw_events = Ieee802154Event::TxDone.bit() | Ieee802154Event::TxSfdDone.bit();
+        let (mut port, accepting_sink) = hard_irq_fixture(0x5a, raw_events, 0, 0, -37, false);
+        let rejecting_sink = RejectingAcknowledgedSink {
+            operations: Rc::clone(&accepting_sink.operations),
+        };
+
+        let rejected = match handle_interrupt(&mut port, &rejecting_sink) {
+            Ieee802154InterruptDisposition::HandoffRejected(rejected) => rejected,
+            disposition => panic!("expected rejected handoff, got {disposition:?}"),
+        };
+
+        assert_eq!(rejected.raw_event_bits(), raw_events);
+        assert_eq!(rejected.ed_rss_code(), -37);
+        assert_eq!(
+            *accepting_sink.operations.borrow(),
+            [
+                HardIrqOperation::Status,
+                HardIrqOperation::ReadEventBits,
+                HardIrqOperation::ReadRxAbortReason,
+                HardIrqOperation::ReadTxAbortReason,
+                HardIrqOperation::ReadEdRss,
+                HardIrqOperation::ReadCcaBusy,
+                HardIrqOperation::Acknowledge(0x5a),
                 HardIrqOperation::Post,
             ]
         );

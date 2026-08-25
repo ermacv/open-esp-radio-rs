@@ -96,6 +96,20 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
         "not-configured"
     );
     assert_eq!(document["phases"]["publication"]["status"], "incomplete");
+    assert_eq!(
+        document["phases"]["revision-workflow"]["status"],
+        "incomplete"
+    );
+    assert_eq!(
+        document["phases"]["revision-workflow"]["components"][0]["name"],
+        "durable-revision-baseline"
+    );
+    assert!(
+        document["phases"]["revision-workflow"]["components"][0]["diagnostic"]
+            .as_str()
+            .unwrap()
+            .contains("baseline is absent")
+    );
     assert!(!directory.join("generated/svd/device.svd").exists());
     assert!(!directory.join("generated/pac-raw/src/lib.rs").exists());
 

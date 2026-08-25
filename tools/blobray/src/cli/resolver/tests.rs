@@ -302,6 +302,47 @@ fn project_cache_stats_resolves_only_the_manifest() {
 }
 
 #[test]
+fn project_cache_maintenance_resolves_only_the_manifest() {
+    let directory = fixture_directory("cache-maintenance");
+    write_project(
+        &directory.join(DEFAULT_PROJECT_MANIFEST),
+        "run-spec = \"missing-local.toml\"\n",
+    );
+
+    let resolved =
+        resolve_from(parse(&["project", "cache", "gc", "--dry-run"]), &directory).unwrap();
+    let ResolvedInvocation::ProjectCacheGc {
+        arguments,
+        project_path,
+    } = resolved
+    else {
+        panic!("expected a project-cache gc invocation")
+    };
+    assert!(arguments.dry_run);
+    assert_eq!(project_path, directory.join(DEFAULT_PROJECT_MANIFEST));
+
+    let resolved = resolve_from(parse(&["project", "cache", "compact"]), &directory).unwrap();
+    let ResolvedInvocation::ProjectCacheCompact { project_path, .. } = resolved else {
+        panic!("expected a project-cache compact invocation")
+    };
+    assert_eq!(project_path, directory.join(DEFAULT_PROJECT_MANIFEST));
+
+    let error = resolve_from(
+        parse(&["project", "cache", "compact", "--run-spec", "override.toml"]),
+        &directory,
+    )
+    .err()
+    .expect("cache compact must reject run-spec overrides");
+    assert!(
+        error
+            .to_string()
+            .contains("accepts a project manifest, not --target-spec, --run-spec or --svd")
+    );
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
     let directory = fixture_directory("local-run-discovery");
     write_target(&directory.join("target.toml"));

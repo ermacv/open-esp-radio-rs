@@ -35,6 +35,14 @@ pub(in crate::cli) enum ResolvedInvocation {
     ProjectCacheStats {
         project_path: PathBuf,
     },
+    ProjectCacheGc {
+        arguments: ProjectCacheGcArgs,
+        project_path: PathBuf,
+    },
+    ProjectCacheCompact {
+        arguments: ProjectCacheCompactArgs,
+        project_path: PathBuf,
+    },
     RevisionWorkspace {
         command: RevisionWorkspaceCommand,
         session: Box<ProjectSession>,
@@ -117,6 +125,7 @@ pub(in crate::cli) enum FunctionWorkspaceCommand {
 
 pub(in crate::cli) enum RevisionWorkspaceCommand {
     Snapshot(RevisionSnapshotArgs),
+    PrepareUpdate(RevisionPrepareUpdateArgs),
     Diff(RevisionDiffArgs),
     Rebase(RevisionRebaseArgs),
 }

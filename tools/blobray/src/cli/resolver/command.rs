@@ -120,6 +120,10 @@ pub(super) fn resolve_command(
             command: RevisionWorkspaceCommand::Snapshot(arguments),
             session: Box::new(environment.into_project_session()?),
         },
+        Command::RevisionPrepareUpdate(arguments) => ResolvedInvocation::RevisionWorkspace {
+            command: RevisionWorkspaceCommand::PrepareUpdate(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
         Command::RevisionDiff(arguments) => ResolvedInvocation::RevisionWorkspace {
             command: RevisionWorkspaceCommand::Diff(arguments),
             session: Box::new(environment.into_project_session()?),
@@ -409,6 +413,8 @@ pub(super) fn resolve_command(
         | Command::ProjectConfigure(_)
         | Command::ProjectInputsInit(_)
         | Command::ProjectCacheStats(_)
+        | Command::ProjectCacheGc(_)
+        | Command::ProjectCacheCompact(_)
         | Command::ProjectBrowse(_) => {
             return Err(crate::Error::invalid(
                 "setup command reached target command resolution",

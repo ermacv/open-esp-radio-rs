@@ -16,6 +16,23 @@ const DEFAULT_ANALYSIS_JOBS: u8 = 4;
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct EmptyArgs {}
 
+#[derive(Clone, Debug, Default, Args)]
+pub(crate) struct ProjectCacheGcArgs {
+    /// Compute and report the exact reachability-compaction plan without writing cache state.
+    #[arg(long, required = true)]
+    pub(crate) dry_run: bool,
+    /// Require the projected cache to fit this many bytes without evicting live results.
+    #[arg(long, value_name = "BYTES", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) max_size: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, Args)]
+pub(crate) struct ProjectCacheCompactArgs {
+    /// Refuse compaction unless its projected cache fits this many bytes without live eviction.
+    #[arg(long, value_name = "BYTES", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) max_size: Option<u64>,
+}
+
 #[derive(Clone, Debug, Args)]
 pub(crate) struct ProjectInitArgs {
     /// Directory in which the new project workspace is created.
@@ -124,10 +141,10 @@ pub(crate) struct ProjectCheckArgs {
 
 #[derive(Clone, Debug, Args)]
 pub(crate) struct RevisionSnapshotArgs {
-    /// Stable revision name used by the default generated snapshot path.
+    /// Stable revision name used by the durable snapshot ledger.
     #[arg(value_name = "NAME")]
     pub(crate) name: String,
-    /// Snapshot path; defaults to generated/revisions/NAME.json.
+    /// Snapshot path below revisions/; defaults to revisions/snapshots/NAME.json.
     #[arg(long, value_name = "PATH")]
     pub(crate) output: Option<PathBuf>,
     /// Verify the existing snapshot without changing it.
@@ -164,6 +181,17 @@ pub(crate) struct RevisionRebaseArgs {
     pub(crate) output: Option<PathBuf>,
     /// Verify the configured output instead of writing it.
     #[arg(long, requires = "output")]
+    pub(crate) check: bool,
+}
+
+#[derive(Clone, Debug, Default, Args)]
+pub(crate) struct RevisionPrepareUpdateArgs {
+    /// Confirm that the current revision has been reviewed and make it the
+    /// baseline for the next vendor update.
+    #[arg(long)]
+    pub(crate) accept_current: bool,
+    /// Verify an existing preflight marker without changing the ledger.
+    #[arg(long)]
     pub(crate) check: bool,
 }
 

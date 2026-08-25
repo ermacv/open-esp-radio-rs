@@ -83,10 +83,14 @@ cargo blobray project research next --scope ieee802154-baseband-leaves \
 
 The command is read-only unless `--output` is supplied. Each candidate names
 the missing knowledge, confidence, affected scopes, expected impact and a
-copyable next inspection command. Report schema 2 ranks unique user actions:
+copyable next inspection command. Report schema 3 ranks unique user actions:
 independent findings that lead to the same inspection command remain listed as
-`related_findings` instead of consuming duplicate top-N slots. Low confidence
-on write semantics is
+`related_findings` instead of consuming duplicate top-N slots. Impact is
+aggregated across the complete action before ranking, not inherited from the
+single highest-scoring finding. Every research packet includes exact direct,
+guaranteed, optimistic, marginal and co-blocker identities together with the
+required evidence, reviewed destination and completion condition. Low
+confidence on write semantics is
 intentional: W1C, self-clear and hardware-owned behavior require reviewed HIL
 or authoritative documentation and are not inferred from vendor writes.
 
@@ -156,12 +160,16 @@ MMIO and harness-semantic changes.
 
 ## Updating vendor artifacts without losing review
 
-Capture an immutable snapshot before replacing caller-owned artifacts, run the
-normal analysis on the new revision, then capture and compare it:
+Capture an immutable snapshot and run the preflight **before** replacing
+caller-owned artifacts. The preflight hashes the live bindings, verifies them
+against the current immutable snapshot and records that the old baseline is
+safe. After replacement, run normal analysis, capture the new revision and
+compare the ledger's adjacent `baseline` and `current` entries:
 
 ```console
 cargo blobray project revision snapshot vendor-2026-05 --project path/to/vendor-project.toml
-# update local artifact bindings, then run project analyze
+cargo blobray project revision prepare-update --project path/to/vendor-project.toml
+# only now update local artifact bindings, then run project analyze
 cargo blobray project revision snapshot vendor-2026-08 --project path/to/vendor-project.toml
 cargo blobray project revision diff vendor-2026-05 vendor-2026-08 \
   --project path/to/vendor-project.toml --details
@@ -170,7 +178,26 @@ cargo blobray project revision rebase vendor-2026-05 vendor-2026-08 \
   --output generated/revisions/vendor-2026-08.rebase.json
 ```
 
-Snapshots default to `generated/revisions/NAME.json`. They contain artifact
+Snapshots default to `revisions/snapshots/NAME.json`; the small
+`revisions/ledger.toml` is updated atomically with the snapshot location,
+snapshot SHA-256, artifact-set SHA-256 and explicit `baseline`/`current`
+pointers. Both paths are outside disposable `generated/` state and should be
+committed or backed by equivalent durable, access-controlled storage. `project
+status` and `project doctor` warn when no baseline exists; deep doctor also
+checks immutable snapshot digests and reports current binding drift.
+Snapshot creation hashes the live caller-owned bindings and rejects stale
+analysis evidence whose recorded artifact identities are no longer present.
+
+`prepare-update` fails if the caller has already replaced a bound vendor
+artifact, if a snapshot is missing or modified, or if the previous revision
+transition has not been accepted. After completing diff/rebase review, use
+`prepare-update --accept-current` to make `current` the next baseline and
+record a new preflight. `prepare-update --check` is read-only and verifies an
+existing marker. A snapshot with changed artifact identities is rejected
+unless its predecessor has a matching marker, so cleanup or an accidental
+binding edit cannot silently erase the old correspondence map.
+
+Snapshots contain artifact
 digests, address-independent function feature fingerprints, MMIO/interface
 observations and complete serialized reviewed records, but no vendor bytes or
 disassembly. The portable fingerprint is a cross-version correlator and never
@@ -188,6 +215,10 @@ Inspect the store before deciding whether cache growth needs investigation:
 
 ```console
 cargo blobray project cache stats --project path/to/vendor-project.toml
+cargo blobray project cache gc --dry-run --max-size 4294967296 \
+  --project path/to/vendor-project.toml
+cargo blobray project cache compact --max-size 4294967296 \
+  --project path/to/vendor-project.toml
 ```
 
 The command reports cache-file, database and pack sizes, query kinds, dependency
@@ -197,11 +228,32 @@ reported without creating `generated/.blobray-cache/` or any SQLite sidecar.
 `cache stats` does not perform garbage collection, compaction, pruning, schema
 migration, or quota enforcement; it only describes the state already on disk.
 Its assessment reports the platform support and exact thresholds for automatic
-pack compaction. `project analyze --plan` is the read-only way to see whether
+pack compaction. `cache gc` currently requires `--dry-run`: it reports the
+reachable-pack projection, temporary space requirement, available space and an
+optional byte-exact `--max-size` guard without creating or changing cache
+state. `cache compact` is the explicit mutation; it is supported only on Linux
+local filesystems, holds the cache writer lock, rewrites and verifies every
+live CAS digest through the pinned cache root, atomically switches the SQLite
+index, then removes old packs. It refuses known network/userspace filesystems,
+insufficient working space and a size limit that cannot be met without
+evicting live results. The size limit is therefore an actionable guard, not a
+silent lossy quota.
+
+Age/LRU retention is intentionally not guessed from file mtimes: the current
+store schema has no durable per-query access clock. Removing the entire
+disposable cache remains the safe cold-start escape hatch; selective retention
+requires a future schema and access-accounting iteration. `project analyze
+--plan` is the read-only way to see whether
 each stage is current, restorable from CAS, or requires recomputation. Plan
 schema 2 keeps the default decision summary bounded while exposing every
 deferred generated input and its producer stage as structured
 `awaiting-inputs` in JSON and in `--details` output.
+
+Writing analysis emits structured `cache_outcome` events for current hits,
+restored hits, misses followed by recomputation, and publication of recomputed
+results. The normal pipeline report independently keeps `up-to-date`,
+`restored` and `written` stage counts; use `-v` when the per-stage cache events
+are needed.
 
 SQLite and the append-only pack have different jobs. SQLite provides indexed
 function queries, transactional stage bindings, dependency edges and locking;

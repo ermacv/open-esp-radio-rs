@@ -50,7 +50,7 @@ tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 libc = "=0.2.189"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-nix = { version = "=0.26.4", default-features = false, features = ["inotify"] }
+nix = { version = "=0.26.4", default-features = false, features = ["fs", "inotify"] }
 
 [lints]
 workspace = true

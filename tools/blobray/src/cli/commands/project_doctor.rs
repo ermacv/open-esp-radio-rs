@@ -7,6 +7,7 @@ mod interfaces;
 mod model;
 mod registers;
 mod render;
+mod revision;
 mod verification;
 
 use super::{ProjectContext, Result};
@@ -54,6 +55,9 @@ pub(super) fn run(context: ProjectContext<'_>) -> Result<bool> {
     let section_started = std::time::Instant::now();
     interfaces::collect(&context, &mut report);
     report.timing("interfaces", section_started.elapsed());
+    let section_started = std::time::Instant::now();
+    revision::collect(&context, &mut report);
+    report.timing("revision-workflow", section_started.elapsed());
     let section_started = std::time::Instant::now();
     verification::collect(&context, &mut report);
     report.timing("verification", section_started.elapsed());

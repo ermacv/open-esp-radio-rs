@@ -6,8 +6,8 @@ use crate::{
     Result,
     application::{generated_file, revision},
     cli::{
-        RevisionDiffArgs, RevisionRebaseArgs, RevisionSnapshotArgs, output,
-        resolver::RevisionWorkspaceCommand, table,
+        RevisionDiffArgs, RevisionPrepareUpdateArgs, RevisionRebaseArgs, RevisionSnapshotArgs,
+        output, resolver::RevisionWorkspaceCommand, table,
     },
 };
 
@@ -24,6 +24,7 @@ struct SnapshotReport<'a> {
     interfaces: usize,
     assertions: usize,
     vendor_bugs: usize,
+    artifact_bindings_verified: usize,
 }
 
 pub(super) fn run(
@@ -32,6 +33,7 @@ pub(super) fn run(
 ) -> Result<bool> {
     match command {
         RevisionWorkspaceCommand::Snapshot(arguments) => snapshot(arguments, session),
+        RevisionWorkspaceCommand::PrepareUpdate(arguments) => prepare_update(arguments, session),
         RevisionWorkspaceCommand::Diff(arguments) => diff(arguments, session),
         RevisionWorkspaceCommand::Rebase(arguments) => rebase(arguments, session),
     }
@@ -45,13 +47,8 @@ fn snapshot(
         .output
         .unwrap_or(revision::default_path(&session.manifest, &arguments.name)?);
     let snapshot = revision::snapshot(session, &arguments.name)?;
-    generated_file::write_or_check_json(
-        &path,
-        &snapshot,
-        arguments.check,
-        "revision snapshot",
-        true,
-    )?;
+    let artifact_bindings_verified = revision::verify_snapshot_bindings(session, &snapshot)?;
+    revision::persist_snapshot(&session.manifest, &snapshot, &path, arguments.check)?;
     let report = SnapshotReport {
         schema_version: revision::REVISION_SCHEMA,
         command: "revision snapshot",
@@ -68,21 +65,48 @@ fn snapshot(
         interfaces: snapshot.interfaces.len(),
         assertions: snapshot.assertions.len(),
         vendor_bugs: snapshot.vendor_bugs.len(),
+        artifact_bindings_verified,
     };
     output::render_report(&report, || {
         outputln!("{}", output::heading("Revision snapshot"));
         outputln!(
             "\n{}",
             output::success(format!(
-                "{} — {} functions, {} registers, {} interfaces, {} reviewed records",
+                "{} — {} functions, {} registers, {} interfaces, {} reviewed records; {} live artifact identities verified",
                 report.status.to_uppercase(),
                 report.functions,
                 report.registers,
                 report.interfaces,
-                report.assertions + report.vendor_bugs
+                report.assertions + report.vendor_bugs,
+                report.artifact_bindings_verified,
             ))
         );
         outputln!("Output: {}", report.output);
+    });
+    Ok(true)
+}
+
+fn prepare_update(
+    arguments: RevisionPrepareUpdateArgs,
+    session: &crate::application::ProjectSession,
+) -> Result<bool> {
+    let report = revision::prepare_update(session, arguments.accept_current, arguments.check)?;
+    output::render_report(&report, || {
+        outputln!("{}", output::heading("Revision update preflight"));
+        outputln!(
+            "\n{}",
+            output::success(format!(
+                "{} — {} current artifact identities match the immutable snapshot",
+                report.status.to_uppercase(),
+                report.artifact_bindings_verified
+            ))
+        );
+        outputln!("Ledger:   {}", report.ledger);
+        outputln!("Baseline: {}", report.baseline);
+        outputln!("Current:  {}", report.current);
+        outputln!(
+            "\nThe current blob may now be replaced. Keep the ledger and its snapshot, refresh analysis, then create a new named revision snapshot."
+        );
     });
     Ok(true)
 }

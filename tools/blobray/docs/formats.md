@@ -45,6 +45,21 @@ silently layering executable assumptions from different ownership scopes.
 - verification policy: required comparisons and bounded properties;
 - evidence catalogs: provenance links for reviewed claims.
 
+## Durable revision state
+
+- immutable revision snapshots (`revisions/snapshots/NAME.json`) contain only
+  artifact digests and normalized derived features, never vendor payloads or
+  disassembly;
+- `revisions/ledger.toml` is the tracked schema-1 index for those snapshots.
+  It stores only project/revision names, relative snapshot locations, SHA-256
+  identities, `baseline`/`current` pointers and an optional update-preflight
+  marker.
+
+Snapshots are tool-written correspondence maps rather than manually reviewed
+facts. Unlike ordinary generated output, they and their ledger must survive a
+vendor update; commit them or place them in equivalent durable,
+access-controlled storage. Snapshot names are immutable.
+
 ## Generated outputs
 
 - symbol, MMIO, and interface observations;
@@ -57,11 +72,11 @@ silently layering executable assumptions from different ownership scopes.
 - pseudo-Rust and executable reference artifacts;
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output;
-- revision snapshots, diffs and rebase plans. Snapshot schema 1 stores only
-  digests and normalized derived features, never vendor payloads;
-- research-next reports (`schema_version = 2`), including explicit benefit,
-  cost and co-blocker score terms, unique follow-up actions, and every related
-  finding grouped below its copyable command.
+- revision diff and rebase plans;
+- research-next reports (`schema_version = 3`), including explicit benefit,
+  cost and co-blocker score terms, action-aggregated function identities,
+  evidence/destination/completion packets, unique follow-up actions, and every
+  related finding grouped below its copyable command.
 - project-status reports (`schema = 9`) keep shallow artifact readiness
   separate from generated freshness, open research debt and verification
   readiness; `ready` never means that a review scope has no remaining work.
@@ -85,7 +100,12 @@ obsolete cache schema is maintained.
 Do not commit, publish or hand-edit the store. Generated linked-IR bundles are
 the portable/public artifacts; reviewed TOML remains the accepted knowledge.
 The SQLite WAL requires a local filesystem and is not supported on a network
-share. JSONL and ZIP are intentionally not cache backends: they do not provide
+share. Linux writer and manual-compaction paths enforce this against known
+network filesystem types and conservatively reject FUSE because its backend
+locality is not visible. Manual compaction also reserves space for a complete
+new live pack, the SQLite working set and a fixed safety margin before writing.
+Other platforms keep destructive compaction disabled. JSONL and ZIP are
+intentionally not cache backends: they do not provide
 the indexed point lookup, multi-table atomic binding update and incremental
 append/recovery contract required here. Use JSON/JSONL for portable reports and
 bundle files, and use revision snapshots plus reviewed TOML to preserve research

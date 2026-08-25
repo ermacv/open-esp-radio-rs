@@ -63,13 +63,17 @@ impl ResolutionNeeds {
             }
 
             Command::ProjectDoctor(_) => Self::new(true, false, false, false, true, true, true),
-            Command::ProjectFiles(_) | Command::ProjectCacheStats(_) => {
+            Command::ProjectFiles(_)
+            | Command::ProjectCacheStats(_)
+            | Command::ProjectCacheGc(_)
+            | Command::ProjectCacheCompact(_) => {
                 Self::new(true, false, false, false, false, false, false)
             }
-            Command::RevisionSnapshot(_)
-            | Command::RevisionDiff(_)
-            | Command::RevisionRebase(_) => {
+            Command::RevisionDiff(_) | Command::RevisionRebase(_) => {
                 Self::new(true, false, false, false, false, false, false)
+            }
+            Command::RevisionSnapshot(_) | Command::RevisionPrepareUpdate(_) => {
+                Self::new(true, false, false, false, false, false, true)
             }
             Command::ResearchNext(_) => Self::new(true, false, false, false, false, false, false)
                 .with_configured_knowledge_provider(),
@@ -146,9 +150,18 @@ mod tests {
 
     #[test]
     fn cache_stats_needs_only_a_project_manifest() {
+        let expected = ResolutionNeeds::new(true, false, false, false, false, false, false);
         assert_eq!(
             ResolutionNeeds::for_command(&Command::ProjectCacheStats(Default::default())),
-            ResolutionNeeds::new(true, false, false, false, false, false, false)
+            expected
+        );
+        assert_eq!(
+            ResolutionNeeds::for_command(&Command::ProjectCacheGc(Default::default())),
+            expected
+        );
+        assert_eq!(
+            ResolutionNeeds::for_command(&Command::ProjectCacheCompact(Default::default())),
+            expected
         );
     }
 }

@@ -236,10 +236,21 @@ impl FunctionCacheRun {
         {
             tracing::warn!(%error, facts = facts.len(), "function-fact cache write failed");
         }
+        let lookups = cache
+            .keys
+            .lock()
+            .expect("function cache key lock")
+            .by_symbol
+            .values()
+            .filter(|key| key.looked_up)
+            .count();
+        let hits = cache.reused.load(Ordering::Relaxed);
         tracing::debug!(
-            loaded = cache.loaded.load(Ordering::Relaxed),
-            reused = cache.reused.load(Ordering::Relaxed),
-            stored = facts.len(),
+            cache_lookups = lookups,
+            cache_loaded = cache.loaded.load(Ordering::Relaxed),
+            cache_hits = hits,
+            cache_misses = lookups.saturating_sub(hits),
+            cache_recomputed_published = facts.len(),
             "completed persistent function-fact cache session"
         );
     }

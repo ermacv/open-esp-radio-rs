@@ -19,9 +19,11 @@ fn command_message(command: &Command) -> Option<&'static str> {
         | Command::ProjectDoctor(_)
         | Command::ProjectFiles(_)
         | Command::ProjectCacheStats(_)
+        | Command::ProjectCacheGc(_)
         | Command::ProjectAuditBindings(_)
         | Command::ProjectStatus(_)
         | Command::ProjectBrowse(_)
+        | Command::RevisionPrepareUpdate(_)
         | Command::RevisionDiff(_)
         | Command::RevisionRebase(_)
         | Command::FunctionInitPack(_)
@@ -29,6 +31,7 @@ fn command_message(command: &Command) -> Option<&'static str> {
         | Command::InterfaceInitPack(_)
         | Command::RegisterInitModel(_)
         | Command::VerifyEvidence(_) => return None,
+        Command::ProjectCacheCompact(_) => "Cache compaction",
         Command::ProjectAnalyze(_) => "Project analysis",
         Command::ProjectVerify(_) => "Project verification",
         Command::ProjectCheck(_) => "Project check",
@@ -150,6 +153,8 @@ mod tests {
         );
         assert!(command_span(&Command::ProjectStatus(Default::default())).is_none());
         assert!(command_span(&Command::ProjectCacheStats(Default::default())).is_none());
+        assert!(command_span(&Command::ProjectCacheGc(Default::default())).is_none());
+        assert!(command_span(&Command::ProjectCacheCompact(Default::default())).is_some());
         assert!(
             command_span(&Command::GenerateCompletions(CompletionArgs {
                 shell: CompletionShell::Bash,

@@ -469,7 +469,7 @@ fn project_doctor_json_is_one_complete_typed_report() {
     assert_eq!(report["validation"]["depth"], "deep");
     assert_eq!(report["validation"]["freshness"], "unknown");
     assert!(report["duration_ms"].is_u64());
-    assert_eq!(report["timings"].as_array().unwrap().len(), 8);
+    assert_eq!(report["timings"].as_array().unwrap().len(), 9);
     assert_eq!(report["project"]["id"], "generic-rv32-fixture");
     assert_eq!(report["target"]["id"], "generic-rv32");
     assert!(report["capabilities"].as_array().unwrap().len() > 10);
@@ -479,6 +479,14 @@ fn project_doctor_json_is_one_complete_typed_report() {
     assert!(report["inputs"].is_array());
     assert!(report["errors"].is_u64());
     assert!(report["warnings"].is_u64());
+
+    let revisions = report["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["name"] == "revision-workflow")
+        .expect("revision-workflow capability");
+    assert_eq!(revisions["status"], "baseline-missing");
 
     let memory = report["capabilities"]
         .as_array()
@@ -2607,5 +2615,97 @@ fn revision_diff_is_a_typed_project_workflow() {
     assert_eq!(document["command"], "revision diff");
     assert_eq!(document["summary"]["moved"], 1);
     assert_eq!(document["changes"][0]["classification"], "moved");
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn revision_snapshot_creates_a_durable_immutable_ledger() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-cli-contract-revision-ledger-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 3\nid = \"revision-ledger\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+    let artifact = directory.join("vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+    let inputs = blobray()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--project"])
+        .arg(&manifest)
+        .arg("--bind")
+        .arg(format!("source-artifact:fixture={}", artifact.display()))
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("initialize revision fixture inputs");
+    assert!(
+        inputs.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&inputs.stderr)
+    );
+    let analyzed = run_project_command(&manifest, &["project", "analyze"]);
+    assert!(
+        analyzed.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&analyzed.stderr)
+    );
+
+    let output = run_project_command(&manifest, &["project", "revision", "snapshot", "vendor-1"]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["command"], "revision snapshot");
+    assert_eq!(document["status"], "written");
+    assert_eq!(document["artifact_bindings_verified"], 1);
+    assert!(directory.join("revisions/ledger.toml").is_file());
+    assert!(
+        directory
+            .join("revisions/snapshots/vendor-1.json")
+            .is_file()
+    );
+    let ledger = std::fs::read_to_string(directory.join("revisions/ledger.toml")).unwrap();
+    assert!(ledger.contains("baseline = \"vendor-1\""));
+    assert!(ledger.contains("current = \"vendor-1\""));
+    assert!(ledger.contains("snapshot-sha256"));
+    assert!(!ledger.contains("disassembly"));
+
+    let checked = run_project_command(
+        &manifest,
+        &["project", "revision", "snapshot", "vendor-1", "--check"],
+    );
+    assert!(
+        checked.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+    let prepared = run_project_command(&manifest, &["project", "revision", "prepare-update"]);
+    assert!(
+        prepared.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&prepared.stderr)
+    );
+    let prepared: serde_json::Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    assert_eq!(prepared["status"], "prepared");
+    assert_eq!(prepared["artifact_bindings_verified"], 1);
+    let status = run_project_command(&manifest, &["project", "status"]);
+    let status_document: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(
+        status_document["phases"]["revision-workflow"]["status"],
+        "ready"
+    );
     std::fs::remove_dir_all(directory).unwrap();
 }

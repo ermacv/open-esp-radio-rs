@@ -29,7 +29,11 @@ pub use project_analysis::{
     ProjectAnalysisPlanStage, ProjectAnalysisPlanWorkItem, ProjectAnalysisReport,
     ProjectAnalysisRequest, ProjectAnalysisStatus,
 };
-pub(crate) use query_store::QueryStoreStatistics as ProjectCacheStatistics;
+pub(crate) use query_store::{
+    QueryStoreCompactionResult as ProjectCacheCompactionResult,
+    QueryStoreMaintenancePlan as ProjectCacheMaintenancePlan,
+    QueryStoreStatistics as ProjectCacheStatistics,
+};
 pub(crate) use resolve::{
     ExplicitProjectContext, FollowUpRequirements, ProjectContext, ProjectSession,
     ProjectSessionOptions,
@@ -158,4 +162,21 @@ pub(crate) fn register_detail_for_project(
 /// Inspect the project-owned persistent cache without creating or repairing it.
 pub(crate) fn project_cache_statistics(manifest: &Path) -> crate::Result<ProjectCacheStatistics> {
     query_store::QueryStore::statistics(manifest)
+}
+
+/// Inspect reachability, quota and disk-space constraints without mutating the
+/// project-owned persistent cache.
+pub(crate) fn project_cache_maintenance_plan(
+    manifest: &Path,
+    max_size_bytes: Option<u64>,
+) -> crate::Result<ProjectCacheMaintenancePlan> {
+    query_store::QueryStore::maintenance_plan(manifest, max_size_bytes)
+}
+
+/// Compact the project-owned persistent cache without evicting live results.
+pub(crate) fn compact_project_cache(
+    manifest: &Path,
+    max_size_bytes: Option<u64>,
+) -> crate::Result<ProjectCacheCompactionResult> {
+    query_store::QueryStore::compact_cache(manifest, max_size_bytes)
 }

@@ -49,10 +49,16 @@ impl TemporaryProject {
     }
 
     fn stats(&self, format: Option<&str>) -> Output {
+        self.cache_command(&["stats"], format)
+    }
+
+    fn cache_command(&self, arguments: &[&str], format: Option<&str>) -> Output {
         let mut command = blobray();
         command
             .current_dir(repository_root())
-            .args(["project", "cache", "stats", "--project"])
+            .args(["project", "cache"])
+            .args(arguments)
+            .arg("--project")
             .arg(&self.manifest)
             .args(["--color", "never", "--progress", "never"]);
         if let Some(format) = format {
@@ -60,6 +66,52 @@ impl TemporaryProject {
         }
         command.output().expect("run project cache stats")
     }
+}
+
+#[test]
+fn fresh_cache_gc_dry_run_is_actionable_and_read_only() {
+    let project = TemporaryProject::from_public_fixture("fresh-gc");
+    let before = tree_snapshot(&project.root);
+
+    let output = project.cache_command(&["gc", "--dry-run", "--max-size", "1048576"], Some("json"));
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["schema_version"], 1);
+    assert_eq!(report["command"], "project cache gc");
+    assert_eq!(report["dry_run"], true);
+    assert_eq!(report["present"], false);
+    assert_eq!(report["would_compact"], false);
+    assert_eq!(report["max_size_bytes"], 1_048_576);
+    assert_eq!(report["over_max_size_bytes"], 0);
+    assert_eq!(tree_snapshot(&project.root), before);
+    assert!(!project.root.join("generated/.blobray-cache").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn compacting_an_absent_cache_is_an_explicit_noop_without_creation() {
+    let project = TemporaryProject::from_public_fixture("fresh-compact");
+    let before = tree_snapshot(&project.root);
+
+    let output = project.cache_command(&["compact"], Some("json"));
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["schema_version"], 1);
+    assert_eq!(report["command"], "project cache compact");
+    assert_eq!(report["compacted"], false);
+    assert_eq!(report["final_root_bytes"], 0);
+    assert_eq!(tree_snapshot(&project.root), before);
+    assert!(!project.root.join("generated/.blobray-cache").exists());
 }
 
 impl Drop for TemporaryProject {

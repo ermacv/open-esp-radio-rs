@@ -26,6 +26,14 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
         ResolvedInvocation::ProjectCacheStats { project_path } => {
             commands::run_project_cache_stats(&project_path)
         }
+        ResolvedInvocation::ProjectCacheGc {
+            arguments,
+            project_path,
+        } => commands::run_project_cache_gc(arguments, &project_path),
+        ResolvedInvocation::ProjectCacheCompact {
+            arguments,
+            project_path,
+        } => commands::run_project_cache_compact(arguments, &project_path),
         ResolvedInvocation::RevisionWorkspace { command, session } => {
             commands::run_revision_command(command, &session)
         }

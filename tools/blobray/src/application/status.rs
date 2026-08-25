@@ -9,6 +9,7 @@ pub(crate) mod model;
 mod policy;
 mod publication;
 mod review;
+mod revision;
 mod verification;
 
 pub(crate) fn collect(context: &ProjectContext<'_>) -> ProjectStatusReport {
@@ -38,6 +39,7 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> ProjectStatusReport {
             phase("inputs", || configuration_inputs::inputs(context)),
             phase("analysis", || analysis::collect(context)),
             phase("review", || review::collect(context)),
+            phase("revision-workflow", || revision::collect(context)),
             phase("verification", || verification::collect(context)),
             phase("verification-policy", || policy::collect(context)),
             phase("publication", || publication::collect(context)),

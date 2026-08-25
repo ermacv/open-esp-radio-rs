@@ -1,11 +1,14 @@
-//! Read-only inspection of the project-owned incremental query cache.
+//! Inspection and explicit maintenance of the project-owned query cache.
 
 use std::path::Path;
 
 use crate::{
     Result,
-    application::{ProjectCacheStatistics, project_cache_statistics},
-    cli::{output, table},
+    application::{
+        ProjectCacheCompactionResult, ProjectCacheMaintenancePlan, ProjectCacheStatistics,
+        compact_project_cache, project_cache_maintenance_plan, project_cache_statistics,
+    },
+    cli::{ProjectCacheCompactArgs, ProjectCacheGcArgs, output, table},
 };
 
 #[derive(serde::Serialize)]
@@ -16,6 +19,23 @@ struct CacheStatsDocument<'a> {
     statistics: &'a ProjectCacheStatistics,
 }
 
+#[derive(serde::Serialize)]
+struct CacheGcDocument<'a> {
+    schema_version: u32,
+    command: &'static str,
+    dry_run: bool,
+    #[serde(flatten)]
+    plan: &'a ProjectCacheMaintenancePlan,
+}
+
+#[derive(serde::Serialize)]
+struct CacheCompactDocument<'a> {
+    schema_version: u32,
+    command: &'static str,
+    #[serde(flatten)]
+    result: &'a ProjectCacheCompactionResult,
+}
+
 pub(super) fn stats(project_manifest: &Path) -> Result<bool> {
     let statistics = project_cache_statistics(project_manifest)?;
     let document = CacheStatsDocument {
@@ -23,11 +43,39 @@ pub(super) fn stats(project_manifest: &Path) -> Result<bool> {
         command: "project cache stats",
         statistics: &statistics,
     };
-    output::render_report(&document, || render_human(&statistics));
+    output::render_report(&document, || render_stats_human(&statistics));
     Ok(true)
 }
 
-fn render_human(statistics: &ProjectCacheStatistics) {
+pub(super) fn gc(arguments: ProjectCacheGcArgs, project_manifest: &Path) -> Result<bool> {
+    if !arguments.dry_run {
+        return Err(crate::Error::invalid(
+            "project cache gc currently requires --dry-run; use project cache compact for explicit derived-cache mutation",
+        ));
+    }
+    let plan = project_cache_maintenance_plan(project_manifest, arguments.max_size)?;
+    let document = CacheGcDocument {
+        schema_version: 1,
+        command: "project cache gc",
+        dry_run: true,
+        plan: &plan,
+    };
+    output::render_report(&document, || render_maintenance_plan(&plan));
+    Ok(true)
+}
+
+pub(super) fn compact(arguments: ProjectCacheCompactArgs, project_manifest: &Path) -> Result<bool> {
+    let result = compact_project_cache(project_manifest, arguments.max_size)?;
+    let document = CacheCompactDocument {
+        schema_version: 1,
+        command: "project cache compact",
+        result: &result,
+    };
+    output::render_report(&document, || render_compaction_result(&result));
+    Ok(true)
+}
+
+fn render_stats_human(statistics: &ProjectCacheStatistics) {
     outputln!("{}", output::heading("Project cache"));
     if !statistics.present {
         outputln!(
@@ -70,7 +118,7 @@ fn render_human(statistics: &ProjectCacheStatistics) {
         );
     }
     outputln!(
-        "- This directory is disposable local acceleration state. Preserve research with reviewed TOML, generated linked IR and revision snapshots, not by copying the cache."
+        "- This directory is disposable local acceleration state. Preserve research with reviewed TOML, durable revision snapshots and reproducible linked IR, not by copying the cache."
     );
     outputln!(
         "- Use `project analyze --plan` to classify stages as current, restorable or recomputed before a write."
@@ -145,6 +193,84 @@ fn render_human(statistics: &ProjectCacheStatistics) {
             )
         );
     }
+}
+
+fn render_maintenance_plan(plan: &ProjectCacheMaintenancePlan) {
+    outputln!("{}", output::heading("Project cache GC dry run"));
+    let status = if plan.ready_to_compact {
+        output::success(format!(
+            "READY — would reclaim {} and project {}",
+            human_bytes(plan.reclaimable_bytes),
+            human_bytes(plan.projected_root_bytes),
+        ))
+    } else if let Some(reason) = plan.reason.as_deref() {
+        output::warning(format!("NO MUTATION — {reason}"))
+    } else {
+        output::warning("NO MUTATION")
+    };
+    outputln!("\n{status}");
+    outputln!(
+        "\n{}",
+        table::render(["Metric", "Value"], maintenance_rows(plan),)
+    );
+}
+
+fn render_compaction_result(result: &ProjectCacheCompactionResult) {
+    outputln!("{}", output::heading("Project cache compaction"));
+    if result.compacted {
+        outputln!(
+            "\n{}",
+            output::success(format!(
+                "COMPACTED — reclaimed {}, final size {}",
+                human_bytes(result.reclaimed_bytes),
+                human_bytes(result.final_root_bytes),
+            ))
+        );
+    } else {
+        outputln!(
+            "\n{}",
+            output::warning(format!(
+                "NO CHANGE — {}",
+                result
+                    .plan
+                    .reason
+                    .as_deref()
+                    .unwrap_or("no unreachable pack bytes"),
+            ))
+        );
+    }
+}
+
+fn maintenance_rows(plan: &ProjectCacheMaintenancePlan) -> Vec<[String; 2]> {
+    let mut rows = vec![
+        ["Filesystem".to_owned(), plan.filesystem.clone()],
+        ["Current cache".to_owned(), human_bytes(plan.root_bytes)],
+        [
+            "Reclaimable".to_owned(),
+            human_bytes(plan.reclaimable_bytes),
+        ],
+        [
+            "Projected cache".to_owned(),
+            human_bytes(plan.projected_root_bytes),
+        ],
+        [
+            "Temporary space required".to_owned(),
+            human_bytes(plan.temporary_bytes_required),
+        ],
+        [
+            "Available space".to_owned(),
+            plan.available_bytes
+                .map_or_else(|| "unknown".to_owned(), human_bytes),
+        ],
+    ];
+    if let Some(max_size) = plan.max_size_bytes {
+        rows.push(["Maximum size".to_owned(), human_bytes(max_size)]);
+        rows.push([
+            "Over limit after compaction".to_owned(),
+            human_bytes(plan.over_max_size_bytes),
+        ]);
+    }
+    rows
 }
 
 fn detail_metric_rows(statistics: &ProjectCacheStatistics) -> Vec<[String; 2]> {
@@ -234,5 +360,41 @@ mod tests {
         assert_eq!(detail_metric_rows(&statistics).len(), 7);
         assert_eq!(detail_metric_rows(&statistics)[0][0], "Store schema");
         assert_eq!(detail_metric_rows(&statistics)[5][0], "Live objects");
+    }
+
+    #[test]
+    fn gc_document_exposes_dry_run_quota_and_space_preflight() {
+        let plan = ProjectCacheMaintenancePlan {
+            cache_root: "generated/.blobray-cache".into(),
+            present: true,
+            supported: true,
+            filesystem: "local".to_owned(),
+            filesystem_magic: Some("0xef53".to_owned()),
+            root_bytes: 900,
+            reclaimable_bytes: 400,
+            projected_root_bytes: 500,
+            temporary_bytes_required: 300,
+            available_bytes: Some(1_000),
+            enough_free_space: true,
+            max_size_bytes: Some(600),
+            over_max_size_bytes: 0,
+            would_compact: true,
+            ready_to_compact: true,
+            reason: None,
+        };
+
+        let document = serde_json::to_value(CacheGcDocument {
+            schema_version: 1,
+            command: "project cache gc",
+            dry_run: true,
+            plan: &plan,
+        })
+        .unwrap();
+
+        assert_eq!(document["command"], "project cache gc");
+        assert_eq!(document["dry_run"], true);
+        assert_eq!(document["projected_root_bytes"], 500);
+        assert_eq!(document["max_size_bytes"], 600);
+        assert_eq!(document["ready_to_compact"], true);
     }
 }

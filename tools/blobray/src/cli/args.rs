@@ -377,11 +377,17 @@ impl ProjectCommand {
 leaf_commands!(ProjectCacheCommand {
     /// Report cache size, query inventory, dependencies and reclaimable data.
     Stats(EmptyArgs) => Command::ProjectCacheStats, Empty,
+    /// Preview reachability GC, disk-space needs and an optional size budget.
+    Gc(ProjectCacheGcArgs) => Command::ProjectCacheGc, ProjectCacheGc,
+    /// Rewrite the CAS pack to remove unreachable records.
+    Compact(ProjectCacheCompactArgs) => Command::ProjectCacheCompact, ProjectCacheCompact,
 });
 
 leaf_commands!(ProjectRevisionCommand {
     /// Capture portable function, MMIO, interface and reviewed-fact identities.
     Snapshot(RevisionSnapshotArgs) => Command::RevisionSnapshot, RevisionSnapshot,
+    /// Preserve and verify the current baseline before replacing artifact bindings.
+    PrepareUpdate(RevisionPrepareUpdateArgs) => Command::RevisionPrepareUpdate, RevisionPrepareUpdate,
     /// Classify entity changes between two immutable snapshots.
     Diff(RevisionDiffArgs) => Command::RevisionDiff, RevisionDiff,
     /// Produce a fail-closed carry/remap/review plan for every reviewed record.
@@ -568,7 +574,10 @@ pub(crate) enum Command {
     ProjectDoctor(EmptyArgs),
     ProjectFiles(EmptyArgs),
     ProjectCacheStats(EmptyArgs),
+    ProjectCacheGc(ProjectCacheGcArgs),
+    ProjectCacheCompact(ProjectCacheCompactArgs),
     RevisionSnapshot(RevisionSnapshotArgs),
+    RevisionPrepareUpdate(RevisionPrepareUpdateArgs),
     RevisionDiff(RevisionDiffArgs),
     RevisionRebase(RevisionRebaseArgs),
     ResearchNext(ResearchNextArgs),
@@ -712,6 +721,45 @@ mod tests {
             invocation.project,
             Some(PathBuf::from("vendor-project.toml"))
         );
+    }
+
+    #[test]
+    fn cache_gc_requires_an_explicit_dry_run_and_parses_a_size_guard() {
+        let error =
+            ParsedInvocation::parse(["project".to_owned(), "cache".to_owned(), "gc".to_owned()])
+                .unwrap_err();
+        assert!(error.to_string().contains("--dry-run"));
+
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "cache".to_owned(),
+            "gc".to_owned(),
+            "--dry-run".to_owned(),
+            "--max-size".to_owned(),
+            "1048576".to_owned(),
+        ])
+        .unwrap();
+        let Command::ProjectCacheGc(arguments) = invocation.command else {
+            panic!("expected project cache gc")
+        };
+        assert!(arguments.dry_run);
+        assert_eq!(arguments.max_size, Some(1_048_576));
+    }
+
+    #[test]
+    fn parses_project_cache_compact_as_an_explicit_mutation() {
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "cache".to_owned(),
+            "compact".to_owned(),
+            "--max-size".to_owned(),
+            "2097152".to_owned(),
+        ])
+        .unwrap();
+        let Command::ProjectCacheCompact(arguments) = invocation.command else {
+            panic!("expected project cache compact")
+        };
+        assert_eq!(arguments.max_size, Some(2_097_152));
     }
 
     #[test]

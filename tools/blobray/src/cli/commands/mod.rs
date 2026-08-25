@@ -94,6 +94,20 @@ pub(super) fn run_project_cache_stats(manifest: &std::path::Path) -> Result<bool
     project_cache::stats(manifest)
 }
 
+pub(super) fn run_project_cache_gc(
+    arguments: super::ProjectCacheGcArgs,
+    manifest: &std::path::Path,
+) -> Result<bool> {
+    project_cache::gc(arguments, manifest)
+}
+
+pub(super) fn run_project_cache_compact(
+    arguments: super::ProjectCacheCompactArgs,
+    manifest: &std::path::Path,
+) -> Result<bool> {
+    project_cache::compact(arguments, manifest)
+}
+
 pub(super) fn run_revision_command(
     command: RevisionWorkspaceCommand,
     session: &crate::application::ProjectSession,

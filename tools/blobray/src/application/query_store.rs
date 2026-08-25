@@ -34,6 +34,7 @@ const PACK_HEADER_BYTES: u64 = 8 + 32 + 8;
 const COMPACT_MIN_PACK_BYTES: u64 = 256 * 1024 * 1024;
 const COMPACT_MIN_RECLAIMABLE_BYTES: u64 = 64 * 1024 * 1024;
 const COMPACT_MIN_RECLAIMABLE_PERCENT: u8 = 25;
+const COMPACT_FREE_SPACE_RESERVE_BYTES: u64 = 8 * 1024 * 1024;
 static NEXT_RESTORE_ID: AtomicU64 = AtomicU64::new(0);
 
 struct PreparedFunctionFact<'a> {
@@ -82,6 +83,42 @@ pub(crate) struct QueryStoreCompactionStatistics {
     pub(crate) minimum_reclaimable_percent: u8,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct QueryStoreMaintenancePlan {
+    pub(crate) cache_root: PathBuf,
+    pub(crate) present: bool,
+    pub(crate) supported: bool,
+    pub(crate) filesystem: String,
+    pub(crate) filesystem_magic: Option<String>,
+    pub(crate) root_bytes: u64,
+    pub(crate) reclaimable_bytes: u64,
+    pub(crate) projected_root_bytes: u64,
+    pub(crate) temporary_bytes_required: u64,
+    pub(crate) available_bytes: Option<u64>,
+    pub(crate) enough_free_space: bool,
+    pub(crate) max_size_bytes: Option<u64>,
+    pub(crate) over_max_size_bytes: u64,
+    pub(crate) would_compact: bool,
+    pub(crate) ready_to_compact: bool,
+    pub(crate) reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct QueryStoreCompactionResult {
+    pub(crate) plan: QueryStoreMaintenancePlan,
+    pub(crate) compacted: bool,
+    pub(crate) final_root_bytes: u64,
+    pub(crate) reclaimed_bytes: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CacheFilesystemAssessment {
+    supported: bool,
+    kind: String,
+    magic: Option<String>,
+    available_bytes: Option<u64>,
+}
+
 impl QueryStoreStatistics {
     pub(crate) fn empty(cache_root: PathBuf, database_path: PathBuf) -> Self {
         Self {
@@ -126,6 +163,93 @@ fn compaction_statistics(
         minimum_reclaimable_bytes: COMPACT_MIN_RECLAIMABLE_BYTES,
         minimum_reclaimable_percent: COMPACT_MIN_RECLAIMABLE_PERCENT,
     }
+}
+
+fn build_maintenance_plan(
+    statistics: &QueryStoreStatistics,
+    filesystem: CacheFilesystemAssessment,
+    max_size_bytes: Option<u64>,
+) -> Result<QueryStoreMaintenancePlan> {
+    let projected_root_bytes = statistics
+        .root_bytes
+        .checked_sub(statistics.reclaimable_pack_bytes)
+        .ok_or_else(|| {
+            crate::Error::invalid("query cache reclaimable bytes exceed its physical size")
+        })?;
+    let would_compact = statistics.present && statistics.reclaimable_pack_bytes != 0;
+    let temporary_bytes_required = if would_compact {
+        statistics
+            .live_record_bytes
+            .checked_add(statistics.database_bytes)
+            .and_then(|bytes| bytes.checked_add(COMPACT_FREE_SPACE_RESERVE_BYTES))
+            .ok_or_else(|| {
+                crate::Error::invalid("query cache compaction space requirement overflowed u64")
+            })?
+    } else {
+        0
+    };
+    let enough_free_space = !would_compact
+        || filesystem
+            .available_bytes
+            .is_some_and(|available| available >= temporary_bytes_required);
+    let over_max_size_bytes = max_size_bytes
+        .map(|limit| projected_root_bytes.saturating_sub(limit))
+        .unwrap_or(0);
+    let reason = if !filesystem.supported {
+        Some(format!(
+            "SQLite WAL and destructive cache maintenance require a local Linux filesystem; detected {}{}",
+            filesystem.kind,
+            filesystem
+                .magic
+                .as_deref()
+                .map(|magic| format!(" ({magic})"))
+                .unwrap_or_default(),
+        ))
+    } else if over_max_size_bytes != 0 {
+        Some(format!(
+            "reachability compaction would preserve every live result but remain {over_max_size_bytes} bytes over --max-size; remove the disposable cache or choose a larger limit"
+        ))
+    } else if !enough_free_space {
+        Some(format!(
+            "compaction needs {temporary_bytes_required} bytes available (new live pack, SQLite working space and reserve), but only {} bytes are available",
+            filesystem.available_bytes.unwrap_or(0),
+        ))
+    } else if !statistics.present {
+        Some("cache is not created".to_owned())
+    } else if !would_compact {
+        Some("cache has no unreachable pack bytes".to_owned())
+    } else {
+        None
+    };
+    let ready_to_compact =
+        filesystem.supported && would_compact && enough_free_space && over_max_size_bytes == 0;
+    Ok(QueryStoreMaintenancePlan {
+        cache_root: statistics.cache_root.clone(),
+        present: statistics.present,
+        supported: filesystem.supported,
+        filesystem: filesystem.kind,
+        filesystem_magic: filesystem.magic,
+        root_bytes: statistics.root_bytes,
+        reclaimable_bytes: statistics.reclaimable_pack_bytes,
+        projected_root_bytes,
+        temporary_bytes_required,
+        available_bytes: filesystem.available_bytes,
+        enough_free_space,
+        max_size_bytes,
+        over_max_size_bytes,
+        would_compact,
+        ready_to_compact,
+        reason,
+    })
+}
+
+fn validate_manual_compaction_plan(plan: &QueryStoreMaintenancePlan) -> Result<()> {
+    if !plan.supported || plan.over_max_size_bytes != 0 || !plan.enough_free_space {
+        return Err(crate::Error::invalid(plan.reason.clone().unwrap_or_else(
+            || "query cache compaction preflight failed".to_owned(),
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -192,6 +316,27 @@ impl CacheTreeFingerprint {
                 && entry.path == Path::new("queries.sqlite3-wal")
                 && entry.len != 0
         })
+    }
+
+    fn sqlite_sidecar_bytes(&self) -> Result<u64> {
+        self.entries
+            .iter()
+            .filter(|entry| {
+                entry.kind == CacheTreeEntryKind::File
+                    && matches!(
+                        entry.path.to_str(),
+                        Some(
+                            "queries.sqlite3-wal"
+                                | "queries.sqlite3-shm"
+                                | "queries.sqlite3-journal"
+                        )
+                    )
+            })
+            .try_fold(0_u64, |total, entry| {
+                total.checked_add(entry.len).ok_or_else(|| {
+                    crate::Error::invalid("query-cache SQLite sidecar bytes overflowed u64")
+                })
+            })
     }
 }
 
@@ -425,6 +570,74 @@ impl QueryStore {
     /// an older schema as [`Self::open`] intentionally does for write mode.
     pub(crate) fn statistics(project_manifest: &Path) -> Result<QueryStoreStatistics> {
         Self::statistics_after_preflight(project_manifest, || ())
+    }
+
+    /// Plan a reachability-only pack compaction without creating or mutating
+    /// cache state. A size limit is an assessment guard, not permission to
+    /// evict live query results.
+    pub(crate) fn maintenance_plan(
+        project_manifest: &Path,
+        max_size_bytes: Option<u64>,
+    ) -> Result<QueryStoreMaintenancePlan> {
+        let statistics = Self::statistics(project_manifest)?;
+        let filesystem_path = nearest_existing_ancestor(&statistics.cache_root);
+        let filesystem = cache_filesystem_assessment(filesystem_path)?;
+        build_maintenance_plan(&statistics, filesystem, max_size_bytes)
+    }
+
+    /// Compact unreachable CAS records through the pinned cache generation.
+    /// This never evicts a live query result to satisfy `max_size_bytes`.
+    pub(crate) fn compact_cache(
+        project_manifest: &Path,
+        max_size_bytes: Option<u64>,
+    ) -> Result<QueryStoreCompactionResult> {
+        let plan = Self::maintenance_plan(project_manifest, max_size_bytes)?;
+        validate_manual_compaction_plan(&plan)?;
+        if !plan.present || !plan.would_compact {
+            return Ok(QueryStoreCompactionResult {
+                final_root_bytes: plan.root_bytes,
+                plan,
+                compacted: false,
+                reclaimed_bytes: 0,
+            });
+        }
+
+        let mut store = Self::open_without_pack_cleanup(project_manifest)?;
+        let locked_plan = store.maintenance_plan_locked(max_size_bytes)?;
+        validate_manual_compaction_plan(&locked_plan)?;
+        if !locked_plan.would_compact {
+            drop(store);
+            let final_statistics = Self::statistics(project_manifest)?;
+            return Ok(QueryStoreCompactionResult {
+                final_root_bytes: final_statistics.root_bytes,
+                reclaimed_bytes: locked_plan
+                    .root_bytes
+                    .saturating_sub(final_statistics.root_bytes),
+                plan: locked_plan,
+                compacted: false,
+            });
+        }
+        store.compact()?;
+        drop(store);
+
+        let final_statistics = Self::statistics(project_manifest)?;
+        if let Some(max_size_bytes) = max_size_bytes
+            && final_statistics.root_bytes > max_size_bytes
+        {
+            return Err(crate::Error::invalid(format!(
+                "query cache compaction preserved every live result but the final cache is {} bytes, {} bytes over --max-size={max_size_bytes}; remove the disposable cache or choose a larger limit",
+                final_statistics.root_bytes,
+                final_statistics.root_bytes - max_size_bytes,
+            )));
+        }
+        Ok(QueryStoreCompactionResult {
+            final_root_bytes: final_statistics.root_bytes,
+            reclaimed_bytes: locked_plan
+                .root_bytes
+                .saturating_sub(final_statistics.root_bytes),
+            plan: locked_plan,
+            compacted: true,
+        })
     }
 
     fn statistics_after_preflight<T>(
@@ -662,12 +875,22 @@ impl QueryStore {
     }
 
     pub(crate) fn open(project_manifest: &Path) -> Result<Self> {
+        Self::open_with_pack_cleanup(project_manifest, true)
+    }
+
+    fn open_without_pack_cleanup(project_manifest: &Path) -> Result<Self> {
+        Self::open_with_pack_cleanup(project_manifest, false)
+    }
+
+    fn open_with_pack_cleanup(project_manifest: &Path, cleanup_orphan_packs: bool) -> Result<Self> {
         let project_root = project_manifest.parent().unwrap_or_else(|| Path::new("."));
         let root = project_root.join("generated/.blobray-cache");
+        validate_cache_filesystem_for_wal(nearest_existing_ancestor(&root))?;
         ensure_cache_root(&root)?;
         let root_identity = CacheRootIdentity::capture(&root)?;
         let root_pin = PinnedCacheRoot::open(&root, &root_identity)?;
         let storage_root = root_pin.storage_root.clone();
+        validate_cache_filesystem_for_wal(&storage_root)?;
         let database_path = root.join("queries.sqlite3");
         let storage_database_path = storage_root.join("queries.sqlite3");
         validate_sqlite_sidecars(&storage_database_path)?;
@@ -782,8 +1005,59 @@ impl QueryStore {
             _root_pin: root_pin,
             _access_lock: access_lock,
         };
-        store.remove_unreferenced_pack_files()?;
+        if cleanup_orphan_packs {
+            store.remove_unreferenced_pack_files()?;
+        }
         Ok(store)
+    }
+
+    fn maintenance_plan_locked(
+        &self,
+        max_size_bytes: Option<u64>,
+    ) -> Result<QueryStoreMaintenancePlan> {
+        self.validate_root_identity()?;
+        let fingerprint = fingerprint_cache_tree(&self.storage_root)?;
+        let root_bytes = fingerprint
+            .file_bytes()?
+            .checked_sub(fingerprint.sqlite_sidecar_bytes()?)
+            .ok_or_else(|| {
+                crate::Error::invalid("query cache SQLite sidecars exceed its physical size")
+            })?;
+        let database_bytes = fingerprint
+            .file_len(Path::new("queries.sqlite3"))
+            .ok_or_else(|| crate::Error::invalid("query cache database disappeared"))?;
+        let pack_bytes = fingerprint.pack_bytes()?;
+        let live_record_bytes = query_live_record_bytes(&self.connection)?;
+        let reclaimable_pack_bytes = pack_bytes.checked_sub(live_record_bytes).ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "query cache reports {live_record_bytes} live record bytes in {pack_bytes} pack bytes"
+            ))
+        })?;
+        let statistics = QueryStoreStatistics {
+            present: true,
+            cache_root: self.root.clone(),
+            database_path: self.root.join("queries.sqlite3"),
+            schema: Some(STORE_SCHEMA as u32),
+            root_bytes,
+            database_bytes,
+            pack_bytes,
+            query_results: 0,
+            query_kinds: Vec::new(),
+            inline_bytes: 0,
+            dependencies: 0,
+            objects: 0,
+            object_payload_bytes: 0,
+            stage_bindings: 0,
+            stage_outputs: 0,
+            live_objects: 0,
+            live_record_bytes,
+            reclaimable_pack_bytes,
+            compaction: compaction_statistics(pack_bytes, reclaimable_pack_bytes),
+        };
+        let filesystem = cache_filesystem_assessment(&self.storage_root)?;
+        let plan = build_maintenance_plan(&statistics, filesystem, max_size_bytes)?;
+        self.validate_root_identity()?;
+        Ok(plan)
     }
 
     fn validate_root_identity(&self) -> Result<()> {
@@ -1636,6 +1910,8 @@ impl QueryStore {
     #[cfg(target_os = "linux")]
     fn compact(&mut self) -> Result<()> {
         self.validate_root_identity()?;
+        let preflight = self.maintenance_plan_locked(None)?;
+        validate_manual_compaction_plan(&preflight)?;
         let live = {
             let mut statement = self
                 .connection
@@ -2137,6 +2413,23 @@ fn query_nonnegative_pair(connection: &Connection, context: &str, sql: &str) -> 
     Ok((nonnegative(first, context)?, nonnegative(second, context)?))
 }
 
+fn query_live_record_bytes(connection: &Connection) -> Result<u64> {
+    let value = connection
+        .query_row(
+            "SELECT COALESCE(SUM(?1 + payload_length), 0)
+             FROM objects
+             WHERE digest IN (
+                 SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
+                 UNION
+                 SELECT digest FROM stage_outputs
+             )",
+            [PACK_HEADER_BYTES as i64],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| store_error("measure live query-cache objects", error))?;
+    nonnegative(value, "live query-cache record bytes")
+}
+
 fn validate_indexed_pack_extents(connection: &Connection, root: &Path) -> Result<()> {
     let mut statement = connection
         .prepare(
@@ -2195,6 +2488,92 @@ fn is_pack_name(name: &str) -> bool {
         return false;
     };
     !generation.is_empty() && generation.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn nearest_existing_ancestor(path: &Path) -> &Path {
+    path.ancestors()
+        .find(|candidate| candidate.exists())
+        .unwrap_or_else(|| Path::new("."))
+}
+
+#[cfg(target_os = "linux")]
+fn cache_filesystem_assessment(path: &Path) -> Result<CacheFilesystemAssessment> {
+    let statistics = nix::sys::statfs::statfs(path).map_err(|error| {
+        crate::Error::invalid(format!(
+            "cannot inspect filesystem for query cache {}: {error}",
+            path.display()
+        ))
+    })?;
+    let raw_magic = (statistics.filesystem_type().0 as u64) & 0xffff_ffff;
+    let block_size = u64::try_from(statistics.block_size()).map_err(|_| {
+        crate::Error::invalid("query cache filesystem reported a negative block size")
+    })?;
+    let blocks_available = statistics.blocks_available();
+    let available_bytes = block_size.checked_mul(blocks_available).ok_or_else(|| {
+        crate::Error::invalid("query cache available-space calculation overflowed u64")
+    })?;
+    let kind = if is_linux_network_filesystem_magic(raw_magic) {
+        "network"
+    } else if raw_magic == 0x6573_5546 {
+        // FUSE does not expose whether its userspace backend is local. WAL's
+        // locking contract cannot safely assume that it is.
+        "userspace-or-network"
+    } else {
+        "local"
+    };
+    Ok(CacheFilesystemAssessment {
+        supported: kind == "local",
+        kind: kind.to_owned(),
+        magic: Some(format!("0x{raw_magic:x}")),
+        available_bytes: Some(available_bytes),
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn is_linux_network_filesystem_magic(magic: u64) -> bool {
+    matches!(
+        magic,
+        0x0000_6969 // NFS
+            | 0x0000_517b // SMB
+            | 0xff53_4d42 // CIFS
+            | 0xfe53_4d42 // SMB2
+            | 0x5346_414f // AFS
+            | 0x7375_7245 // CODA
+            | 0x0000_564c // NCP
+            | 0x0102_1997 // 9P
+            | 0x00c3_6400 // Ceph
+            | 0x0bd0_0bd0 // Lustre
+            | 0x0116_1970 // GFS2
+            | 0x7461_636f // OCFS2
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+fn cache_filesystem_assessment(_path: &Path) -> Result<CacheFilesystemAssessment> {
+    Ok(CacheFilesystemAssessment {
+        supported: false,
+        kind: "unchecked-non-linux".to_owned(),
+        magic: None,
+        available_bytes: None,
+    })
+}
+
+fn validate_cache_filesystem_for_wal(path: &Path) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let filesystem = cache_filesystem_assessment(path)?;
+        if !filesystem.supported {
+            return Err(crate::Error::invalid(format!(
+                "query cache SQLite WAL requires a local filesystem; {} is on {} filesystem {}",
+                path.display(),
+                filesystem.kind,
+                filesystem.magic.as_deref().unwrap_or("of unknown type"),
+            )));
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = path;
+    Ok(())
 }
 
 fn ensure_cache_root(root: &Path) -> Result<()> {
@@ -4047,6 +4426,115 @@ mod tests {
         assert_eq!(store.get("live-function").unwrap().unwrap(), live);
         assert!(store.open_object(&retired_digest).is_err());
         assert_eq!(pack_files(&store.root).unwrap(), vec![store.pack_path]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn public_compaction_preflights_and_preserves_every_live_digest() {
+        let manifest = manifest("manual-compact");
+        let live = vec![0x31; INLINE_VALUE_LIMIT + 1];
+        {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            store
+                .put("live-function", "function", "inputs", &[], &live)
+                .unwrap();
+            let retired = output(&manifest, "old/functions.jsonl", b"retired-stage-output");
+            store
+                .record_stage("linked-ir:old", "old-query", &[retired])
+                .unwrap();
+            store
+                .record_stage("linked-ir:old", "new-query", &[])
+                .unwrap();
+        }
+
+        let plan = QueryStore::maintenance_plan(&manifest, None).unwrap();
+        assert!(plan.supported);
+        assert!(plan.would_compact);
+        assert!(plan.ready_to_compact);
+        assert!(plan.temporary_bytes_required >= COMPACT_FREE_SPACE_RESERVE_BYTES);
+        let result = QueryStore::compact_cache(&manifest, None).unwrap();
+
+        assert!(result.compacted);
+        assert!(result.reclaimed_bytes > 0);
+        assert_eq!(result.final_root_bytes, plan.projected_root_bytes);
+        let store = QueryStore::open(&manifest).unwrap();
+        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+        assert!(store.stage_output_digests("old-query").unwrap().is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn unsatisfiable_size_guard_is_actionable_and_does_not_evict_live_results() {
+        let manifest = manifest("manual-compact-quota");
+        let live = vec![0x42; INLINE_VALUE_LIMIT + 1];
+        {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            store
+                .put("live-function", "function", "inputs", &[], &live)
+                .unwrap();
+            let retired = output(&manifest, "old/output.json", b"retired");
+            store
+                .record_stage("old-stage", "old-query", &[retired])
+                .unwrap();
+            store.record_stage("old-stage", "new-query", &[]).unwrap();
+        }
+        let project_root = manifest.parent().unwrap();
+        let before = snapshot_tree(project_root);
+
+        let plan = QueryStore::maintenance_plan(&manifest, Some(1)).unwrap();
+        assert!(plan.over_max_size_bytes > 0);
+        assert!(!plan.ready_to_compact);
+        let error = QueryStore::compact_cache(&manifest, Some(1)).unwrap_err();
+
+        assert!(error.to_string().contains("over --max-size"));
+        assert_eq!(snapshot_tree(project_root), before);
+        let store = QueryStore::open(&manifest).unwrap();
+        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn network_filesystem_magic_is_rejected_for_sqlite_wal() {
+        for magic in [
+            0x0000_6969,
+            0xff53_4d42,
+            0xfe53_4d42,
+            0x0102_1997,
+            0x00c3_6400,
+        ] {
+            assert!(is_linux_network_filesystem_magic(magic));
+        }
+        assert!(!is_linux_network_filesystem_magic(0xef53));
+        assert!(!is_linux_network_filesystem_magic(0x794c_7630));
+    }
+
+    #[test]
+    fn maintenance_plan_reserves_space_for_the_live_pack_and_sqlite_working_set() {
+        let mut statistics = QueryStoreStatistics::empty(
+            PathBuf::from("generated/.blobray-cache"),
+            PathBuf::from("generated/.blobray-cache/queries.sqlite3"),
+        );
+        statistics.present = true;
+        statistics.root_bytes = 1_000;
+        statistics.database_bytes = 100;
+        statistics.pack_bytes = 800;
+        statistics.live_record_bytes = 300;
+        statistics.reclaimable_pack_bytes = 500;
+        let required = COMPACT_FREE_SPACE_RESERVE_BYTES + 400;
+        let filesystem = CacheFilesystemAssessment {
+            supported: true,
+            kind: "local".to_owned(),
+            magic: Some("0xef53".to_owned()),
+            available_bytes: Some(required - 1),
+        };
+
+        let plan = build_maintenance_plan(&statistics, filesystem, Some(600)).unwrap();
+
+        assert_eq!(plan.projected_root_bytes, 500);
+        assert_eq!(plan.temporary_bytes_required, required);
+        assert!(!plan.enough_free_space);
+        assert!(!plan.ready_to_compact);
+        assert!(plan.reason.unwrap().contains("only"));
     }
 
     #[test]

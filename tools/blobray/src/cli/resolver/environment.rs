@@ -125,6 +125,36 @@ pub(super) fn resolve_from(
                 )?,
             });
         }
+        Command::ProjectCacheGc(arguments) => {
+            reject_target_overrides(
+                requested_target.as_ref(),
+                requested_run_spec.as_ref(),
+                &svd_paths,
+                "project cache gc accepts a project manifest, not --target-spec, --run-spec or --svd",
+            )?;
+            return Ok(ResolvedInvocation::ProjectCacheGc {
+                arguments,
+                project_path: required_regular_project_path(
+                    project_path,
+                    "project cache gc requires --project or a discovered manifest",
+                )?,
+            });
+        }
+        Command::ProjectCacheCompact(arguments) => {
+            reject_target_overrides(
+                requested_target.as_ref(),
+                requested_run_spec.as_ref(),
+                &svd_paths,
+                "project cache compact accepts a project manifest, not --target-spec, --run-spec or --svd",
+            )?;
+            return Ok(ResolvedInvocation::ProjectCacheCompact {
+                arguments,
+                project_path: required_regular_project_path(
+                    project_path,
+                    "project cache compact requires --project or a discovered manifest",
+                )?,
+            });
+        }
         Command::ProjectBrowse(_) => {
             reject_target_overrides(
                 requested_target.as_ref(),

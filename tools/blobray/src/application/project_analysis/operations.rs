@@ -554,6 +554,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
         if self.is_unversioned_linked_ir_stage(stage) {
             tracing::warn!(
                 cache_stage = stage,
+                cache_outcome = "bypass",
                 "persistent linked-IR stage cache disabled: the selected RISC-V harness has no stable semantic cache domain"
             );
             return Ok(None);
@@ -564,14 +565,27 @@ impl ResolvedProjectAnalysisOperations<'_> {
             .is_current(stage, &configuration, inputs, outputs)?;
         if current {
             let run = if self.cache.last_lookup_restored() {
-                tracing::info!(cache_stage = stage, "restored content-addressed outputs");
+                tracing::info!(
+                    cache_stage = stage,
+                    cache_outcome = "hit-restored",
+                    "persistent stage cache hit; restored content-addressed outputs"
+                );
                 StageRun::Restored
             } else {
-                tracing::info!(cache_stage = stage, "content-addressed outputs are current");
+                tracing::info!(
+                    cache_stage = stage,
+                    cache_outcome = "hit-current",
+                    "persistent stage cache hit; outputs are current"
+                );
                 StageRun::Current
             };
             Ok(Some(run))
         } else {
+            tracing::info!(
+                cache_stage = stage,
+                cache_outcome = "miss-recompute",
+                "persistent stage cache miss; recomputing stage"
+            );
             Ok(None)
         }
     }
@@ -586,6 +600,11 @@ impl ResolvedProjectAnalysisOperations<'_> {
         if !check && !self.is_unversioned_linked_ir_stage(stage) {
             let configuration = self.stage_configuration(stage);
             self.cache.record(stage, &configuration, inputs, outputs)?;
+            tracing::info!(
+                cache_stage = stage,
+                cache_outcome = "recomputed-published",
+                "published recomputed stage to the persistent cache"
+            );
         }
         Ok(())
     }

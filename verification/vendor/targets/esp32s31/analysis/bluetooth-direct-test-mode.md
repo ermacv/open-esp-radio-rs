@@ -116,11 +116,96 @@ remain descriptor images rather than a packet-engine readiness claim; the
 scheduler-item type still cannot insert itself or produce a hardware-owned
 token.
 
-The TX payload construction has no allocator requirement. The complete S31
-body chooses finite repeated-byte images for the supported patterns and copies
-the two fixed PRBS tables for the corresponding selectors. An open DTM role
-can therefore use static, bounded packet storage. Reproducing the vendor
-allocation and internal object layout is unnecessary.
+The TX payload construction has no allocator requirement. Complete current
+`r_sym_ble_XaQTq1AjtothrIFLgEeJ` and initial
+`r_ble_lll_dtm_tx_create_ctx` bodies agree on all eight selector branches:
+selectors 1, 2, 4, 5, 6 and 7 fill `0x0f`, `0x55`, `0xff`, `0x00`, `0xf0`
+and `0xaa`, while selectors 0 and 3 copy PRBS9 and PRBS15 respectively. The
+body stores the selector and eight-bit length directly before the payload and
+copies exactly that many bytes.
+
+The current and initial 255-byte PRBS tables are byte-identical. PRBS9 has
+SHA-256 `e2a8f5102484eb3bda6e3b5ebb6917bdf31920d3351d68d8b46a645e57356678`;
+PRBS15 has SHA-256
+`7ba700ed15ee66201f072225222e181a024baee13aca0b08c43a4416c7d4fba9`.
+The open implementation regenerates both complete images with bounded LFSR
+steps instead of retaining extracted arrays. It prepares at most 255 bytes in
+caller-owned storage, rejects a short destination before mutation and returns
+an affine read-only payload view. This is CPU-owned preparation only: no packet
+header address, descriptor publication, fence or hardware ownership is
+implied. Reproducing the vendor allocation and internal object layout remains
+unnecessary.
+
+The generic TX-buffer/header allocator is narrow enough to replace as well.
+Current `r_sym_ble_4FZFpypyQDtGoyqc084f` is instruction-identical to named
+initial `r_ble_lll_mmgmt_alloc_tx_buffer_and_hdr` apart from symbol names. It
+allocates `capacity + 0x12` bytes, zero-initializes a separate 24-byte header,
+installs compressed buffer-base and `buffer+0x10` pointers in header words
+`+0x04/+0x08`, sets the positional high image to `0x80a`, stores
+`capacity << 3` in halfword `+0x10`, then writes packet-buffer bytes `+0x05 =
+2` and `+0x06 = 0`. DTM always supplies capacity `0xff`; the resulting complete
+header words after zero-initialization are `[0, base, 0x80a00000 | payload, 0,
+0x000007f8, 0]`, where both pointers are the reviewed low-twenty-bit compressed
+images.
+
+The open packet slot consequently owns `0x12 + 0xff = 0x111` bytes with
+four-byte alignment and validates the final aligned word as well as its base
+and payload prefix against the controller-SRAM window. Preparation writes the
+two allocator bytes, selector at `+0x10`, length at `+0x11` and only the
+declared payload prefix at `+0x12`. A second preparation preserves bytes beyond
+the new declared packet, matching the complete body's bounded copy/fill rather
+than silently clearing unowned state. The slot and header image expose no raw
+pointer, dereference or publication transition because the packet-engine
+consumer and required device fence remain open.
+
+DTM event duration is also exact through the microsecond-domain frontier.
+Current `r_sym_ble_fkQ62juI6VgjMcLGg8XK` maps to named
+`r_ble_ll_pdu_tx_time_get`, and current `r_sym_ble_xWK8Hh2AdoTzjH7mpE35`
+is byte-identical to initial `g_ble_ll_pdu_header_tx_time_ro`: four little-
+endian halfwords `[462, 80, 44, 720]`. Together the complete bodies calculate
+`(length + 2) * factor + header` with factors 16, 8, 4 and 64 for internal
+modes Coded S=2, 1M, 2M and Coded S=8. Complete
+`r_sym_ble_bWydXXPAXzjyon1EdAMg` / `r_ble_lll_dtm_calculate_itvl` then rounds
+`packet_duration + 249` upward to a 625-usec quantum and takes the maximum with
+the optional 16-bit extended request without rerounding that request.
+
+The complete tick tail is now closed as source-owned S31 behavior. In current
+`r_sym_ble_4W45cnSk8tMbpqkpDdkQ` and named initial `r_ble_ll_init`, the value
+stored at controller environment offset `+0x24` comes directly from current
+`r_sym_ble_E4auD6oVVomYiG2Pm144` / named
+`r_ble_lll_calc_us_convert_tick_unit`; both complete leaves return constant
+one. Current `r_sym_ble_xHIFihMabllBUXiMYYoN` and
+`r_sym_ble_GzLO7QvWzB8FTsdGLaBt`, mapped to the named initial usec-to-tick and
+tick-to-usec leaves, are both identity returns. The DTM body consequently
+stores `interval_ticks = interval_usecs`, computes a zero one-byte remainder
+and never takes its `remainder == unit` correction branch.
+
+The open timing types reproduce the complete arithmetic and positional
+tick/remainder images for every HCI length and TX PHY. This still does not
+sample a live controller clock, form an absolute deadline or grant scheduler
+publication. Those are separate ownership and event-ordering transitions.
+
+The transmitter window above the interval is now exact as pure scheduler
+arithmetic. Current `r_sym_ble_pF0fMZSluGybO8KafMKl`, mapped to named
+`r_ble_lll_init`, stores identity-converted literal 440 at LLL environment
+offset `+0x04`. For an initial event, complete current
+`r_sym_ble_G4zC4UNjJYmyjOsZ3vNq` starts with current scheduler time plus that
+440, literal 500 and the one-byte scheduler margin, then selects RF-ready time
+when it is later under a signed wrapping comparison. The item window begins at
+anchor minus the margin. Its end is anchor plus the TX duration calculated for
+length `0xff`, deliberately reserving maximum packet capacity independently of
+the requested payload length.
+
+Complete recurring helper `r_sym_ble_huwoa5WRTRrAierQfN3B.part.1` first adds
+the retained interval to the prior anchor. If the resulting start precedes the
+fresh current-time sample, the vendor body repeatedly adds whole intervals
+until it catches up. The open transition computes the equivalent ceiling-
+division skip count in constant time, preserves the original phase and reports
+how many intervals advanced. This removes a potentially long CPU loop from the
+future async bottom half without changing the positional start/end images.
+The initial and recurring windows compose directly into the reviewed DTM
+scheduler-item transform. A live ordered clock sample, RF-ready result,
+scheduler-margin owner and publication transition remain intentionally absent.
 
 The RX callback signature and result projection are also narrower than the
 vendor memory manager. Complete S31 allocation and RX bodies, plus the named
@@ -141,6 +226,20 @@ memory manager before recycling eligible storage. These are software object
 kinds, not hardware memory-list selectors. An open implementation should
 replace them with affine Rust states rather than preserving the integers or
 the vendor object graph.
+
+The two register slots in each selector pair are no longer directionless.
+Current `r_sym_ble_LboRu27EaU8MV8Q7UUfZ` and
+`r_sym_ble_ZzrExMrn8EDiTFI7PENK` are each 122 bytes and instruction-identical
+over all three selector branches to named same-chip
+`r_ble_phy_global_curr_rxptr_set` and
+`r_ble_phy_global_next_rxptr_set`. Complete current
+`r_sym_ble_HL6xpyhopnPTnSDqTURd`, mapped to the named memory-manager RX-link
+reset, passes its selected chain to the current pointer setter and literal zero
+to the next pointer setter. The restricted PAC therefore exposes current/next
+RX slot roles while retaining selectors one through three and their element
+contents as positional. This does not yet prove which selector DTM uses at a
+given event, when hardware rotates the pair or when either chain is safe to
+reclaim.
 
 ## Bottom-to-top execution path
 
@@ -287,8 +386,8 @@ time source.
 | SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify and always-awake time-latch fields, exact images and wait predicates are finite. Live cross-owner MMIO and the remaining scheduler commands are absent. |
 | HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | Clock/PHY/BTBB components exist separately; the time-scale transform and pure affine latch phases exist, but no reachable composed epoch, live latch owner or powered rollback exists. |
 | Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; nine DTM scheduler-item words and their typed channel/role/PHY inputs have exact pre-insert transforms. The finished-item/recycle call chain and DTM callback edge are mapped; the open queue, raw status source, fences and abort path are absent. |
-| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | Compressed address validation, positional list pairs, the exact eight-word DTM link-state reset and nine-word scheduler-item event regions, software object kinds and the narrow RX result-word projection exist. The complete descriptors, publication edge and RX reclamation are incomplete. |
-| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup and role-dependent PHY/rate mapping are typed. Exact command roles, allocation rollback, substantial descriptor writes and the positional RX result split are mapped, but payload and remaining field boundaries and result meaning are incomplete. |
+| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A statically sized DTM TX packet slot, its complete allocation-time 24-byte header image, caller-owned bounded payload preparation, compressed extent validation, positional list pairs, the exact eight-word link-state reset and nine-word scheduler-item event regions, software object kinds and the narrow RX result-word projection exist. Packet-engine header consumption, the publication edge and RX reclamation are incomplete. |
+| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns and packet-duration/minimum-interval arithmetic are typed. Exact command roles, allocation rollback, substantial descriptor writes and the positional RX result split are mapped, but tick/remainder conversion, remaining field boundaries and result meaning are incomplete. |
 | HCI | LE Receiver Test, LE Transmitter Test and LE Test End command/event semantics for only the implemented variants | Bootstrap transport exists; operational DTM opcodes must remain unsupported until the physical owner is live. |
 
 No ULL advertising, scanning, connection, ACL or LLCP implementation is
@@ -329,13 +428,16 @@ The remaining work should proceed in narrow, testable increments:
    wrapping epoch projection now exist. Bind them to the sole task-side MMIO
    owner and a lost-wake-safe registered event or bounded timer recheck; prove
    the effective counter width, physical unit and required ordering fence
-   before scheduler deadlines become live.
+   before scheduler deadlines become live. Compose the now-exact DTM
+   microsecond interval with the recovered environment remainder only after
+   that value has a source-owned initialization path.
 3. **Freeze the minimum descriptor.** Eight link-state reset words and nine
    scheduler-item event words, including their preservation masks, typed
    channel/PHY images and epoch projection, are now exact. Trace every
    additional word read by hardware for one TX-role event and prove the
-   complete field masks for access address, CRC, whitening, power, payload
-   pointer/length and next link. For RX, connect the now-exact
+   complete field masks for access address, CRC, whitening, power and next
+   link; connect the now-exact TX packet/header image to its packet-engine
+   consumer and publication fence. For RX, connect the now-exact
    low-24/high-byte result projection to validity, receive-count and
    reclamation semantics.
 4. **Implement affine static slots.** Introduce no-heap aligned storage whose

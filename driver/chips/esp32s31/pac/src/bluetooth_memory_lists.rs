@@ -21,13 +21,17 @@ pub enum BluetoothMemoryListSelector {
     Three,
 }
 
-/// One of the two positional pointer words associated with each selector.
+/// One of the two reviewed receive-pointer words associated with each selector.
+///
+/// Current setter bodies are instruction-identical to the same-chip named
+/// `r_ble_phy_global_curr_rxptr_set` and
+/// `r_ble_phy_global_next_rxptr_set` leaves over all three selector branches.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothMemoryListSlot {
-    /// First word in the selected pair.
-    A,
-    /// Second word in the selected pair.
-    B,
+    /// Pointer consumed as the current receive buffer/header chain.
+    CurrentRx,
+    /// Pointer consumed as the next receive buffer/header chain.
+    NextRx,
 }
 
 /// Address accepted by the controller's reviewed compressed-pointer format.
@@ -111,9 +115,9 @@ impl BluetoothControllerSramAddress {
 
 /// Exact low-twenty-bit image accepted by the recovered selector leaves.
 ///
-/// `Zero` is intentionally not named empty, null, or disabled: one recovered
-/// caller supplies literal zero for slot B, but its hardware meaning is not
-/// yet established.
+/// `Zero` is intentionally not named empty, null, or disabled: the reviewed
+/// RX-link reset supplies literal zero for `NextRx`, but the hardware's
+/// rotation and empty-chain semantics are not yet established.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothMemoryListPointerImage {
     /// Publish the finite low-twenty-bit zero image.
@@ -132,20 +136,22 @@ impl BluetoothMemoryListPointerImage {
 }
 
 impl BluetoothTaskRegisters {
-    /// Program one positional controller memory-list pointer.
+    /// Program one controller receive-list pointer.
     ///
     /// SOURCE: complete ESP32-S31 `libble_app.a` `ble_phy.c` member `72.o`
     /// symbols `r_sym_ble_LboRu27EaU8MV8Q7UUfZ` and
-    /// `r_sym_ble_ZzrExMrn8EDiTFI7PENK`. Selector values one through three
-    /// choose the three A/B pairs at `0x20101280..=0x20101294`. The exact
-    /// transaction performs a fresh read/write clearing bits 0..19, then a
-    /// second fresh read/write OR-ing the compressed image into that complete
-    /// second read. The latter detail intentionally preserves any bits that
-    /// hardware may publish between the two RMW operations.
+    /// `r_sym_ble_ZzrExMrn8EDiTFI7PENK`. Their complete bodies are
+    /// instruction-identical to named same-chip
+    /// `r_ble_phy_global_curr_rxptr_set` and
+    /// `r_ble_phy_global_next_rxptr_set`. Selector values one through three
+    /// choose the three current/next pairs at `0x20101280..=0x20101294`. The
+    /// exact transaction performs a fresh read/write clearing bits 0..19,
+    /// then a second fresh read/write OR-ing the compressed image into that
+    /// complete second read. The latter detail intentionally preserves any
+    /// bits that hardware may publish between the two RMW operations.
     ///
-    /// This API deliberately retains positional selector/slot names. The
-    /// vendor evidence does not yet establish RX/TX direction or list
-    /// semantics.
+    /// Selector meanings and the element layout remain positional; only the
+    /// current/next RX role of each pair is established.
     ///
     /// # Safety
     ///
@@ -177,22 +183,22 @@ impl BluetoothTaskRegisters {
 
         let controller = &self.bluetooth.bluetooth_controller_core;
         match (selector, slot) {
-            (BluetoothMemoryListSelector::One, BluetoothMemoryListSlot::A) => {
+            (BluetoothMemoryListSelector::One, BluetoothMemoryListSlot::CurrentRx) => {
                 program!(controller.mmgmt_list_1_pointer_a());
             }
-            (BluetoothMemoryListSelector::One, BluetoothMemoryListSlot::B) => {
+            (BluetoothMemoryListSelector::One, BluetoothMemoryListSlot::NextRx) => {
                 program!(controller.mmgmt_list_1_pointer_b());
             }
-            (BluetoothMemoryListSelector::Two, BluetoothMemoryListSlot::A) => {
+            (BluetoothMemoryListSelector::Two, BluetoothMemoryListSlot::CurrentRx) => {
                 program!(controller.mmgmt_list_2_pointer_a());
             }
-            (BluetoothMemoryListSelector::Two, BluetoothMemoryListSlot::B) => {
+            (BluetoothMemoryListSelector::Two, BluetoothMemoryListSlot::NextRx) => {
                 program!(controller.mmgmt_list_2_pointer_b());
             }
-            (BluetoothMemoryListSelector::Three, BluetoothMemoryListSlot::A) => {
+            (BluetoothMemoryListSelector::Three, BluetoothMemoryListSlot::CurrentRx) => {
                 program!(controller.mmgmt_list_3_pointer_a());
             }
-            (BluetoothMemoryListSelector::Three, BluetoothMemoryListSlot::B) => {
+            (BluetoothMemoryListSelector::Three, BluetoothMemoryListSlot::NextRx) => {
                 program!(controller.mmgmt_list_3_pointer_b());
             }
         }
@@ -263,43 +269,48 @@ mod tests {
     }
 
     #[test]
-    fn memory_list_pairs_follow_the_reviewed_selector_geometry() {
+    fn current_and_next_rx_pairs_follow_the_reviewed_selector_geometry() {
         let cold = RadioHardware::for_validation().into_bluetooth();
         let (task, _interrupts) = cold.separate_interrupt_owner();
         let controller = &task.bluetooth.bluetooth_controller_core;
 
-        let addresses = [
+        let current_rx = [
             controller.mmgmt_list_1_pointer_a().as_ptr() as usize,
-            controller.mmgmt_list_1_pointer_b().as_ptr() as usize,
             controller.mmgmt_list_2_pointer_a().as_ptr() as usize,
-            controller.mmgmt_list_2_pointer_b().as_ptr() as usize,
             controller.mmgmt_list_3_pointer_a().as_ptr() as usize,
+        ];
+        let next_rx = [
+            controller.mmgmt_list_1_pointer_b().as_ptr() as usize,
+            controller.mmgmt_list_2_pointer_b().as_ptr() as usize,
             controller.mmgmt_list_3_pointer_b().as_ptr() as usize,
         ];
-        assert_eq!(
-            addresses,
-            [
-                0x2010_1280,
-                0x2010_1284,
-                0x2010_1288,
-                0x2010_128c,
-                0x2010_1290,
-                0x2010_1294,
-            ]
-        );
+        assert_eq!(current_rx, [0x2010_1280, 0x2010_1288, 0x2010_1290]);
+        assert_eq!(next_rx, [0x2010_1284, 0x2010_128c, 0x2010_1294]);
 
         let _all = [
-            (BluetoothMemoryListSelector::One, BluetoothMemoryListSlot::A),
-            (BluetoothMemoryListSelector::One, BluetoothMemoryListSlot::B),
-            (BluetoothMemoryListSelector::Two, BluetoothMemoryListSlot::A),
-            (BluetoothMemoryListSelector::Two, BluetoothMemoryListSlot::B),
             (
-                BluetoothMemoryListSelector::Three,
-                BluetoothMemoryListSlot::A,
+                BluetoothMemoryListSelector::One,
+                BluetoothMemoryListSlot::CurrentRx,
+            ),
+            (
+                BluetoothMemoryListSelector::One,
+                BluetoothMemoryListSlot::NextRx,
+            ),
+            (
+                BluetoothMemoryListSelector::Two,
+                BluetoothMemoryListSlot::CurrentRx,
+            ),
+            (
+                BluetoothMemoryListSelector::Two,
+                BluetoothMemoryListSlot::NextRx,
             ),
             (
                 BluetoothMemoryListSelector::Three,
-                BluetoothMemoryListSlot::B,
+                BluetoothMemoryListSlot::CurrentRx,
+            ),
+            (
+                BluetoothMemoryListSelector::Three,
+                BluetoothMemoryListSlot::NextRx,
             ),
         ];
     }

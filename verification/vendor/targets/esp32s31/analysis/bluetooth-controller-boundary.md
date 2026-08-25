@@ -253,10 +253,12 @@ DTM prerequisite; selector 6 becomes an invariant of the open scheduler.
 The implementation order is:
 
 1. finish restricted PAC access for the remaining scheduler command/status
-   words and memory-list pointer geometry; the lock/modify head request already
-   has exact images, predicate, diagnostic publication-result projection and
-   affine event phases, while the controller-time latch has exact always-awake
-   request/self-clear/read phases and a pure epoch projection. Both interrupt
+   words and memory-list lifecycle; the three positional selector pairs now
+   have exact current/next RX slot roles and compressed-pointer geometry. The
+   lock/modify head request already has exact images, predicate, diagnostic
+   publication-result projection and affine event phases, while the
+   controller-time latch has exact always-awake request/self-clear/read phases
+   and a pure epoch projection. Both interrupt
    snapshot modes, baseline setup/teardown masks, route identities, policies
    and typed ESP-HAL pair binding, dynamic scheduler classification, affine
    ISR scheduler MMIO and sticky coalesced wake state are finite components.
@@ -305,8 +307,9 @@ The decisive gaps are not HCI packet syntax. They are:
 - remaining scheduler command opcodes, any operational meaning of the
   lock/modify diagnostic result, the raw-status-to-finished-list mapping,
   completion fence and timebase semantics;
-- the roles and element layouts of the three compressed-pointer memory-list
-  pairs, including alignment and ownership barriers;
+- the meanings of the three compressed-pointer RX-list selectors, their
+  element layouts, hardware current-to-next rotation, alignment and ownership
+  barriers;
 - BLE packet-engine configuration for channel, whitening, CRC, access address,
   TX/RX mode and result/RSSI extraction;
 - abort/cancel behavior and quiescence proof for powered teardown;

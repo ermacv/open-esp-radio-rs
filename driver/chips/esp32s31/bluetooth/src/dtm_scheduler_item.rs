@@ -9,6 +9,7 @@
 
 use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
+    BluetoothDtmTxEventWindow,
 };
 
 const FREQUENCY_MASK: u32 = 0x0000_7f00;
@@ -32,6 +33,21 @@ pub struct BluetoothDtmSchedulerItemEvent {
 }
 
 impl BluetoothDtmSchedulerItemEvent {
+    /// Bind a prepared transmitter window to the reviewed item transforms.
+    pub const fn new_transmitter(
+        channel: BluetoothDtmChannel,
+        phy: BluetoothDtmPhy,
+        window: BluetoothDtmTxEventWindow,
+    ) -> Result<Self, BluetoothDtmSchedulerItemEventError> {
+        Self::new(
+            channel,
+            phy,
+            BluetoothDtmRole::Transmitter,
+            window.start().image(),
+            window.end().image(),
+        )
+    }
+
     /// Convert typed HCI inputs into the reviewed positional field images.
     pub const fn new(
         channel: BluetoothDtmChannel,
@@ -217,5 +233,35 @@ mod tests {
             ),
             Err(BluetoothDtmSchedulerItemEventError::LeCodedS2RequiresTransmitter)
         );
+    }
+
+    #[test]
+    fn transmitter_window_flows_into_both_epoch_projected_item_words() {
+        use crate::{
+            BluetoothDtmPayloadLength, BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin,
+            BluetoothDtmTxTimingMicros,
+        };
+
+        let timing = BluetoothDtmTxTimingMicros::new(
+            BluetoothDtmPayloadLength::from_hci_image(0),
+            BluetoothDtmPhy::Le1M,
+            0,
+        )
+        .scheduler_timing();
+        let window = timing.initial_event_window(
+            BluetoothDtmSchedulerInstant::from_image(1_000),
+            BluetoothDtmSchedulerInstant::from_image(1_900),
+            BluetoothDtmSchedulerMargin::from_image(20),
+        );
+        let event = BluetoothDtmSchedulerItemEvent::new_transmitter(
+            BluetoothDtmChannel::new(0).expect("channel zero is accepted"),
+            BluetoothDtmPhy::Le1M,
+            window,
+        )
+        .expect("1M TX is accepted");
+        let words = event.apply(CURRENT, epoch());
+
+        assert_eq!(words.word_44, 335);
+        assert_eq!(words.word_48, 874);
     }
 }

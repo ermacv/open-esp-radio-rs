@@ -144,7 +144,7 @@ fn memory_list_image(raw: u32) -> Option<BluetoothMemoryListPointerImage> {
     }
 }
 
-/// Compiled production entry for the positional memory-list A selector.
+/// Compiled production entry for the current-RX memory-list setter.
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_ble_memory_list_a_trace_r_sym_ble_lbo_ru27_ea_u8_mv8_q7_uuf_z(
@@ -162,13 +162,13 @@ pub extern "C" fn open_ble_memory_list_a_trace_r_sym_ble_lbo_ru27_ea_u8_mv8_q7_u
     unsafe {
         open_esp_radio_esp32s31_bluetooth::validation::program_memory_list_pointer(
             selector,
-            BluetoothMemoryListSlot::A,
+            BluetoothMemoryListSlot::CurrentRx,
             image,
         );
     }
 }
 
-/// Compiled production entry for the positional memory-list B selector.
+/// Compiled production entry for the next-RX memory-list setter.
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_penk(
@@ -180,11 +180,11 @@ pub extern "C" fn open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_pe
     else {
         return;
     };
-    // SAFETY: same isolated-image conditions as the A-selector probe apply.
+    // SAFETY: same isolated-image conditions as the current-RX probe apply.
     unsafe {
         open_esp_radio_esp32s31_bluetooth::validation::program_memory_list_pointer(
             selector,
-            BluetoothMemoryListSlot::B,
+            BluetoothMemoryListSlot::NextRx,
             image,
         );
     }

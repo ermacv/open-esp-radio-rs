@@ -28,9 +28,13 @@ mod clock;
 #[cfg(any(target_arch = "riscv32", test))]
 mod common_phy_state;
 mod controller_time;
+mod dtm_event_timing;
 mod dtm_link_state;
 mod dtm_parameters;
+mod dtm_payload;
 mod dtm_scheduler_item;
+mod dtm_timing;
+mod dtm_tx_packet;
 mod interrupt;
 mod interrupt_classifier;
 mod interrupt_wake;
@@ -58,6 +62,10 @@ pub use controller_time::{
     BluetoothControllerTimeLatchProgress, BluetoothControllerTimeLatchPublication,
     BluetoothControllerTimeLatchReadReady, BluetoothControllerTimeSample,
 };
+pub use dtm_event_timing::{
+    BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin, BluetoothDtmTxEventAdvance,
+    BluetoothDtmTxEventWindow,
+};
 pub use dtm_link_state::{
     BluetoothDtmLinkStateReset, BluetoothDtmLinkStateResetError,
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,
@@ -66,9 +74,20 @@ pub use dtm_parameters::{
     BluetoothDtmChannel, BluetoothDtmChannelError, BluetoothDtmPhy, BluetoothDtmPhyError,
     BluetoothDtmPhyRoleError,
 };
+pub use dtm_payload::{
+    BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern, BluetoothDtmPayloadPatternError,
+    BluetoothDtmPayloadPreparationError, BluetoothDtmPreparedPayload,
+};
 pub use dtm_scheduler_item::{
     BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
     BluetoothDtmSchedulerItemReviewedWords,
+};
+pub use dtm_timing::{BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros};
+pub use dtm_tx_packet::{
+    BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES, BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES,
+    BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES, BluetoothDtmPreparedTxPacket,
+    BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError,
+    BluetoothDtmTxPacketStorage,
 };
 pub use interrupt::{
     BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,

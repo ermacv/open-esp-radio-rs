@@ -11,6 +11,8 @@ required-capabilities = [
   "controller-memory-lists",
   "dtm-link-state-reset",
   "dtm-scheduler-item",
+  "dtm-tx-payload",
+  "dtm-tx-timing",
   "scheduler-head-transaction",
   "scheduler-finished-list-drain",
   "hci-handoff-storage",
@@ -211,7 +213,7 @@ gaps = [
 [[capabilities]]
 id = "controller-memory-lists"
 title = "Controller packet-list ownership"
-scope = "Typed RX TX free and ready list storage publication consumption and recovery"
+scope = "Three positional list selectors with proven current and next RX pointer roles compressed storage publication consumption and recovery"
 depends-on = ["controller-initialization"]
 owners = [
   { path = "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs", token = "BluetoothMemoryListSelector" },
@@ -221,14 +223,14 @@ owners = [
 tests = [
   { path = "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs", token = "compressed_controller_address_rejects_unrepresentable_values" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs", token = "dtm_rx_result_projection_preserves_only_the_reviewed_high_byte" },
-  { path = "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs", token = "memory_list_pairs_follow_the_reviewed_selector_geometry" },
+  { path = "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs", token = "current_and_next_rx_pairs_follow_the_reviewed_selector_geometry" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/README.md", token = "memory-list" },
 ]
 gaps = [
-  { axis = "implementation", id = "list-role-layout-lifetime-and-recovery-missing" },
-  { axis = "vendor", id = "complete-list-lifecycle-production-trace-missing" },
+  { axis = "implementation", id = "selector-role-element-layout-lifetime-rotation-and-recovery-missing" },
+  { axis = "vendor", id = "complete-current-next-rx-list-lifecycle-production-trace-missing" },
   { axis = "hil", id = "controller-list-publication-cell-missing" },
   { axis = "async", id = "list-completion-wake-and-backpressure-missing" },
 ]
@@ -275,6 +277,7 @@ tests = [
   { path = "driver/chips/esp32s31/bluetooth/src/dtm_scheduler_item.rs", token = "rx_event_matches_every_complete_scheduler_item_image" },
   { path = "driver/chips/esp32s31/bluetooth/src/dtm_scheduler_item.rs", token = "tx_event_preserves_rx_only_word_and_selects_tx_role_byte" },
   { path = "driver/chips/esp32s31/bluetooth/src/dtm_scheduler_item.rs", token = "event_rejects_transmitter_only_phy_for_receiver_role" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_scheduler_item.rs", token = "transmitter_window_flows_into_both_epoch_projected_item_words" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md", token = "r_sym_ble_G4zC4UNjJYmyjOsZ3vNq" },
@@ -284,6 +287,70 @@ gaps = [
   { axis = "implementation", id = "complete-item-storage-insertion-and-affine-lifecycle-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-words-and-packet-field-semantics-missing" },
   { axis = "hil", id = "dtm-scheduler-item-memory-and-insert-trace-missing" },
+]
+
+[[capabilities]]
+id = "dtm-tx-payload"
+title = "Bounded DTM transmitter packet preparation"
+scope = "Full static packet allocation header image and all eight HCI test patterns with complete cross-revision equivalence"
+owners = [
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_payload.rs", token = "BluetoothDtmPayloadPattern" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_payload.rs", token = "BluetoothDtmPreparedPayload" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_tx_packet.rs", token = "BluetoothDtmTxPacketStorage" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_tx_packet.rs", token = "BluetoothDtmTxBufferHeaderImage" },
+]
+tests = [
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_payload.rs", token = "every_hci_pattern_selector_roundtrips_and_bounds_the_domain" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_payload.rs", token = "repeated_patterns_match_all_complete_vendor_branches" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_payload.rs", token = "prbs9_matches_the_complete_cross_revision_table_fingerprint" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_payload.rs", token = "prbs15_matches_the_complete_cross_revision_table_fingerprint" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_payload.rs", token = "preparation_is_fail_closed_and_returns_the_whole_storage" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_tx_packet.rs", token = "packet_address_validates_base_header_target_and_complete_aligned_tail" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_tx_packet.rs", token = "static_packet_slot_has_the_reviewed_capacity_and_alignment" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_tx_packet.rs", token = "packet_preparation_writes_every_complete_positional_byte" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_tx_packet.rs", token = "reprepare_preserves_bytes_outside_the_new_declared_packet" },
+]
+vendor-anchors = [
+  { path = "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md", token = "r_sym_ble_XaQTq1AjtothrIFLgEeJ" },
+]
+async-not-applicable = "pure-synchronous-transform"
+gaps = [
+  { axis = "implementation", id = "packet-header-publication-fence-and-hardware-lifecycle-missing" },
+  { axis = "vendor", id = "packet-engine-header-consumer-and-publication-order-missing" },
+  { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
+]
+
+[[capabilities]]
+id = "dtm-tx-timing"
+title = "DTM transmitter interval and scheduler timing"
+scope = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows and constant-time phase-preserving late-event catch-up"
+depends-on = ["dtm-tx-payload"]
+owners = [
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_timing.rs", token = "BluetoothDtmTxTimingMicros" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_timing.rs", token = "BluetoothDtmTxSchedulerTiming" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_event_timing.rs", token = "BluetoothDtmTxEventWindow" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_event_timing.rs", token = "BluetoothDtmTxEventAdvance" },
+]
+tests = [
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_timing.rs", token = "zero_length_packets_match_all_four_complete_phy_branches" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_timing.rs", token = "maximum_length_packets_retain_exact_duration_and_rounding" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_timing.rs", token = "every_length_and_phy_matches_the_complete_vendor_integer_formula" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_timing.rs", token = "extended_requested_interval_is_a_maximum_without_vendor_rerounding" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_timing.rs", token = "complete_s31_tick_tail_is_identity_with_zero_remainder" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_timing.rs", token = "scheduler_window_uses_maximum_packet_capacity_for_every_payload_length" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_event_timing.rs", token = "initial_window_selects_the_later_nominal_or_rf_ready_anchor" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_event_timing.rs", token = "on_time_recurring_window_advances_exactly_one_interval" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_event_timing.rs", token = "late_recurring_window_preserves_phase_and_skips_in_constant_time" },
+  { path = "driver/chips/esp32s31/bluetooth/src/dtm_event_timing.rs", token = "constant_time_catch_up_matches_the_complete_vendor_loop" },
+]
+vendor-anchors = [
+  { path = "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md", token = "r_sym_ble_bWydXXPAXzjyon1EdAMg" },
+]
+async-not-applicable = "pure-synchronous-transform"
+gaps = [
+  { axis = "implementation", id = "ordered-live-clock-rf-ready-margin-input-and-scheduler-publication-missing" },
+  { axis = "vendor", id = "scheduler-margin-runtime-source-and-publication-order-missing" },
+  { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]
 
 [[capabilities]]
@@ -420,7 +487,7 @@ gaps = [
 id = "packet-dataplane"
 title = "BLE packet TX and RX dataplane"
 scope = "One bounded 1M PHY packet from owned storage through radio publication completion and receive recovery"
-depends-on = ["common-phy-baseband", "interrupt-runtime", "controller-memory-lists", "dtm-link-state-reset", "dtm-scheduler-item", "scheduler-head-transaction", "scheduler-finished-list-drain"]
+depends-on = ["common-phy-baseband", "interrupt-runtime", "controller-memory-lists", "dtm-link-state-reset", "dtm-scheduler-item", "dtm-tx-payload", "dtm-tx-timing", "scheduler-head-transaction", "scheduler-finished-list-drain"]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/README.md", token = "memory-list" },
 ]

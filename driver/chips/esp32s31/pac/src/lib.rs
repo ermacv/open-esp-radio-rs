@@ -1,10 +1,14 @@
 #![no_std]
 #![deny(unsafe_code)]
 
+#[cfg(test)]
+extern crate std;
+
 mod agc;
 mod agc_runtime;
 mod baseband;
 mod bluetooth_baseband;
+mod bluetooth_controller_hal_init;
 mod bluetooth_interrupt;
 mod bluetooth_memory_lists;
 mod bluetooth_phy_init;
@@ -58,7 +62,14 @@ pub mod validation;
 #[cfg(feature = "validation-probes")]
 mod validation_transactions;
 pub use agc_runtime::ForcedRxGain;
-pub use bluetooth_interrupt::BluetoothInterruptObservation;
+pub use bluetooth_controller_hal_init::{
+    BluetoothControllerHalInitConfig, BluetoothHalInitPeriod, BluetoothHalInitScale,
+};
+pub use bluetooth_interrupt::{
+    BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
+    BluetoothInterruptObservation, BluetoothInterruptOutputPrepared,
+    BluetoothPrimaryInterruptObservation,
+};
 pub use bluetooth_memory_lists::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
@@ -846,26 +857,15 @@ pub struct BluetoothInterruptSetup {
     peripherals: svd::peripheral_ownership::BluetoothInterruptPeripherals,
 }
 
-/// Bluetooth interrupt-bank capability for a future powered ISR epoch.
+/// Bluetooth interrupt-bank capability staged for a future powered ISR epoch.
 ///
-/// No public transition currently constructs this type. A later lifecycle
-/// slice must prove clock/reset/mask setup and bind the CPU route before it can
-/// expose the reviewed finite capture-and-acknowledge transaction.
+/// [`BluetoothInterruptOutputPrepared::stage_for_cpu_routes`] constructs this
+/// value only after the reviewed baseline masks and controller output have
+/// been prepared. The platform must retain it in stable storage shared by the
+/// primary and NRT handlers before enabling either CPU route.
 #[must_use = "the Bluetooth interrupt owner must be deactivated and reunited"]
 pub struct BluetoothInterruptRegisters {
     peripherals: svd::peripheral_ownership::BluetoothInterruptPeripherals,
-}
-
-impl BluetoothInterruptRegisters {
-    /// Return the unchanged partition to inactive setup ownership.
-    ///
-    /// The caller must disable the CPU route first. This method performs no
-    /// controller transaction.
-    pub fn deactivate(self) -> BluetoothInterruptSetup {
-        BluetoothInterruptSetup {
-            peripherals: self.peripherals,
-        }
-    }
 }
 
 #[cfg(test)]

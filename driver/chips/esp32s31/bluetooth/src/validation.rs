@@ -8,16 +8,34 @@
 #![deny(unsafe_code)]
 
 pub use open_esp_radio_esp32s31_pac::{
-    BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+    BluetoothControllerHalInitConfig, BluetoothControllerSramAddress,
+    BluetoothControllerSramAddressError, BluetoothHalInitPeriod, BluetoothHalInitScale,
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
 };
 
-/// Execute the exact production interrupt sample/acknowledgement transaction.
+/// Execute the exact production NRT raw-snapshot acknowledgement transaction.
 #[inline(always)]
 pub fn capture_and_acknowledge_interrupts() -> [u32; 2] {
     let mut registers = open_esp_radio_esp32s31_pac::validation::bluetooth_interrupt_registers();
     let observation = registers.capture_and_acknowledge();
     [observation.bank_0_bits(), observation.bank_1_bits()]
+}
+
+/// Execute the exact primary BT MAC masked-status acknowledgement prefix.
+#[inline(always)]
+pub fn capture_primary_and_acknowledge_interrupts() -> [u32; 2] {
+    let mut registers = open_esp_radio_esp32s31_pac::validation::bluetooth_interrupt_registers();
+    let observation = registers.capture_primary_and_acknowledge();
+    [observation.bank_0_bits(), observation.bank_1_bits()]
+}
+
+/// Execute the reviewed primary baseline clear/enable/output preparation.
+#[inline(always)]
+pub fn prepare_primary_interrupt_output() {
+    let bluetooth = open_esp_radio_esp32s31_pac::RadioHardware::for_validation().into_bluetooth();
+    let (task, interrupts) = bluetooth.separate_interrupt_owner();
+    let prepared = interrupts.prepare_controller_output();
+    let _powered_owners = (task, prepared);
 }
 
 /// Execute the exact production scheduler-table low-bit clear transaction.
@@ -57,6 +75,30 @@ pub unsafe fn initialize_baseband_v2(gain_parameter: u8) {
     unsafe {
         open_esp_radio_esp32s31_pac::validation::initialize_bluetooth_baseband_v2(gain_parameter);
     }
+}
+
+/// Execute the complete production BTDM controller HAL-init component with
+/// the exact standalone profile recovered from the pinned controller caller.
+///
+/// # Safety
+///
+/// The caller must be an isolated compiled-production probe modeling enabled
+/// clocks, common PHY, BTBB, quiescent controller queues and an inactive IRQ
+/// bank. The powered owners remain retained after return.
+#[allow(
+    unsafe_code,
+    reason = "the validation-only API preserves the complete HAL-init prerequisites"
+)]
+#[inline(always)]
+pub unsafe fn initialize_controller_hal_reviewed_standalone() {
+    let resources = crate::BluetoothPhysicalResources::from_radio_hardware(
+        open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
+    );
+    let (mut task, interrupts) = resources.separate_interrupt_owner();
+    unsafe {
+        task.initialize_controller_hal(BluetoothControllerHalInitConfig::reviewed_standalone());
+    }
+    let _powered_owners = (task, interrupts);
 }
 
 /// Execute one exact production memory-list pointer publication in an

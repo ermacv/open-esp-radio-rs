@@ -15242,50 +15242,50 @@ BLUETOOTH_INTERRUPT_BANK.
           <dimIncrement>0x4</dimIncrement>
           <dimIndex>0-1</dimIndex>
           <name>HAL_INIT_SLOT_MAP%s</name>
-          <description>Two adjacent words each hold eight independently initialized two-bit lanes. The complete BTDM HAL loop proves the lane geometry and finite initialization sequence but not the hardware meaning of either the words or lane values.</description>
+          <description>The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index &amp; 3) &lt;&lt; 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown.</description>
           <addressOffset>0x34C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>SLOT_0</name>
+              <name>LANE_0</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>2</bitWidth>
+              <bitWidth>4</bitWidth>
             </field>
             <field>
-              <name>SLOT_1</name>
-              <bitOffset>2</bitOffset>
-              <bitWidth>2</bitWidth>
-            </field>
-            <field>
-              <name>SLOT_2</name>
+              <name>LANE_1</name>
               <bitOffset>4</bitOffset>
-              <bitWidth>2</bitWidth>
+              <bitWidth>4</bitWidth>
             </field>
             <field>
-              <name>SLOT_3</name>
-              <bitOffset>6</bitOffset>
-              <bitWidth>2</bitWidth>
-            </field>
-            <field>
-              <name>SLOT_4</name>
+              <name>LANE_2</name>
               <bitOffset>8</bitOffset>
-              <bitWidth>2</bitWidth>
+              <bitWidth>4</bitWidth>
             </field>
             <field>
-              <name>SLOT_5</name>
-              <bitOffset>10</bitOffset>
-              <bitWidth>2</bitWidth>
-            </field>
-            <field>
-              <name>SLOT_6</name>
+              <name>LANE_3</name>
               <bitOffset>12</bitOffset>
-              <bitWidth>2</bitWidth>
+              <bitWidth>4</bitWidth>
             </field>
             <field>
-              <name>SLOT_7</name>
-              <bitOffset>14</bitOffset>
-              <bitWidth>2</bitWidth>
+              <name>LANE_4</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>LANE_5</name>
+              <bitOffset>20</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>LANE_6</name>
+              <bitOffset>24</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>LANE_7</name>
+              <bitOffset>28</bitOffset>
+              <bitWidth>4</bitWidth>
             </field>
           </fields>
         </register>
@@ -15445,7 +15445,7 @@ also exposing scheduler, sleep or memory-management state.
         </register>
         <register>
           <name>IRQ_ENABLE_0</name>
-          <description>First controller interrupt-enable bank. Complete users independently RMW the recorded source positions.</description>
+          <description>First controller interrupt-enable bank. Primary setup clears stale image 0x00008000 then ORs that baseline into this word; another complete helper independently controls 0x18200000.</description>
           <addressOffset>0x54</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -15494,7 +15494,7 @@ also exposing scheduler, sleep or memory-management state.
         </register>
         <register>
           <name>IRQ_CLEAR_0</name>
-          <description>First controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_0 here as a complete word.</description>
+          <description>First controller interrupt-clear bank. Primary and NRT handlers copy their respective first-bank status images here as complete words.</description>
           <addressOffset>0x58</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -15509,7 +15509,7 @@ also exposing scheduler, sleep or memory-management state.
         </register>
         <register>
           <name>IRQ_STATUS_0</name>
-          <description>First controller interrupt-status bank; complete HAL users read the full word.</description>
+          <description>First masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.</description>
           <addressOffset>0x5C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -15523,7 +15523,7 @@ also exposing scheduler, sleep or memory-management state.
         </register>
         <register>
           <name>IRQ_ENABLE_1</name>
-          <description>Second controller interrupt-enable bank. Complete users independently RMW the recorded source positions.</description>
+          <description>Second controller interrupt-enable bank. Primary setup clears stale image 0x00001300 then ORs that baseline into this word; another complete helper independently controls bit 3.</description>
           <addressOffset>0x60</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -15549,9 +15549,14 @@ also exposing scheduler, sleep or memory-management state.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>SOURCES_8_9</name>
+              <name>SOURCE_8</name>
               <bitOffset>8</bitOffset>
-              <bitWidth>2</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_9</name>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>SOURCE_12</name>
@@ -15567,7 +15572,7 @@ also exposing scheduler, sleep or memory-management state.
         </register>
         <register>
           <name>IRQ_CLEAR_1</name>
-          <description>Second controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_1 here as a complete word.</description>
+          <description>Second controller interrupt-clear bank. Primary and NRT handlers copy their respective second-bank status images here as complete words.</description>
           <addressOffset>0x64</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -15582,7 +15587,7 @@ also exposing scheduler, sleep or memory-management state.
         </register>
         <register>
           <name>IRQ_STATUS_1</name>
-          <description>Second controller interrupt-status bank; complete HAL users read the full word.</description>
+          <description>Second masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.</description>
           <addressOffset>0x68</addressOffset>
           <size>0x20</size>
           <access>read-only</access>

@@ -2476,10 +2476,17 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SOURCES_8_9"
-method = "sources_8_9"
+svd-name = "SOURCE_8"
+method = "source_8"
 bit-offset = 8
-bit-width = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_9"
+method = "source_9"
+bit-offset = 9
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -3858,59 +3865,59 @@ register-method = "hal_init_slot_map"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "SLOT_0"
-method = "slot_0"
+svd-name = "LANE_0"
+method = "lane_0"
 bit-offset = 0
-bit-width = 2
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SLOT_1"
-method = "slot_1"
-bit-offset = 2
-bit-width = 2
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "SLOT_2"
-method = "slot_2"
+svd-name = "LANE_1"
+method = "lane_1"
 bit-offset = 4
-bit-width = 2
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SLOT_3"
-method = "slot_3"
-bit-offset = 6
-bit-width = 2
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "SLOT_4"
-method = "slot_4"
+svd-name = "LANE_2"
+method = "lane_2"
 bit-offset = 8
-bit-width = 2
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SLOT_5"
-method = "slot_5"
-bit-offset = 10
-bit-width = 2
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "SLOT_6"
-method = "slot_6"
+svd-name = "LANE_3"
+method = "lane_3"
 bit-offset = 12
-bit-width = 2
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SLOT_7"
-method = "slot_7"
-bit-offset = 14
-bit-width = 2
+svd-name = "LANE_4"
+method = "lane_4"
+bit-offset = 16
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_5"
+method = "lane_5"
+bit-offset = 20
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_6"
+method = "lane_6"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7"
+method = "lane_7"
+bit-offset = 28
+bit-width = 4
 access = "read-write"
 
 [[registers]]
@@ -3926,59 +3933,59 @@ register-method = "hal_init_slot_map"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "SLOT_0"
-method = "slot_0"
+svd-name = "LANE_0"
+method = "lane_0"
 bit-offset = 0
-bit-width = 2
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SLOT_1"
-method = "slot_1"
-bit-offset = 2
-bit-width = 2
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "SLOT_2"
-method = "slot_2"
+svd-name = "LANE_1"
+method = "lane_1"
 bit-offset = 4
-bit-width = 2
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SLOT_3"
-method = "slot_3"
-bit-offset = 6
-bit-width = 2
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "SLOT_4"
-method = "slot_4"
+svd-name = "LANE_2"
+method = "lane_2"
 bit-offset = 8
-bit-width = 2
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SLOT_5"
-method = "slot_5"
-bit-offset = 10
-bit-width = 2
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "SLOT_6"
-method = "slot_6"
+svd-name = "LANE_3"
+method = "lane_3"
 bit-offset = 12
-bit-width = 2
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SLOT_7"
-method = "slot_7"
-bit-offset = 14
-bit-width = 2
+svd-name = "LANE_4"
+method = "lane_4"
+bit-offset = 16
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_5"
+method = "lane_5"
+bit-offset = 20
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_6"
+method = "lane_6"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7"
+method = "lane_7"
+bit-offset = 28
+bit-width = 4
 access = "read-write"
 
 [[registers]]

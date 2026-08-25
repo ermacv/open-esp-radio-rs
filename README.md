@@ -13,7 +13,15 @@ reaches source-reviewed digital clocks, private MAC reset, an interrupt-masked
 static policy, and isolated DMA/IRQ semantic leaves plus a pure fail-closed MAC
 control model; PHY/RF, active IRQ, command issue and operational MAC readiness
 remain incomplete. ESP32-C5 and operational Bluetooth/BLE support remain
-future work. The normal workspace and HIL
+future work. The ESP32-S31 Bluetooth tree now also carries an explicit
+[BLE feature frontier](driver/chips/esp32s31/bluetooth/FEATURES.md) and a
+portable bounded asynchronous HCI transport; neither is an on-air readiness
+claim. Its closed Host-bootstrap command table rejects every Link-Layer
+operation until a real controller backend owns it.
+Host tests also run the released Trouble Runner through the executor-neutral
+bootstrap worker; this is software integration evidence, not an ESP32-S31 task
+or hardware capability.
+The normal workspace and HIL
 do not link `esp-wifi-sys`, vendor Wi-Fi
 archives, or a radio/Wi-Fi ROM ABI. The isolated vendor-oracle workspace is the
 only opt-in exception.
@@ -24,6 +32,7 @@ only opt-in exception.
 | --- | --- |
 | [`driver/`](driver/README.md) | All shipping driver code and its architecture map |
 | `driver/radio` | Public requests and typed radio/Wi-Fi lifecycle |
+| `driver/bluetooth/hci` | Portable allocation-free async `bt-hci` transport, fail-closed Host bootstrap and bootstrap worker |
 | `driver/common/dma` | Shared audited DMA ownership primitives |
 | `driver/wifi/` | Chip-independent Wi-Fi protocols and policy |
 | `driver/wifi/softmac` | Executor-independent SoftMAC service, VIF and status contract |

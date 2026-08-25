@@ -10,6 +10,7 @@ members = [
     "driver/adapters/embassy/esp32s31-wifi",
     "driver/adapters/esp-hal/esp32s31-radio-platform",
     "driver/adapters/esp-hal/esp32s31-wifi",
+    "driver/bluetooth/hci",
     "driver/wifi/ap",
     "driver/wifi/sta",
     "driver/wifi/ieee80211",

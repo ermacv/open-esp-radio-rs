@@ -3,12 +3,14 @@
 //! This crate is intentionally below HCI and the Bluetooth Link Layer. The
 //! implemented slices establish lossless physical ownership, the platform
 //! clock/reset prerequisite and the first finite scheduler-table transaction
-//! of controller init. That path stops before software event/list, LP,
-//! BLE-stack and HCI initialization. Common PHY and BT-baseband transitions are
-//! implemented as later enable-stage components but are deliberately not
-//! reachable from the incomplete init frontier. No current finite state claims
-//! that the complete controller lifecycle, HCI transport, task or CPU
-//! interrupt routing has completed.
+//! of controller init. Common PHY, BT-baseband and the complete 50-operation
+//! BTDM HAL-init body are implemented as later enable-stage components. The
+//! two Controller interrupt sources, level/residency policies, baseline masks,
+//! snapshot modes and shared-register staging are also represented, but are
+//! deliberately not connected across the missing event/list, LP, BLE, typed
+//! CPU-route and interrupt-classification prerequisites. No current finite
+//! state claims that the complete controller lifecycle, HCI transport, task or
+//! live interrupt epoch has completed.
 
 #![no_std]
 #![deny(unsafe_code)]
@@ -21,6 +23,7 @@ mod baseband;
 mod clock;
 #[cfg(any(target_arch = "riscv32", test))]
 mod common_phy_state;
+mod interrupt;
 #[cfg(target_arch = "riscv32")]
 mod phy;
 mod resources;
@@ -38,6 +41,10 @@ pub use clock::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use common_phy_state::{BluetoothPhyInitializationReport, BluetoothPhyInitialized};
+pub use interrupt::{
+    BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,
+    BluetoothInterruptHandlerResidency,
+};
 #[cfg(target_arch = "riscv32")]
 pub use phy::{
     BluetoothPhyInitializationConfig, BluetoothPhyInitializationError,

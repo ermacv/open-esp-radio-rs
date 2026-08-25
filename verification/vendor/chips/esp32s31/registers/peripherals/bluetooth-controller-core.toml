@@ -708,42 +708,42 @@ dim = 2
 dimIncrement = 0x4
 dimIndex = "0,1"
 name = "HAL_INIT_SLOT_MAP%s"
-description = "Two adjacent words each hold eight independently initialized two-bit lanes. The complete BTDM HAL loop proves the lane geometry and finite initialization sequence but not the hardware meaning of either the words or lane values."
+description = "The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown."
 addressOffset = 0x34C
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "SLOT_0"
+name = "LANE_0"
 bitOffset = 0
-bitWidth = 2
+bitWidth = 4
 [[peripherals.registers.register.fields]]
-name = "SLOT_1"
-bitOffset = 2
-bitWidth = 2
-[[peripherals.registers.register.fields]]
-name = "SLOT_2"
+name = "LANE_1"
 bitOffset = 4
-bitWidth = 2
+bitWidth = 4
 [[peripherals.registers.register.fields]]
-name = "SLOT_3"
-bitOffset = 6
-bitWidth = 2
-[[peripherals.registers.register.fields]]
-name = "SLOT_4"
+name = "LANE_2"
 bitOffset = 8
-bitWidth = 2
+bitWidth = 4
 [[peripherals.registers.register.fields]]
-name = "SLOT_5"
-bitOffset = 10
-bitWidth = 2
-[[peripherals.registers.register.fields]]
-name = "SLOT_6"
+name = "LANE_3"
 bitOffset = 12
-bitWidth = 2
+bitWidth = 4
 [[peripherals.registers.register.fields]]
-name = "SLOT_7"
-bitOffset = 14
-bitWidth = 2
+name = "LANE_4"
+bitOffset = 16
+bitWidth = 4
+[[peripherals.registers.register.fields]]
+name = "LANE_5"
+bitOffset = 20
+bitWidth = 4
+[[peripherals.registers.register.fields]]
+name = "LANE_6"
+bitOffset = 24
+bitWidth = 4
+[[peripherals.registers.register.fields]]
+name = "LANE_7"
+bitOffset = 28
+bitWidth = 4
 
 [[peripherals.registers]]
 [peripherals.registers.register]
@@ -1691,56 +1691,56 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_0"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_0"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_1"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_1"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_2"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_2"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_3"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_3"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_4"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_4"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_5"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_5"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_6"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_6"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.SLOT_7"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_7"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"

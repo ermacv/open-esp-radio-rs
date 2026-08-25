@@ -78,6 +78,9 @@ block/register/data layout.
 | Source ID | Basis |
 |---|---|
 | `ESP_IDF_ESP32S31_MODEM_REG_BASE` | Official ESP-IDF S31 modem partition map pinned to the commit and SHA-256 recorded in the add-on provenance catalog |
+| `ESP_IDF_S31_INTERRUPT_SOURCES` | Official pinned ESP-IDF S31 interrupt-source header proving primary BT MAC source 124 and BT MAC INT1 source 133 |
+| `ESP_IDF_BTDM_OSAL_INTERRUPT_POLICY` | Official pinned BTDM OSAL allocation wrapper proving level 3, primary IRAM request policy and configured-core routing |
+| `BLOB_LIBBTDM_CONTROLLER_IRQ` | Complete primary setup/ISR/teardown and NRT ISR prefixes proving baseline masks, masked-versus-raw snapshots and their shared W1C clear banks |
 | `HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30` | Open HE20 MCS9/LDPC A-MPDU completion, typed ACK-SNR decode, DHCP and zero-loss ICMP qualification on ESP32-S31 rev0 |
 | `S31_MODEM_SYSCON_STRUCT` | Pinned `esp-wifi-sys` commit `2585f278`, S31 `modem_syscon_struct.h`, SHA-256 recorded in the add-on provenance catalog |
 | `S31_MODEM_LPCON_STRUCT` | Same commit, S31 `modem_lpcon_struct.h`, SHA-256 recorded in the add-on provenance catalog |

@@ -1,0 +1,285 @@
+# ESP32-S31 Bluetooth controller boundary
+
+Verdict: **INCOMPLETE**. The reviewed public ESP-IDF glue proves the outer
+lifecycle order and separates several platform operations from Controller
+software. It does not publish the BLE Link Layer, scheduler command meanings,
+packet-memory layouts or interrupt meanings implemented by the controller
+libraries. Those gaps still block an on-air open Controller.
+
+This review answers a narrower question than vendor equivalence: which parts
+of the vendor lifecycle are requirements of ESP32-S31 silicon, and which parts
+are implementations that the open Rust Controller must replace. Copying the
+whole vendor init sequence would import its FreeRTOS/NPL architecture and would
+not establish hardware correctness.
+
+## Pinned public inputs
+
+All sources are from ESP-IDF commit
+[`aeab6dcfbeb44aba4b1f8ed102e3086172833153`](https://github.com/espressif/esp-idf/tree/aeab6dcfbeb44aba4b1f8ed102e3086172833153).
+The hashes cover the complete raw files used for this review.
+
+| Public ESP-IDF source | Relevant lines | SHA-256 |
+| --- | --- | --- |
+| [`components/bt/controller/esp32s31/bt.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/controller/esp32s31/bt.c#L78-L145) | shutdown, disable and deinit order | `a7eb5a77c543b244757c08cc595960911c7aff73cae16eb7bd78503322d9f76d` |
+| [`components/bt/controller/esp32s31/bt.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/controller/esp32s31/bt.c#L168-L350) | top-level init, enable and rollback order | same file/hash as above |
+| [`components/bt/porting_btdm/controller/btdm_common/src/btdm_lp.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_lp.c#L350-L469) | module clocks, MAC reset, LP timer, PHY and BTBB ownership | `1d681581eedcf5aa23b8462a148bd377a92edae676f941d9318a1e8947bf7585` |
+| [`components/bt/porting_btdm/controller/ble/src/ble.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/ble/src/ble.c#L613-L756) | BLE controller, BB callback, packet pool and address setup | `ed793921668c5276e4726a506dbeca2d2ca4ae453f1d6b4c3b4943d7c1c7f279` |
+| [`components/bt/porting_btdm/controller/btdm_common/src/btdm_coex.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_coex.c#L40-L235) | standalone coexistence defaults and optional shared-radio hooks | `da92929e125a830553d6d251af301ab2fbdfb6aef31d1342e9d14b483bdac1f9` |
+| [`components/bt/porting_btdm/controller/btdm_common/src/btdm_external.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_external.c#L29-L43) | empty S31 external-init wrapper | `843a19181e1f4e25d3d9bdc924b2ec0c112ddee4f5c133c428a4ff95a62e5916` |
+| [`components/bt/porting_btdm/controller/btdm_common/src/btdm_log.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_log.c#L115-L129) | empty default log-init wrapper | `952b6cd74004dea4254f615c93298bfd392fff4586820de6231916a0fe107ac5` |
+| [`components/bt/porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c#L84-L291) | FreeRTOS event queues and ISR wake behavior | `436d009f67fbe7c83fa367a6b80dbf87316727605e751febc03c5118a669b5c8` |
+| [`components/bt/porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c#L1084-L1093) | vendor task creation | same file/hash as above |
+| [`components/bt/porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c#L1107-L1137) | level-3 interrupt allocation, optional IRAM flag and pinned-core routing | same file/hash as above |
+| [`components/soc/esp32s31/include/soc/interrupts.h`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/soc/esp32s31/include/soc/interrupts.h#L139-L153) | Bluetooth MAC CPU sources 124 and 133 | `1a4f155b87090376b1a40ac62e19de344c7f10dc53d9b4451b66d545e9e4717d` |
+| [`components/bt/porting_btdm/transport/src/hci_transport.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/transport/src/hci_transport.c#L23-L103) | HCI command/ACL/event routing | `db3fea7daa8d313e16f570eac6dc7e87a860edf03e896af49cce9d5dd7d13b45` |
+| [`components/bt/porting_btdm/transport/src/hci_transport.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/transport/src/hci_transport.c#L214-L291) | transport selection, callback registration and teardown | same file/hash as above |
+| [`esp32s31-bt-lib/libbtdm_common.a`](https://github.com/espressif/esp32s31-bt-lib/blob/7f20740dd66ee774ffce5db0b55507892551aa31/libbtdm_common.a) | exact public S31 BTDM object code used to split composite HAL/task boundaries | `fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099` |
+
+The exact public ESP32-S31 controller-library revision is additionally pinned
+by the target project README. Public glue proves calls and order, not the
+internal effects of binary `r_*` entries. Reviewed Blobray facts remain the
+evidence source for those internal MMIO transactions.
+
+Reviewing the complete HAL-init body exposed and corrected one pre-existing
+register-model error: the words at `0x2010_134c` and `0x2010_1350` contain
+eight observed four-bit lanes each, not eight dense two-bit lanes. Each
+iteration first clears nibble mask `0xc`, then performs a fresh read and ORs
+`1 | ((global_index & 3) << 1)`. Bit one can retain a pre-existing one, so the
+operation is not a complete nibble assignment. The reviewed register source,
+SVD, raw PAC and bindings now preserve that exact positional geometry without
+inventing lane meaning.
+
+The same review now closes the HAL body's runtime-input question. Complete
+`r_btdm_task_init` constructs positional inputs `16`, `11`, `33`, `2000` and
+`0x2f00_0000`; the complete setter maps period images `500/1000/2000` to a
+selector in the same internal object, and the complete helper uses that
+selector to scale the two bytes. For the standalone caller the resulting
+hardware images are sleep-timer shift `3`, byte zero `22`, byte one `66` and
+SRAM prefix `0x2f00_0000`. The restricted PAC represents these accepted
+domains directly and executes the complete 50-operation MMIO body. It does
+not reproduce the vendor object layout, task, event primitive or IRQ allocator.
+
+The interrupt boundary is now known to contain two CPU routes, not one. The
+primary Bluetooth MAC route uses source 124, level 3 and an IRAM-capable
+handler request. The non-real-time (NRT) Bluetooth MAC INT1 route uses source
+133 and level 3 without requesting IRAM placement. The public OSAL installs
+both on the configured Controller core. The primary setup clears and enables
+baseline groups `0x0000_8000` in bank 0 and `0x0000_1300` in bank 1 before the
+output strobe. Its handler samples masked status; the NRT handler samples raw
+status. Both acknowledge through the same two W1C clear banks. The restricted
+PAC therefore exposes a transition that stages a single shared register owner
+before either CPU route is bound and preserves the distinct snapshot modes.
+
+This closes route identity, level, residency policy, baseline masks and the
+setup/teardown prefix. It does not close bit semantics or the dynamic primary
+groups (`0x1820_0000` and `0x0000_0008`). Both vendor handlers perform
+synchronous callback dispatch, and the primary handler has an additional
+scheduler-sensitive path. Replacing those callbacks with a coalescing async
+wake before multiplicity and re-arm semantics are known could lose work.
+The pinned `esp-pacs` revision is also a platform blocker: its typed
+ESP32-S31 `Interrupt` enum omits both source 124 and source 133. Production
+routing must wait for a reviewed PAC update rather than casting raw integers
+into an incomplete enum.
+
+## Reference Controller implementations
+
+These inputs are architecture references, not ESP32-S31 register evidence.
+They answer which software layers a complete open Controller actually needs
+and which apparent Rust integrations still terminate in closed firmware.
+
+| Implementation | Actual boundary | Decision for this driver |
+| --- | --- | --- |
+| [Trouble 0.7.0](https://github.com/embassy-rs/trouble/blob/e1aff18291e466474752a3beea75004325e6e0ad/README.md) | Async Rust BLE **Host** above HCI. It explicitly requires a Controller implementing `bt-hci`; its ESP32, nRF SDC, Pico W and STM32WB examples do not make those Controllers open. | Reuse after the open HCI Controller is real. Do not put timing, Link Layer or ESP32-S31 register policy in Trouble adapters. |
+| [`bt-hci` 0.9.0](https://github.com/embassy-rs/bt-hci/blob/d0f7558ff205313c2c473046adec0ffdc00d919b/README.md) | Packet types and Host-side traits for the standardized HCI boundary, not a Link Layer. | Keep as the direct in-process Controller contract. It cannot supply radio scheduling, packet ownership, ACL credits or LL procedures. |
+| [Zephyr open LE Controller](https://github.com/zephyrproject-rtos/zephyr/blob/08e13d28c3aed050b9742ea28d5d573f260c13a7/doc/services/connectivity/bluetooth/bluetooth-ctlr-arch.rst) | Vendor HAL, soft-real-time ticker, hard-deadline LLL, ULL roles/control procedures, HCI and fixed/lockless utility queues. Its documented priority model keeps radio-event handling above preparation, completion, role management and Host work. | Adopt the HAL/LLL/ULL/HCI decomposition and explicit prepare/abort/done flow. Replace Zephyr kernel threads and Mayfly contexts with typed ISR frontiers plus one executor-neutral async owner; do not move inter-frame deadlines into ordinary futures. |
+| [Apache NimBLE](https://github.com/apache/mynewt-nimble/blob/1e8ed60276f35a80ed4d4b4f8bb9d9c6fee53845/README.md) | A complete open Host and Controller with distinct `controller`, radio `drivers`, HCI `transport` and OS `porting` directories. Its published Controller hardware support does not include ESP32-S31. | Use its controller-only split, LL/HCI semantics and conformance tests as behavioral references. Do not port its NPL/event-task ABI or Nordic/Renesas radio shims as an S31 HAL. |
+| [Pinned `esp-radio` BLE connector](https://github.com/ermacv/esp-hal/blob/7f914782f5c689a74f37df83b89a0827d3800323/esp-radio/src/ble/controller/mod.rs) | Async `bt-hci` facade over BTDM initialization and symbols supplied by the `esp-wifi-sys` binary packages. | Useful interoperability and lifecycle evidence, but not a source-open Controller. Replacing only its connector or OS adapter would leave the closed Link Layer intact. |
+
+The resulting unit stack is larger than PAC -> HAL -> Link Layer -> HCI. The
+minimum dependency graph and publication gate for each unit are:
+
+| Unit | Responsibility | Current S31 state | Exit criterion |
+| --- | --- | --- | --- |
+| Register evidence and SVD | Address, field, access and transaction provenance | Partial but substantial; generated model is fail-closed | Every register used by the first vertical slice is reviewed and generated with no raw-address escape in upper layers. |
+| Restricted PAC | Affine peripheral ownership and finite MMIO operations | Cold ownership, scheduler prefix, full 50-operation HAL body, memory-pointer geometry and IRQ prefixes exist | DTM trace uses only typed operations and has exact rollback/quiescence edges. |
+| Platform/HAL lifecycle | Clocks, reset, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset is live; PHY/BTBB are disconnected; typed IRQ routes are blocked | One owner can power, route both IRQs, run and return cold without owner duplication. |
+| Controller timer and scheduler | Radio timebase, prepare/abort/doorbell/completion and collision policy | Command/status semantics absent | Virtual-time model plus register trace proves one scheduled event, cancellation and late/error handling. |
+| Packet memory dataplane | Static RX/TX/free/ready storage, DMA visibility and backpressure | Pointer encoding exists; list roles/layouts do not | Every buffer has an affine CPU/hardware state and is reclaimed on success, error, abort and shutdown. |
+| Lower Link Layer (LLL) | Channel/whitening/CRC/access address, hard ISR turnaround and one radio-event state machine | Absent | DTM TX/RX works first; then one advertising event executes without executor-latency dependence. |
+| Upper Link Layer (ULL) | Advertising/scanning/connection scheduling, SN/NESN/retry, supervision and LLCP | Absent | Legacy advertising, scanning and one peripheral connection pass deterministic virtual-clock tests and HIL. |
+| HCI Controller | Command/event table, capability reporting, ACL flow control and completed-packet credits | Bounded transport/bootstrap exists; operational Controller is absent | Only implemented LL features are advertised; all supported commands and ACL paths reach owned ULL state with bounded cancellation-safe queues. |
+| Host and application | L2CAP, ATT/GATT, GAP/SMP and application policy | Trouble bootstrap works in host tests only | Trouble Runner and a bounded GATT peripheral run through the same production Controller worker. |
+| Qualification | RF, protocol, concurrency, soak, teardown and negative evidence | Ledger is intentionally not ready | Dated HIL and conformance cells close each capability independently; interoperability alone is insufficient. |
+
+This order is bottom-up for evidence and hardware enablement, but interfaces
+are developed with vertical slices. DTM is the first slice because it closes
+PAC/HAL/timer/dataplane/LLL/HCI without prematurely implementing GAP or a
+connection. Legacy advertising is next, then scanning, one peripheral
+connection, ACL flow control and mandatory LLCP. Encryption, privacy, central
+role, extended features, low power and concurrent Wi-Fi remain independent
+later slices.
+
+## 1. Four-way classification
+
+Each observed step is assigned to one of four classes:
+
+1. **silicon-required**: clock, reset, PHY, baseband, timer, IRQ or memory
+   transaction that an independent Controller must reproduce;
+2. **open-controller replacement**: protocol, scheduling, queueing or HCI
+   behavior that belongs in the Rust Controller rather than the HAL;
+3. **profile-optional**: power, coexistence, diagnostics or extended feature
+   work that can be absent from the first declared standalone profile;
+4. **unresolved**: the public glue identifies a boundary, but current evidence
+   cannot safely split hardware requirement from vendor implementation.
+
+The classification is deliberately about ownership. A vendor function may
+contain work from more than one class and must then be decomposed before any
+production transition calls it equivalent.
+
+## 2. Init/deinit classification
+
+The public top-level init order is OSAL pool, log, external hooks,
+coexistence, clocks/reset, BTDM task, low-power state, HCI flow-control state,
+BLE stack and HCI transport. The open lifecycle must preserve only the
+hardware dependencies in this order; it must not reproduce the software
+container around them.
+
+| Vendor step | Class | Open-driver decision |
+| --- | --- | --- |
+| `ble_osal_elem_calc`, `btdm_osal_elem_mempool_init` | open-controller replacement | Do not port the object pool or FreeRTOS layouts. Use statically bounded Rust-owned queues, packet slots and intrusive/free-list state with explicit lifetimes. |
+| `btdm_log_init` | profile-optional | The default S31 wrapper is empty. Diagnostics may be added through compile-time logging without becoming a radio prerequisite. |
+| `btdm_external_init` | profile-optional at this level | The S31 wrapper is empty. Concrete BLE callbacks such as randomness or cryptography must be introduced only by the feature that consumes them. Heap/allocation callbacks are not required by silicon. |
+| `btdm_coex_init` | profile-optional for standalone; required for joint radio ownership | With software coexistence disabled, the public implementation is a set of no-op/default adapters. The first profile may own the radio exclusively and implement that declared standalone contract. Wi-Fi plus BLE requires a later shared arbiter and HIL. |
+| `btdm_lp_enable_clock` | silicon-required | Acquire the BT and BT-APB clock dependencies, pulse the BT MAC reset and establish the selected low-power timer source. These operations belong to platform/HAL typestates. |
+| `r_btdm_task_init` | unresolved composite | Do not port the task. Reviewed binary evidence shows finite hardware scheduler/IRQ initialization inside the boundary, mixed with event/list and OSAL setup. Recover and publish those transactions as separate HAL operations before replacing the task with the async Controller owner. |
+| `btdm_lp_init` | split | Publishing the measured low-power clock frequency to controller timing is silicon/controller-HAL work. FreeRTOS tickless callbacks, PM locks, light-sleep retention and wake registration are optional low-power features and are out of the always-awake profile. |
+| `r_btdm_hci_fc_env_init` | open-controller replacement | HCI ACL credits and completed-packet accounting are Controller state. Implement them in bounded Rust queues; no vendor flow-control environment is needed. |
+| `ble_stack_init` / `r_ble_controller_init` | unresolved composite, predominantly open-controller replacement | This is the closed BLE Controller: Link Layer, scheduling and command/event behavior must be replaced. Only separately recovered register, IRQ, timer and memory transactions may move into HAL. Completion of this vendor call is not an acceptable open typestate. |
+| `esp_ble_register_bb_funcs` | unresolved | This callback table may bridge hardware/platform helpers into the closed Link Layer. Recover call sites and effects before deciding which entries are silicon-required. Do not clone the ABI as the open architecture. |
+| duplicate-scan cache and public-address setup | open-controller replacement | These are Link Layer/HCI state. The first DTM slice needs neither; later advertising/scanning owns address and duplicate-filter policy. |
+| `ble_msys_init` | open-controller replacement | Vendor mbufs are transport/storage policy. Replace with bounded, typed packet ownership shared by LLL, ULL and HCI. |
+| `hci_transport_init` | open-controller replacement | UART/VHCI selection and callback registration are not radio requirements. The open in-process `bt-hci::ExternalController` channel is the native path; an H4/UART adapter can remain optional. |
+
+Deinitialization is the reverse ownership proof, not merely a list of cleanup
+calls. The current open path must remain fail-stop after the first unpaired
+powered mutation until IRQ quiescence, scheduled-command cancellation, packet
+reclamation, BTBB release, PHY release and clock release are all proven.
+
+## 3. Enable/disable classification
+
+The public enable path first executes `btdm_lp_reset(true)`. On S31 that
+enables the Bluetooth PHY client and only then enables the shared BT baseband.
+This establishes a mandatory silicon order:
+
+```text
+clock/reset owner -> common PHY owner -> BTBB owner -> BLE radio engine
+```
+
+The corresponding disable path first stops the Controller software, then
+disables BLE/coexistence, releases BTBB and finally releases the PHY client.
+An open implementation therefore needs a quiesced hardware state before either
+shared hardware lease can be dropped.
+
+| Vendor step | Class | Open-driver decision |
+| --- | --- | --- |
+| `esp_phy_enable(PHY_MODEM_BT)` | silicon-required | Reuse the common open PHY transition and retain the returned owner for exact last-client release. |
+| `esp_btbb_enable()` | silicon-required | Run the reviewed finite first-user BTBB transaction only after common PHY completion; retain independent shared ownership. |
+| `btdm_coex_enable` | profile-optional for standalone | A no-op success is source-correct only while the product contract excludes simultaneous Wi-Fi. |
+| `ble_stack_enable` | unresolved composite | Replace protocol activation; recover any remaining radio-engine activation transaction separately. |
+| `r_btdm_hci_fc_enable` | open-controller replacement | Start a fresh bounded HCI credit epoch in Rust. |
+| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline interrupt masks, controller-output strobes and two CPU-route policies are recovered as separate restricted-PAC/platform contracts. Replace the RTOS task with one affine async Controller owner; typed CPU route installation, dynamic interrupt meanings, timer/scheduler activation and event-to-work classification remain unresolved. |
+| `r_btdm_task_disable` and `ble_stack_disable` | unresolved composite | Define a stop barrier: mask sources, cancel/abort commands, acknowledge residual status, reclaim every packet, then expose a quiesced owner. |
+
+The public OSAL demonstrates that the vendor implementation uses FreeRTOS
+queues, ISR variants and an RTOS task. This is evidence about its software
+architecture, not evidence that ESP32-S31 requires an RTOS. The hardware
+contract is the ordered interrupt/status/timer/memory interaction underneath
+those adapters.
+
+## 4. Target open architecture
+
+The target path is:
+
+```text
+SVD / restricted PAC
+  -> shared clock, reset, PHY and BTBB leases
+  -> BLE Controller HAL: primary/NRT IRQs + timer/scheduler + packet memory + radio command
+  -> Lower Link Layer (hard-deadline radio-event engine)
+  -> Upper Link Layer and LL control procedures
+  -> bounded HCI command/event/ACL worker
+  -> bt-hci::ExternalController
+  -> Trouble Host
+```
+
+The sole Controller owner is async and executor-neutral. Both same-core,
+level-3 handlers serialize access to one staged clear-bank owner; each handler
+only acknowledges/classifies a bounded hardware snapshot and wakes the async
+owner. Hard
+radio deadlines, including inter-frame turnaround, stay in the hardware
+scheduler and the minimal lower-link-layer interrupt path; they are not
+delegated to arbitrary executor latency. No mutex shared with the Host may be
+held across a radio deadline.
+
+Trouble starts above HCI. It can validate and consume the Controller boundary,
+but it cannot replace the missing PHY, scheduler, packet engine or Link Layer.
+The existing software bootstrap proves transport/API compatibility only.
+
+## 5. Evidence-bounded route to first on-air proof
+
+Direct Test Mode is the first physical vertical slice because it exercises the
+radio without advertising state, connection timing, ACL flow control or LLCP.
+The implementation order is:
+
+1. finish restricted PAC access for scheduler command/status words, controller
+   timer and memory-list pointer geometry; both interrupt snapshot modes,
+   baseline setup/teardown masks, route identities and policies are finite
+   components, but typed CPU route installation and dynamic bit semantics are
+   still absent, so this is not a live interrupt epoch;
+2. recover a hardware-only init transition from the composite task/BLE init
+   functions, with read-back or bounded postconditions and exact rollback up
+   to every fallible edge;
+3. define static packet storage and prove CPU/hardware ownership transitions;
+4. route both real Controller interrupts into the shared staged owner, define
+   the synchronous hard-handler versus async-bottom-half boundary, and prove no
+   lost or duplicated work across mask, acknowledge, wake and re-arm;
+5. implement one scheduled 1M transmitter-test command, then receiver-test,
+   then test-end/result collection;
+6. expose only the matching LE Transmitter Test, LE Receiver Test and LE Test
+   End HCI commands through the existing dispatcher;
+7. qualify register traces first, then HIL frequency/channel/PDU/count results,
+   and keep the ledger fail-closed until dated evidence exists.
+
+The current sixteen-entry scheduler-table low-bit clear is only an observed
+initialization prefix. It neither proves the meaning of those entries nor
+establishes that the vendor event/list objects are hardware requirements. It
+must not be promoted to `ControllerInitialized` until the subsequent hardware
+command, IRQ and storage contracts are known.
+
+After DTM, the next growth order is legacy non-connectable advertising,
+scanning, connectable advertising plus one peripheral connection, bounded ACL
+flow control, mandatory LL control procedures, and only then encryption,
+privacy, central role, extended PHY/advertising, ISO, low power and concurrent
+coexistence. Each step adds HCI support only after its Link Layer owner is
+live.
+
+## 6. Blocking unknowns
+
+The decisive gaps are not HCI packet syntax. They are:
+
+- dynamic controller interrupt bit meanings, callback multiplicity and
+  acknowledgement/re-arm ordering; the two source identities, level-3 policy,
+  baseline masks and shared clear-bank prefix are no longer unknown, but typed
+  platform routing is blocked by the incomplete external PAC enum;
+- scheduler command opcodes, completion/error status and timebase semantics;
+- the roles and element layouts of the three compressed-pointer memory-list
+  pairs, including alignment and ownership barriers;
+- BLE packet-engine configuration for channel, whitening, CRC, access address,
+  TX/RX mode and result/RSSI extraction;
+- abort/cancel behavior and quiescence proof for powered teardown;
+- the hardware/platform subset hidden behind BB callback registration and the
+  composite task/BLE initialization entries.
+
+Until those gaps are closed by reviewed public sources, fail-closed vendor
+comparison or HIL, the repository can truthfully claim an open PAC/HAL
+foundation and HCI-compatible software boundary, but not an open Bluetooth
+Controller driver.

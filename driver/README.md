@@ -23,10 +23,28 @@ ESP32-S31 Embassy Wi-Fi runner (sole PAC/DMA/ISR owner)
     └────────────────┘
 ```
 
+The independent Bluetooth LE direction uses a Host/Controller boundary rather
+than embedding Host protocols in the chip crate:
+
+```text
+application -> Trouble Host -> bt-hci -> portable LE Controller
+                                      -> ESP32-S31 BLE scheduler/PHY/PAC
+```
+
+Only the bounded bidirectional HCI transport, conservative Host-bootstrap
+dispatcher, its executor-neutral bootstrap worker and hardware-foundation
+pieces exist today. A real Trouble Runner crosses that production software
+worker in host tests, but no ESP32-S31 Controller worker or on-air operation
+exists. The
+exact live, partial, fail-closed and absent scopes are recorded in the
+[ESP32-S31 Bluetooth LE feature frontier](chips/esp32s31/bluetooth/FEATURES.md).
+
 The source tree follows the ownership boundary above. There is no compatibility
 module for the former vendor-derived `wdev` naming.
 
 - `radio`: public requests and typed role lifecycle.
+- `bluetooth/hci`: portable allocation-free async typed HCI transport, closed
+  pre-Link-Layer Host bootstrap and cancellation-safe bootstrap worker.
 - `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.
 - `chips/esp32s31/{pac,registers,hal,phy}`: chip RF/register implementation.
 - `chips/esp32s31/ieee802154/{dma,irq,mac}`: non-operational fixed-frame
@@ -135,7 +153,10 @@ Its isolated DMA and IRQ leaves likewise own storage and pure semantics, not a
 live hardware route. The isolated MAC leaf describes non-executable start
 intents and validates already sampled event batches; it cannot issue a command
 or acknowledge hardware status. Bluetooth/BLE likewise have no operational
-runtime service.
+runtime service. Its source-owned affine HCI transport provides bounded async
+Host/Controller handoff. Its closed bootstrap table handles only non-radio Host
+configuration and rejects Link-Layer commands; neither is ESP32-S31 Controller
+or Link Layer readiness.
 
 Internal typed PAC/HAL/LMAC transactions exist for the reviewed Wi-Fi-side
 PTI/request leaves and COEX hardware timers; they deliberately remain below the

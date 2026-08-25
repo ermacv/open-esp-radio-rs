@@ -7,9 +7,9 @@
 #![deny(unsafe_code)]
 
 use crate::{
-    BluetoothInterruptRegisters, BluetoothMemoryListPointerImage, BluetoothMemoryListSelector,
-    BluetoothMemoryListSlot, MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters,
-    RadioHardware, svd,
+    BluetoothControllerHalInitConfig, BluetoothInterruptRegisters, BluetoothMemoryListPointerImage,
+    BluetoothMemoryListSelector, BluetoothMemoryListSlot, MacInterruptRegisters, MacInterruptSetup,
+    MacPowerInterruptRegisters, RadioHardware, svd,
 };
 
 use crate::bluetooth_phy_init::{BluetoothPhyEnvironmentAddress, BluetoothPhyRegisterInitInputs};
@@ -53,8 +53,10 @@ pub fn mac_power_interrupt_registers() -> MacPowerInterruptRegisters {
 /// compiled probe image.
 ///
 /// Ordinary production code cannot call this constructor: the validation
-/// module is absent unless `validation-probes` is enabled. The production
-/// cold owner therefore still has no transition to active Bluetooth MMIO.
+/// module is absent unless `validation-probes` is enabled. Production can
+/// reach the same register owner only by consuming inactive ownership through
+/// baseline prepare and explicit shared-ISR staging; this isolated probe
+/// deliberately bypasses that lifecycle to compare one bounded transaction.
 #[inline(always)]
 pub fn bluetooth_interrupt_registers() -> BluetoothInterruptRegisters {
     let RadioHardware {
@@ -92,6 +94,32 @@ pub unsafe fn initialize_bluetooth_baseband_v2(gain_parameter: u8) {
     let (mut task, interrupts) = cold.separate_interrupt_owner();
     unsafe {
         task.initialize_baseband_v2_arg_one(gain_parameter);
+    }
+    let _powered_owners = (task, interrupts);
+}
+
+/// Execute the complete recovered BTDM controller HAL-init body inside one
+/// isolated comparison image.
+///
+/// This calls the same hidden PAC transaction used by a future production
+/// lifecycle and retains both Bluetooth owners. It neither configures a CPU
+/// interrupt route nor claims controller, Link-Layer or HCI readiness.
+///
+/// # Safety
+///
+/// The caller must model enabled Bluetooth clocks, completed common PHY and
+/// BTBB initialization, quiescent controller software queues and an inactive
+/// retained interrupt bank. No other radio owner may be used afterwards.
+#[allow(
+    unsafe_code,
+    reason = "the validation bridge preserves the complete HAL-init lifecycle prerequisites"
+)]
+#[inline(always)]
+pub unsafe fn initialize_bluetooth_controller_hal(config: BluetoothControllerHalInitConfig) {
+    let cold = RadioHardware::for_validation().into_bluetooth();
+    let (mut task, interrupts) = cold.separate_interrupt_owner();
+    unsafe {
+        task.initialize_controller_hal(config);
     }
     let _powered_owners = (task, interrupts);
 }

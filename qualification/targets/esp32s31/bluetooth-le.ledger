@@ -1,0 +1,313 @@
+# Machine-checked qualification roots for the source-only ESP32-S31 LE Controller.
+# Every current hardware and protocol gap is deliberate; no capability in this
+# initial ledger is on-air ready.
+ledger-version 2
+target esp32s31-bluetooth-le
+verification-project verification/vendor/targets/esp32s31/vendor-project.toml
+vendor-evidence-index verification/vendor/targets/esp32s31/evidence/vendor-evidence.json
+require-capability cold-ownership
+require-capability clock-reset-prerequisite
+require-capability controller-initialization
+require-capability common-phy-baseband
+require-capability interrupt-runtime
+require-capability controller-memory-lists
+require-capability hci-handoff-storage
+require-capability hci-bootstrap
+require-capability hci-bootstrap-worker
+require-capability packet-dataplane
+require-capability le-link-layer
+require-capability typed-hci-controller
+require-capability async-controller-runtime
+require-capability trouble-host-integration
+require-capability coexistence
+require-capability powered-teardown
+
+capability cold-ownership
+title Cold Bluetooth radio ownership
+scope Lossless protocol-neutral radio root roundtrip through the inactive exclusive Bluetooth route
+implementation complete
+host-proof covered
+hil-proof missing
+async-proof not-applicable
+owner driver/chips/esp32s31/bluetooth/src/resources.rs BluetoothPhysicalResources
+test driver/chips/esp32s31/bluetooth/src/resources.rs task_and_interrupt_owners_reunite_into_the_same_radio_root
+vendor-not-applicable source-ownership-contract
+gap hil cold-owner-hardware-roundtrip-missing
+
+capability clock-reset-prerequisite
+title Bluetooth controller clock and reset prerequisite
+scope Standalone main-XTAL low-power timer clock and reset transaction with semantic readback and rollback
+implementation complete
+host-proof covered
+hil-proof missing
+async-proof not-applicable
+owner driver/chips/esp32s31/bluetooth/src/clock.rs BluetoothClockedResources
+test driver/chips/esp32s31/bluetooth/src/clock.rs exact_clock_order_retains_both_owners_until_reverse_shutdown
+test driver/chips/esp32s31/bluetooth/src/clock.rs failed_readback_rolls_back_before_returning_owners
+vendor-anchor driver/adapters/esp-hal/esp32s31-radio-platform/README.md bt.c
+gap vendor clock-production-trace-not-release-eligible
+gap hil bluetooth-clock-readback-cell-missing
+
+capability controller-initialization
+title Complete LE Controller initialization
+scope Powered controller initialization through software events lists low-power task and HCI-ready ownership
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof partial
+owner driver/chips/esp32s31/bluetooth/src/scheduler.rs BluetoothSchedulerTableLowBitsCleared
+owner driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs BluetoothControllerHalInitConfig
+test driver/chips/esp32s31/bluetooth/src/scheduler.rs scheduler_prefix_consumes_reversible_clocks_and_arms_fail_stop
+test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs reviewed_profile_derives_all_runtime_images
+test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs complete_transaction_has_exact_prefix_and_thirty_two_lane_edges
+vendor-anchor verification/vendor/targets/esp32s31/README.md event/list
+depends-on clock-reset-prerequisite
+gap implementation hal-init-component-disconnected-by-event-list-low-power-ble-and-task-stages
+gap vendor complete-controller-init-production-trace-missing
+gap hil initialized-controller-cell-missing
+gap async controller-task-wake-contract-missing
+
+capability common-phy-baseband
+title Common PHY and Bluetooth baseband enable
+scope Ordered common PHY registration followed by the finite Bluetooth baseband initialization transaction
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof partial
+owner driver/chips/esp32s31/bluetooth/src/common_phy_state.rs BluetoothPhyInitialized
+owner driver/chips/esp32s31/bluetooth/src/baseband.rs BluetoothBasebandInitialized
+test driver/chips/esp32s31/bluetooth/src/baseband.rs transition_consumes_terminal_phy_projection_and_retains_reports
+vendor-anchor verification/vendor/targets/esp32s31/README.md bt_bb_v2_init_cmplx(1)
+depends-on controller-initialization
+gap implementation enable-components-disconnected-from-controller-init
+gap vendor common-phy-baseband-composed-trace-missing
+gap hil bluetooth-phy-baseband-cell-missing
+gap async complete-controller-prerequisite-owner-missing
+
+capability interrupt-runtime
+title Live Controller interrupt epoch
+scope Controller masks CPU route bounded hard-handler classification acknowledgement and task wake
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof partial
+owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothInterruptObservation
+owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothPrimaryInterruptObservation
+owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothInterruptOutputPrepared
+owner driver/chips/esp32s31/bluetooth/src/interrupt.rs BluetoothCpuInterruptRoutePolicy
+test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs observation_preserves_both_opaque_banks
+test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_observation_preserves_both_masked_banks
+test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_baseline_masks_are_exact_complete_helper_images
+test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_prepare_preserves_clear_enable_strobe_order
+test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_release_preserves_strobe_then_mask_order
+test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs interrupt_control_geometry_matches_the_three_reviewed_strobes
+test driver/chips/esp32s31/bluetooth/src/interrupt.rs primary_route_is_source_124_level_three_and_iram
+test driver/chips/esp32s31/bluetooth/src/interrupt.rs nrt_route_is_distinct_source_133_without_iram_request
+vendor-anchor verification/vendor/targets/esp32s31/README.md 0x00008000
+depends-on controller-initialization
+gap implementation typed-primary-and-nrt-platform-routes-missing
+gap implementation dynamic-bit-classification-and-shared-clear-bank-dispatch-missing
+gap vendor complete-interrupt-production-trace-missing
+gap hil bluetooth-interrupt-epoch-cell-missing
+gap async callback-multiplicity-rearm-and-controller-wake-contract-missing
+
+capability controller-memory-lists
+title Controller packet-list ownership
+scope Typed RX TX free and ready list storage publication consumption and recovery
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof partial
+owner driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs BluetoothMemoryListSelector
+owner driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs BluetoothControllerSramAddress
+test driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs compressed_controller_address_rejects_unrepresentable_values
+test driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs memory_list_pairs_follow_the_reviewed_selector_geometry
+vendor-anchor verification/vendor/targets/esp32s31/README.md memory-list
+depends-on controller-initialization
+gap implementation list-role-layout-lifetime-and-recovery-missing
+gap vendor complete-list-lifecycle-production-trace-missing
+gap hil controller-list-publication-cell-missing
+gap async list-completion-wake-and-backpressure-missing
+
+capability hci-handoff-storage
+title Bounded bidirectional HCI handoff
+scope Affine allocation-free bidirectional transport with validation backpressure wake and cancellation-safe caller-buffer retry at the direct in-process HCI boundary
+implementation complete
+host-proof covered
+hil-proof missing
+async-proof bounded
+owner driver/bluetooth/hci/src/lib.rs ControllerToHostQueue
+owner driver/bluetooth/hci/src/channel.rs InProcessHciChannel
+owner driver/bluetooth/hci/src/channel.rs InProcessHciHostTransport
+owner driver/bluetooth/hci/src/channel.rs InProcessHciControllerEndpoint
+test driver/bluetooth/hci/src/lib.rs queue_preserves_fifo_and_decodes_through_bt_hci
+test driver/bluetooth/hci/src/lib.rs full_queue_never_overwrites_the_oldest_packet
+test driver/bluetooth/hci/src/lib.rs short_receive_buffer_retains_the_complete_oldest_packet
+test driver/bluetooth/hci/src/channel.rs typed_reset_and_event_cross_the_direct_hci_boundary
+test driver/bluetooth/hci/src/channel.rs both_async_directions_wake_without_polling_or_an_rtos
+test driver/bluetooth/hci/src/channel.rs cancelled_backpressure_waits_never_publish_a_packet
+test driver/bluetooth/hci/src/channel.rs external_controller_completes_a_command_via_the_same_event_loop
+test driver/bluetooth/hci/src/channel.rs async_queue_preserves_fifo_across_ring_wrap
+test driver/bluetooth/hci/src/channel.rs every_host_packet_header_rejects_declared_length_mismatch
+vendor-not-applicable portable-host-controller-storage
+gap hil hci-handoff-hardware-cell-missing
+
+capability hci-bootstrap
+title Conservative LE HCI Host bootstrap
+scope Closed Reset mask address buffer flow-control information and fail-closed unsupported-command semantics before any Link Layer or radio capability
+implementation complete
+host-proof covered
+hil-proof missing
+async-proof not-applicable
+owner driver/bluetooth/hci/src/bootstrap.rs LeControllerBootstrap
+owner driver/bluetooth/hci/src/bootstrap.rs BootstrapCommand
+owner driver/bluetooth/hci/src/bootstrap.rs BootstrapCommandCompleteEvent
+test driver/bluetooth/hci/src/bootstrap.rs trouble_no_security_bootstrap_and_conservative_extensions_are_supported
+test driver/bluetooth/hci/src/bootstrap.rs external_controller_exec_completes_from_bootstrap_dispatch
+test driver/bluetooth/hci/src/bootstrap.rs real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary
+test driver/bluetooth/hci/src/bootstrap.rs known_commands_are_disallowed_before_reset_and_malformed_input_never_mutates
+test driver/bluetooth/hci/src/bootstrap.rs capability_table_excludes_link_layer_and_optional_page_two_commands
+vendor-not-applicable portable-hci-bootstrap-policy
+depends-on hci-handoff-storage
+gap hil hci-bootstrap-hardware-cell-missing
+
+capability hci-bootstrap-worker
+title RTOS-free HCI bootstrap Controller worker
+scope Sole affine Controller endpoint with ordered async stop retained backpressured responses and terminal rejection of pre-Link-Layer Host data
+implementation complete
+host-proof covered
+hil-proof missing
+async-proof bounded
+owner driver/bluetooth/hci/src/worker.rs HciCommandWorker
+owner driver/bluetooth/hci/src/worker.rs BootstrapWorkerExit
+test driver/bluetooth/hci/src/worker.rs stop_wins_a_ready_tie_without_consuming_the_queued_command
+test driver/bluetooth/hci/src/worker.rs shutdown_retains_a_backpressured_response_and_resume_publishes_it_once
+test driver/bluetooth/hci/src/worker.rs acl_data_is_terminal_before_a_link_layer_owner_exists
+test driver/bluetooth/hci/src/bootstrap.rs real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary
+vendor-not-applicable portable-bootstrap-worker-lifecycle
+depends-on hci-handoff-storage
+depends-on hci-bootstrap
+gap hil hci-bootstrap-worker-hardware-cell-missing
+
+capability packet-dataplane
+title BLE packet TX and RX dataplane
+scope One bounded 1M PHY packet from owned storage through radio publication completion and receive recovery
+implementation missing
+host-proof missing
+hil-proof missing
+async-proof partial
+vendor-anchor verification/vendor/targets/esp32s31/README.md memory-list
+depends-on common-phy-baseband
+depends-on interrupt-runtime
+depends-on controller-memory-lists
+gap implementation tx-rx-scheduler-doorbell-and-completion-missing
+gap host packet-dataplane-host-model-missing
+gap vendor packet-dataplane-production-trace-missing
+gap hil direct-test-mode-rf-cell-missing
+gap async hard-deadline-to-bottom-half-contract-missing
+
+capability le-link-layer
+title Bluetooth LE Link Layer
+scope Legacy advertising scanning one peripheral connection reliability supervision and minimum LL control procedures
+implementation missing
+host-proof missing
+hil-proof missing
+async-proof partial
+vendor-anchor verification/vendor/targets/esp32s31/vendor-project.toml r_ble_controller_init
+depends-on packet-dataplane
+gap implementation advertising-scanning-connection-and-llcp-missing
+gap host virtual-clock-link-layer-tests-missing
+gap vendor link-layer-production-contracts-missing
+gap hil advertising-scanning-and-connection-cells-missing
+gap async connection-event-deadline-contract-missing
+
+capability typed-hci-controller
+title Typed bt-hci Controller implementation
+scope HCI command event ACL credit and error semantics for the implemented ESP32-S31 LE capability set
+implementation missing
+host-proof partial
+hil-proof missing
+async-proof partial
+test driver/bluetooth/hci/src/bootstrap.rs external_controller_exec_completes_from_bootstrap_dispatch
+test driver/bluetooth/hci/src/bootstrap.rs real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary
+vendor-anchor verification/vendor/targets/esp32s31/vendor-project.toml r_ble_hci_trans_init
+depends-on hci-handoff-storage
+depends-on hci-bootstrap
+depends-on hci-bootstrap-worker
+depends-on le-link-layer
+gap implementation controller-and-command-trait-implementations-missing
+gap host bootstrap-command-conformance-excludes-operational-hci-and-acl
+gap vendor hci-command-and-acl-production-contracts-missing
+gap hil external-hci-interoperability-cell-missing
+gap async command-response-and-acl-credit-wakes-missing
+
+capability async-controller-runtime
+title RTOS-free asynchronous Controller runtime
+scope Sole affine hardware owner bounded ISR handoff timer events run-to-quiescence and cancellation-safe shutdown
+implementation missing
+host-proof partial
+hil-proof missing
+async-proof partial
+test driver/bluetooth/hci/src/worker.rs stop_wins_a_ready_tie_without_consuming_the_queued_command
+test driver/bluetooth/hci/src/worker.rs shutdown_retains_a_backpressured_response_and_resume_publishes_it_once
+test driver/bluetooth/hci/src/worker.rs acl_data_is_terminal_before_a_link_layer_owner_exists
+vendor-anchor verification/vendor/targets/esp32s31/README.md controller-task
+depends-on interrupt-runtime
+depends-on packet-dataplane
+depends-on hci-bootstrap-worker
+gap implementation link-layer-runtime-and-embassy-hardware-owner-missing
+gap host bootstrap-worker-tests-have-no-virtual-time-link-layer-runtime
+gap vendor controller-task-order-and-event-contracts-missing
+gap hil controller-runtime-latency-and-soak-cells-missing
+gap async runtime-owner-and-bounded-wake-graph-missing
+
+capability trouble-host-integration
+title Trouble BLE Host integration
+scope Released Trouble peripheral Host runs through the direct typed HCI boundary without vendor Controller firmware or RTOS
+implementation missing
+host-proof covered
+hil-proof missing
+async-proof partial
+test driver/bluetooth/hci/src/lib.rs pinned_bt_hci_release_matches_trouble_controller_contract
+test driver/bluetooth/hci/src/bootstrap.rs trouble_no_security_bootstrap_and_conservative_extensions_are_supported
+test driver/bluetooth/hci/src/bootstrap.rs real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary
+vendor-not-applicable upstream-open-host-integration
+depends-on typed-hci-controller
+depends-on async-controller-runtime
+gap implementation production-trouble-runner-and-gatt-example-missing
+gap hil trouble-gatt-interoperability-cell-missing
+gap async trouble-runner-lifecycle-and-shutdown-missing
+
+capability coexistence
+title Standalone and Wi-Fi plus BLE coexistence
+scope Standalone Bluetooth registration hooks followed by bounded joint-radio arbitration without owning either controller lifecycle
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof partial
+owner driver/chips/esp32s31/coex/src/core.rs CoexCore
+owner driver/adapters/embassy/esp32s31-coex/src/lib.rs CoexOwner
+test driver/chips/esp32s31/coex/src/tests.rs request_programs_then_enables_and_release_disables
+test driver/adapters/embassy/esp32s31-coex/src/lib.rs single_owner_serializes_request_release_and_shutdown
+vendor-anchor verification/vendor/targets/esp32s31/README.md coexistence
+depends-on async-controller-runtime
+gap implementation bluetooth-lifecycle-hooks-and-wifi-platform-migration-missing
+gap vendor complete-standalone-and-joint-coex-contracts-missing
+gap hil standalone-and-wifi-bluetooth-coex-cells-missing
+gap async bluetooth-request-deadline-and-cancellation-missing
+
+capability powered-teardown
+title Powered Controller and last-owner PHY teardown
+scope Disable interrupts quiesce tasks and lists shut down baseband and PHY reverse clocks and recover the neutral radio owner
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof partial
+owner driver/chips/esp32s31/bluetooth/src/scheduler.rs BluetoothSchedulerTableLowBitsCleared
+test driver/chips/esp32s31/bluetooth/src/scheduler.rs scheduler_prefix_consumes_reversible_clocks_and_arms_fail_stop
+vendor-anchor verification/vendor/targets/esp32s31/README.md last-owner
+depends-on async-controller-runtime
+gap implementation powered-cleanup-and-cold-reconstruction-missing
+gap vendor complete-disable-deinit-production-trace-missing
+gap hil repeated-powered-roundtrip-and-fault-cells-missing
+gap async quiescence-deadline-and-terminal-disposition-missing

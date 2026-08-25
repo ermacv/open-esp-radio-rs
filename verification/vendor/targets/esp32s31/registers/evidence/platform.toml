@@ -18,6 +18,14 @@ id = "S31_REG_BASE"
 description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/soc/esp32s31/register/soc/reg_base.h, sha256 24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d. It names IEEE802154_REG_BASE as 0x20103000 and the surrounding HP-system, LP-system and LP-peripheral blocks. The same bytes were previously reviewed from esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80."
 
 [[sources]]
+id = "ESP_IDF_S31_INTERRUPT_SOURCES"
+description = "Official ESP-IDF commit aeab6dcfbeb44aba4b1f8ed102e3086172833153, components/soc/esp32s31/include/soc/interrupts.h, sha256 1a4f155b87090376b1a40ac62e19de344c7f10dc53d9b4451b66d545e9e4717d. The hardware source table assigns MODEM_BT_MAC to 124 and MODEM_BT_MAC_INT1 to 133. The identical file is also present at the public-source review commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe."
+
+[[sources]]
+id = "ESP_IDF_BTDM_OSAL_INTERRUPT_POLICY"
+description = "Official ESP-IDF commit aeab6dcfbeb44aba4b1f8ed102e3086172833153, components/bt/porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c, sha256 436d009f67fbe7c83fa367a6b80dbf87316727605e751febc03c5118a669b5c8. The complete public wrapper always requests interrupt level three, additionally requests IRAM only when the controller caller passes flags zero, and allocates on CONFIG_BT_CTRL_PINNED_TO_CORE through blocking IPC on multicore builds. FreeRTOS and IPC are replaceable platform mechanisms; source, priority, residency and same-core policy are the recovered contract."
+
+[[sources]]
 id = "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"
 description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/soc/esp32s31/register/soc/ieee802154_struct.h, sha256 da13c2bc78cd6ef35a4e54ddddf11ce48fda967746193f1a0ad03578a5881752. The public volatile esp_ieee802154_t declaration fixes register and field geometry through offset 0x1a0, but its TODO ZB-93 says the file still awaits generation from IEEE802154.csv; it therefore supports a selective partial model, not a claim that every word or access policy is complete."
 

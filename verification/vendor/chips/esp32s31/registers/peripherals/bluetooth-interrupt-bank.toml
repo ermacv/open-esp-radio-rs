@@ -46,7 +46,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IRQ_ENABLE_0"
-description = "First controller interrupt-enable bank. Complete users independently RMW the recorded source positions."
+description = "First controller interrupt-enable bank. Primary setup clears stale image 0x00008000 then ORs that baseline into this word; another complete helper independently controls 0x18200000."
 addressOffset = 0x54
 size = 32
 access = "read-write"
@@ -85,7 +85,7 @@ bitWidth = 2
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IRQ_CLEAR_0"
-description = "First controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_0 here as a complete word."
+description = "First controller interrupt-clear bank. Primary and NRT handlers copy their respective first-bank status images here as complete words."
 addressOffset = 0x58
 size = 32
 access = "write-only"
@@ -97,7 +97,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IRQ_STATUS_0"
-description = "First controller interrupt-status bank; complete HAL users read the full word."
+description = "First masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement."
 addressOffset = 0x5C
 size = 32
 access = "read-only"
@@ -108,7 +108,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IRQ_ENABLE_1"
-description = "Second controller interrupt-enable bank. Complete users independently RMW the recorded source positions."
+description = "Second controller interrupt-enable bank. Primary setup clears stale image 0x00001300 then ORs that baseline into this word; another complete helper independently controls bit 3."
 addressOffset = 0x60
 size = 32
 access = "read-write"
@@ -129,9 +129,13 @@ name = "SOURCE_6"
 bitOffset = 6
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "SOURCES_8_9"
+name = "SOURCE_8"
 bitOffset = 8
-bitWidth = 2
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "SOURCE_9"
+bitOffset = 9
+bitWidth = 1
 [[peripherals.registers.register.fields]]
 name = "SOURCE_12"
 bitOffset = 12
@@ -143,7 +147,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IRQ_CLEAR_1"
-description = "Second controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_1 here as a complete word."
+description = "Second controller interrupt-clear bank. Primary and NRT handlers copy their respective second-bank status images here as complete words."
 addressOffset = 0x64
 size = 32
 access = "write-only"
@@ -155,7 +159,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IRQ_STATUS_1"
-description = "Second controller interrupt-status bank; complete HAL users read the full word."
+description = "Second masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement."
 addressOffset = 0x68
 size = 32
 access = "read-only"
@@ -398,7 +402,14 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1.SOURCES_8_9"
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1.SOURCE_8"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1.SOURCE_9"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 provenance = "observed"
 accuracy = "exact"

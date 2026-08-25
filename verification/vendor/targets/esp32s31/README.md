@@ -110,11 +110,19 @@ verified sixteen-entry scheduler-table low-bit transaction, then stops. It
 does not skip the still-missing event/list, LP, BLE-stack and HCI init stages.
 The separately implemented common-PHY and finite `bt_bb_v2_init_cmplx(1)`
 components preserve their correct enable-stage order but are deliberately not
-reachable from that incomplete init frontier. Once the first powered MMIO
+reachable from that incomplete init frontier. The complete 50-operation BTDM
+HAL-init body is also implemented as a typed restricted-PAC component. Its
+runtime inputs are derived from the complete caller/setter/helper chain rather
+than a copied vendor config ABI, but it remains validation-only until the
+intervening controller and BLE lifecycle prerequisites exist. Once the first powered MMIO
 mutation occurs, every owner is retained fail-stop because complete rollback
-and last-owner PHY teardown remain unrecovered. The isolated interrupt
-transaction still exposes only two reviewed opaque status-to-clear words; it
-does not imply controller mask, CPU route, task or HCI readiness.
+and last-owner PHY teardown remain unrecovered. The interrupt slice now
+preserves two distinct vendor paths: primary source 124 samples masked status,
+NRT source 133 samples raw status, and both acknowledge through the same W1C
+clear banks. The primary baseline groups (`0x00008000`, `0x00001300`), exact
+prepare/release ordering, level-3 policies and shared owner staging are typed.
+Dynamic bit meanings, typed platform routing, task wake and HCI readiness are
+still absent; the pinned external ESP32-S31 PAC omits both source variants.
 
 The powered lifecycle is not ready yet, but its top-level S31 provenance is no
 longer missing. The authenticated local `libble_app.a` and
@@ -130,6 +138,15 @@ The next lifecycle slices must therefore implement and verify the remaining
 platform/OSAL, controller-task, interrupt-route, BLE-stack and HCI boundaries
 in outer vendor order, without exposing one premature monolithic powered
 capability.
+
+The pinned public-source classification of those lifecycle steps is recorded
+in
+[`analysis/bluetooth-controller-boundary.md`](analysis/bluetooth-controller-boundary.md).
+It separates silicon-required clock/PHY/BTBB/timer work from the closed
+Controller, RTOS/OSAL and HCI software that the Rust implementation must
+replace. Its verdict remains `INCOMPLETE`: the composite task and BLE init
+entries still hide interrupt, scheduler, packet-memory and radio-engine
+requirements.
 
 The standalone enable order is also a hard production contract:
 `btdm_lp_reset(true)` calls `esp_phy_enable(PHY_MODEM_BT)` before

@@ -7,6 +7,8 @@ use core::mem::ManuallyDrop;
 use open_esp_radio_esp32s31_hal::{
     BluetoothSharedPhyBorrow, SharedPhyHal, WifiBasebandEnableObservation,
 };
+#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 use open_esp_radio_esp32s31_pac::{
     BluetoothColdRegisters as PacBluetoothColdRegisters, RadioHardware,
 };
@@ -106,6 +108,34 @@ impl BluetoothTaskResources {
     #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
     pub(crate) fn clear_scheduler_table_low_bits(&mut self) {
         self.registers.clear_scheduler_table_low_bits();
+    }
+
+    /// Execute the complete reviewed controller HAL-init component.
+    ///
+    /// This bridge remains disconnected from ordinary production lifecycle
+    /// until event/list initialization, the BLE enable stages and IRQ routing
+    /// own the prerequisites between BTBB initialization and this transaction.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain every prerequisite documented by the PAC
+    /// transaction and must not infer controller or HCI readiness from return.
+    #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+    #[allow(
+        unsafe_code,
+        reason = "the unsafe bridge retains the PAC controller HAL-init prerequisites"
+    )]
+    #[allow(
+        dead_code,
+        reason = "the verified component awaits composition across the missing BLE lifecycle stages"
+    )]
+    pub(crate) unsafe fn initialize_controller_hal(
+        &mut self,
+        config: BluetoothControllerHalInitConfig,
+    ) {
+        unsafe {
+            self.registers.initialize_controller_hal(config);
+        }
     }
 
     /// Borrow the protocol-neutral radio PHY for one finite lower-layer scope.

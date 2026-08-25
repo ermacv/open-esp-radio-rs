@@ -28,6 +28,22 @@ pub extern "C" fn open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da()
     bank_0 ^ bank_1
 }
 
+/// Production-path probe for the primary BT MAC status/clear ISR prefix.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_btdm_primary_interrupt_trace_r_sym_bt_r9_gzfn_ubtn7k6m_htozbv() -> u32 {
+    let [bank_0, bank_1] =
+        open_esp_radio_esp32s31_bluetooth::validation::capture_primary_and_acknowledge_interrupts();
+    bank_0 ^ bank_1
+}
+
+/// Production-path probe for baseline clear/enable and output preparation.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_btdm_primary_interrupt_prepare_trace() {
+    open_esp_radio_esp32s31_bluetooth::validation::prepare_primary_interrupt_output();
+}
+
 /// Production-path probe for the finite scheduler-table MMIO transaction.
 ///
 /// The vendor event/list suffix is deliberately outside this entry's claim.
@@ -35,6 +51,19 @@ pub extern "C" fn open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da()
 #[inline(never)]
 pub extern "C" fn open_ble_scheduler_trace_r_sym_bt_x_puq_thli_eo5_v9xp_r7a_jr() {
     open_esp_radio_esp32s31_bluetooth::validation::clear_scheduler_table_low_bits();
+}
+
+/// Compiled production entry for the complete 50-operation BTDM controller
+/// HAL-init body under its exact standalone caller-derived profile.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_btdm_hal_init_trace_r_sym_bt_a_gdrujd2_mu_az_wyh75ba_r() {
+    // SAFETY: the comparison image models the recovered powered and quiescent
+    // prerequisites, retains the inactive IRQ owner, and performs no later
+    // radio operation.
+    unsafe {
+        open_esp_radio_esp32s31_bluetooth::validation::initialize_controller_hal_reviewed_standalone();
+    }
 }
 
 /// Production-path probe for the exact finite MMIO behavior of
@@ -199,6 +228,9 @@ pub fn retain_all_probes() {
     );
     core::hint::black_box(
         open_ble_scheduler_trace_r_sym_bt_x_puq_thli_eo5_v9xp_r7a_jr as *const (),
+    );
+    core::hint::black_box(
+        open_btdm_hal_init_trace_r_sym_bt_a_gdrujd2_mu_az_wyh75ba_r as *const (),
     );
     core::hint::black_box(open_btbb_v2_init_trace_r_sym_bt_bb_v2_init_cmplx_x1 as *const ());
     core::hint::black_box(open_phy_i2c_host_trace_phy_get_i2c_hostid_new as *const ());

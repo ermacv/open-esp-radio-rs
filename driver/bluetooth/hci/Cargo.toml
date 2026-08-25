@@ -1,0 +1,23 @@
+[package]
+name = "open-esp-radio-bluetooth-hci"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Allocation-free HCI boundary for open ESP radio Bluetooth controllers"
+
+[dependencies]
+# Trouble 0.7.0 depends on the 0.9 HCI contract. Keep this exact until an
+# explicit compatibility migration moves both sides together.
+bt-hci = "=0.9.0"
+embassy-futures = "0.1.2"
+embassy-sync = "0.8.0"
+embedded-io = "0.7.1"
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+trouble-host = { version = "=0.7.0", default-features = false, features = ["peripheral"] }
+
+[lints]
+workspace = true

@@ -35036,13 +35036,13 @@ pub mod bluetooth_controller_core {
         pub const fn operational_status_0324(&self) -> &OperationalStatus0324 {
             &self.operational_status_0324
         }
-        #[doc = "0x34c..0x354 - Two adjacent words each hold eight independently initialized two-bit lanes. The complete BTDM HAL loop proves the lane geometry and finite initialization sequence but not the hardware meaning of either the words or lane values."]
+        #[doc = "0x34c..0x354 - The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown."]
         #[inline(always)]
         pub const fn hal_init_slot_map(&self, n: usize) -> &HalInitSlotMap {
             &self.hal_init_slot_map[n]
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x34c..0x354 - Two adjacent words each hold eight independently initialized two-bit lanes. The complete BTDM HAL loop proves the lane geometry and finite initialization sequence but not the hardware meaning of either the words or lane values."]
+        #[doc = "0x34c..0x354 - The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown."]
         #[inline(always)]
         pub fn hal_init_slot_map_iter(&self) -> impl Iterator<Item = &HalInitSlotMap> {
             self.hal_init_slot_map.iter()
@@ -37323,132 +37323,132 @@ pub mod bluetooth_controller_core {
         #[doc = "`read()` method returns [`scan_hw_snapshot::R`](R) reader structure"]
         impl crate::Readable for ScanHwSnapshotSpec {}
     }
-    #[doc = "HAL_INIT_SLOT_MAP (rw) register accessor: Two adjacent words each hold eight independently initialized two-bit lanes. The complete BTDM HAL loop proves the lane geometry and finite initialization sequence but not the hardware meaning of either the words or lane values.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_slot_map::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_slot_map::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hal_init_slot_map`] module"]
+    #[doc = "HAL_INIT_SLOT_MAP (rw) register accessor: The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_slot_map::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_slot_map::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hal_init_slot_map`] module"]
     #[doc(alias = "HAL_INIT_SLOT_MAP")]
     pub type HalInitSlotMap = crate::Reg<hal_init_slot_map::HalInitSlotMapSpec>;
-    #[doc = "Two adjacent words each hold eight independently initialized two-bit lanes. The complete BTDM HAL loop proves the lane geometry and finite initialization sequence but not the hardware meaning of either the words or lane values."]
+    #[doc = "The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown."]
     pub mod hal_init_slot_map {
         #[doc = "Register `HAL_INIT_SLOT_MAP%s` reader"]
         pub type R = crate::R<HalInitSlotMapSpec>;
         #[doc = "Register `HAL_INIT_SLOT_MAP%s` writer"]
         pub type W = crate::W<HalInitSlotMapSpec>;
-        #[doc = "Field `SLOT_0` reader - "]
-        pub type Slot0R = crate::FieldReader;
-        #[doc = "Field `SLOT_0` writer - "]
-        pub type Slot0W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `SLOT_1` reader - "]
-        pub type Slot1R = crate::FieldReader;
-        #[doc = "Field `SLOT_1` writer - "]
-        pub type Slot1W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `SLOT_2` reader - "]
-        pub type Slot2R = crate::FieldReader;
-        #[doc = "Field `SLOT_2` writer - "]
-        pub type Slot2W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `SLOT_3` reader - "]
-        pub type Slot3R = crate::FieldReader;
-        #[doc = "Field `SLOT_3` writer - "]
-        pub type Slot3W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `SLOT_4` reader - "]
-        pub type Slot4R = crate::FieldReader;
-        #[doc = "Field `SLOT_4` writer - "]
-        pub type Slot4W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `SLOT_5` reader - "]
-        pub type Slot5R = crate::FieldReader;
-        #[doc = "Field `SLOT_5` writer - "]
-        pub type Slot5W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `SLOT_6` reader - "]
-        pub type Slot6R = crate::FieldReader;
-        #[doc = "Field `SLOT_6` writer - "]
-        pub type Slot6W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `SLOT_7` reader - "]
-        pub type Slot7R = crate::FieldReader;
-        #[doc = "Field `SLOT_7` writer - "]
-        pub type Slot7W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `LANE_0` reader - "]
+        pub type Lane0R = crate::FieldReader;
+        #[doc = "Field `LANE_0` writer - "]
+        pub type Lane0W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LANE_1` reader - "]
+        pub type Lane1R = crate::FieldReader;
+        #[doc = "Field `LANE_1` writer - "]
+        pub type Lane1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LANE_2` reader - "]
+        pub type Lane2R = crate::FieldReader;
+        #[doc = "Field `LANE_2` writer - "]
+        pub type Lane2W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LANE_3` reader - "]
+        pub type Lane3R = crate::FieldReader;
+        #[doc = "Field `LANE_3` writer - "]
+        pub type Lane3W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LANE_4` reader - "]
+        pub type Lane4R = crate::FieldReader;
+        #[doc = "Field `LANE_4` writer - "]
+        pub type Lane4W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LANE_5` reader - "]
+        pub type Lane5R = crate::FieldReader;
+        #[doc = "Field `LANE_5` writer - "]
+        pub type Lane5W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LANE_6` reader - "]
+        pub type Lane6R = crate::FieldReader;
+        #[doc = "Field `LANE_6` writer - "]
+        pub type Lane6W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LANE_7` reader - "]
+        pub type Lane7R = crate::FieldReader;
+        #[doc = "Field `LANE_7` writer - "]
+        pub type Lane7W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         impl R {
-            #[doc = "Bits 0:1"]
+            #[doc = "Bits 0:3"]
             #[inline(always)]
-            pub fn slot_0(&self) -> Slot0R {
-                Slot0R::new((self.bits & 3) as u8)
+            pub fn lane_0(&self) -> Lane0R {
+                Lane0R::new((self.bits & 0x0f) as u8)
             }
-            #[doc = "Bits 2:3"]
+            #[doc = "Bits 4:7"]
             #[inline(always)]
-            pub fn slot_1(&self) -> Slot1R {
-                Slot1R::new(((self.bits >> 2) & 3) as u8)
+            pub fn lane_1(&self) -> Lane1R {
+                Lane1R::new(((self.bits >> 4) & 0x0f) as u8)
             }
-            #[doc = "Bits 4:5"]
+            #[doc = "Bits 8:11"]
             #[inline(always)]
-            pub fn slot_2(&self) -> Slot2R {
-                Slot2R::new(((self.bits >> 4) & 3) as u8)
+            pub fn lane_2(&self) -> Lane2R {
+                Lane2R::new(((self.bits >> 8) & 0x0f) as u8)
             }
-            #[doc = "Bits 6:7"]
+            #[doc = "Bits 12:15"]
             #[inline(always)]
-            pub fn slot_3(&self) -> Slot3R {
-                Slot3R::new(((self.bits >> 6) & 3) as u8)
+            pub fn lane_3(&self) -> Lane3R {
+                Lane3R::new(((self.bits >> 12) & 0x0f) as u8)
             }
-            #[doc = "Bits 8:9"]
+            #[doc = "Bits 16:19"]
             #[inline(always)]
-            pub fn slot_4(&self) -> Slot4R {
-                Slot4R::new(((self.bits >> 8) & 3) as u8)
+            pub fn lane_4(&self) -> Lane4R {
+                Lane4R::new(((self.bits >> 16) & 0x0f) as u8)
             }
-            #[doc = "Bits 10:11"]
+            #[doc = "Bits 20:23"]
             #[inline(always)]
-            pub fn slot_5(&self) -> Slot5R {
-                Slot5R::new(((self.bits >> 10) & 3) as u8)
+            pub fn lane_5(&self) -> Lane5R {
+                Lane5R::new(((self.bits >> 20) & 0x0f) as u8)
             }
-            #[doc = "Bits 12:13"]
+            #[doc = "Bits 24:27"]
             #[inline(always)]
-            pub fn slot_6(&self) -> Slot6R {
-                Slot6R::new(((self.bits >> 12) & 3) as u8)
+            pub fn lane_6(&self) -> Lane6R {
+                Lane6R::new(((self.bits >> 24) & 0x0f) as u8)
             }
-            #[doc = "Bits 14:15"]
+            #[doc = "Bits 28:31"]
             #[inline(always)]
-            pub fn slot_7(&self) -> Slot7R {
-                Slot7R::new(((self.bits >> 14) & 3) as u8)
+            pub fn lane_7(&self) -> Lane7R {
+                Lane7R::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:1"]
+            #[doc = "Bits 0:3"]
             #[inline(always)]
-            pub fn slot_0(&mut self) -> Slot0W<'_, HalInitSlotMapSpec> {
-                Slot0W::new(self, 0)
+            pub fn lane_0(&mut self) -> Lane0W<'_, HalInitSlotMapSpec> {
+                Lane0W::new(self, 0)
             }
-            #[doc = "Bits 2:3"]
+            #[doc = "Bits 4:7"]
             #[inline(always)]
-            pub fn slot_1(&mut self) -> Slot1W<'_, HalInitSlotMapSpec> {
-                Slot1W::new(self, 2)
+            pub fn lane_1(&mut self) -> Lane1W<'_, HalInitSlotMapSpec> {
+                Lane1W::new(self, 4)
             }
-            #[doc = "Bits 4:5"]
+            #[doc = "Bits 8:11"]
             #[inline(always)]
-            pub fn slot_2(&mut self) -> Slot2W<'_, HalInitSlotMapSpec> {
-                Slot2W::new(self, 4)
+            pub fn lane_2(&mut self) -> Lane2W<'_, HalInitSlotMapSpec> {
+                Lane2W::new(self, 8)
             }
-            #[doc = "Bits 6:7"]
+            #[doc = "Bits 12:15"]
             #[inline(always)]
-            pub fn slot_3(&mut self) -> Slot3W<'_, HalInitSlotMapSpec> {
-                Slot3W::new(self, 6)
+            pub fn lane_3(&mut self) -> Lane3W<'_, HalInitSlotMapSpec> {
+                Lane3W::new(self, 12)
             }
-            #[doc = "Bits 8:9"]
+            #[doc = "Bits 16:19"]
             #[inline(always)]
-            pub fn slot_4(&mut self) -> Slot4W<'_, HalInitSlotMapSpec> {
-                Slot4W::new(self, 8)
+            pub fn lane_4(&mut self) -> Lane4W<'_, HalInitSlotMapSpec> {
+                Lane4W::new(self, 16)
             }
-            #[doc = "Bits 10:11"]
+            #[doc = "Bits 20:23"]
             #[inline(always)]
-            pub fn slot_5(&mut self) -> Slot5W<'_, HalInitSlotMapSpec> {
-                Slot5W::new(self, 10)
+            pub fn lane_5(&mut self) -> Lane5W<'_, HalInitSlotMapSpec> {
+                Lane5W::new(self, 20)
             }
-            #[doc = "Bits 12:13"]
+            #[doc = "Bits 24:27"]
             #[inline(always)]
-            pub fn slot_6(&mut self) -> Slot6W<'_, HalInitSlotMapSpec> {
-                Slot6W::new(self, 12)
+            pub fn lane_6(&mut self) -> Lane6W<'_, HalInitSlotMapSpec> {
+                Lane6W::new(self, 24)
             }
-            #[doc = "Bits 14:15"]
+            #[doc = "Bits 28:31"]
             #[inline(always)]
-            pub fn slot_7(&mut self) -> Slot7W<'_, HalInitSlotMapSpec> {
-                Slot7W::new(self, 14)
+            pub fn lane_7(&mut self) -> Lane7W<'_, HalInitSlotMapSpec> {
+                Lane7W::new(self, 28)
             }
         }
-        #[doc = "Two adjacent words each hold eight independently initialized two-bit lanes. The complete BTDM HAL loop proves the lane geometry and finite initialization sequence but not the hardware meaning of either the words or lane values.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_slot_map::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_slot_map::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_slot_map::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_slot_map::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HalInitSlotMapSpec;
         impl crate::RegisterSpec for HalInitSlotMapSpec {
             type Ux = u32;
@@ -37745,32 +37745,32 @@ pub mod bluetooth_interrupt_bank {
         pub const fn irq_control_2(&self) -> &IrqControl2 {
             &self.irq_control_2
         }
-        #[doc = "0x54 - First controller interrupt-enable bank. Complete users independently RMW the recorded source positions."]
+        #[doc = "0x54 - First controller interrupt-enable bank. Primary setup clears stale image 0x00008000 then ORs that baseline into this word; another complete helper independently controls 0x18200000."]
         #[inline(always)]
         pub const fn irq_enable_0(&self) -> &IrqEnable0 {
             &self.irq_enable_0
         }
-        #[doc = "0x58 - First controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_0 here as a complete word."]
+        #[doc = "0x58 - First controller interrupt-clear bank. Primary and NRT handlers copy their respective first-bank status images here as complete words."]
         #[inline(always)]
         pub const fn irq_clear_0(&self) -> &IrqClear0 {
             &self.irq_clear_0
         }
-        #[doc = "0x5c - First controller interrupt-status bank; complete HAL users read the full word."]
+        #[doc = "0x5c - First masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement."]
         #[inline(always)]
         pub const fn irq_status_0(&self) -> &IrqStatus0 {
             &self.irq_status_0
         }
-        #[doc = "0x60 - Second controller interrupt-enable bank. Complete users independently RMW the recorded source positions."]
+        #[doc = "0x60 - Second controller interrupt-enable bank. Primary setup clears stale image 0x00001300 then ORs that baseline into this word; another complete helper independently controls bit 3."]
         #[inline(always)]
         pub const fn irq_enable_1(&self) -> &IrqEnable1 {
             &self.irq_enable_1
         }
-        #[doc = "0x64 - Second controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_1 here as a complete word."]
+        #[doc = "0x64 - Second controller interrupt-clear bank. Primary and NRT handlers copy their respective second-bank status images here as complete words."]
         #[inline(always)]
         pub const fn irq_clear_1(&self) -> &IrqClear1 {
             &self.irq_clear_1
         }
-        #[doc = "0x68 - Second controller interrupt-status bank; complete HAL users read the full word."]
+        #[doc = "0x68 - Second masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement."]
         #[inline(always)]
         pub const fn irq_status_1(&self) -> &IrqStatus1 {
             &self.irq_status_1
@@ -37879,10 +37879,10 @@ pub mod bluetooth_interrupt_bank {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "IRQ_ENABLE_0 (rw) register accessor: First controller interrupt-enable bank. Complete users independently RMW the recorded source positions.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_enable_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_enable_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_enable_0`] module"]
+    #[doc = "IRQ_ENABLE_0 (rw) register accessor: First controller interrupt-enable bank. Primary setup clears stale image 0x00008000 then ORs that baseline into this word; another complete helper independently controls 0x18200000.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_enable_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_enable_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_enable_0`] module"]
     #[doc(alias = "IRQ_ENABLE_0")]
     pub type IrqEnable0 = crate::Reg<irq_enable_0::IrqEnable0Spec>;
-    #[doc = "First controller interrupt-enable bank. Complete users independently RMW the recorded source positions."]
+    #[doc = "First controller interrupt-enable bank. Primary setup clears stale image 0x00008000 then ORs that baseline into this word; another complete helper independently controls 0x18200000."]
     pub mod irq_enable_0 {
         #[doc = "Register `IRQ_ENABLE_0` reader"]
         pub type R = crate::R<IrqEnable0Spec>;
@@ -38004,7 +38004,7 @@ pub mod bluetooth_interrupt_bank {
                 Sources27_28W::new(self, 27)
             }
         }
-        #[doc = "First controller interrupt-enable bank. Complete users independently RMW the recorded source positions.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_enable_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_enable_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "First controller interrupt-enable bank. Primary setup clears stale image 0x00008000 then ORs that baseline into this word; another complete helper independently controls 0x18200000.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_enable_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_enable_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IrqEnable0Spec;
         impl crate::RegisterSpec for IrqEnable0Spec {
             type Ux = u32;
@@ -38016,10 +38016,10 @@ pub mod bluetooth_interrupt_bank {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "IRQ_CLEAR_0 (w) register accessor: First controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_0 here as a complete word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_0::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_clear_0`] module"]
+    #[doc = "IRQ_CLEAR_0 (w) register accessor: First controller interrupt-clear bank. Primary and NRT handlers copy their respective first-bank status images here as complete words.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_0::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_clear_0`] module"]
     #[doc(alias = "IRQ_CLEAR_0")]
     pub type IrqClear0 = crate::Reg<irq_clear_0::IrqClear0Spec>;
-    #[doc = "First controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_0 here as a complete word."]
+    #[doc = "First controller interrupt-clear bank. Primary and NRT handlers copy their respective first-bank status images here as complete words."]
     pub mod irq_clear_0 {
         #[doc = "Register `IRQ_CLEAR_0` writer"]
         pub type W = crate::W<IrqClear0Spec>;
@@ -38032,7 +38032,7 @@ pub mod bluetooth_interrupt_bank {
                 PendingBitsW::new(self, 0)
             }
         }
-        #[doc = "First controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_0 here as a complete word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "First controller interrupt-clear bank. Primary and NRT handlers copy their respective first-bank status images here as complete words.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IrqClear0Spec;
         impl crate::RegisterSpec for IrqClear0Spec {
             type Ux = u32;
@@ -38043,10 +38043,10 @@ pub mod bluetooth_interrupt_bank {
             const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
         }
     }
-    #[doc = "IRQ_STATUS_0 (r) register accessor: First controller interrupt-status bank; complete HAL users read the full word.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_status_0`] module"]
+    #[doc = "IRQ_STATUS_0 (r) register accessor: First masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_0::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_status_0`] module"]
     #[doc(alias = "IRQ_STATUS_0")]
     pub type IrqStatus0 = crate::Reg<irq_status_0::IrqStatus0Spec>;
-    #[doc = "First controller interrupt-status bank; complete HAL users read the full word."]
+    #[doc = "First masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement."]
     pub mod irq_status_0 {
         #[doc = "Register `IRQ_STATUS_0` reader"]
         pub type R = crate::R<IrqStatus0Spec>;
@@ -38059,7 +38059,7 @@ pub mod bluetooth_interrupt_bank {
                 PendingBitsR::new(self.bits)
             }
         }
-        #[doc = "First controller interrupt-status bank; complete HAL users read the full word.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "First masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IrqStatus0Spec;
         impl crate::RegisterSpec for IrqStatus0Spec {
             type Ux = u32;
@@ -38067,10 +38067,10 @@ pub mod bluetooth_interrupt_bank {
         #[doc = "`read()` method returns [`irq_status_0::R`](R) reader structure"]
         impl crate::Readable for IrqStatus0Spec {}
     }
-    #[doc = "IRQ_ENABLE_1 (rw) register accessor: Second controller interrupt-enable bank. Complete users independently RMW the recorded source positions.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_enable_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_enable_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_enable_1`] module"]
+    #[doc = "IRQ_ENABLE_1 (rw) register accessor: Second controller interrupt-enable bank. Primary setup clears stale image 0x00001300 then ORs that baseline into this word; another complete helper independently controls bit 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_enable_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_enable_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_enable_1`] module"]
     #[doc(alias = "IRQ_ENABLE_1")]
     pub type IrqEnable1 = crate::Reg<irq_enable_1::IrqEnable1Spec>;
-    #[doc = "Second controller interrupt-enable bank. Complete users independently RMW the recorded source positions."]
+    #[doc = "Second controller interrupt-enable bank. Primary setup clears stale image 0x00001300 then ORs that baseline into this word; another complete helper independently controls bit 3."]
     pub mod irq_enable_1 {
         #[doc = "Register `IRQ_ENABLE_1` reader"]
         pub type R = crate::R<IrqEnable1Spec>;
@@ -38092,10 +38092,14 @@ pub mod bluetooth_interrupt_bank {
         pub type Source6R = crate::BitReader;
         #[doc = "Field `SOURCE_6` writer - "]
         pub type Source6W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `SOURCES_8_9` reader - "]
-        pub type Sources8_9R = crate::FieldReader;
-        #[doc = "Field `SOURCES_8_9` writer - "]
-        pub type Sources8_9W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `SOURCE_8` reader - "]
+        pub type Source8R = crate::BitReader;
+        #[doc = "Field `SOURCE_8` writer - "]
+        pub type Source8W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SOURCE_9` reader - "]
+        pub type Source9R = crate::BitReader;
+        #[doc = "Field `SOURCE_9` writer - "]
+        pub type Source9W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `SOURCE_12` reader - "]
         pub type Source12R = crate::BitReader;
         #[doc = "Field `SOURCE_12` writer - "]
@@ -38125,10 +38129,15 @@ pub mod bluetooth_interrupt_bank {
             pub fn source_6(&self) -> Source6R {
                 Source6R::new(((self.bits >> 6) & 1) != 0)
             }
-            #[doc = "Bits 8:9"]
+            #[doc = "Bit 8"]
             #[inline(always)]
-            pub fn sources_8_9(&self) -> Sources8_9R {
-                Sources8_9R::new(((self.bits >> 8) & 3) as u8)
+            pub fn source_8(&self) -> Source8R {
+                Source8R::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn source_9(&self) -> Source9R {
+                Source9R::new(((self.bits >> 9) & 1) != 0)
             }
             #[doc = "Bit 12"]
             #[inline(always)]
@@ -38162,10 +38171,15 @@ pub mod bluetooth_interrupt_bank {
             pub fn source_6(&mut self) -> Source6W<'_, IrqEnable1Spec> {
                 Source6W::new(self, 6)
             }
-            #[doc = "Bits 8:9"]
+            #[doc = "Bit 8"]
             #[inline(always)]
-            pub fn sources_8_9(&mut self) -> Sources8_9W<'_, IrqEnable1Spec> {
-                Sources8_9W::new(self, 8)
+            pub fn source_8(&mut self) -> Source8W<'_, IrqEnable1Spec> {
+                Source8W::new(self, 8)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn source_9(&mut self) -> Source9W<'_, IrqEnable1Spec> {
+                Source9W::new(self, 9)
             }
             #[doc = "Bit 12"]
             #[inline(always)]
@@ -38178,7 +38192,7 @@ pub mod bluetooth_interrupt_bank {
                 Source13W::new(self, 13)
             }
         }
-        #[doc = "Second controller interrupt-enable bank. Complete users independently RMW the recorded source positions.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_enable_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_enable_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Second controller interrupt-enable bank. Primary setup clears stale image 0x00001300 then ORs that baseline into this word; another complete helper independently controls bit 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_enable_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_enable_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IrqEnable1Spec;
         impl crate::RegisterSpec for IrqEnable1Spec {
             type Ux = u32;
@@ -38190,10 +38204,10 @@ pub mod bluetooth_interrupt_bank {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "IRQ_CLEAR_1 (w) register accessor: Second controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_1 here as a complete word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_1::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_clear_1`] module"]
+    #[doc = "IRQ_CLEAR_1 (w) register accessor: Second controller interrupt-clear bank. Primary and NRT handlers copy their respective second-bank status images here as complete words.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_1::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_clear_1`] module"]
     #[doc(alias = "IRQ_CLEAR_1")]
     pub type IrqClear1 = crate::Reg<irq_clear_1::IrqClear1Spec>;
-    #[doc = "Second controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_1 here as a complete word."]
+    #[doc = "Second controller interrupt-clear bank. Primary and NRT handlers copy their respective second-bank status images here as complete words."]
     pub mod irq_clear_1 {
         #[doc = "Register `IRQ_CLEAR_1` writer"]
         pub type W = crate::W<IrqClear1Spec>;
@@ -38206,7 +38220,7 @@ pub mod bluetooth_interrupt_bank {
                 PendingBitsW::new(self, 0)
             }
         }
-        #[doc = "Second controller interrupt-clear bank. The NRT ISR copies IRQ_STATUS_SNAPSHOT_1 here as a complete word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Second controller interrupt-clear bank. Primary and NRT handlers copy their respective second-bank status images here as complete words.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IrqClear1Spec;
         impl crate::RegisterSpec for IrqClear1Spec {
             type Ux = u32;
@@ -38217,10 +38231,10 @@ pub mod bluetooth_interrupt_bank {
             const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
         }
     }
-    #[doc = "IRQ_STATUS_1 (r) register accessor: Second controller interrupt-status bank; complete HAL users read the full word.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_status_1`] module"]
+    #[doc = "IRQ_STATUS_1 (r) register accessor: Second masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_1::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@irq_status_1`] module"]
     #[doc(alias = "IRQ_STATUS_1")]
     pub type IrqStatus1 = crate::Reg<irq_status_1::IrqStatus1Spec>;
-    #[doc = "Second controller interrupt-status bank; complete HAL users read the full word."]
+    #[doc = "Second masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement."]
     pub mod irq_status_1 {
         #[doc = "Register `IRQ_STATUS_1` reader"]
         pub type R = crate::R<IrqStatus1Spec>;
@@ -38233,7 +38247,7 @@ pub mod bluetooth_interrupt_bank {
                 PendingBitsR::new(self.bits)
             }
         }
-        #[doc = "Second controller interrupt-status bank; complete HAL users read the full word.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Second masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct IrqStatus1Spec;
         impl crate::RegisterSpec for IrqStatus1Spec {
             type Ux = u32;
@@ -49539,6 +49553,88 @@ pub mod interrupt_snapshot {
     ) -> BluetoothInterruptBank1Snapshot {
         BluetoothInterruptBank1Snapshot(bits)
     }
+
+    /// Opaque event image sampled from `BLUETOOTH_INTERRUPT_BANK`.`IRQ_STATUS_0`.
+    #[must_use = "an interrupt snapshot must be inspected and acknowledged"]
+    #[derive(Debug)]
+    pub struct BluetoothPrimaryInterruptBank0Snapshot(u32);
+    impl BluetoothPrimaryInterruptBank0Snapshot {
+        /// Complete masked event image observed by the status read.
+        #[inline]
+        pub const fn bits(&self) -> u32 {
+            self.0
+        }
+    }
+    /// Sample the complete masked event image.
+    #[inline]
+    pub fn sample_bluetooth_primary_interrupt_bank_0(
+        registers: &crate::BluetoothInterruptBank,
+    ) -> BluetoothPrimaryInterruptBank0Snapshot {
+        BluetoothPrimaryInterruptBank0Snapshot(registers.irq_status_0().read().bits())
+    }
+    /// Acknowledge exactly the event image returned by the paired sample.
+    #[inline]
+    pub fn acknowledge_bluetooth_primary_interrupt_bank_0(
+        registers: &crate::BluetoothInterruptBank,
+        snapshot: BluetoothPrimaryInterruptBank0Snapshot,
+    ) {
+        // SAFETY: the opaque value can only be constructed by the paired
+        // STATUS read (or in a validation-only build) and CLEAR is an
+        // SVD-validated full-width write-one-to-clear register.
+        unsafe {
+            registers
+                .irq_clear_0()
+                .write_with_zero(|writer| writer.pending_bits().bits(snapshot.0));
+        }
+    }
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn bluetooth_primary_interrupt_bank_0_for_validation(
+        bits: u32,
+    ) -> BluetoothPrimaryInterruptBank0Snapshot {
+        BluetoothPrimaryInterruptBank0Snapshot(bits)
+    }
+
+    /// Opaque event image sampled from `BLUETOOTH_INTERRUPT_BANK`.`IRQ_STATUS_1`.
+    #[must_use = "an interrupt snapshot must be inspected and acknowledged"]
+    #[derive(Debug)]
+    pub struct BluetoothPrimaryInterruptBank1Snapshot(u32);
+    impl BluetoothPrimaryInterruptBank1Snapshot {
+        /// Complete masked event image observed by the status read.
+        #[inline]
+        pub const fn bits(&self) -> u32 {
+            self.0
+        }
+    }
+    /// Sample the complete masked event image.
+    #[inline]
+    pub fn sample_bluetooth_primary_interrupt_bank_1(
+        registers: &crate::BluetoothInterruptBank,
+    ) -> BluetoothPrimaryInterruptBank1Snapshot {
+        BluetoothPrimaryInterruptBank1Snapshot(registers.irq_status_1().read().bits())
+    }
+    /// Acknowledge exactly the event image returned by the paired sample.
+    #[inline]
+    pub fn acknowledge_bluetooth_primary_interrupt_bank_1(
+        registers: &crate::BluetoothInterruptBank,
+        snapshot: BluetoothPrimaryInterruptBank1Snapshot,
+    ) {
+        // SAFETY: the opaque value can only be constructed by the paired
+        // STATUS read (or in a validation-only build) and CLEAR is an
+        // SVD-validated full-width write-one-to-clear register.
+        unsafe {
+            registers
+                .irq_clear_1()
+                .write_with_zero(|writer| writer.pending_bits().bits(snapshot.0));
+        }
+    }
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn bluetooth_primary_interrupt_bank_1_for_validation(
+        bits: u32,
+    ) -> BluetoothPrimaryInterruptBank1Snapshot {
+        BluetoothPrimaryInterruptBank1Snapshot(bits)
+    }
 }
 
 /// Target-declared exhaustive ownership partitions of the raw SVD singleton.
@@ -50178,6 +50274,45 @@ pub mod fixed_register_write {
 
 /// Safe, SVD-declared writes of fixed complete-register images.
 pub mod fixed_register_image {
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CONTROL_0`.
+    #[inline]
+    pub fn prepare_bluetooth_interrupt_output(registers: &crate::BluetoothInterruptBank) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .irq_control_0()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CONTROL_1`.
+    #[inline]
+    pub fn release_bluetooth_interrupt_output_0(registers: &crate::BluetoothInterruptBank) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .irq_control_1()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CONTROL_2`.
+    #[inline]
+    pub fn release_bluetooth_interrupt_output_1(registers: &crate::BluetoothInterruptBank) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .irq_control_2()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
 
     /// Publish the SVD-qualified image `0x000008c7` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8070_OPAQUE`.
     #[inline]

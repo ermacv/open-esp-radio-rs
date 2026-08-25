@@ -11,6 +11,15 @@ cargo qualification check \
   --manifest qualification/targets/esp32s31/wifi-sta.ledger
 ```
 
+The Bluetooth LE program has an independent fail-closed ledger. It is expected
+to report zero ready on-air capabilities until its implementation, evidence and
+HIL gaps close:
+
+```console
+cargo qualification check \
+  --manifest qualification/targets/esp32s31/bluetooth-le.ledger
+```
+
 Each capability has five independent axes:
 
 - `implementation`: a production owner exists under `driver/*/src`;

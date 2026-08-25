@@ -11,8 +11,9 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::pipeline::{
-    PipelineSummary, StageExecution, StageRun, StageSuccess, WorkflowMode, execute,
+use super::{
+    FollowUpStep, ProjectContext, ProjectContextRequirement,
+    pipeline::{PipelineSummary, StageExecution, StageRun, StageSuccess, WorkflowMode, execute},
 };
 use crate::{Result, project::ProjectSpec};
 
@@ -120,6 +121,7 @@ pub struct ProjectAnalysisReport {
     pub not_configured: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+    pub next_steps: Vec<FollowUpStep>,
 }
 
 impl ProjectAnalysisReport {
@@ -391,7 +393,7 @@ pub(crate) fn run(
         ProjectAnalysisStatus::Complete
     };
     ProjectAnalysisReport {
-        schema: 5,
+        schema: 6,
         command: "project analyze",
         mode: mode.label(),
         status,
@@ -404,7 +406,83 @@ pub(crate) fn run(
         blocked: summary.blocked,
         not_configured: summary.not_configured,
         duration_ms: summary.duration_ms,
+        next_steps: Vec::new(),
     }
+}
+
+pub(crate) fn follow_up_steps(
+    report: &ProjectAnalysisReport,
+    context: &ProjectContext<'_>,
+) -> Vec<FollowUpStep> {
+    let missing_pack = |kind: &str| {
+        report.stages.iter().any(|stage| {
+            stage
+                .reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains(kind))
+        })
+    };
+    let missing_function_pack = missing_pack("cannot read function pack");
+    let missing_interface_pack = missing_pack("cannot read interface pack");
+    let analyze =
+        || context.follow_up_action(["project", "analyze"], ProjectContextRequirement::Analysis);
+
+    if missing_function_pack || missing_interface_pack {
+        let mut commands = Vec::new();
+        let result = (|| {
+            if missing_function_pack {
+                commands.push(context.follow_up_action(
+                    ["advanced", "functions", "init-pack"],
+                    ProjectContextRequirement::Target,
+                )?);
+            }
+            if missing_interface_pack {
+                commands.push(context.follow_up_action(
+                    ["advanced", "interfaces", "init-pack"],
+                    ProjectContextRequirement::Target,
+                )?);
+            }
+            commands.push(analyze()?);
+            crate::Result::Ok(())
+        })();
+        return vec![match result {
+            Ok(()) => FollowUpStep::commands(
+                "Create the missing reviewed packs, then rerun project analysis.",
+                commands,
+            ),
+            Err(error) => FollowUpStep::manual(format!(
+                "Create the missing reviewed packs, then rerun project analysis; executable commands could not be represented: {error}"
+            )),
+        }];
+    }
+
+    if report.status == ProjectAnalysisStatus::NothingConfigured {
+        return vec![match analyze() {
+            Ok(command) => FollowUpStep::command(
+                "Configure at least one analysis, validation, or review stage, then rerun project analysis.",
+                command,
+            ),
+            Err(error) => FollowUpStep::manual(format!(
+                "Configure at least one analysis, validation, or review stage, then rerun project analysis; an executable command could not be represented: {error}"
+            )),
+        }];
+    }
+
+    if report.status == ProjectAnalysisStatus::Failed {
+        return vec![match context
+            .follow_up_action(["project", "doctor"], ProjectContextRequirement::Analysis)
+        {
+            Ok(command) => FollowUpStep::command(
+                "Diagnose the failed or blocked analysis stages and their prerequisites.",
+                command,
+            ),
+            Err(error) => FollowUpStep::manual(format!(
+                "Diagnose the failed or blocked analysis stages and their prerequisites; an executable command could not be represented: {error}"
+            )),
+        }];
+    }
+
+    Vec::new()
 }
 
 fn review_depends_on_project_ir(project: &ProjectSpec, reports: &[std::path::PathBuf]) -> bool {

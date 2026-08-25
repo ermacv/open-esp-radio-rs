@@ -23,7 +23,7 @@ pub(crate) mod status;
 
 use std::{collections::BTreeMap, path::Path};
 
-pub(crate) use action::{ExecutableAction, ProjectContextRequirement};
+pub use action::{ExecutableAction, ProjectContextRequirement};
 pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
 pub use pipeline::StageReport as ProjectAnalysisStageReport;
@@ -44,9 +44,10 @@ pub(crate) use resolve::{
 };
 pub use status::model::{
     AnalysisSurfaceDetail, ArtifactDetail, Component as ProjectStatusComponent, DetailValue,
-    EvidenceFreshness, LinkedIrProfileDetail, MmioRegionDetail, Phase as ProjectStatusPhase,
-    ProjectStatusReport, Readiness, ResearchCompleteness, ResearchProgress, ReviewScopeDetail,
-    StatusValidation, TargetIdentity as ProjectTargetIdentity, ValidationDepth,
+    EvidenceFreshness, FollowUpStep, LinkedIrProfileDetail, MmioRegionDetail,
+    Phase as ProjectStatusPhase, ProjectStatusReport, Readiness, ResearchCompleteness,
+    ResearchProgress, ReviewScopeDetail, StatusValidation, TargetIdentity as ProjectTargetIdentity,
+    ValidationDepth,
 };
 
 /// Resolved project state and reload-scoped analysis caches.

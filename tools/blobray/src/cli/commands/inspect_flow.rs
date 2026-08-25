@@ -242,7 +242,10 @@ fn render_human(report: &FlowInvestigationReport) {
         outputln!("\n{}", crate::cli::output::heading("Blockers"));
         for (index, blocker) in report.blockers.iter().enumerate() {
             outputln!("{}. {}: {}", index + 1, blocker.kind, blocker.message);
-            outputln!("   Next: {}", blocker.next_action);
+            outputln!("   Next: {}", blocker.next_step.instruction);
+            for command in &blocker.next_step.commands {
+                outputln!("   Run:  {}", command.render_posix());
+            }
         }
     }
     outputln!(

@@ -3,6 +3,8 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+use crate::application::ExecutableAction;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct LinkedIrProfileDetail {
     pub id: String,
@@ -333,6 +335,36 @@ pub struct StatusValidation {
     pub freshness: EvidenceFreshness,
 }
 
+/// One explicit human instruction and the exact commands that implement it.
+///
+/// Manual work has an empty `commands` list. Frontends may render commands for
+/// copy/paste, but automation executes their argument vectors directly.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FollowUpStep {
+    pub instruction: String,
+    pub commands: Vec<ExecutableAction>,
+}
+
+impl FollowUpStep {
+    pub fn manual(instruction: impl Into<String>) -> Self {
+        Self {
+            instruction: instruction.into(),
+            commands: Vec::new(),
+        }
+    }
+
+    pub fn command(instruction: impl Into<String>, command: ExecutableAction) -> Self {
+        Self::commands(instruction, vec![command])
+    }
+
+    pub fn commands(instruction: impl Into<String>, commands: Vec<ExecutableAction>) -> Self {
+        Self {
+            instruction: instruction.into(),
+            commands,
+        }
+    }
+}
+
 impl StatusValidation {
     const SHALLOW: Self = Self {
         depth: ValidationDepth::Shallow,
@@ -347,7 +379,7 @@ pub struct Component {
     pub details: BTreeMap<String, DetailValue>,
     pub diagnostic: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_action: Option<String>,
+    pub next_step: Option<FollowUpStep>,
 }
 
 impl Component {
@@ -357,7 +389,7 @@ impl Component {
             status,
             details: BTreeMap::new(),
             diagnostic: None,
-            next_action: None,
+            next_step: None,
         }
     }
 
@@ -371,8 +403,8 @@ impl Component {
         self
     }
 
-    pub(crate) fn next_action(mut self, value: impl ToString) -> Self {
-        self.next_action = Some(value.to_string());
+    pub(crate) fn next_step(mut self, value: FollowUpStep) -> Self {
+        self.next_step = Some(value);
         self
     }
 }
@@ -488,6 +520,54 @@ mod tests {
         assert_eq!(
             serde_json::to_value(EvidenceFreshness::Stale).unwrap(),
             serde_json::json!("stale")
+        );
+    }
+
+    #[test]
+    fn component_serializes_typed_follow_up_step_without_legacy_action_key() {
+        let command = ExecutableAction::new(
+            vec![
+                "blobray".into(),
+                "project".into(),
+                "verify".into(),
+                "--suite".into(),
+                "suite with spaces".into(),
+            ],
+            std::env::current_dir().unwrap(),
+            crate::application::ProjectContextRequirement::Analysis,
+        )
+        .unwrap();
+        let value = serde_json::to_value(
+            Component::new("verification", Readiness::Incomplete)
+                .next_step(FollowUpStep::command("replay the failing suite", command)),
+        )
+        .unwrap();
+
+        assert!(value.get("next_action").is_none());
+        assert_eq!(
+            value["next_step"]["instruction"],
+            "replay the failing suite"
+        );
+        assert_eq!(
+            value["next_step"]["commands"][0]["argv"][4],
+            "suite with spaces"
+        );
+        assert_eq!(value["next_step"]["commands"][0]["context"], "analysis");
+    }
+
+    #[test]
+    fn manual_follow_up_step_has_no_fake_executable_command() {
+        let value = serde_json::to_value(FollowUpStep::manual(
+            "choose a concrete candidate evidence directory",
+        ))
+        .unwrap();
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "instruction": "choose a concrete candidate evidence directory",
+                "commands": [],
+            })
         );
     }
 

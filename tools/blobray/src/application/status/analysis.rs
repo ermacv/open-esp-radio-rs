@@ -2,7 +2,10 @@
 
 use std::collections::BTreeSet;
 
-use super::model::{AnalysisSurfaceDetail, Component, LinkedIrProfileDetail, Phase, Readiness};
+use super::{
+    executable_step,
+    model::{AnalysisSurfaceDetail, Component, LinkedIrProfileDetail, Phase, Readiness},
+};
 use crate::application::{ProjectContext, ProjectContextRequirement};
 use crate::{artifacts::inspect_linked_ir, harnesses, run_spec::InputRole};
 
@@ -470,9 +473,12 @@ fn event_replays(context: &ProjectContext<'_>) -> Component {
         component = component.diagnostic(problem);
     }
     if incomplete {
-        component = component.next_action(
-            context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
-        );
+        component = component.next_step(executable_step(
+            context,
+            "regenerate incomplete analysis evidence",
+            ["project", "analyze"],
+            ProjectContextRequirement::Analysis,
+        ));
     }
     component
 }
@@ -485,9 +491,12 @@ fn navigation_index(context: &ProjectContext<'_>) -> Component {
         return Component::new("navigation_index", Readiness::Incomplete)
             .detail("path", spec.output.display().to_string())
             .diagnostic("navigation index has not been generated")
-            .next_action(
-                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
-            );
+            .next_step(executable_step(
+                context,
+                "generate the navigation index",
+                ["project", "analyze"],
+                ProjectContextRequirement::Analysis,
+            ));
     }
     generated_output("navigation_index", &spec.output)
 }

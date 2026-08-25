@@ -69,7 +69,8 @@ pub(super) fn run(context: ProjectContext<'_>) -> Result<bool> {
         .as_millis()
         .try_into()
         .unwrap_or(u64::MAX);
+    report.next_steps = render::next_steps(&report, &context)?;
 
-    render::render(&report, &context);
+    render::render(&report);
     Ok(report.succeeded())
 }

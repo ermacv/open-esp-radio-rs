@@ -433,7 +433,7 @@ mod tests {
             &project(),
             ProjectAnalysisInputs::default(),
             ProjectAnalysisReport {
-                schema: 5,
+                schema: 6,
                 command: "project analyze",
                 mode: "write",
                 status: ProjectAnalysisStatus::Failed,
@@ -451,6 +451,7 @@ mod tests {
                 blocked: 0,
                 not_configured: 0,
                 duration_ms: None,
+                next_steps: Vec::new(),
             },
         );
 

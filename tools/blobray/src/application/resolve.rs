@@ -62,57 +62,21 @@ impl ProjectContext<'_> {
         ExecutableAction::new(argv, self.invocation_directory.to_owned(), requirement)
     }
 
-    /// Render a copy/paste follow-up command with every explicit resolution
-    /// override that the destination command consumes.
-    pub(crate) fn follow_up_command(
-        &self,
-        command: &str,
-        requirements: ProjectContextRequirement,
-    ) -> String {
-        let mut rendered = format!(
-            "blobray {command} --project {}",
-            crate::shell::arg(self.project_path.as_os_str())
-        );
-        if requirements.target_spec()
-            && let Some(path) = self.explicit_context.target_spec.as_deref()
-        {
-            rendered.push_str(&format!(
-                " --target-spec {}",
-                crate::shell::arg(path.as_os_str())
-            ));
-        }
-        if requirements.run_spec()
-            && let Some(path) = self.explicit_context.run_spec.as_deref()
-        {
-            rendered.push_str(&format!(
-                " --run-spec {}",
-                crate::shell::arg(path.as_os_str())
-            ));
-        }
-        if requirements.register_catalog() {
-            for path in &self.explicit_context.svd_paths {
-                rendered.push_str(&format!(" --svd {}", crate::shell::arg(path.as_os_str())));
-            }
-        }
-        rendered
-    }
-
-    /// Render the executable help entry point for repairing input bindings.
-    /// An explicit run-spec override is an output destination for this command,
-    /// not a resolution root: omitting it would silently edit `local.toml`.
-    pub(crate) fn inputs_init_help_command(&self) -> String {
-        let mut rendered = self.follow_up_command(
-            "project inputs init",
+    /// Executable help entry point for repairing caller-owned input bindings.
+    ///
+    /// An explicit run-spec override is the output destination for this
+    /// command, not a resolution root: omitting it would silently edit the
+    /// project's default `local.toml` instead.
+    pub(crate) fn inputs_init_help_action(&self) -> Result<ExecutableAction> {
+        let mut action = self.follow_up_action(
+            ["project", "inputs", "init"],
             ProjectContextRequirement::ProjectOnly,
-        );
+        )?;
         if let Some(path) = self.explicit_context.run_spec.as_deref() {
-            rendered.push_str(&format!(
-                " --output {}",
-                crate::shell::arg(path.as_os_str())
-            ));
+            push_path_argument(&mut action.argv, "--output", path)?;
         }
-        rendered.push_str(" --help");
-        rendered
+        action.argv.push("--help".to_owned());
+        Ok(action)
     }
 }
 

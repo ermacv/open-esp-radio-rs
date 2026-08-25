@@ -180,11 +180,17 @@ fn render_overview(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                             Style::new().fg(Color::Yellow),
                         )));
                     }
-                    if let Some(action) = &component.next_action {
+                    if let Some(step) = &component.next_step {
                         lines.push(Line::from(vec![
                             Span::styled("Next: ", Style::new().fg(Color::Cyan)),
-                            Span::raw(action),
+                            Span::raw(&step.instruction),
                         ]));
+                        lines.extend(step.commands.iter().map(|action| {
+                            Line::from(Span::styled(
+                                format!("  {}", action.render_posix()),
+                                Style::new().fg(Color::Cyan),
+                            ))
+                        }));
                     }
                     lines
                 })

@@ -9,7 +9,7 @@ use crate::Result;
 /// Project resolution context carried by an executable follow-up action.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum ProjectContextRequirement {
+pub enum ProjectContextRequirement {
     ProjectOnly,
     Target,
     RunSpec,
@@ -32,13 +32,13 @@ impl ProjectContextRequirement {
 
 /// One command that can be executed without reparsing a rendered shell line.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-pub(crate) struct ExecutableAction {
+pub struct ExecutableAction {
     /// Complete argument vector, including logical `argv[0] == "blobray"`.
-    pub(crate) argv: Vec<String>,
+    pub argv: Vec<String>,
     /// Absolute directory from which the source invocation was resolved.
-    pub(crate) working_directory: PathBuf,
+    pub working_directory: PathBuf,
     /// Resolution overrides included in `argv`.
-    pub(crate) context: ProjectContextRequirement,
+    pub context: ProjectContextRequirement,
 }
 
 impl ExecutableAction {

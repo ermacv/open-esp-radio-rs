@@ -56,7 +56,7 @@ pub(super) fn investigate(
     let replay = match load_replay_proof(route) {
         Ok(proof) => proof,
         Err(error) => {
-            blockers.push(FlowBlocker::new(
+            blockers.push(FlowBlocker::manual(
                 "event-replay-invalid",
                 error.to_string(),
                 "rerun the configured replay against current inputs and retain its evidence artifact",
@@ -108,7 +108,7 @@ pub(super) fn investigate(
         .collect::<Vec<_>>();
     let dispatch_observed = matching_dispatches.len() == 1 || direct_dispatches.len() == 1;
     if !dispatch_observed {
-        blockers.push(FlowBlocker::new(
+        blockers.push(FlowBlocker::manual(
             "dispatch-evidence-mismatch",
             format!(
                 "expected one complete {} dispatch with {}={}, found {}",
@@ -147,7 +147,7 @@ pub(super) fn investigate(
                 .position(|role| role == &route.delivery.output_role)
         });
     if output_argument.is_none() {
-        blockers.push(FlowBlocker::new(
+        blockers.push(FlowBlocker::manual(
             "unknown-delivery-output-role",
             format!(
                 "semantic operation {:?} does not define output role {:?}",
@@ -163,7 +163,7 @@ pub(super) fn investigate(
         .collect::<Vec<_>>();
     let delivery = (delivery_calls.len() == 1).then(|| delivery_calls[0]);
     if delivery.is_none() {
-        blockers.push(FlowBlocker::new(
+        blockers.push(FlowBlocker::manual(
             "delivery-call-mismatch",
             format!(
                 "consumer {:?} has {} direct calls annotated as {:?}",
@@ -303,7 +303,7 @@ pub(super) fn investigate(
                         provenance: "reviewed-route",
                     });
                 } else {
-                    blockers.push(FlowBlocker::new(
+                    blockers.push(FlowBlocker::manual(
                         "missing-delivery-argument",
                         format!(
                             "delivery role {:?} maps to argument {}, but the call exposes {} arguments",
@@ -375,7 +375,7 @@ pub(super) fn investigate(
                 // obligation; the structural output model remains its ABI
                 // explanation.
             } else if delivery_modeled {
-                blockers.push(FlowBlocker::new(
+                blockers.push(FlowBlocker::manual(
                     "event-delivery-not-replayed",
                     format!(
                         "{} can write the reviewed {}-bit output, but no concrete queue instance has replayed selector {:#x}",
@@ -386,7 +386,7 @@ pub(super) fn investigate(
                     "bind a scenario-owned queue item, replay the consumer, and retain the execution trace",
                 ));
             } else {
-                blockers.push(FlowBlocker::new(
+                blockers.push(FlowBlocker::manual(
                     "delivery-not-executable",
                     format!(
                         "{} is annotated but has no execution model writing {}-bit output argument {:?}",
@@ -451,7 +451,7 @@ pub(super) fn investigate(
             if route.terminal.is_none() {
                 rust_boundaries = rust_boundary_evidence(&handler_function, project)?;
                 if rust_boundaries.is_empty() {
-                    blockers.push(FlowBlocker::new(
+                    blockers.push(FlowBlocker::manual(
                         "rust-boundary-unmapped",
                         format!(
                             "case handler {:?} has no vendor-to-Rust replacement edge",
@@ -476,7 +476,7 @@ pub(super) fn investigate(
                 .path
                 .is_some();
             if !observed_case {
-                blockers.push(FlowBlocker::new(
+                blockers.push(FlowBlocker::manual(
                     "case-dispatch-not-executable",
                     format!(
                         "selector {:#x} to {:?} is reviewed, but the indirect ppTask jump is not resolved in generated IR",
@@ -486,7 +486,7 @@ pub(super) fn investigate(
                 ));
             }
         } else {
-            blockers.push(FlowBlocker::new(
+            blockers.push(FlowBlocker::manual(
                 "case-handler-unreviewed",
                 format!(
                     "event route {:?} stops at consumer {:?}",
@@ -539,7 +539,7 @@ pub(super) fn investigate(
                 }
                 rust_boundaries = rust_boundary_evidence(&terminal_function, project)?;
                 if rust_boundaries.is_empty() {
-                    blockers.push(FlowBlocker::new(
+                    blockers.push(FlowBlocker::manual(
                         "rust-boundary-unmapped",
                         format!(
                             "terminal {:?} has no vendor-to-Rust replacement edge",
@@ -552,7 +552,7 @@ pub(super) fn investigate(
                 depth_limited = true;
             }
         } else {
-            blockers.push(FlowBlocker::new(
+            blockers.push(FlowBlocker::manual(
                 "terminal-without-handler",
                 format!(
                     "event route {:?} has a terminal but no case handler",
@@ -563,7 +563,7 @@ pub(super) fn investigate(
         }
     }
     if depth_limited {
-        blockers.push(FlowBlocker::new(
+        blockers.push(FlowBlocker::manual(
             "max-depth",
             format!("event route exceeds --max-depth {}", request.max_depth),
             "increase --max-depth to include the remaining reviewed transition",
@@ -581,7 +581,7 @@ pub(super) fn investigate(
     effects.dedup();
     let structural_navigation = dispatch_observed && delivery.is_some();
     Ok(FlowInvestigationReport {
-        schema_version: 3,
+        schema_version: 4,
         command: "inspect flow",
         mode: "event-route",
         status: if blockers.is_empty() {
@@ -772,12 +772,31 @@ mod tests {
         ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventReplay, ReviewedEventRoute,
         ReviewedEventStateModel,
     };
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_REPLAY_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+    fn replay_test_directory() -> std::path::PathBuf {
+        loop {
+            let sequence = NEXT_REPLAY_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+            let directory = std::env::temp_dir().join(format!(
+                "blobray-event-replay-{}-{sequence}",
+                std::process::id()
+            ));
+            match std::fs::create_dir(&directory) {
+                Ok(()) => return directory,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!(
+                    "cannot create replay test directory {}: {error}",
+                    directory.display()
+                ),
+            }
+        }
+    }
 
     #[test]
     fn replay_proof_requires_fresh_ordered_fifo_delivery_and_handler_goal() {
-        let directory =
-            std::env::temp_dir().join(format!("blobray-event-replay-{}", std::process::id()));
-        std::fs::create_dir_all(&directory).unwrap();
+        let directory = replay_test_directory();
         let manifest = directory.join("route.toml");
         let artifact = directory.join("vendor.elf");
         let evidence = directory.join("route.json");

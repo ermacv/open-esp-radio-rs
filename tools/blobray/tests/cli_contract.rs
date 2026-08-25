@@ -109,6 +109,114 @@ fn write_rv32_e2e_fixture(path: &Path) {
     std::fs::write(path, bytes).unwrap();
 }
 
+#[test]
+fn bootstrap_reports_expose_typed_follow_up_steps() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-cli-contract-typed-bootstrap-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    let initialized = blobray()
+        .current_dir(repository_root())
+        .args(["project", "init", "--directory"])
+        .arg(&directory)
+        .args([
+            "--id",
+            "typed-bootstrap",
+            "--mmio",
+            "radio=0x20000000..0x20010000",
+            "--format",
+            "json",
+            "--color",
+            "never",
+        ])
+        .output()
+        .expect("initialize typed bootstrap project");
+    assert!(
+        initialized.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    let initialized: serde_json::Value = serde_json::from_slice(&initialized.stdout).unwrap();
+    assert_eq!(initialized["schema_version"], 2);
+    assert!(initialized.get("next_command").is_none());
+    assert_eq!(initialized["next_steps"].as_array().unwrap().len(), 2);
+    let initialized_argv = initialized["next_steps"][0]["commands"][0]["argv"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        &initialized_argv[..4],
+        serde_json::json!(["blobray", "project", "inputs", "init"])
+            .as_array()
+            .unwrap()
+    );
+
+    let manifest = directory.join("vendor-project.toml");
+    let artifact = directory.join("vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+    let inputs = blobray()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--project"])
+        .arg(&manifest)
+        .arg("--bind")
+        .arg(format!("source-artifact:vendor={}", artifact.display()))
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("bind typed bootstrap inputs");
+    assert!(
+        inputs.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&inputs.stderr)
+    );
+    let inputs: serde_json::Value = serde_json::from_slice(&inputs.stdout).unwrap();
+    assert_eq!(inputs["schema"], 2);
+    assert!(inputs.get("next_command").is_none());
+    let inputs_argv = inputs["next_steps"][0]["commands"][0]["argv"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        &inputs_argv[..3],
+        serde_json::json!(["blobray", "project", "doctor"])
+            .as_array()
+            .unwrap()
+    );
+    assert!(
+        inputs["next_steps"][0]["commands"][0]["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|argument| argument == "--run-spec")
+    );
+
+    let configured = blobray()
+        .current_dir(repository_root())
+        .args(["project", "configure", "--check", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("check typed bootstrap configuration");
+    assert!(
+        configured.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&configured.stderr)
+    );
+    let configured: serde_json::Value = serde_json::from_slice(&configured.stdout).unwrap();
+    assert_eq!(configured["schema_version"], 3);
+    let configured_argv = configured["next_steps"][0]["commands"][0]["argv"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        &configured_argv[..3],
+        serde_json::json!(["blobray", "project", "doctor"])
+            .as_array()
+            .unwrap()
+    );
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
 fn run_project_command(project: &Path, arguments: &[&str]) -> Output {
     blobray()
         .current_dir(repository_root())
@@ -163,7 +271,7 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
-    assert_eq!(document["schema"], 11);
+    assert_eq!(document["schema"], 12);
     assert_eq!(document["scope"], "blobray-pipeline");
     assert_eq!(document["command"], "project status");
     assert_eq!(document["validation"]["depth"], "shallow");
@@ -219,7 +327,7 @@ fn project_status_human_details_explain_shallow_validation_and_render_fields() {
 }
 
 #[test]
-fn status_and_doctor_next_actions_preserve_explicit_resolution_context() {
+fn status_and_doctor_next_steps_preserve_explicit_resolution_context() {
     let (directory, manifest) = init_temporary_project("follow-up-context");
     let target = directory.join("explicit target's.toml");
     std::fs::copy(directory.join("target.toml"), &target).unwrap();
@@ -260,6 +368,19 @@ fn status_and_doctor_next_actions_preserve_explicit_resolution_context() {
         run_spec.display(),
         svd.display(),
     );
+    let expected_argv = vec![
+        "blobray",
+        "project",
+        "analyze",
+        "--project",
+        manifest.to_str().unwrap(),
+        "--target-spec",
+        target.to_str().unwrap(),
+        "--run-spec",
+        run_spec.to_str().unwrap(),
+        "--svd",
+        svd.to_str().unwrap(),
+    ];
 
     let machine = blobray()
         .current_dir(repository_root())
@@ -280,16 +401,19 @@ fn status_and_doctor_next_actions_preserve_explicit_resolution_context() {
         String::from_utf8_lossy(&machine.stderr)
     );
     let document: serde_json::Value = serde_json::from_slice(&machine.stdout).unwrap();
-    let next_actions = document["phases"]
+    let next_steps = document["phases"]
         .as_object()
         .unwrap()
         .values()
         .flat_map(|phase| phase["components"].as_array().unwrap())
-        .filter_map(|component| component["next_action"].as_str())
+        .filter_map(|component| component.get("next_step"))
+        .flat_map(|step| step["commands"].as_array().unwrap())
         .collect::<Vec<_>>();
     assert!(
-        next_actions.contains(&expected.as_str()),
-        "{next_actions:#?}"
+        next_steps
+            .iter()
+            .any(|action| action["argv"] == serde_json::json!(expected_argv)),
+        "{next_steps:#?}"
     );
 
     for workflow in ["status", "doctor"] {
@@ -314,7 +438,7 @@ fn status_and_doctor_next_actions_preserve_explicit_resolution_context() {
 }
 
 #[test]
-fn status_human_next_actions_preserve_shell_quoted_spaces_and_apostrophes() {
+fn status_human_next_steps_preserve_shell_quoted_spaces_and_apostrophes() {
     let (directory, _) = init_temporary_project("quoted-follow-up-context");
     let quoted_directory = directory.with_file_name(format!(
         "{}  owner's project",
@@ -421,13 +545,24 @@ prefix = "fixture_"
         .iter()
         .find(|component| component["name"] == "suite-inputs")
         .unwrap();
-    let expected = format!(
-        "bind the missing roles in {} using `blobray project inputs init --project {} --output {} --help`",
-        run_spec.display(),
-        manifest.display(),
-        run_spec.display(),
+    assert_eq!(
+        component["next_step"]["instruction"],
+        format!("bind the missing roles in {}", run_spec.display())
     );
-    assert_eq!(component["next_action"], expected);
+    assert_eq!(
+        component["next_step"]["commands"][0]["argv"],
+        serde_json::json!([
+            "blobray",
+            "project",
+            "inputs",
+            "init",
+            "--project",
+            manifest.to_str().unwrap(),
+            "--output",
+            run_spec.to_str().unwrap(),
+            "--help"
+        ])
+    );
 
     let help = blobray()
         .current_dir(repository_root())
@@ -463,7 +598,7 @@ fn project_doctor_json_is_one_complete_typed_report() {
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("doctor stdout must be one JSON document");
     let report = &document;
-    assert_eq!(report["schema"], 3);
+    assert_eq!(report["schema"], 4);
     assert_eq!(report["command"], "project doctor");
     assert_eq!(report["status"], "valid-with-warnings");
     assert_eq!(report["validation"]["depth"], "deep");
@@ -479,6 +614,14 @@ fn project_doctor_json_is_one_complete_typed_report() {
     assert!(report["inputs"].is_array());
     assert!(report["errors"].is_u64());
     assert!(report["warnings"].is_u64());
+    assert!(report["next_steps"].as_array().is_some_and(|steps| {
+        steps.iter().all(|step| {
+            step["instruction"].is_string()
+                && step["commands"].as_array().is_some_and(|commands| {
+                    commands.iter().all(|command| command["argv"].is_array())
+                })
+        })
+    }));
 
     let revisions = report["capabilities"]
         .as_array()
@@ -544,10 +687,11 @@ fn obsolete_revision_state_is_a_hard_cutover_in_cli_status_and_doctor() {
             .contains("create a new current state")
     );
     assert!(
-        revision["next_action"]
-            .as_str()
+        revision["next_step"]["commands"][0]["argv"]
+            .as_array()
             .unwrap()
-            .contains("project revision snapshot CURRENT")
+            .windows(4)
+            .any(|arguments| arguments == ["project", "revision", "snapshot", "CURRENT"])
     );
 
     let doctor = run_project_command(&manifest, &["project", "doctor"]);
@@ -593,11 +737,19 @@ fn root_help_is_project_first_and_project_files_is_typed() {
     ]);
     assert!(files.status.success());
     let report: serde_json::Value = serde_json::from_slice(&files.stdout).unwrap();
-    assert_eq!(report["schema"], 3);
+    assert_eq!(report["schema"], 4);
     assert_eq!(report["project_id"], "generic-rv32-fixture");
     assert_eq!(report["workflow_state"], "blocked");
     assert!(report["required_missing"].is_u64());
-    assert!(report["next_actions"].is_array());
+    assert!(report["next_steps"].as_array().is_some_and(|steps| {
+        steps.iter().all(|step| {
+            step["instruction"].is_string()
+                && step["commands"].as_array().is_some_and(|commands| {
+                    commands.iter().all(|command| command["argv"].is_array())
+                })
+        })
+    }));
+    assert!(report.get("next_actions").is_none());
     assert!(report["files"].as_array().unwrap().iter().any(|file| {
         file["role"] == "project-manifest"
             && file["ownership"] == "entrypoint"
@@ -612,15 +764,31 @@ fn fresh_project_files_exposes_only_the_executable_bootstrap_frontier() {
     let machine = run_project_command(&manifest, &["project", "files"]);
     assert!(machine.status.success());
     let document: serde_json::Value = serde_json::from_slice(&machine.stdout).unwrap();
-    assert_eq!(document["schema"], 3);
+    assert_eq!(document["schema"], 4);
     assert_eq!(document["workflow_state"], "blocked");
     assert!(document["required_missing"].as_u64().unwrap() > 0);
-    let actions = document["next_actions"].as_array().unwrap();
-    assert_eq!(actions.len(), 1);
-    let action = actions[0].as_str().unwrap();
-    assert!(action.contains("project inputs init"));
-    assert!(action.ends_with("--help"));
-    assert!(!action.contains("project publish"));
+    let steps = document["next_steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert!(steps[0]["instruction"].as_str().unwrap().contains("input"));
+    let commands = steps[0]["commands"].as_array().unwrap();
+    assert_eq!(commands.len(), 1);
+    let argv = commands[0]["argv"].as_array().unwrap();
+    assert_eq!(
+        argv.iter()
+            .take(4)
+            .map(|argument| argument.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["blobray", "project", "inputs", "init"]
+    );
+    assert_eq!(
+        argv.last().and_then(|argument| argument.as_str()),
+        Some("--help")
+    );
+    assert!(
+        argv.iter()
+            .all(|argument| argument.as_str() != Some("publish"))
+    );
+    assert!(document.get("next_actions").is_none());
 
     let human = blobray()
         .current_dir(repository_root())
@@ -1470,7 +1638,7 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     assert_eq!(output.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 5);
+    assert_eq!(document["schema"], 6);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["mode"], "check");
     assert_eq!(document["status"], "failed");
@@ -1484,6 +1652,15 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     );
     assert!(document["blocked"].as_u64().unwrap() > 0);
     assert!(document["stages"].is_array());
+    assert_eq!(
+        &document["next_steps"][0]["commands"][0]["argv"]
+            .as_array()
+            .unwrap()[..3],
+        serde_json::json!(["blobray", "project", "doctor"])
+            .as_array()
+            .unwrap()
+    );
+    assert!(document.get("next_actions").is_none());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!stderr.contains("Project analysis"));
     assert!(!stderr.contains("Project stage:"));
@@ -1914,7 +2091,7 @@ fn project_analysis_plan_distinguishes_current_and_restorable_outputs_without_re
         String::from_utf8_lossy(&restored.stderr)
     );
     let restored: serde_json::Value = serde_json::from_slice(&restored.stdout).unwrap();
-    assert_eq!(restored["schema"], 5);
+    assert_eq!(restored["schema"], 6);
     assert_eq!(restored["written"], 0);
     assert_eq!(restored["restored"], 1);
     assert_eq!(restored["up-to-date"], 0);
@@ -1978,13 +2155,21 @@ fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
     assert_eq!(json.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&json.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 5);
+    assert_eq!(document["schema"], 6);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["status"], "nothing-configured");
     assert_eq!(document["not-configured"], 15);
     assert_eq!(document["written"], 0);
     assert_eq!(document["verified"], 0);
     assert_eq!(document["up-to-date"], 0);
+    assert_eq!(
+        &document["next_steps"][0]["commands"][0]["argv"]
+            .as_array()
+            .unwrap()[..3],
+        serde_json::json!(["blobray", "project", "analyze"])
+            .as_array()
+            .unwrap()
+    );
     assert!(document.get("duration_ms").is_none());
     std::fs::remove_dir_all(directory).unwrap();
 }
@@ -2193,7 +2378,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         );
         let document: serde_json::Value = serde_json::from_slice(&output.stdout)
             .expect("project analysis stdout must be valid JSON");
-        assert_eq!(document["schema"], 5);
+        assert_eq!(document["schema"], 6);
         assert_eq!(document["command"], "project analyze");
         assert_eq!(document["status"], "ok");
         let measured_total = document["stages"]

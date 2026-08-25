@@ -54,7 +54,7 @@ pub(super) fn investigate(
         let mut root_closed = false;
         for identity in identities {
             let Some(function) = reader.get_function_by_identity(&identity)? else {
-                blockers.push(FlowBlocker::new(
+                blockers.push(FlowBlocker::manual(
                     "missing-function-record",
                     format!("reachable identity {identity:?} has no indexed function record"),
                     "regenerate the linked-IR profile",
@@ -68,7 +68,7 @@ pub(super) fn investigate(
             collect_function_effects(&function, request.kind, &mut effects);
         }
         if !root_closed {
-            blockers.push(FlowBlocker::new(
+            blockers.push(FlowBlocker::manual(
                 "open-call-graph",
                 format!("reachable effect inventory for {root} has unresolved call boundaries"),
                 "inspect the root blockers and add reviewed interface or external-call models",
@@ -94,7 +94,7 @@ pub(super) fn investigate(
         });
         effects.dedup();
         reports.push(FlowInvestigationReport {
-            schema_version: 3,
+            schema_version: 4,
             command: "inspect flow",
             mode: "effects",
             status: if blockers.is_empty() {

@@ -31,8 +31,9 @@ pub(super) fn run(arguments: ProjectStatusArgs, context: ProjectContext<'_>) -> 
             if options.check { "verified" } else { "written" },
         )
     });
+    let validation_actions = render::validation_actions(&context)?;
     if let Some(path) = options.output.as_deref() {
-        let stored_document = render::document(&report, None);
+        let stored_document = render::document(&report, validation_actions.clone(), None);
         let rendered = render::json_document(&stored_document)?;
         crate::application::generated_file::write_or_check(
             path,
@@ -41,9 +42,9 @@ pub(super) fn run(arguments: ProjectStatusArgs, context: ProjectContext<'_>) -> 
             "project status",
         )?;
     }
-    let document = render::document(&report, publication.clone());
+    let document = render::document(&report, validation_actions, publication.clone());
     if !crate::cli::output::structured(&document) {
-        render::print_text(&report, &context);
+        render::print_text(&report, &document);
         if let Some(publication) = publication {
             outputln!("\nReport {}: {}", publication.status, publication.path);
         }

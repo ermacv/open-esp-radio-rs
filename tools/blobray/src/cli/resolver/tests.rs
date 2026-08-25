@@ -504,36 +504,71 @@ fn explicit_target_run_spec_and_svd_override_project_defaults() {
             .windows(2)
             .any(|pair| pair == ["--svd", "cli.svd"])
     );
-    assert_eq!(
-        context.follow_up_command(
-            "project analyze",
+    let analyze = context
+        .follow_up_action(
+            ["project", "analyze"],
             crate::application::ProjectContextRequirement::Analysis,
-        ),
-        format!(
-            "blobray project analyze --project {} --target-spec {} --run-spec {} --svd cli.svd",
-            crate::shell::arg(directory.join(DEFAULT_PROJECT_MANIFEST).as_os_str()),
-            crate::shell::arg(explicit_target.as_os_str()),
-            crate::shell::arg(directory.join("explicit.toml").as_os_str()),
         )
+        .unwrap();
+    assert_eq!(
+        analyze.argv,
+        vec![
+            "blobray".to_owned(),
+            "project".to_owned(),
+            "analyze".to_owned(),
+            "--project".to_owned(),
+            directory
+                .join(DEFAULT_PROJECT_MANIFEST)
+                .to_str()
+                .unwrap()
+                .to_owned(),
+            "--target-spec".to_owned(),
+            explicit_target.to_str().unwrap().to_owned(),
+            "--run-spec".to_owned(),
+            directory.join("explicit.toml").to_str().unwrap().to_owned(),
+            "--svd".to_owned(),
+            "cli.svd".to_owned(),
+        ]
     );
     assert_eq!(
-        context.inputs_init_help_command(),
-        format!(
-            "blobray project inputs init --project {} --output {} --help",
-            crate::shell::arg(directory.join(DEFAULT_PROJECT_MANIFEST).as_os_str()),
-            crate::shell::arg(directory.join("explicit.toml").as_os_str()),
-        )
+        context.inputs_init_help_action().unwrap().argv,
+        vec![
+            "blobray".to_owned(),
+            "project".to_owned(),
+            "inputs".to_owned(),
+            "init".to_owned(),
+            "--project".to_owned(),
+            directory
+                .join(DEFAULT_PROJECT_MANIFEST)
+                .to_str()
+                .unwrap()
+                .to_owned(),
+            "--output".to_owned(),
+            directory.join("explicit.toml").to_str().unwrap().to_owned(),
+            "--help".to_owned(),
+        ]
     );
     assert_eq!(
-        context.follow_up_command(
-            "project files",
-            crate::application::ProjectContextRequirement::Target,
-        ),
-        format!(
-            "blobray project files --project {} --target-spec {}",
-            crate::shell::arg(directory.join(DEFAULT_PROJECT_MANIFEST).as_os_str()),
-            crate::shell::arg(explicit_target.as_os_str()),
-        )
+        context
+            .follow_up_action(
+                ["project", "files"],
+                crate::application::ProjectContextRequirement::Target,
+            )
+            .unwrap()
+            .argv,
+        vec![
+            "blobray".to_owned(),
+            "project".to_owned(),
+            "files".to_owned(),
+            "--project".to_owned(),
+            directory
+                .join(DEFAULT_PROJECT_MANIFEST)
+                .to_str()
+                .unwrap()
+                .to_owned(),
+            "--target-spec".to_owned(),
+            explicit_target.to_str().unwrap().to_owned(),
+        ]
     );
 
     let report = crate::application::status::collect(&context);
@@ -541,18 +576,13 @@ fn explicit_target_run_spec_and_svd_override_project_defaults() {
         .phases
         .iter()
         .flat_map(|phase| &phase.components)
-        .filter_map(|component| component.next_action.as_deref())
+        .filter_map(|component| component.next_step.as_ref())
+        .flat_map(|step| &step.commands)
         .collect::<Vec<_>>();
     assert!(
-        actions.contains(
-            &format!(
-                "blobray project analyze --project {} --target-spec {} --run-spec {} --svd cli.svd",
-                crate::shell::arg(directory.join(DEFAULT_PROJECT_MANIFEST).as_os_str()),
-                crate::shell::arg(explicit_target.as_os_str()),
-                crate::shell::arg(directory.join("explicit.toml").as_os_str()),
-            )
-            .as_str()
-        )
+        actions
+            .iter()
+            .any(|candidate| candidate.argv == analyze.argv)
     );
 
     std::fs::remove_dir_all(directory).unwrap();

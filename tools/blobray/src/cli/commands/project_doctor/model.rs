@@ -4,7 +4,7 @@ use std::{fmt, path::PathBuf};
 
 use serde::{Serialize, Serializer, ser::SerializeMap as _};
 
-use crate::application::status::model::{EvidenceFreshness, ValidationDepth};
+use crate::application::status::model::{EvidenceFreshness, FollowUpStep, ValidationDepth};
 
 use super::super::{
     project_function_doctor::FunctionDoctorReport, project_ir_doctor::IrDoctorReport,
@@ -30,6 +30,8 @@ pub(super) struct DoctorReport {
     pub(super) valid_inputs: usize,
     pub(super) duration_ms: u64,
     pub(super) timings: Vec<DoctorTiming>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) next_steps: Vec<FollowUpStep>,
 }
 
 #[derive(Serialize)]
@@ -56,7 +58,7 @@ impl DoctorReport {
         run_spec: RunSpecReport,
     ) -> Self {
         Self {
-            schema: 3,
+            schema: 4,
             command: "project doctor",
             status: DoctorStatus::Valid,
             validation: DoctorValidation {
@@ -83,6 +85,7 @@ impl DoctorReport {
             valid_inputs: 0,
             duration_ms: 0,
             timings: Vec::new(),
+            next_steps: Vec::new(),
         }
     }
 

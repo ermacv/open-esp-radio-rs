@@ -53,7 +53,9 @@ pub(crate) fn analyze_project(
         pipeline_inputs,
         pipeline_input_error,
     };
-    super::run(&session.project, request, inputs, &mut operations)
+    let mut report = super::run(&session.project, request, inputs, &mut operations);
+    report.next_steps = super::follow_up_steps(&report, &session.context());
+    report
 }
 
 pub(crate) fn plan_project(

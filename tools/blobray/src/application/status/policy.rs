@@ -1,6 +1,9 @@
 //! Fail-closed status for the flat verification policy.
 
-use super::model::{Component, Phase, Readiness};
+use super::{
+    executable_steps,
+    model::{Component, FollowUpStep, Phase, Readiness},
+};
 use crate::application::{ProjectContext, ProjectContextRequirement};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
@@ -15,10 +18,10 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
             vec![
                 Component::new("surfaces", Readiness::Incomplete)
                     .diagnostic("verification policy is not configured")
-                    .next_action(format!(
+                    .next_step(FollowUpStep::manual(format!(
                         "configure verification.policy in {}",
                         context.project_path.display()
-                    )),
+                    ))),
             ],
         );
     };
@@ -47,9 +50,9 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
             .detail("blocked", report.blocked)
             .detail("blockers", blockers.clone());
             if let Some(first) = blockers.first() {
-                component = component
-                    .diagnostic(first)
-                    .next_action("close the reported verification surface");
+                component = component.diagnostic(first).next_step(FollowUpStep::manual(
+                    "close the reported verification surface",
+                ));
             }
             Phase::collect("verification-policy", vec![component])
         }
@@ -60,16 +63,19 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                 Component::new("surfaces", Readiness::Incomplete)
                     .detail("policy", policy_path.display().to_string())
                     .diagnostic(error)
-                    .next_action(format!(
-                        "regenerate review with `{}`, then verification with `{}`",
-                        context.follow_up_command(
-                            "project analyze",
-                            ProjectContextRequirement::Analysis,
-                        ),
-                        context.follow_up_command(
-                            "project verify",
-                            ProjectContextRequirement::Analysis,
-                        )
+                    .next_step(executable_steps(
+                        context,
+                        "regenerate review evidence, then replay verification",
+                        vec![
+                            (
+                                vec!["project".into(), "analyze".into()],
+                                ProjectContextRequirement::Analysis,
+                            ),
+                            (
+                                vec!["project".into(), "verify".into()],
+                                ProjectContextRequirement::Analysis,
+                            ),
+                        ],
                     )),
             ],
         ),

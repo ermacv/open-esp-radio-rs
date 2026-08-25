@@ -11,6 +11,7 @@ use serde::Serialize;
 
 use super::Result;
 use crate::{
+    application::{ExecutableAction, FollowUpStep, ProjectContextRequirement},
     artifact,
     cli::{ProjectInputBinding, ProjectInputsInitArgs},
     project::ProjectSpec,
@@ -26,7 +27,7 @@ struct ProjectInputsReport {
     output: String,
     required_roles: Vec<String>,
     bindings: Vec<InputBindingReport>,
-    next_command: String,
+    next_steps: Vec<FollowUpStep>,
 }
 
 #[derive(Serialize)]
@@ -54,6 +55,22 @@ pub(super) fn run(arguments: ProjectInputsInitArgs, manifest: &Path) -> Result<b
     let required_roles = required_roles(&project, &known_sources);
     let bindings = resolve_bindings(arguments.bind, &known_sources, &required_roles)?;
     reject_artifact_output_alias(&output, &bindings)?;
+    let next_steps = vec![FollowUpStep::command(
+        "Validate the resolved project, explicit input bindings, and reviewed workspaces.",
+        ExecutableAction::new(
+            vec![
+                "blobray".to_owned(),
+                "project".to_owned(),
+                "doctor".to_owned(),
+                "--project".to_owned(),
+                executable_path(manifest, "project manifest")?,
+                "--run-spec".to_owned(),
+                executable_path(&output, "run spec")?,
+            ],
+            std::env::current_dir()?,
+            ProjectContextRequirement::RunSpec,
+        )?,
+    )];
     let rendered = render_run_spec(&bindings);
     let (status, succeeded) = if arguments.check {
         let current = match fs::read_to_string(&output) {
@@ -75,7 +92,7 @@ pub(super) fn run(arguments: ProjectInputsInitArgs, manifest: &Path) -> Result<b
     };
 
     let report = ProjectInputsReport {
-        schema: 1,
+        schema: 2,
         command: "project inputs init",
         status,
         project: project.id,
@@ -92,10 +109,7 @@ pub(super) fn run(arguments: ProjectInputsInitArgs, manifest: &Path) -> Result<b
                 container: binding.container.label(),
             })
             .collect(),
-        next_command: format!(
-            "cargo blobray project doctor --project {}",
-            manifest.display()
-        ),
+        next_steps,
     };
     crate::cli::output::render_report(&report, || print_human(&report));
     Ok(succeeded)
@@ -304,5 +318,19 @@ fn print_human(report: &ProjectInputsReport) {
         )
     );
     outputln!("\n{}", output::heading("Next"));
-    outputln!("1. {}", report.next_command);
+    for (index, step) in report.next_steps.iter().enumerate() {
+        outputln!("{}. {}", index + 1, step.instruction);
+        for action in &step.commands {
+            outputln!("   {}", action.render_posix());
+        }
+    }
+}
+
+fn executable_path(path: &Path, role: &str) -> Result<String> {
+    path.to_str().map(str::to_owned).ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "{role} path is not valid UTF-8 and cannot be represented in an executable action: {}",
+            path.display()
+        ))
+    })
 }

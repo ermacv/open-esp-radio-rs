@@ -2,15 +2,90 @@
 
 use super::model::{CapabilityReport, DoctorReport};
 use crate::{
-    application::{ProjectContext, ProjectContextRequirement},
+    Result,
+    application::{FollowUpStep, ProjectContext, ProjectContextRequirement},
     cli::{output, table},
 };
 
-pub(super) fn render(report: &DoctorReport, context: &ProjectContext<'_>) {
-    output::render_report(report, || human(report, context));
+pub(super) fn next_steps(
+    report: &DoctorReport,
+    context: &ProjectContext<'_>,
+) -> Result<Vec<FollowUpStep>> {
+    if report.errors == 0 && report.warnings == 0 {
+        return Ok(Vec::new());
+    }
+
+    if report.run_spec.status != "available" {
+        return Ok(vec![
+            FollowUpStep::command(
+                "Define caller-owned input bindings.",
+                context.inputs_init_help_action()?,
+            ),
+            FollowUpStep::command(
+                "Inspect the prerequisite-ordered project file contract.",
+                context.follow_up_action(
+                    ["project", "files", "--details"],
+                    ProjectContextRequirement::Target,
+                )?,
+            ),
+        ]);
+    }
+
+    let missing_inputs = report
+        .inputs
+        .iter()
+        .filter(|input| input.status == "missing")
+        .collect::<Vec<_>>();
+    if !missing_inputs.is_empty() {
+        let bindings = missing_inputs
+            .iter()
+            .map(|input| format!("{} -> {}", input.role, input.path.display()))
+            .collect::<Vec<_>>()
+            .join("; ");
+        let mut steps = vec![FollowUpStep::manual(format!(
+            "Rebuild or restore these already-bound artifacts: {bindings}."
+        ))];
+        if let Some(path) = report.run_spec.path.as_deref() {
+            steps.push(FollowUpStep::command(
+                format!(
+                    "Only if an artifact path changed, recreate its binding in {}.",
+                    path.display()
+                ),
+                context.inputs_init_help_action()?,
+            ));
+        }
+        steps.push(FollowUpStep::command(
+            "Recheck project readiness after restoring the inputs.",
+            context.follow_up_action(["project", "status"], ProjectContextRequirement::RunSpec)?,
+        ));
+        return Ok(steps);
+    }
+
+    Ok(vec![
+        FollowUpStep::command(
+            "Inspect the prerequisite-ordered project file contract.",
+            context.follow_up_action(
+                ["project", "files", "--details"],
+                ProjectContextRequirement::Target,
+            )?,
+        ),
+        FollowUpStep::command(
+            "Regenerate analysis evidence.",
+            context
+                .follow_up_action(["project", "analyze"], ProjectContextRequirement::Analysis)?,
+        ),
+        FollowUpStep::command(
+            "Recheck project readiness.",
+            context.follow_up_action(["project", "status"], ProjectContextRequirement::RunSpec)?,
+        ),
+    ])
 }
 
-fn human(report: &DoctorReport, context: &ProjectContext<'_>) {
+pub(super) fn render(report: &DoctorReport) {
+    output::render_report(report, || human(report));
+}
+
+fn human(report: &DoctorReport) {
     outputln!("{}", output::heading("Project doctor"));
     outputln!("Project:  {}", report.project.id);
     outputln!("Manifest: {}", report.project.path.display());
@@ -86,47 +161,13 @@ fn human(report: &DoctorReport, context: &ProjectContext<'_>) {
         }
     }
 
-    if report.errors != 0 || report.warnings != 0 {
+    if !report.next_steps.is_empty() {
         outputln!("\n{}", output::heading("Next"));
-        if report.run_spec.status != "available" {
-            outputln!("1. {}", context.inputs_init_help_command());
-            outputln!(
-                "2. {} --details",
-                context.follow_up_command("project files", ProjectContextRequirement::Target)
-            );
-        } else if report.inputs.iter().any(|input| input.status == "missing") {
-            outputln!("1. rebuild or restore these already-bound artifacts:");
-            for input in report
-                .inputs
-                .iter()
-                .filter(|input| input.status == "missing")
-            {
-                outputln!("   {} -> {}", input.role, input.path.display());
+        for (index, step) in report.next_steps.iter().enumerate() {
+            outputln!("{}. {}", index + 1, sanitize(&step.instruction));
+            for command in &step.commands {
+                outputln!("   {}", command.render_posix());
             }
-            if let Some(path) = report.run_spec.path.as_deref() {
-                outputln!(
-                    "2. only if a path changed, recreate its binding in {} with `{}`",
-                    path.display(),
-                    context.inputs_init_help_command(),
-                );
-            }
-            outputln!(
-                "3. {}",
-                context.follow_up_command("project status", ProjectContextRequirement::RunSpec)
-            );
-        } else {
-            outputln!(
-                "1. {} --details",
-                context.follow_up_command("project files", ProjectContextRequirement::Target)
-            );
-            outputln!(
-                "2. {}",
-                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis)
-            );
-            outputln!(
-                "3. {}",
-                context.follow_up_command("project status", ProjectContextRequirement::RunSpec)
-            );
         }
     }
 

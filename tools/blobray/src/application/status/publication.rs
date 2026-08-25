@@ -1,6 +1,9 @@
 //! Fast publication readiness; exact comparison belongs to publish/check.
 
-use super::model::{Component, Phase, Readiness};
+use super::{
+    executable_step,
+    model::{Component, FollowUpStep, Phase, Readiness},
+};
 use crate::{
     application::{ProjectContext, ProjectContextRequirement},
     registers::ProjectRegisterWorkspace,
@@ -19,7 +22,9 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
             vec![
                 Component::new("register_outputs", Readiness::Incomplete)
                     .diagnostic("publication review scopes are not configured")
-                    .next_action("configure [review] and its publication-scopes"),
+                    .next_step(FollowUpStep::manual(
+                        "configure [review] and its publication-scopes",
+                    )),
             ],
         );
     }
@@ -31,12 +36,11 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                 vec![
                     Component::new("register_outputs", Readiness::Invalid)
                         .diagnostic(error)
-                        .next_action(format!(
-                            "refresh review scopes with `{}`",
-                            context.follow_up_command(
-                                "project analyze",
-                                ProjectContextRequirement::Analysis,
-                            )
+                        .next_step(executable_step(
+                            context,
+                            "refresh review scopes",
+                            ["project", "analyze"],
+                            ProjectContextRequirement::Analysis,
                         )),
                 ],
             );
@@ -52,12 +56,11 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                 vec![
                     Component::new("register_outputs", Readiness::Invalid)
                         .diagnostic(error)
-                        .next_action(format!(
-                            "resolve register review findings, then run `{}`",
-                            context.follow_up_command(
-                                "project publish --check",
-                                ProjectContextRequirement::ProjectOnly,
-                            )
+                        .next_step(executable_step(
+                            context,
+                            "resolve register review findings, then check publication",
+                            ["project", "publish", "--check"],
+                            ProjectContextRequirement::ProjectOnly,
                         )),
                 ],
             );
@@ -79,13 +82,14 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                         "publication scopes contain {} unreviewed MMIO register(s): {identities}",
                         unreviewed.len()
                     ))
-                    .next_action(format!(
-                        "review the registers in {}, then run `{}`",
-                        paths.model.display(),
-                        context.follow_up_command(
-                            "project publish --check",
-                            ProjectContextRequirement::ProjectOnly,
-                        )
+                    .next_step(executable_step(
+                        context,
+                        format!(
+                            "review the registers in {}, then check publication",
+                            paths.model.display()
+                        ),
+                        ["project", "publish", "--check"],
+                        ProjectContextRequirement::ProjectOnly,
                     )),
             ],
         );
@@ -128,10 +132,11 @@ fn output(
         Component::new(name, Readiness::Incomplete)
             .detail("path", path.display().to_string())
             .detail("file_status", "missing")
-            .next_action(format!(
-                "generate the configured outputs with `{}`",
-                context
-                    .follow_up_command("project publish", ProjectContextRequirement::ProjectOnly,)
+            .next_step(executable_step(
+                context,
+                "generate the configured publication outputs",
+                ["project", "publish"],
+                ProjectContextRequirement::ProjectOnly,
             ))
     }
 }

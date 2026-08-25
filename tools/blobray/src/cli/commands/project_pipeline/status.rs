@@ -1,17 +1,14 @@
 //! CLI presentation for the application-owned project analysis report.
 
-use crate::application::{
-    ProjectContext, ProjectContextRequirement,
-    project_analysis::{ProjectAnalysisReport, ProjectAnalysisStatus},
-};
+use crate::application::project_analysis::{ProjectAnalysisReport, ProjectAnalysisStatus};
 
 use super::human_duration;
 
-pub(super) fn render(document: &ProjectAnalysisReport, context: ProjectContext<'_>) {
-    crate::cli::output::render_report(document, || print_human(document, &context));
+pub(super) fn render(document: &ProjectAnalysisReport) {
+    crate::cli::output::render_report(document, || print_human(document));
 }
 
-fn print_human(document: &ProjectAnalysisReport, context: &ProjectContext<'_>) {
+fn print_human(document: &ProjectAnalysisReport) {
     use crate::cli::{output, table};
 
     outputln!("{}", output::heading("Project analysis"));
@@ -64,57 +61,14 @@ fn print_human(document: &ProjectAnalysisReport, context: &ProjectContext<'_>) {
             })
         )
     );
-    let next = next_lines(document, context);
-    if !next.is_empty() {
+    if !document.next_steps.is_empty() {
         outputln!("\n{}", output::heading("Next"));
-        for line in next {
-            outputln!("{line}");
+        for (index, step) in document.next_steps.iter().enumerate() {
+            outputln!("{}. {}", index + 1, step.instruction);
+            for command in &step.commands {
+                outputln!("   {}", command.render_posix());
+            }
         }
-    }
-}
-
-fn next_lines(document: &ProjectAnalysisReport, context: &ProjectContext<'_>) -> Vec<String> {
-    let missing_pack = |kind: &str| {
-        document.stages.iter().any(|stage| {
-            stage
-                .reason
-                .as_deref()
-                .is_some_and(|reason| reason.contains(kind))
-        })
-    };
-    let missing_function_pack = missing_pack("cannot read function pack");
-    let missing_interface_pack = missing_pack("cannot read interface pack");
-    let analyze =
-        || context.follow_up_command("project analyze", ProjectContextRequirement::Analysis);
-    if missing_function_pack || missing_interface_pack {
-        let mut lines = Vec::new();
-        if missing_function_pack {
-            lines.push(format!(
-                "- {}",
-                context.follow_up_command(
-                    "advanced functions init-pack",
-                    ProjectContextRequirement::Target,
-                )
-            ));
-        }
-        if missing_interface_pack {
-            lines.push(format!(
-                "- {}",
-                context.follow_up_command(
-                    "advanced interfaces init-pack",
-                    ProjectContextRequirement::Target,
-                )
-            ));
-        }
-        lines.push(format!("Then rerun `{}`.", analyze()));
-        lines
-    } else if document.status == ProjectAnalysisStatus::NothingConfigured {
-        vec![format!(
-            "Configure at least one analysis, validation, or review stage, then rerun `{}`.",
-            analyze()
-        )]
-    } else {
-        Vec::new()
     }
 }
 
@@ -123,7 +77,7 @@ mod tests {
     use super::*;
     use crate::{
         MmioMap, TargetSpec,
-        application::{ExplicitProjectContext, pipeline::StageReport},
+        application::{ExplicitProjectContext, ProjectContext, pipeline::StageReport},
         project::ProjectSpec,
     };
     use std::path::{Path, PathBuf};
@@ -131,7 +85,7 @@ mod tests {
     #[test]
     fn analysis_document_keeps_stage_states_and_counts_typed() {
         let document = ProjectAnalysisReport {
-            schema: 5,
+            schema: 6,
             command: "project analyze",
             mode: "check",
             status: ProjectAnalysisStatus::Failed,
@@ -149,6 +103,7 @@ mod tests {
             blocked: 1,
             not_configured: 0,
             duration_ms: None,
+            next_steps: Vec::new(),
         };
         let value = serde_json::to_value(document).unwrap();
         assert_eq!(value["blocked"], 1);
@@ -197,7 +152,7 @@ mod tests {
             invocation_directory: Path::new("/tmp"),
         };
         let document = ProjectAnalysisReport {
-            schema: 5,
+            schema: 6,
             command: "project analyze",
             mode: "write",
             status: ProjectAnalysisStatus::Failed,
@@ -215,25 +170,44 @@ mod tests {
             blocked: 0,
             not_configured: 0,
             duration_ms: None,
+            next_steps: Vec::new(),
         };
-        let arg = |path: &Path| crate::shell::arg(path.as_os_str());
-
+        let steps = crate::application::project_analysis::follow_up_steps(&document, &context);
+        assert_eq!(steps.len(), 1);
         assert_eq!(
-            next_lines(&document, &context),
+            steps[0].instruction,
+            "Create the missing reviewed packs, then rerun project analysis."
+        );
+        assert_eq!(steps[0].commands.len(), 2);
+        assert_eq!(
+            steps[0].commands[0].argv,
             [
-                format!(
-                    "- blobray advanced functions init-pack --project {} --target-spec {}",
-                    arg(&manifest),
-                    arg(&explicit_target),
-                ),
-                format!(
-                    "Then rerun `blobray project analyze --project {} --target-spec {} --run-spec {} --svd {} --svd {}`.",
-                    arg(&manifest),
-                    arg(&explicit_target),
-                    arg(&explicit_run),
-                    arg(&explicit_svds[0]),
-                    arg(&explicit_svds[1]),
-                ),
+                "blobray",
+                "advanced",
+                "functions",
+                "init-pack",
+                "--project",
+                manifest.to_str().unwrap(),
+                "--target-spec",
+                explicit_target.to_str().unwrap(),
+            ]
+        );
+        assert_eq!(
+            steps[0].commands[1].argv,
+            [
+                "blobray",
+                "project",
+                "analyze",
+                "--project",
+                manifest.to_str().unwrap(),
+                "--target-spec",
+                explicit_target.to_str().unwrap(),
+                "--run-spec",
+                explicit_run.to_str().unwrap(),
+                "--svd",
+                explicit_svds[0].to_str().unwrap(),
+                "--svd",
+                explicit_svds[1].to_str().unwrap(),
             ]
         );
     }

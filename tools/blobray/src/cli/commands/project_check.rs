@@ -5,7 +5,7 @@ use serde::Serialize;
 use super::Result;
 use crate::{
     application::{
-        ProjectContext, ProjectContextRequirement, ProjectSession,
+        ExecutableAction, FollowUpStep, ProjectContext, ProjectContextRequirement, ProjectSession,
         pipeline::StageReport,
         project_analysis::ProjectAnalysisRequest,
         project_publication::{ProjectPublicationRequest, execute as publish},
@@ -31,7 +31,7 @@ struct ProjectCheckStage {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     issues: Vec<ProjectCheckIssue>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    next_actions: Vec<String>,
+    next_steps: Vec<FollowUpStep>,
 }
 
 #[derive(Serialize)]
@@ -42,38 +42,41 @@ struct ProjectCheckIssue {
 }
 
 struct ProjectCheckFollowUps {
-    check: String,
-    audit_bindings: String,
-    analyze_check: String,
-    verify_check: String,
-    publish_check: String,
+    check: ExecutableAction,
+    audit_bindings: ExecutableAction,
+    analyze_check: ExecutableAction,
+    verify_check: ExecutableAction,
+    publish_check: ExecutableAction,
 }
 
 impl ProjectCheckFollowUps {
-    fn new(context: &ProjectContext<'_>) -> Self {
-        Self {
-            check: context.follow_up_command("project check", ProjectContextRequirement::Analysis),
-            audit_bindings: context
-                .follow_up_command("project audit bindings", ProjectContextRequirement::Target),
-            analyze_check: context.follow_up_command(
-                "project analyze --check",
+    fn new(context: &ProjectContext<'_>) -> Result<Self> {
+        Ok(Self {
+            check: context
+                .follow_up_action(["project", "check"], ProjectContextRequirement::Analysis)?,
+            audit_bindings: context.follow_up_action(
+                ["project", "audit", "bindings"],
+                ProjectContextRequirement::Target,
+            )?,
+            analyze_check: context.follow_up_action(
+                ["project", "analyze", "--check"],
                 ProjectContextRequirement::Analysis,
-            ),
-            verify_check: context.follow_up_command(
-                "project verify --check",
+            )?,
+            verify_check: context.follow_up_action(
+                ["project", "verify", "--check"],
                 ProjectContextRequirement::Analysis,
-            ),
-            publish_check: context.follow_up_command(
-                "project publish --check",
+            )?,
+            publish_check: context.follow_up_action(
+                ["project", "publish", "--check"],
                 ProjectContextRequirement::ProjectOnly,
-            ),
-        }
+            )?,
+        })
     }
 }
 
 pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Result<bool> {
     let context = session.context();
-    let follow_ups = ProjectCheckFollowUps::new(&context);
+    let follow_ups = ProjectCheckFollowUps::new(&context)?;
     let binding_audit = crate::verification::audit(&session.project)?;
     let analysis_request = ProjectAnalysisRequest {
         check: true,
@@ -117,7 +120,7 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         .report;
     let graph = &verification.replacement_graph.summary;
     let report = ProjectCheckReport {
-        schema: 6,
+        schema: 7,
         command: "project check",
         project: session.project.id.clone(),
         passed,
@@ -147,12 +150,14 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                         }
                     }))
                     .collect(),
-                next_actions: (!ownership.passed())
+                next_steps: (!ownership.passed())
                     .then(|| {
-                        format!(
-                            "remove the {} files without a current project owner, then rerun `{}`",
-                            ownership.issue_count(),
-                            follow_ups.check,
+                        FollowUpStep::command(
+                            format!(
+                                "Remove the {} files without a current project owner, then rerun the project check.",
+                                ownership.issue_count(),
+                            ),
+                            follow_ups.check.clone(),
                         )
                     })
                     .into_iter()
@@ -181,11 +186,11 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                             .unwrap_or_else(|| "binding declaration is invalid".to_owned()),
                     })
                     .collect(),
-                next_actions: (!binding_audit.passed)
+                next_steps: (!binding_audit.passed)
                     .then(|| {
-                        format!(
-                            "run `{}`; fix every invalid declaration and every verification-blocked binding required by the verification policy before accepting baselines",
-                            follow_ups.audit_bindings,
+                        FollowUpStep::command(
+                            "Inspect the binding audit, then fix every invalid declaration and every policy-required verification-blocked binding before accepting baselines.",
+                            follow_ups.audit_bindings.clone(),
                         )
                     })
                     .into_iter()
@@ -202,11 +207,11 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                     analysis.blocked
                 ),
                 issues: pipeline_issues(&analysis.stages),
-                next_actions: (!analysis_passed)
+                next_steps: (!analysis_passed)
                     .then(|| {
-                        format!(
-                            "inspect failed analysis stages above and rerun `{}`",
-                            follow_ups.analyze_check,
+                        FollowUpStep::command(
+                            "Inspect the failed analysis stages above and reproduce the analysis check.",
+                            follow_ups.analyze_check.clone(),
                         )
                     })
                     .into_iter()
@@ -226,12 +231,14 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                     graph.implemented_unqualified,
                 ),
                 issues: verification_issues(&verification),
-                next_actions: (!verification.passed)
+                next_steps: (!verification.passed)
                     .then(|| {
-                        format!(
-                            "inspect {}; edit the responsible verification dispositions/contracts and rerun `{}`",
-                            report_path.display(),
-                            follow_ups.verify_check,
+                        FollowUpStep::command(
+                            format!(
+                                "Inspect {}; edit the responsible verification dispositions or contracts, then reproduce verification.",
+                                report_path.display(),
+                            ),
+                            follow_ups.verify_check.clone(),
                         )
                     })
                     .into_iter()
@@ -247,11 +254,11 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                     publication.verified, publication.failed, publication.blocked
                 ),
                 issues: pipeline_issues(&publication.stages),
-                next_actions: (!publication_passed)
+                next_steps: (!publication_passed)
                     .then(|| {
-                        format!(
-                            "fix the publication issue above and rerun `{}`",
-                            follow_ups.publish_check,
+                        FollowUpStep::command(
+                            "Fix the publication issue above, then reproduce the publication preflight.",
+                            follow_ups.publish_check.clone(),
                         )
                     })
                     .into_iter()
@@ -293,15 +300,18 @@ fn render_human(report: &ProjectCheckReport) {
         }
     }
 
-    let actions = report
+    let steps = report
         .stages
         .iter()
-        .flat_map(|stage| &stage.next_actions)
+        .flat_map(|stage| &stage.next_steps)
         .collect::<Vec<_>>();
-    if !actions.is_empty() {
+    if !steps.is_empty() {
         outputln!("\n{}", output::heading("Next"));
-        for (index, action) in actions.iter().enumerate() {
-            outputln!("{}. {action}", index + 1);
+        for (index, step) in steps.iter().enumerate() {
+            outputln!("{}. {}", index + 1, step.instruction);
+            for command in &step.commands {
+                outputln!("   {}", command.render_posix());
+            }
         }
     }
 
@@ -319,7 +329,7 @@ fn render_human(report: &ProjectCheckReport) {
     );
 }
 
-fn policy_stage(session: &ProjectSession, check_command: &str) -> ProjectCheckStage {
+fn policy_stage(session: &ProjectSession, check_command: &ExecutableAction) -> ProjectCheckStage {
     let manifest = session.manifest.display();
     let Some(policy_path) = session
         .project
@@ -338,7 +348,9 @@ fn policy_stage(session: &ProjectSession, check_command: &str) -> ProjectCheckSt
                 reason: "every project check requires an explicit flat verification policy"
                     .to_owned(),
             }],
-            next_actions: vec![format!("configure verification.policy in {manifest}")],
+            next_steps: vec![FollowUpStep::manual(format!(
+                "Configure verification.policy in {manifest}."
+            ))],
         };
     };
     match crate::verification::policy::evaluate(&session.project) {
@@ -364,10 +376,11 @@ fn policy_stage(session: &ProjectSession, check_command: &str) -> ProjectCheckSt
                     report.closed, report.blocked,
                 ),
                 issues,
-                next_actions: (!report.passed)
+                next_steps: (!report.passed)
                     .then(|| {
-                        format!(
-                            "close the reported verification surface and rerun `{check_command}`"
+                        FollowUpStep::command(
+                            "Close the reported verification surface, then rerun the project check.",
+                            check_command.clone(),
                         )
                     })
                     .into_iter()
@@ -388,8 +401,9 @@ fn policy_stage(session: &ProjectSession, check_command: &str) -> ProjectCheckSt
                 status: "failed".to_owned(),
                 reason: error.to_string(),
             }],
-            next_actions: vec![format!(
-                "regenerate analysis and verification reports, then rerun `{check_command}`"
+            next_steps: vec![FollowUpStep::command(
+                "Regenerate the analysis and verification reports, then rerun the project check.",
+                check_command.clone(),
             )],
         },
     }
@@ -492,9 +506,9 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_schema_keeps_issues_and_next_actions_separate() {
+    fn aggregate_schema_keeps_issues_and_next_steps_separate() {
         let report = ProjectCheckReport {
-            schema: 6,
+            schema: 7,
             command: "project check",
             project: "fixture".to_owned(),
             passed: false,
@@ -508,20 +522,27 @@ mod tests {
                     status: "failed".to_owned(),
                     reason: "1: missing production trace".to_owned(),
                 }],
-                next_actions: vec!["inspect verification.json".to_owned()],
+                next_steps: vec![FollowUpStep::manual("Inspect verification.json.")],
             }],
         };
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema"], 6);
+        assert_eq!(value["schema"], 7);
         assert_eq!(value["stages"][0]["status"], "failed");
         assert_eq!(
             value["stages"][0]["issues"][0]["component"],
             "implemented-unqualified"
         );
         assert_eq!(
-            value["stages"][0]["next_actions"][0],
-            "inspect verification.json"
+            value["stages"][0]["next_steps"][0]["instruction"],
+            "Inspect verification.json."
         );
+        assert!(
+            value["stages"][0]["next_steps"][0]["commands"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(value["stages"][0].get("next_actions").is_none());
     }
 
     #[test]
@@ -556,43 +577,64 @@ mod tests {
             explicit_context: &explicit_context,
             invocation_directory: Path::new("/tmp"),
         };
-        let arg = |path: &Path| crate::shell::arg(path.as_os_str());
-        let follow_ups = ProjectCheckFollowUps::new(&context);
-        let analysis_context = format!(
-            "--project {} --target-spec {} --run-spec {} --svd {} --svd {}",
-            arg(&manifest),
-            arg(&explicit_target),
-            arg(&explicit_run),
-            arg(&explicit_svds[0]),
-            arg(&explicit_svds[1]),
-        );
+        let follow_ups = ProjectCheckFollowUps::new(&context).unwrap();
+        let analysis_context = [
+            "--project",
+            manifest.to_str().unwrap(),
+            "--target-spec",
+            explicit_target.to_str().unwrap(),
+            "--run-spec",
+            explicit_run.to_str().unwrap(),
+            "--svd",
+            explicit_svds[0].to_str().unwrap(),
+            "--svd",
+            explicit_svds[1].to_str().unwrap(),
+        ];
 
         assert_eq!(
-            follow_ups.check,
-            format!("blobray project check {analysis_context}")
+            follow_ups.check.argv,
+            ["blobray", "project", "check"]
+                .into_iter()
+                .chain(analysis_context)
+                .collect::<Vec<_>>()
         );
         assert_eq!(
-            follow_ups.analyze_check,
-            format!("blobray project analyze --check {analysis_context}")
+            follow_ups.analyze_check.argv,
+            ["blobray", "project", "analyze", "--check"]
+                .into_iter()
+                .chain(analysis_context)
+                .collect::<Vec<_>>()
         );
         assert_eq!(
-            follow_ups.verify_check,
-            format!("blobray project verify --check {analysis_context}")
+            follow_ups.verify_check.argv,
+            ["blobray", "project", "verify", "--check"]
+                .into_iter()
+                .chain(analysis_context)
+                .collect::<Vec<_>>()
         );
         assert_eq!(
-            follow_ups.audit_bindings,
-            format!(
-                "blobray project audit bindings --project {} --target-spec {}",
-                arg(&manifest),
-                arg(&explicit_target),
-            )
+            follow_ups.audit_bindings.argv,
+            [
+                "blobray",
+                "project",
+                "audit",
+                "bindings",
+                "--project",
+                manifest.to_str().unwrap(),
+                "--target-spec",
+                explicit_target.to_str().unwrap(),
+            ]
         );
         assert_eq!(
-            follow_ups.publish_check,
-            format!(
-                "blobray project publish --check --project {}",
-                arg(&manifest)
-            )
+            follow_ups.publish_check.argv,
+            [
+                "blobray",
+                "project",
+                "publish",
+                "--check",
+                "--project",
+                manifest.to_str().unwrap(),
+            ]
         );
     }
 }

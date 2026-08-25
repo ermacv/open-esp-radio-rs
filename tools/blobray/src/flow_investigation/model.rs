@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use crate::FollowUpStep;
+
 pub(crate) const MAX_VISITED_NODES: usize = 4_096;
 pub(crate) const MAX_EXAMINED_EDGES: usize = 32_768;
 pub(crate) const MAX_LOADED_FUNCTIONS: usize = 128;
@@ -217,19 +219,51 @@ pub(crate) struct FlowRustBoundaryEvidence {
 pub(crate) struct FlowBlocker {
     pub(crate) kind: String,
     pub(crate) message: String,
-    pub(crate) next_action: String,
+    /// Explicit instruction plus zero or more argument-vector commands.
+    pub(crate) next_step: FollowUpStep,
 }
 
 impl FlowBlocker {
     pub(crate) fn new(
         kind: impl Into<String>,
         message: impl Into<String>,
-        next_action: impl Into<String>,
+        next_step: FollowUpStep,
     ) -> Self {
         Self {
             kind: kind.into(),
             message: message.into(),
-            next_action: next_action.into(),
+            next_step,
         }
+    }
+
+    pub(crate) fn manual(
+        kind: impl Into<String>,
+        message: impl Into<String>,
+        instruction: impl Into<String>,
+    ) -> Self {
+        Self::new(kind, message, FollowUpStep::manual(instruction))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blocker_exposes_manual_instruction_without_a_fake_action() {
+        let value = serde_json::to_value(FlowBlocker::manual(
+            "missing-model",
+            "the call result is unresolved",
+            "review the external call contract",
+        ))
+        .unwrap();
+
+        assert_eq!(
+            value["next_step"]["instruction"],
+            "review the external call contract"
+        );
+        assert_eq!(value["next_step"]["commands"], serde_json::json!([]));
+        assert!(value.get("next_action").is_none());
+        assert!(value.get("instruction").is_none());
     }
 }

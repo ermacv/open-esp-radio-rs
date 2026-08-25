@@ -2,7 +2,10 @@
 
 use std::collections::BTreeSet;
 
-use super::model::{Component, Phase, Readiness, ReviewScopeDetail};
+use super::{
+    executable_step,
+    model::{Component, FollowUpStep, Phase, Readiness, ReviewScopeDetail},
+};
 use crate::application::{ProjectContext, ProjectContextRequirement};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,9 +67,12 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
         return Component::new("scopes", Readiness::Incomplete)
             .detail("report", workspace.output.display().to_string())
             .diagnostic("review scope report has not been generated")
-            .next_action(
-                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
-            );
+            .next_step(executable_step(
+                context,
+                "generate the review-scope report",
+                ["project", "analyze"],
+                ProjectContextRequirement::Analysis,
+            ));
     }
     match crate::review_scopes::load_for_project(context.project) {
         Ok(document) => {
@@ -94,10 +100,10 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                     .detail("report", workspace.output.display().to_string())
                     .detail("count", reports.len())
                     .diagnostic("no publication review scopes are configured")
-                    .next_action(format!(
+                    .next_step(FollowUpStep::manual(format!(
                         "configure [review].publication-scopes in {}",
                         context.project_path.display()
-                    ));
+                    )));
             }
             let details = reports
                 .iter()
@@ -160,12 +166,11 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                 .detail("research_scopes", research_scopes)
                 .detail("scopes", details);
             if recommend_research(research_root_causes.len(), gate.replacement_coverage_gaps) {
-                component = component.next_action(format!(
-                    "run `{}`",
-                    context.follow_up_command(
-                        "project research next",
-                        ProjectContextRequirement::Target,
-                    )
+                component = component.next_step(executable_step(
+                    context,
+                    "inspect the highest-leverage unresolved research item",
+                    ["project", "research", "next"],
+                    ProjectContextRequirement::Target,
                 ));
             }
             component
@@ -190,16 +195,21 @@ fn code(context: &ProjectContext<'_>) -> Component {
         return Component::new("code_boundaries", Readiness::Incomplete)
             .detail("facts", inventory.output.display().to_string())
             .diagnostic("symbol inventory has not been generated")
-            .next_action(
-                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
-            );
+            .next_step(executable_step(
+                context,
+                "generate the symbol inventory",
+                ["project", "analyze"],
+                ProjectContextRequirement::Analysis,
+            ));
     }
     if !paths.pack.is_file() {
         return Component::new("code_boundaries", Readiness::Incomplete)
             .detail("pack", paths.pack.display().to_string())
             .diagnostic("reviewed code-boundary pack has not been initialized")
-            .next_action(context.follow_up_command(
-                "advanced code init-pack",
+            .next_step(executable_step(
+                context,
+                "initialize the reviewed code-boundary pack",
+                ["advanced", "code", "init-pack"],
                 ProjectContextRequirement::ProjectOnly,
             ));
     }
@@ -220,8 +230,10 @@ fn registers(context: &ProjectContext<'_>) -> Component {
         return Component::new("registers", Readiness::Incomplete)
             .detail("model", paths.model.display().to_string())
             .diagnostic("register model has not been initialized")
-            .next_action(context.follow_up_command(
-                "registers init-model",
+            .next_step(executable_step(
+                context,
+                "initialize the reviewed register model",
+                ["registers", "init-model"],
                 ProjectContextRequirement::ProjectOnly,
             ));
     }
@@ -247,24 +259,29 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
         return Component::new("interfaces", Readiness::Incomplete)
             .detail("facts", paths.facts.display().to_string())
             .diagnostic("interface facts have not been generated")
-            .next_action(
-                context.follow_up_command("project analyze", ProjectContextRequirement::Analysis),
-            );
+            .next_step(executable_step(
+                context,
+                "generate interface discovery facts",
+                ["project", "analyze"],
+                ProjectContextRequirement::Analysis,
+            ));
     }
     let Some(pack) = paths.pack.as_deref() else {
         return Component::new("interfaces", Readiness::Incomplete)
             .diagnostic("interface pack is not configured")
-            .next_action(format!(
+            .next_step(FollowUpStep::manual(format!(
                 "configure [interfaces].pack in {}",
                 context.project_path.display()
-            ));
+            )));
     };
     if !pack.is_file() {
         return Component::new("interfaces", Readiness::Incomplete)
             .detail("pack", pack.display().to_string())
             .diagnostic("interface pack has not been initialized")
-            .next_action(context.follow_up_command(
-                "advanced interfaces init-pack",
+            .next_step(executable_step(
+                context,
+                "initialize the reviewed interface pack",
+                ["advanced", "interfaces", "init-pack"],
                 ProjectContextRequirement::Target,
             ));
     }
@@ -293,16 +310,21 @@ fn functions(context: &ProjectContext<'_>) -> Component {
             .detail("profiles", reports.len())
             .detail("missing_reports", missing)
             .diagnostic("linked-IR function facts have not been generated")
-            .next_action(
-                context.follow_up_command("advanced ir build", ProjectContextRequirement::Analysis),
-            );
+            .next_step(executable_step(
+                context,
+                "generate linked-IR function facts",
+                ["advanced", "ir", "build"],
+                ProjectContextRequirement::Analysis,
+            ));
     }
     if !paths.pack.is_file() {
         return Component::new("functions", Readiness::Incomplete)
             .detail("pack", paths.pack.display().to_string())
             .diagnostic("function pack has not been initialized")
-            .next_action(context.follow_up_command(
-                "advanced functions init-pack",
+            .next_step(executable_step(
+                context,
+                "initialize the reviewed function pack",
+                ["advanced", "functions", "init-pack"],
                 ProjectContextRequirement::ProjectOnly,
             ));
     }

@@ -8,7 +8,7 @@ use std::{
 
 use serde::Serialize;
 
-use super::ProjectContext;
+use super::{FollowUpStep, ProjectContext, ProjectContextRequirement};
 use crate::{Result, run_spec::RunSpec};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
@@ -93,7 +93,8 @@ pub(crate) struct ProjectFileEntry {
     pub(crate) producer: Option<String>,
     pub(crate) consumers: Vec<String>,
     pub(crate) required: bool,
-    pub(crate) next_action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) next_step: Option<FollowUpStep>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -161,13 +162,16 @@ impl ProjectFilesReport {
         self.pending_generated_count_by(|producer| producer == "project verify")
     }
 
-    /// Return only the next commands or manual actions whose prerequisites are
+    /// Return only the next executable commands or manual actions whose prerequisites are
     /// present. The file inventory deliberately does not recommend every
     /// producer at once: later bootstrap and publication stages would fail and
     /// hide the actual first blocker.
-    pub(crate) fn next_actions(&self) -> Vec<String> {
+    pub(crate) fn next_steps(&self, context: &ProjectContext<'_>) -> Result<Vec<FollowUpStep>> {
         if self.is_missing("run-spec") {
-            return vec!["blobray project inputs init --help".to_owned()];
+            return Ok(vec![FollowUpStep::command(
+                "Initialize the local input bindings.",
+                context.inputs_init_help_action()?,
+            )]);
         }
 
         let missing_inputs = self
@@ -177,25 +181,45 @@ impl ProjectFilesReport {
                 file.ownership == ProjectFileOwnership::External
                     && file.state == ProjectFileState::Missing
             })
-            .filter_map(|file| file.next_action.clone())
+            .filter_map(|file| file.next_step.clone())
             .collect::<Vec<_>>();
         if !missing_inputs.is_empty() {
-            return missing_inputs;
+            return Ok(missing_inputs);
         }
 
         if self.is_missing("code-pack") {
-            return vec![if self.is_present("symbol-inventory") {
-                "blobray advanced code init-pack".to_owned()
+            return Ok(vec![if self.is_present("symbol-inventory") {
+                executable_step(
+                    context,
+                    "Create the reviewed code pack from the current symbol inventory.",
+                    ["advanced", "code", "init-pack"],
+                    ProjectContextRequirement::ProjectOnly,
+                )?
             } else {
-                "blobray advanced symbols inventory".to_owned()
-            }];
+                executable_step(
+                    context,
+                    "Generate the symbol inventory required by the code pack.",
+                    ["advanced", "symbols", "inventory"],
+                    ProjectContextRequirement::RunSpec,
+                )?
+            }]);
         }
         if self.is_missing("interface-pack") {
-            return vec![if self.is_present("interface-facts") {
-                "blobray advanced interfaces init-pack".to_owned()
+            return Ok(vec![if self.is_present("interface-facts") {
+                executable_step(
+                    context,
+                    "Create the reviewed interface pack from the discovered facts.",
+                    ["advanced", "interfaces", "init-pack"],
+                    ProjectContextRequirement::Target,
+                )?
             } else {
-                "blobray advanced interfaces discover".to_owned()
-            }];
+                executable_step(
+                    context,
+                    "Discover interface facts required by the interface pack.",
+                    ["advanced", "interfaces", "discover"],
+                    ProjectContextRequirement::RunSpec,
+                )?
+            }]);
         }
         if self.is_missing("function-pack") {
             let linked_ir_ready = self
@@ -203,45 +227,99 @@ impl ProjectFilesReport {
                 .iter()
                 .filter(|file| file.role.starts_with("linked-ir:"))
                 .all(|file| file.state == ProjectFileState::Present);
-            return vec![if linked_ir_ready {
-                "blobray advanced functions init-pack".to_owned()
+            return Ok(vec![if linked_ir_ready {
+                executable_step(
+                    context,
+                    "Create the reviewed function pack from linked IR.",
+                    ["advanced", "functions", "init-pack"],
+                    ProjectContextRequirement::Target,
+                )?
             } else {
-                "blobray advanced ir build".to_owned()
-            }];
+                executable_step(
+                    context,
+                    "Build the linked IR required by the function pack.",
+                    ["advanced", "ir", "build"],
+                    ProjectContextRequirement::Analysis,
+                )?
+            }]);
         }
 
         if self.required_missing() != 0 {
-            return vec!["blobray project doctor".to_owned()];
+            return Ok(vec![executable_step(
+                context,
+                "Diagnose the remaining required project files.",
+                ["project", "doctor"],
+                ProjectContextRequirement::Analysis,
+            )?]);
         }
 
-        match self.workflow_state() {
-            ProjectFilesWorkflowState::Blocked => vec!["blobray project doctor".to_owned()],
-            ProjectFilesWorkflowState::AnalysisPending => {
-                vec!["blobray project analyze".to_owned()]
-            }
+        let steps = match self.workflow_state() {
+            ProjectFilesWorkflowState::Blocked => vec![executable_step(
+                context,
+                "Diagnose the blocked project workflow.",
+                ["project", "doctor"],
+                ProjectContextRequirement::Analysis,
+            )?],
+            ProjectFilesWorkflowState::AnalysisPending => vec![executable_step(
+                context,
+                "Generate the pending analysis outputs.",
+                ["project", "analyze"],
+                ProjectContextRequirement::Analysis,
+            )?],
             ProjectFilesWorkflowState::ReviewOutputsPending => [
-                "advanced code review",
-                "registers review",
-                "advanced functions review",
+                (
+                    "advanced code review",
+                    ["advanced", "code", "review"].as_slice(),
+                    ProjectContextRequirement::ProjectOnly,
+                ),
+                (
+                    "registers review",
+                    ["registers", "review"].as_slice(),
+                    ProjectContextRequirement::ProjectOnly,
+                ),
+                (
+                    "advanced functions review",
+                    ["advanced", "functions", "review"].as_slice(),
+                    ProjectContextRequirement::Target,
+                ),
             ]
             .into_iter()
-            .filter(|producer| self.pending_generated_by(|pending| pending == *producer))
-            .map(|producer| format!("blobray {producer}"))
-            .collect(),
-            ProjectFilesWorkflowState::ReviewConfigurationRequired => vec![format!(
-                "configure [review] and publication-scopes in {}",
-                self.manifest.display()
-            )],
-            ProjectFilesWorkflowState::PublicationPreflightRequired => {
-                vec!["blobray project publish --check".to_owned()]
+            .filter(|(producer, _, _)| self.pending_generated_by(|pending| pending == *producer))
+            .map(|(producer, command, requirement)| {
+                executable_step(
+                    context,
+                    format!("Generate the pending `{producer}` review output."),
+                    command.iter().copied(),
+                    requirement,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?,
+            ProjectFilesWorkflowState::ReviewConfigurationRequired => {
+                vec![FollowUpStep::manual(format!(
+                    "Configure [review] and publication-scopes in {}.",
+                    self.manifest.display()
+                ))]
             }
-            ProjectFilesWorkflowState::VerificationPending => {
-                vec!["blobray project verify".to_owned()]
-            }
-            ProjectFilesWorkflowState::FilesPresent => {
-                vec!["blobray project status".to_owned()]
-            }
-        }
+            ProjectFilesWorkflowState::PublicationPreflightRequired => vec![executable_step(
+                context,
+                "Validate the generated publication outputs without modifying them.",
+                ["project", "publish", "--check"],
+                ProjectContextRequirement::ProjectOnly,
+            )?],
+            ProjectFilesWorkflowState::VerificationPending => vec![executable_step(
+                context,
+                "Generate the pending verification outputs.",
+                ["project", "verify"],
+                ProjectContextRequirement::Analysis,
+            )?],
+            ProjectFilesWorkflowState::FilesPresent => vec![executable_step(
+                context,
+                "Inspect project readiness and the next research frontier.",
+                ["project", "status"],
+                ProjectContextRequirement::RunSpec,
+            )?],
+        };
+        Ok(steps)
     }
 
     fn file(&self, role: &str) -> Option<&ProjectFileEntry> {
@@ -271,6 +349,22 @@ impl ProjectFilesReport {
             })
             .count()
     }
+}
+
+fn executable_step<I, S>(
+    context: &ProjectContext<'_>,
+    instruction: impl Into<String>,
+    command: I,
+    requirement: ProjectContextRequirement,
+) -> Result<FollowUpStep>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    Ok(FollowUpStep::command(
+        instruction,
+        context.follow_up_action(command, requirement)?,
+    ))
 }
 
 fn is_review_producer(producer: &str) -> bool {
@@ -570,6 +664,10 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
     }
 
     let run_spec_path = configured_run_spec(context.project_path, project.run_spec.as_deref());
+    let initialize_inputs = FollowUpStep::command(
+        "Initialize the local input bindings.",
+        context.inputs_init_help_action()?,
+    );
     push(
         &mut files,
         "run-spec",
@@ -578,11 +676,11 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
         Some("project inputs init"),
         &["artifact bindings", "verification"],
         true,
-        Some("blobray project inputs init"),
+        Some(initialize_inputs),
     );
     if run_spec_path.is_file() {
         for input in RunSpec::load(&run_spec_path)?.inputs() {
-            let next_action = format!(
+            let repair_instruction = format!(
                 "rebuild or restore {}, or update its binding in {}",
                 input.path.display(),
                 run_spec_path.display()
@@ -595,7 +693,7 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
                 None,
                 &["analysis pipeline"],
                 true,
-                Some(&next_action),
+                Some(FollowUpStep::manual(repair_instruction)),
             );
         }
     }
@@ -872,7 +970,7 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
         .filter(|file| file.state == ProjectFileState::Pending)
         .count();
     Ok(ProjectFilesReport {
-        schema: 3,
+        schema: 4,
         project_id: project.id.clone(),
         manifest: context.project_path.to_owned(),
         files,
@@ -898,7 +996,6 @@ fn push_generated(
     producer: &str,
     consumers: &[&str],
 ) {
-    let next_action = format!("blobray {producer}");
     push(
         files,
         role,
@@ -907,7 +1004,7 @@ fn push_generated(
         Some(producer),
         consumers,
         false,
-        Some(&next_action),
+        None,
     );
 }
 
@@ -938,7 +1035,7 @@ fn push(
     producer: Option<&str>,
     consumers: &[&str],
     required: bool,
-    next_action: Option<&str>,
+    next_step: Option<FollowUpStep>,
 ) {
     let role = role.into();
     let state = if path.exists() {
@@ -957,8 +1054,8 @@ fn push(
         producer: producer.map(str::to_owned),
         consumers: consumers.iter().map(|value| (*value).to_owned()).collect(),
         required,
-        next_action: (state != ProjectFileState::Present)
-            .then(|| next_action.map(str::to_owned))
+        next_step: (state != ProjectFileState::Present)
+            .then_some(next_step)
             .flatten(),
     });
 }
@@ -981,6 +1078,53 @@ fn default_layer(role: &str, ownership: ProjectFileOwnership) -> ProjectFileLaye
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{MmioMap, TargetSpec, application::ExplicitProjectContext, project::ProjectSpec};
+
+    fn next_steps(report: &ProjectFilesReport) -> Vec<FollowUpStep> {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/generic-project/vendor-project.toml");
+        let project = ProjectSpec::load(&manifest).unwrap();
+        let target = TargetSpec::load(&project.target_spec).unwrap();
+        let svd = MmioMap::load_all(&[]).unwrap();
+        let explicit_context = ExplicitProjectContext::default();
+        let invocation_directory = std::env::current_dir().unwrap();
+        let context = ProjectContext {
+            project_path: &manifest,
+            project: &project,
+            target_path: &project.target_spec,
+            target: &target,
+            run_spec_path: None,
+            run_spec: None,
+            memory_map: None,
+            svd_paths: &[],
+            svd: &svd,
+            explicit_context: &explicit_context,
+            invocation_directory: &invocation_directory,
+        };
+        report.next_steps(&context).unwrap()
+    }
+
+    fn next_commands(report: &ProjectFilesReport) -> Vec<Vec<String>> {
+        next_steps(report)
+            .into_iter()
+            .flat_map(|step| step.commands)
+            .map(|action| {
+                let mut command = Vec::new();
+                let mut arguments = action.argv[1..].iter();
+                while let Some(argument) = arguments.next() {
+                    if matches!(
+                        argument.as_str(),
+                        "--project" | "--target-spec" | "--run-spec" | "--svd"
+                    ) {
+                        let _ = arguments.next();
+                    } else {
+                        command.push(argument.clone());
+                    }
+                }
+                command
+            })
+            .collect()
+    }
 
     fn entry(
         role: &str,
@@ -998,13 +1142,13 @@ mod tests {
             producer: producer.map(str::to_owned),
             consumers: Vec::new(),
             required,
-            next_action: None,
+            next_step: None,
         }
     }
 
     fn report(files: Vec<ProjectFileEntry>) -> ProjectFilesReport {
         ProjectFilesReport {
-            schema: 3,
+            schema: 4,
             project_id: "fixture".to_owned(),
             manifest: PathBuf::from("vendor-project.toml"),
             present: files
@@ -1116,8 +1260,8 @@ mod tests {
 
         assert_eq!(report.workflow_state(), ProjectFilesWorkflowState::Blocked);
         assert_eq!(
-            report.next_actions(),
-            ["blobray project inputs init --help"]
+            next_commands(&report),
+            [vec!["project", "inputs", "init", "--help"]]
         );
 
         let run_spec_index = report
@@ -1127,8 +1271,8 @@ mod tests {
             .unwrap();
         report.files[run_spec_index].state = ProjectFileState::Present;
         assert_eq!(
-            report.next_actions(),
-            ["blobray advanced symbols inventory"]
+            next_commands(&report),
+            [vec!["advanced", "symbols", "inventory"]]
         );
 
         let symbol_index = report
@@ -1137,7 +1281,10 @@ mod tests {
             .position(|file| file.role == "symbol-inventory")
             .unwrap();
         report.files[symbol_index].state = ProjectFileState::Present;
-        assert_eq!(report.next_actions(), ["blobray advanced code init-pack"]);
+        assert_eq!(
+            next_commands(&report),
+            [vec!["advanced", "code", "init-pack"]]
+        );
     }
 
     #[test]
@@ -1154,15 +1301,17 @@ mod tests {
             report.workflow_state(),
             ProjectFilesWorkflowState::ReviewConfigurationRequired
         );
+        let steps = next_steps(&report);
+        assert_eq!(steps.len(), 1);
         assert_eq!(
-            report.next_actions(),
-            ["configure [review] and publication-scopes in vendor-project.toml"]
+            steps[0].instruction,
+            "Configure [review] and publication-scopes in vendor-project.toml."
         );
+        assert!(steps[0].commands.is_empty());
         assert!(
-            report
-                .next_actions()
+            next_steps(&report)
                 .iter()
-                .all(|action| !action.contains("project publish"))
+                .all(|step| step.commands.is_empty())
         );
 
         report.files.push(entry(
@@ -1176,7 +1325,10 @@ mod tests {
             report.workflow_state(),
             ProjectFilesWorkflowState::PublicationPreflightRequired
         );
-        assert_eq!(report.next_actions(), ["blobray project publish --check"]);
+        assert_eq!(
+            next_commands(&report),
+            [vec!["project", "publish", "--check"]]
+        );
     }
 
     #[test]
@@ -1219,11 +1371,11 @@ mod tests {
         assert_eq!(review.pending_analysis_outputs(), 0);
         assert_eq!(review.pending_review_outputs(), 3);
         assert_eq!(
-            review.next_actions(),
+            next_commands(&review),
             [
-                "blobray advanced code review",
-                "blobray registers review",
-                "blobray advanced functions review",
+                vec!["advanced", "code", "review"],
+                vec!["registers", "review"],
+                vec!["advanced", "functions", "review"],
             ]
         );
     }
@@ -1241,7 +1393,7 @@ mod tests {
             analysis.workflow_state(),
             ProjectFilesWorkflowState::AnalysisPending
         );
-        assert_eq!(analysis.next_actions(), ["blobray project analyze"]);
+        assert_eq!(next_commands(&analysis), [vec!["project", "analyze"]]);
 
         let complete = report(vec![entry(
             "navigation-index",
@@ -1254,6 +1406,6 @@ mod tests {
             complete.workflow_state(),
             ProjectFilesWorkflowState::FilesPresent
         );
-        assert_eq!(complete.next_actions(), ["blobray project status"]);
+        assert_eq!(next_commands(&complete), [vec!["project", "status"]]);
     }
 }

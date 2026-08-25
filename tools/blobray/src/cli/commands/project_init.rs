@@ -8,6 +8,7 @@ use super::Result;
 use crate::cli::ProjectInitArgs;
 use crate::{
     MemoryMap, TargetSpec,
+    application::{ExecutableAction, FollowUpStep, ProjectContextRequirement},
     project::{DEFAULT_PROJECT_MANIFEST, ProjectSpec},
     registers::{
         FactRange, RegisterFacts, RegisterModel, import_svd_model, init_register_model,
@@ -37,14 +38,16 @@ struct ProjectInitReport {
     mmio_regions: usize,
     imported_svd: bool,
     path: String,
-    next_command: String,
+    next_steps: Vec<FollowUpStep>,
 }
 
 pub(super) fn run(arguments: ProjectInitArgs) -> Result<bool> {
     let options = resolve_options(arguments)?;
-    create_project(&options)?;
+    let manifest = options.directory.join(DEFAULT_PROJECT_MANIFEST);
+    let working_directory = std::env::current_dir()?;
+    let manifest_argument = utf8_path(&manifest, "project manifest")?;
     let report = ProjectInitReport {
-        schema_version: 1,
+        schema_version: 2,
         command: "project init",
         status: "created",
         id: options.id.clone(),
@@ -53,11 +56,40 @@ pub(super) fn run(arguments: ProjectInitArgs) -> Result<bool> {
         mmio_regions: options.ranges.len(),
         imported_svd: options.import_svd.is_some(),
         path: options.directory.display().to_string(),
-        next_command: format!(
-            "blobray project inputs init --project {} --help",
-            crate::cli::output::shell_arg(options.directory.join(DEFAULT_PROJECT_MANIFEST))
-        ),
+        next_steps: vec![
+            FollowUpStep::command(
+                "Bind caller-owned vendor artifacts.",
+                ExecutableAction::new(
+                    vec![
+                        "blobray".to_owned(),
+                        "project".to_owned(),
+                        "inputs".to_owned(),
+                        "init".to_owned(),
+                        "--project".to_owned(),
+                        manifest_argument.clone(),
+                        "--help".to_owned(),
+                    ],
+                    working_directory.clone(),
+                    ProjectContextRequirement::ProjectOnly,
+                )?,
+            ),
+            FollowUpStep::command(
+                "Inspect every project-owned, generated, and local file.",
+                ExecutableAction::new(
+                    vec![
+                        "blobray".to_owned(),
+                        "project".to_owned(),
+                        "files".to_owned(),
+                        "--project".to_owned(),
+                        manifest_argument,
+                    ],
+                    working_directory,
+                    ProjectContextRequirement::ProjectOnly,
+                )?,
+            ),
+        ],
     };
+    create_project(&options)?;
     crate::cli::output::render_report(&report, || {
         outputln!("{}", crate::cli::output::heading("Project created"));
         outputln!("{}", crate::cli::output::success("READY FOR LOCAL INPUTS"));
@@ -68,13 +100,23 @@ pub(super) fn run(arguments: ProjectInitArgs) -> Result<bool> {
         outputln!("MMIO regions: {}", report.mmio_regions);
         outputln!("Imported SVD: {}", report.imported_svd);
         outputln!("\n{}", crate::cli::output::heading("Next"));
-        outputln!("1. {}", report.next_command);
-        outputln!(
-            "2. blobray project files --project {}",
-            crate::cli::output::shell_arg(options.directory.join(DEFAULT_PROJECT_MANIFEST))
-        );
+        for (index, step) in report.next_steps.iter().enumerate() {
+            outputln!("{}. {}", index + 1, step.instruction);
+            for action in &step.commands {
+                outputln!("   {}", action.render_posix());
+            }
+        }
     });
     Ok(true)
+}
+
+fn utf8_path(path: &Path, role: &str) -> Result<String> {
+    path.to_str().map(str::to_owned).ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "{role} path is not valid UTF-8 and cannot be represented in an executable action: {}",
+            path.display()
+        ))
+    })
 }
 
 fn create_project(options: &Options) -> Result<()> {

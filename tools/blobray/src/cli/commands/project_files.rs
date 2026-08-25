@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     Result,
-    application::{ProjectContext, ProjectContextRequirement, project_files},
+    application::{FollowUpStep, ProjectContext, project_files},
     cli::{output, table},
 };
 
@@ -14,27 +14,23 @@ struct ProjectFilesDocument<'a> {
     report: &'a project_files::ProjectFilesReport,
     workflow_state: project_files::ProjectFilesWorkflowState,
     required_missing: usize,
-    next_actions: Vec<String>,
+    next_steps: Vec<FollowUpStep>,
 }
 
 pub(super) fn run(context: ProjectContext<'_>) -> Result<bool> {
     let report = project_files::collect(&context)?;
-    let next_actions = report
-        .next_actions()
-        .iter()
-        .map(|action| contextualize_action(action, &context))
-        .collect();
+    let next_steps = report.next_steps(&context)?;
     let document = ProjectFilesDocument {
         report: &report,
         workflow_state: report.workflow_state(),
         required_missing: report.required_missing(),
-        next_actions,
+        next_steps,
     };
-    output::render_report(&document, || render_human(&report, &document.next_actions));
+    output::render_report(&document, || render_human(&report, &document.next_steps));
     Ok(true)
 }
 
-fn render_human(report: &project_files::ProjectFilesReport, next_actions: &[String]) {
+fn render_human(report: &project_files::ProjectFilesReport, next_steps: &[FollowUpStep]) {
     outputln!("{}", output::heading("Project files"));
     outputln!("Project:  {}", report.project_id);
     outputln!("Manifest: {}", report.manifest.display());
@@ -97,10 +93,13 @@ fn render_human(report: &project_files::ProjectFilesReport, next_actions: &[Stri
         }
     }
 
-    if !next_actions.is_empty() {
+    if !next_steps.is_empty() {
         outputln!("\n{}", output::heading("Next"));
-        for (index, action) in next_actions.iter().enumerate() {
-            outputln!("{}. {}", index + 1, action);
+        for (index, step) in next_steps.iter().enumerate() {
+            outputln!("{}. {}", index + 1, step.instruction);
+            for command in &step.commands {
+                outputln!("   {}", command.render_posix());
+            }
         }
     }
 
@@ -146,37 +145,14 @@ fn display_path(path: &std::path::Path) -> String {
         .to_string()
 }
 
-fn contextualize_action(action: &str, context: &ProjectContext<'_>) -> String {
-    let Some(command) = action.strip_prefix("blobray ") else {
-        return action.to_owned();
-    };
-    match command {
-        "project inputs init --help" => context.inputs_init_help_command(),
-        "project doctor" | "project analyze" | "project verify" | "advanced ir build" => {
-            context.follow_up_command(command, ProjectContextRequirement::Analysis)
-        }
-        "advanced symbols inventory" | "advanced interfaces discover" | "project status" => {
-            context.follow_up_command(command, ProjectContextRequirement::RunSpec)
-        }
-        "advanced functions init-pack"
-        | "advanced interfaces init-pack"
-        | "advanced functions review" => {
-            context.follow_up_command(command, ProjectContextRequirement::Target)
-        }
-        "advanced code init-pack"
-        | "advanced code review"
-        | "registers review"
-        | "project publish --check" => {
-            context.follow_up_command(command, ProjectContextRequirement::ProjectOnly)
-        }
-        _ => action.to_owned(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MmioMap, TargetSpec, application::ExplicitProjectContext, project::ProjectSpec};
+    use crate::{
+        MmioMap, TargetSpec,
+        application::{ExplicitProjectContext, project_files::*},
+        project::ProjectSpec,
+    };
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -211,54 +187,122 @@ mod tests {
             explicit_context: &explicit_context,
             invocation_directory: Path::new("/tmp"),
         };
-        let arg = |path: &Path| crate::shell::arg(path.as_os_str());
+        let entry = |role: &str, state, producer: Option<&str>| ProjectFileEntry {
+            role: role.to_owned(),
+            ownership: ProjectFileOwnership::Generated,
+            layer: ProjectFileLayer::Generated,
+            state,
+            path: PathBuf::from(role),
+            producer: producer.map(str::to_owned),
+            consumers: Vec::new(),
+            required: false,
+            next_step: None,
+        };
+        let report = |files: Vec<ProjectFileEntry>| ProjectFilesReport {
+            schema: 4,
+            project_id: "fixture".to_owned(),
+            manifest: manifest.clone(),
+            present: files
+                .iter()
+                .filter(|file| file.state == ProjectFileState::Present)
+                .count(),
+            missing: 0,
+            pending: files
+                .iter()
+                .filter(|file| file.state == ProjectFileState::Pending)
+                .count(),
+            files,
+        };
 
+        let analysis = report(vec![entry(
+            "navigation-index",
+            ProjectFileState::Pending,
+            Some("project analyze"),
+        )]);
+        let analysis_action = &analysis.next_steps(&context).unwrap()[0].commands[0];
         assert_eq!(
-            contextualize_action("blobray project inputs init --help", &context),
-            format!(
-                "blobray project inputs init --project {} --output {} --help",
-                arg(&manifest),
-                arg(&explicit_run),
-            )
+            analysis_action.argv,
+            [
+                "blobray",
+                "project",
+                "analyze",
+                "--project",
+                manifest.to_str().unwrap(),
+                "--target-spec",
+                explicit_target.to_str().unwrap(),
+                "--run-spec",
+                explicit_run.to_str().unwrap(),
+                "--svd",
+                explicit_svds[0].to_str().unwrap(),
+                "--svd",
+                explicit_svds[1].to_str().unwrap(),
+            ]
         );
+
+        let review = report(vec![entry(
+            "function-review",
+            ProjectFileState::Pending,
+            Some("advanced functions review"),
+        )]);
+        let review_action = &review.next_steps(&context).unwrap()[0].commands[0];
         assert_eq!(
-            contextualize_action("blobray project analyze", &context),
-            format!(
-                "blobray project analyze --project {} --target-spec {} --run-spec {} --svd {} --svd {}",
-                arg(&manifest),
-                arg(&explicit_target),
-                arg(&explicit_run),
-                arg(&explicit_svds[0]),
-                arg(&explicit_svds[1]),
-            )
+            review_action.argv,
+            [
+                "blobray",
+                "advanced",
+                "functions",
+                "review",
+                "--project",
+                manifest.to_str().unwrap(),
+                "--target-spec",
+                explicit_target.to_str().unwrap(),
+            ]
         );
+
+        let publication = report(vec![
+            entry(
+                "published-svd",
+                ProjectFileState::Pending,
+                Some("project publish"),
+            ),
+            entry(
+                "review-workspace",
+                ProjectFileState::Present,
+                Some("project analyze"),
+            ),
+        ]);
+        let publication_action = &publication.next_steps(&context).unwrap()[0].commands[0];
         assert_eq!(
-            contextualize_action("blobray project status", &context),
-            format!(
-                "blobray project status --project {} --target-spec {} --run-spec {}",
-                arg(&manifest),
-                arg(&explicit_target),
-                arg(&explicit_run),
-            )
+            publication_action.argv,
+            [
+                "blobray",
+                "project",
+                "publish",
+                "--check",
+                "--project",
+                manifest.to_str().unwrap(),
+            ]
         );
+
+        let complete = report(vec![entry(
+            "navigation-index",
+            ProjectFileState::Present,
+            Some("project analyze"),
+        )]);
+        let status_action = &complete.next_steps(&context).unwrap()[0].commands[0];
         assert_eq!(
-            contextualize_action("blobray advanced functions init-pack", &context),
-            format!(
-                "blobray advanced functions init-pack --project {} --target-spec {}",
-                arg(&manifest),
-                arg(&explicit_target),
-            )
-        );
-        assert_eq!(
-            contextualize_action("blobray project publish --check", &context),
-            format!(
-                "blobray project publish --check --project {}",
-                arg(&manifest)
-            )
-        );
-        assert_eq!(
-            contextualize_action("restore the vendor archive", &context),
-            "restore the vendor archive"
+            status_action.argv,
+            [
+                "blobray",
+                "project",
+                "status",
+                "--project",
+                manifest.to_str().unwrap(),
+                "--target-spec",
+                explicit_target.to_str().unwrap(),
+                "--run-spec",
+                explicit_run.to_str().unwrap(),
+            ]
         );
     }
 }

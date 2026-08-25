@@ -11,7 +11,12 @@ use serde::Serialize;
 
 use super::Result;
 use crate::cli::ProjectConfigureArgs;
-use crate::{TargetSpec, ecosystem_pack::EcosystemPack, project::ProjectSpec};
+use crate::{
+    TargetSpec,
+    application::{ExecutableAction, FollowUpStep, ProjectContextRequirement},
+    ecosystem_pack::EcosystemPack,
+    project::ProjectSpec,
+};
 
 #[derive(Debug, Eq, PartialEq)]
 enum Selection {
@@ -35,6 +40,7 @@ struct ProjectConfigureReport {
     knowledge_packs: usize,
     knowledge_operations: usize,
     manifest: String,
+    next_steps: Vec<FollowUpStep>,
 }
 
 pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bool> {
@@ -44,6 +50,20 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
             "project configure requires --ecosystem-pack PATH, --no-ecosystem-pack, or --check",
         ));
     }
+    let next_steps = vec![FollowUpStep::command(
+        "Validate the resolved project, local inputs, and reviewed workspaces.",
+        ExecutableAction::new(
+            vec![
+                "blobray".to_owned(),
+                "project".to_owned(),
+                "doctor".to_owned(),
+                "--project".to_owned(),
+                executable_path(manifest, "project manifest")?,
+            ],
+            env::current_dir()?,
+            ProjectContextRequirement::ProjectOnly,
+        )?,
+    )];
 
     let input = fs::read_to_string(manifest)?;
     let mut document = input.parse::<DocumentMut>()?;
@@ -113,7 +133,7 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
         "unchanged"
     };
     let report = ProjectConfigureReport {
-        schema_version: 2,
+        schema_version: 3,
         command: "project configure",
         status,
         ecosystem_packs: project
@@ -141,6 +161,7 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
                 .as_ref()
                 .map_or(0, |pack| pack.knowledge_operations),
         manifest: manifest.display().to_string(),
+        next_steps,
     };
     if !crate::cli::output::structured(&report) {
         print_report(&report);
@@ -181,7 +202,21 @@ fn print_report(report: &ProjectConfigureReport) {
         );
     }
     outputln!("\n{}", crate::cli::output::heading("Next"));
-    outputln!("1. blobray project doctor --project {}", report.manifest);
+    for (index, step) in report.next_steps.iter().enumerate() {
+        outputln!("{}. {}", index + 1, step.instruction);
+        for action in &step.commands {
+            outputln!("   {}", action.render_posix());
+        }
+    }
+}
+
+fn executable_path(path: &Path, role: &str) -> Result<String> {
+    path.to_str().map(str::to_owned).ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "{role} path is not valid UTF-8 and cannot be represented in an executable action: {}",
+            path.display()
+        ))
+    })
 }
 
 fn resolve_options(arguments: ProjectConfigureArgs) -> Options {

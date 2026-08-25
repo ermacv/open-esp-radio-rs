@@ -2,7 +2,10 @@
 
 use std::{collections::BTreeMap, path::PathBuf};
 
-use super::model::{ArtifactDetail, Component, MmioRegionDetail, Phase, Readiness};
+use super::{
+    inputs_init_step,
+    model::{ArtifactDetail, Component, FollowUpStep, MmioRegionDetail, Phase, Readiness},
+};
 use crate::application::ProjectContext;
 use crate::{artifact, memory_map::MemoryRegionKind};
 
@@ -16,10 +19,10 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
             ),
         Err(error) => Component::new("backend", Readiness::Invalid)
             .diagnostic(error)
-            .next_action(format!(
+            .next_step(FollowUpStep::manual(format!(
                 "select a compiled backend in {}",
                 context.project_path.display()
-            )),
+            ))),
     };
     let ecosystem = Component::new(
         "ecosystem_packs",
@@ -105,19 +108,19 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
                 ),
             Err(error) => Component::new("knowledge_provider", Readiness::Invalid)
                 .diagnostic(error)
-                .next_action(format!(
+                .next_step(FollowUpStep::manual(format!(
                     "rebuild the Blobray host with the add-on that registers this knowledge provider; selection is declared by {}",
                     context.project_path.display()
-                )),
+                ))),
         },
     };
     let memory = match context.memory_map {
         None => Component::new("memory_map", Readiness::Incomplete)
             .diagnostic("project has no memory map")
-            .next_action(format!(
+            .next_step(FollowUpStep::manual(format!(
                 "attach a chip-pack with memory-map in {}",
                 context.project_path.display()
-            )),
+            ))),
         Some(memory) => {
             let mmio = memory
                 .regions
@@ -168,7 +171,10 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
         };
         let mut component = Component::new("run_spec", status)
             .diagnostic("caller-owned artifact bindings are unavailable")
-            .next_action(context.inputs_init_help_command());
+            .next_step(inputs_init_step(
+                context,
+                "inspect input initialization options and create caller-owned bindings",
+            ));
         if let Some(path) = context.run_spec_path {
             component = component.detail("path", path.display().to_string());
         }
@@ -240,7 +246,7 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     } else {
         Readiness::Ready
     };
-    let next_action = (status != Readiness::Ready).then(|| input_repair_action(context, &records));
+    let next_step = (status != Readiness::Ready).then(|| input_repair_step(context, &records));
     let mut component = Component::new("artifacts", status)
         .detail(
             "run_spec",
@@ -252,21 +258,24 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
         .detail("configured", records.len())
         .detail("ready", ready)
         .detail("items", records);
-    if let Some(next_action) = next_action {
-        component = component.next_action(next_action);
+    if let Some(next_step) = next_step {
+        component = component.next_step(next_step);
     }
     Phase::collect("inputs", vec![component])
 }
 
-fn input_repair_action(context: &ProjectContext<'_>, records: &[ArtifactDetail]) -> String {
-    let inputs_command = context.inputs_init_help_command();
-    input_repair_action_with_command(context.run_spec_path, records, &inputs_command)
+fn input_repair_step(context: &ProjectContext<'_>, records: &[ArtifactDetail]) -> FollowUpStep {
+    let instruction = input_repair_instruction(context.run_spec_path, records);
+    if records.is_empty() {
+        inputs_init_step(context, instruction)
+    } else {
+        FollowUpStep::manual(instruction)
+    }
 }
 
-fn input_repair_action_with_command(
+fn input_repair_instruction(
     run_spec_path: Option<&std::path::Path>,
     records: &[ArtifactDetail],
-    inputs_command: &str,
 ) -> String {
     let binding = run_spec_path
         .map(|path| path.display().to_string())
@@ -288,7 +297,7 @@ fn input_repair_action_with_command(
         );
     }
     if records.is_empty() {
-        return format!("bind the project inputs with `{inputs_command}`");
+        return "bind the project inputs in a caller-owned run spec".to_owned();
     }
     format!("restore usable symbols in the artifacts bound by {binding}")
 }
@@ -310,14 +319,11 @@ mod tests {
             symbol_facts: None,
             error: None,
         }];
-        let action = input_repair_action_with_command(
-            Some(Path::new("targets/chip/local.toml")),
-            &records,
-            "blobray project inputs init --project targets/chip/vendor-project.toml",
-        );
-        assert!(action.contains("rebuild or restore"));
-        assert!(action.contains("source-artifact:libpp -> /tmp/vendor-linked-libpp"));
-        assert!(action.contains("targets/chip/local.toml"));
-        assert!(!action.contains("inputs init --check"));
+        let instruction =
+            input_repair_instruction(Some(Path::new("targets/chip/local.toml")), &records);
+        assert!(instruction.contains("rebuild or restore"));
+        assert!(instruction.contains("source-artifact:libpp -> /tmp/vendor-linked-libpp"));
+        assert!(instruction.contains("targets/chip/local.toml"));
+        assert!(!instruction.contains("inputs init --check"));
     }
 }

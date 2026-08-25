@@ -1,6 +1,6 @@
 //! Lightweight durable revision-baseline readiness.
 
-use super::{ProjectContext, model};
+use super::{ProjectContext, executable_step, executable_steps, model};
 use crate::application::{
     ProjectContextRequirement,
     revision::{self, RevisionLedgerHealth},
@@ -28,31 +28,40 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> model::Phase {
         )
         .detail("update-prepared", inspection.update_prepared);
     if let Some(diagnostic) = inspection.diagnostic {
-        let next_action = match inspection.health {
-            RevisionLedgerHealth::RevisionReviewPending => format!(
-                "review revision diff/rebase; then run {} --accept-current",
-                context.follow_up_command(
-                    "project revision prepare-update",
-                    ProjectContextRequirement::RunSpec,
-                )
-            ),
-            RevisionLedgerHealth::Invalid => context.follow_up_command(
-                "project revision snapshot CURRENT",
+        let next_step = match inspection.health {
+            RevisionLedgerHealth::RevisionReviewPending => executable_step(
+                context,
+                "review the revision diff/rebase, then accept the current revision",
+                ["project", "revision", "prepare-update", "--accept-current"],
                 ProjectContextRequirement::RunSpec,
             ),
-            _ => format!(
-                "{}; before replacing bindings run {}",
-                context.follow_up_command(
-                    "project revision snapshot BASELINE",
-                    ProjectContextRequirement::ProjectOnly,
-                ),
-                context.follow_up_command(
-                    "project revision prepare-update",
-                    ProjectContextRequirement::RunSpec,
-                )
+            RevisionLedgerHealth::Invalid => executable_step(
+                context,
+                "replace the invalid revision ledger with a current snapshot",
+                ["project", "revision", "snapshot", "CURRENT"],
+                ProjectContextRequirement::RunSpec,
+            ),
+            _ => executable_steps(
+                context,
+                "snapshot the baseline, then prepare the update before replacing bindings",
+                vec![
+                    (
+                        vec![
+                            "project".into(),
+                            "revision".into(),
+                            "snapshot".into(),
+                            "BASELINE".into(),
+                        ],
+                        ProjectContextRequirement::ProjectOnly,
+                    ),
+                    (
+                        vec!["project".into(), "revision".into(), "prepare-update".into()],
+                        ProjectContextRequirement::RunSpec,
+                    ),
+                ],
             ),
         };
-        component = component.diagnostic(diagnostic).next_action(next_action);
+        component = component.diagnostic(diagnostic).next_step(next_step);
     }
     model::Phase::collect("revision-workflow", vec![component])
 }

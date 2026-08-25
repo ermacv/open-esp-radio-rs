@@ -28,6 +28,6 @@ pub(super) fn run(arguments: ProjectAnalyzeArgs, session: &ProjectSession) -> Re
         return Ok(report.succeeded());
     }
     let report = crate::application::project_analysis::analyze_project(session, request);
-    status::render(&report, session.context());
+    status::render(&report);
     Ok(report.succeeded())
 }

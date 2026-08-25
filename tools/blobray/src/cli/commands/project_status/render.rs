@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::{
     Result,
     application::{
-        ProjectContext, ProjectContextRequirement,
+        ExecutableAction, FollowUpStep, ProjectContext, ProjectContextRequirement,
         status::model::{
             DetailValue, EvidenceFreshness, ProjectStatusReport, Readiness, ResearchProgress,
             StatusValidation, TargetIdentity, ValidationDepth,
@@ -29,7 +29,7 @@ struct ComponentDocument<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     diagnostic: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    next_action: Option<&'a str>,
+    next_step: Option<&'a FollowUpStep>,
     #[serde(flatten)]
     details: &'a BTreeMap<String, DetailValue>,
 }
@@ -63,12 +63,13 @@ pub(super) struct StatusDocument<'a> {
     validation: &'a StatusValidation,
     dimensions: WorkflowDimensions<'a>,
     pipeline_status: Readiness,
+    validation_actions: Vec<ExecutableAction>,
     phases: BTreeMap<&'a str, PhaseDocument<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     publication: Option<crate::cli::output::Publication>,
 }
 
-pub(super) fn print_text(report: &ProjectStatusReport, context: &ProjectContext<'_>) {
+pub(super) fn print_text(report: &ProjectStatusReport, document: &StatusDocument<'_>) {
     outputln!("{}", output::heading("Project status"));
     outputln!("Project:  {}", report.project_id);
     outputln!("Manifest: {}", report.manifest);
@@ -83,14 +84,9 @@ pub(super) fn print_text(report: &ProjectStatusReport, context: &ProjectContext<
     outputln!("Research:     {}", research_summary(report));
     outputln!("Verification: {}", report.verification.label());
     outputln!("Deep validation:");
-    outputln!(
-        "  {}",
-        context.follow_up_command("project doctor", ProjectContextRequirement::Analysis)
-    );
-    outputln!(
-        "  {}",
-        context.follow_up_command("project check", ProjectContextRequirement::Analysis)
-    );
+    for action in &document.validation_actions {
+        outputln!("  {}", action.render_posix());
+    }
     let outcome = match report.overall {
         Readiness::Ready => output::success(
             "SHALLOW OVERVIEW — configured outputs are present; freshness not validated",
@@ -157,26 +153,29 @@ pub(super) fn print_text(report: &ProjectStatusReport, context: &ProjectContext<
 
     // Preserve workflow order. Alphabetical sorting made late verification
     // commands appear before the input or analysis repair that unblocks them.
-    let mut actions = Vec::<(String, Vec<String>)>::new();
+    let mut actions = Vec::<(FollowUpStep, Vec<String>)>::new();
     let mut action_positions = BTreeMap::<String, usize>::new();
     for phase in &report.phases {
         for component in &phase.components {
-            if let Some(action) = component.next_action.as_deref() {
-                let action = sanitize_next_action(action);
+            if let Some(step) = component.next_step.as_ref() {
+                let key = follow_up_step_key(step);
                 let component = format!("{}/{}", phase.name, component.name);
-                if let Some(position) = action_positions.get(&action).copied() {
+                if let Some(position) = action_positions.get(&key).copied() {
                     actions[position].1.push(component);
                 } else {
-                    action_positions.insert(action.clone(), actions.len());
-                    actions.push((action, vec![component]));
+                    action_positions.insert(key, actions.len());
+                    actions.push((step.clone(), vec![component]));
                 }
             }
         }
     }
     if !actions.is_empty() {
         outputln!("\n{}", output::heading("Next"));
-        for (index, (action, components)) in actions.iter().enumerate() {
-            outputln!("{}. {action}", index + 1);
+        for (index, (step, components)) in actions.iter().enumerate() {
+            outputln!("{}. {}", index + 1, sanitize(&step.instruction));
+            for action in &step.commands {
+                outputln!("   {}", action.render_posix());
+            }
             if output::details() {
                 outputln!("   Resolves: {}", components.join(", "));
             }
@@ -250,6 +249,7 @@ pub(super) fn print_text(report: &ProjectStatusReport, context: &ProjectContext<
 
 pub(super) fn document(
     report: &ProjectStatusReport,
+    validation_actions: Vec<ExecutableAction>,
     publication: Option<crate::cli::output::Publication>,
 ) -> StatusDocument<'_> {
     let phases = report
@@ -263,7 +263,7 @@ pub(super) fn document(
                     name: &component.name,
                     status: component.status,
                     diagnostic: component.diagnostic.as_deref(),
-                    next_action: component.next_action.as_deref(),
+                    next_step: component.next_step.as_ref(),
                     details: &component.details,
                 })
                 .collect::<Vec<_>>();
@@ -277,7 +277,7 @@ pub(super) fn document(
         })
         .collect();
     StatusDocument {
-        schema: 11,
+        schema: 12,
         command: "project status",
         scope: "blobray-pipeline",
         project: ProjectIdentity {
@@ -295,9 +295,17 @@ pub(super) fn document(
             verification: report.verification,
         },
         pipeline_status: report.overall,
+        validation_actions,
         phases,
         publication,
     }
+}
+
+pub(super) fn validation_actions(context: &ProjectContext<'_>) -> Result<Vec<ExecutableAction>> {
+    Ok(vec![
+        context.follow_up_action(["project", "doctor"], ProjectContextRequirement::Analysis)?,
+        context.follow_up_action(["project", "check"], ProjectContextRequirement::Analysis)?,
+    ])
 }
 
 fn freshness_summary(report: &ProjectStatusReport) -> &'static str {
@@ -358,14 +366,13 @@ fn sanitize(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn sanitize_next_action(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| match character {
-            '\r' | '\n' => ' ',
-            character => character,
-        })
-        .collect()
+fn follow_up_step_key(step: &FollowUpStep) -> String {
+    let mut key = format!("{}:{}", step.instruction.len(), step.instruction);
+    for action in &step.commands {
+        let action = action.canonical_execution_key();
+        key.push_str(&format!("{}:{action}", action.len()));
+    }
+    key
 }
 
 fn phase_problem_count(phase: &crate::application::status::model::Phase) -> usize {
@@ -384,14 +391,27 @@ mod tests {
     };
 
     #[test]
-    fn next_action_sanitizing_preserves_shell_quoted_argument_bytes() {
-        let command =
-            "blobray project status --project '/tmp/owner'\"'\"'s/project  tree/vendor.toml'";
-        assert_eq!(sanitize_next_action(command), command);
-        assert_eq!(
-            sanitize_next_action("blobray project status\r\n--help"),
-            "blobray project status  --help"
+    fn follow_up_step_identity_preserves_argument_boundaries() {
+        let directory = std::env::current_dir().unwrap();
+        let split = FollowUpStep::command(
+            "Inspect the function.",
+            ExecutableAction::new(
+                vec!["blobray".into(), "inspect".into(), "a".into(), "b".into()],
+                directory.clone(),
+                ProjectContextRequirement::Analysis,
+            )
+            .unwrap(),
         );
+        let joined = FollowUpStep::command(
+            "Inspect the function.",
+            ExecutableAction::new(
+                vec!["blobray".into(), "inspect".into(), "a b".into()],
+                directory,
+                ProjectContextRequirement::Analysis,
+            )
+            .unwrap(),
+        );
+        assert_ne!(follow_up_step_key(&split), follow_up_step_key(&joined));
     }
 
     #[test]
@@ -410,13 +430,14 @@ mod tests {
                 vec![
                     Component::new("linked_ir", Readiness::Incomplete)
                         .detail("profiles", 2usize)
-                        .next_action("run ir build"),
+                        .next_step(FollowUpStep::manual("run ir build")),
                 ],
             )],
         );
         let document: serde_json::Value =
-            serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
-        assert_eq!(document["schema"], 11);
+            serde_json::from_str(&json_document(&document(&report, Vec::new(), None)).unwrap())
+                .unwrap();
+        assert_eq!(document["schema"], 12);
         assert_eq!(document["scope"], "blobray-pipeline");
         assert_eq!(document["validation"]["depth"], "shallow");
         assert_eq!(document["validation"]["freshness"], "unknown");
@@ -432,8 +453,12 @@ mod tests {
             2
         );
         assert_eq!(
-            document["phases"]["analysis"]["components"][0]["next_action"],
+            document["phases"]["analysis"]["components"][0]["next_step"]["instruction"],
             "run ir build"
+        );
+        assert_eq!(
+            document["phases"]["analysis"]["components"][0]["next_step"]["commands"],
+            serde_json::json!([])
         );
     }
 

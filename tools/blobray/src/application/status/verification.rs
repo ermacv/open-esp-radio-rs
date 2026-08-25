@@ -8,7 +8,10 @@ use std::{
 
 use serde::Deserialize;
 
-use super::model::{Component, Phase, Readiness};
+use super::{
+    executable_step, inputs_init_step,
+    model::{Component, FollowUpStep, Phase, Readiness},
+};
 use crate::verification::PROJECT_VERIFICATION_REPORT_SCHEMA;
 use crate::{
     application::{ProjectContext, ProjectContextRequirement},
@@ -45,7 +48,10 @@ fn suite_inputs(workspace: &VerificationWorkspacePaths, context: &ProjectContext
     let Some(run_spec) = context.run_spec else {
         return Component::new("suite-inputs", Readiness::Incomplete)
             .diagnostic("verification suite artifact bindings are unavailable")
-            .next_action(format!("run `{}`", context.inputs_init_help_command()));
+            .next_step(inputs_init_step(
+                context,
+                "inspect input initialization options and bind verification artifacts",
+            ));
     };
     let configured = run_spec
         .inputs()
@@ -78,13 +84,15 @@ fn suite_inputs(workspace: &VerificationWorkspacePaths, context: &ProjectContext
                 "verification suites require missing run-spec roles: {}",
                 missing.join(", ")
             ))
-            .next_action(format!(
-                "bind the missing roles in {} using `{}`",
-                context.run_spec_path.map_or_else(
-                    || "the local run spec".to_owned(),
-                    |path| path.display().to_string()
+            .next_step(inputs_init_step(
+                context,
+                format!(
+                    "bind the missing roles in {}",
+                    context.run_spec_path.map_or_else(
+                        || "the local run spec".to_owned(),
+                        |path| path.display().to_string()
+                    )
                 ),
-                context.inputs_init_help_command()
             ))
     }
 }
@@ -244,10 +252,7 @@ fn last_report(
         return Component::new("last-verification", Readiness::Incomplete)
             .detail("path", workspace.report.display().to_string())
             .diagnostic("project verification has not been executed")
-            .next_action(format!(
-                "run `{}`",
-                context.follow_up_command("project verify", ProjectContextRequirement::Analysis)
-            ));
+            .next_step(verify_step(context, "execute project verification"));
     }
     let input = match fs::read_to_string(&workspace.report) {
         Ok(input) => input,
@@ -272,9 +277,9 @@ fn last_report(
         return Component::new("last-verification", Readiness::Incomplete)
             .detail("path", workspace.report.display().to_string())
             .diagnostic("project verification report is stale for the current identity or schema")
-            .next_action(format!(
-                "run `{}`",
-                context.follow_up_command("project verify", ProjectContextRequirement::Analysis)
+            .next_step(verify_step(
+                context,
+                "replace the stale report by executing project verification",
             ));
     }
     let expected_suite_ids = workspace
@@ -295,9 +300,9 @@ fn last_report(
             .diagnostic(
                 "aggregate verification report is partial or stale for the current suite set",
             )
-            .next_action(format!(
-                "run `{}`",
-                context.follow_up_command("project verify", ProjectContextRequirement::Analysis)
+            .next_step(verify_step(
+                context,
+                "execute a complete verification run for the current suite set",
             ));
     }
     let currency = match artifact_currency(&report.suites) {
@@ -317,9 +322,9 @@ fn last_report(
             .detail("stale_inputs", currency.stale)
             .detail("missing_inputs", currency.missing)
             .diagnostic("project verification report no longer matches its recorded inputs")
-            .next_action(format!(
-                "run `{}`",
-                context.follow_up_command("project verify", ProjectContextRequirement::Analysis)
+            .next_step(verify_step(
+                context,
+                "replay verification against the current artifacts",
             ));
     }
     let failed_suites = report
@@ -443,38 +448,26 @@ fn last_report(
         "project verify --check replays suites and verifies artifact/evidence currency",
     );
     if !report.passed {
-        let next_action = stale_baselines.first().map_or_else(
+        let next_step = stale_baselines.first().map_or_else(
             || {
                 failed_suites.first().map_or_else(
-                    || {
-                        format!(
-                            "replay verification with `{}`",
-                            context.follow_up_command(
-                                "project verify",
-                                ProjectContextRequirement::Analysis,
-                            )
-                        )
-                    },
-                    |first| {
-                        format!(
-                            "replay the first failing suite with `{}`",
-                            context.follow_up_command(
-                                &format!("project verify --suite {first}"),
-                                ProjectContextRequirement::Analysis,
-                            )
-                        )
-                    },
-                )
-            },
-            |first| {
-                format!(
-                    "generate and review candidate evidence for {first} with `{}`",
-                    context.follow_up_command(
-                        &format!("project verify --suite {first} --candidate-evidence-dir DIR"),
+                    || verify_step(context, "replay project verification"),
+                    |first| executable_step(
+                        context,
+                        format!("replay the first failing suite {first}"),
+                        vec![
+                            "project".to_owned(),
+                            "verify".to_owned(),
+                            "--suite".to_owned(),
+                            first.clone(),
+                        ],
                         ProjectContextRequirement::Analysis,
-                    )
+                    ),
                 )
             },
+            |first| FollowUpStep::manual(format!(
+                "choose a concrete candidate-evidence directory, generate evidence for {first}, and review it before acceptance"
+            )),
         );
         let failed = if failed_suites.is_empty() {
             "the aggregate gate failed without a failing suite identity".to_owned()
@@ -503,9 +496,18 @@ fn last_report(
             .detail("failed_suites", failed_suites.clone())
             .detail("evidence_review_required", stale_baselines.clone())
             .diagnostic(diagnostic)
-            .next_action(next_action);
+            .next_step(next_step);
     }
     component
+}
+
+fn verify_step(context: &ProjectContext<'_>, instruction: impl Into<String>) -> FollowUpStep {
+    executable_step(
+        context,
+        instruction,
+        ["project", "verify"],
+        ProjectContextRequirement::Analysis,
+    )
 }
 
 fn compact_ids(ids: &[String]) -> String {

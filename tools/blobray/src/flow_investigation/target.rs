@@ -93,7 +93,7 @@ fn compose_path(
             Some((function, profile)) => {
                 functions.insert(identity, (function, profile.output.display().to_string()));
             }
-            None => blockers.push(FlowBlocker::new(
+            None => blockers.push(FlowBlocker::manual(
                 "missing-function-record",
                 format!("graph identity {identity:?} has no indexed function record"),
                 "regenerate the linked-IR profile",
@@ -105,7 +105,7 @@ fn compose_path(
     let mut steps = Vec::new();
     for (ordinal, edge) in path.iter().enumerate() {
         let Some((caller, origin)) = functions.get(&edge.caller) else {
-            blockers.push(FlowBlocker::new(
+            blockers.push(FlowBlocker::manual(
                 "missing-caller-record",
                 format!("cannot load caller {}", edge.caller),
                 "regenerate the linked-IR profile or reduce the requested path",
@@ -117,7 +117,7 @@ fn compose_path(
             .iter()
             .find(|call| call_matches_edge(call, edge))
         else {
-            blockers.push(FlowBlocker::new(
+            blockers.push(FlowBlocker::manual(
                 "missing-call-fact",
                 format!(
                     "graph edge {} -> {} has no matching call fact",
@@ -130,7 +130,7 @@ fn compose_path(
         let (next, arguments) = compose_call_arguments(caller, call, &domains);
         for argument in &arguments {
             if argument.local.starts_with("private-stack:") && argument.pointee.is_empty() {
-                blockers.push(FlowBlocker::new(
+                blockers.push(FlowBlocker::manual(
                     "unresolved-stack-object",
                     format!(
                         "{} -> {} passes an unresolved private stack object in a{}",
@@ -141,7 +141,7 @@ fn compose_path(
             }
         }
         if call.arguments.is_empty() {
-            blockers.push(FlowBlocker::new(
+            blockers.push(FlowBlocker::manual(
                 "missing-abi-arguments",
                 format!(
                     "{} -> {} has no recovered ABI arguments",
@@ -151,7 +151,7 @@ fn compose_path(
             ));
         }
         if edge.kind == PROJECT_ASSOCIATED {
-            blockers.push(FlowBlocker::new(
+            blockers.push(FlowBlocker::manual(
                 "project-associated-call",
                 format!(
                     "{} -> {} is associated through one exported project symbol, not authoritative linker selection",
@@ -244,7 +244,7 @@ fn compose_path(
             });
         }
         if !function.completeness.executable_complete {
-            blockers.push(FlowBlocker::new(
+            blockers.push(FlowBlocker::manual(
                 "incomplete-sink",
                 format!("sink function {sink} has semantic blockers"),
                 "run `inspect function` for the sink and satisfy its required models",
@@ -276,7 +276,7 @@ fn compose_path(
     };
     let (profile, linked_ir) = graph.profile_labels();
     Ok(FlowInvestigationReport {
-        schema_version: 3,
+        schema_version: 4,
         command: "inspect flow",
         mode: "target",
         status,
@@ -314,7 +314,7 @@ fn not_reached(
 ) -> FlowInvestigationReport {
     let (profile, linked_ir) = graph.profile_labels();
     FlowInvestigationReport {
-        schema_version: 3,
+        schema_version: 4,
         command: "inspect flow",
         mode: "target",
         status: FlowStatus::NotReached,
@@ -329,7 +329,7 @@ fn not_reached(
         steps: Vec::new(),
         effects: Vec::new(),
         rust_boundaries: Vec::new(),
-        blockers: vec![FlowBlocker::new(
+        blockers: vec![FlowBlocker::manual(
             "target-not-reached",
             message,
             "increase --max-depth, regenerate project analysis, or inspect the missing boundary",
@@ -384,7 +384,7 @@ fn target_label(target: &FlowTargetRequest<'_>) -> String {
 }
 
 pub(super) fn limit_blocker(limit: &str) -> FlowBlocker {
-    FlowBlocker::new(
+    FlowBlocker::manual(
         "analysis-limit",
         format!("flow investigation reached {limit}"),
         "narrow the root/target or raise the explicit bound after measuring resource use",

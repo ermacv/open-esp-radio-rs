@@ -313,10 +313,11 @@ struct GraphNode {
 #[derive(Debug, Default)]
 struct ScopeGraph {
     nodes: BTreeMap<String, GraphNode>,
-    address_owners: BTreeMap<u32, BTreeSet<String>>,
     outgoing: BTreeMap<String, BTreeSet<String>>,
     incoming: BTreeMap<String, BTreeSet<String>>,
 }
+
+type DirectDiagnosticOwners = BTreeMap<String, BTreeSet<String>>;
 
 #[derive(Debug)]
 struct Accumulator {
@@ -381,13 +382,19 @@ pub(crate) fn next(
         .transpose()?;
     let scopes = select_scopes(&document, options.scope, selected_protocol)?;
     let analyzed_scopes = scopes.iter().map(|scope| scope.id.clone()).collect();
+    let direct_diagnostic_owners = load_direct_diagnostic_owners(session)?;
     let graphs = scopes
         .iter()
         .map(|scope| Ok((scope.id.clone(), load_graph(session, scope)?)))
         .collect::<Result<BTreeMap<_, _>>>()?;
     let mut candidates = BTreeMap::new();
     for scope in &scopes {
-        add_blockers(scope, &graphs[&scope.id], &mut candidates)?;
+        add_blockers(
+            scope,
+            &graphs[&scope.id],
+            &direct_diagnostic_owners,
+            &mut candidates,
+        )?;
     }
     add_registers(session, &scopes, &graphs, &mut candidates)?;
     add_unknown_semantics(session, &scopes, &graphs, &mut candidates)?;
@@ -672,7 +679,6 @@ fn load_graph(session: &ProjectSession, scope: &ReviewScopeReport) -> Result<Sco
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
     let mut nodes = BTreeMap::<String, GraphNode>::new();
-    let mut address_owners = BTreeMap::<u32, BTreeSet<String>>::new();
     for profile_id in &scope.profiles {
         let profile = session
             .project
@@ -684,12 +690,6 @@ fn load_graph(session: &ProjectSession, scope: &ReviewScopeReport) -> Result<Sco
             .read_review_projection()?
             .functions
         {
-            if let Some(address) = identity_address(&function.identity) {
-                address_owners
-                    .entry(address)
-                    .or_default()
-                    .insert(function.identity.clone());
-            }
             if !selected.contains(function.identity.as_str()) {
                 continue;
             }
@@ -733,7 +733,6 @@ fn load_graph(session: &ProjectSession, scope: &ReviewScopeReport) -> Result<Sco
     }
     let mut graph = ScopeGraph {
         nodes,
-        address_owners,
         ..ScopeGraph::default()
     };
     for identity in graph.nodes.keys().cloned().collect::<Vec<_>>() {
@@ -755,10 +754,32 @@ fn load_graph(session: &ProjectSession, scope: &ReviewScopeReport) -> Result<Sco
     Ok(graph)
 }
 
-fn identity_address(identity: &str) -> Option<u32> {
-    identity
-        .rsplit_once("@0x")
-        .and_then(|(_, address)| u32::from_str_radix(address, 16).ok())
+fn load_direct_diagnostic_owners(session: &ProjectSession) -> Result<DirectDiagnosticOwners> {
+    let mut owners = DirectDiagnosticOwners::new();
+    let reports = session
+        .project
+        .ir_profiles
+        .iter()
+        .map(|profile| profile.output.as_path())
+        .collect::<BTreeSet<_>>();
+    for report in reports {
+        for function in LinkedIrReader::open(report)?
+            .read_review_projection()?
+            .functions
+        {
+            for diagnostic in function
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.channel == "direct")
+            {
+                owners
+                    .entry(diagnostic.root_id.clone())
+                    .or_default()
+                    .insert(function.identity.clone());
+            }
+        }
+    }
+    Ok(owners)
 }
 
 fn resolve_function(graph: &ScopeGraph, selector: &str) -> Option<String> {
@@ -793,34 +814,26 @@ fn reverse_reachable(graph: &ScopeGraph, starts: &BTreeSet<String>) -> BTreeSet<
 
 fn blocker_inspection_targets(
     graph: &ScopeGraph,
+    direct_diagnostic_owners: &DirectDiagnosticOwners,
     item: &crate::review_scopes::ReviewQueueItem,
 ) -> BTreeSet<String> {
-    let mut inspection = graph
-        .nodes
-        .iter()
-        .filter(|(_, node)| node.direct_diagnostic_roots.contains(&item.id))
-        .map(|(identity, _)| identity.clone())
-        .collect::<BTreeSet<_>>();
-    // Reference diagnostics preserve the causal instruction address even
-    // when their root id belongs to an impacted caller. Resolve that address
-    // through the complete profile inventory, then retain only functions in
-    // this scope graph.
-    if inspection.is_empty() {
-        for site in &item.sites {
-            if let Some((_, owners)) = graph.address_owners.range(..=*site).next_back() {
-                inspection.extend(
-                    owners
-                        .iter()
-                        .filter(|identity| graph.nodes.contains_key(*identity))
-                        .cloned(),
-                );
-            }
-        }
-    }
+    let mut inspection = direct_diagnostic_owners
+        .get(&item.id)
+        .cloned()
+        .unwrap_or_default();
+    inspection.extend(
+        graph
+            .nodes
+            .iter()
+            .filter(|(_, node)| node.direct_diagnostic_roots.contains(&item.id))
+            .map(|(identity, _)| identity.clone()),
+    );
     // Decode, unresolved-call and replacement findings are synthesized
     // outside the diagnostic-root channel. Their owning functions remain
-    // the safest available inspection targets.
-    if inspection.is_empty() {
+    // the safest available inspection targets. A reference diagnostic whose
+    // direct owner is absent from the configured inventory instead fails
+    // closed: an impacted caller is not evidence of the causal location.
+    if inspection.is_empty() && !item.channels.iter().any(|channel| channel == "reference") {
         inspection.extend(item.functions.iter().cloned());
     }
     inspection
@@ -829,6 +842,7 @@ fn blocker_inspection_targets(
 fn add_blockers(
     scope: &ReviewScopeReport,
     graph: &ScopeGraph,
+    direct_diagnostic_owners: &DirectDiagnosticOwners,
     candidates: &mut BTreeMap<String, Accumulator>,
 ) -> Result<()> {
     let mut by_function = BTreeMap::<String, BTreeSet<String>>::new();
@@ -842,7 +856,7 @@ fn add_blockers(
     }
     for item in &scope.review_queue {
         let direct = item.functions.iter().cloned().collect::<BTreeSet<_>>();
-        let inspection = blocker_inspection_targets(graph, item);
+        let inspection = blocker_inspection_targets(graph, direct_diagnostic_owners, item);
         let optimistic = reverse_reachable(graph, &direct);
         let co_blockers = direct
             .iter()
@@ -2006,11 +2020,15 @@ fn next_command(candidate: &Accumulator) -> String {
     if let ResearchSubject::MmioRegister { address, .. } = &candidate.subject {
         return format!("inspect register {address:#010x}");
     }
-    if let Some(function) = candidate
-        .inspection
-        .first()
-        .or_else(|| candidate.direct.first())
-    {
+    let function = candidate.inspection.first().or_else(|| {
+        (!candidate
+            .evidence_channels
+            .iter()
+            .any(|channel| channel == "reference"))
+        .then(|| candidate.direct.first())
+        .flatten()
+    });
+    if let Some(function) = function {
         let selector = function.split_once("::").map_or_else(
             || function.clone(),
             |(source, symbol)| format!("{source}:{symbol}"),
@@ -2095,7 +2113,6 @@ mod tests {
                     )
                 })
                 .collect(),
-            address_owners: BTreeMap::new(),
             outgoing: BTreeMap::new(),
             incoming: BTreeMap::from([
                 ("leaf".to_owned(), ["middle".to_owned()].into()),
@@ -2133,7 +2150,6 @@ mod tests {
                     },
                 ),
             ]),
-            address_owners: BTreeMap::new(),
             outgoing: BTreeMap::new(),
             incoming: BTreeMap::new(),
         };
@@ -2152,13 +2168,13 @@ mod tests {
         };
 
         assert_eq!(
-            blocker_inspection_targets(&graph, &item),
+            blocker_inspection_targets(&graph, &DirectDiagnosticOwners::new(), &item),
             ["libpp::callee".to_owned()].into()
         );
     }
 
     #[test]
-    fn reference_blocker_inspection_resolves_the_function_owning_its_evidence_site() {
+    fn reference_blocker_uses_all_exact_cross_profile_owners_not_a_lower_address() {
         let graph = ScopeGraph {
             nodes: BTreeMap::from([
                 (
@@ -2172,23 +2188,27 @@ mod tests {
                     },
                 ),
                 (
-                    "libpp::causal_callee@0x1000".to_owned(),
+                    "archive::unrelated_lower@0x10001000".to_owned(),
                     GraphNode {
-                        source: "libpp".to_owned(),
-                        symbol: "causal_callee".to_owned(),
+                        source: "archive".to_owned(),
+                        symbol: "unrelated_lower".to_owned(),
                         dependencies: BTreeSet::new(),
                         direct_diagnostic_roots: BTreeSet::new(),
                         complete: false,
                     },
                 ),
             ]),
-            address_owners: BTreeMap::from([
-                (0x1000, ["libpp::causal_callee@0x1000".to_owned()].into()),
-                (0x2000, ["libpp::caller@0x2000".to_owned()].into()),
-            ]),
             outgoing: BTreeMap::new(),
             incoming: BTreeMap::new(),
         };
+        let owners = DirectDiagnosticOwners::from([(
+            "reference-cause".to_owned(),
+            [
+                "rom::causal_callee_a@0x2f8261b0".to_owned(),
+                "rom::causal_callee_b@0x2f826200".to_owned(),
+            ]
+            .into(),
+        )]);
         let item = crate::review_scopes::ReviewQueueItem {
             id: "reference-cause".to_owned(),
             kind: "call-result-model".to_owned(),
@@ -2198,15 +2218,56 @@ mod tests {
             functions: vec!["libpp::caller@0x2000".to_owned()],
             affected_scope_roots: vec!["libpp::caller@0x2000".to_owned()],
             potentially_unblocked_functions: 1,
-            sites: vec![0x1010],
+            sites: vec![0x2f82_61c0],
             channels: vec!["reference".to_owned()],
             message: "callee evidence".to_owned(),
         };
 
         assert_eq!(
-            blocker_inspection_targets(&graph, &item),
-            ["libpp::causal_callee@0x1000".to_owned()].into()
+            blocker_inspection_targets(&graph, &owners, &item),
+            [
+                "rom::causal_callee_a@0x2f8261b0".to_owned(),
+                "rom::causal_callee_b@0x2f826200".to_owned(),
+            ]
+            .into()
         );
+    }
+
+    #[test]
+    fn reference_blocker_without_an_exact_owner_fails_closed_to_scope_inspection() {
+        let graph = ScopeGraph {
+            nodes: BTreeMap::from([(
+                "libpp::impacted_caller".to_owned(),
+                GraphNode {
+                    source: "libpp".to_owned(),
+                    symbol: "impacted_caller".to_owned(),
+                    dependencies: BTreeSet::new(),
+                    direct_diagnostic_roots: BTreeSet::new(),
+                    complete: false,
+                },
+            )]),
+            ..ScopeGraph::default()
+        };
+        let item = crate::review_scopes::ReviewQueueItem {
+            id: "missing-cause".to_owned(),
+            kind: "call-result-model".to_owned(),
+            priority: 1,
+            severity: "warning".to_owned(),
+            occurrences: 1,
+            functions: vec!["libpp::impacted_caller".to_owned()],
+            affected_scope_roots: vec!["libpp::impacted_caller".to_owned()],
+            potentially_unblocked_functions: 1,
+            sites: vec![0x2000],
+            channels: vec!["reference".to_owned()],
+            message: "missing direct owner".to_owned(),
+        };
+        let inspection = blocker_inspection_targets(&graph, &DirectDiagnosticOwners::new(), &item);
+        assert!(inspection.is_empty());
+
+        let mut candidate = accumulator("missing-cause", "call-result-model");
+        candidate.direct = ["libpp::impacted_caller".to_owned()].into();
+        candidate.evidence_channels = ["reference".to_owned()].into();
+        assert_eq!(next_command(&candidate), "inspect scope radio");
     }
 
     #[test]

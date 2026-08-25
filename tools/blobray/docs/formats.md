@@ -23,6 +23,9 @@ unknown fields.
   identities for one vendor revision;
 - `[reviewed-knowledge].packs`: sparse accepted assertions and vendor-bug
   records with stable IDs, evidence, provenance and applicability;
+  `default-pack` is mandatory for a non-empty list and exactly selects the one
+  configured project pack that receives newly reviewed facts. It is forbidden
+  when no packs are configured; pack order is never a destination fallback;
 - local run specification: ignored bindings to caller-owned private artifacts.
 
 `project files` schema 3 exposes the resolved portability layer separately

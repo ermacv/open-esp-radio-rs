@@ -16,7 +16,8 @@ verification-addon = "verification-addon.toml"
 artifact-lineages = ["esp32s31-radio"]
 
 [reviewed-knowledge]
-packs = ["reviewed/ieee802154.toml"]
+packs = ["reviewed/project-facts.toml"]
+default-pack = "reviewed/project-facts.toml"
 
 [analysis.symbols]
 output = "generated/findings/symbols.json"

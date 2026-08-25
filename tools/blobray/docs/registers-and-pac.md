@@ -15,7 +15,9 @@ does not own or rewrite the underlying observations. Validation rejects
 overlapping definitions, unreviewed access, missing evidence and unsafe API
 exposure.
 
-New human conclusions belong in sparse `[reviewed-knowledge]` packs. A stable
+New human conclusions belong in the project manifest's explicit
+`[reviewed-knowledge].default-pack`; Blobray never guesses a destination from
+pack order or protocol naming. A stable
 physical subject such as `mmio:cpu:0x20103064/32` can independently acquire a
 `register-name` or `hardware-write-semantics` assertion. If that physical
 register is absent from the reusable model, exactly one explicit

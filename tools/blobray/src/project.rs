@@ -265,6 +265,9 @@ pub(crate) struct ProjectSpec {
     /// Sparse human-reviewed facts. Generated observations and complete
     /// register models are deliberately not stored in these packs.
     pub(crate) reviewed_knowledge: Vec<PathBuf>,
+    /// Exact project-local destination for newly accepted sparse facts.
+    /// Selection is explicit even when only one pack is configured.
+    pub(crate) reviewed_knowledge_default: Option<PathBuf>,
     pub(crate) review_context: open_radio_vendor_review::ApplicabilityContext,
     pub(crate) symbol_inventory: Option<SymbolInventorySpec>,
     pub(crate) navigation_index: Option<NavigationIndexSpec>,

@@ -27,7 +27,7 @@ struct RegisterNeighbor {
 #[derive(Serialize)]
 struct RegisterRecordingGuide {
     subject: String,
-    reviewed_knowledge_packs: Vec<String>,
+    reviewed_knowledge_destination: Option<String>,
     supported_register_facts: Vec<&'static str>,
     supported_field_facts: Vec<&'static str>,
     field_subject_suffix: &'static str,
@@ -51,7 +51,7 @@ pub(super) fn run(
         neighbors: neighbors(project, &detail)?,
         recording: recording_guide(project, &detail)?,
         conclusion: conclusion(&detail),
-        schema_version: 2,
+        schema_version: 3,
         command: "inspect register",
         register: detail,
     };
@@ -76,11 +76,10 @@ fn recording_guide(
             model.address_space(),
             detail.address
         ),
-        reviewed_knowledge_packs: project
-            .reviewed_knowledge
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect(),
+        reviewed_knowledge_destination: project
+            .reviewed_knowledge_default
+            .as_ref()
+            .map(|path| path.display().to_string()),
         supported_register_facts: vec![
             "register-declaration",
             "register-name",
@@ -228,12 +227,11 @@ fn render_human(report: &RegisterInvestigationReport) {
             crate::cli::output::heading("Record accepted progress")
         );
         outputln!("Subject:      {}", recording.subject);
-        if recording.reviewed_knowledge_packs.is_empty() {
-            outputln!("Pack:         configure [reviewed-knowledge].packs before recording facts");
+        if let Some(destination) = &recording.reviewed_knowledge_destination {
+            outputln!("Pack:         {destination}");
         } else {
             outputln!(
-                "Pack:         {}",
-                recording.reviewed_knowledge_packs.join(", ")
+                "Pack:         configure [reviewed-knowledge].packs and default-pack before recording facts"
             );
         }
         outputln!(

@@ -1122,7 +1122,8 @@ fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
         .expect("read ESP32-S31 project manifest");
     assert!(manifest.contains("chip-pack = \"../../chips/esp32s31/chip.toml\""));
     assert!(manifest.contains("analysis-provider = \"esp32s31-radio-knowledge-v1\""));
-    assert!(manifest.contains("packs = [\"reviewed/ieee802154.toml\"]"));
+    assert!(manifest.contains("packs = [\"reviewed/project-facts.toml\"]"));
+    assert!(manifest.contains("default-pack = \"reviewed/project-facts.toml\""));
 
     let chip_manifest = fs::read_to_string(chip.join("chip.toml")).unwrap();
     assert!(chip_manifest.contains("knowledge-provider = \"esp32s31-rev0-chip-knowledge-v1\""));
@@ -1130,8 +1131,10 @@ fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
     assert!(chip.join("blobray-provider/knowledge").is_dir());
     assert!(target.join("blobray-provider/OWNERSHIP.md").is_file());
 
-    let reviewed = fs::read_to_string(target.join("reviewed/ieee802154.toml"))
+    let reviewed = fs::read_to_string(target.join("reviewed/project-facts.toml"))
         .expect("read sparse reviewed facts");
+    assert!(!target.join("reviewed/ieee802154.toml").exists());
+    assert!(reviewed.contains("id = \"esp32s31-radio-rev0-project-facts\""));
     assert!(reviewed.contains("subject = \"mmio:cpu:0x20103064/32\""));
     assert!(reviewed.contains("kind = \"register-name\""));
     assert!(reviewed.contains("kind = \"hardware-write-semantics\""));

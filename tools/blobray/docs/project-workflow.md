@@ -46,6 +46,22 @@ register geometry to a chip add-on, not into the generic crate. Keep binary
 profiles, review scopes, dispositions, verification policy and sparse
 artifact-bounded conclusions in the investigation.
 
+The project must select one exact destination for newly accepted sparse facts:
+
+```toml
+[reviewed-knowledge]
+packs = ["reviewed/project-facts.toml"]
+default-pack = "reviewed/project-facts.toml"
+```
+
+Every configured pack remains an input, but `default-pack` is the only file
+Blobray may recommend as the destination for new project facts. It is required
+whenever `packs` is non-empty and must exactly name one entry from that array.
+No list-order fallback exists. A project with no packs must not declare a
+default. Prefer a project-wide destination over protocol-named files: a single
+reviewed assertion can affect Wi-Fi, Bluetooth/BLE, IEEE 802.15.4, coexistence,
+or shared PHY logic without moving between files as understanding improves.
+
 Use this ownership rule when Wi-Fi, BT, or 802.15.4 analysis produces new
 knowledge:
 
@@ -55,7 +71,7 @@ knowledge:
 | Public ESP-IDF/NimBLE interface layout/ABI independent of one chip/blob | ecosystem interface-template pack | yes, reviewed reusable fact with header revision/path |
 | Chip/revision MMIO geometry, ROM address, base SVD | chip pack | yes, reviewed reusable fact |
 | Exact blob source/root/digest/runtime binding, body-identity summary, scope/profile, disposition | investigation project | yes, reviewed and applicability-bounded |
-| Register name, W1C/self-clear semantics, vendor access bug | sparse `[reviewed-knowledge]` pack | yes, one record per accepted fact |
+| Register name, W1C/self-clear semantics, vendor access bug | project `reviewed-knowledge.default-pack` | yes, one record per accepted fact |
 | Symbols, MMIO candidates, linked IR, review pages, SVD/PAC/reference code | `generated/` | no; reproduce it |
 | Vendor binaries and paths | ignored local run spec / `_oracles` | no publication |
 

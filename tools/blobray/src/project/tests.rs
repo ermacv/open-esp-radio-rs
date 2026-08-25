@@ -58,6 +58,38 @@ fn review_scopes_require_explicit_canonical_protocols() {
 }
 
 #[test]
+fn reviewed_knowledge_requires_one_explicit_configured_default_pack() {
+    let cases = [
+        (
+            "missing-default-pack.toml",
+            "[reviewed-knowledge]\npacks = [\"reviewed/project.toml\"]\n",
+            "requires default-pack when packs are configured",
+        ),
+        (
+            "unconfigured-default-pack.toml",
+            "[reviewed-knowledge]\npacks = [\"reviewed/one.toml\"]\ndefault-pack = \"reviewed/two.toml\"\n",
+            "must exactly match one configured packs entry",
+        ),
+        (
+            "default-without-packs.toml",
+            "[reviewed-knowledge]\ndefault-pack = \"reviewed/project.toml\"\n",
+            "is forbidden without non-empty packs",
+        ),
+        (
+            "default-with-empty-packs.toml",
+            "[reviewed-knowledge]\npacks = []\ndefault-pack = \"reviewed/project.toml\"\n",
+            "is forbidden without non-empty packs",
+        ),
+    ];
+    for (name, section, expected) in cases {
+        let input =
+            format!("schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n{section}");
+        let (_, _, error) = invalid_project_span(&input, name);
+        assert!(error.contains(expected), "case {name}: {error}");
+    }
+}
+
+#[test]
 fn project_manifest_rejects_misspelled_nested_configuration_tables() {
     let (_, _, error) = invalid_project_span(
         "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.toml]\ncatalogs = [\"evidence.toml\"]\n",
@@ -163,6 +195,7 @@ artifact-lineages = ["fixture-radio"]
 artifacts = [{{ source = "fixture-blob", sha256 = "{ARTIFACT_SHA256}" }}]
 [reviewed-knowledge]
 packs = ["reviewed/rev0.toml", "reviewed/rev1.toml"]
+default-pack = "reviewed/rev0.toml"
 [registers]
 facts = "generated/mmio.json"
 owned-ranges = ["radio"]
@@ -209,6 +242,7 @@ chip-pack = "chip.toml"
 
 [reviewed-knowledge]
 packs = ["reviewed/radio.toml"]
+default-pack = "reviewed/radio.toml"
 
 [analysis.symbols]
 output = "generated/symbols.json"
@@ -355,6 +389,10 @@ locator = "review"
     assert_eq!(
         project.reviewed_knowledge,
         [directory.join("reviewed/radio.toml")]
+    );
+    assert_eq!(
+        project.reviewed_knowledge_default,
+        Some(directory.join("reviewed/radio.toml"))
     );
     assert_eq!(
         project.symbol_inventory,

@@ -165,7 +165,8 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         &interface_template_packs,
         &semantic_catalogs,
     )?;
-    let reviewed_knowledge = load_reviewed_knowledge(&document, base, source)?;
+    let (reviewed_knowledge, reviewed_knowledge_default) =
+        load_reviewed_knowledge(&document, base, source)?;
     open_radio_vendor_review::ReviewKnowledge::load_all(&reviewed_knowledge)
         .and_then(|knowledge| knowledge.select_for(&review_context))
         .map_err(|error| source.item(document.get("reviewed-knowledge"), error.to_string()))?;
@@ -600,6 +601,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         memory_map,
         svd_paths,
         reviewed_knowledge,
+        reviewed_knowledge_default,
         review_context,
         symbol_inventory,
         navigation_index,
@@ -732,9 +734,9 @@ fn load_reviewed_knowledge(
     document: &Table,
     base: &Path,
     source: ProjectSource<'_>,
-) -> Result<Vec<PathBuf>> {
+) -> Result<(Vec<PathBuf>, Option<PathBuf>)> {
     let Some(item) = document.get("reviewed-knowledge") else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), None));
     };
     let table = item.as_table().ok_or_else(|| {
         source.item(
@@ -742,15 +744,54 @@ fn load_reviewed_knowledge(
             "project manifest reviewed-knowledge must be a table",
         )
     })?;
-    reject_unknown_keys(table, &["packs"], "project reviewed-knowledge", source)?;
-    table_path_array(
+    reject_unknown_keys(
         table,
-        "packs",
+        &["packs", "default-pack"],
         "project reviewed-knowledge",
-        base,
         source,
-        false,
-    )
+    )?;
+    let pack_values = table
+        .get("packs")
+        .map(|_| table_string_array(table, "packs", "project reviewed-knowledge", source, true))
+        .transpose()?
+        .unwrap_or_default();
+    let default_pack =
+        optional_table_string(table, "default-pack", "project reviewed-knowledge", source)?;
+    match (pack_values.is_empty(), default_pack.as_ref()) {
+        (true, Some(_)) => {
+            return Err(source.table_key(
+                table,
+                "default-pack",
+                "project reviewed-knowledge.default-pack is forbidden without non-empty packs",
+            ));
+        }
+        (false, None) => {
+            return Err(source.table_key(
+                table,
+                "default-pack",
+                "project reviewed-knowledge requires default-pack when packs are configured",
+            ));
+        }
+        _ => {}
+    }
+    if let Some(default_pack) = default_pack.as_ref()
+        && !pack_values.contains(default_pack)
+    {
+        return Err(source.table_key(
+            table,
+            "default-pack",
+            format!(
+                "project reviewed-knowledge.default-pack {} must exactly match one configured packs entry",
+                default_pack
+            ),
+        ));
+    }
+    let packs = pack_values
+        .into_iter()
+        .map(|value| resolve_path(base, &value))
+        .collect();
+    let default_pack = default_pack.map(|value| resolve_path(base, &value));
+    Ok((packs, default_pack))
 }
 
 fn load_review_workspace(

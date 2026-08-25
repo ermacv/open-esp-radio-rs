@@ -64,6 +64,9 @@ The schema-3 composition is deliberately layered:
    contracts while their generated candidates remain disposable.
 
 Pack order is not an override mechanism. Conflicting definitions fail closed.
+The project manifest separately names one exact `reviewed-knowledge.default-pack`
+for new investigation facts; this destination must be a configured pack and
+does not change composition precedence.
 Two projects may reference the same chip pack without copying its address map.
 Likewise, projects for different chips may reference one ecosystem pack. A
 generic algorithm or schema belongs in Blobray source; generic is not a dump

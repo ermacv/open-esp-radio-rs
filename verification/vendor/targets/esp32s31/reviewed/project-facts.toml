@@ -1,7 +1,9 @@
-# Sparse reviewed facts. Generated MMIO geometry and access observations stay
-# under generated/; this file grows only when a reviewer accepts new meaning.
+# Project-wide sparse reviewed facts for Wi-Fi, Bluetooth/BLE, IEEE 802.15.4,
+# coexistence, and shared radio logic. Generated MMIO geometry and access
+# observations stay under generated/; this file grows only when a reviewer
+# accepts new investigation-specific meaning.
 schema = 1
-id = "esp32s31-rev0-ieee802154"
+id = "esp32s31-radio-rev0-project-facts"
 
 [classification]
 provenance = "reviewed"

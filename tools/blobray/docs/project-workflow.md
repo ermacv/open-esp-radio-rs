@@ -209,6 +209,14 @@ status` and `project doctor` warn when no baseline exists; deep doctor also
 checks immutable snapshot digests and reports current binding drift.
 Snapshot creation hashes the live caller-owned bindings and rejects stale
 analysis evidence whose recorded artifact identities are no longer present.
+Schema 2 deliberately hashes only typed `vendor-*` and
+`source-artifact:*`/`source-inventory:*`/`source-companion:*` roles. Ambiguous
+generic `artifact`/`companion` roles fail closed in the revision workflow.
+Local `rust-artifact` probes remain freshness-checked verification inputs, but
+rebuilding the driver or a probe cannot create a false vendor revision.
+Reusing one source ID for both a vendor and Rust role also fails closed.
+Linked-IR bundles retain exact primary, inventory and companion provenance, so
+revision capture rejects a bundle produced from stale dependency bytes.
 
 `prepare-update` fails if the caller has already replaced a bound vendor
 artifact, if a snapshot is missing or modified, or if the previous revision
@@ -218,6 +226,24 @@ record a new preflight. `prepare-update --check` is read-only and verifies an
 existing marker. A snapshot with changed artifact identities is rejected
 unless its predecessor has a matching marker, so cleanup or an accidental
 binding edit cannot silently erase the old correspondence map.
+
+For a legacy schema-1 current snapshot, `project status`/`doctor` report a
+scope migration. Keep the old immutable file, add an explicit map bound to its
+logical digest and listing the old Rust verification source IDs, then run
+`prepare-update --migrate-legacy-scope MAP`. Create a new name while the vendor
+inputs are unchanged, inspect the resulting diff/rebase, and finish with
+`prepare-update --accept-current`. Blobray refuses automatic source inference
+and requires every function, register, interface and reviewed record to remain
+identical during this one-time scope migration. The map must live below
+`revisions/migrations/`; its relative path and digest remain in the ledger and
+are revalidated by deep inspection.
+
+`source-artifact:*` may identify a locally linked analysis container around
+vendor objects. It is still part of exact analysis provenance: rebuilding or
+relinking that container can require a revision preflight even when the raw
+vendor inventory is unchanged. The durable raw-vendor identity comes from the
+corresponding `source-inventory:*` inputs; do not interpret exclusion of Rust
+probes as proof that every analysis container is itself vendor-distributed.
 
 Snapshots contain artifact
 digests, address-independent function feature fingerprints, MMIO/interface

@@ -19,7 +19,7 @@ pub(crate) struct StoredMmioFacts {
     completeness_claim: bool,
     code_selection: StoredCodeSelection,
     pub(crate) ranges: Vec<StoredMmioRange>,
-    artifacts: Vec<StoredMmioArtifact>,
+    pub(crate) artifacts: Vec<StoredMmioArtifact>,
     pub(crate) registers: Vec<StoredRegisterFact>,
     diagnostics: Vec<StoredMmioDiagnostic>,
 }
@@ -43,9 +43,9 @@ pub(crate) struct StoredMmioRange {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredMmioArtifact {
-    source: String,
-    artifact: StoredArtifactIdentity,
+pub(crate) struct StoredMmioArtifact {
+    pub(crate) source: String,
+    pub(crate) artifact: StoredArtifactIdentity,
     functions: usize,
     reviewed_boundaries: usize,
     functions_with_mmio: usize,
@@ -57,9 +57,9 @@ struct StoredMmioArtifact {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredArtifactIdentity {
+pub(crate) struct StoredArtifactIdentity {
     path: String,
-    sha256: String,
+    pub(crate) sha256: String,
 }
 
 #[derive(Debug, Deserialize)]

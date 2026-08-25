@@ -39,6 +39,12 @@ struct SourceArtifact<'a> {
 }
 
 #[derive(Clone, Serialize)]
+struct SourceInputArtifact<'a> {
+    source: &'a str,
+    artifact: ArtifactIdentity,
+}
+
+#[derive(Clone, Serialize)]
 struct ReviewedCodeBoundaryDocument<'a> {
     member: &'a Option<String>,
     section: &'a str,
@@ -401,6 +407,7 @@ pub(crate) struct LinkedIrDocument<'a> {
     cfg_guard_completeness_claim: bool,
     completeness_claim: bool,
     artifacts: Vec<SourceArtifact<'a>>,
+    inventories: Vec<SourceInputArtifact<'a>>,
     companions: Vec<ArtifactIdentity>,
     symbol_prefix: &'a str,
     entry_contract: &'a str,
@@ -601,6 +608,7 @@ fn manifest_projection<'a>(document: &'a LinkedIrDocument<'a>) -> LinkedIrDocume
         cfg_guard_completeness_claim: document.cfg_guard_completeness_claim,
         completeness_claim: document.completeness_claim,
         artifacts: document.artifacts.clone(),
+        inventories: document.inventories.clone(),
         companions: document.companions.clone(),
         symbol_prefix: document.symbol_prefix,
         entry_contract: document.entry_contract,
@@ -1045,6 +1053,7 @@ struct RegisterIndexDocument<'a> {
 
 pub(crate) fn build_linked_ir_document<'a>(
     artifacts: &'a [IrArtifactInput],
+    inventories: &'a [(String, PathBuf)],
     companions: &[PathBuf],
     symbol_prefix: &'a str,
     entry_contract: EntryContractRef,
@@ -1124,6 +1133,15 @@ pub(crate) fn build_linked_ir_document<'a>(
                             end_offset: format!("{:#x}", range.end_offset),
                         })
                         .collect(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        inventories: inventories
+            .iter()
+            .map(|(source, path)| {
+                Ok(SourceInputArtifact {
+                    source,
+                    artifact: ArtifactIdentity::load(path)?,
                 })
             })
             .collect::<Result<Vec<_>>>()?,
@@ -1356,6 +1374,7 @@ pub(crate) fn render_linked_ir_fixture(
         scenario_suggestions: 0,
     };
     let document = build_linked_ir_document(
+        &[],
         &[],
         &[],
         "",

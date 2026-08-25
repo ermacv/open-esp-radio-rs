@@ -472,6 +472,7 @@ mod tests {
         ));
         let output = directory.join("device.toml");
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![
                 FactRange {
                     name: "radio-core".to_owned(),
@@ -505,6 +506,7 @@ mod tests {
         ));
         let output = directory.join("device.toml");
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![
                 FactRange {
                     name: "radio-core".to_owned(),

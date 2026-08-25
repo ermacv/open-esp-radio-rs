@@ -75,6 +75,7 @@ pub(super) fn run(
         .collect::<Vec<_>>();
     let document = crate::artifacts::build_linked_ir_document(
         &artifacts,
+        &inventories,
         &arguments.companion,
         &arguments.symbol_prefix,
         entry_contract,

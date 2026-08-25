@@ -138,6 +138,7 @@ fn write_project(root: &Path, options: &Options) -> Result<()> {
         import_svd_model(input, &model, "cpu")?;
     } else {
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: options
                 .ranges
                 .iter()

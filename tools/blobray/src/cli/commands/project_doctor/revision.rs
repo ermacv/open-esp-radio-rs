@@ -29,6 +29,32 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                     ),
             );
         }
+        Health::LegacyScope | Health::MigrationReviewPending => {
+            let status = if inspection.health == Health::MigrationReviewPending {
+                "migration-review-pending"
+            } else {
+                "legacy-scope"
+            };
+            report.warning(
+                inspection
+                    .diagnostic
+                    .clone()
+                    .unwrap_or_else(|| "legacy revision scope requires migration".to_owned()),
+            );
+            report.capability(
+                CapabilityReport::new("revision-workflow", status)
+                    .field("ledger", inspection.path)
+                    .field("revisions", inspection.revisions)
+                    .field(
+                        "baseline",
+                        inspection.baseline.unwrap_or_else(|| "-".to_owned()),
+                    )
+                    .field(
+                        "current",
+                        inspection.current.unwrap_or_else(|| "-".to_owned()),
+                    ),
+            );
+        }
         Health::Invalid => {
             report.error();
             report.capability(

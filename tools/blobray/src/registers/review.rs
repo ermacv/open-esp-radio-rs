@@ -508,6 +508,7 @@ mod tests {
     #[test]
     fn report_links_functions_and_emits_safe_unreviewed_drafts() {
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![FactRange {
                 name: "radio".to_owned(),
                 start: 0x1000,
@@ -575,6 +576,7 @@ mod tests {
             candidate_masks: Vec::new(),
         };
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![FactRange {
                 name: "radio".to_owned(),
                 start: 0x1000,

@@ -21,7 +21,8 @@ use crate::{
     registers::{RegisterFacts, load_effective_register_model},
 };
 
-pub(crate) const REVISION_SCHEMA: u32 = 1;
+const LEGACY_REVISION_SCHEMA: u32 = 1;
+pub(crate) const REVISION_SCHEMA: u32 = 2;
 pub(crate) const REVISION_LEDGER_SCHEMA: u32 = 1;
 
 static LEDGER_STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -33,6 +34,8 @@ pub(crate) struct RevisionSnapshot {
     pub(crate) command: String,
     pub(crate) name: String,
     pub(crate) project: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) artifact_scope: Option<RevisionArtifactScope>,
     pub(crate) artifacts: Vec<RevisionArtifact>,
     pub(crate) functions: Vec<RevisionFunction>,
     pub(crate) registers: Vec<RevisionRegister>,
@@ -41,9 +44,17 @@ pub(crate) struct RevisionSnapshot {
     pub(crate) vendor_bugs: Vec<RevisionReviewedRecord>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum RevisionArtifactScope {
+    VendorInputs,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RevisionArtifact {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) role: Option<String>,
     pub(crate) source: String,
     pub(crate) sha256: String,
 }
@@ -218,6 +229,8 @@ pub(crate) struct RevisionLedgerEntry {
     pub(crate) snapshot: String,
     pub(crate) snapshot_sha256: String,
     pub(crate) artifacts_sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) scope_migration: Option<RevisionScopeMigration>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -226,6 +239,38 @@ pub(crate) struct PreparedRevisionUpdate {
     pub(crate) from: String,
     pub(crate) snapshot_sha256: String,
     pub(crate) artifacts_sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) legacy_scope_migration: Option<PreparedLegacyScopeMigration>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub(crate) struct RevisionScopeMigration {
+    pub(crate) from_snapshot_sha256: String,
+    pub(crate) map: String,
+    pub(crate) map_sha256: String,
+    pub(crate) verification_sources: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub(crate) struct PreparedLegacyScopeMigration {
+    pub(crate) map: String,
+    pub(crate) map_sha256: String,
+    pub(crate) verification_sources: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct LegacyScopeMigrationDocument {
+    schema: u32,
+    snapshot_sha256: String,
+    verification_sources: Vec<String>,
+}
+
+struct LoadedLegacyScopeMigration {
+    snapshot_sha256: String,
+    prepared: PreparedLegacyScopeMigration,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -233,6 +278,8 @@ pub(crate) struct PreparedRevisionUpdate {
 pub(crate) enum RevisionLedgerHealth {
     Missing,
     BaselineMissing,
+    LegacyScope,
+    MigrationReviewPending,
     Ready,
     Invalid,
 }
@@ -371,11 +418,12 @@ pub(crate) fn persist_snapshot(
     // leaving every reviewed fact unchanged.
     let snapshot_sha256 = logical_snapshot_sha256(snapshot)?;
     let artifacts_sha256 = artifacts_sha256(&snapshot.artifacts)?;
-    let entry = RevisionLedgerEntry {
+    let mut entry = RevisionLedgerEntry {
         name: snapshot.name.clone(),
         snapshot: location,
         snapshot_sha256,
         artifacts_sha256,
+        scope_migration: None,
     };
 
     let mut ledger =
@@ -401,6 +449,7 @@ pub(crate) fn persist_snapshot(
                     entry.name
                 ))
             })?;
+        entry.scope_migration = stored.scope_migration.clone();
         if stored != &entry {
             return Err(crate::Error::invalid(format!(
                 "revision ledger entry {:?} differs from the requested snapshot; revision names are immutable",
@@ -417,6 +466,7 @@ pub(crate) fn persist_snapshot(
         .iter()
         .find(|stored| stored.name == entry.name)
     {
+        entry.scope_migration = stored.scope_migration.clone();
         if stored != &entry {
             return Err(crate::Error::invalid(format!(
                 "revision {:?} is immutable and already names different snapshot content; choose a new revision name",
@@ -431,6 +481,45 @@ pub(crate) fn persist_snapshot(
     if let Some(current) = ledger.current.as_deref() {
         let previous = ledger_entry(&ledger, current)?;
         verify_ledger_entry(manifest, &ledger, previous)?;
+        let previous_snapshot = load(&snapshot_path(manifest, &previous.snapshot)?)?;
+        if previous_snapshot.schema_version == LEGACY_REVISION_SCHEMA
+            && snapshot.schema_version == REVISION_SCHEMA
+        {
+            let prepared = ledger.prepared_update.as_ref().ok_or_else(|| {
+                crate::Error::invalid(
+                    "schema-1 scope migration requires `project revision prepare-update --migrate-legacy-scope MAP` before capturing schema 2",
+                )
+            })?;
+            let migration = prepared.legacy_scope_migration.as_ref().ok_or_else(|| {
+                crate::Error::invalid(
+                    "schema-1 scope migration preflight has no explicit verification-source map",
+                )
+            })?;
+            if previous_snapshot.functions != snapshot.functions
+                || previous_snapshot.registers != snapshot.registers
+                || previous_snapshot.interfaces != snapshot.interfaces
+                || previous_snapshot.assertions != snapshot.assertions
+                || previous_snapshot.vendor_bugs != snapshot.vendor_bugs
+            {
+                return Err(crate::Error::invalid(
+                    "legacy scope migration changed a function, register, interface or reviewed record; regenerate exact vendor evidence or review a separate vendor revision transition",
+                ));
+            }
+            entry.scope_migration = Some(RevisionScopeMigration {
+                from_snapshot_sha256: previous.snapshot_sha256.clone(),
+                map: migration.map.clone(),
+                map_sha256: migration.map_sha256.clone(),
+                verification_sources: migration.verification_sources.clone(),
+            });
+        } else if ledger
+            .prepared_update
+            .as_ref()
+            .is_some_and(|prepared| prepared.legacy_scope_migration.is_some())
+        {
+            return Err(crate::Error::invalid(
+                "legacy scope migration map can only transition a schema-1 current snapshot to schema 2",
+            ));
+        }
         if previous.artifacts_sha256 != entry.artifacts_sha256 {
             let prepared = ledger.prepared_update.as_ref().ok_or_else(|| {
                 crate::Error::invalid(format!(
@@ -467,18 +556,23 @@ pub(crate) fn prepare_update(
     session: &ProjectSession,
     accept_current: bool,
     check: bool,
+    legacy_scope_path: Option<&Path>,
 ) -> Result<RevisionPrepareUpdateReport> {
     let run_spec = session.run_spec.as_ref().ok_or_else(|| {
         crate::Error::invalid(
             "revision update preflight requires the current caller-owned run spec",
         )
     })?;
+    let legacy_scope = legacy_scope_path
+        .map(|path| load_legacy_scope_migration(&session.manifest, path))
+        .transpose()?;
     prepare_update_with_bindings(
         &session.manifest,
         &session.project.id,
         run_spec,
         accept_current,
         check,
+        legacy_scope.as_ref(),
     )
 }
 
@@ -489,7 +583,89 @@ pub(crate) fn verify_snapshot_bindings(
     let run_spec = session.run_spec.as_ref().ok_or_else(|| {
         crate::Error::invalid("revision snapshot requires the current caller-owned run spec")
     })?;
-    verify_current_artifact_bindings(run_spec, snapshot)
+    verify_current_artifact_bindings(run_spec, snapshot, &[])
+}
+
+fn load_legacy_scope_migration(
+    manifest: &Path,
+    value: &Path,
+) -> Result<LoadedLegacyScopeMigration> {
+    let path = if value.is_absolute() {
+        value.to_owned()
+    } else {
+        manifest
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(value)
+    };
+    let input = fs::read_to_string(&path)
+        .map_err(|error| crate::Error::read("legacy revision scope migration", &path, error))?;
+    let document: LegacyScopeMigrationDocument =
+        toml_edit::de::from_str(&input).map_err(|error| {
+            crate::Error::manifest_source(
+                "legacy revision scope migration",
+                &path,
+                &input,
+                error,
+                None,
+            )
+        })?;
+    if document.schema != 1 {
+        return Err(crate::Error::invalid(format!(
+            "legacy revision scope migration {} requires schema = 1",
+            path.display()
+        )));
+    }
+    validate_sha256(
+        "legacy migration snapshot-sha256",
+        &document.snapshot_sha256,
+    )?;
+    if document.verification_sources.is_empty() {
+        return Err(crate::Error::invalid(
+            "legacy revision scope migration requires at least one verification source",
+        ));
+    }
+    for source in &document.verification_sources {
+        crate::source_id::validate_source_id(source).map_err(|_| {
+            crate::Error::invalid(format!(
+                "legacy revision scope migration has invalid source id {source:?}"
+            ))
+        })?;
+    }
+    if !document
+        .verification_sources
+        .windows(2)
+        .all(|pair| pair[0] < pair[1])
+    {
+        return Err(crate::Error::invalid(
+            "legacy revision scope migration verification-sources must be sorted and unique",
+        ));
+    }
+    let mut hash = Sha256::new();
+    hash.update(b"blobray/legacy-scope-migration/v1\0");
+    hash.update(input.as_bytes());
+    let map_sha256 = hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let map = durable_migration_location(manifest, &path)?;
+    Ok(LoadedLegacyScopeMigration {
+        snapshot_sha256: document.snapshot_sha256,
+        prepared: PreparedLegacyScopeMigration {
+            map,
+            map_sha256,
+            verification_sources: document.verification_sources,
+        },
+    })
+}
+
+fn load_ledger_scope_migration(
+    manifest: &Path,
+    location: &str,
+) -> Result<LoadedLegacyScopeMigration> {
+    validate_relative_components(Path::new(location), "scope-migration map location")?;
+    load_legacy_scope_migration(manifest, &Path::new("revisions").join(location))
 }
 
 fn prepare_update_with_bindings(
@@ -498,6 +674,7 @@ fn prepare_update_with_bindings(
     run_spec: &crate::run_spec::RunSpec,
     accept_current: bool,
     check: bool,
+    legacy_scope: Option<&LoadedLegacyScopeMigration>,
 ) -> Result<RevisionPrepareUpdateReport> {
     let mut ledger = load_ledger_optional(manifest, Some(project))?
         .ok_or_else(|| {
@@ -524,11 +701,32 @@ fn prepare_update_with_bindings(
     }
     let entry = ledger_entry(&ledger, &current)?.clone();
     let snapshot = load(&snapshot_path(manifest, &entry.snapshot)?)?;
-    let verified = verify_current_artifact_bindings(run_spec, &snapshot)?;
+    if let Some(migration) = legacy_scope {
+        if snapshot.schema_version != LEGACY_REVISION_SCHEMA {
+            return Err(crate::Error::invalid(
+                "--migrate-legacy-scope requires a schema-1 current snapshot",
+            ));
+        }
+        if migration.snapshot_sha256 != entry.snapshot_sha256 {
+            return Err(crate::Error::invalid(format!(
+                "legacy scope migration map names snapshot digest {}, but current revision {:?} has {}",
+                migration.snapshot_sha256, current, entry.snapshot_sha256
+            )));
+        }
+    } else if snapshot.schema_version == LEGACY_REVISION_SCHEMA {
+        return Err(crate::Error::invalid(
+            "schema-1 current snapshot requires an explicit `--migrate-legacy-scope MAP`; automatic vendor/Rust classification is not fail-closed",
+        ));
+    }
+    let verification_sources = legacy_scope
+        .map(|migration| migration.prepared.verification_sources.as_slice())
+        .unwrap_or_default();
+    let verified = verify_current_artifact_bindings(run_spec, &snapshot, verification_sources)?;
     let prepared = PreparedRevisionUpdate {
         from: current.clone(),
         snapshot_sha256: entry.snapshot_sha256.clone(),
         artifacts_sha256: entry.artifacts_sha256.clone(),
+        legacy_scope_migration: legacy_scope.map(|migration| migration.prepared.clone()),
     };
     if check {
         if accept_current && ledger.baseline.as_deref() != Some(current.as_str()) {
@@ -595,7 +793,35 @@ pub(crate) fn inspect_ledger(
             if deep {
                 validate_ledger_files(manifest, &ledger)?;
             }
-            RevisionLedgerHealth::Ready
+            let current = ledger
+                .current
+                .as_deref()
+                .expect("current checked before snapshot scope inspection");
+            let entry = ledger_entry(&ledger, current)?;
+            let snapshot = load(&snapshot_path(manifest, &entry.snapshot)?)?;
+            if snapshot.schema_version == LEGACY_REVISION_SCHEMA {
+                RevisionLedgerHealth::LegacyScope
+            } else if ledger.baseline.as_deref() != Some(current) && entry.scope_migration.is_some()
+            {
+                RevisionLedgerHealth::MigrationReviewPending
+            } else {
+                RevisionLedgerHealth::Ready
+            }
+        };
+        let diagnostic = match health {
+            RevisionLedgerHealth::BaselineMissing => Some(
+                "revision ledger has no baseline/current snapshot; run `project revision snapshot BASELINE` before replacing artifact bindings"
+                    .to_owned(),
+            ),
+            RevisionLedgerHealth::LegacyScope => Some(
+                "current revision snapshot uses legacy schema 1 and may include local Rust verification artifacts; create a digest-bound migration map, run `project revision prepare-update --migrate-legacy-scope MAP`, capture a new named snapshot, review the one-time scope diff/rebase, then run `project revision prepare-update --accept-current`"
+                    .to_owned(),
+            ),
+            RevisionLedgerHealth::MigrationReviewPending => Some(
+                "schema-2 vendor-scope migration is current but not accepted; review the legacy/current diff and rebase, then run `project revision prepare-update --accept-current`"
+                    .to_owned(),
+            ),
+            _ => None,
         };
         Ok(RevisionLedgerInspection {
             path: path.display().to_string(),
@@ -604,10 +830,7 @@ pub(crate) fn inspect_ledger(
             current: ledger.current.clone(),
             revisions: ledger.entries.len(),
             update_prepared: ledger.prepared_update.is_some(),
-            diagnostic: (health == RevisionLedgerHealth::BaselineMissing).then(|| {
-                "revision ledger has no baseline/current snapshot; run `project revision snapshot BASELINE` before replacing artifact bindings"
-                    .to_owned()
-            }),
+            diagnostic,
         })
     })();
     result.unwrap_or_else(|error| RevisionLedgerInspection {
@@ -633,7 +856,7 @@ pub(crate) fn verify_ledger_bindings_from_context(context: &ProjectContext<'_>) 
     let run_spec = context
         .run_spec
         .ok_or_else(|| crate::Error::invalid("current run spec is missing"))?;
-    verify_current_artifact_bindings(run_spec, &snapshot)
+    verify_current_artifact_bindings(run_spec, &snapshot, &[])
 }
 
 fn load_ledger_optional(
@@ -683,6 +906,21 @@ fn validate_ledger(ledger: &RevisionLedger, expected_project: Option<&str>) -> R
         validate_snapshot_location(&entry.snapshot)?;
         validate_sha256("snapshot-sha256", &entry.snapshot_sha256)?;
         validate_sha256("artifacts-sha256", &entry.artifacts_sha256)?;
+        if let Some(migration) = &entry.scope_migration {
+            validate_sha256(
+                "scope-migration.from-snapshot-sha256",
+                &migration.from_snapshot_sha256,
+            )?;
+            validate_sha256("scope-migration.map-sha256", &migration.map_sha256)?;
+            validate_relative_components(
+                Path::new(&migration.map),
+                "scope-migration map location",
+            )?;
+            validate_source_list(
+                "scope-migration.verification-sources",
+                &migration.verification_sources,
+            )?;
+        }
     }
     for (label, name) in [
         ("baseline", ledger.baseline.as_deref()),
@@ -720,6 +958,36 @@ fn validate_ledger(ledger: &RevisionLedger, expected_project: Option<&str>) -> R
                 "revision ledger prepared-update digests do not match the current immutable revision",
             ));
         }
+        if let Some(migration) = &prepared.legacy_scope_migration {
+            validate_sha256(
+                "prepared-update.legacy-scope-migration.map-sha256",
+                &migration.map_sha256,
+            )?;
+            validate_relative_components(
+                Path::new(&migration.map),
+                "prepared-update legacy map location",
+            )?;
+            validate_source_list(
+                "prepared-update.legacy-scope-migration.verification-sources",
+                &migration.verification_sources,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_list(label: &str, sources: &[String]) -> Result<()> {
+    if sources.is_empty() {
+        return Err(crate::Error::invalid(format!("{label} must not be empty")));
+    }
+    for source in sources {
+        crate::source_id::validate_source_id(source)
+            .map_err(|_| crate::Error::invalid(format!("{label} contains invalid {source:?}")))?;
+    }
+    if !sources.windows(2).all(|pair| pair[0] < pair[1]) {
+        return Err(crate::Error::invalid(format!(
+            "{label} must be sorted and unique"
+        )));
     }
     Ok(())
 }
@@ -758,69 +1026,100 @@ fn verify_ledger_entry(
             path.display()
         )));
     }
+    if let Some(migration) = &entry.scope_migration {
+        let loaded = load_ledger_scope_migration(manifest, &migration.map)?;
+        if loaded.snapshot_sha256 != migration.from_snapshot_sha256
+            || loaded.prepared.map != migration.map
+            || loaded.prepared.map_sha256 != migration.map_sha256
+            || loaded.prepared.verification_sources != migration.verification_sources
+        {
+            return Err(crate::Error::invalid(format!(
+                "revision {:?} scope-migration map no longer matches its ledger record",
+                entry.name
+            )));
+        }
+    }
     Ok(())
 }
 
 fn verify_current_artifact_bindings(
     run_spec: &crate::run_spec::RunSpec,
     snapshot: &RevisionSnapshot,
+    legacy_verification_sources: &[String],
 ) -> Result<usize> {
     if snapshot.artifacts.is_empty() {
         return Err(crate::Error::invalid(
             "current revision snapshot contains no vendor artifact identities",
         ));
     }
-    let expected = snapshot
+    let (_, rust_sources) = revision_source_sets(run_spec)?;
+    let exclusions = legacy_verification_sources
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if exclusions.len() != legacy_verification_sources.len() {
+        return Err(crate::Error::invalid(
+            "legacy verification source exclusions must be unique",
+        ));
+    }
+    if snapshot.schema_version != LEGACY_REVISION_SCHEMA && !exclusions.is_empty() {
+        return Err(crate::Error::invalid(
+            "legacy verification source exclusions are valid only for a schema-1 current snapshot",
+        ));
+    }
+    if snapshot.schema_version == LEGACY_REVISION_SCHEMA {
+        let absent = exclusions
+            .iter()
+            .filter(|source| {
+                !snapshot
+                    .artifacts
+                    .iter()
+                    .any(|artifact| artifact.source.as_str() == source.as_str())
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let not_rust = exclusions
+            .difference(&rust_sources)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !absent.is_empty() || !not_rust.is_empty() {
+            return Err(crate::Error::invalid(format!(
+                "legacy verification exclusions must name old snapshot sources currently bound only as typed Rust inputs (absent: {}; not-rust: {})",
+                absent.join(", "),
+                not_rust.join(", ")
+            )));
+        }
+    }
+    let expected_owned = snapshot
         .artifacts
         .iter()
-        .map(|artifact| (artifact.source.as_str(), artifact.sha256.as_str()))
+        .filter(|artifact| !exclusions.contains(&artifact.source))
+        .cloned()
         .collect::<BTreeSet<_>>();
-    let mut actual_owned = Vec::new();
-    // Every scannable input can contribute functions, registers or interfaces
-    // to the revision snapshot. Treat that typed role set as revision-owned;
-    // filtering by sources already observed in the old snapshot would let a
-    // newly added analysis input bypass the update preflight.
-    for input in run_spec
-        .inputs()
-        .iter()
-        .filter(|input| input.role.is_scannable())
-    {
-        let sha256 = if input.path.is_file() {
-            sha256_file(&input.path).map_err(|error| {
-                crate::Error::invalid(format!(
-                    "cannot hash current artifact binding {} at {}: {error}",
-                    input.role,
-                    input.path.display()
-                ))
-            })?
-        } else {
-            crate::artifact_path_sha256(&input.path).map_err(|error| {
-                crate::Error::invalid(format!(
-                    "cannot hash current artifact binding {} at {}: {error}",
-                    input.role,
-                    input.path.display()
-                ))
-            })?
-        };
-        actual_owned.push((input.role.source_id().to_owned(), sha256));
-    }
-    let actual = actual_owned
-        .iter()
-        .map(|(source, digest)| (source.as_str(), digest.as_str()))
-        .collect::<BTreeSet<_>>();
-    let missing = expected.difference(&actual).copied().collect::<Vec<_>>();
-    let unexpected = actual.difference(&expected).copied().collect::<Vec<_>>();
+    let actual_owned = if snapshot.schema_version == LEGACY_REVISION_SCHEMA {
+        current_legacy_revision_artifacts(run_spec, &exclusions)?
+    } else {
+        current_revision_artifacts(run_spec)?
+    };
+    let missing = expected_owned
+        .difference(&actual_owned)
+        .cloned()
+        .collect::<Vec<_>>();
+    let unexpected = actual_owned
+        .difference(&expected_owned)
+        .cloned()
+        .collect::<Vec<_>>();
     if !missing.is_empty() || !unexpected.is_empty() {
         let missing_summary = missing
             .iter()
             .take(8)
-            .map(|(source, digest)| format!("{source}@{}", &digest[..12]))
+            .map(revision_artifact_summary)
             .collect::<Vec<_>>()
             .join(", ");
         let unexpected_summary = unexpected
             .iter()
             .take(8)
-            .map(|(source, digest)| format!("{source}@{}", &digest[..12]))
+            .map(revision_artifact_summary)
             .collect::<Vec<_>>()
             .join(", ");
         return Err(crate::Error::invalid(format!(
@@ -832,7 +1131,302 @@ fn verify_current_artifact_bindings(
             unexpected_summary,
         )));
     }
-    Ok(expected.len())
+    Ok(expected_owned.len())
+}
+
+fn revision_artifact_summary(artifact: &RevisionArtifact) -> String {
+    format!(
+        "{}:{}@{}",
+        artifact.role.as_deref().unwrap_or("legacy"),
+        artifact.source,
+        artifact.sha256.get(..12).unwrap_or(&artifact.sha256)
+    )
+}
+
+fn revision_source_sets(
+    run_spec: &crate::run_spec::RunSpec,
+) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
+    let vendor_sources = run_spec
+        .inputs()
+        .iter()
+        .filter(|input| input.role.is_revision_owned())
+        .map(|input| input.role.source_id().to_owned())
+        .collect::<BTreeSet<_>>();
+    let rust_sources = run_spec
+        .inputs()
+        .iter()
+        .filter(|input| input.role.is_rust_lineage())
+        .map(|input| input.role.source_id().to_owned())
+        .collect::<BTreeSet<_>>();
+    let ambiguous = run_spec
+        .inputs()
+        .iter()
+        .filter(|input| input.role.is_ambiguous_lineage())
+        .map(|input| input.role.to_string())
+        .collect::<BTreeSet<_>>();
+    if !ambiguous.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "revision workflow requires typed vendor or Rust roles; ambiguous scannable role(s): {}",
+            ambiguous.into_iter().collect::<Vec<_>>().join(", ")
+        )));
+    }
+    let overlaps = vendor_sources
+        .intersection(&rust_sources)
+        .cloned()
+        .collect::<Vec<_>>();
+    if !overlaps.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "revision source id(s) are shared by vendor and Rust artifact roles: {}; use distinct source ids so vendor lineage is unambiguous",
+            overlaps.join(", ")
+        )));
+    }
+    Ok((vendor_sources, rust_sources))
+}
+
+fn current_legacy_revision_artifacts(
+    run_spec: &crate::run_spec::RunSpec,
+    exclusions: &BTreeSet<String>,
+) -> Result<BTreeSet<RevisionArtifact>> {
+    revision_source_sets(run_spec)?;
+    run_spec
+        .inputs()
+        .iter()
+        .filter(|input| input.role.is_scannable() && input.role.is_revision_owned())
+        .filter(|input| !exclusions.contains(input.role.source_id()))
+        .map(|input| {
+            Ok(RevisionArtifact {
+                role: None,
+                source: input.role.source_id().to_owned(),
+                sha256: hash_revision_input(input)?,
+            })
+        })
+        .collect()
+}
+
+fn current_revision_artifacts(
+    run_spec: &crate::run_spec::RunSpec,
+) -> Result<BTreeSet<RevisionArtifact>> {
+    Ok(current_revision_artifacts_with_digests(run_spec)?.0)
+}
+
+fn current_revision_artifacts_with_digests(
+    run_spec: &crate::run_spec::RunSpec,
+) -> Result<(BTreeSet<RevisionArtifact>, BTreeMap<PathBuf, String>)> {
+    revision_source_sets(run_spec)?;
+    let mut artifacts = BTreeSet::new();
+    let mut digests = BTreeMap::<PathBuf, String>::new();
+    for input in run_spec
+        .inputs()
+        .iter()
+        .filter(|input| input.role.is_revision_owned())
+    {
+        let sha256 = if let Some(sha256) = digests.get(&input.path) {
+            sha256.clone()
+        } else {
+            let sha256 = hash_revision_input(input)?;
+            digests.insert(input.path.clone(), sha256.clone());
+            sha256
+        };
+        artifacts.insert(RevisionArtifact {
+            role: Some(input.role.to_string()),
+            source: input.role.source_id().to_owned(),
+            sha256,
+        });
+    }
+    Ok((artifacts, digests))
+}
+
+fn hash_revision_input(input: &crate::run_spec::RunInput) -> Result<String> {
+    if input.path.is_file() {
+        sha256_file(&input.path).map_err(|error| {
+            crate::Error::invalid(format!(
+                "cannot hash current vendor artifact binding {} at {}: {error}",
+                input.role,
+                input.path.display()
+            ))
+        })
+    } else {
+        crate::artifact_path_sha256(&input.path).map_err(|error| {
+            crate::Error::invalid(format!(
+                "cannot hash current vendor artifact binding {} at {}: {error}",
+                input.role,
+                input.path.display()
+            ))
+        })
+    }
+}
+
+fn validate_vendor_projection_artifacts(
+    label: &str,
+    observed: &[RevisionArtifact],
+    live: &BTreeSet<RevisionArtifact>,
+    vendor_sources: &BTreeSet<String>,
+    inventories_allowed: bool,
+) -> Result<()> {
+    if observed.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "{label} contain no artifact provenance for a vendor revision snapshot"
+        )));
+    }
+    for artifact in observed {
+        if !vendor_sources.contains(&artifact.source) {
+            return Err(crate::Error::invalid(format!(
+                "{label} contain non-vendor source {:?}; regenerate a vendor-only projection before snapshotting",
+                artifact.source
+            )));
+        }
+        let current = if inventories_allowed {
+            live_revision_analysis_input_matches(live, &artifact.source, &artifact.sha256)
+        } else {
+            live_revision_primary_matches(live, &artifact.source, &artifact.sha256)
+        };
+        if !current {
+            return Err(crate::Error::invalid(format!(
+                "{label} retain stale vendor artifact identity {}@{}; rerun project analysis against the current bindings",
+                artifact.source,
+                artifact.sha256.get(..12).unwrap_or(&artifact.sha256)
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn live_revision_primary_matches(
+    live: &BTreeSet<RevisionArtifact>,
+    source: &str,
+    sha256: &str,
+) -> bool {
+    live.iter().any(|artifact| {
+        artifact.source == source
+            && artifact.sha256 == sha256
+            && artifact
+                .role
+                .as_deref()
+                .and_then(crate::run_spec::InputRole::parse)
+                .is_some_and(|role| role.is_revision_primary())
+    })
+}
+
+fn live_revision_analysis_input_matches(
+    live: &BTreeSet<RevisionArtifact>,
+    source: &str,
+    sha256: &str,
+) -> bool {
+    live.iter().any(|artifact| {
+        artifact.source == source
+            && artifact.sha256 == sha256
+            && artifact
+                .role
+                .as_deref()
+                .and_then(crate::run_spec::InputRole::parse)
+                .is_some_and(|role| role.is_revision_primary() || role.is_revision_inventory())
+    })
+}
+
+fn validate_linked_ir_inventories(
+    profile: &crate::project_ir::ProjectIrProfile,
+    observed: &[(String, String)],
+    run_spec: &crate::run_spec::RunSpec,
+    live_digests: &BTreeMap<PathBuf, String>,
+) -> Result<()> {
+    let expected = run_spec
+        .inputs()
+        .iter()
+        .filter(|input| {
+            input.role.is_revision_inventory()
+                && (profile.sources.is_empty()
+                    || profile
+                        .sources
+                        .iter()
+                        .any(|source| source == input.role.source_id()))
+        })
+        .map(|input| {
+            Ok((
+                input.role.source_id().to_owned(),
+                live_digests.get(&input.path).cloned().ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "current inventory binding {} was not included in vendor revision provenance",
+                        input.role
+                    ))
+                })?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let expected = counted_identities(expected);
+    let actual = counted_identities(observed.to_vec());
+    if actual != expected {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR profile {:?} inventory provenance differs from the current typed bindings; rerun project analysis",
+            profile.id
+        )));
+    }
+    Ok(())
+}
+
+fn counted_identities(values: Vec<(String, String)>) -> BTreeMap<(String, String), usize> {
+    let mut counts = BTreeMap::new();
+    for value in values {
+        *counts.entry(value).or_default() += 1;
+    }
+    counts
+}
+
+fn validate_linked_ir_companions(
+    profile: &crate::project_ir::ProjectIrProfile,
+    primary_sources: &BTreeSet<String>,
+    observed: &[(String, String)],
+    run_spec: &crate::run_spec::RunSpec,
+    live_digests: &BTreeMap<PathBuf, String>,
+) -> Result<()> {
+    let expected = if primary_sources.len() == 1 {
+        let source = primary_sources
+            .first()
+            .expect("one primary source established above");
+        run_spec
+            .inputs()
+            .iter()
+            .filter(|input| {
+                input.role.is_revision_companion() && input.role.source_id() == source
+            })
+            .map(|input| {
+                Ok((
+                    input.path.display().to_string(),
+                    live_digests.get(&input.path).cloned().ok_or_else(|| {
+                        crate::Error::invalid(format!(
+                            "current companion binding {} was not included in vendor revision provenance",
+                            input.role
+                        ))
+                    })?,
+                ))
+            })
+            .collect::<Result<BTreeSet<_>>>()?
+    } else {
+        BTreeSet::new()
+    };
+    let actual = observed.iter().cloned().collect::<BTreeSet<_>>();
+    if actual.len() != observed.len() {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR profile {:?} contains duplicate companion provenance",
+            profile.id
+        )));
+    }
+    if actual != expected {
+        let missing = expected
+            .difference(&actual)
+            .take(4)
+            .cloned()
+            .collect::<Vec<_>>();
+        let unexpected = actual
+            .difference(&expected)
+            .take(4)
+            .cloned()
+            .collect::<Vec<_>>();
+        return Err(crate::Error::invalid(format!(
+            "linked-IR profile {:?} companion provenance differs from the current typed bindings (missing: {missing:?}; unexpected: {unexpected:?}); rerun project analysis",
+            profile.id
+        )));
+    }
+    Ok(())
 }
 
 fn ledger_entry<'a>(ledger: &'a RevisionLedger, name: &str) -> Result<&'a RevisionLedgerEntry> {
@@ -873,6 +1467,35 @@ fn durable_snapshot_location(manifest: &Path, path: &Path) -> Result<String> {
         return Err(crate::Error::invalid(
             "revision snapshot path cannot overwrite revisions/ledger.toml",
         ));
+    }
+    Ok(relative.to_string_lossy().into_owned())
+}
+
+fn durable_migration_location(manifest: &Path, path: &Path) -> Result<String> {
+    let root = manifest
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("revisions");
+    let relative = path.strip_prefix(&root).map_err(|_| {
+        crate::Error::invalid(format!(
+            "legacy scope migration map {} must be stored below {}",
+            path.display(),
+            root.join("migrations").display()
+        ))
+    })?;
+    validate_relative_components(relative, "scope-migration map path")?;
+    if relative
+        .extension()
+        .is_none_or(|extension| extension != "toml")
+        || relative
+            .parent()
+            .and_then(|parent| parent.components().next())
+            != Some(Component::Normal("migrations".as_ref()))
+    {
+        return Err(crate::Error::invalid(format!(
+            "legacy scope migration map {} must be a TOML file below revisions/migrations/",
+            path.display()
+        )));
     }
     Ok(relative.to_string_lossy().into_owned())
 }
@@ -1040,15 +1663,35 @@ fn sync_parent_directory(_parent: &Path) -> Result<()> {
 
 pub(crate) fn snapshot(session: &ProjectSession, name: &str) -> Result<RevisionSnapshot> {
     validate_revision_name(name)?;
-    let (artifacts, functions) = snapshot_functions(session)?;
-    let registers = snapshot_registers(session)?;
-    let (interface_artifacts, interfaces) = snapshot_interfaces(session)?;
-    let artifacts = artifacts
-        .into_iter()
-        .chain(interface_artifacts)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    let run_spec = session.run_spec.as_ref().ok_or_else(|| {
+        crate::Error::invalid("revision snapshot requires the current caller-owned run spec")
+    })?;
+    let (artifacts, live_digests) = current_revision_artifacts_with_digests(run_spec)?;
+    if artifacts.is_empty() {
+        return Err(crate::Error::invalid(
+            "revision snapshot requires at least one vendor artifact or inventory binding",
+        ));
+    }
+    let (vendor_sources, rust_sources) = revision_source_sets(run_spec)?;
+    let (function_artifacts, functions) = snapshot_functions(session, run_spec, &live_digests)?;
+    validate_vendor_projection_artifacts(
+        "linked-IR",
+        &function_artifacts,
+        &artifacts,
+        &vendor_sources,
+        false,
+    )?;
+    if let Some(function) = functions
+        .iter()
+        .find(|function| !vendor_sources.contains(&function.source))
+    {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR revision projection contains non-vendor function {:?} from source {:?}",
+            function.id, function.source
+        )));
+    }
+    let registers = snapshot_registers(session, &artifacts, &vendor_sources)?;
+    let (_, interfaces) = snapshot_interfaces(session, &artifacts, &vendor_sources, &rust_sources)?;
     let knowledge =
         open_radio_vendor_review::ReviewKnowledge::load_all(&session.project.reviewed_knowledge)
             .map_err(|error| {
@@ -1081,7 +1724,8 @@ pub(crate) fn snapshot(session: &ProjectSession, name: &str) -> Result<RevisionS
         command: "revision snapshot".to_owned(),
         name: name.to_owned(),
         project: session.project.id.clone(),
-        artifacts,
+        artifact_scope: Some(RevisionArtifactScope::VendorInputs),
+        artifacts: artifacts.into_iter().collect(),
         functions,
         registers,
         interfaces,
@@ -1094,17 +1738,36 @@ pub(crate) fn snapshot(session: &ProjectSession, name: &str) -> Result<RevisionS
 
 fn snapshot_functions(
     session: &ProjectSession,
+    run_spec: &crate::run_spec::RunSpec,
+    live_digests: &BTreeMap<PathBuf, String>,
 ) -> Result<(Vec<RevisionArtifact>, Vec<RevisionFunction>)> {
     let mut artifacts = BTreeSet::new();
     let mut functions = BTreeMap::<String, RevisionFunction>::new();
     for profile in &session.project.ir_profiles {
         let reader = LinkedIrReader::open(&profile.output)?;
         let projection = reader.read_review_projection()?;
+        let primary_sources = projection
+            .inputs
+            .iter()
+            .map(|(source, _)| source.clone())
+            .collect::<BTreeSet<_>>();
+        validate_linked_ir_companions(
+            profile,
+            &primary_sources,
+            &projection.companions,
+            run_spec,
+            live_digests,
+        )?;
+        validate_linked_ir_inventories(profile, &projection.inventories, run_spec, live_digests)?;
         artifacts.extend(
             projection
                 .inputs
                 .into_iter()
-                .map(|(source, sha256)| RevisionArtifact { source, sha256 }),
+                .map(|(source, sha256)| RevisionArtifact {
+                    role: None,
+                    source,
+                    sha256,
+                }),
         );
         for function in projection.functions {
             let mut features = Vec::new();
@@ -1213,11 +1876,31 @@ fn snapshot_functions(
     ))
 }
 
-fn snapshot_registers(session: &ProjectSession) -> Result<Vec<RevisionRegister>> {
+fn snapshot_registers(
+    session: &ProjectSession,
+    revision_artifacts: &BTreeSet<RevisionArtifact>,
+    vendor_sources: &BTreeSet<String>,
+) -> Result<Vec<RevisionRegister>> {
     let Some(paths) = session.project.registers.as_ref() else {
         return Ok(Vec::new());
     };
     let facts = RegisterFacts::load(&paths.facts)?;
+    let fact_artifacts = facts
+        .artifacts
+        .iter()
+        .map(|artifact| RevisionArtifact {
+            role: None,
+            source: artifact.source.clone(),
+            sha256: artifact.sha256.clone(),
+        })
+        .collect::<Vec<_>>();
+    validate_vendor_projection_artifacts(
+        "MMIO facts",
+        &fact_artifacts,
+        revision_artifacts,
+        vendor_sources,
+        true,
+    )?;
     let identities = load_effective_register_model(paths)?.register_identities()?;
     facts
         .registers
@@ -1268,28 +1951,76 @@ fn snapshot_registers(session: &ProjectSession) -> Result<Vec<RevisionRegister>>
 
 fn snapshot_interfaces(
     session: &ProjectSession,
+    revision_artifacts: &BTreeSet<RevisionArtifact>,
+    vendor_sources: &BTreeSet<String>,
+    rust_sources: &BTreeSet<String>,
 ) -> Result<(Vec<RevisionArtifact>, Vec<RevisionInterface>)> {
     let Some(paths) = session.project.interfaces.as_ref() else {
         return Ok((Vec::new(), Vec::new()));
     };
     let facts = InterfaceFacts::load(&paths.facts)?;
-    let artifacts = facts
-        .artifacts
-        .iter()
-        .flat_map(|artifact| {
-            artifact.sha256.iter().flat_map(|sha256| {
-                artifact.sources.iter().map(|source| RevisionArtifact {
+    let mut artifacts = BTreeSet::new();
+    let mut revision_artifact_indices = BTreeSet::new();
+    for artifact in &facts.artifacts {
+        let has_vendor = artifact
+            .sources
+            .iter()
+            .any(|source| vendor_sources.contains(source));
+        let has_rust = artifact
+            .sources
+            .iter()
+            .any(|source| rust_sources.contains(source));
+        if has_vendor && has_rust {
+            return Err(crate::Error::invalid(format!(
+                "interface facts artifact {} mixes vendor and Rust source lineages; regenerate separate projections before snapshotting",
+                artifact.index
+            )));
+        }
+        let mut vendor_artifact = false;
+        for source in &artifact.sources {
+            if vendor_sources.contains(source) {
+                let sha256 = artifact.sha256.as_ref().ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "interface facts omit the digest for vendor source {source:?}"
+                    ))
+                })?;
+                let identity = RevisionArtifact {
+                    role: None,
                     source: source.clone(),
                     sha256: sha256.clone(),
-                })
-            })
-        })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
+                };
+                if !live_revision_analysis_input_matches(
+                    revision_artifacts,
+                    &identity.source,
+                    &identity.sha256,
+                ) {
+                    return Err(crate::Error::invalid(format!(
+                        "interface facts retain stale vendor artifact identity {}@{}; rerun project analysis against the current bindings",
+                        identity.source,
+                        identity.sha256.get(..12).unwrap_or(&identity.sha256)
+                    )));
+                }
+                artifacts.insert(identity);
+                vendor_artifact = true;
+            } else if !rust_sources.contains(source) {
+                return Err(crate::Error::invalid(format!(
+                    "interface facts contain unclassified source {source:?}; restore its typed run-spec binding before snapshotting"
+                )));
+            }
+        }
+        if vendor_artifact {
+            revision_artifact_indices.insert(artifact.index);
+        }
+    }
+    if artifacts.is_empty() {
+        return Err(crate::Error::invalid(
+            "interface facts contain no current vendor artifact provenance",
+        ));
+    }
     let mut entities = facts
         .tables
         .iter()
+        .filter(|table| revision_artifact_indices.contains(&table.artifact))
         .map(|table| {
             let artifact = facts.artifact(table.artifact).ok_or_else(|| {
                 crate::Error::invalid("interface table references an absent artifact")
@@ -1331,7 +2062,7 @@ fn snapshot_interfaces(
         })
         .collect::<Result<Vec<_>>>()?;
     entities.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok((artifacts, entities))
+    Ok((artifacts.into_iter().collect(), entities))
 }
 
 fn interface_root(root: &InterfaceFactRoot) -> String {
@@ -1395,13 +2126,71 @@ fn validate_revision_name(name: &str) -> Result<()> {
 }
 
 fn validate_snapshot(snapshot: &RevisionSnapshot) -> Result<()> {
-    if snapshot.schema_version != REVISION_SCHEMA || snapshot.command != "revision snapshot" {
+    if !matches!(
+        snapshot.schema_version,
+        LEGACY_REVISION_SCHEMA | REVISION_SCHEMA
+    ) || snapshot.command != "revision snapshot"
+    {
         return Err(crate::Error::invalid(format!(
             "unsupported revision snapshot schema/command for {:?}",
             snapshot.name
         )));
     }
+    match (snapshot.schema_version, snapshot.artifact_scope) {
+        (LEGACY_REVISION_SCHEMA, None)
+        | (REVISION_SCHEMA, Some(RevisionArtifactScope::VendorInputs)) => {}
+        _ => {
+            return Err(crate::Error::invalid(format!(
+                "revision snapshot {:?} has an invalid artifact scope for schema {}",
+                snapshot.name, snapshot.schema_version
+            )));
+        }
+    }
     validate_revision_name(&snapshot.name)?;
+    let mut artifact_identities = BTreeSet::new();
+    for artifact in &snapshot.artifacts {
+        crate::source_id::validate_source_id(&artifact.source).map_err(|_| {
+            crate::Error::invalid(format!(
+                "revision snapshot {:?} has invalid artifact source {:?}",
+                snapshot.name, artifact.source
+            ))
+        })?;
+        validate_sha256("revision artifact sha256", &artifact.sha256)?;
+        match (snapshot.schema_version, artifact.role.as_deref()) {
+            (LEGACY_REVISION_SCHEMA, None) => {}
+            (REVISION_SCHEMA, Some(role_text)) => {
+                let role = crate::run_spec::InputRole::parse(role_text).ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "revision snapshot {:?} has invalid artifact role {role_text:?}",
+                        snapshot.name
+                    ))
+                })?;
+                if !role.is_revision_owned()
+                    || role.is_ambiguous_lineage()
+                    || role.source_id() != artifact.source
+                    || role.to_string() != role_text
+                {
+                    return Err(crate::Error::invalid(format!(
+                        "revision snapshot {:?} artifact role {role_text:?} does not canonically identify vendor source {:?}",
+                        snapshot.name, artifact.source
+                    )));
+                }
+            }
+            _ => {
+                return Err(crate::Error::invalid(format!(
+                    "revision snapshot {:?} artifact roles do not match schema {}",
+                    snapshot.name, snapshot.schema_version
+                )));
+            }
+        }
+        if !artifact_identities.insert(artifact) {
+            return Err(crate::Error::invalid(format!(
+                "revision snapshot {:?} contains duplicate artifact binding {}",
+                snapshot.name,
+                revision_artifact_summary(artifact)
+            )));
+        }
+    }
     validate_unique(
         "function",
         snapshot.functions.iter().map(|entity| &entity.id),
@@ -1652,6 +2441,7 @@ fn increment(summary: &mut RevisionDiffSummary, classification: RevisionChangeCl
 pub(crate) fn rebase(from: &RevisionSnapshot, to: &RevisionSnapshot) -> RevisionRebaseReport {
     let diff = diff(from, to);
     let mappings = automatic_mappings(&diff);
+    let unchanged_subjects = unchanged_subjects(from, to);
     let target_subjects = to
         .functions
         .iter()
@@ -1678,6 +2468,7 @@ pub(crate) fn rebase(from: &RevisionSnapshot, to: &RevisionSnapshot) -> Revision
                 "assertion",
                 record,
                 &current,
+                &unchanged_subjects,
                 &target_subjects,
                 &target_artifacts,
                 &mappings,
@@ -1688,6 +2479,7 @@ pub(crate) fn rebase(from: &RevisionSnapshot, to: &RevisionSnapshot) -> Revision
                 "vendor-bug",
                 record,
                 &current,
+                &unchanged_subjects,
                 &target_subjects,
                 &target_artifacts,
                 &mappings,
@@ -1714,6 +2506,49 @@ pub(crate) fn rebase(from: &RevisionSnapshot, to: &RevisionSnapshot) -> Revision
     }
 }
 
+fn unchanged_subjects<'a>(
+    from: &'a RevisionSnapshot,
+    to: &'a RevisionSnapshot,
+) -> BTreeSet<&'a str> {
+    let from = subject_fingerprints(from);
+    let to = subject_fingerprints(to);
+    to.iter()
+        .filter_map(|(id, fingerprints)| {
+            (fingerprints.len() == 1
+                && from
+                    .get(id)
+                    .is_some_and(|old| old.len() == 1 && old == fingerprints))
+            .then_some(*id)
+        })
+        .collect()
+}
+
+fn subject_fingerprints(snapshot: &RevisionSnapshot) -> BTreeMap<&str, Vec<&str>> {
+    let mut fingerprints = BTreeMap::<_, Vec<_>>::new();
+    for entity in snapshot
+        .functions
+        .iter()
+        .map(|entity| EntityView {
+            id: &entity.id,
+            fingerprint: &entity.fingerprint,
+        })
+        .chain(snapshot.registers.iter().map(|entity| EntityView {
+            id: &entity.id,
+            fingerprint: &entity.fingerprint,
+        }))
+        .chain(snapshot.interfaces.iter().map(|entity| EntityView {
+            id: &entity.id,
+            fingerprint: &entity.fingerprint,
+        }))
+    {
+        fingerprints
+            .entry(entity.id)
+            .or_default()
+            .push(entity.fingerprint);
+    }
+    fingerprints
+}
+
 fn automatic_mappings(diff: &RevisionDiffReport) -> BTreeMap<&str, &str> {
     diff.changes
         .iter()
@@ -1731,6 +2566,7 @@ fn rebase_record(
     kind: &str,
     record: &RevisionReviewedRecord,
     current: &BTreeMap<&str, &RevisionReviewedRecord>,
+    unchanged_subjects: &BTreeSet<&str>,
     target_subjects: &BTreeSet<&str>,
     target_artifacts: &BTreeSet<(&str, &str)>,
     mappings: &BTreeMap<&str, &str>,
@@ -1745,6 +2581,7 @@ fn rebase_record(
         .map(split_subject_suffix)
         .unwrap_or(("", ""));
     let exact_target = target_subjects.contains(base);
+    let exact_unchanged = unchanged_subjects.contains(base);
     let mapped = mappings.get(base).copied();
     let proposed_subject = mapped
         .map(|target| format!("{subject_prefix}{target}{suffix}"))
@@ -1755,9 +2592,10 @@ fn rebase_record(
             RevisionRebaseStatus::ReviewRequired,
             "record applicability names artifact bytes absent from the target revision",
         )
-    } else if current
-        .get(record.id.as_str())
-        .is_some_and(|current| *current == record)
+    } else if exact_unchanged
+        && current
+            .get(record.id.as_str())
+            .is_some_and(|current| *current == record)
     {
         (
             RevisionRebaseStatus::AlreadyPresent,
@@ -1768,10 +2606,15 @@ fn rebase_record(
             RevisionRebaseStatus::CarryRemapped,
             "the subject has one high-confidence normalized-feature move",
         )
-    } else if exact_target {
+    } else if exact_unchanged {
         (
             RevisionRebaseStatus::CarryExact,
             "the stable subject exists unchanged in the target revision",
+        )
+    } else if exact_target {
+        (
+            RevisionRebaseStatus::ReviewRequired,
+            "the stable subject exists but its normalized features changed",
         )
     } else {
         (
@@ -1846,6 +2689,7 @@ mod tests {
             command: "revision snapshot".to_owned(),
             name: name.to_owned(),
             project: "fixture".to_owned(),
+            artifact_scope: Some(RevisionArtifactScope::VendorInputs),
             artifacts: Vec::new(),
             functions,
             registers: Vec::new(),
@@ -1927,11 +2771,59 @@ mod tests {
     }
 
     #[test]
+    fn rebase_requires_review_when_an_identical_fact_targets_modified_semantics() {
+        let record = RevisionReviewedRecord {
+            id: "fact.modified".to_owned(),
+            subject: Some("stable".to_owned()),
+            record: serde_json::json!({"id":"fact.modified","subject":"stable"}),
+        };
+        let mut before = snapshot("old", vec![function("stable", "a")]);
+        before.assertions = vec![record.clone()];
+        let mut after = snapshot("new", vec![function("stable", "changed")]);
+        after.assertions = vec![record];
+
+        let report = rebase(&before, &after);
+
+        assert_eq!(report.summary.already_present, 0);
+        assert_eq!(report.summary.carry_exact, 0);
+        assert_eq!(report.summary.review_required, 1);
+        assert_eq!(
+            report.records[0].proposed_subject.as_deref(),
+            Some("stable")
+        );
+        assert!(
+            report.records[0]
+                .reason
+                .contains("normalized features changed")
+        );
+    }
+
+    #[test]
+    fn rebase_requires_review_when_an_identical_fact_targets_a_removed_subject() {
+        let record = RevisionReviewedRecord {
+            id: "fact.removed".to_owned(),
+            subject: Some("removed".to_owned()),
+            record: serde_json::json!({"id":"fact.removed","subject":"removed"}),
+        };
+        let mut before = snapshot("old", vec![function("removed", "a")]);
+        before.assertions = vec![record.clone()];
+        let mut after = snapshot("new", Vec::new());
+        after.assertions = vec![record];
+
+        let report = rebase(&before, &after);
+
+        assert_eq!(report.summary.already_present, 0);
+        assert_eq!(report.summary.review_required, 1);
+        assert_eq!(report.records[0].proposed_subject, None);
+    }
+
+    #[test]
     fn rebase_rejects_an_artifact_guard_from_the_old_revision() {
         let old_digest = "aa".repeat(32);
         let new_digest = "bb".repeat(32);
         let mut before = snapshot("old", vec![function("stable", "a")]);
         before.artifacts = vec![RevisionArtifact {
+            role: Some("vendor-artifact".to_owned()),
             source: "vendor".to_owned(),
             sha256: old_digest.clone(),
         }];
@@ -1949,6 +2841,7 @@ mod tests {
         }];
         let mut after = snapshot("new", vec![function("stable", "a")]);
         after.artifacts = vec![RevisionArtifact {
+            role: Some("vendor-artifact".to_owned()),
             source: "vendor".to_owned(),
             sha256: new_digest,
         }];
@@ -2066,6 +2959,7 @@ mod tests {
         let (directory, manifest) = temporary_manifest("ledger-preflight");
         let mut old = snapshot("vendor-1", vec![function("stable", "a")]);
         old.artifacts.push(RevisionArtifact {
+            role: Some("vendor-artifact".to_owned()),
             source: "vendor".to_owned(),
             sha256: "aa".repeat(32),
         });
@@ -2078,6 +2972,7 @@ mod tests {
         .unwrap();
         let mut new = snapshot("vendor-2", vec![function("stable", "a")]);
         new.artifacts.push(RevisionArtifact {
+            role: Some("vendor-artifact".to_owned()),
             source: "vendor".to_owned(),
             sha256: "bb".repeat(32),
         });
@@ -2094,6 +2989,7 @@ mod tests {
             from: current.name.clone(),
             snapshot_sha256: current.snapshot_sha256,
             artifacts_sha256: current.artifacts_sha256,
+            legacy_scope_migration: None,
         });
         write_ledger_atomic(&manifest, &ledger).unwrap();
         persist_snapshot(&manifest, &new, &output, false).unwrap();
@@ -2137,6 +3033,7 @@ mod tests {
         let run_spec = crate::run_spec::RunSpec::load(&run_path).unwrap();
         let mut current_snapshot = snapshot("vendor-1", Vec::new());
         current_snapshot.artifacts.push(RevisionArtifact {
+            role: Some("vendor-artifact".to_owned()),
             source: "vendor".to_owned(),
             sha256: crate::artifact_path_sha256(&artifact).unwrap(),
         });
@@ -2148,15 +3045,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            verify_current_artifact_bindings(&run_spec, &current_snapshot).unwrap(),
+            verify_current_artifact_bindings(&run_spec, &current_snapshot, &[]).unwrap(),
             1
         );
         let report =
-            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false).unwrap();
+            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false, None)
+                .unwrap();
         assert_eq!(report.status, "prepared");
         assert_eq!(report.artifact_bindings_verified, 1);
         assert_eq!(
-            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, true)
+            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, true, None)
                 .unwrap()
                 .status,
             "verified"
@@ -2171,13 +3069,14 @@ mod tests {
         )
         .unwrap();
         assert!(
-            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false)
+            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false, None)
                 .unwrap_err()
                 .to_string()
                 .contains("--accept-current")
         );
         let accepted =
-            prepare_update_with_bindings(&manifest, "fixture", &run_spec, true, false).unwrap();
+            prepare_update_with_bindings(&manifest, "fixture", &run_spec, true, false, None)
+                .unwrap();
         assert_eq!(accepted.baseline, "vendor-2");
 
         let unexpected_artifact = directory.join("unexpected.elf");
@@ -2192,7 +3091,7 @@ mod tests {
         .unwrap();
         let run_spec_with_unexpected = crate::run_spec::RunSpec::load(&run_path).unwrap();
         let unexpected =
-            verify_current_artifact_bindings(&run_spec_with_unexpected, &current_snapshot)
+            verify_current_artifact_bindings(&run_spec_with_unexpected, &current_snapshot, &[])
                 .unwrap_err()
                 .to_string();
         assert!(unexpected.contains("unexpected scannable"));
@@ -2200,10 +3099,216 @@ mod tests {
 
         std::fs::write(&artifact, b"new vendor bytes").unwrap();
         assert!(
-            verify_current_artifact_bindings(&run_spec, &current_snapshot)
+            verify_current_artifact_bindings(&run_spec, &current_snapshot, &[])
                 .unwrap_err()
                 .to_string()
                 .contains("no longer reproduce")
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn legacy_snapshot_ignores_changed_local_rust_artifacts_during_migration() {
+        let (directory, manifest) = temporary_manifest("legacy-vendor-scope");
+        let vendor = directory.join("vendor.elf");
+        let rust = directory.join("rust.elf");
+        std::fs::write(&vendor, b"stable vendor bytes").unwrap();
+        std::fs::write(&rust, b"new local verification bytes").unwrap();
+        let run_path = directory.join("local.toml");
+        std::fs::write(
+            &run_path,
+            format!(
+                "schema = 1\n\n[[inputs]]\nrole = \"vendor-artifact\"\npath = {:?}\n\n[[inputs]]\nrole = \"rust-artifact\"\npath = {:?}\n",
+                vendor, rust
+            ),
+        )
+        .unwrap();
+        let run_spec = crate::run_spec::RunSpec::load(&run_path).unwrap();
+        let mut legacy = snapshot("legacy", Vec::new());
+        legacy.schema_version = LEGACY_REVISION_SCHEMA;
+        legacy.artifact_scope = None;
+        legacy.artifacts = vec![
+            RevisionArtifact {
+                role: None,
+                source: "vendor".to_owned(),
+                sha256: crate::artifact_path_sha256(&vendor).unwrap(),
+            },
+            RevisionArtifact {
+                role: None,
+                source: "rust".to_owned(),
+                sha256: "11".repeat(32),
+            },
+        ];
+        persist_snapshot(
+            &manifest,
+            &legacy,
+            &default_path(&manifest, "legacy").unwrap(),
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            verify_current_artifact_bindings(&run_spec, &legacy, &["rust".to_owned()],).unwrap(),
+            1
+        );
+        assert_eq!(
+            inspect_ledger(&manifest, "fixture", true).health,
+            RevisionLedgerHealth::LegacyScope
+        );
+
+        let entry = load_ledger_optional(&manifest, Some("fixture"))
+            .unwrap()
+            .unwrap()
+            .entries
+            .remove(0);
+        let migration_path = directory.join("revisions/migrations/legacy.toml");
+        std::fs::create_dir_all(migration_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &migration_path,
+            format!(
+                "schema = 1\nsnapshot-sha256 = {:?}\nverification-sources = [\"rust\"]\n",
+                entry.snapshot_sha256
+            ),
+        )
+        .unwrap();
+        let migration = load_legacy_scope_migration(&manifest, &migration_path).unwrap();
+        assert!(
+            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false, None,)
+                .unwrap_err()
+                .to_string()
+                .contains("explicit")
+        );
+        prepare_update_with_bindings(
+            &manifest,
+            "fixture",
+            &run_spec,
+            false,
+            false,
+            Some(&migration),
+        )
+        .unwrap();
+        let mut migrated = snapshot("vendor-scope", Vec::new());
+        migrated.artifacts = current_revision_artifacts(&run_spec)
+            .unwrap()
+            .into_iter()
+            .collect();
+        persist_snapshot(
+            &manifest,
+            &migrated,
+            &default_path(&manifest, "vendor-scope").unwrap(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            inspect_ledger(&manifest, "fixture", true).health,
+            RevisionLedgerHealth::MigrationReviewPending
+        );
+        let report = diff(&legacy, &migrated);
+        assert!(report.artifacts_changed);
+        assert_eq!(report.summary, RevisionDiffSummary::default());
+        prepare_update_with_bindings(&manifest, "fixture", &run_spec, true, false, None).unwrap();
+        assert_eq!(
+            inspect_ledger(&manifest, "fixture", true).health,
+            RevisionLedgerHealth::Ready
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn schema_two_artifacts_require_canonical_vendor_roles() {
+        let mut value = snapshot("vendor", Vec::new());
+        value.artifacts.push(RevisionArtifact {
+            role: Some("rust-artifact".to_owned()),
+            source: "rust".to_owned(),
+            sha256: "11".repeat(32),
+        });
+        assert!(
+            validate_snapshot(&value)
+                .unwrap_err()
+                .to_string()
+                .contains("vendor source")
+        );
+
+        value.artifacts[0] = RevisionArtifact {
+            role: Some("source-artifact:rom".to_owned()),
+            source: "archive".to_owned(),
+            sha256: "11".repeat(32),
+        };
+        assert!(
+            validate_snapshot(&value)
+                .unwrap_err()
+                .to_string()
+                .contains("canonically")
+        );
+
+        value.artifacts[0] = RevisionArtifact {
+            role: Some("source-companion:rom".to_owned()),
+            source: "rom".to_owned(),
+            sha256: "11".repeat(32),
+        };
+        validate_snapshot(&value).unwrap();
+    }
+
+    #[test]
+    fn linked_ir_dependencies_match_inventory_and_companion_bindings_exactly() {
+        let (directory, _) = temporary_manifest("linked-ir-dependencies");
+        let primary = directory.join("wifi.elf");
+        let inventory = directory.join("libwifi.a");
+        let companion = directory.join("rom.elf");
+        std::fs::write(&primary, b"linked vendor image").unwrap();
+        std::fs::write(&inventory, b"vendor archive").unwrap();
+        std::fs::write(&companion, b"vendor rom").unwrap();
+        let run_path = directory.join("local.toml");
+        std::fs::write(
+            &run_path,
+            format!(
+                "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:wifi\"\npath = {:?}\n\n[[inputs]]\nrole = \"source-inventory:wifi\"\npath = {:?}\n\n[[inputs]]\nrole = \"source-companion:wifi\"\npath = {:?}\n",
+                primary, inventory, companion
+            ),
+        )
+        .unwrap();
+        let run_spec = crate::run_spec::RunSpec::load(&run_path).unwrap();
+        let (_, digests) = current_revision_artifacts_with_digests(&run_spec).unwrap();
+        let profile = crate::project_ir::ProjectIrProfile {
+            id: "wifi".to_owned(),
+            sources: vec!["wifi".to_owned()],
+            roots: crate::project_ir::ProjectIrRoots::All,
+            include_reachable: true,
+            entry_contract: "none".to_owned(),
+            output: directory.join("ir"),
+        };
+        let inventory_identity =
+            vec![("wifi".to_owned(), digests.get(&inventory).unwrap().clone())];
+        let companion_identity = vec![(
+            companion.display().to_string(),
+            digests.get(&companion).unwrap().clone(),
+        )];
+        validate_linked_ir_inventories(&profile, &inventory_identity, &run_spec, &digests).unwrap();
+        validate_linked_ir_companions(
+            &profile,
+            &BTreeSet::from(["wifi".to_owned()]),
+            &companion_identity,
+            &run_spec,
+            &digests,
+        )
+        .unwrap();
+        assert!(
+            validate_linked_ir_inventories(&profile, &[], &run_spec, &digests)
+                .unwrap_err()
+                .to_string()
+                .contains("inventory provenance")
+        );
+        assert!(
+            validate_linked_ir_companions(
+                &profile,
+                &BTreeSet::from(["wifi".to_owned()]),
+                &[],
+                &run_spec,
+                &digests,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("companion provenance")
         );
         std::fs::remove_dir_all(directory).unwrap();
     }

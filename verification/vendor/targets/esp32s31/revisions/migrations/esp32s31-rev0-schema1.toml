@@ -1,0 +1,5 @@
+# One-time, digest-bound correction of the schema-1 revision scope.
+# These sources are locally built Rust verification probes, not vendor inputs.
+schema = 1
+snapshot-sha256 = "042052407bbf7287d824596fba71d585abbb324a21fb4f3a390854e37d00b151"
+verification-sources = ["bluetooth", "rust", "wifi-registers"]

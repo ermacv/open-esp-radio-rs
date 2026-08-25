@@ -101,6 +101,7 @@ pub(crate) fn generate_project_profile(
     let render_started = std::time::Instant::now();
     let document = crate::artifacts::build_linked_ir_document(
         &artifacts,
+        &inventories,
         &companions,
         profile.roots.symbol_prefix(),
         entry_contract,

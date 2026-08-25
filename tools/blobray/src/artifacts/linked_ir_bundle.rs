@@ -149,6 +149,8 @@ pub(crate) struct GraphSlice {
 
 pub(crate) struct LinkedIrReviewProjection {
     pub(crate) inputs: Vec<(String, String)>,
+    pub(crate) inventories: Vec<(String, String)>,
+    pub(crate) companions: Vec<(String, String)>,
     pub(crate) functions: Vec<StoredFunctionReviewProjection>,
 }
 
@@ -631,7 +633,24 @@ impl LinkedIrReader {
             .iter()
             .map(|artifact| (artifact.source.clone(), artifact.artifact.sha256.clone()))
             .collect();
-        Ok(LinkedIrReviewProjection { inputs, functions })
+        let companions = self
+            .manifest
+            .companions
+            .iter()
+            .map(|artifact| (artifact.path.clone(), artifact.sha256.clone()))
+            .collect();
+        let inventories = self
+            .manifest
+            .inventories
+            .iter()
+            .map(|artifact| (artifact.source.clone(), artifact.artifact.sha256.clone()))
+            .collect();
+        Ok(LinkedIrReviewProjection {
+            inputs,
+            inventories,
+            companions,
+            functions,
+        })
     }
 
     fn into_document(mut self, include_registers: bool) -> Result<super::LinkedIrStoredDocument> {

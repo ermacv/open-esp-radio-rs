@@ -290,6 +290,7 @@ mod tests {
     #[test]
     fn publication_scope_keeps_external_observations_visible_but_non_blocking() {
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![
                 FactRange {
                     name: "radio".to_owned(),
@@ -313,6 +314,7 @@ mod tests {
     #[test]
     fn publication_scope_rejects_a_range_missing_from_generated_facts() {
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![FactRange {
                 name: "radio".to_owned(),
                 start: 0x1000,
@@ -336,6 +338,7 @@ mod tests {
         let mut mixed = fact(0x1020);
         mixed.read_functions = ["archive:dump".to_owned(), "rom:enable".to_owned()].into();
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![FactRange {
                 name: "radio".to_owned(),
                 start: 0x1000,
@@ -357,6 +360,7 @@ mod tests {
     #[test]
     fn non_operational_policy_rejects_stale_function_names() {
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![FactRange {
                 name: "radio".to_owned(),
                 start: 0x1000,

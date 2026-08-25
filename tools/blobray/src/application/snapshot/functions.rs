@@ -246,6 +246,7 @@ mod tests {
     #[test]
     fn artifact_wide_mmio_sites_survive_incomplete_linked_ir() {
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![FactRange {
                 name: "radio".to_owned(),
                 start: 0x2010_0000,

@@ -51,8 +51,15 @@ pub(crate) struct RegisterFact {
     pub(crate) candidate_masks: Vec<u32>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct RegisterFactArtifact {
+    pub(crate) source: String,
+    pub(crate) sha256: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RegisterFacts {
+    pub(crate) artifacts: Vec<RegisterFactArtifact>,
     pub(crate) ranges: Vec<FactRange>,
     pub(crate) registers: Vec<RegisterFact>,
 }
@@ -68,6 +75,14 @@ impl RegisterFacts {
 
     fn parse(input: &str) -> Result<Self> {
         let document = crate::artifacts::parse_mmio_facts(input)?;
+        let artifacts = document
+            .artifacts
+            .into_iter()
+            .map(|artifact| RegisterFactArtifact {
+                source: artifact.source,
+                sha256: artifact.artifact.sha256,
+            })
+            .collect();
         let ranges = document
             .ranges
             .into_iter()
@@ -131,7 +146,11 @@ impl RegisterFacts {
                 }
             })
             .collect();
-        let facts = Self { ranges, registers };
+        let facts = Self {
+            artifacts,
+            ranges,
+            registers,
+        };
         facts.validate()?;
         Ok(facts)
     }
@@ -231,6 +250,7 @@ impl RegisterFacts {
             )));
         }
         Ok(Self {
+            artifacts: self.artifacts.clone(),
             ranges: self
                 .ranges
                 .iter()
@@ -297,6 +317,7 @@ mod tests {
     #[test]
     fn selects_owned_ranges_without_discarding_width_or_evidence() {
         let facts = RegisterFacts {
+            artifacts: Vec::new(),
             ranges: vec![
                 FactRange {
                     name: "radio".to_owned(),

@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v58.
+//! Complete owned DTO for linked-IR schema v61.
 
 #![allow(
     dead_code,
@@ -39,7 +39,8 @@ pub(crate) struct LinkedIrStoredDocument {
     cfg_guard_completeness_claim: bool,
     pub(crate) completeness_claim: bool,
     pub(crate) artifacts: Vec<StoredSourceArtifact>,
-    companions: Vec<StoredArtifactIdentity>,
+    pub(crate) inventories: Vec<StoredSourceInputArtifact>,
+    pub(crate) companions: Vec<StoredArtifactIdentity>,
     symbol_prefix: String,
     entry_contract: String,
     pub(crate) summary: StoredReportSummary,
@@ -56,6 +57,13 @@ pub(crate) struct StoredSourceArtifact {
     pub(crate) source: String,
     pub(crate) artifact: StoredArtifactIdentity,
     reviewed_code_boundaries: Vec<StoredReviewedCodeBoundary>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredSourceInputArtifact {
+    pub(crate) source: String,
+    pub(crate) artifact: StoredArtifactIdentity,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

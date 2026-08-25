@@ -99,9 +99,10 @@ provenance, never executable semantics.
 
 ## Durable revision state
 
-- immutable revision snapshots (`revisions/snapshots/NAME.json.gz`) contain only
-  artifact digests and normalized derived features, never vendor payloads or
-  disassembly;
+- immutable schema-2 revision snapshots (`revisions/snapshots/NAME.json.gz`)
+  contain only typed vendor artifact/inventory/companion digests and normalized
+  vendor-derived features, never vendor payloads, disassembly, or local Rust
+  verification ELF identities;
 - `revisions/ledger.toml` is the tracked schema-1 index for those snapshots.
   It stores only project/revision names, relative snapshot locations, SHA-256
   identities, `baseline`/`current` pointers and an optional update-preflight
@@ -112,6 +113,30 @@ Snapshots are tool-written correspondence maps rather than manually reviewed
 facts. Unlike ordinary generated output, they and their ledger must survive a
 vendor update; commit them or place them in equivalent durable,
 access-controlled storage. Snapshot names are immutable.
+
+Linked-IR schema 61 records the primary artifacts, symbol inventories and
+companions that affected each generated bundle. Revision capture compares all
+three dependency classes with the current typed run-spec and rejects stale
+generated evidence.
+
+Schema-1 snapshots remain readable and immutable, but their artifact scope was
+the full scannable analysis universe and could include `rust-artifact` inputs.
+They are a legacy baseline, not the endpoint for future vendor diffs. Migrate
+without rewriting one: create a tracked digest-bound migration map such as
+
+```toml
+schema = 1
+snapshot-sha256 = "<schema-1 logical snapshot digest>"
+verification-sources = ["bluetooth", "rust", "wifi-registers"]
+```
+
+Run `project revision prepare-update --migrate-legacy-scope MAP`, capture a new
+schema-2 name over unchanged vendor inputs, review the one-time scope-only
+diff/rebase, then accept the schema-2 current revision. The listed sources must
+be sorted, present in the old snapshot, and currently bound only by typed Rust
+roles; the map digest is retained in the ledger.
+The ledger also retains its normalized `migrations/...` location, and deep
+validation reopens the tracked map and verifies its content and source list.
 
 ## Generated outputs
 

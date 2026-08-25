@@ -10,13 +10,13 @@
       "symbol": "r_sym_ble_ywjh0f9yjTBeI7XgS5da",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothInterruptRegisters::capture_and_acknowledge",
       "rust_probe": "open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/ble-nrt-interrupt-ordered-mmio-prefix",
-      "evidence_digest": "05ef91f0857db82e80974113d34f75fab4e7f406ae1ebffa4fd8137f1a079a35",
-      "baseline_passed": true,
+      "evidence_digest": "0d9f39d96f6c7c6deb12313c1f85a010dec971962af21b7423c47b50a4ec7450",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -32,7 +32,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:ble-controller:artifact",
@@ -64,6 +64,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs",
           "sha256": "266657739017b23886d8a66b353cb1f5ac311956028534a71382c0dcad30b86b"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -72,13 +75,13 @@
       "symbol": "r_sym_ble_LboRu27EaU8MV8Q7UUfZ",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::program_memory_list_pointer",
       "rust_probe": "open_ble_memory_list_a_trace_r_sym_ble_lbo_ru27_ea_u8_mv8_q7_uuf_z",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/ble-memory-list-selector-one-slot-a-publication",
-      "evidence_digest": "c0efcea092ba308d98cdb42a5110a4d7f5f009eda82e9861a4d3dec6c54efe99",
-      "baseline_passed": true,
+      "evidence_digest": "c2d6fdf5fce2222b47044fb4dbac8e7aa027c05b1d9f0f0195900bb0385a8c05",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -94,7 +97,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:ble-controller:artifact",
@@ -126,6 +129,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs",
           "sha256": "f2f9b75859d0cd2e50d41ecd7ecce19dd95762e853718ec9e94b9de5310b2e65"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -134,13 +140,13 @@
       "symbol": "r_sym_ble_ZzrExMrn8EDiTFI7PENK",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::program_memory_list_pointer",
       "rust_probe": "open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_penk",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/ble-memory-list-selector-one-slot-b-publication",
-      "evidence_digest": "5519553fd1286270e49ef579a226210c11cc229a197f3fe57419ef0d2356eb89",
-      "baseline_passed": true,
+      "evidence_digest": "689e57777d698c236fb310ad8a2d4a60e72b31cad427e500bc2a79307b2afc17",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -156,7 +162,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:ble-controller:artifact",
@@ -188,6 +194,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs",
           "sha256": "f2f9b75859d0cd2e50d41ecd7ecce19dd95762e853718ec9e94b9de5310b2e65"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -196,13 +205,13 @@
       "symbol": "r_sym_ble_LboRu27EaU8MV8Q7UUfZ",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::program_memory_list_pointer",
       "rust_probe": "open_ble_memory_list_a_trace_r_sym_ble_lbo_ru27_ea_u8_mv8_q7_uuf_z",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/ble-memory-list-selector-three-slot-a-publication",
-      "evidence_digest": "f308748ceedf0d142ffa12d6fa418b2974f1be2a07b4eb368a10c41f3a02b7e7",
-      "baseline_passed": true,
+      "evidence_digest": "ca635348337d261f18f0769af81c55d0759661f851f9cb483358ac58235d56eb",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -218,7 +227,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:ble-controller:artifact",
@@ -250,6 +259,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs",
           "sha256": "f2f9b75859d0cd2e50d41ecd7ecce19dd95762e853718ec9e94b9de5310b2e65"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -258,13 +270,13 @@
       "symbol": "r_sym_ble_ZzrExMrn8EDiTFI7PENK",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::program_memory_list_pointer",
       "rust_probe": "open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_penk",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/ble-memory-list-selector-three-slot-b-publication",
-      "evidence_digest": "dbb66f45c4ae9a64570e9274dd347f01123b17aa206e0206d9103617367745ac",
-      "baseline_passed": true,
+      "evidence_digest": "12d9f01044a7d0d9eb53b575166ce00f4bf102a62d60d9997981364774f6a9fe",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -280,7 +292,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:ble-controller:artifact",
@@ -312,6 +324,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs",
           "sha256": "f2f9b75859d0cd2e50d41ecd7ecce19dd95762e853718ec9e94b9de5310b2e65"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -320,13 +335,13 @@
       "symbol": "r_sym_ble_LboRu27EaU8MV8Q7UUfZ",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::program_memory_list_pointer",
       "rust_probe": "open_ble_memory_list_a_trace_r_sym_ble_lbo_ru27_ea_u8_mv8_q7_uuf_z",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/ble-memory-list-selector-two-slot-a-publication",
-      "evidence_digest": "8d629612f31b1d0f8ff70b5a1ef6ff2f131379c2053e2edad2b23db0394c20c6",
-      "baseline_passed": true,
+      "evidence_digest": "9d908884e60c306420e3fd48c03c5fe6f7c9f7896b6c8005d3fe46d4d263d36c",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -342,7 +357,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:ble-controller:artifact",
@@ -374,6 +389,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs",
           "sha256": "f2f9b75859d0cd2e50d41ecd7ecce19dd95762e853718ec9e94b9de5310b2e65"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -382,13 +400,13 @@
       "symbol": "r_sym_ble_ZzrExMrn8EDiTFI7PENK",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::program_memory_list_pointer",
       "rust_probe": "open_ble_memory_list_b_trace_r_sym_ble_zzr_ex_mrn8_edi_tfi7_penk",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/ble-memory-list-selector-two-slot-b-publication",
-      "evidence_digest": "7cc7c653f7a1fc855d12d2071bfaab221212165d8f2eea4b18d9e0f24b9d353b",
-      "baseline_passed": true,
+      "evidence_digest": "99d4c94e0edd87df703d126824a272cacdf6d357b82580b192220042f1eba0e2",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -404,7 +422,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:ble-controller:artifact",
@@ -436,6 +454,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs",
           "sha256": "f2f9b75859d0cd2e50d41ecd7ecce19dd95762e853718ec9e94b9de5310b2e65"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -444,13 +465,13 @@
       "symbol": "r_sym_ble_3472b6bNiQdnWkYo6Ggv",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::initialize_ble_phy_registers",
       "rust_probe": "open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_yo6_ggv",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/ble-phy-register-init-ordered-mmio",
-      "evidence_digest": "a46be733533acb87c519347008e6083b1614e6b06af8f9f898a607c8077fee90",
-      "baseline_passed": true,
+      "evidence_digest": "c459d3ef77b12eb5cb11cfb7c6d70b5fad02ea533c5bafa272b3d1ebdf4a825f",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -466,7 +487,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:ble-controller:artifact",
@@ -498,6 +519,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_phy_init.rs",
           "sha256": "b773c0aa0276d33b93e0af85c32dfd2ffba500ddd69e7d9801f46689ce371271"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -506,13 +530,13 @@
       "symbol": "r_sym_bt_XPuqTHliEO5V9xpR7aJR",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::clear_scheduler_table_low_bits",
       "rust_probe": "open_ble_scheduler_trace_r_sym_bt_x_puq_thli_eo5_v9xp_r7a_jr",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/ble-scheduler-table-low-twenty-clear-prefix",
-      "evidence_digest": "e0387aa513f978f027458ad4f84581d7478780a1f4e0ae869363b4facf0dcba5",
-      "baseline_passed": true,
+      "evidence_digest": "305a5646c8eea22e540cc12174bd8f36c51776f8df2a0e3282f4053ea8237392",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -528,7 +552,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:ble-controller:artifact",
@@ -560,6 +584,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_scheduler.rs",
           "sha256": "36e93bc149e6c238082810e320ab53fa6a67fb4c3c5d0bd201a73f992b3c925a"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -568,13 +595,13 @@
       "symbol": "bt_bb_v2_init_cmplx",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::BluetoothTaskRegisters::initialize_baseband_v2_arg_one",
       "rust_probe": "open_btbb_v2_init_trace_r_sym_bt_bb_v2_init_cmplx_x1",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/btbb-v2-init-arg-one-ordered-mmio",
-      "evidence_digest": "092055d0e18e6fac32510942fc1d2df10727109202eb37d831fd505e316303c3",
-      "baseline_passed": true,
+      "evidence_digest": "0f57a7aee79bb3b83367289747d8aa2757da4fa345df48b32f7a62e2d288cfc4",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -590,7 +617,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:btbb:artifact",
@@ -610,6 +637,9 @@
           "path": "driver/chips/esp32s31/pac/src/bluetooth_baseband.rs",
           "sha256": "d3742a4aad03a8f8589027b622f7648cf5197bb0500492ea559e9f2a69fc9d01"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -623,8 +653,8 @@
       "rust_probe": "open_coex_core_trace_event_duration_get",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/coex-core-event-duration-get",
-      "evidence_digest": "0577f37552876417d506a38bd6a5f29e66256fba855f0236c9c250d996bb237f",
-      "baseline_passed": true,
+      "evidence_digest": "06ba1f72cdf954895c1afc5ddaa28eb2c3726c063eea4b30b0ce6dfa887ae21a",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -648,7 +678,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -670,6 +700,7 @@
         }
       ],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "verification status implemented-unqualified is not a successful production comparison"
       ]
@@ -685,8 +716,8 @@
       "rust_probe": "open_coex_core_trace_pti_get",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/coex-core-pti-get",
-      "evidence_digest": "68750c46f1c0b17af32e64848025a591e8e092a8a822c24bea0efed8a11134af",
-      "baseline_passed": true,
+      "evidence_digest": "7176fdd12e457b6ecc7a74c4e78101d245e2059d09099eb216e9fd5cb4468b23",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -710,7 +741,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -732,6 +763,7 @@
         }
       ],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "verification status implemented-unqualified is not a successful production comparison"
       ]
@@ -742,13 +774,13 @@
       "symbol": "coex_core_release",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_coex::CoexCore::release",
       "rust_probe": "open_coex_core_trace_release",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-core-release",
-      "evidence_digest": "f80f46994c78149bc2a86a851090c7bc51df2ac29ac7abb31b215de61c9511cb",
-      "baseline_passed": true,
+      "evidence_digest": "d2dd9d0027d523bddb6b65e4ee97fe34f7ecc5c9e847d1a48970b590686238ca",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -772,7 +804,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -792,6 +824,9 @@
           "path": "driver/chips/esp32s31/coex/src/core.rs",
           "sha256": "eff694d5441025957a30a0eef2fd81b992379d385c29f9cfecf6066ff41e61e9"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -800,13 +835,13 @@
       "symbol": "coex_core_request",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_coex::CoexCore::request",
       "rust_probe": "open_coex_core_trace_request",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/coex-core-request",
-      "evidence_digest": "fc03a065be4bb650b1741e9466ff13295e5b9234b045af55a1a3ca2f98561190",
-      "baseline_passed": true,
+      "evidence_digest": "8863bea02690d941a807a4e2452aacc4c28577b8a159b74e11bb2a2232a432be",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -830,7 +865,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -850,6 +885,9 @@
           "path": "driver/chips/esp32s31/coex/src/core.rs",
           "sha256": "eff694d5441025957a30a0eef2fd81b992379d385c29f9cfecf6066ff41e61e9"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -863,8 +901,8 @@
       "rust_probe": "open_coex_core_trace_timer_idx_get",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-core-timer-index",
-      "evidence_digest": "ed8f0e21aa0c29b18c62372835d5be42a75629921e7893a4ed64a11e499cdc16",
-      "baseline_passed": true,
+      "evidence_digest": "88163a4e1d65acdea2e8c191ab8aa43073191e7c80ed1c9edbf597ba2b424a26",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -888,7 +926,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -910,6 +948,7 @@
         }
       ],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "verification status implemented-unqualified is not a successful production comparison"
       ]
@@ -920,13 +959,13 @@
       "symbol": "coex_hw_timer_disable",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::WifiRadioRegisters::disable_coex_timer",
       "rust_probe": "open_coex_trace_coex_hw_timer_disable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-hw-timer-disable",
-      "evidence_digest": "c5cc0c04c7ebce053e24df5adcce035c0829a5f121fd538edb0f5e9a0eacf0ad",
-      "baseline_passed": true,
+      "evidence_digest": "73df8a85bb9ab5f58027b8520fefd9c64491a222e953c03b81b41b97685f271d",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -942,7 +981,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -962,6 +1001,9 @@
           "path": "driver/chips/esp32s31/pac/src/coex.rs",
           "sha256": "a938e6819ca798a1858f5d1f3b2239f61e079e84546407e0c7cfbbc74c72b367"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -970,13 +1012,13 @@
       "symbol": "coex_hw_timer_enable",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::WifiRadioRegisters::enable_coex_timer",
       "rust_probe": "open_coex_trace_coex_hw_timer_enable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-hw-timer-enable",
-      "evidence_digest": "da7cf6388586209a40af3e110dad1b42e22119b1043825e66fac4bdbc56f1c39",
-      "baseline_passed": true,
+      "evidence_digest": "7871cdc191aaa1f5cb344f7c65a72a24b4c4e1c8b031af7e1511882847073308",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -992,7 +1034,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -1012,6 +1054,9 @@
           "path": "driver/chips/esp32s31/pac/src/coex.rs",
           "sha256": "a938e6819ca798a1858f5d1f3b2239f61e079e84546407e0c7cfbbc74c72b367"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1020,13 +1065,13 @@
       "symbol": "coex_hw_timer_force",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::WifiRadioRegisters::force_coex_timer",
       "rust_probe": "open_coex_trace_coex_hw_timer_force",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-hw-timer-force",
-      "evidence_digest": "700e15bf7472374112048a075872f4dfc5377ab70c8a36aff52a94fd19e33eb4",
-      "baseline_passed": true,
+      "evidence_digest": "f73bac4155b2396b456d49b28a5fbae475f595be3f77366a32d551d252549614",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -1042,7 +1087,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -1062,6 +1107,9 @@
           "path": "driver/chips/esp32s31/pac/src/coex.rs",
           "sha256": "a938e6819ca798a1858f5d1f3b2239f61e079e84546407e0c7cfbbc74c72b367"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1070,13 +1118,13 @@
       "symbol": "coex_hw_timer_unforce",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::WifiRadioRegisters::unforce_coex_timer",
       "rust_probe": "open_coex_trace_coex_hw_timer_unforce",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/coex-hw-timer-unforce",
-      "evidence_digest": "5fcefe4334cf566f19d4ba5181c1ac66cb2f708853bbc34278d23be765c9dec3",
-      "baseline_passed": true,
+      "evidence_digest": "3eb793d6799cda63cffd17d54959d0c5758e1d56987455b6024752b655e3b0e7",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -1092,7 +1140,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -1112,6 +1160,9 @@
           "path": "driver/chips/esp32s31/pac/src/coex.rs",
           "sha256": "a938e6819ca798a1858f5d1f3b2239f61e079e84546407e0c7cfbbc74c72b367"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1125,8 +1176,8 @@
       "rust_probe": "open_coex_set_trace_coex_hw_timer_set",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/coex-hw-timer-set",
-      "evidence_digest": "2e2112f601a9f2ddba102f0525040fc8c0c6530afbb6299ebb00de026267b678",
-      "baseline_passed": true,
+      "evidence_digest": "be1d88e287e8075f5dc7a5946ce2bba37201532985b091e5e6b5950dd1f4a2f3",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -1142,7 +1193,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:coex:artifact",
@@ -1159,6 +1210,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "production component is source=missing, compiled=resolved, freshness=unknown"
       ]
     },
@@ -1168,13 +1220,13 @@
       "symbol": "hal_mac_rx_disable",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_rx_dma::set_walker_enabled",
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_disable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-disable",
-      "evidence_digest": "fdbf383264db9c988644678e5e9e47a4689f23010fa99929ecdb15feee07eeb4",
-      "baseline_passed": true,
+      "evidence_digest": "c83d157b975535c963d1148a9e9bf2c51df6c38ddb85d1458c2c8d67b89479b7",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1194,7 +1246,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1214,6 +1266,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_rx_dma.rs",
           "sha256": "0351d00242891e181a4db8d63a9ea2938840708dc75d05fb7a4a8fd6dd2805a4"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1222,13 +1277,13 @@
       "symbol": "hal_mac_rx_enable",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_rx_dma::set_walker_enabled",
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_enable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-enable",
-      "evidence_digest": "d4d1d0ef6030f57cfece469f1700aa3b266ec04e668e870897c08d58bd1d8ff6",
-      "baseline_passed": true,
+      "evidence_digest": "cf933b8d8da53f74c7917de6879b27c80ab69adc930924eb13f770725c411da0",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1248,7 +1303,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1268,6 +1323,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_rx_dma.rs",
           "sha256": "0351d00242891e181a4db8d63a9ea2938840708dc75d05fb7a4a8fd6dd2805a4"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1276,13 +1334,13 @@
       "symbol": "hal_mac_rx_get_last_dscr",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_rx_dma::read_last_descriptor_address",
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_get_last_dscr",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-get-last-descriptor",
-      "evidence_digest": "d00e03c579b9a7b0b104624403f02a58ece9a179a81f96105696db9062ebea76",
-      "baseline_passed": true,
+      "evidence_digest": "0165d0e6cd6b1f48b27a02d3753a0861e0bf3cb02de7f733b0bd11605a4584f3",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1302,7 +1360,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1322,6 +1380,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_rx_dma.rs",
           "sha256": "0351d00242891e181a4db8d63a9ea2938840708dc75d05fb7a4a8fd6dd2805a4"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1330,13 +1391,13 @@
       "symbol": "hal_mac_rx_is_dscr_reload",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_rx_dma::descriptor_reload_pending",
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_is_dscr_reload",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-reload-pending",
-      "evidence_digest": "e4cdc23f4178f81fc7e9fffb3d13f1c5ec4d12d6ac3a8c5b53596a719f326717",
-      "baseline_passed": true,
+      "evidence_digest": "45cf39e7df1554ad18a62f03f219c4c084206221f01e22dbd11d0b45140e0ef9",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1356,7 +1417,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1376,6 +1437,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_rx_dma.rs",
           "sha256": "0351d00242891e181a4db8d63a9ea2938840708dc75d05fb7a4a8fd6dd2805a4"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1389,8 +1453,8 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_read_rxdscrlast",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-read-last-word",
-      "evidence_digest": "bce7a260586ce4a129d58c0080684194e1ed063654aadc0baa45914ba1fc11d9",
-      "baseline_passed": true,
+      "evidence_digest": "45a334ac94a6d6b05320c545c24b82919d6371cf69c99f2d354e9146009451e0",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1410,7 +1474,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1428,10 +1492,11 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/hal/src/wifi_mac.rs",
-          "sha256": "f1f0936c5fad30c734fa16f044d529c994c49f5b53bb9b5c882386524a8aa0ef"
+          "sha256": "6f16703e0d56e0b5fe01955e5ff875cb3ecf0bf14b17383a55cd5a30ba95938b"
         }
       ],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class shared-core is supporting evidence only",
         "verification status implemented-unqualified is not a successful production comparison"
       ]
@@ -1447,8 +1512,8 @@
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_read_rxdscrnext",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-read-next-word",
-      "evidence_digest": "f959ffb0bbbfc027f3caf9a5631a49cbb41390ee91e2e50c04cc16fdd5e9279e",
-      "baseline_passed": true,
+      "evidence_digest": "e67ca76596781be780f72d8637fb19900abf78158f319a89934afb8b09f209f2",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1468,7 +1533,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1486,10 +1551,11 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/hal/src/wifi_mac.rs",
-          "sha256": "f1f0936c5fad30c734fa16f044d529c994c49f5b53bb9b5c882386524a8aa0ef"
+          "sha256": "6f16703e0d56e0b5fe01955e5ff875cb3ecf0bf14b17383a55cd5a30ba95938b"
         }
       ],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class shared-core is supporting evidence only",
         "verification status implemented-unqualified is not a successful production comparison"
       ]
@@ -1500,13 +1566,13 @@
       "symbol": "hal_mac_rx_set_base",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_rx_dma::write_descriptor_base",
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_set_base",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-set-base",
-      "evidence_digest": "181d4ad4c6f82668cc937dbe5f8b2b032c734bc5f23b0a94bcf8164d09676c47",
-      "baseline_passed": true,
+      "evidence_digest": "63448f3b5d53dcd8ed154c21c5dd7b3a64dc83ea7d7322e9a9376c7cb4209e42",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1526,7 +1592,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1546,6 +1612,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_rx_dma.rs",
           "sha256": "0351d00242891e181a4db8d63a9ea2938840708dc75d05fb7a4a8fd6dd2805a4"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1554,13 +1623,13 @@
       "symbol": "hal_mac_rx_set_dscr_reload",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_rx_dma::request_descriptor_reload",
       "rust_probe": "open_libpp_rx_trace_hal_mac_rx_set_dscr_reload",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-rx-request-reload",
-      "evidence_digest": "7dbb4838434d41dbeeefc72fc1a32573d497b28ccc95c6de651db529996b3355",
-      "baseline_passed": true,
+      "evidence_digest": "ad1e2f9f39552443ea406306102cbdf53dca9771ff3d3e094d283bb16f0a3e0e",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1580,7 +1649,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1600,6 +1669,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_rx_dma.rs",
           "sha256": "0351d00242891e181a4db8d63a9ea2938840708dc75d05fb7a4a8fd6dd2805a4"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1608,13 +1680,13 @@
       "symbol": "hal_mac_is_txq_enabled",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_tx_queue::queue_enabled",
       "rust_probe": "open_libpp_tx_trace_hal_mac_is_txq_enabled",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-txq-enabled",
-      "evidence_digest": "5773df2e98e99dea084763abfa567c40221b67e2c1fc26d541407f9bf9dd065f",
-      "baseline_passed": true,
+      "evidence_digest": "9a50110f47bc088432d607c2ef378092b0a1857c860acdbed9158d8ac379719a",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1634,7 +1706,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1654,6 +1726,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_tx_queue.rs",
           "sha256": "40fe3fcec3d636c3d5bdcc29aaed210d15bd90f4b4d9687f2e867b570ebf0f3a"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1662,13 +1737,13 @@
       "symbol": "hal_mac_is_txq_valid",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_tx_queue::queue_valid",
       "rust_probe": "open_libpp_tx_trace_hal_mac_is_txq_valid",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-txq-valid",
-      "evidence_digest": "36e508a4e27b9c3ec8e69998f513cf95444a30e1f8540bc7f2ae04d5f1f179c3",
-      "baseline_passed": true,
+      "evidence_digest": "d942ea85461913ae8228b51dc84c6d04dcbf4c75c829e0d16aeede3cbfde132e",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1688,7 +1763,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1708,6 +1783,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_tx_queue.rs",
           "sha256": "40fe3fcec3d636c3d5bdcc29aaed210d15bd90f4b4d9687f2e867b570ebf0f3a"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1716,13 +1794,13 @@
       "symbol": "hal_mac_set_txq_invalid",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_tx_queue::invalidate_queue",
       "rust_probe": "open_libpp_tx_trace_hal_mac_set_txq_invalid",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-set-txq-invalid",
-      "evidence_digest": "3acd953682a5161736b0845441e2aa69b76f4e6ab9b0d9c1c46d38f6a84c543c",
-      "baseline_passed": true,
+      "evidence_digest": "22d0edc88e11dca7f7b3bd1b2a742a112066597516e07ac18357c746fc92ad17",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1742,7 +1820,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1762,6 +1840,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_tx_queue.rs",
           "sha256": "40fe3fcec3d636c3d5bdcc29aaed210d15bd90f4b4d9687f2e867b570ebf0f3a"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1770,13 +1851,13 @@
       "symbol": "hal_mac_tx_config_edca",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_tx_queue::configure_edca",
       "rust_probe": "open_libpp_tx_trace_hal_mac_tx_config_edca",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-configure-tx-edca",
-      "evidence_digest": "545f9cb9b1e907937d067de65c27ea75829cab79f2657737ae60249a8188fea8",
-      "baseline_passed": true,
+      "evidence_digest": "b9507254e49fc82b3d471c90826107802f4bc145365b4a122314c8a01e4492d7",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1796,7 +1877,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1816,6 +1897,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_tx_queue.rs",
           "sha256": "40fe3fcec3d636c3d5bdcc29aaed210d15bd90f4b4d9687f2e867b570ebf0f3a"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1824,13 +1908,13 @@
       "symbol": "hal_mac_tx_get_blockack",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::WifiRadioRegisters::read_tx_block_ack_payload",
       "rust_probe": "open_libpp_tx_trace_hal_mac_tx_get_blockack",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/libpp-read-tx-blockack",
-      "evidence_digest": "24c3caa76317231fe3549e34fb2455fcb1aa8150dfd61e5d4ff0933c42c724e8",
-      "baseline_passed": true,
+      "evidence_digest": "0c43ab1014d58dd5b9e33445f427331e8ab831a8e7441ae69198a26d611d36d6",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1850,7 +1934,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1870,6 +1954,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_block_ack.rs",
           "sha256": "04e7017a28d4d6057ed9c56a91da85195869cd2f08411ab067818509de42e9a6"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1878,13 +1965,13 @@
       "symbol": "hal_mac_tx_set_ppdu",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_tx::WifiRadioRegisters::program_ht_mac_tx_ppdu",
       "rust_probe": "open_libpp_tx_trace_hal_mac_tx_set_ppdu",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/libpp-set-ht40-ampdu-ppdu",
-      "evidence_digest": "00d24faaf4c476d682ef8045bb2dfa876819e60e92834fba8195c11265b47e3c",
-      "baseline_passed": true,
+      "evidence_digest": "94d8eabb7068aee302db558f9b3f0b660fc187fbca21fcbabbb46341eac269fb",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1904,7 +1991,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1924,6 +2011,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_tx.rs",
           "sha256": "4f5cc67c28cc1acf8aac1ae2178e90f644d47eb17adb94600d1604d2fc59325f"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -1932,13 +2022,13 @@
       "symbol": "hal_mac_txq_disable",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_tx_queue::disable_queue",
       "rust_probe": "open_libpp_tx_trace_hal_mac_txq_disable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/libpp-disable-txq",
-      "evidence_digest": "207351ae7a5c70d0ff1a2adef983a282c6d9f66dcc45fc3e068bae088018763f",
-      "baseline_passed": true,
+      "evidence_digest": "3209a93d275fbacf2648f653b6f90447a381edf180801b5175f3e3c27ce3b262",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "auxiliary:libpp-replay",
@@ -1958,7 +2048,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -1978,64 +2068,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_tx_queue.rs",
           "sha256": "40fe3fcec3d636c3d5bdcc29aaed210d15bd90f4b4d9687f2e867b570ebf0f3a"
         }
-      ]
-    },
-    {
-      "suite": "libpp-tx-retry",
-      "source": "libpp",
-      "symbol": "rcGetRate",
-      "evidence_class": "production-trace",
-      "status": "bounded-match",
-      "release_eligible": true,
-      "rust_component": "open_esp_radio_esp32s31_wifi_mac::tx_runtime::select_ordinary_retry_rate",
-      "rust_probe": "open_libpp_tx_retry_trace_rc_get_rate",
-      "claim": "reviewed-domain-equivalence",
-      "evidence_kind": "reviewed-domain-equivalence/profile:scenario/libpp-ordinary-rc-get-rate",
-      "evidence_digest": "c0205131b32a81f643bed73424594cc4eae26e15e48e4dcc01f14e355b1b0bd3",
-      "baseline_passed": true,
-      "artifact_hashes": [
-        {
-          "role": "dispositions:0",
-          "sha256": "c6708215c59b53fa63b37f5c7b4161c6699affc502a419bb5d59efcd115f8a1f"
-        },
-        {
-          "role": "evidence-baseline:0",
-          "sha256": "71083b530126601e6136dd18a3a0d3b8928075eae64f5e4337ef543b79f70e38"
-        },
-        {
-          "role": "profiles:0",
-          "sha256": "b05eeda746a37277647ef91f82cbd25ce48d3ebeb4b5c87003f8235c1a00246d"
-        },
-        {
-          "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
-        },
-        {
-          "role": "source:libpp-replay:artifact",
-          "sha256": "467d9de280b84de9e66a8db0954435a71ed31a214c363474393d510b765d3b13"
-        },
-        {
-          "role": "source:libpp-replay:companion",
-          "sha256": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
-        },
-        {
-          "role": "source:libpp:artifact",
-          "sha256": "1b7c51be906bb113777ea18b0ac4db708ff9e36e8dfa900f2e805061dd20e91f"
-        },
-        {
-          "role": "source:libpp:companion",
-          "sha256": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
-        },
-        {
-          "role": "source:libpp:inventory",
-          "sha256": "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
-        }
       ],
-      "source_hashes": [
-        {
-          "path": "driver/chips/esp32s31/wifi/mac/src/tx_runtime.rs",
-          "sha256": "e9d9445e1a252470d9eb33ebed623236ee5d32c04ea479d36f17031a88819b12"
-        }
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -2044,13 +2079,13 @@
       "symbol": "lmacProcessAckTimeout",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxOwner::service",
       "rust_probe": "open_libpp_tx_retry_trace_ack_timeout_state",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:state/libpp-lmac-ack-timeout-state",
-      "evidence_digest": "97804cc6936ed7c01ce97c35b66ce09d97082d0ceeaa488f2dba8dba0648bb8d",
-      "baseline_passed": true,
+      "evidence_digest": "ea3ba484387522f615557e63a5e1be2f4b57bda23d314b3d34eb9bb0b63e1745",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2066,7 +2101,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp-replay:artifact",
@@ -2092,8 +2127,11 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/wifi/src/ordinary_tx.rs",
-          "sha256": "57c88b4f0c9456c3c1ab5a86ca3176d49c36469490d86ead95aa22d793a1af5c"
+          "sha256": "bfc3fcec2724309dc37474358f5f27aa1a89fc61b454bec684ac7776cb00a4e2"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -2102,13 +2140,13 @@
       "symbol": "lmacProcessTxError",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_wifi_mac::tx::TxCompletion::disposition",
       "rust_probe": "open_libpp_tx_retry_trace_lmac_process_tx_error",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/libpp-lmac-process-tx-error-dispatch",
-      "evidence_digest": "ddd67142bab814112a9854ee04ee850659f363bdeab29fafab31bc4c630256fb",
-      "baseline_passed": true,
+      "evidence_digest": "f7134850d3a5ec8c9abe519cf5ae0d08a1919af9481b4795eed0f96eb093ed51",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2124,7 +2162,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp-replay:artifact",
@@ -2150,8 +2188,11 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/wifi/mac/src/tx.rs",
-          "sha256": "9f27148dfc5a6f619404ffdd86dee45cc9c4ba2ea5752f30b99137bda12435e8"
+          "sha256": "1a7ec9dce2effb90cc57d566fb2379f45dab37dc5c5c872e9fedb308c5d9fc65"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -2164,8 +2205,8 @@
       "rust_probe": "open_phy_trace_ant_dft_cfg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-antenna-diversity",
-      "evidence_digest": "9464df1b41869da251da996831ec2eb9c4ab896cf671779e19f5496144b1d2dd",
-      "baseline_passed": true,
+      "evidence_digest": "4c6dc6c823e5bd39f091358bc9dd1fef8c29315242a4ed39c7933feac0f02069",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2181,7 +2222,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2206,6 +2247,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -2221,8 +2263,8 @@
       "rust_probe": "open_phy_trace_ret_bb_wdt_get_status",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-watchdog-status",
-      "evidence_digest": "69b96ae8125d1979e937cbdae4ff0082b0cfec36d01e6e33f1330e29fc15f711",
-      "baseline_passed": true,
+      "evidence_digest": "0d29288a8cc182aed0430f9ef5029068f449c51bf2051a8fce6f2119e1f65636",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2238,7 +2280,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2263,6 +2305,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -2278,8 +2321,8 @@
       "rust_probe": "open_phy_trace_bb_wdt_int_enable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-watchdog-interrupt-enable",
-      "evidence_digest": "381c0c49ab7e04ad8af337b5b3936d4ebcdedcc8dbfcf3a6b59d58065ca9ab81",
-      "baseline_passed": true,
+      "evidence_digest": "e8cf4b43fa584114bad0748cdc23bc102877bf0d405f2d6c73b9a40968ee8f7e",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2295,7 +2338,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2320,6 +2363,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -2335,8 +2379,8 @@
       "rust_probe": "open_phy_trace_bb_wdt_rst_enable",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-watchdog-reset-enable",
-      "evidence_digest": "90fbb6f62cf824c62186db129e33baa4bd4e460b2199ef20e9d4b4b09fadb4b5",
-      "baseline_passed": true,
+      "evidence_digest": "bdcf247e29db95ae86f27c3766ea513c5efc045cece63576e79bd5bdb8861ca8",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2352,7 +2396,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2377,6 +2421,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -2392,8 +2437,8 @@
       "rust_probe": "open_phy_trace_bb_wdt_timeout_clear",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-watchdog-timeout-clear",
-      "evidence_digest": "8ed115c79c6e27a8c883927b273b9e0a8d223d47d1e4461f28257cfbbca7a5e1",
-      "baseline_passed": true,
+      "evidence_digest": "c71c761b223952cb7d12939112eec36edc828a1bb825ac60401811c67dc838ee",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2409,7 +2454,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2434,6 +2479,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -2448,7 +2494,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_ret_get_bias_ref_code",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2464,7 +2510,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2489,6 +2535,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -2503,8 +2550,8 @@
       "rust_probe": "open_phy_trace_get_dc_value",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-dc-value-split",
-      "evidence_digest": "ba6aa2bf5b982c817b9ea6b143e19a9c8f79aa6dc67943ea69dc58c150e261a6",
-      "baseline_passed": true,
+      "evidence_digest": "7a7523c78a49f7fd5ef119f18d456a4e76fb614fafcf9d48a15713ccfb9cd051",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2520,7 +2567,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2545,6 +2592,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -2559,7 +2607,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_noise_check_loop",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2575,7 +2623,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2600,6 +2648,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -2614,8 +2663,8 @@
       "rust_probe": "open_phy_trace_phy_11p_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-dot11p-state",
-      "evidence_digest": "75c8e479fec2286373d47668b1db9bd5626b467b951c8de986f5325de7fb442f",
-      "baseline_passed": true,
+      "evidence_digest": "88170b36279cae3a648d8eb423d140f689f1b8504f16dcb79f5dc7b5b1121f7b",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2631,7 +2680,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2656,6 +2705,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -2670,7 +2720,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_bb_txpwr_track",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2686,7 +2736,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2711,6 +2761,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -2724,7 +2775,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_bbpll_en_usb",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2740,7 +2791,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2765,6 +2816,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -2779,8 +2831,8 @@
       "rust_probe": "open_phy_trace_phy_ble_set_chan_base",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-ble-channel-base-state",
-      "evidence_digest": "8fdcf0597aeba4a7ea54d5229323e449f9a573121ad423e0d4264bad6442c9e0",
-      "baseline_passed": true,
+      "evidence_digest": "44782c0f20d904310031c6f6d9d23656cdf9ea7c0562c1855bd29bf28b8e8e05",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2796,7 +2848,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2821,6 +2873,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -2836,8 +2889,8 @@
       "rust_probe": "open_phy_trace_phy_bt_power_track",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-bt-power-tracking-state",
-      "evidence_digest": "1f2a4bf82ea326c56deeeb4d3c2bdedf49a6fea246c16eb34accd0057dfdbfe0",
-      "baseline_passed": true,
+      "evidence_digest": "1e0e55355d07973920d7e676835a2e097939e9b6e4761cc28a6189df00158a1b",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2853,7 +2906,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2878,6 +2931,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -2892,7 +2946,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_close_fe_bb_clk",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2908,7 +2962,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2933,6 +2987,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -2946,7 +3001,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_config_hccfr",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -2962,7 +3017,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -2987,6 +3042,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3001,8 +3057,8 @@
       "rust_probe": "open_phy_trace_phy_current_level_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-current-level-state",
-      "evidence_digest": "f8ff013b7d87770cced8a95ab64e6f3211ef323201a935c2d11bdabff982601e",
-      "baseline_passed": true,
+      "evidence_digest": "6474fcb7ca7ed47ab5fbd5f05d53ae065f5767f2ede7b942e0322eecd83778c0",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3018,7 +3074,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3043,6 +3099,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -3057,7 +3114,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_dc_mem_clr",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3073,7 +3130,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3098,6 +3155,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3111,7 +3169,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_fe_reg_update",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3127,7 +3185,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3152,6 +3210,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3166,8 +3225,8 @@
       "rust_probe": "open_phy_trace_phy_force_iccfr",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-force-iccfr",
-      "evidence_digest": "13dc03a3f0afe932bdb7ab42727e3866be787175b0f60bb896b4884692263bf4",
-      "baseline_passed": true,
+      "evidence_digest": "5a4eecd629037417874c7b951d351ca973a11166d177819afd74955779675864",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3183,7 +3242,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3208,6 +3267,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -3222,7 +3282,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_freq_mem_backup",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3238,7 +3298,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3263,6 +3323,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3276,7 +3337,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_freq_offset_set",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3292,7 +3353,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3317,6 +3378,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3330,7 +3392,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_get_i2c_data",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3346,7 +3408,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3371,6 +3433,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3384,7 +3447,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_ret_phy_get_rf_cal_version",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3400,7 +3463,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3425,6 +3488,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3438,7 +3502,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_ret_phy_get_rfdata_num",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3454,7 +3518,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3479,6 +3543,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3492,7 +3557,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_i2c_enter_critical",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3508,7 +3573,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3533,6 +3598,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3546,7 +3612,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_i2c_exit_critical",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3562,7 +3628,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3587,6 +3653,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3601,8 +3668,8 @@
       "rust_probe": "open_phy_trace_phy_i2c_master_command_mem_cfg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-i2c-command-memory-configuration",
-      "evidence_digest": "62aaeeac6b1c5553f113deb5d7ca74fe13eaebb04f30e733620bdf8f06243fc2",
-      "baseline_passed": true,
+      "evidence_digest": "3f5025505a6708b4f679efb07c57c85e64d4e1da1686fa063a647301986bc70d",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3618,7 +3685,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3643,6 +3710,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -3658,8 +3726,8 @@
       "rust_probe": "open_phy_trace_phy_i2c_master_mem_cfg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-i2c-master-memory-configuration",
-      "evidence_digest": "a7520d524f13747a7ad8e1e878cadd76e6e079d386b1d951a84339220ea6bd4a",
-      "baseline_passed": true,
+      "evidence_digest": "cc81c6573184693029268f3ffb57d9eaffa35dfce9cd91434f560e8406ef2c4c",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3675,7 +3743,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3700,6 +3768,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -3715,8 +3784,8 @@
       "rust_probe": "open_phy_trace_phy_iccfr_en",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-iccfr-enable",
-      "evidence_digest": "ef5527a25178b5331952ef6d472afc51434eb6fceedc06a5137591e30d7121e6",
-      "baseline_passed": true,
+      "evidence_digest": "7758ddac6b3db85d3c0c95c9060a32434ad47850af6ac1c8b07e43f27b1deebb",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3732,7 +3801,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3757,6 +3826,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -3772,8 +3842,8 @@
       "rust_probe": "open_phy_trace_phy_init_param_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-initialization-parameter-state",
-      "evidence_digest": "65382b80a5ae9e1db178522e4d712e56c367ca1c137fa64319748f84c078c595",
-      "baseline_passed": true,
+      "evidence_digest": "407789862d288883ea7be8147610bffc7655b38d8c49eefe8a41d2d4f76710ae",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3789,7 +3859,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3814,6 +3884,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -3828,7 +3899,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_ret_phy_internal_delay",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3844,7 +3915,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3869,6 +3940,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3882,7 +3954,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_pwdet_always_en",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3898,7 +3970,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3923,6 +3995,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3936,7 +4009,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_pwdet_onetime_en",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -3952,7 +4025,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -3977,6 +4050,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -3991,8 +4065,8 @@
       "rust_probe": "open_phy_trace_phy_reg_update_new",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-post-initialization-register-update",
-      "evidence_digest": "9e7e658adb587de9892fc1789cdb119827ef3f9234ba7aeb4f3d066e14bc54b2",
-      "baseline_passed": true,
+      "evidence_digest": "f4b91e353d2421fbc7aac2d2af012f4be2c82f0c255416ad5678998f89d9e2f4",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4008,7 +4082,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4033,6 +4107,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -4047,7 +4122,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_set_ftm_en",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4063,7 +4138,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4088,6 +4163,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4101,7 +4177,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_set_rx_comp_new",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4117,7 +4193,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4142,6 +4218,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4155,7 +4232,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_phy_stop_tx_tone_new",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4171,7 +4248,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4196,6 +4273,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4210,8 +4288,8 @@
       "rust_probe": "open_phy_trace_phy_track_temp_debug",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/archive-temperature-tracking-debug-state",
-      "evidence_digest": "13079f014d76cbcf282938b3e25d38507fea41804b14cb5229b83c1b223fafaf",
-      "baseline_passed": true,
+      "evidence_digest": "c68cd4ea58e330128949a8ef0821af504964db2cf33fc1f7efc58da969f50154",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4227,7 +4305,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4252,6 +4330,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -4267,8 +4346,8 @@
       "rust_probe": "open_phy_trace_phy_tx_atten_comp",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-tx-attenuation-compensation",
-      "evidence_digest": "49acb0fde87c598a46909bd4c5e4b5d0c080fcc6a7cff61c06941d3a83391e1f",
-      "baseline_passed": true,
+      "evidence_digest": "ad629f3e117bafe975eae0479e411f7878e325d446e74e4c0bc91b208efc5095",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4284,7 +4363,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4309,6 +4388,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -4324,8 +4404,8 @@
       "rust_probe": "open_phy_trace_ret_read_hw_noisefloor",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/archive-read-hardware-noise-floor",
-      "evidence_digest": "75e6c679d5bef02414f7cc7c288d78c9b200aa94ada9f8d2550aa584bef21122",
-      "baseline_passed": true,
+      "evidence_digest": "0a8aeada05bd2f90270d9e1fe7dfd8f9eb6fc6b4db11f882f8ebed3c3a16bb66",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4341,7 +4421,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4366,6 +4446,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -4380,7 +4461,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_archive_set_bb_wdg",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4396,7 +4477,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4421,6 +4502,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4435,8 +4517,8 @@
       "rust_probe": "open_phy_trace_ret_abs_temp",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-absolute-temperature",
-      "evidence_digest": "6f4d46eff937a0a963b2c6b56c88c21149bb4f0380e2cee930a71e56c99b348a",
-      "baseline_passed": true,
+      "evidence_digest": "50e5731bba3933aa1f4ac526944aabafa73ef4d486f7bb1b9de3415ac9179812",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4452,7 +4534,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4477,6 +4559,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -4492,8 +4575,8 @@
       "rust_probe": "open_phy_trace_agc_reg_init",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-agc-register-init",
-      "evidence_digest": "54ac90b630abab5b8f111dc12258cdeeb30563b171f30103a5baf60df9f181df",
-      "baseline_passed": true,
+      "evidence_digest": "8117bd3d40117738bee949a605088bff32d7c4a58aaa33c0f1a91f41ddb7ec54",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4509,7 +4592,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4534,6 +4617,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -4548,7 +4632,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_ant_dft_cfg",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4564,7 +4648,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4589,6 +4673,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4602,7 +4687,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_ant_init",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4618,7 +4703,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4643,6 +4728,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4657,8 +4743,8 @@
       "rust_probe": "open_phy_trace_bb_cbw_chan_cfg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-channel-cbw",
-      "evidence_digest": "809904f4cadde214503af69bd43fc0f17d88e88d62a137a0b514cb5e055d8de1",
-      "baseline_passed": true,
+      "evidence_digest": "1e5c368b6c86bc46c5d43e103704ac406773d4aef039202afc9659f68989d113",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4674,7 +4760,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4699,6 +4785,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -4713,7 +4800,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_bb_dcmem_clr",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4729,7 +4816,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4754,6 +4841,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4767,7 +4855,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_bb_wdg_cfg",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4783,7 +4871,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4808,6 +4896,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4821,7 +4910,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_ret_bb_wdt_get_status",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4837,7 +4926,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4862,6 +4951,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4875,7 +4965,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_bb_wdt_int_enable",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4891,7 +4981,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4916,6 +5006,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4929,7 +5020,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_bb_wdt_rst_enable",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4945,7 +5036,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -4970,6 +5061,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -4983,7 +5075,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_bb_wdt_timeout_clear",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -4999,7 +5091,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5024,6 +5116,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5037,7 +5130,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_bbtx_outfilter",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5053,7 +5146,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5078,6 +5171,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5092,8 +5186,8 @@
       "rust_probe": "open_phy_trace_ret_bt_bb_to_index",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-bluetooth-baseband-to-index",
-      "evidence_digest": "b683ef208f7baedae609a29546c988a7f119be12322873c32c0f7dcdc102bfea",
-      "baseline_passed": true,
+      "evidence_digest": "a1037e9be15ab0dd29e0cc63716254cc83f3f2f68dc75766033f6b28fd8c2aea",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5109,7 +5203,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5134,6 +5228,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -5148,7 +5243,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_bt_filter_reg",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5164,7 +5259,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5189,6 +5284,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5203,8 +5299,8 @@
       "rust_probe": "open_phy_trace_ret_bt_index_to_bb",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-bluetooth-index-to-baseband",
-      "evidence_digest": "14f6dc07e08ea48761d992608fe96f7ebf7aa8b3ff9a868b2b2e68e678cae2fe",
-      "baseline_passed": true,
+      "evidence_digest": "8971378ab53f66f14c6c0a81c5fa26ca375e1c3ef87436790f7e69dd51e8f5ed",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5220,7 +5316,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5245,6 +5341,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -5259,7 +5356,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_btbb_wifi_bb_cfg2",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5275,7 +5372,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5300,6 +5397,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5314,8 +5412,8 @@
       "rust_probe": "open_phy_trace_ret_byte_to_word",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-byte-to-word",
-      "evidence_digest": "79563e05de54ac30331d5bceeacbaf82c92cd5c9061762ccebb55f51ae281399",
-      "baseline_passed": true,
+      "evidence_digest": "da860cba86b6c53fed10232acf4d2a2340cd2e1dd8853057dd625455f6bea68d",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5331,7 +5429,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5356,6 +5454,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -5370,7 +5469,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_chan_dump_cfg",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5386,7 +5485,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5411,6 +5510,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5424,7 +5524,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_csidump_force_lltf_cfg",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5440,7 +5540,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5465,6 +5565,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5478,7 +5579,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_dac_rate_set",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5494,7 +5595,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5519,6 +5620,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5533,8 +5635,8 @@
       "rust_probe": "open_phy_trace_dis_hw_set_freq",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-disable-hardware-frequency",
-      "evidence_digest": "847e581ff8148b253670f6f75254d859a9fee72c294ed60cad3f39da4cb3e25f",
-      "baseline_passed": true,
+      "evidence_digest": "25f146fcaaa4737441d0adca0e55f5b1306656f769545e8906803a413aa25176",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5550,7 +5652,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5575,6 +5677,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -5589,7 +5692,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_disable_cca",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5605,7 +5708,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5630,6 +5733,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5643,7 +5747,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_disable_low_rate",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5659,7 +5763,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5684,6 +5788,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5697,7 +5802,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_en_hw_set_freq",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5713,7 +5818,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5738,6 +5843,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5751,7 +5857,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_enable_agc",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5767,7 +5873,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5792,6 +5898,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5805,7 +5912,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_enable_cca",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5821,7 +5928,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5846,6 +5953,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5859,7 +5967,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_enable_low_rate",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5875,7 +5983,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5900,6 +6008,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -5914,8 +6023,8 @@
       "rust_probe": "open_phy_trace_ret_encode_i2c_master",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-encode-i2c-master",
-      "evidence_digest": "182f36ccc9b73fcc03b24d8d60f0ecf7bc839b2657f808d31847445b6d5e07b0",
-      "baseline_passed": true,
+      "evidence_digest": "e0147dc1176ea125f8a057a5d7a7fda38be9f5ac8fdbd731e219e3820e764abe",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5931,7 +6040,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -5956,6 +6065,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -5970,7 +6080,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_fe_reg_init",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -5986,7 +6096,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6011,6 +6121,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -6024,7 +6135,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_force_pwr_index",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6040,7 +6151,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6065,6 +6176,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -6078,7 +6190,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_force_rx_gain",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6094,7 +6206,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6119,6 +6231,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -6133,8 +6246,8 @@
       "rust_probe": "open_phy_trace_freq_band_reg_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/frequency-band-registers",
-      "evidence_digest": "ab4dc43959b8b3a1789333d201c2d1f025b79e0cf29f3076ae926cbcde0e5864",
-      "baseline_passed": true,
+      "evidence_digest": "4a4fa0d9d6a609fa77a5e7f23ca2e71063ad88f817f20fefce4078fdcb05283f",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6150,7 +6263,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6175,6 +6288,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -6190,8 +6304,8 @@
       "rust_probe": "open_phy_trace_freq_i2c_mem_write",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-frequency-i2c-memory-write",
-      "evidence_digest": "59cd4d83d29d1e762ace02304bf2d062e23fb880d7608ba0160b6214927eb244",
-      "baseline_passed": true,
+      "evidence_digest": "71252f03fa9d58ed0e12a85679eea978a97de8fe326ba54cbfff5c7d38a1d6e0",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6207,7 +6321,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6232,6 +6346,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -6246,7 +6361,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_freq_module_resetn",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6262,7 +6377,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6287,6 +6402,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -6301,8 +6417,8 @@
       "rust_probe": "open_phy_trace_freq_reg_init",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-frequency-register-init",
-      "evidence_digest": "f774305fb8c40bdc0e5f5209d4804d754bb6cb10d969013d44212af379a87ccd",
-      "baseline_passed": true,
+      "evidence_digest": "ee0ee3755eb893c39c135027b3fd9851fdebd0425f489a37ecb0cccf6a05eed4",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6318,7 +6434,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6343,6 +6459,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -6358,8 +6475,8 @@
       "rust_probe": "open_phy_trace_ret_get_freq_mem_addr",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-frequency-memory-address",
-      "evidence_digest": "0511aeed83b8804e37f9f5f8cd3ecbff5f05f270da32c8b2761dd71537a01e3f",
-      "baseline_passed": true,
+      "evidence_digest": "30bbafb87254401cbd8a7cc9e867e31fee1097af19d11bd32df2c1080d4e5bb5",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6375,7 +6492,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6400,6 +6517,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -6414,7 +6532,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_hemu_ru26_good_res",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6430,7 +6548,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6455,6 +6573,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -6469,8 +6588,8 @@
       "rust_probe": "open_phy_trace_i2c_txrate_init",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-i2c-tx-rate-init",
-      "evidence_digest": "4b7cb03f69a6397a99045c67a8b9a38c03098e96e978c99e53aafc26f9bff4b5",
-      "baseline_passed": true,
+      "evidence_digest": "70e9d9423a933a53702d0eec880d7eb94fa18c564cf265ffe7fcaaed5469473a",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6486,7 +6605,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6511,6 +6630,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -6525,7 +6645,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_iq_corr_enable",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6541,7 +6661,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6566,6 +6686,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -6579,7 +6700,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_ret_is_low_rate_enabled",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6595,7 +6716,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6620,6 +6741,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -6633,7 +6755,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_lltf_mask_en",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6649,7 +6771,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6674,6 +6796,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -6687,7 +6810,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_noise_floor_auto_set",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6703,7 +6826,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6728,6 +6851,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -6742,8 +6866,8 @@
       "rust_probe": "open_phy_trace_nrx_freq_set",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-nrx-frequency",
-      "evidence_digest": "c44d48d0d6b6c710d85e4d414606626e3dcb45e67d5809feb80845fdaf73f6eb",
-      "baseline_passed": true,
+      "evidence_digest": "b06e8450b41dd018caf6e71e1c5315bddf6d93470747244f35ae1a02a84349d7",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6759,7 +6883,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6784,6 +6908,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -6799,8 +6924,8 @@
       "rust_probe": "open_phy_trace_pbus_debugmode",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-pbus-debug-mode",
-      "evidence_digest": "d92bfe055bd121cfc713c474b88e75bfa8f8b5f9e75856491469411692a15977",
-      "baseline_passed": true,
+      "evidence_digest": "1449a9cdfc37c11870d6736c459561c2923654c615ea06cbac791f0f70688370",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6816,7 +6941,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6841,6 +6966,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -6856,8 +6982,8 @@
       "rust_probe": "open_phy_trace_ret_read_hw_noisefloor",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-read-hardware-noise-floor",
-      "evidence_digest": "2a1c33ea98f234eb12206704fb18761e6d70fdb67ff53ea48f1d66d20c34b964",
-      "baseline_passed": true,
+      "evidence_digest": "53e2d7718ecad38a5bca8984dea1259c1c386642f3f4469d7cd4fb3c09c10fd7",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6873,7 +6999,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6898,6 +7024,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -6913,8 +7040,8 @@
       "rust_probe": "open_phy_trace_rfrx_sat_rst",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-rf-rx-saturation-reset",
-      "evidence_digest": "2a18edb9eabdbb092b0e20168793e1519d0c9417a5963b669d03273583a8b1b3",
-      "baseline_passed": true,
+      "evidence_digest": "72588e4fee71af394e663d90fccf626f12a7a7cbb092c3d88dd82feb42157b01",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6930,7 +7057,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -6955,6 +7082,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -6969,7 +7097,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_rx11blr_cfg",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -6985,7 +7113,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7010,6 +7138,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -7024,8 +7153,8 @@
       "rust_probe": "open_phy_trace_rx_11b_opt",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-rx-11b-optimization",
-      "evidence_digest": "0b1bd750731a61c50162125607961462634734ab49c9227104c2bbc142efdee0",
-      "baseline_passed": true,
+      "evidence_digest": "b78762917d60a3837099895fd03bb2d56b13d152ba2d1ea2262e5ddae046d25e",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7041,7 +7170,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7066,6 +7195,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -7081,8 +7211,8 @@
       "rust_probe": "open_phy_trace_save_pbus_reg",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-save-pbus-registers",
-      "evidence_digest": "eb906ddce01a26b7b6bcefcf32f1ce0533296571ae525d71989bd395966a3077",
-      "baseline_passed": true,
+      "evidence_digest": "60ffc8954346d9bc36e544d1f15ad7d9e63356ce7aa5c8d5b98db36176754430",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7098,7 +7228,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7123,6 +7253,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -7138,8 +7269,8 @@
       "rust_probe": "open_phy_trace_set_rxclk_en",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-rx-clock-enable",
-      "evidence_digest": "b8b62a2ce9022fbdb7985bb9839a1884f31eda2623d8dd76a1f62d73da4b8899",
-      "baseline_passed": true,
+      "evidence_digest": "f21e606f9b3dca11e3edce2240c89adcf937ca9335c339cc628228b2e46c8a2f",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7155,7 +7286,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7180,6 +7311,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -7195,8 +7327,8 @@
       "rust_probe": "open_phy_trace_set_txclk_en",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-tx-clock-enable",
-      "evidence_digest": "5cfd2f73a54c3501a1f6c01c98e729dd69aca3af4220a27ee28215b1c90b38c4",
-      "baseline_passed": true,
+      "evidence_digest": "f58fc815d88514cb77f4350827b293b52288890d4d388cfaa62055ceb43fa581",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7212,7 +7344,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7237,6 +7369,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -7251,7 +7384,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_sifs_reg_init",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7267,7 +7400,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7292,6 +7425,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -7305,7 +7439,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_tx_paon_set",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7321,7 +7455,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7346,6 +7480,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -7360,8 +7495,8 @@
       "rust_probe": "open_phy_trace_txpwr_track_slow",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:state/rom-tx-power-tracking-slow-state",
-      "evidence_digest": "811d22e8494187c59b6566c1a6e65d3b227b0231685399f4a52752ced696d867",
-      "baseline_passed": true,
+      "evidence_digest": "43fa87fc0aec9bc2f3154ef81ca77817b76e294881b8aa28217c80d14d3d1cce",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7377,7 +7512,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7402,6 +7537,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved",
         "verification status implemented-unqualified is not a successful production comparison"
@@ -7416,7 +7552,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_vht_support",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7432,7 +7568,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7457,6 +7593,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -7470,7 +7607,7 @@
       "release_eligible": false,
       "rust_probe": "open_phy_trace_wifi_agc_sat_gain",
       "evidence_kind": "symbolic",
-      "baseline_passed": true,
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7486,7 +7623,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:archive:artifact",
@@ -7511,6 +7648,7 @@
       ],
       "source_hashes": [],
       "release_blockers": [
+        "accepted evidence baseline did not pass",
         "evidence class static-analysis is supporting evidence only",
         "reviewed production component is not resolved"
       ]
@@ -7521,13 +7659,13 @@
       "symbol": "phy_get_i2c_hostid_new",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_phy::phy_i2c::configure_and_select_phy_i2c_host",
       "rust_probe": "open_phy_i2c_host_trace_phy_get_i2c_hostid_new",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/phy-i2c-host-map-accredited-domain",
-      "evidence_digest": "d78dd495181dbae9cb06375c473f0444ed57352a0cb6d63b4ab5b647d84afd66",
-      "baseline_passed": true,
+      "evidence_digest": "27b26f38a9afc64d0c9f2e7f918bfc4dbff5e5c7ddb9f872a6487a94528859b3",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7543,7 +7681,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "20b6930aacbac6ca2e299ca694c885cb00803756da3441f57a98d39d550a9571"
+          "sha256": "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
         },
         {
           "role": "source:archive:artifact",
@@ -7563,6 +7701,9 @@
           "path": "driver/chips/esp32s31/phy/src/phy_i2c.rs",
           "sha256": "dae46db189553a11e2fd7c25136e8602fc29fdd49bdafc4140ca50bc604cc2da"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -7571,13 +7712,13 @@
       "symbol": "hal_get_sta_tsf",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::mac_tsf::snapshot_station_tsf",
       "rust_probe": "open_rom_power_tsf_trace_hal_get_sta_tsf",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/rom-sta-tsf-snapshot",
-      "evidence_digest": "8af207de4840056147a8d78e9724644d058ee881a05e68261e33b880ddc81183",
-      "baseline_passed": true,
+      "evidence_digest": "a520c4bbeaac9cef5bee7d91be225c68b80c5c7ca27fbcadbabbc5085b2dd92c",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7593,7 +7734,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:rom:artifact",
@@ -7607,8 +7748,11 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/pac/src/mac_tsf.rs",
-          "sha256": "d32fd151b861fad269967864389613d37718c8923499498b47b0575a7256a1a2"
+          "sha256": "4b7305311fee46014fbb963d7f7356e853e62f883f0aed70d0d127f80d024fc3"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -7617,13 +7761,13 @@
       "symbol": "hal_mac_tsf_reset",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_wifi_mac::ap_tsf::reset_and_start_access_point_tsf",
       "rust_probe": "open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/wifi-ap-tsf-start",
-      "evidence_digest": "1c9ed58eae9b0dff0fbb541084cf78dda4d79c7c964207295417ff3c8e67b213",
-      "baseline_passed": true,
+      "evidence_digest": "1adf1fdce4568bb63123a1efded50af6cd4e8a1f7d6f3c43b26ac387c5c2abd2",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7639,7 +7783,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -7659,6 +7803,9 @@
           "path": "driver/chips/esp32s31/wifi/mac/src/ap_tsf.rs",
           "sha256": "726975ddbbb71eec4ea205971c0a5079e360583781bc29b3dfb97f4834a0a411"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -7667,13 +7814,13 @@
       "symbol": "hal_disable_softap_tsf",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_wifi_mac::ap_tsf::stop_access_point_tsf",
       "rust_probe": "open_libpp_ap_tsf_trace_hal_disable_softap_tsf",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/wifi-ap-tsf-stop",
-      "evidence_digest": "871eea92c3174f98c10aa01f9ec7450a404e6585fc9aaf5d858f9098c2fc32b4",
-      "baseline_passed": true,
+      "evidence_digest": "73ebaa2c6771c72bd4f077ebe811ba9119745155fae50b98db8638409237aa16",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7689,7 +7836,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -7709,6 +7856,9 @@
           "path": "driver/chips/esp32s31/wifi/mac/src/ap_tsf.rs",
           "sha256": "726975ddbbb71eec4ea205971c0a5079e360583781bc29b3dfb97f4834a0a411"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -7717,13 +7867,13 @@
       "symbol": "hal_mac_set_addr",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::WifiRadioRegisters::program_receive_interface_address",
       "rust_probe": "open_libpp_interface_trace_hal_mac_set_addr",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/wifi-interface-address",
-      "evidence_digest": "01d89151f43a7af84a1394723be1a49885a502cbdef0e339f0d39194977aa345",
-      "baseline_passed": true,
+      "evidence_digest": "e37bd8667f692febfbe606e2204161162dbb97cd85b38d762204f3609830bb91",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7739,7 +7889,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -7759,6 +7909,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_interface_address.rs",
           "sha256": "68ef4cc54d37cdcd60124706f0095a4e3de6a3c338c2e51a4d3fe9d1564b55c2"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -7767,13 +7920,13 @@
       "symbol": "hal_mac_set_bssid",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::WifiRadioRegisters::program_interface_bssid",
       "rust_probe": "open_libpp_interface_trace_hal_mac_set_bssid",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/wifi-interface-bssid",
-      "evidence_digest": "1d1a3cfbe69af0c30dbc1a27345662894030ccc6498d80121810a6231603cc97",
-      "baseline_passed": true,
+      "evidence_digest": "b3b4a12ca9bf2f549da78e074d4944f18d7dfd643c29eb3360aac2f2b14b9939",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7789,7 +7942,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:libpp:artifact",
@@ -7809,6 +7962,9 @@
           "path": "driver/chips/esp32s31/pac/src/mac_rx_policy.rs",
           "sha256": "1d78e6423e5f77ef02fcc54337ca8bd14eda925d7c36d35914421048d8c113b5"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -7817,13 +7973,13 @@
       "symbol": "wifi_set_rx_policy",
       "evidence_class": "production-trace",
       "status": "bounded-match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal::configure_role_receive_policy",
       "rust_probe": "open_wifi_sta_ap_trace_wifi_set_rx_policy",
       "claim": "reviewed-domain-equivalence",
       "evidence_kind": "reviewed-domain-equivalence/profile:scenario/wifi-sta-ap-receive-policy",
-      "evidence_digest": "19fa58d9ed8d71b33296435770f57b08238634176c6f4e260d1052140ee41554",
-      "baseline_passed": true,
+      "evidence_digest": "a8135e81de4d1057decbc4511bfc75c78d3f83b80ecdbec0b239089e81610f49",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7839,7 +7995,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "bbf7ad317c4fc61b883f9020ff7c22906165a681c10d3402d81e5b0ce8b406a9"
+          "sha256": "435344744d9594f534e4e7f9e6aaa9bc335609e5b4fb76b4d3414f9b86cfd4bf"
         },
         {
           "role": "source:wifi-sta-ap-receive:artifact",
@@ -7865,8 +8021,11 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/hal/src/wifi_mac.rs",
-          "sha256": "f1f0936c5fad30c734fa16f044d529c994c49f5b53bb9b5c882386524a8aa0ef"
+          "sha256": "6f16703e0d56e0b5fe01955e5ff875cb3ecf0bf14b17383a55cd5a30ba95938b"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     },
     {
@@ -7875,13 +8034,13 @@
       "symbol": "hal_disable_sta_beacon_filter",
       "evidence_class": "production-trace",
       "status": "match",
-      "release_eligible": true,
+      "release_eligible": false,
       "rust_component": "open_esp_radio_esp32s31_pac::MacInterruptSetup::prepare_connected_sta_without_power_save",
       "rust_probe": "open_wifi_sta_trace_hal_disable_sta_beacon_filter",
       "claim": "whole-function-equivalence",
       "evidence_kind": "whole-function-equivalence/profile:scenario/wifi-sta-disable-beacon-filter",
-      "evidence_digest": "a6f0ca93aad8394d7e232b00ac370a244cc624c83eac9acfb882b62387c0e6b2",
-      "baseline_passed": true,
+      "evidence_digest": "f457c3db5430b36d17a3507cebad3fddef3d7fafaf34510f4a266ddaae415c40",
+      "baseline_passed": false,
       "artifact_hashes": [
         {
           "role": "dispositions:0",
@@ -7897,7 +8056,7 @@
         },
         {
           "role": "rust-probes",
-          "sha256": "65b6e25e2bdd2324802fb298059713026b98d3c6cdf73afa9117d180737b2b48"
+          "sha256": "64dd089f20b7bb76e43993598479b969daab925dee83f5ba6b9fb78deb3dbd96"
         },
         {
           "role": "source:wifi-sta-lifecycle:artifact",
@@ -7915,8 +8074,11 @@
       "source_hashes": [
         {
           "path": "driver/chips/esp32s31/pac/src/mac_interrupt.rs",
-          "sha256": "da5c52ca7e6cb3b1c1dbf7b2ef4f68dd11899447bbc129364416bb313377ff9f"
+          "sha256": "d828210e907d0c69662106a0c3151a7aa1c8341c60a73f281e397c35392949fd"
         }
+      ],
+      "release_blockers": [
+        "accepted evidence baseline did not pass"
       ]
     }
   ]

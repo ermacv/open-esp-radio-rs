@@ -10,9 +10,10 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> model::Phase {
     let inspection = revision::inspect_ledger(context.project_path, &context.project.id, false);
     let status = match inspection.health {
         RevisionLedgerHealth::Ready => model::Readiness::Ready,
-        RevisionLedgerHealth::Missing | RevisionLedgerHealth::BaselineMissing => {
-            model::Readiness::Incomplete
-        }
+        RevisionLedgerHealth::Missing
+        | RevisionLedgerHealth::BaselineMissing
+        | RevisionLedgerHealth::LegacyScope
+        | RevisionLedgerHealth::MigrationReviewPending => model::Readiness::Incomplete,
         RevisionLedgerHealth::Invalid => model::Readiness::Invalid,
     };
     let mut component = model::Component::new("durable-revision-baseline", status)
@@ -28,17 +29,34 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> model::Phase {
         )
         .detail("update-prepared", inspection.update_prepared);
     if let Some(diagnostic) = inspection.diagnostic {
-        component = component.diagnostic(diagnostic).next_action(format!(
-            "{}; before replacing bindings run {}",
-            context.follow_up_command(
-                "project revision snapshot BASELINE",
-                FollowUpRequirements::PROJECT_ONLY,
+        let next_action = match inspection.health {
+            RevisionLedgerHealth::LegacyScope => format!(
+                "{} --migrate-legacy-scope MAP; then capture a new named schema-2 snapshot and review its diff/rebase",
+                context.follow_up_command(
+                    "project revision prepare-update",
+                    FollowUpRequirements::RUN_SPEC,
+                )
             ),
-            context.follow_up_command(
-                "project revision prepare-update",
-                FollowUpRequirements::RUN_SPEC,
-            )
-        ));
+            RevisionLedgerHealth::MigrationReviewPending => format!(
+                "review revision diff/rebase; then run {} --accept-current",
+                context.follow_up_command(
+                    "project revision prepare-update",
+                    FollowUpRequirements::RUN_SPEC,
+                )
+            ),
+            _ => format!(
+                "{}; before replacing bindings run {}",
+                context.follow_up_command(
+                    "project revision snapshot BASELINE",
+                    FollowUpRequirements::PROJECT_ONLY,
+                ),
+                context.follow_up_command(
+                    "project revision prepare-update",
+                    FollowUpRequirements::RUN_SPEC,
+                )
+            ),
+        };
+        component = component.diagnostic(diagnostic).next_action(next_action);
     }
     model::Phase::collect("revision-workflow", vec![component])
 }

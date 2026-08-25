@@ -88,6 +88,46 @@ impl InputRole {
         )
     }
 
+    /// Inputs whose bytes define a vendor revision rather than the local
+    /// verification implementation used to compare against it.
+    pub(crate) const fn is_revision_owned(&self) -> bool {
+        matches!(
+            self,
+            Self::VendorArtifact
+                | Self::VendorInventory
+                | Self::VendorCompanion
+                | Self::SourceArtifact(_)
+                | Self::SourceInventory(_)
+                | Self::SourceCompanion(_)
+        )
+    }
+
+    pub(crate) const fn is_rust_lineage(&self) -> bool {
+        matches!(
+            self,
+            Self::RustArtifact
+                | Self::RustCompanion
+                | Self::NamedRustArtifact(_)
+                | Self::NamedRustCompanion(_)
+        )
+    }
+
+    pub(crate) const fn is_revision_companion(&self) -> bool {
+        matches!(self, Self::VendorCompanion | Self::SourceCompanion(_))
+    }
+
+    pub(crate) const fn is_revision_primary(&self) -> bool {
+        matches!(self, Self::VendorArtifact | Self::SourceArtifact(_))
+    }
+
+    pub(crate) const fn is_revision_inventory(&self) -> bool {
+        matches!(self, Self::VendorInventory | Self::SourceInventory(_))
+    }
+
+    pub(crate) const fn is_ambiguous_lineage(&self) -> bool {
+        matches!(self, Self::Artifact | Self::Companion)
+    }
+
     pub(crate) fn source_id(&self) -> &str {
         match self {
             Self::VendorArtifact | Self::VendorInventory | Self::VendorCompanion => "vendor",
@@ -365,5 +405,9 @@ mod tests {
         assert_eq!(run.inputs[0].role.to_string(), "source-artifact:rom");
         assert_eq!(run.inputs[1].role.to_string(), "source-inventory:rom");
         assert_eq!(run.inputs[2].role, InputRole::RustArtifact);
+        assert!(run.inputs[0].role.is_revision_owned());
+        assert!(run.inputs[1].role.is_revision_owned());
+        assert!(!run.inputs[2].role.is_revision_owned());
+        assert!(run.inputs[2].role.is_rust_lineage());
     }
 }

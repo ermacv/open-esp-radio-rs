@@ -4,44 +4,42 @@ use std::fmt::Write as _;
 
 use super::{RegisterFact, review_ir::ReviewIrRegister};
 
-pub(super) fn write_draft(
-    output: &mut String,
-    fact: &RegisterFact,
-    range_start: u32,
-    ir: Option<&ReviewIrRegister>,
-) {
-    let offset = fact.address - range_start;
+pub(super) fn write_draft(output: &mut String, fact: &RegisterFact, address_space: &str) {
     output.push_str(
-        "\nDraft to copy into the appropriate reviewed peripheral fragment and edit:\n\n```toml\n",
+        "\nSparse reviewed-knowledge template. Copy only facts proven by manual review; replace every `REVIEW_REQUIRED` value and keep exact applicability/evidence:\n\n```toml\n",
     );
-    output.push_str("[[peripherals.registers]]\n\n[peripherals.registers.register]\n");
-    writeln!(output, "name = \"{}\"", candidate_name(fact, offset))
+    if fact.catalog_name != "UNMAPPED" {
+        writeln!(
+            output,
+            "# Generated catalog candidate (not accepted knowledge): {}",
+            fact.catalog_name
+        )
         .expect("writing to String cannot fail");
-    output.push_str("description = \"REVIEW_REQUIRED: hardware meaning\"\n");
-    writeln!(output, "addressOffset = {offset:#X}").expect("writing to String cannot fail");
-    writeln!(output, "size = {}", fact.width).expect("writing to String cannot fail");
-    writeln!(output, "access = \"{}\"", inferred_access(fact))
-        .expect("writing to String cannot fail");
-    let fields = candidate_fields(fact, ir);
-    if !fields.is_empty() {
-        output.push_str(if ir.is_some_and(|ir| !ir.fields.is_empty()) {
-            "\n# Mechanical partition induced by linked-IR field evidence. Split, merge, rename or delete after review.\n"
-        } else {
-            "\n# Mechanical partition induced by partial-write masks. Split, merge, rename or delete after review.\n"
-        });
-        for (lsb, width) in fields {
-            output.push_str("[[peripherals.registers.register.fields]]\n");
-            writeln!(
-                output,
-                "name = \"FIELD_{}_{}\"",
-                u16::from(lsb) + u16::from(width) - 1,
-                lsb
-            )
-            .expect("writing to String cannot fail");
-            writeln!(output, "bitOffset = {lsb}").expect("writing to String cannot fail");
-            writeln!(output, "bitWidth = {width}\n").expect("writing to String cannot fail");
-        }
     }
+    writeln!(
+        output,
+        "# Generated access observation (not hardware semantics): {}",
+        inferred_access(fact)
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "[[assertions]]\nid = \"REVIEW_REQUIRED.register-declaration\"\nsubject = \"mmio:{address_space}:{:#010x}/{}\"\nkind = \"register-declaration\"\nvalue = \"REVIEW_REQUIRED_EXISTING_REGION\"\nnote = \"Declares geometry only; observed accesses do not prove hardware semantics.\"\n",
+        fact.address, fact.width
+    )
+    .expect("writing to String cannot fail");
+    output.push_str(
+        "[assertions.applies-to]\nchips = [\"REVIEW_REQUIRED_CHIP\"]\nchip-revisions = [\"REVIEW_REQUIRED_REVISION\"]\n\n[[assertions.evidence]]\nsource = \"REVIEW_REQUIRED_EVIDENCE_ID\"\nlocator = \"REVIEW_REQUIRED_DECLARATION_LOCATOR\"\n\n",
+    );
+    writeln!(
+        output,
+        "[[assertions]]\nid = \"REVIEW_REQUIRED.register-name\"\nsubject = \"mmio:{address_space}:{:#010x}/{}\"\nkind = \"register-name\"\nvalue = \"REVIEW_REQUIRED_REGISTER_NAME\"\n",
+        fact.address, fact.width
+    )
+    .expect("writing to String cannot fail");
+    output.push_str(
+        "[assertions.applies-to]\nchips = [\"REVIEW_REQUIRED_CHIP\"]\nchip-revisions = [\"REVIEW_REQUIRED_REVISION\"]\n\n[[assertions.evidence]]\nsource = \"REVIEW_REQUIRED_EVIDENCE_ID\"\nlocator = \"REVIEW_REQUIRED_NAME_LOCATOR\"\n",
+    );
     output.push_str("```\n");
 }
 
@@ -97,37 +95,6 @@ pub(super) fn inferred_access(fact: &RegisterFact) -> &'static str {
         (false, true) => "write-only",
         (false, false) => "read-write",
     }
-}
-
-fn candidate_name(fact: &RegisterFact, offset: u32) -> String {
-    if fact.catalog_name != "UNMAPPED" {
-        let leaf = fact.catalog_name.rsplit('.').next().unwrap_or_default();
-        let name = identifier(leaf);
-        if !name.is_empty() {
-            return name;
-        }
-    }
-    format!("REG_{offset:08X}_W{}", fact.width)
-}
-
-fn identifier(value: &str) -> String {
-    let mut output = String::new();
-    let mut separator = false;
-    for character in value.chars() {
-        if character.is_ascii_alphanumeric() {
-            if separator && !output.is_empty() {
-                output.push('_');
-            }
-            output.push(character.to_ascii_uppercase());
-            separator = false;
-        } else {
-            separator = true;
-        }
-    }
-    if output.as_bytes().first().is_some_and(u8::is_ascii_digit) {
-        output.insert_str(0, "REG_");
-    }
-    output
 }
 
 #[cfg(test)]

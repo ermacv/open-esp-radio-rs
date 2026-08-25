@@ -88,6 +88,12 @@ knowledge. Promote a conclusion from a project pack into the chip model only
 when its applicability and evidence support reuse by other blob revisions or
 projects.
 
+For an unreviewed physical register, `registers review` emits only a sparse
+`register-declaration` plus `register-name` template with deliberately
+unresolved `REVIEW_REQUIRED` placeholders. It never emits a complete
+peripheral fragment and never promotes observed reads, writes, masks or field
+partitions into access, W1C, self-clear or field assertions.
+
 Publication produces the configured clean SVD, raw PAC/register
 representation and restricted capability API. Outputs are reproducible from
 reviewed inputs and may be checked with `project check`.

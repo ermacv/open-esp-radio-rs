@@ -63,6 +63,7 @@ pub(crate) fn render_register_review(
     render_report(
         facts,
         RegisterReviewContext {
+            address_space: model.address_space(),
             identities: &identities,
             annotations: model.review(),
             ir: &ir,
@@ -75,6 +76,7 @@ pub(crate) fn render_register_review(
 }
 
 struct RegisterReviewContext<'a> {
+    address_space: &'a str,
     identities: &'a BTreeMap<(u64, u32), String>,
     annotations: &'a [ReviewAnnotation],
     ir: &'a RegisterReviewIr,
@@ -89,6 +91,7 @@ fn render_report(
     context: RegisterReviewContext<'_>,
 ) -> Result<(String, RegisterReviewSummary)> {
     let RegisterReviewContext {
+        address_space,
         identities,
         annotations,
         ir,
@@ -442,7 +445,7 @@ fn render_report(
                 write_ir_evidence(&mut output, ir_register);
             }
             if owned && identity.is_none() && !non_operational {
-                write_draft(&mut output, fact, range.start, ir_register);
+                write_draft(&mut output, fact, address_space);
             }
         }
     }
@@ -541,6 +544,7 @@ mod tests {
         let (report, summary) = render_report(
             &facts,
             RegisterReviewContext {
+                address_space: "cpu",
                 identities: &BTreeMap::new(),
                 annotations: &[],
                 ir: &RegisterReviewIr::default(),
@@ -554,9 +558,14 @@ mod tests {
         assert_eq!(summary.unreviewed, 1);
         assert_eq!(summary.field_candidates, 2);
         assert!(report.contains("`rom:read_status`"));
-        assert!(report.contains("name = \"REG_00000010_W32\""));
-        assert!(report.contains("name = \"FIELD_1_0\""));
-        assert!(report.contains("name = \"FIELD_5_4\""));
+        assert!(report.contains("subject = \"mmio:cpu:0x00001010/32\""));
+        assert!(report.contains("kind = \"register-declaration\""));
+        assert!(report.contains("kind = \"register-name\""));
+        assert!(report.contains("value = \"REVIEW_REQUIRED_REGISTER_NAME\""));
+        assert!(!report.contains("[[peripherals.registers]]"));
+        assert!(!report.contains("kind = \"register-access\""));
+        assert!(!report.contains("hardware-write-semantics"));
+        assert!(!report.contains("[[peripherals.registers.register.fields]]"));
         assert!(report.contains("Candidate names, access modes and bit ranges are mechanical"));
     }
 
@@ -589,6 +598,7 @@ mod tests {
         let (report, summary) = render_report(
             &facts,
             RegisterReviewContext {
+                address_space: "cpu",
                 identities: &identities,
                 annotations: &[],
                 ir: &RegisterReviewIr::default(),

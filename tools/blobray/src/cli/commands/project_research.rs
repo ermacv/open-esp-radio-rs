@@ -264,6 +264,186 @@ fn render_prerequisites(prerequisites: &[SelectedPrerequisite<'_>]) {
             prerequisites.len()
         );
     }
+    outputln!("\n{}", output::heading("Top prerequisite"));
+    for line in prerequisite_lines(&prerequisites[0], output::details()) {
+        outputln!("{line}");
+    }
+    if output::details() {
+        for prerequisite in prerequisites.iter().skip(1) {
+            outputln!(
+                "\n{}",
+                output::heading(format!(
+                    "Prerequisite #{} — {}",
+                    prerequisite.rank, prerequisite.prerequisite.id
+                ))
+            );
+            for line in prerequisite_lines(prerequisite, true) {
+                outputln!("{line}");
+            }
+        }
+    }
+}
+
+fn prerequisite_lines(prerequisite: &SelectedPrerequisite<'_>, details: bool) -> Vec<String> {
+    let entry = prerequisite.prerequisite;
+    let affected_functions = prerequisite_affected_functions(prerequisite);
+    let publication_scopes = prerequisite_publication_scopes(prerequisite);
+    let evidence_sites = prerequisite_evidence_sites(prerequisite);
+    let evidence_channels = prerequisite_evidence_channels(prerequisite);
+    let mut lines = Vec::new();
+    if details {
+        lines.push(format!("ID: {}", entry.id));
+        lines.push(format!("Kind: {}", prerequisite_kind_label(entry.kind)));
+        lines.push(format!("Subject: {}", entry.subject));
+        lines.push(format!(
+            "Destination: {}",
+            entry
+                .path
+                .as_ref()
+                .map_or("not configured".to_owned(), |path| path
+                    .display()
+                    .to_string())
+        ));
+        lines.push(format!("Reason: {}", entry.reason));
+    }
+    lines.push(format!("Required action: {}", entry.manual_action));
+    lines.push(format!(
+        "Why high-profit: {} benefit points = {} guaranteed functions × 20 + {} optimistic functions × 3 + {} scope roots × 10 + {} publication scopes × 20; {} cost units. Completing this setup may unblock {} findings across {} research actions.",
+        entry.benefit_points,
+        entry.guaranteed_unlock,
+        entry.optimistic_unlock,
+        entry.affected_scope_roots.len(),
+        publication_scopes.len(),
+        entry.estimated_cost_units,
+        entry.satisfies_finding_ids.len(),
+        entry.blocked_action_ids.len(),
+    ));
+    if details {
+        lines.push(format!(
+            "Satisfied finding IDs: {}",
+            list_or_none(&entry.satisfies_finding_ids)
+        ));
+        lines.push(format!(
+            "Blocked action IDs: {}",
+            list_or_none(&entry.blocked_action_ids)
+        ));
+        lines.push(format!(
+            "Affected functions: {}",
+            list_or_none(&affected_functions)
+        ));
+        lines.push(format!("Scopes: {}", list_or_none(&entry.scopes)));
+        lines.push(format!(
+            "Affected scope roots: {}",
+            list_or_none(&entry.affected_scope_roots)
+        ));
+        lines.push(format!(
+            "Publication scopes: {}",
+            list_or_none(&publication_scopes)
+        ));
+        lines.push(format!(
+            "Evidence sites: {}",
+            evidence_sites_label(&evidence_sites, true)
+        ));
+        lines.push(format!(
+            "Evidence channels: {}",
+            list_or_none(&evidence_channels)
+        ));
+    } else {
+        lines.push(format!(
+            "Affected: {} functions; scopes {}.",
+            affected_functions.len(),
+            highlight_list(&entry.scopes, false)
+        ));
+    }
+    if prerequisite.actions.is_empty() {
+        lines.push("Inspection path: no blocked inspection action is linked; use --format json to audit the complete prerequisite record".to_owned());
+    } else if details {
+        lines.extend(
+            prerequisite
+                .actions
+                .iter()
+                .map(|action| format!("Inspection path: {}", action.inspect_command)),
+        );
+    } else {
+        lines.push(format!(
+            "Next inspection: {}",
+            prerequisite.actions[0].inspect_command
+        ));
+    }
+    if let (Some(action), Some(finding_id)) = (
+        prerequisite.actions.first(),
+        entry.satisfies_finding_ids.first(),
+    ) && let Some(command) = exact_research_command(&action.inspect_command, finding_id)
+    {
+        lines.push(format!("Re-query exact finding: {command}"));
+    }
+    lines.push(
+        "Boundary: this prerequisite is a manual setup step, not evidence and not a completion claim; inspect the linked evidence, reanalyze, and re-query the finding."
+            .to_owned(),
+    );
+    lines
+}
+
+fn prerequisite_affected_functions(prerequisite: &SelectedPrerequisite<'_>) -> Vec<String> {
+    prerequisite
+        .findings
+        .iter()
+        .flat_map(|finding| {
+            finding
+                .guaranteed_function_ids
+                .iter()
+                .chain(&finding.optimistic_function_ids)
+        })
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn prerequisite_publication_scopes(prerequisite: &SelectedPrerequisite<'_>) -> Vec<String> {
+    prerequisite
+        .findings
+        .iter()
+        .flat_map(|finding| finding.publication_scopes.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn prerequisite_evidence_sites(prerequisite: &SelectedPrerequisite<'_>) -> Vec<u32> {
+    prerequisite
+        .findings
+        .iter()
+        .flat_map(|finding| finding.evidence_sites.iter().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn prerequisite_evidence_channels(prerequisite: &SelectedPrerequisite<'_>) -> Vec<String> {
+    prerequisite
+        .findings
+        .iter()
+        .flat_map(|finding| finding.evidence_channels.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn list_or_none(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_owned()
+    } else {
+        values.join(", ")
+    }
+}
+
+fn exact_research_command(inspect_command: &str, finding_id: &str) -> Option<String> {
+    let (_, context) = inspect_command.split_once(" --project ")?;
+    Some(format!(
+        "blobray project research next --finding {} --project {context}",
+        crate::shell::arg(std::ffi::OsStr::new(finding_id))
+    ))
 }
 
 fn prerequisite_kind_label(kind: research::ResearchPrerequisiteKind) -> &'static str {
@@ -281,6 +461,8 @@ fn prerequisite_kind_label(kind: research::ResearchPrerequisiteKind) -> &'static
 struct SelectedPrerequisite<'a> {
     rank: usize,
     prerequisite: &'a research::ResearchPrerequisiteCatalogEntry,
+    findings: Vec<&'a research::ResearchFinding>,
+    actions: Vec<&'a research::ResearchActionCatalogEntry>,
 }
 
 struct SelectedAction<'a> {
@@ -296,14 +478,43 @@ fn selected_prerequisites(report: &research::ResearchNextReport) -> Vec<Selected
         .iter()
         .enumerate()
         .filter(|(_, step)| step.kind == research::ResearchStepKind::Prerequisite)
-        .map(|(index, step)| SelectedPrerequisite {
-            rank: index + 1,
-            prerequisite: report
+        .map(|(index, step)| {
+            let prerequisite = report
                 .inventory
                 .prerequisites
                 .binary_search_by(|candidate| candidate.id.cmp(&step.id))
                 .map(|index| &report.inventory.prerequisites[index])
-                .expect("validated prerequisite selection reference"),
+                .expect("validated prerequisite selection reference");
+            let findings = prerequisite
+                .satisfies_finding_ids
+                .iter()
+                .map(|id| {
+                    report
+                        .inventory
+                        .findings
+                        .binary_search_by(|candidate| candidate.id.cmp(id))
+                        .map(|index| &report.inventory.findings[index])
+                        .expect("validated prerequisite finding reference")
+                })
+                .collect();
+            let actions = prerequisite
+                .blocked_action_ids
+                .iter()
+                .map(|id| {
+                    report
+                        .inventory
+                        .actions
+                        .binary_search_by(|candidate| candidate.id.cmp(id))
+                        .map(|index| &report.inventory.actions[index])
+                        .expect("validated prerequisite action reference")
+                })
+                .collect();
+            SelectedPrerequisite {
+                rank: index + 1,
+                prerequisite,
+                findings,
+                actions,
+            }
         })
         .collect()
 }
@@ -742,6 +953,178 @@ mod tests {
         let (detailed, hidden) = visible_findings(&finding_refs, true);
         assert_eq!(detailed.len(), 12);
         assert_eq!(hidden, 0);
+    }
+
+    #[test]
+    fn compact_prerequisite_is_actionable_without_a_completion_claim() {
+        let mut first = finding("finding-a", "interface-layout", "bind the first slot");
+        first.guaranteed_function_ids = vec!["btbb::guaranteed".to_owned()];
+        first.optimistic_function_ids =
+            vec!["btbb::guaranteed".to_owned(), "btbb::optimistic".to_owned()];
+        first.publication_scopes = vec!["ieee-publication".to_owned()];
+        let findings = [first];
+        let action = research::ResearchActionCatalogEntry {
+            id: "action-a".to_owned(),
+            kinds: vec!["interface-layout".to_owned()],
+            score: 10,
+            inspect_command:
+                "blobray inspect function btbb:worker --project project.toml --run-spec local.toml"
+                    .to_owned(),
+            estimated_cost: "low".to_owned(),
+            confidence: "medium".to_owned(),
+            score_breakdown: research::ResearchScoreBreakdown {
+                guaranteed_weight: 0,
+                optimistic_weight: 0,
+                marginal_weight: 0,
+                root_weight: 0,
+                capability_weight: 0,
+                verification_weight: 0,
+                publication_weight: 0,
+                cost_penalty: 0,
+                co_blocker_penalty: 0,
+            },
+            score_explanation: research::ResearchScoreExplanation {
+                benefit_points: 0,
+                effort_points: 1,
+                estimated_cost_units: 1,
+            },
+            finding_ids: vec!["finding-a".to_owned()],
+        };
+        let prerequisite = research::ResearchPrerequisiteCatalogEntry {
+            id: "prerequisite-a".to_owned(),
+            kind: research::ResearchPrerequisiteKind::CreateInterfaceAnchor,
+            reason: "the observation has no reviewed anchor".to_owned(),
+            path: Some("review/interfaces.toml".into()),
+            subject: "unmatched:btbb:callbacks::fact-7".to_owned(),
+            manual_action: "Create the reviewed anchor in review/interfaces.toml".to_owned(),
+            satisfies_finding_ids: vec!["finding-a".to_owned()],
+            blocked_action_ids: vec!["action-a".to_owned()],
+            guaranteed_unlock: 1,
+            optimistic_unlock: 2,
+            affected_scope_roots: vec!["btbb:root".to_owned()],
+            scopes: vec!["ieee-runtime".to_owned()],
+            benefit_points: 56,
+            estimated_cost_units: 3,
+        };
+        let selected = SelectedPrerequisite {
+            rank: 1,
+            prerequisite: &prerequisite,
+            findings: findings.iter().collect(),
+            actions: vec![&action],
+        };
+
+        let rendered = prerequisite_lines(&selected, false).join("\n");
+
+        assert!(
+            rendered
+                .contains("Required action: Create the reviewed anchor in review/interfaces.toml"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("Why high-profit: 56 benefit points"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("Affected: 2 functions; scopes ieee-runtime"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains(
+                "Next inspection: blobray inspect function btbb:worker --project project.toml --run-spec local.toml"
+            ),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains(
+                "Re-query exact finding: blobray project research next --finding finding-a --project project.toml --run-spec local.toml"
+            ),
+            "{rendered}"
+        );
+        assert!(rendered.contains("not a completion claim"), "{rendered}");
+        assert!(!rendered.contains("Subject:"), "{rendered}");
+    }
+
+    #[test]
+    fn detailed_prerequisite_exposes_full_ownership_and_impact() {
+        let mut finding = finding("finding-a", "interface-layout", "bind the slot");
+        finding.guaranteed_function_ids = vec!["btbb::producer".to_owned()];
+        finding.optimistic_function_ids = vec!["btbb::consumer".to_owned()];
+        finding.publication_scopes = vec!["ieee-publication".to_owned()];
+        finding.evidence_sites = vec![0x1000_0020, 0x1000_0010];
+        finding.evidence_channels = vec!["linked-ir".to_owned(), "interface".to_owned()];
+        let findings = [finding];
+        let action = research::ResearchActionCatalogEntry {
+            id: "action-a".to_owned(),
+            kinds: vec!["interface-layout".to_owned()],
+            score: 1,
+            inspect_command: "blobray inspect function btbb:consumer --project projects/radio.toml"
+                .to_owned(),
+            estimated_cost: "low".to_owned(),
+            confidence: "medium".to_owned(),
+            score_breakdown: research::ResearchScoreBreakdown {
+                guaranteed_weight: 0,
+                optimistic_weight: 0,
+                marginal_weight: 0,
+                root_weight: 0,
+                capability_weight: 0,
+                verification_weight: 0,
+                publication_weight: 0,
+                cost_penalty: 0,
+                co_blocker_penalty: 0,
+            },
+            score_explanation: research::ResearchScoreExplanation {
+                benefit_points: 0,
+                effort_points: 1,
+                estimated_cost_units: 1,
+            },
+            finding_ids: vec!["finding-a".to_owned()],
+        };
+        let prerequisite = research::ResearchPrerequisiteCatalogEntry {
+            id: "prerequisite-a".to_owned(),
+            kind: research::ResearchPrerequisiteKind::CreateInterfaceAnchor,
+            reason: "the exact producer is not bound".to_owned(),
+            path: Some("review/interfaces.toml".into()),
+            subject: "unmatched:btbb:bounded-data-address::fact-303".to_owned(),
+            manual_action: "Create an exact reviewed anchor".to_owned(),
+            satisfies_finding_ids: vec!["finding-a".to_owned()],
+            blocked_action_ids: vec!["action-a".to_owned()],
+            guaranteed_unlock: 1,
+            optimistic_unlock: 1,
+            affected_scope_roots: vec!["btbb:root".to_owned()],
+            scopes: vec!["ieee-runtime".to_owned()],
+            benefit_points: 53,
+            estimated_cost_units: 3,
+        };
+        let selected = SelectedPrerequisite {
+            rank: 1,
+            prerequisite: &prerequisite,
+            findings: findings.iter().collect(),
+            actions: vec![&action],
+        };
+
+        let rendered = prerequisite_lines(&selected, true).join("\n");
+
+        for expected in [
+            "ID: prerequisite-a",
+            "Kind: interface-anchor",
+            "Subject: unmatched:btbb:bounded-data-address::fact-303",
+            "Destination: review/interfaces.toml",
+            "Reason: the exact producer is not bound",
+            "Satisfied finding IDs: finding-a",
+            "Blocked action IDs: action-a",
+            "Affected functions: btbb::consumer, btbb::producer",
+            "Scopes: ieee-runtime",
+            "Affected scope roots: btbb:root",
+            "Publication scopes: ieee-publication",
+            "Evidence sites: 0x10000010, 0x10000020",
+            "Evidence channels: interface, linked-ir",
+            "Inspection path: blobray inspect function btbb:consumer --project projects/radio.toml",
+        ] {
+            assert!(
+                rendered.contains(expected),
+                "missing {expected:?}:\n{rendered}"
+            );
+        }
     }
 
     #[test]

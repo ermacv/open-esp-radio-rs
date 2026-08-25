@@ -17,6 +17,13 @@ Generated observations are not accepted facts and do not belong in these
 packs. A project should add a record only after a reviewer accepts a name,
 hardware semantic, ABI meaning or vendor defect.
 
+Register-model migration consumes the effective classification, applicability,
+evidence and semantic fingerprint from this crate without rewriting a pack.
+The read-only workflow is documented in
+[`../../docs/register-migration.md`](../../docs/register-migration.md); a
+duplicated base value is only an extraction candidate and never weakens the
+review requirement.
+
 Register-model consumers reserve `register-declaration` as the explicit
 authorization to add geometry that is absent from the reusable base model.
 Its MMIO subject owns address space, address and width; its string value names

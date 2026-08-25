@@ -20,6 +20,9 @@ logging and delay semantics remain outside this crate.
 
 The format and editing workflow are documented in
 [`../../docs/registers-and-pac.md`](../../docs/registers-and-pac.md).
+The read-only split planner and unchanged-effective-output migration process
+are documented in
+[`../../docs/register-migration.md`](../../docs/register-migration.md).
 
 An absent physical register is created only by a reviewed
 `register-declaration = "PERIPHERAL"` plus a `register-name` assertion for the

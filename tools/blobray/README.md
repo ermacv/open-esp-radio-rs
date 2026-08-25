@@ -207,6 +207,7 @@ format is human or JSON.
 - [Binary analysis, semantic IR and pseudo-Rust](docs/analysis-and-semantic-ir.md)
 - [Verification policy and evidence](docs/verification.md)
 - [Register discovery, SVD and PAC generation](docs/registers-and-pac.md)
+- [Register-model migration into generated base and sparse review](docs/register-migration.md)
 - [Architecture and responsibility boundaries](docs/architecture.md)
 - [Persistent formats and schemas](docs/formats.md)
 - [Read-only TUI](docs/tui.md)

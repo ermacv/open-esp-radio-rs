@@ -406,7 +406,9 @@ maximum = 0x3fff
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "EVENT_STATUS"
+# Stable non-semantic base identity. The target reviewed pack supplies
+# EVENT_STATUS for the applicable ESP32-S31 revision.
+name = "WORD_064_BASE"
 description = "Fourteen-bit event snapshot read by the public LL. Its clear accessor performs a masked self-write (`status &= events`), but no write-one-to-clear or other modified-write semantic is established. The reviewed safe model therefore publishes observation only until HIL proves the clearing contract."
 addressOffset = 0x064
 size = 32
@@ -1331,7 +1333,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "IEEE802154_MAC.EVENT_STATUS"
+entity = "IEEE802154_MAC.WORD_064_BASE"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",

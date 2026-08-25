@@ -280,6 +280,7 @@ pub(crate) enum RevisionLedgerHealth {
     BaselineMissing,
     LegacyScope,
     MigrationReviewPending,
+    RevisionReviewPending,
     Ready,
     Invalid,
 }
@@ -801,9 +802,12 @@ pub(crate) fn inspect_ledger(
             let snapshot = load(&snapshot_path(manifest, &entry.snapshot)?)?;
             if snapshot.schema_version == LEGACY_REVISION_SCHEMA {
                 RevisionLedgerHealth::LegacyScope
-            } else if ledger.baseline.as_deref() != Some(current) && entry.scope_migration.is_some()
-            {
-                RevisionLedgerHealth::MigrationReviewPending
+            } else if ledger.baseline.as_deref() != Some(current) {
+                if entry.scope_migration.is_some() {
+                    RevisionLedgerHealth::MigrationReviewPending
+                } else {
+                    RevisionLedgerHealth::RevisionReviewPending
+                }
             } else {
                 RevisionLedgerHealth::Ready
             }
@@ -819,6 +823,10 @@ pub(crate) fn inspect_ledger(
             ),
             RevisionLedgerHealth::MigrationReviewPending => Some(
                 "schema-2 vendor-scope migration is current but not accepted; review the legacy/current diff and rebase, then run `project revision prepare-update --accept-current`"
+                    .to_owned(),
+            ),
+            RevisionLedgerHealth::RevisionReviewPending => Some(
+                "current revision has not been accepted as the new baseline; review the baseline/current diff and rebase, then run `project revision prepare-update --accept-current`"
                     .to_owned(),
             ),
             _ => None,
@@ -2886,6 +2894,44 @@ mod tests {
             inspect_ledger(&manifest, "fixture", true).health,
             RevisionLedgerHealth::Ready
         );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn unaccepted_ordinary_revision_is_reported_as_review_pending() {
+        let (directory, manifest) = temporary_manifest("ledger-review-pending");
+        let baseline = snapshot("vendor-1", vec![function("stable", "a")]);
+        persist_snapshot(
+            &manifest,
+            &baseline,
+            &default_path(&manifest, &baseline.name).unwrap(),
+            false,
+        )
+        .unwrap();
+        let current = snapshot("vendor-2", vec![function("stable", "changed")]);
+        persist_snapshot(
+            &manifest,
+            &current,
+            &default_path(&manifest, &current.name).unwrap(),
+            false,
+        )
+        .unwrap();
+
+        for deep in [false, true] {
+            let inspection = inspect_ledger(&manifest, "fixture", deep);
+            assert_eq!(
+                inspection.health,
+                RevisionLedgerHealth::RevisionReviewPending
+            );
+            assert_eq!(inspection.baseline.as_deref(), Some("vendor-1"));
+            assert_eq!(inspection.current.as_deref(), Some("vendor-2"));
+            assert!(
+                inspection
+                    .diagnostic
+                    .as_deref()
+                    .is_some_and(|diagnostic| diagnostic.contains("diff and rebase"))
+            );
+        }
         std::fs::remove_dir_all(directory).unwrap();
     }
 

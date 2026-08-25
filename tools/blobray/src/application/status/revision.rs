@@ -13,7 +13,8 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> model::Phase {
         RevisionLedgerHealth::Missing
         | RevisionLedgerHealth::BaselineMissing
         | RevisionLedgerHealth::LegacyScope
-        | RevisionLedgerHealth::MigrationReviewPending => model::Readiness::Incomplete,
+        | RevisionLedgerHealth::MigrationReviewPending
+        | RevisionLedgerHealth::RevisionReviewPending => model::Readiness::Incomplete,
         RevisionLedgerHealth::Invalid => model::Readiness::Invalid,
     };
     let mut component = model::Component::new("durable-revision-baseline", status)
@@ -37,7 +38,8 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> model::Phase {
                     FollowUpRequirements::RUN_SPEC,
                 )
             ),
-            RevisionLedgerHealth::MigrationReviewPending => format!(
+            RevisionLedgerHealth::MigrationReviewPending
+            | RevisionLedgerHealth::RevisionReviewPending => format!(
                 "review revision diff/rebase; then run {} --accept-current",
                 context.follow_up_command(
                     "project revision prepare-update",

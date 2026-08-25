@@ -226,6 +226,10 @@ record a new preflight. `prepare-update --check` is read-only and verifies an
 existing marker. A snapshot with changed artifact identities is rejected
 unless its predecessor has a matching marker, so cleanup or an accidental
 binding edit cannot silently erase the old correspondence map.
+While `baseline` and `current` differ, `project status` and deep doctor report
+`revision-review-pending` (or the more specific
+`migration-review-pending`) instead of `ready`; a captured snapshot is not an
+accepted review decision.
 
 For a legacy schema-1 current snapshot, `project status`/`doctor` report a
 scope migration. Keep the old immutable file, add an explicit map bound to its

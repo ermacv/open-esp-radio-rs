@@ -29,11 +29,11 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                     ),
             );
         }
-        Health::LegacyScope | Health::MigrationReviewPending => {
-            let status = if inspection.health == Health::MigrationReviewPending {
-                "migration-review-pending"
-            } else {
-                "legacy-scope"
+        Health::LegacyScope | Health::MigrationReviewPending | Health::RevisionReviewPending => {
+            let status = match inspection.health {
+                Health::MigrationReviewPending => "migration-review-pending",
+                Health::RevisionReviewPending => "revision-review-pending",
+                _ => "legacy-scope",
             };
             report.warning(
                 inspection

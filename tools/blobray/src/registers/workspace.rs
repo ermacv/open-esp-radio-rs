@@ -18,6 +18,7 @@ pub(crate) fn load_effective_register_model(
     if !paths.reviewed_knowledge.is_empty() {
         let knowledge =
             open_radio_vendor_review::ReviewKnowledge::load_all(&paths.reviewed_knowledge)
+                .and_then(|knowledge| knowledge.select_for(&paths.review_context))
                 .map_err(|error| {
                     crate::Error::invalid(format!(
                         "cannot compose reviewed knowledge over register model: {error}"
@@ -503,6 +504,10 @@ locator = "name"
             lint_pack: None,
             evidence_catalogs: Vec::new(),
             reviewed_knowledge: vec![reviewed],
+            review_context: open_radio_vendor_review::ApplicabilityContext {
+                chips: vec!["fixture-chip".to_owned()],
+                ..open_radio_vendor_review::ApplicabilityContext::default()
+            },
         };
 
         let workspace = ProjectRegisterWorkspace::load(&paths).unwrap();

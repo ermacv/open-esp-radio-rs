@@ -49,6 +49,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             "target-spec",
             "ecosystem-packs",
             "chip-pack",
+            "applicability",
             "analysis-provider",
             "reviewed-knowledge",
             "run-spec",
@@ -111,6 +112,9 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     let chip_pack = optional_string(&document, "chip-pack", source)?
         .map(|path| ChipPack::load(&resolve_path(base, &path)))
         .transpose()?;
+    let project_applicability = load_project_applicability(&document, source)?;
+    let review_context =
+        compose_review_context(&ecosystem_packs, chip_pack.as_ref(), &project_applicability);
     let analysis_provider = optional_string(&document, "analysis-provider", source)?;
     if analysis_provider
         .as_ref()
@@ -163,6 +167,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     )?;
     let reviewed_knowledge = load_reviewed_knowledge(&document, base, source)?;
     open_radio_vendor_review::ReviewKnowledge::load_all(&reviewed_knowledge)
+        .and_then(|knowledge| knowledge.select_for(&review_context))
         .map_err(|error| source.item(document.get("reviewed-knowledge"), error.to_string()))?;
     let ir_profiles = load_ir_profiles(&document, base, source)?;
     let symbol_inventory = load_symbol_inventory(&document, base, &ir_profiles, source)?;
@@ -355,6 +360,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 lint_pack,
                 evidence_catalogs,
                 reviewed_knowledge: reviewed_knowledge.clone(),
+                review_context: review_context.clone(),
             })
         })
         .transpose()?;
@@ -594,6 +600,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         memory_map,
         svd_paths,
         reviewed_knowledge,
+        review_context,
         symbol_inventory,
         navigation_index,
         code,
@@ -606,6 +613,119 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     };
     crate::verification::policy::validate_project(&project)?;
     Ok(project)
+}
+
+fn load_project_applicability(
+    document: &Table,
+    source: ProjectSource<'_>,
+) -> Result<open_radio_vendor_review::Applicability> {
+    let Some(item) = document.get("applicability") else {
+        return Ok(open_radio_vendor_review::Applicability::default());
+    };
+    let table = item
+        .as_table()
+        .ok_or_else(|| source.item(Some(item), "project manifest applicability must be a table"))?;
+    reject_unknown_keys(
+        table,
+        &["artifact-lineages", "artifacts"],
+        "project applicability",
+        source,
+    )?;
+    Ok(open_radio_vendor_review::Applicability {
+        artifact_lineages: table_string_array(
+            table,
+            "artifact-lineages",
+            "project applicability",
+            source,
+            false,
+        )?,
+        artifacts: load_project_artifacts(table, source)?,
+        ..open_radio_vendor_review::Applicability::default()
+    })
+}
+
+fn load_project_artifacts(
+    table: &Table,
+    source: ProjectSource<'_>,
+) -> Result<Vec<open_radio_vendor_review::ArtifactApplicability>> {
+    let Some(item) = table.get("artifacts") else {
+        return Ok(Vec::new());
+    };
+    let values = item.as_array().ok_or_else(|| {
+        source.item(
+            Some(item),
+            "project applicability artifacts must be an array of inline tables",
+        )
+    })?;
+    let mut artifacts = Vec::with_capacity(values.len());
+    let mut unique = std::collections::BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        let artifact = value.as_inline_table().ok_or_else(|| {
+            source.error(
+                value.span(),
+                format!("project applicability artifacts[{index}] must be an inline table"),
+            )
+        })?;
+        for (key, value) in artifact.iter() {
+            if !matches!(key, "source" | "sha256") {
+                return Err(source.error(
+                    value.span(),
+                    format!("unknown project applicability artifacts[{index}] key {key:?}"),
+                ));
+            }
+        }
+        let required = |key: &str| -> Result<String> {
+            artifact
+                .get(key)
+                .and_then(toml_edit::Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| {
+                    source.error(
+                        value.span(),
+                        format!(
+                            "project applicability artifacts[{index}] requires non-empty {key:?}"
+                        ),
+                    )
+                })
+        };
+        let artifact = open_radio_vendor_review::ArtifactApplicability {
+            source: required("source")?,
+            sha256: required("sha256")?,
+        };
+        if !unique.insert(artifact.clone()) {
+            return Err(source.error(
+                value.span(),
+                format!("duplicate project applicability artifact at index {index}"),
+            ));
+        }
+        artifacts.push(artifact);
+    }
+    Ok(artifacts)
+}
+
+fn compose_review_context(
+    ecosystem_packs: &[EcosystemPack],
+    chip_pack: Option<&ChipPack>,
+    project: &open_radio_vendor_review::Applicability,
+) -> open_radio_vendor_review::ApplicabilityContext {
+    let ecosystems = ecosystem_packs
+        .iter()
+        .flat_map(|pack| pack.applicability.ecosystems.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    open_radio_vendor_review::ApplicabilityContext {
+        ecosystems,
+        chips: chip_pack
+            .map(|pack| pack.applicability.chips.clone())
+            .unwrap_or_default(),
+        chip_revisions: chip_pack
+            .map(|pack| pack.applicability.chip_revisions.clone())
+            .unwrap_or_default(),
+        artifact_lineages: project.artifact_lineages.clone(),
+        artifacts: project.artifacts.clone(),
+    }
 }
 
 fn load_reviewed_knowledge(

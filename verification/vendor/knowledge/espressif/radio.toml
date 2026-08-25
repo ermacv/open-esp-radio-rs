@@ -9,3 +9,6 @@ knowledge-packs = [
 ]
 capability-packs = ["capabilities.toml"]
 interface-template-packs = ["interface-templates.toml"]
+
+[applicability]
+ecosystems = ["esp-idf"]

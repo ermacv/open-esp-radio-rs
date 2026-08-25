@@ -63,8 +63,11 @@ model before inspection, validation, SVD/PAC publication and cache-key
 construction. `[registers].model` may override the base for an experiment, but
 normally `chip.toml` owns `register-model` and the project only selects sparse
 review packs. Conflicting assertions with overlapping applicability fail
-closed. Complete SVD-shaped geometry is generated/reusable input, not the
-normal unit of a human change.
+closed during merge. Disjoint revision facts are filtered through the
+ecosystem/chip/project applicability composition before application; missing
+revision context and a context that selects multiple values for one
+subject/kind also fail closed. Complete SVD-shaped geometry is
+generated/reusable input, not the normal unit of a human change.
 
 ## Normal workflow
 

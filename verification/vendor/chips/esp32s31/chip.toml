@@ -6,3 +6,7 @@ svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
 register-model = "registers/device.toml"
 knowledge-provider = "esp32s31-rev0-chip-knowledge-v1"
 knowledge-packs = []
+
+[applicability]
+chips = ["esp32s31"]
+chip-revisions = ["rev0"]

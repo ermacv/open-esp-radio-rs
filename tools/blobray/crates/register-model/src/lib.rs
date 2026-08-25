@@ -468,6 +468,7 @@ impl RegisterModel {
         knowledge: &ReviewKnowledge,
     ) -> Result<ReviewApplicationSummary> {
         let mut assertions = knowledge.assertions().values().collect::<Vec<_>>();
+        ensure_single_applicable_register_fact(&assertions, &self.address_space)?;
         assertions.sort_by_key(|assertion| (assertion_priority(&assertion.kind), &assertion.id));
         let declarations = prepare_register_declarations(&assertions, &self.address_space)?;
         for declaration in &declarations {
@@ -718,6 +719,36 @@ impl RegisterModel {
     pub fn validate_lints(&self, pack: &RegisterLintPack) -> Result<()> {
         pack.validate_device(&self.device)
     }
+}
+
+fn ensure_single_applicable_register_fact(
+    assertions: &[&EffectiveAssertion],
+    address_space: &str,
+) -> Result<()> {
+    let mut selected = BTreeMap::<(&str, &str), &str>::new();
+    for assertion in assertions
+        .iter()
+        .copied()
+        .filter(|assertion| is_register_assertion(&assertion.kind))
+    {
+        let subject = RegisterSubject::parse(&assertion.subject).map_err(|reason| {
+            Error::message(format!(
+                "reviewed assertion {:?} has invalid register subject: {reason}",
+                assertion.id
+            ))
+        })?;
+        if subject.address_space != address_space {
+            continue;
+        }
+        let key = (assertion.subject.as_str(), assertion.kind.as_str());
+        if let Some(previous) = selected.insert(key, &assertion.id) {
+            return Err(Error::message(format!(
+                "reviewed assertions {previous:?} and {:?} both target {}/{}; select reviewed knowledge for one explicit applicability context before applying it",
+                assertion.id, assertion.subject, assertion.kind
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1769,6 +1800,53 @@ locator = "function"
                 .collect::<Vec<_>>(),
             ["RADIO.EVENT_STATUS", "RADIO.EVENT_STATUS.PENDING"]
         );
+    }
+
+    #[test]
+    fn unselected_revision_facts_cannot_override_each_other() {
+        let (directory, mut model) = fixture_model("revision-selection", None);
+        let make = |id: &str, revision: &str, value: &str| {
+            ReviewPack::from_toml(&format!(
+                r#"schema = 1
+id = "{id}"
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+[applies-to]
+chip-revisions = ["{revision}"]
+[[assertions]]
+id = "{id}.name"
+subject = "mmio:cpu:0x1000/32"
+kind = "register-name"
+value = "{value}"
+[[assertions.evidence]]
+source = "FIXTURE"
+locator = "manual"
+"#
+            ))
+            .unwrap()
+        };
+        let knowledge = ReviewKnowledge::merge([
+            make("fixture.rev0", "rev0", "STATUS_REV0"),
+            make("fixture.rev1", "rev1", "STATUS_REV1"),
+        ])
+        .unwrap();
+
+        let error = model.apply_review_knowledge(&knowledge).unwrap_err();
+        assert!(error.to_string().contains("explicit applicability context"));
+
+        let selected = knowledge
+            .select_for(&open_radio_vendor_review::ApplicabilityContext {
+                chip_revisions: vec!["rev0".to_owned()],
+                ..open_radio_vendor_review::ApplicabilityContext::default()
+            })
+            .unwrap();
+        model.apply_review_knowledge(&selected).unwrap();
+        let (svd, _) = model.render_svd().unwrap();
+        fs::remove_dir_all(directory).unwrap();
+        assert!(svd.contains("<name>STATUS_REV0</name>"));
+        assert!(!svd.contains("STATUS_REV1"));
     }
 
     #[test]

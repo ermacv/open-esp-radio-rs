@@ -45,6 +45,9 @@ pub enum Error {
         left: String,
         right: String,
     },
+
+    #[error("cannot select reviewed knowledge for the active applicability context: {reason}")]
+    Selection { reason: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -71,6 +74,26 @@ pub struct ArtifactApplicability {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Applicability {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ecosystems: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chips: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chip_revisions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifact_lineages: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<ArtifactApplicability>,
+}
+
+/// Concrete identities selected by a project composition.
+///
+/// Unlike [`Applicability`], an empty context dimension is not a wildcard when
+/// a reviewed fact constrains that dimension. Selection fails closed instead
+/// of guessing which revision or artifact the caller intended.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ApplicabilityContext {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ecosystems: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -365,6 +388,42 @@ impl ReviewKnowledge {
         &self.vendor_bugs
     }
 
+    /// Select only facts compatible with one explicit project composition.
+    ///
+    /// A constrained fact cannot be selected when the corresponding context
+    /// dimension is absent. If a context is broad enough to select two facts
+    /// for the same subject/kind, selection is ambiguous and fails closed.
+    pub fn select_for(&self, context: &ApplicabilityContext) -> Result<Self> {
+        validate_context(context)?;
+        let mut assertions = BTreeMap::new();
+        let mut semantic = BTreeMap::<(String, String), String>::new();
+        for assertion in self.assertions.values() {
+            if !matches_context(&assertion.id, &assertion.applies_to, context)? {
+                continue;
+            }
+            let key = (assertion.subject.clone(), assertion.kind.clone());
+            if let Some(previous) = semantic.insert(key.clone(), assertion.id.clone()) {
+                return Err(Error::Selection {
+                    reason: format!(
+                        "assertions {previous:?} and {:?} both match {}/{}, so the context is ambiguous",
+                        assertion.id, key.0, key.1
+                    ),
+                });
+            }
+            assertions.insert(assertion.id.clone(), assertion.clone());
+        }
+        let mut vendor_bugs = BTreeMap::new();
+        for bug in self.vendor_bugs.values() {
+            if matches_context(&bug.id, &bug.applies_to, context)? {
+                vendor_bugs.insert(bug.id.clone(), bug.clone());
+            }
+        }
+        Ok(Self {
+            assertions,
+            vendor_bugs,
+        })
+    }
+
     pub fn semantic_fingerprint(&self) -> String {
         let encoded = serde_json::to_vec(self).expect("review knowledge is JSON serializable");
         let mut hash = Sha256::new();
@@ -375,6 +434,69 @@ impl ReviewKnowledge {
             .map(|byte| format!("{byte:02x}"))
             .collect()
     }
+}
+
+fn validate_context(context: &ApplicabilityContext) -> Result<()> {
+    let applicability = Applicability {
+        ecosystems: context.ecosystems.clone(),
+        chips: context.chips.clone(),
+        chip_revisions: context.chip_revisions.clone(),
+        artifact_lineages: context.artifact_lineages.clone(),
+        artifacts: context.artifacts.clone(),
+    };
+    validate_applicability("<selection>", "context", &applicability)
+}
+
+fn matches_context(
+    record: &str,
+    applicability: &Applicability,
+    context: &ApplicabilityContext,
+) -> Result<bool> {
+    let dimensions = [
+        ("ecosystems", &applicability.ecosystems, &context.ecosystems),
+        ("chips", &applicability.chips, &context.chips),
+        (
+            "chip-revisions",
+            &applicability.chip_revisions,
+            &context.chip_revisions,
+        ),
+        (
+            "artifact-lineages",
+            &applicability.artifact_lineages,
+            &context.artifact_lineages,
+        ),
+    ];
+    let mut missing = Vec::new();
+    for (name, constraint, active) in dimensions {
+        if constraint.is_empty() {
+            continue;
+        }
+        if active.is_empty() {
+            missing.push(name);
+        } else if !constraint.iter().any(|value| active.contains(value)) {
+            return Ok(false);
+        }
+    }
+    if !applicability.artifacts.is_empty() {
+        if context.artifacts.is_empty() {
+            missing.push("artifacts");
+        } else if !applicability
+            .artifacts
+            .iter()
+            .any(|artifact| context.artifacts.contains(artifact))
+        {
+            return Ok(false);
+        }
+    }
+    if !missing.is_empty() {
+        return Err(Error::Selection {
+            reason: format!(
+                "assertion or vendor bug {record:?} constrains {}, but the project composition does not provide that context",
+                missing.join(", ")
+            ),
+        });
+    }
+    Ok(true)
 }
 
 fn validate_pack(pack: &ReviewPack) -> Result<()> {
@@ -761,7 +883,7 @@ locator = "status register offset"
     }
 
     #[test]
-    fn disjoint_artifact_revisions_may_carry_different_values() {
+    fn disjoint_chip_revisions_may_carry_different_values() {
         let make = |id: &str, revision: &str, value: &str| {
             ReviewPack::from_toml(&format!(
                 r#"
@@ -791,6 +913,59 @@ locator = "review"
         ])
         .unwrap();
         assert_eq!(merged.assertions().len(), 2);
+
+        let rev_a = merged
+            .select_for(&ApplicabilityContext {
+                chip_revisions: vec!["a".to_owned()],
+                ..ApplicabilityContext::default()
+            })
+            .unwrap();
+        assert_eq!(rev_a.assertions().len(), 1);
+        assert_eq!(
+            rev_a.assertions()["rev-a.fact"].value,
+            AssertionValue::String("CONTROL_A".to_owned())
+        );
+
+        let ambiguous = merged
+            .select_for(&ApplicabilityContext {
+                chip_revisions: vec!["a".to_owned(), "b".to_owned()],
+                ..ApplicabilityContext::default()
+            })
+            .unwrap_err();
+        assert!(ambiguous.to_string().contains("context is ambiguous"));
+
+        let missing = merged
+            .select_for(&ApplicabilityContext::default())
+            .unwrap_err();
+        assert!(missing.to_string().contains("chip-revisions"));
+    }
+
+    #[test]
+    fn exact_artifact_applicability_is_an_allowed_identity_set() {
+        let digest_a = "a".repeat(64);
+        let digest_b = "b".repeat(64);
+        let applicability = Applicability {
+            artifacts: vec![
+                ArtifactApplicability {
+                    source: "blob".to_owned(),
+                    sha256: digest_a.clone(),
+                },
+                ArtifactApplicability {
+                    source: "blob".to_owned(),
+                    sha256: digest_b,
+                },
+            ],
+            ..Applicability::default()
+        };
+        let selected = ApplicabilityContext {
+            artifacts: vec![ArtifactApplicability {
+                source: "blob".to_owned(),
+                sha256: digest_a,
+            }],
+            ..ApplicabilityContext::default()
+        };
+
+        assert!(matches_context("artifact.fact", &applicability, &selected).unwrap());
     }
 
     #[test]

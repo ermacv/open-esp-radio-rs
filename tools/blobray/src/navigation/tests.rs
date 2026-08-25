@@ -174,6 +174,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         memory_map: None,
         svd_paths: Vec::new(),
         reviewed_knowledge: Vec::new(),
+        review_context: open_radio_vendor_review::ApplicabilityContext::default(),
         symbol_inventory: Some(SymbolInventorySpec {
             output: symbols_path,
         }),

@@ -70,6 +70,102 @@ fn register_workspace_inherits_the_reusable_chip_model() {
 }
 
 #[test]
+fn project_composition_selects_one_reviewed_chip_revision_fail_closed() {
+    const ARTIFACT_SHA256: &str =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let directory = std::env::temp_dir().join(format!(
+        "open-radio-blobray-review-context-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(directory.join("reviewed")).unwrap();
+    std::fs::write(
+        directory.join("ecosystem.toml"),
+        "schema = 3\nid = \"fixture-ecosystem\"\nknowledge-packs = []\ncapability-packs = []\ninterface-template-packs = []\n[applicability]\necosystems = [\"esp-idf\"]\n",
+    )
+    .unwrap();
+    let write_chip = |revisions: &str| {
+        std::fs::write(
+            directory.join("chip.toml"),
+            format!(
+                "schema = 3\nid = \"fixture-chip\"\nregister-model = \"registers/device.toml\"\n[applicability]\nchips = [\"esp32s31\"]\nchip-revisions = {revisions}\n"
+            ),
+        )
+        .unwrap();
+    };
+    write_chip("[\"rev0\"]");
+    let make_pack = |id: &str, revision: &str, name: &str| {
+        std::fs::write(
+            directory.join(format!("reviewed/{id}.toml")),
+            format!(
+                r#"schema = 1
+id = "{id}"
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+[applies-to]
+ecosystems = ["esp-idf"]
+chips = ["esp32s31"]
+chip-revisions = ["{revision}"]
+artifact-lineages = ["fixture-radio"]
+artifacts = [{{ source = "fixture-blob", sha256 = "{ARTIFACT_SHA256}" }}]
+[[assertions]]
+id = "{id}.name"
+subject = "mmio:cpu:0x1000/32"
+kind = "register-name"
+value = "{name}"
+[[assertions.evidence]]
+source = "FIXTURE"
+locator = "manual"
+"#
+            ),
+        )
+        .unwrap();
+    };
+    make_pack("rev0", "rev0", "CONTROL_REV0");
+    make_pack("rev1", "rev1", "CONTROL_REV1");
+    std::fs::write(
+        directory.join(DEFAULT_PROJECT_MANIFEST),
+        format!(
+            r#"schema = 3
+id = "fixture"
+target-spec = "target.toml"
+ecosystem-packs = ["ecosystem.toml"]
+chip-pack = "chip.toml"
+[applicability]
+artifact-lineages = ["fixture-radio"]
+artifacts = [{{ source = "fixture-blob", sha256 = "{ARTIFACT_SHA256}" }}]
+[reviewed-knowledge]
+packs = ["reviewed/rev0.toml", "reviewed/rev1.toml"]
+[registers]
+facts = "generated/mmio.json"
+owned-ranges = ["radio"]
+"#
+        ),
+    )
+    .unwrap();
+
+    let project = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap();
+    let context = &project.registers.unwrap().review_context;
+    assert_eq!(context.ecosystems, ["esp-idf"]);
+    assert_eq!(context.chips, ["esp32s31"]);
+    assert_eq!(context.chip_revisions, ["rev0"]);
+    assert_eq!(context.artifact_lineages, ["fixture-radio"]);
+    assert_eq!(context.artifacts.len(), 1);
+    assert_eq!(context.artifacts[0].source, "fixture-blob");
+    assert_eq!(context.artifacts[0].sha256, ARTIFACT_SHA256);
+
+    write_chip("[\"rev0\", \"rev1\"]");
+    let ambiguous = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap_err();
+    assert!(ambiguous.to_string().contains("context is ambiguous"));
+
+    write_chip("[]");
+    let missing = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap_err();
+    assert!(missing.to_string().contains("chip-revisions"));
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn resolves_composed_specs_relative_to_the_project() {
     let directory =
         std::env::temp_dir().join(format!("open-radio-blobray-project-{}", std::process::id()));
@@ -287,6 +383,7 @@ locator = "review"
             lint_pack: Some(directory.join("registers/lints.toml")),
             evidence_catalogs: vec![directory.join("registers/evidence.toml")],
             reviewed_knowledge: vec![directory.join("reviewed/radio.toml")],
+            review_context: open_radio_vendor_review::ApplicabilityContext::default(),
         })
     );
     assert_eq!(

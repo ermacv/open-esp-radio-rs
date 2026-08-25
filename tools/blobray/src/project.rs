@@ -122,6 +122,7 @@ pub(crate) struct RegisterWorkspacePaths {
     pub(crate) lint_pack: Option<PathBuf>,
     pub(crate) evidence_catalogs: Vec<PathBuf>,
     pub(crate) reviewed_knowledge: Vec<PathBuf>,
+    pub(crate) review_context: open_radio_vendor_review::ApplicabilityContext,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -244,6 +245,7 @@ pub(crate) struct ProjectSpec {
     /// Sparse human-reviewed facts. Generated observations and complete
     /// register models are deliberately not stored in these packs.
     pub(crate) reviewed_knowledge: Vec<PathBuf>,
+    pub(crate) review_context: open_radio_vendor_review::ApplicabilityContext,
     pub(crate) symbol_inventory: Option<SymbolInventorySpec>,
     pub(crate) navigation_index: Option<NavigationIndexSpec>,
     pub(crate) code: Option<CodeWorkspacePaths>,

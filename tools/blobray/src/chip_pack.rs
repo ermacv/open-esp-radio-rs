@@ -19,6 +19,7 @@ use crate::{
 pub(crate) struct ChipPack {
     pub(crate) path: PathBuf,
     pub(crate) id: String,
+    pub(crate) applicability: open_radio_vendor_review::Applicability,
     pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) register_model: Option<PathBuf>,
@@ -35,6 +36,8 @@ pub(crate) struct ChipPack {
 struct ChipDocument {
     schema: u32,
     id: String,
+    #[serde(default)]
+    applicability: open_radio_vendor_review::Applicability,
     #[serde(default)]
     memory_map: Option<String>,
     #[serde(default)]
@@ -68,6 +71,7 @@ impl ChipPack {
             )));
         }
         validate_id(&document.id)?;
+        validate_applicability(&path, &document.applicability)?;
         if document
             .knowledge_provider
             .as_ref()
@@ -108,6 +112,7 @@ impl ChipPack {
         Ok(Self {
             path,
             id: document.id,
+            applicability: document.applicability,
             memory_map,
             svd_paths,
             register_model,
@@ -132,6 +137,37 @@ impl ChipPack {
         }
         Ok(())
     }
+}
+
+fn validate_applicability(
+    path: &Path,
+    applicability: &open_radio_vendor_review::Applicability,
+) -> Result<()> {
+    if !applicability.ecosystems.is_empty()
+        || !applicability.artifact_lineages.is_empty()
+        || !applicability.artifacts.is_empty()
+    {
+        return Err(crate::Error::invalid(format!(
+            "chip pack {} applicability may contain only chips and chip-revisions",
+            path.display()
+        )));
+    }
+    for (name, values) in [
+        ("chips", &applicability.chips),
+        ("chip-revisions", &applicability.chip_revisions),
+    ] {
+        let mut unique = BTreeSet::new();
+        if values
+            .iter()
+            .any(|value| value.trim().is_empty() || !unique.insert(value))
+        {
+            return Err(crate::Error::invalid(format!(
+                "chip pack {} applicability {name} must be non-empty and unique",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn resolve_unique_paths(base: &Path, values: &[String], key: &str) -> Result<Vec<PathBuf>> {

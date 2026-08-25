@@ -361,6 +361,7 @@ mod tests {
             memory_map: None,
             svd_paths: Vec::new(),
             reviewed_knowledge: Vec::new(),
+            review_context: open_radio_vendor_review::ApplicabilityContext::default(),
             symbol_inventory: None,
             navigation_index: None,
             code: None,

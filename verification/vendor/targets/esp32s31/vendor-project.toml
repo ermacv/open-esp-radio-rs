@@ -12,6 +12,9 @@ chip-pack = "../../chips/esp32s31/chip.toml"
 analysis-provider = "esp32s31-radio-knowledge-v1"
 verification-addon = "verification-addon.toml"
 
+[applicability]
+artifact-lineages = ["esp32s31-radio"]
+
 [reviewed-knowledge]
 packs = ["reviewed/ieee802154.toml"]
 

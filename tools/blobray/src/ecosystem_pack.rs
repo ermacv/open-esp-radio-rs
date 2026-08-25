@@ -18,6 +18,7 @@ use crate::{
 pub(crate) struct EcosystemPack {
     pub(crate) path: PathBuf,
     pub(crate) id: String,
+    pub(crate) applicability: open_radio_vendor_review::Applicability,
     pub(crate) knowledge_packs: Vec<PathBuf>,
     pub(crate) knowledge_operations: usize,
     pub(crate) capability_packs: Vec<PathBuf>,
@@ -47,6 +48,7 @@ impl EcosystemPack {
         let id = required_string(document, "id", source)?;
         validate_id(&id, "ecosystem pack")
             .map_err(|message| source.table_key(document, "id", message))?;
+        let applicability = load_applicability(document, source)?;
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         let catalogs = string_array(document, "knowledge-packs", source)?;
         let values = document
@@ -123,6 +125,7 @@ impl EcosystemPack {
         Ok(Self {
             path: path.to_owned(),
             id,
+            applicability,
             knowledge_packs,
             knowledge_operations,
             capability_packs,
@@ -136,12 +139,52 @@ fn reject_unknown_keys(document: &Table, source: ManifestContext<'_>) -> Result<
     for (key, item) in document.iter() {
         if !matches!(
             key,
-            "schema" | "id" | "knowledge-packs" | "capability-packs" | "interface-template-packs"
+            "schema"
+                | "id"
+                | "applicability"
+                | "knowledge-packs"
+                | "capability-packs"
+                | "interface-template-packs"
         ) {
             return Err(source.item(Some(item), format!("unknown ecosystem pack key {key:?}")));
         }
     }
     Ok(())
+}
+
+fn load_applicability(
+    document: &Table,
+    source: ManifestContext<'_>,
+) -> Result<open_radio_vendor_review::Applicability> {
+    let Some(item) = document.get("applicability") else {
+        return Ok(open_radio_vendor_review::Applicability::default());
+    };
+    let table = item
+        .as_table()
+        .ok_or_else(|| source.item(Some(item), "ecosystem pack applicability must be a table"))?;
+    for (key, item) in table.iter() {
+        if key != "ecosystems" {
+            return Err(source.item(
+                Some(item),
+                format!("unknown ecosystem pack applicability key {key:?}"),
+            ));
+        }
+    }
+    let ecosystems = string_array(table, "ecosystems", source)?;
+    let mut unique = BTreeSet::new();
+    if ecosystems
+        .iter()
+        .any(|value| value.trim().is_empty() || !unique.insert(value))
+    {
+        return Err(source.item(
+            Some(item),
+            "ecosystem pack applicability ecosystems must be non-empty and unique",
+        ));
+    }
+    Ok(open_radio_vendor_review::Applicability {
+        ecosystems,
+        ..open_radio_vendor_review::Applicability::default()
+    })
 }
 
 fn resolve_pack_paths(

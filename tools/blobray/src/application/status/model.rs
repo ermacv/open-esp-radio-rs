@@ -197,6 +197,112 @@ pub enum EvidenceFreshness {
     Stale,
 }
 
+/// Research progress is deliberately separate from artifact readiness.
+///
+/// A review report can be present and structurally valid while still exposing
+/// hundreds of unresolved root causes. Calling that state merely `ready`
+/// makes the normal project-status projection easy to misread.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ResearchCompleteness {
+    Complete,
+    Open,
+    Unknown,
+    NotConfigured,
+    Invalid,
+}
+
+impl ResearchCompleteness {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Open => "open",
+            Self::Unknown => "unknown",
+            Self::NotConfigured => "not-configured",
+            Self::Invalid => "invalid",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ResearchProgress {
+    pub status: ResearchCompleteness,
+    pub scopes: usize,
+    pub inventory_complete: usize,
+    pub inventory_open: usize,
+    pub root_causes: usize,
+    pub publication_coverage_gaps: usize,
+}
+
+impl ResearchProgress {
+    fn collect(phases: &[Phase]) -> Self {
+        let Some(component) =
+            phases
+                .iter()
+                .find(|phase| phase.name == "review")
+                .and_then(|phase| {
+                    phase
+                        .components
+                        .iter()
+                        .find(|component| component.name == "scopes")
+                })
+        else {
+            return Self::empty(ResearchCompleteness::NotConfigured);
+        };
+        if component.status == Readiness::Invalid {
+            return Self::empty(ResearchCompleteness::Invalid);
+        }
+        if component.status == Readiness::NotConfigured {
+            return Self::empty(ResearchCompleteness::NotConfigured);
+        }
+        let Some(scopes) = unsigned_detail(component, "count") else {
+            return Self::empty(ResearchCompleteness::Unknown);
+        };
+        let Some(inventory_open) = unsigned_detail(component, "analysis_inventory_blocked") else {
+            return Self::empty(ResearchCompleteness::Unknown);
+        };
+        let Some(root_causes) = unsigned_detail(component, "research_root_causes") else {
+            return Self::empty(ResearchCompleteness::Unknown);
+        };
+        let Some(publication_coverage_gaps) =
+            unsigned_detail(component, "replacement_coverage_gaps")
+        else {
+            return Self::empty(ResearchCompleteness::Unknown);
+        };
+        let status = if inventory_open == 0 && root_causes == 0 && publication_coverage_gaps == 0 {
+            ResearchCompleteness::Complete
+        } else {
+            ResearchCompleteness::Open
+        };
+        Self {
+            status,
+            scopes,
+            inventory_complete: scopes.saturating_sub(inventory_open),
+            inventory_open,
+            root_causes,
+            publication_coverage_gaps,
+        }
+    }
+
+    const fn empty(status: ResearchCompleteness) -> Self {
+        Self {
+            status,
+            scopes: 0,
+            inventory_complete: 0,
+            inventory_open: 0,
+            root_causes: 0,
+            publication_coverage_gaps: 0,
+        }
+    }
+}
+
+fn unsigned_detail(component: &Component, key: &str) -> Option<usize> {
+    match component.details.get(key) {
+        Some(DetailValue::Unsigned(value)) => usize::try_from(*value).ok(),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct StatusValidation {
     pub depth: ValidationDepth,
@@ -297,6 +403,8 @@ pub struct ProjectStatusReport {
     pub manifest: String,
     pub target: TargetIdentity,
     pub validation: StatusValidation,
+    pub research: ResearchProgress,
+    pub verification: Readiness,
     pub overall: Readiness,
     pub phases: Vec<Phase>,
 }
@@ -308,6 +416,11 @@ impl ProjectStatusReport {
         target: TargetIdentity,
         phases: Vec<Phase>,
     ) -> Self {
+        let research = ResearchProgress::collect(&phases);
+        let verification = phases
+            .iter()
+            .find(|phase| phase.name == "verification")
+            .map_or(Readiness::NotConfigured, |phase| phase.status);
         let overall = if phases
             .iter()
             .any(|phase| phase.status == Readiness::Invalid)
@@ -326,6 +439,8 @@ impl ProjectStatusReport {
             manifest,
             target,
             validation: StatusValidation::SHALLOW,
+            research,
+            verification,
             overall,
             phases,
         }
@@ -376,5 +491,42 @@ mod tests {
             .status,
             Readiness::Ready
         );
+    }
+
+    #[test]
+    fn research_progress_is_independent_from_ready_review_artifacts() {
+        let report = ProjectStatusReport::new(
+            "fixture".to_owned(),
+            "vendor-project.toml".to_owned(),
+            TargetIdentity {
+                id: "target".to_owned(),
+                architecture: "riscv32".to_owned(),
+                calling_convention: "riscv-ilp32".to_owned(),
+                knowledge_provider: None,
+            },
+            vec![
+                Phase::collect(
+                    "review",
+                    vec![
+                        Component::new("scopes", Readiness::Ready)
+                            .detail("count", 7usize)
+                            .detail("analysis_inventory_blocked", 3usize)
+                            .detail("research_root_causes", 11usize)
+                            .detail("replacement_coverage_gaps", 1usize),
+                    ],
+                ),
+                Phase::collect(
+                    "verification",
+                    vec![Component::new("last-verification", Readiness::Incomplete)],
+                ),
+            ],
+        );
+        assert_eq!(report.research.status, ResearchCompleteness::Open);
+        assert_eq!(report.research.scopes, 7);
+        assert_eq!(report.research.inventory_complete, 4);
+        assert_eq!(report.research.inventory_open, 3);
+        assert_eq!(report.research.root_causes, 11);
+        assert_eq!(report.research.publication_coverage_gaps, 1);
+        assert_eq!(report.verification, Readiness::Incomplete);
     }
 }

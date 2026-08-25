@@ -294,7 +294,7 @@ mod tests {
         CodeWorkspaceReport, DiagnosticRecord, DiagnosticSeverity, FunctionReviewState,
         FunctionSelection, FunctionSummary, InterfaceSlotSummary, InterfaceWorkspaceReport,
         ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, Readiness, RegisterSummary,
-        RegisterWorkspaceReport, ReviewScopeSummary,
+        RegisterWorkspaceReport, ResearchCompleteness, ResearchProgress, ReviewScopeSummary,
     };
 
     fn snapshot(generation: u64, phases: usize, diagnostics: usize) -> WorkspaceSnapshot {
@@ -313,6 +313,15 @@ mod tests {
                     depth: crate::ValidationDepth::Shallow,
                     freshness: crate::EvidenceFreshness::Unknown,
                 },
+                research: ResearchProgress {
+                    status: ResearchCompleteness::NotConfigured,
+                    scopes: 0,
+                    inventory_complete: 0,
+                    inventory_open: 0,
+                    root_causes: 0,
+                    publication_coverage_gaps: 0,
+                },
+                verification: Readiness::NotConfigured,
                 overall: Readiness::Incomplete,
                 phases: (0..phases)
                     .map(|index| ProjectStatusPhase {

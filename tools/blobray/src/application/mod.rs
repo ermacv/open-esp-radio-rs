@@ -37,8 +37,8 @@ pub(crate) use resolve::{
 pub use status::model::{
     ArtifactDetail, Component as ProjectStatusComponent, DetailValue, EvidenceFreshness,
     LinkedIrProfileDetail, MmioRegionDetail, Phase as ProjectStatusPhase, ProjectStatusReport,
-    Readiness, ReviewScopeDetail, StatusValidation, TargetIdentity as ProjectTargetIdentity,
-    ValidationDepth,
+    Readiness, ResearchCompleteness, ResearchProgress, ReviewScopeDetail, StatusValidation,
+    TargetIdentity as ProjectTargetIdentity, ValidationDepth,
 };
 
 /// Resolved project state and reload-scoped analysis caches.

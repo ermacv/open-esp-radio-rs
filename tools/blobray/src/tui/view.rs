@@ -459,8 +459,8 @@ mod tests {
     use crate::{
         CodeWorkspaceReport, ComparisonProfileSummary, FunctionSummary, InterfaceWorkspaceReport,
         ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, RegisterSummary,
-        RegisterWorkspaceReport, ScenarioArgumentSummary, ScenarioSuggestionSummary,
-        ScenarioSuggestionVariantSummary, WorkspaceSnapshot,
+        RegisterWorkspaceReport, ResearchCompleteness, ResearchProgress, ScenarioArgumentSummary,
+        ScenarioSuggestionSummary, ScenarioSuggestionVariantSummary, WorkspaceSnapshot,
     };
 
     #[test]
@@ -480,6 +480,15 @@ mod tests {
                     depth: crate::ValidationDepth::Shallow,
                     freshness: crate::EvidenceFreshness::Unknown,
                 },
+                research: ResearchProgress {
+                    status: ResearchCompleteness::NotConfigured,
+                    scopes: 0,
+                    inventory_complete: 0,
+                    inventory_open: 0,
+                    root_causes: 0,
+                    publication_coverage_gaps: 0,
+                },
+                verification: crate::Readiness::NotConfigured,
                 overall: Readiness::Incomplete,
                 phases: vec![ProjectStatusPhase {
                     name: "analysis".to_owned(),

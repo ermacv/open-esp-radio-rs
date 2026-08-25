@@ -163,11 +163,18 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
-    assert_eq!(document["schema"], 8);
+    assert_eq!(document["schema"], 9);
     assert_eq!(document["scope"], "blobray-pipeline");
     assert_eq!(document["command"], "project status");
     assert_eq!(document["validation"]["depth"], "shallow");
     assert_eq!(document["validation"]["freshness"], "unknown");
+    assert_eq!(document["dimensions"]["freshness"]["status"], "unknown");
+    assert_eq!(
+        document["dimensions"]["freshness"]["validation_depth"],
+        "shallow"
+    );
+    assert!(document["dimensions"]["research"]["status"].is_string());
+    assert!(document["dimensions"]["verification"].is_string());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !stderr.contains("Missing description for register"),
@@ -194,7 +201,10 @@ fn project_status_human_details_explain_shallow_validation_and_render_fields() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for expected in [
         "Validation: shallow project-status inspection",
-        "Freshness:  unknown unless a component states otherwise",
+        "Freshness:    unknown — run project doctor or project check",
+        "Research:",
+        "Verification:",
+        "Artifact readiness (not research completeness)",
         "Deep validation:",
         "Component details",
         "Field",

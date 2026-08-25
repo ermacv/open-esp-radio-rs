@@ -9,7 +9,8 @@ use crate::{
     application::{
         FollowUpRequirements, ProjectContext,
         status::model::{
-            DetailValue, ProjectStatusReport, Readiness, StatusValidation, TargetIdentity,
+            DetailValue, EvidenceFreshness, ProjectStatusReport, Readiness, ResearchProgress,
+            StatusValidation, TargetIdentity, ValidationDepth,
         },
     },
     cli::{output, table},
@@ -40,6 +41,19 @@ struct PhaseDocument<'a> {
 }
 
 #[derive(Serialize)]
+struct FreshnessDimension {
+    status: EvidenceFreshness,
+    validation_depth: ValidationDepth,
+}
+
+#[derive(Serialize)]
+struct WorkflowDimensions<'a> {
+    freshness: FreshnessDimension,
+    research: &'a ResearchProgress,
+    verification: Readiness,
+}
+
+#[derive(Serialize)]
 pub(super) struct StatusDocument<'a> {
     schema: u32,
     command: &'static str,
@@ -47,6 +61,7 @@ pub(super) struct StatusDocument<'a> {
     project: ProjectIdentity<'a>,
     target: &'a TargetIdentity,
     validation: &'a StatusValidation,
+    dimensions: WorkflowDimensions<'a>,
     pipeline_status: Readiness,
     phases: BTreeMap<&'a str, PhaseDocument<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -64,7 +79,9 @@ pub(super) fn print_text(report: &ProjectStatusReport, context: &ProjectContext<
         report.target.calling_convention
     );
     outputln!("Validation: shallow project-status inspection");
-    outputln!("Freshness:  unknown unless a component states otherwise");
+    outputln!("Freshness:    {}", freshness_summary(report));
+    outputln!("Research:     {}", research_summary(report));
+    outputln!("Verification: {}", report.verification.label());
     outputln!("Deep validation:");
     outputln!(
         "  {}",
@@ -166,7 +183,10 @@ pub(super) fn print_text(report: &ProjectStatusReport, context: &ProjectContext<
         }
     }
 
-    outputln!("\n{}", output::heading("Workflow"));
+    outputln!(
+        "\n{}",
+        output::heading("Artifact readiness (not research completeness)")
+    );
     outputln!(
         "{}",
         table::render(
@@ -257,7 +277,7 @@ pub(super) fn document(
         })
         .collect();
     StatusDocument {
-        schema: 8,
+        schema: 9,
         command: "project status",
         scope: "blobray-pipeline",
         project: ProjectIdentity {
@@ -266,10 +286,41 @@ pub(super) fn document(
         },
         target: &report.target,
         validation: &report.validation,
+        dimensions: WorkflowDimensions {
+            freshness: FreshnessDimension {
+                status: report.validation.freshness,
+                validation_depth: report.validation.depth,
+            },
+            research: &report.research,
+            verification: report.verification,
+        },
         pipeline_status: report.overall,
         phases,
         publication,
     }
+}
+
+fn freshness_summary(report: &ProjectStatusReport) -> &'static str {
+    match report.validation.freshness {
+        EvidenceFreshness::Unknown => "unknown — run project doctor or project check",
+        EvidenceFreshness::Current => "current",
+        EvidenceFreshness::Stale => "stale",
+    }
+}
+
+fn research_summary(report: &ProjectStatusReport) -> String {
+    let research = &report.research;
+    if research.scopes == 0 {
+        return research.status.label().to_owned();
+    }
+    format!(
+        "{} — {}/{} scope inventories open, {} root causes, {} publication coverage gaps",
+        research.status.label(),
+        research.inventory_open,
+        research.scopes,
+        research.root_causes,
+        research.publication_coverage_gaps,
+    )
 }
 
 fn human_detail_value(value: &DetailValue) -> String {
@@ -362,10 +413,15 @@ mod tests {
         );
         let document: serde_json::Value =
             serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
-        assert_eq!(document["schema"], 8);
+        assert_eq!(document["schema"], 9);
         assert_eq!(document["scope"], "blobray-pipeline");
         assert_eq!(document["validation"]["depth"], "shallow");
         assert_eq!(document["validation"]["freshness"], "unknown");
+        assert_eq!(
+            document["dimensions"]["research"]["status"],
+            "not-configured"
+        );
+        assert_eq!(document["dimensions"]["verification"], "not-configured");
         assert_eq!(document["pipeline_status"], "incomplete");
         assert!(document.get("overall").is_none());
         assert_eq!(

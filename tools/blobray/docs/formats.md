@@ -62,6 +62,9 @@ silently layering executable assumptions from different ownership scopes.
 - research-next reports (`schema_version = 2`), including explicit benefit,
   cost and co-blocker score terms, unique follow-up actions, and every related
   finding grouped below its copyable command.
+- project-status reports (`schema = 9`) keep shallow artifact readiness
+  separate from generated freshness, open research debt and verification
+  readiness; `ready` never means that a review scope has no remaining work.
 
 Generated outputs are disposable and reproducible. They must preserve source
 artifact identity/provenance and must not contain proprietary payloads or full

@@ -36,11 +36,11 @@ fn render(report: &research::ResearchNextReport) {
     outputln!("{}", output::heading("Research next"));
     outputln!(
         "\nReturned {} of {} {} actions ({} total actions from {} findings) across {} review scopes.",
-        report.returned_candidates,
+        report.returned_actions,
         report.strategy_actions,
         report.strategy.label(),
         report.total_actions,
-        report.total_candidates,
+        report.total_findings,
         report.analyzed_scopes.len()
     );
     outputln!(
@@ -59,12 +59,22 @@ fn render(report: &research::ResearchNextReport) {
             diagnostic
         );
     }
+    if let Some(diagnostic) = &report.capability_diagnostic {
+        outputln!(
+            "\n{}: capability context was omitted: {}",
+            output::warning("PARTIAL PRIORITIZATION"),
+            diagnostic
+        );
+    }
     if let Some(diagnostic) = &report.selection_diagnostic {
         outputln!("\n{}: {diagnostic}", output::warning("NO ACTION FITS"));
     }
-    if report.candidates.is_empty() {
+    if report.actions.is_empty() {
         if report.total_actions == 0 {
-            outputln!("\n{}", output::success("NO OPEN RESEARCH CANDIDATES"));
+            outputln!(
+                "\n{}",
+                output::warning("NO CANDIDATES DERIVED FROM CURRENT INPUTS")
+            );
         }
         return;
     }
@@ -81,9 +91,9 @@ fn render(report: &research::ResearchNextReport) {
                 "Findings",
                 "Action"
             ],
-            report.candidates.iter().map(|candidate| [
+            report.actions.iter().map(|candidate| [
                 candidate.rank.to_string(),
-                candidate.kind.clone(),
+                candidate.kinds.join(","),
                 format!(
                     "{} {}/{}",
                     candidate.score,
@@ -98,12 +108,13 @@ fn render(report: &research::ResearchNextReport) {
                 ),
                 candidate.co_blockers.to_string(),
                 candidate.estimated_cost.clone(),
-                (candidate.related_findings.len() + 1).to_string(),
-                table::compact(action_label(&candidate.next_command), 44),
+                candidate.findings.len().to_string(),
+                table::compact(action_label(&candidate.inspect_command), 44),
             ]),
         )
     );
-    let first = &report.candidates[0];
+    let first = &report.actions[0];
+    let finding = &first.findings[0];
     outputln!(
         "\n{}",
         output::heading(format!("Top {} action", report.strategy.label()))
@@ -111,12 +122,12 @@ fn render(report: &research::ResearchNextReport) {
     outputln!(
         "Why: {}",
         if output::details() {
-            first.summary.clone()
+            finding.summary.clone()
         } else {
-            table::compact(&first.summary, 320)
+            table::compact(&finding.summary, 320)
         }
     );
-    outputln!("Knowledge: {}", first.knowledge_required);
+    outputln!("Knowledge: {}", finding.knowledge_required);
     outputln!("Confidence: {}", first.confidence);
     outputln!(
         "Score: {} = 100 × {} benefit / {} effort ({} cost units)",
@@ -136,35 +147,41 @@ fn render(report: &research::ResearchNextReport) {
         outputln!("Co-blockers: {}", first.co_blocker_ids.join(", "));
     }
     outputln!("Evidence:");
-    for evidence in &first.evidence_required {
+    for evidence in &finding.evidence_required {
         outputln!("  - {evidence}");
     }
-    outputln!("Review into: {}", first.review_destinations.join("; "));
-    outputln!("Done when: {}", first.completion_conditions.join("; "));
-    if !first.related_findings.is_empty() {
+    outputln!("Typed consumers:");
+    if finding.consumers.is_empty() {
+        outputln!("  - unresolved; inspect evidence before selecting an edit target");
+    } else {
+        for consumer in &finding.consumers {
+            outputln!("  - {}", consumer_label(consumer));
+        }
+    }
+    if first.findings.len() > 1 {
         outputln!(
-            "Also covers: {} related finding(s)",
-            first.related_findings.len()
+            "Same inspection also exposes {} distinct finding(s)",
+            first.findings.len() - 1
         );
     }
-    outputln!("Next: {}", first.next_command);
+    outputln!("Next inspection: {}", first.inspect_command);
+    for command in revalidation_commands(first) {
+        outputln!("Revalidate after human review: {command}");
+    }
 
     if output::details() {
-        for candidate in report.candidates.iter().skip(1) {
+        for candidate in &report.actions {
             outputln!(
-                "\n#{} {} — {}\n  Knowledge: {}\n  Direct functions: {}\n  Co-blockers: {}\n  Review into: {}\n  Done when: {}\n  Related findings: {}\n  Next: {}",
+                "\n#{} {}\n  Kinds: {}\n  Direct functions: {}\n  Co-blockers: {}\n  Findings: {}\n  Next inspection: {}",
                 candidate.rank,
                 candidate.id,
-                candidate.summary,
-                candidate.knowledge_required,
+                candidate.kinds.join(", "),
                 candidate.direct_function_ids.join(", "),
                 candidate.co_blocker_ids.join(", "),
-                candidate.review_destinations.join("; "),
-                candidate.completion_conditions.join("; "),
-                candidate.related_findings.len(),
-                candidate.next_command
+                candidate.findings.len(),
+                candidate.inspect_command
             );
-            for finding in &candidate.related_findings {
+            for finding in &candidate.findings {
                 outputln!(
                     "    - {} ({}): {}",
                     finding.id,
@@ -174,6 +191,67 @@ fn render(report: &research::ResearchNextReport) {
             }
         }
     }
+}
+
+fn resolution_label(resolution: research::ResearchConsumerResolution) -> &'static str {
+    match resolution {
+        research::ResearchConsumerResolution::Ready => "ready",
+        research::ResearchConsumerResolution::NeedsDestination => "needs-destination",
+        research::ResearchConsumerResolution::Unavailable => "unavailable",
+        research::ResearchConsumerResolution::UnsupportedTarget => "unsupported-target",
+    }
+}
+
+fn consumer_label(consumer: &research::ResearchConsumer) -> String {
+    match consumer {
+        research::ResearchConsumer::ReviewedKnowledgeAssertions {
+            resolution,
+            selected_path,
+            assertion_kinds,
+            diagnostic,
+            ..
+        } => format!(
+            "reviewed knowledge [{}], assertions {}, target {}{}",
+            resolution_label(*resolution),
+            assertion_kinds.join(","),
+            selected_path.as_ref().map_or_else(
+                || "not selected".to_owned(),
+                |path| path.display().to_string()
+            ),
+            diagnostic
+                .as_deref()
+                .map_or_else(String::new, |value| format!(" ({value})"))
+        ),
+        research::ResearchConsumer::InterfacePackSlot {
+            resolution,
+            path,
+            contract,
+            offset,
+            diagnostic,
+            ..
+        } => format!(
+            "interface pack [{}], contract {contract} offset {offset:+#x}, target {}{}",
+            resolution_label(*resolution),
+            path.as_ref().map_or_else(
+                || "not configured".to_owned(),
+                |path| path.display().to_string()
+            ),
+            diagnostic
+                .as_deref()
+                .map_or_else(String::new, |value| format!(" ({value})"))
+        ),
+    }
+}
+
+fn revalidation_commands(action: &research::ResearchAction) -> Vec<&str> {
+    let mut commands = action
+        .findings
+        .iter()
+        .flat_map(|finding| finding.revalidation_commands.iter().map(String::as_str))
+        .collect::<Vec<_>>();
+    commands.sort_unstable();
+    commands.dedup();
+    commands
 }
 
 fn action_label(command: &str) -> String {

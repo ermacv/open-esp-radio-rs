@@ -530,11 +530,7 @@ fn obsolete_revision_state_is_a_hard_cutover_in_cli_status_and_doctor() {
     let (directory, manifest) = init_temporary_project("revision-cutover");
     let ledger = directory.join("revisions/ledger.toml");
     std::fs::create_dir_all(ledger.parent().unwrap()).unwrap();
-    std::fs::write(
-        &ledger,
-        "schema = 1\nproject = \"revision-cutover\"\n",
-    )
-    .unwrap();
+    std::fs::write(&ledger, "schema = 1\nproject = \"revision-cutover\"\n").unwrap();
 
     let status = run_project_command(&manifest, &["project", "status"]);
     assert!(!status.status.success());

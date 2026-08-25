@@ -3,6 +3,7 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, VecDeque},
+    path::PathBuf,
 };
 
 use serde::Serialize;
@@ -15,7 +16,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 4;
+pub(crate) const RESEARCH_SCHEMA: u32 = 5;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -51,6 +52,7 @@ pub(crate) struct ResearchScoreBreakdown {
     pub(crate) optimistic_weight: u64,
     pub(crate) marginal_weight: u64,
     pub(crate) root_weight: u64,
+    pub(crate) capability_weight: u64,
     pub(crate) verification_weight: u64,
     pub(crate) publication_weight: u64,
     pub(crate) cost_penalty: u64,
@@ -64,20 +66,126 @@ pub(crate) struct ResearchScoreExplanation {
     pub(crate) estimated_cost_units: u64,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub(crate) enum ResearchSubject {
+    AnalysisRoot {
+        root_id: String,
+    },
+    MmioRegister {
+        address_space: String,
+        address: u32,
+        width: u8,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        assertion: Option<String>,
+    },
+    InterfaceObservation {
+        observation: String,
+        contract: String,
+        source: String,
+        offset: i32,
+        width: u8,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        selector: Option<String>,
+        call_sites: Vec<u32>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ResearchConsumerResolution {
+    Ready,
+    NeedsDestination,
+    Unavailable,
+    UnsupportedTarget,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub(crate) enum ResearchConsumer {
+    ReviewedKnowledgeAssertions {
+        resolution: ResearchConsumerResolution,
+        configured_paths: Vec<PathBuf>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        selected_path: Option<PathBuf>,
+        assertion_kinds: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        diagnostic: Option<String>,
+    },
+    InterfacePackSlot {
+        resolution: ResearchConsumerResolution,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        path: Option<PathBuf>,
+        contract: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        anchor: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        template: Option<String>,
+        offset: i32,
+        width: u8,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        diagnostic: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ResearchLinkRelation {
+    ExistingEvidenceContext,
+    ReviewScopeContext,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct ResearchCapabilityLink {
+    pub(crate) rule: String,
+    pub(crate) status: String,
+    pub(crate) requirement_kind: String,
+    pub(crate) requirement: String,
+    pub(crate) function: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) evidence_site: Option<u32>,
+    pub(crate) relation: ResearchLinkRelation,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct ResearchVerificationLink {
+    pub(crate) surface: String,
+    pub(crate) surface_kind: String,
+    pub(crate) review_scope: String,
+    pub(crate) closed: bool,
+    pub(crate) relation: ResearchLinkRelation,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct RelatedResearchFinding {
+pub(crate) struct ResearchFinding {
     pub(crate) id: String,
     pub(crate) kind: String,
+    pub(crate) severity: String,
+    pub(crate) subject: ResearchSubject,
+    pub(crate) consumers: Vec<ResearchConsumer>,
+    pub(crate) evidence_sites: Vec<u32>,
+    pub(crate) evidence_channels: Vec<String>,
+    pub(crate) direct_function_ids: Vec<String>,
+    pub(crate) guaranteed_function_ids: Vec<String>,
+    pub(crate) optimistic_function_ids: Vec<String>,
+    pub(crate) marginal_function_ids: Vec<String>,
+    pub(crate) co_blocker_ids: Vec<String>,
+    pub(crate) affected_scope_roots: Vec<String>,
+    pub(crate) scopes: Vec<String>,
+    pub(crate) capability_links: Vec<ResearchCapabilityLink>,
+    pub(crate) verification_links: Vec<ResearchVerificationLink>,
+    pub(crate) publication_scopes: Vec<String>,
     pub(crate) knowledge_required: String,
+    pub(crate) evidence_required: Vec<String>,
+    pub(crate) revalidation_commands: Vec<String>,
     pub(crate) summary: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct ResearchCandidate {
+pub(crate) struct ResearchAction {
     pub(crate) rank: usize,
     pub(crate) id: String,
-    pub(crate) kind: String,
-    pub(crate) severity: String,
+    pub(crate) kinds: Vec<String>,
     pub(crate) score: u64,
     pub(crate) direct_functions: usize,
     pub(crate) direct_function_ids: Vec<String>,
@@ -91,19 +199,13 @@ pub(crate) struct ResearchCandidate {
     pub(crate) co_blocker_ids: Vec<String>,
     pub(crate) affected_scope_roots: Vec<String>,
     pub(crate) scopes: Vec<String>,
-    pub(crate) verification_surfaces: Vec<String>,
+    pub(crate) capability_links: Vec<ResearchCapabilityLink>,
+    pub(crate) verification_links: Vec<ResearchVerificationLink>,
     pub(crate) publication_scopes: Vec<String>,
     pub(crate) estimated_cost: String,
     pub(crate) confidence: String,
-    pub(crate) knowledge_required: String,
-    pub(crate) evidence_required: Vec<String>,
-    pub(crate) review_destinations: Vec<String>,
-    pub(crate) completion_conditions: Vec<String>,
-    pub(crate) next_command: String,
-    pub(crate) summary: String,
-    /// Other independently scored findings resolved by the same next action.
-    /// They remain visible rather than consuming duplicate ranked slots.
-    pub(crate) related_findings: Vec<RelatedResearchFinding>,
+    pub(crate) inspect_command: String,
+    pub(crate) findings: Vec<ResearchFinding>,
     pub(crate) score_breakdown: ResearchScoreBreakdown,
     pub(crate) score_explanation: ResearchScoreExplanation,
 }
@@ -117,16 +219,19 @@ pub(crate) struct ResearchNextReport {
     pub(crate) protocol: Option<String>,
     pub(crate) scope: Option<String>,
     pub(crate) analyzed_scopes: Vec<String>,
-    /// Count before grouping findings that lead to the same user action.
-    pub(crate) total_candidates: usize,
+    /// Count before grouping findings that lead to the same inspection action.
+    pub(crate) total_findings: usize,
     pub(crate) total_actions: usize,
     pub(crate) strategy_actions: usize,
-    pub(crate) returned_candidates: usize,
+    pub(crate) returned_actions: usize,
     pub(crate) budget: Option<u64>,
     pub(crate) consumed_budget: u64,
+    /// Research prioritization never proves that the investigation is complete.
+    pub(crate) completion_claim: bool,
     pub(crate) selection_diagnostic: Option<String>,
+    pub(crate) capability_diagnostic: Option<String>,
     pub(crate) verification_diagnostic: Option<String>,
-    pub(crate) candidates: Vec<ResearchCandidate>,
+    pub(crate) actions: Vec<ResearchAction>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -150,6 +255,10 @@ struct Accumulator {
     kind: String,
     severity: String,
     message: String,
+    subject: ResearchSubject,
+    consumers: Vec<ResearchConsumer>,
+    evidence_sites: BTreeSet<u32>,
+    evidence_channels: BTreeSet<String>,
     direct: BTreeSet<String>,
     guaranteed: BTreeSet<String>,
     optimistic: BTreeSet<String>,
@@ -165,6 +274,10 @@ struct Seed {
     kind: String,
     severity: String,
     message: String,
+    subject: ResearchSubject,
+    consumers: Vec<ResearchConsumer>,
+    evidence_sites: BTreeSet<u32>,
+    evidence_channels: BTreeSet<String>,
     direct: BTreeSet<String>,
     guaranteed: BTreeSet<String>,
     optimistic: BTreeSet<String>,
@@ -172,6 +285,9 @@ struct Seed {
     co_blockers: BTreeSet<String>,
     roots: BTreeSet<String>,
 }
+
+type CapabilityContexts = BTreeMap<String, BTreeSet<ResearchCapabilityLink>>;
+type VerificationContexts = BTreeMap<String, BTreeSet<ResearchVerificationLink>>;
 
 pub(crate) fn next(
     session: &ProjectSession,
@@ -196,25 +312,34 @@ pub(crate) fn next(
         .collect::<Result<BTreeMap<_, _>>>()?;
     let mut candidates = BTreeMap::new();
     for scope in &scopes {
-        add_blockers(scope, &graphs[&scope.id], &mut candidates);
+        add_blockers(scope, &graphs[&scope.id], &mut candidates)?;
     }
     add_registers(session, &scopes, &graphs, &mut candidates)?;
     add_unknown_semantics(session, &scopes, &graphs, &mut candidates)?;
     add_interfaces(session, &scopes, &graphs, &mut candidates)?;
     attach_candidate_co_blockers(&mut candidates);
-    let (surfaces, verification_diagnostic) = verification_surfaces(&session.project);
+    let (capabilities, capability_diagnostic) = capability_contexts(session);
+    let (surfaces, verification_diagnostic) = verification_contexts(&session.project);
     let context = session.context();
     let ranked = candidates
         .into_values()
         .map(|candidate| {
-            let command = context.follow_up_command(
+            let inspect_command = context.follow_up_command(
                 &next_command(&candidate),
                 super::FollowUpRequirements::ANALYSIS,
             );
-            finalize(candidate, &surfaces, command)
+            let revalidation_command =
+                context.follow_up_command("project analyze", super::FollowUpRequirements::ANALYSIS);
+            finalize(
+                candidate,
+                &capabilities,
+                &surfaces,
+                inspect_command,
+                revalidation_command,
+            )
         })
         .collect::<Vec<_>>();
-    let total_candidates = ranked.len();
+    let total_findings = ranked.len();
     let mut ranked = coalesce_actions(ranked);
     let total_actions = ranked.len();
     apply_ranking_strategy(&mut ranked, options.strategy);
@@ -247,15 +372,17 @@ pub(crate) fn next(
         protocol: options.protocol.map(str::to_owned),
         scope: options.scope.map(str::to_owned),
         analyzed_scopes,
-        total_candidates,
+        total_findings,
         total_actions,
         strategy_actions,
-        returned_candidates: ranked.len(),
+        returned_actions: ranked.len(),
         budget: options.budget,
         consumed_budget,
+        completion_claim: false,
         selection_diagnostic,
+        capability_diagnostic,
         verification_diagnostic,
-        candidates: ranked,
+        actions: ranked,
     })
 }
 
@@ -325,10 +452,7 @@ fn scope_protocol(scope: &str) -> &str {
         .map_or(scope, |(protocol, _)| protocol)
 }
 
-fn apply_ranking_strategy(
-    candidates: &mut Vec<ResearchCandidate>,
-    strategy: ResearchRankingStrategy,
-) {
+fn apply_ranking_strategy(candidates: &mut Vec<ResearchAction>, strategy: ResearchRankingStrategy) {
     if strategy == ResearchRankingStrategy::Frontier {
         let frontier = candidates
             .iter()
@@ -355,7 +479,7 @@ fn apply_ranking_strategy(
     });
 }
 
-fn impact_order(left: &ResearchCandidate, right: &ResearchCandidate) -> Ordering {
+fn impact_order(left: &ResearchAction, right: &ResearchAction) -> Ordering {
     right
         .score
         .cmp(&left.score)
@@ -364,7 +488,7 @@ fn impact_order(left: &ResearchCandidate, right: &ResearchCandidate) -> Ordering
         .then_with(|| left.id.cmp(&right.id))
 }
 
-fn dominates(left: &ResearchCandidate, right: &ResearchCandidate) -> bool {
+fn dominates(left: &ResearchAction, right: &ResearchAction) -> bool {
     let left_score = &left.score_explanation;
     let right_score = &right.score_explanation;
     left_score.benefit_points >= right_score.benefit_points
@@ -374,10 +498,10 @@ fn dominates(left: &ResearchCandidate, right: &ResearchCandidate) -> bool {
 }
 
 fn select_ranked_actions(
-    candidates: Vec<ResearchCandidate>,
+    candidates: Vec<ResearchAction>,
     limit: usize,
     budget: Option<u64>,
-) -> (Vec<ResearchCandidate>, u64) {
+) -> (Vec<ResearchAction>, u64) {
     let mut selected = Vec::new();
     let mut consumed_budget = 0_u64;
     for candidate in candidates {
@@ -503,7 +627,7 @@ fn add_blockers(
     scope: &ReviewScopeReport,
     graph: &ScopeGraph,
     candidates: &mut BTreeMap<String, Accumulator>,
-) {
+) -> Result<()> {
     let mut by_function = BTreeMap::<String, BTreeSet<String>>::new();
     for item in &scope.review_queue {
         for function in &item.functions {
@@ -544,6 +668,12 @@ fn add_blockers(
                 kind: item.kind.clone(),
                 severity: item.severity.clone(),
                 message: item.message.clone(),
+                subject: ResearchSubject::AnalysisRoot {
+                    root_id: item.id.clone(),
+                },
+                consumers: Vec::new(),
+                evidence_sites: item.sites.iter().copied().collect(),
+                evidence_channels: item.channels.iter().cloned().collect(),
                 guaranteed,
                 optimistic,
                 marginal: direct.clone(),
@@ -552,11 +682,28 @@ fn add_blockers(
                 roots: item.affected_scope_roots.iter().cloned().collect(),
             },
             scope,
-        );
+        )?;
     }
+    Ok(())
 }
 
-fn merge(candidates: &mut BTreeMap<String, Accumulator>, seed: Seed, scope: &ReviewScopeReport) {
+fn merge(
+    candidates: &mut BTreeMap<String, Accumulator>,
+    seed: Seed,
+    scope: &ReviewScopeReport,
+) -> Result<()> {
+    if let Some(existing) = candidates.get(&seed.id)
+        && (existing.kind != seed.kind
+            || existing.severity != seed.severity
+            || existing.message != seed.message
+            || existing.subject != seed.subject
+            || existing.consumers != seed.consumers)
+    {
+        return Err(crate::Error::invalid(format!(
+            "research finding id {:?} resolves to conflicting typed subjects or consumers",
+            seed.id
+        )));
+    }
     let item = candidates
         .entry(seed.id.clone())
         .or_insert_with(|| Accumulator {
@@ -564,6 +711,10 @@ fn merge(candidates: &mut BTreeMap<String, Accumulator>, seed: Seed, scope: &Rev
             kind: seed.kind,
             severity: seed.severity,
             message: seed.message,
+            subject: seed.subject,
+            consumers: seed.consumers,
+            evidence_sites: BTreeSet::new(),
+            evidence_channels: BTreeSet::new(),
             direct: BTreeSet::new(),
             guaranteed: BTreeSet::new(),
             optimistic: BTreeSet::new(),
@@ -573,6 +724,8 @@ fn merge(candidates: &mut BTreeMap<String, Accumulator>, seed: Seed, scope: &Rev
             scopes: BTreeSet::new(),
             publication_scopes: BTreeSet::new(),
         });
+    item.evidence_sites.extend(seed.evidence_sites);
+    item.evidence_channels.extend(seed.evidence_channels);
     item.direct.extend(seed.direct);
     item.guaranteed.extend(seed.guaranteed);
     item.optimistic.extend(seed.optimistic);
@@ -583,6 +736,7 @@ fn merge(candidates: &mut BTreeMap<String, Accumulator>, seed: Seed, scope: &Rev
     if scope.publication {
         item.publication_scopes.insert(scope.id.clone());
     }
+    Ok(())
 }
 
 fn add_registers(
@@ -595,7 +749,9 @@ fn add_registers(
         return Ok(());
     };
     let facts = RegisterFacts::load(&paths.facts)?;
-    let identities = load_effective_register_model(paths)?.register_identities()?;
+    let model = load_effective_register_model(paths)?;
+    let address_space = model.address_space().to_owned();
+    let identities = model.register_identities()?;
     for fact in &facts.registers {
         if identities.contains_key(&(u64::from(fact.address), u32::from(fact.width))) {
             continue;
@@ -613,8 +769,18 @@ fn add_registers(
                     "name and review MMIO {:#010x}/{} before publication",
                     fact.address, fact.width
                 ),
+                subject: ResearchSubject::MmioRegister {
+                    address_space: address_space.clone(),
+                    address: fact.address,
+                    width: fact.width,
+                    assertion: None,
+                },
+                consumers: vec![reviewed_knowledge_consumer(
+                    session,
+                    &["register-declaration", "register-name"],
+                )],
             },
-        );
+        )?;
     }
     Ok(())
 }
@@ -624,6 +790,39 @@ struct SeedTemplate {
     kind: String,
     severity: String,
     message: String,
+    subject: ResearchSubject,
+    consumers: Vec<ResearchConsumer>,
+}
+
+fn reviewed_knowledge_consumer(
+    session: &ProjectSession,
+    assertion_kinds: &[&str],
+) -> ResearchConsumer {
+    let mut configured_paths = session.project.reviewed_knowledge.clone();
+    configured_paths.sort();
+    let (resolution, selected_path, diagnostic) = match configured_paths.as_slice() {
+        [] => (
+            ResearchConsumerResolution::Unavailable,
+            None,
+            Some("project has no [reviewed-knowledge] pack".to_owned()),
+        ),
+        [path] => (ResearchConsumerResolution::Ready, Some(path.clone()), None),
+        _ => (
+            ResearchConsumerResolution::NeedsDestination,
+            None,
+            Some("select one configured project-local reviewed-knowledge pack".to_owned()),
+        ),
+    };
+    ResearchConsumer::ReviewedKnowledgeAssertions {
+        resolution,
+        configured_paths,
+        selected_path,
+        assertion_kinds: assertion_kinds
+            .iter()
+            .map(|kind| (*kind).to_owned())
+            .collect(),
+        diagnostic,
+    }
 }
 
 fn add_register_seed(
@@ -632,7 +831,7 @@ fn add_register_seed(
     candidates: &mut BTreeMap<String, Accumulator>,
     fact: &crate::registers::RegisterFact,
     template: SeedTemplate,
-) {
+) -> Result<()> {
     let function_keys = fact
         .read_functions
         .iter()
@@ -654,6 +853,15 @@ fn add_register_seed(
                 kind: template.kind.clone(),
                 severity: template.severity.clone(),
                 message: template.message.clone(),
+                subject: template.subject.clone(),
+                consumers: template.consumers.clone(),
+                evidence_sites: fact
+                    .read_sites
+                    .iter()
+                    .chain(&fact.write_sites)
+                    .map(|site| site.pc)
+                    .collect(),
+                evidence_channels: ["mmio".to_owned()].into(),
                 guaranteed: BTreeSet::new(),
                 optimistic: reverse_reachable(graph, &direct),
                 marginal: direct.clone(),
@@ -662,8 +870,9 @@ fn add_register_seed(
                 roots: BTreeSet::new(),
             },
             scope,
-        );
+        )?;
     }
+    Ok(())
 }
 
 fn add_unknown_semantics(
@@ -676,8 +885,12 @@ fn add_unknown_semantics(
         return Ok(());
     };
     let facts = RegisterFacts::load(&paths.facts)?;
+    let model_address_space = load_effective_register_model(paths)?
+        .address_space()
+        .to_owned();
     let knowledge =
         open_radio_vendor_review::ReviewKnowledge::load_all(&session.project.reviewed_knowledge)
+            .and_then(|knowledge| knowledge.select_for(&session.project.review_context))
             .map_err(|error| {
                 crate::Error::invalid(format!("cannot prioritize reviewed knowledge: {error}"))
             })?;
@@ -685,9 +898,12 @@ fn add_unknown_semantics(
         assertion.kind == "hardware-write-semantics"
             && matches!(&assertion.value, open_radio_vendor_review::AssertionValue::String(value) if value == "unknown")
     }) {
-        let Some((address, width)) = parse_register(&assertion.subject) else {
+        let Some((address_space, address, width)) = parse_register(&assertion.subject) else {
             continue;
         };
+        if address_space != model_address_space {
+            continue;
+        }
         let Some(fact) = facts
             .registers
             .iter()
@@ -707,16 +923,32 @@ fn add_unknown_semantics(
                 message: format!(
                     "prove write semantics for {address:#010x}/{width}; software access cannot prove W1C/self-clear"
                 ),
+                subject: ResearchSubject::MmioRegister {
+                    address_space,
+                    address,
+                    width,
+                    assertion: Some(assertion.id.clone()),
+                },
+                consumers: vec![reviewed_knowledge_consumer(
+                    session,
+                    &["hardware-write-semantics"],
+                )],
             },
-        );
+        )?;
     }
     Ok(())
 }
 
-fn parse_register(subject: &str) -> Option<(u32, u8)> {
-    let physical = subject.strip_prefix("mmio:cpu:")?.split('#').next()?;
+fn parse_register(subject: &str) -> Option<(String, u32, u8)> {
+    let value = subject.strip_prefix("mmio:")?;
+    let (address_space, physical) = value.split_once(':')?;
+    if address_space.is_empty() {
+        return None;
+    }
+    let physical = physical.split('#').next()?;
     let (address, width) = physical.split_once('/')?;
     Some((
+        address_space.to_owned(),
         u32::from_str_radix(address.strip_prefix("0x")?, 16).ok()?,
         width.parse().ok()?,
     ))
@@ -732,17 +964,7 @@ fn add_interfaces(
         return Ok(());
     };
     for observation in workspace.unreviewed_observations() {
-        let id = stable_id(
-            "interface",
-            &format!(
-                "{}:{}:{:+#x}/{}:{:?}",
-                observation.source,
-                observation.contract,
-                observation.offset,
-                observation.width,
-                observation.selector
-            ),
-        );
+        let id = interface_finding_id(observation);
         for scope in scopes {
             let graph = &graphs[&scope.id];
             let direct = observation
@@ -763,6 +985,18 @@ fn add_interfaces(
                         "review interface slot {} at {:+#x}/{}",
                         observation.contract, observation.offset, observation.width
                     ),
+                    subject: ResearchSubject::InterfaceObservation {
+                        observation: observation.id.clone(),
+                        contract: observation.contract.clone(),
+                        source: observation.source.clone(),
+                        offset: observation.offset,
+                        width: observation.width,
+                        selector: observation.selector.clone(),
+                        call_sites: observation.call_sites.clone(),
+                    },
+                    consumers: vec![interface_consumer(session, workspace, observation)],
+                    evidence_sites: observation.call_sites.iter().copied().collect(),
+                    evidence_channels: ["interface".to_owned()].into(),
                     guaranteed: BTreeSet::new(),
                     optimistic: reverse_reachable(graph, &direct),
                     marginal: direct.clone(),
@@ -771,10 +1005,66 @@ fn add_interfaces(
                     roots: BTreeSet::new(),
                 },
                 scope,
-            );
+            )?;
         }
     }
     Ok(())
+}
+
+fn interface_finding_id(observation: &crate::interfaces::UnreviewedInterfaceObservation) -> String {
+    stable_id("interface", &observation.id)
+}
+
+fn interface_consumer(
+    session: &ProjectSession,
+    workspace: &crate::interfaces::InterfaceWorkspace,
+    observation: &crate::interfaces::UnreviewedInterfaceObservation,
+) -> ResearchConsumer {
+    let path = session
+        .project
+        .interfaces
+        .as_ref()
+        .and_then(|paths| paths.pack.clone());
+    let contract = workspace
+        .contracts()
+        .iter()
+        .find(|contract| contract.id == observation.contract);
+    let (resolution, anchor, template, diagnostic) = match (path.as_ref(), contract) {
+        (None, _) => (
+            ResearchConsumerResolution::Unavailable,
+            None,
+            None,
+            Some("project has no reviewed interface pack".to_owned()),
+        ),
+        (Some(_), None) => (
+            ResearchConsumerResolution::UnsupportedTarget,
+            None,
+            None,
+            Some("observation is not bound to a reviewed interface anchor".to_owned()),
+        ),
+        (Some(_), Some(contract)) if contract.template.is_some() => (
+            ResearchConsumerResolution::UnsupportedTarget,
+            Some(contract.anchor.clone()),
+            contract.template.clone(),
+            Some("templated anchors cannot accept an unreviewed additive project slot".to_owned()),
+        ),
+        (Some(_), Some(contract)) => (
+            ResearchConsumerResolution::Ready,
+            Some(contract.anchor.clone()),
+            None,
+            None,
+        ),
+    };
+    ResearchConsumer::InterfacePackSlot {
+        resolution,
+        path,
+        contract: observation.contract.clone(),
+        anchor,
+        template,
+        offset: observation.offset,
+        width: observation.width,
+        diagnostic,
+    }
 }
 
 fn stable_id(kind: &str, identity: &str) -> String {
@@ -823,18 +1113,68 @@ fn candidate_domain(kind: &str) -> &'static str {
     }
 }
 
-fn verification_surfaces(
-    project: &crate::ProjectSpec,
-) -> (BTreeMap<String, BTreeSet<String>>, Option<String>) {
+fn capability_contexts(session: &ProjectSession) -> (CapabilityContexts, Option<String>) {
+    let Some(paths) = session.project.interfaces.as_ref() else {
+        return (BTreeMap::new(), None);
+    };
+    if paths.capability_packs.is_empty() {
+        return (BTreeMap::new(), None);
+    }
+    let workspace = match session.interface_workspace() {
+        Ok(Some(workspace)) => workspace,
+        Ok(None) => return (BTreeMap::new(), None),
+        Err(error) => return (BTreeMap::new(), Some(error.to_string())),
+    };
+    let report = match workspace.evaluate_capabilities(&paths.capability_packs) {
+        Ok(report) => report,
+        Err(error) => return (BTreeMap::new(), Some(error.to_string())),
+    };
+    let mut by_function = CapabilityContexts::new();
+    for rule in report.rules {
+        for requirement in rule.requirements {
+            let requirement_kind = match requirement.kind {
+                crate::interfaces::CapabilityMatcherKind::Operation => "operation",
+                crate::interfaces::CapabilityMatcherKind::Effect => "effect",
+                crate::interfaces::CapabilityMatcherKind::Call => "call",
+            };
+            for evidence in requirement.matches {
+                let Some(function) = evidence.function else {
+                    continue;
+                };
+                by_function
+                    .entry(function.clone())
+                    .or_default()
+                    .insert(ResearchCapabilityLink {
+                        rule: rule.id.clone(),
+                        status: rule.status.label().to_owned(),
+                        requirement_kind: requirement_kind.to_owned(),
+                        requirement: requirement.value.clone(),
+                        function,
+                        evidence_site: evidence.site,
+                        relation: ResearchLinkRelation::ExistingEvidenceContext,
+                    });
+            }
+        }
+    }
+    (by_function, None)
+}
+
+fn verification_contexts(project: &crate::ProjectSpec) -> (VerificationContexts, Option<String>) {
     match crate::verification::policy::evaluate(project) {
         Ok(Some(report)) => {
-            let mut by_scope = BTreeMap::<String, BTreeSet<String>>::new();
+            let mut by_scope = VerificationContexts::new();
             for surface in report.surfaces {
                 for scope in surface.review_scopes {
                     by_scope
-                        .entry(scope)
+                        .entry(scope.clone())
                         .or_default()
-                        .insert(surface.id.clone());
+                        .insert(ResearchVerificationLink {
+                            surface: surface.id.clone(),
+                            surface_kind: surface.kind.as_str().to_owned(),
+                            review_scope: scope,
+                            closed: surface.closed,
+                            relation: ResearchLinkRelation::ReviewScopeContext,
+                        });
                 }
             }
             (by_scope, None)
@@ -846,50 +1186,81 @@ fn verification_surfaces(
 
 fn finalize(
     candidate: Accumulator,
-    surfaces_by_scope: &BTreeMap<String, BTreeSet<String>>,
-    next_command: String,
-) -> ResearchCandidate {
-    let surfaces = candidate
+    capabilities_by_function: &CapabilityContexts,
+    surfaces_by_scope: &VerificationContexts,
+    inspect_command: String,
+    revalidation_command: String,
+) -> ResearchAction {
+    let capability_links = candidate
+        .direct
+        .iter()
+        .flat_map(|function| capabilities_by_function.get(function).into_iter().flatten())
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let verification_links = candidate
         .scopes
         .iter()
         .flat_map(|scope| surfaces_by_scope.get(scope).into_iter().flatten())
         .cloned()
-        .collect::<BTreeSet<_>>();
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let kind = candidate.kind.clone();
-    let mut result = ResearchCandidate {
-        rank: 0,
+    let finding = ResearchFinding {
         id: candidate.id,
         kind: kind.clone(),
         severity: candidate.severity,
-        score: 0,
-        direct_functions: candidate.direct.len(),
+        subject: candidate.subject,
+        consumers: candidate.consumers,
+        evidence_sites: candidate.evidence_sites.into_iter().collect(),
+        evidence_channels: candidate.evidence_channels.into_iter().collect(),
         direct_function_ids: candidate.direct.into_iter().collect(),
-        guaranteed_unlock: candidate.guaranteed.len(),
         guaranteed_function_ids: candidate.guaranteed.into_iter().collect(),
-        optimistic_unlock: candidate.optimistic.len(),
         optimistic_function_ids: candidate.optimistic.into_iter().collect(),
-        marginal_unlock_after_co_blockers: candidate.marginal.len(),
         marginal_function_ids: candidate.marginal.into_iter().collect(),
-        co_blockers: candidate.co_blockers.len(),
         co_blocker_ids: candidate.co_blockers.into_iter().collect(),
         affected_scope_roots: candidate.roots.into_iter().collect(),
         scopes: candidate.scopes.into_iter().collect(),
-        verification_surfaces: surfaces.into_iter().collect(),
+        capability_links,
+        verification_links,
         publication_scopes: candidate.publication_scopes.into_iter().collect(),
-        estimated_cost: String::new(),
-        confidence: String::new(),
         knowledge_required: knowledge_required(&kind).to_owned(),
         evidence_required: evidence_required(&kind),
-        review_destinations: vec![review_destination(&kind).to_owned()],
-        completion_conditions: vec![completion_condition(&kind).to_owned()],
-        next_command,
+        revalidation_commands: vec![revalidation_command],
         summary: candidate.message,
-        related_findings: Vec::new(),
+    };
+    let mut result = ResearchAction {
+        rank: 0,
+        id: stable_id("action", &inspect_command),
+        kinds: vec![kind],
+        score: 0,
+        direct_functions: finding.direct_function_ids.len(),
+        direct_function_ids: finding.direct_function_ids.clone(),
+        guaranteed_unlock: finding.guaranteed_function_ids.len(),
+        guaranteed_function_ids: finding.guaranteed_function_ids.clone(),
+        optimistic_unlock: finding.optimistic_function_ids.len(),
+        optimistic_function_ids: finding.optimistic_function_ids.clone(),
+        marginal_unlock_after_co_blockers: finding.marginal_function_ids.len(),
+        marginal_function_ids: finding.marginal_function_ids.clone(),
+        co_blockers: finding.co_blocker_ids.len(),
+        co_blocker_ids: finding.co_blocker_ids.clone(),
+        affected_scope_roots: finding.affected_scope_roots.clone(),
+        scopes: finding.scopes.clone(),
+        capability_links: finding.capability_links.clone(),
+        verification_links: finding.verification_links.clone(),
+        publication_scopes: finding.publication_scopes.clone(),
+        estimated_cost: String::new(),
+        confidence: String::new(),
+        inspect_command,
+        findings: vec![finding],
         score_breakdown: ResearchScoreBreakdown {
             guaranteed_weight: 0,
             optimistic_weight: 0,
             marginal_weight: 0,
             root_weight: 0,
+            capability_weight: 0,
             verification_weight: 0,
             publication_weight: 0,
             cost_penalty: 0,
@@ -905,24 +1276,25 @@ fn finalize(
     result
 }
 
-fn coalesce_actions(candidates: Vec<ResearchCandidate>) -> Vec<ResearchCandidate> {
-    let mut actions = Vec::<ResearchCandidate>::new();
+fn coalesce_actions(candidates: Vec<ResearchAction>) -> Vec<ResearchAction> {
+    let mut actions = Vec::<ResearchAction>::new();
     let mut by_command = BTreeMap::<String, usize>::new();
     for candidate in candidates {
-        if let Some(index) = by_command.get(&candidate.next_command).copied() {
+        if let Some(index) = by_command.get(&candidate.inspect_command).copied() {
             let action = &mut actions[index];
-            action.related_findings.push(RelatedResearchFinding {
-                id: candidate.id,
-                kind: candidate.kind,
-                knowledge_required: candidate.knowledge_required,
-                summary: candidate.summary,
-            });
+            action.findings.extend(candidate.findings);
+            action
+                .findings
+                .sort_by(|left, right| left.id.cmp(&right.id));
+            merge_strings(&mut action.kinds, candidate.kinds);
             merge_strings(&mut action.scopes, candidate.scopes);
-            merge_strings(
-                &mut action.verification_surfaces,
-                candidate.verification_surfaces,
-            );
+            merge_ordered(&mut action.capability_links, candidate.capability_links);
+            merge_ordered(&mut action.verification_links, candidate.verification_links);
             merge_strings(&mut action.publication_scopes, candidate.publication_scopes);
+            merge_strings(
+                &mut action.affected_scope_roots,
+                candidate.affected_scope_roots,
+            );
             merge_strings(
                 &mut action.direct_function_ids,
                 candidate.direct_function_ids,
@@ -940,44 +1312,49 @@ fn coalesce_actions(candidates: Vec<ResearchCandidate>) -> Vec<ResearchCandidate
                 candidate.marginal_function_ids,
             );
             merge_strings(&mut action.co_blocker_ids, candidate.co_blocker_ids);
-            merge_strings(&mut action.evidence_required, candidate.evidence_required);
-            merge_strings(
-                &mut action.review_destinations,
-                candidate.review_destinations,
-            );
-            merge_strings(
-                &mut action.completion_conditions,
-                candidate.completion_conditions,
-            );
+            let internal_findings = action
+                .findings
+                .iter()
+                .map(|finding| finding.id.as_str())
+                .collect::<BTreeSet<_>>();
+            action
+                .co_blocker_ids
+                .retain(|id| !internal_findings.contains(id.as_str()));
             refresh_action_score(action);
         } else {
-            by_command.insert(candidate.next_command.clone(), actions.len());
+            by_command.insert(candidate.inspect_command.clone(), actions.len());
             actions.push(candidate);
         }
     }
     actions
 }
 
-fn refresh_action_score(candidate: &mut ResearchCandidate) {
+fn refresh_action_score(candidate: &mut ResearchAction) {
     candidate.direct_functions = candidate.direct_function_ids.len();
     candidate.guaranteed_unlock = candidate.guaranteed_function_ids.len();
     candidate.optimistic_unlock = candidate.optimistic_function_ids.len();
     candidate.marginal_unlock_after_co_blockers = candidate.marginal_function_ids.len();
     candidate.co_blockers = candidate.co_blocker_ids.len();
-    let cost = cost_units(&candidate.kind, candidate.direct_functions);
+    let cost = candidate
+        .kinds
+        .iter()
+        .map(|kind| cost_units(kind, candidate.direct_functions))
+        .max()
+        .unwrap_or_default();
     candidate.estimated_cost = match cost {
         0..=2 => "low",
         3..=5 => "medium",
         _ => "high",
     }
     .to_owned();
-    candidate.confidence = confidence(&candidate.kind, candidate.co_blockers).to_owned();
+    candidate.confidence = confidence(&candidate.kinds, candidate.co_blockers).to_owned();
     candidate.score_breakdown = ResearchScoreBreakdown {
         guaranteed_weight: candidate.guaranteed_unlock as u64 * 20,
         optimistic_weight: candidate.optimistic_unlock as u64 * 3,
         marginal_weight: candidate.marginal_unlock_after_co_blockers as u64 * 5,
         root_weight: candidate.affected_scope_roots.len() as u64 * 10,
-        verification_weight: candidate.verification_surfaces.len() as u64 * 15,
+        capability_weight: 0,
+        verification_weight: 0,
         publication_weight: candidate.publication_scopes.len() as u64 * 20,
         cost_penalty: cost * 10,
         co_blocker_penalty: candidate.co_blockers as u64 * 5,
@@ -986,6 +1363,7 @@ fn refresh_action_score(candidate: &mut ResearchCandidate) {
         + candidate.score_breakdown.optimistic_weight
         + candidate.score_breakdown.marginal_weight
         + candidate.score_breakdown.root_weight
+        + candidate.score_breakdown.capability_weight
         + candidate.score_breakdown.verification_weight
         + candidate.score_breakdown.publication_weight;
     let effort =
@@ -1004,6 +1382,12 @@ fn merge_strings(target: &mut Vec<String>, source: Vec<String>) {
     target.dedup();
 }
 
+fn merge_ordered<T: Ord>(target: &mut Vec<T>, source: Vec<T>) {
+    target.extend(source);
+    target.sort();
+    target.dedup();
+}
+
 fn cost_units(kind: &str, functions: usize) -> u64 {
     let base = match kind {
         "unresolved-call" => 2,
@@ -1017,8 +1401,8 @@ fn cost_units(kind: &str, functions: usize) -> u64 {
     base + u64::from(functions > 8) + u64::from(functions > 32)
 }
 
-fn confidence(kind: &str, co_blockers: usize) -> &'static str {
-    if kind == "register-write-semantics" {
+fn confidence(kinds: &[String], co_blockers: usize) -> &'static str {
+    if kinds.iter().any(|kind| kind == "register-write-semantics") {
         "low-until-hil"
     } else if co_blockers == 0 {
         "high"
@@ -1035,7 +1419,9 @@ fn knowledge_required(kind: &str) -> &'static str {
         "call-shape" | "indirect-control-flow" | "interface-layout" => {
             "ABI and interface-table layout"
         }
-        "register-model" => "register name, access role and bit candidates",
+        "register-model" => {
+            "owning register region and manually confirmed register identity/semantics"
+        }
         "register-write-semantics" => "hardware semantics backed by HIL or authoritative docs",
         kind if kind.starts_with("replacement-") => "production binding and verification evidence",
         "memory-load" | "memory-store" | "memory-intrinsic" => "memory-object/type layout",
@@ -1087,61 +1473,9 @@ fn evidence_required(kind: &str) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
-fn review_destination(kind: &str) -> &'static str {
-    match kind {
-        "decode" => "generic backend source plus a focused regression test",
-        "interface-layout" | "call-shape" | "indirect-control-flow" => {
-            "reusable interface pack or artifact-bounded project overlay"
-        }
-        "register-model" => "sparse register-declaration and register-name reviewed assertions",
-        "register-write-semantics" => "sparse hardware-write-semantics reviewed assertion",
-        kind if kind.starts_with("replacement-") => {
-            "production binding, verification evidence or reviewed disposition"
-        }
-        "unresolved-call" | "call-result-model" => {
-            "reusable ecosystem contract or artifact-bounded function knowledge"
-        }
-        "memory-load" | "memory-store" | "memory-intrinsic" => "reviewed object/type layout pack",
-        _ => "applicability-bounded reviewed knowledge pack",
-    }
-}
-
-fn completion_condition(kind: &str) -> &'static str {
-    match kind {
-        "decode" => "the blocker disappears without weakening decode limits",
-        "register-model" => {
-            "the effective model contains the physical register while access semantics remain explicit"
-        }
-        "register-write-semantics" => {
-            "hardware semantics are explicit and no longer inferred from vendor software writes"
-        }
-        "interface-layout" | "call-shape" | "indirect-control-flow" => {
-            "the affected call sites resolve through one reviewed ABI identity"
-        }
-        kind if kind.starts_with("replacement-") => {
-            "the explicit replacement root has qualifying evidence or an explicit fail-closed disposition"
-        }
-        _ => "the named root cause is absent after regenerating the affected scopes",
-    }
-}
-
 fn next_command(candidate: &Accumulator) -> String {
-    if let Some(address) = candidate.id.strip_prefix("register-") {
-        return format!(
-            "inspect register {}",
-            address.split('-').next().unwrap_or(address)
-        );
-    }
-    if candidate.kind == "register-write-semantics"
-        && let Some(address) = candidate
-            .message
-            .split_whitespace()
-            .find(|word| word.starts_with("0x"))
-    {
-        return format!(
-            "inspect register {}",
-            address.split('/').next().unwrap_or(address)
-        );
+    if let ResearchSubject::MmioRegister { address, .. } = &candidate.subject {
+        return format!("inspect register {address:#010x}");
     }
     if let Some(function) = candidate.direct.first() {
         let selector = function.split_once("::").map_or_else(
@@ -1166,13 +1500,19 @@ fn next_command(candidate: &Accumulator) -> String {
 mod tests {
     use super::*;
 
-    fn ranked_candidate(id: &str, benefit: u64, effort: u64, cost: u64) -> ResearchCandidate {
-        let candidate = Accumulator {
+    fn accumulator(id: &str, kind: &str) -> Accumulator {
+        Accumulator {
             id: id.to_owned(),
-            kind: "unresolved-call".to_owned(),
+            kind: kind.to_owned(),
             severity: "error".to_owned(),
             message: format!("resolve {id}"),
-            direct: [id.to_owned()].into(),
+            subject: ResearchSubject::AnalysisRoot {
+                root_id: id.to_owned(),
+            },
+            consumers: Vec::new(),
+            evidence_sites: BTreeSet::new(),
+            evidence_channels: BTreeSet::new(),
+            direct: BTreeSet::new(),
             guaranteed: BTreeSet::new(),
             optimistic: BTreeSet::new(),
             marginal: BTreeSet::new(),
@@ -1180,12 +1520,20 @@ mod tests {
             roots: BTreeSet::new(),
             scopes: ["radio".to_owned()].into(),
             publication_scopes: BTreeSet::new(),
-        };
+        }
+    }
+
+    fn ranked_candidate(id: &str, benefit: u64, effort: u64, cost: u64) -> ResearchAction {
+        let mut accumulator = accumulator(id, "unresolved-call");
+        accumulator.direct.insert(id.to_owned());
         let mut candidate = finalize(
-            candidate,
+            accumulator,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             format!("blobray inspect function {id} --project project.toml"),
+            "blobray project analyze --project project.toml".to_owned(),
         );
+        candidate.id = id.to_owned();
         candidate.score = benefit.saturating_mul(100) / effort;
         candidate.score_explanation = ResearchScoreExplanation {
             benefit_points: benefit,
@@ -1226,37 +1574,54 @@ mod tests {
 
     #[test]
     fn score_exposes_benefit_and_cost_terms() {
-        let candidate = Accumulator {
-            id: "candidate".to_owned(),
-            kind: "unresolved-call".to_owned(),
-            severity: "error".to_owned(),
-            message: "resolve call".to_owned(),
-            direct: ["leaf".to_owned()].into(),
-            guaranteed: ["leaf".to_owned()].into(),
-            optimistic: ["leaf".to_owned(), "root".to_owned()].into(),
-            marginal: ["leaf".to_owned()].into(),
-            co_blockers: ["other-cause".to_owned()].into(),
-            roots: ["root".to_owned()].into(),
-            scopes: ["radio".to_owned()].into(),
-            publication_scopes: ["radio".to_owned()].into(),
+        let mut candidate = accumulator("candidate", "unresolved-call");
+        candidate.message = "resolve call".to_owned();
+        candidate.direct = ["leaf".to_owned()].into();
+        candidate.guaranteed = ["leaf".to_owned()].into();
+        candidate.optimistic = ["leaf".to_owned(), "root".to_owned()].into();
+        candidate.marginal = ["leaf".to_owned()].into();
+        candidate.co_blockers = ["other-cause".to_owned()].into();
+        candidate.roots = ["root".to_owned()].into();
+        candidate.publication_scopes = ["radio".to_owned()].into();
+        let capability = ResearchCapabilityLink {
+            rule: "wifi.log".to_owned(),
+            status: "matched".to_owned(),
+            requirement_kind: "call".to_owned(),
+            requirement: "logger".to_owned(),
+            function: "leaf".to_owned(),
+            evidence_site: Some(0x1000),
+            relation: ResearchLinkRelation::ExistingEvidenceContext,
+        };
+        let surface = ResearchVerificationLink {
+            surface: "wifi-review".to_owned(),
+            surface_kind: "review-scope".to_owned(),
+            review_scope: "radio".to_owned(),
+            closed: true,
+            relation: ResearchLinkRelation::ReviewScopeContext,
         };
         let result = finalize(
             candidate,
-            &BTreeMap::from([("radio".to_owned(), ["surface".to_owned()].into())]),
+            &BTreeMap::from([("leaf".to_owned(), [capability].into())]),
+            &BTreeMap::from([("radio".to_owned(), [surface].into())]),
             "blobray inspect function leaf --project project.toml".to_owned(),
+            "blobray project analyze --project project.toml".to_owned(),
         );
         assert_eq!(result.guaranteed_unlock, 1);
         assert_eq!(result.optimistic_unlock, 2);
         assert_eq!(result.direct_function_ids, ["leaf"]);
         assert_eq!(result.co_blocker_ids, ["other-cause"]);
         assert_eq!(result.score_breakdown.cost_penalty, 20);
-        assert_eq!(result.score_explanation.benefit_points, 76);
+        assert_eq!(result.capability_links.len(), 1);
+        assert_eq!(result.verification_links.len(), 1);
+        assert_eq!(result.score_breakdown.capability_weight, 0);
+        assert_eq!(result.score_breakdown.verification_weight, 0);
+        assert_eq!(result.score_explanation.benefit_points, 61);
         assert_eq!(result.score_explanation.effort_points, 26);
         assert_eq!(result.score_explanation.estimated_cost_units, 2);
-        assert_eq!(result.score, 292);
+        assert_eq!(result.score, 234);
         assert!(result.score > 100);
         assert_eq!(
-            result.next_command,
+            result.inspect_command,
             "blobray inspect function leaf --project project.toml"
         );
     }
@@ -1346,40 +1711,49 @@ mod tests {
         fn candidate(id: &str, message: &str, extra_function: Option<&str>) -> Accumulator {
             let mut direct = BTreeSet::from(["ble-controller::logger".to_owned()]);
             direct.extend(extra_function.map(str::to_owned));
-            Accumulator {
-                id: id.to_owned(),
-                kind: "interface-layout".to_owned(),
-                severity: "warning".to_owned(),
-                message: message.to_owned(),
-                direct: direct.clone(),
-                guaranteed: BTreeSet::new(),
-                optimistic: direct.clone(),
-                marginal: direct,
-                co_blockers: BTreeSet::new(),
-                roots: BTreeSet::new(),
-                scopes: ["ble".to_owned()].into(),
-                publication_scopes: ["ble".to_owned()].into(),
-            }
+            let mut candidate = accumulator(id, "interface-layout");
+            candidate.severity = "warning".to_owned();
+            candidate.message = message.to_owned();
+            candidate.direct = direct.clone();
+            candidate.optimistic = direct.clone();
+            candidate.marginal = direct;
+            candidate.co_blockers =
+                [if id == "slot-a" { "slot-b" } else { "slot-a" }.to_owned()].into();
+            candidate.roots = [format!("root-{id}")].into();
+            candidate.scopes = ["ble".to_owned()].into();
+            candidate.publication_scopes = ["ble".to_owned()].into();
+            candidate
         }
 
         let actions = coalesce_actions(vec![
             finalize(
                 candidate("slot-a", "review slot A", None),
                 &BTreeMap::new(),
+                &BTreeMap::new(),
                 "blobray inspect function ble-controller:logger --project project.toml".to_owned(),
+                "blobray project analyze --project project.toml".to_owned(),
             ),
             finalize(
                 candidate("slot-b", "review slot B", Some("ble-controller::worker")),
                 &BTreeMap::new(),
+                &BTreeMap::new(),
                 "blobray inspect function ble-controller:logger --project project.toml".to_owned(),
+                "blobray project analyze --project project.toml".to_owned(),
             ),
         ]);
 
         assert_eq!(actions.len(), 1);
-        assert_eq!(actions[0].id, "slot-a");
-        assert_eq!(actions[0].related_findings.len(), 1);
-        assert_eq!(actions[0].related_findings[0].id, "slot-b");
-        assert_eq!(actions[0].related_findings[0].summary, "review slot B");
+        assert_eq!(actions[0].findings.len(), 2);
+        assert_eq!(actions[0].findings[0].id, "slot-a");
+        assert_eq!(actions[0].findings[1].id, "slot-b");
+        assert_eq!(actions[0].findings[1].summary, "review slot B");
+        assert_eq!(actions[0].findings[0].co_blocker_ids, ["slot-b"]);
+        assert_eq!(actions[0].findings[1].co_blocker_ids, ["slot-a"]);
+        assert!(actions[0].co_blocker_ids.is_empty());
+        assert_eq!(
+            actions[0].affected_scope_roots,
+            ["root-slot-a", "root-slot-b"]
+        );
         assert_eq!(actions[0].direct_functions, 2);
         assert_eq!(
             actions[0].direct_function_ids,
@@ -1389,20 +1763,8 @@ mod tests {
 
     #[test]
     fn next_command_converts_internal_identity_to_cli_selector() {
-        let candidate = Accumulator {
-            id: "candidate".to_owned(),
-            kind: "unresolved-call".to_owned(),
-            severity: "error".to_owned(),
-            message: "resolve call".to_owned(),
-            direct: ["archive::function".to_owned()].into(),
-            guaranteed: BTreeSet::new(),
-            optimistic: BTreeSet::new(),
-            marginal: BTreeSet::new(),
-            co_blockers: BTreeSet::new(),
-            roots: BTreeSet::new(),
-            scopes: BTreeSet::new(),
-            publication_scopes: BTreeSet::new(),
-        };
+        let mut candidate = accumulator("candidate", "unresolved-call");
+        candidate.direct = ["archive::function".to_owned()].into();
         assert_eq!(
             next_command(&candidate),
             "inspect function archive:function"
@@ -1410,22 +1772,47 @@ mod tests {
     }
 
     #[test]
+    fn register_inspection_command_uses_typed_subject_not_text() {
+        let mut candidate = accumulator("misleading-id", "register-write-semantics");
+        candidate.message = "message contains 0xdeadbeef".to_owned();
+        candidate.subject = ResearchSubject::MmioRegister {
+            address_space: "radio".to_owned(),
+            address: 0x6000_1000,
+            width: 32,
+            assertion: Some("write-semantics".to_owned()),
+        };
+
+        assert_eq!(next_command(&candidate), "inspect register 0x60001000");
+    }
+
+    #[test]
+    fn interface_finding_identity_distinguishes_same_slot_in_different_tables() {
+        let observation = |id: &str| crate::interfaces::UnreviewedInterfaceObservation {
+            id: id.to_owned(),
+            contract: "unmatched:btbb:relocated-symbol".to_owned(),
+            source: "btbb".to_owned(),
+            offset: 0x10,
+            width: 32,
+            selector: None,
+            functions: vec!["btbb::worker".to_owned()],
+            call_sites: vec![0x1000],
+        };
+
+        assert_ne!(
+            interface_finding_id(&observation("fact-0@+0x10/32")),
+            interface_finding_id(&observation("fact-1@+0x10/32"))
+        );
+    }
+
+    #[test]
     fn overlapping_candidates_are_co_blockers_only_within_one_domain() {
         fn candidate(id: &str, kind: &str) -> Accumulator {
-            Accumulator {
-                id: id.to_owned(),
-                kind: kind.to_owned(),
-                severity: "warning".to_owned(),
-                message: "review".to_owned(),
-                direct: ["function".to_owned()].into(),
-                guaranteed: BTreeSet::new(),
-                optimistic: BTreeSet::new(),
-                marginal: BTreeSet::new(),
-                co_blockers: BTreeSet::new(),
-                roots: BTreeSet::new(),
-                scopes: BTreeSet::new(),
-                publication_scopes: BTreeSet::new(),
-            }
+            let mut candidate = accumulator(id, kind);
+            candidate.severity = "warning".to_owned();
+            candidate.message = "review".to_owned();
+            candidate.direct = ["function".to_owned()].into();
+            candidate.scopes.clear();
+            candidate
         }
 
         let mut candidates = BTreeMap::from([
@@ -1452,5 +1839,80 @@ mod tests {
             ["interface-a".to_owned()].into()
         );
         assert!(candidates["register"].co_blockers.is_empty());
+    }
+
+    #[test]
+    fn schema_five_serializes_full_typed_finding_under_action() {
+        let mut candidate = accumulator("register", "register-model");
+        candidate.subject = ResearchSubject::MmioRegister {
+            address_space: "radio".to_owned(),
+            address: 0x6000_1000,
+            width: 32,
+            assertion: None,
+        };
+        candidate.consumers = vec![ResearchConsumer::ReviewedKnowledgeAssertions {
+            resolution: ResearchConsumerResolution::NeedsDestination,
+            configured_paths: vec![PathBuf::from("a.toml"), PathBuf::from("b.toml")],
+            selected_path: None,
+            assertion_kinds: vec!["register-declaration".to_owned()],
+            diagnostic: Some("select one pack".to_owned()),
+        }];
+        let action = finalize(
+            candidate,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray inspect register 0x60001000 --project project.toml".to_owned(),
+            "blobray project analyze --project project.toml".to_owned(),
+        );
+
+        let value = serde_json::to_value(action).unwrap();
+        assert_eq!(value["findings"][0]["subject"]["kind"], "mmio-register");
+        assert_eq!(
+            value["findings"][0]["consumers"][0]["kind"],
+            "reviewed-knowledge-assertions"
+        );
+        assert_eq!(
+            value["findings"][0]["consumers"][0]["resolution"],
+            "needs-destination"
+        );
+        assert!(value.get("completion_conditions").is_none());
+    }
+
+    #[test]
+    fn register_subject_parser_preserves_non_cpu_address_space() {
+        assert_eq!(
+            parse_register("mmio:radio:0x60001000/32#write-semantics"),
+            Some(("radio".to_owned(), 0x6000_1000, 32))
+        );
+    }
+
+    #[test]
+    fn mixed_kind_action_cost_and_findings_are_order_independent() {
+        let command = "blobray inspect function radio:worker --project project.toml";
+        let revalidate = "blobray project analyze --project project.toml";
+        let action_for = |id: &str, kind: &str| {
+            let mut candidate = accumulator(id, kind);
+            candidate.direct = ["radio::worker".to_owned()].into();
+            finalize(
+                candidate,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                command.to_owned(),
+                revalidate.to_owned(),
+            )
+        };
+        let analysis = action_for("analysis", "unresolved-call");
+        let semantics = action_for("semantics", "register-write-semantics");
+
+        let forward = coalesce_actions(vec![analysis.clone(), semantics.clone()]);
+        let reverse = coalesce_actions(vec![semantics, analysis]);
+
+        assert_eq!(forward, reverse);
+        assert_eq!(
+            forward[0].kinds,
+            ["register-write-semantics", "unresolved-call"]
+        );
+        assert_eq!(forward[0].score_explanation.estimated_cost_units, 6);
+        assert_eq!(forward[0].confidence, "low-until-hil");
     }
 }

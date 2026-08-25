@@ -10,12 +10,17 @@ unknown fields.
   and Rust target only;
 - `ecosystem.toml`: reusable ordered semantic catalogs, capability-rule packs,
   and public interface-template packs for a vendor/RTOS ecosystem, with no
-  chip addresses or executable provider;
+  chip addresses or executable provider; `[applicability].ecosystems` declares
+  the stable reviewed-fact identities contributed by this layer;
 - `chip.toml`: reusable memory map, base register model, SVD inputs, chip
   semantic catalogs, and an optional compiled knowledge-provider ID;
+  `[applicability]` declares its `chips` and `chip-revisions` identities;
 - `vendor-project.toml`: composition, reviewed workspaces, and generated
   output selection; its optional `analysis-provider` selects compiled logic
   that is valid only for this investigation, never reusable chip facts;
+  `[applicability].artifact-lineages` declares the selected blob lineage and
+  `[applicability].artifacts` may bind facts to exact `{ source, sha256 }`
+  identities for one vendor revision;
 - `[reviewed-knowledge].packs`: sparse accepted assertions and vendor-bug
   records with stable IDs, evidence, provenance and applicability;
 - local run specification: ignored bindings to caller-owned private artifacts.
@@ -43,7 +48,9 @@ closed instead of using manifest order as executable precedence.
 - sparse reviewed-knowledge packs (`schema = 1`): opaque subject/kind/value
   facts and vendor bugs. Empty evidence, hints, duplicate IDs, invalid artifact
   hashes and overlapping assertions fail closed; pack and record applicability
-  are intersected rather than overridden;
+  are intersected rather than overridden. The effective project composition
+  selects facts before use. A missing context dimension or two same-subject,
+  same-kind facts selected by an ambiguous context is an error;
 - disposition manifests: reviewed vendor-to-production binding and claim
   declarations, never execution truth;
 - verification policy: required comparisons and bounded properties;
@@ -103,7 +110,7 @@ provenance, never executable semantics.
   contain only typed vendor artifact/inventory/companion digests and normalized
   vendor-derived features, never vendor payloads, disassembly, or local Rust
   verification ELF identities;
-- `revisions/ledger.toml` is the tracked schema-1 index for those snapshots.
+- `revisions/ledger.toml` is the tracked schema-2 index for those snapshots.
   It stores only project/revision names, relative snapshot locations, SHA-256
   identities, `baseline`/`current` pointers and an optional update-preflight
   marker. `snapshot-sha256` identifies normalized logical snapshot content,
@@ -119,24 +126,9 @@ companions that affected each generated bundle. Revision capture compares all
 three dependency classes with the current typed run-spec and rejects stale
 generated evidence.
 
-Schema-1 snapshots remain readable and immutable, but their artifact scope was
-the full scannable analysis universe and could include `rust-artifact` inputs.
-They are a legacy baseline, not the endpoint for future vendor diffs. Migrate
-without rewriting one: create a tracked digest-bound migration map such as
-
-```toml
-schema = 1
-snapshot-sha256 = "<schema-1 logical snapshot digest>"
-verification-sources = ["bluetooth", "rust", "wifi-registers"]
-```
-
-Run `project revision prepare-update --migrate-legacy-scope MAP`, capture a new
-schema-2 name over unchanged vendor inputs, review the one-time scope-only
-diff/rebase, then accept the schema-2 current revision. The listed sources must
-be sorted, present in the old snapshot, and currently bound only by typed Rust
-roles; the map digest is retained in the ledger.
-The ledger also retains its normalized `migrations/...` location, and deep
-validation reopens the tracked map and verifies its content and source list.
+Only schema-2 snapshots and ledgers are accepted. Schema-1 state and migration
+maps are not parsed or upgraded. Archive or remove an older ledger and capture
+a fresh schema-2 baseline from the live typed vendor bindings.
 
 ## Generated outputs
 
@@ -151,10 +143,12 @@ validation reopens the tracked map and verifies its content and source list.
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output;
 - revision diff and rebase plans;
-- research-next reports (`schema_version = 3`), including explicit benefit,
-  cost and co-blocker score terms, action-aggregated function identities,
-  evidence/destination/completion packets, unique follow-up actions, and every
-  related finding grouped below its copyable command.
+- research-next reports (`schema_version = 5`), including explicit benefit,
+  cost and co-blocker score terms; one action per copyable inspection command;
+  and full typed findings with subjects, executable-consumer resolution,
+  evidence, impact sets and revalidation commands. Capability matches and
+  verification surfaces are context-only links with zero ranking weight, and
+  the report makes no completion claim.
 - project-status reports (`schema = 9`) keep shallow artifact readiness
   separate from generated freshness, open research debt and verification
   readiness; `ready` never means that a review scope has no remaining work.

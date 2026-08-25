@@ -8,8 +8,8 @@ use core::{
 };
 
 use crate::{
-    DmaAddressError, DmaFrameAddress, FRAME_BUFFER_SIZE, RxFrameError, RxFrameView,
-    ordering::device_fence,
+    DmaAddressError, DmaFrameAddress, DmaTerminalEvidence, FRAME_BUFFER_SIZE, RxFrameError,
+    RxFrameView, ordering::device_fence,
 };
 
 const STATE_FREE: u8 = 0;
@@ -502,29 +502,15 @@ impl<'pool, const COUNT: usize> RxCompletion<'pool, COUNT> {
 }
 
 impl<'pool, const COUNT: usize> RxArm<'pool, COUNT> {
-    /// Complete either kind of armed resource in the native ownership model.
+    /// Transfer either terminal RX resource to CPU ownership.
     ///
-    /// The model only advances software ownership; it does not observe a MAC
-    /// event or perform MMIO. On mismatch the exact arm is retained inside an
-    /// opaque terminal failure and later address publication stays poisoned.
-    #[cfg(not(target_arch = "riscv32"))]
-    pub fn complete_model(self) -> Result<RxCompletion<'pool, COUNT>, RxLifecycleFailure<Self>> {
-        self.complete_inner()
-    }
-
-    /// Transfer either kind of hardware-completed arm to CPU ownership.
-    ///
-    /// # Safety
-    ///
-    /// The caller must have observed a terminal MAC RX event for the exact
-    /// address borrowed from this arm and proved that hardware cannot write it.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "hardware completion is the external DMA ownership boundary"
-    )]
-    pub unsafe fn assume_delivered(
+    /// Evidence is minted only by the sealed runtime after the exact active
+    /// operation accepts an acknowledged terminal batch. The completion keeps
+    /// ordinary delivery buffers distinct from the drop stub and must be
+    /// explicitly recycled before that slot can be armed again.
+    pub fn complete(
         self,
+        _terminal: &DmaTerminalEvidence,
     ) -> Result<RxCompletion<'pool, COUNT>, RxLifecycleFailure<Self>> {
         self.complete_inner()
     }
@@ -586,30 +572,11 @@ impl<'pool, const COUNT: usize> RxArmed<'pool, COUNT> {
 
     /// Complete a native-model transition with no external DMA actor.
     ///
-    /// This compatibility API returns only the error after poisoning the
-    /// complete pool. Use aggregate [`RxArm::complete_model`] when a MAC actor
-    /// must retain the exact failed arm as an opaque terminal owner.
+    /// This model-only API returns only the error after poisoning the complete
+    /// pool. Production reclaim uses aggregate [`RxArm::complete`] with affine
+    /// terminal evidence and retains a failed arm as an opaque terminal owner.
     #[cfg(not(target_arch = "riscv32"))]
     pub fn complete_model(self) -> Result<RxDelivered<'pool, COUNT>, RxPoolError> {
-        self.complete_inner_retaining_owner()
-            .map_err(|(_owner, error)| error)
-    }
-
-    /// Transfer a hardware-completed buffer to CPU ownership.
-    ///
-    /// # Safety
-    ///
-    /// The caller must have observed a terminal MAC RX event for this exact
-    /// armed address and established that hardware will no longer write it.
-    /// On a lifecycle mismatch this compatibility API poisons the pool but
-    /// does not return the arm; aggregate [`RxArm::assume_delivered`] retains
-    /// it opaquely.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "hardware completion is the external DMA ownership boundary"
-    )]
-    pub unsafe fn assume_delivered(self) -> Result<RxDelivered<'pool, COUNT>, RxPoolError> {
         self.complete_inner_retaining_owner()
             .map_err(|(_owner, error)| error)
     }
@@ -689,26 +656,9 @@ impl<'pool, const COUNT: usize> RxStubArmed<'pool, COUNT> {
     }
 
     #[cfg(not(target_arch = "riscv32"))]
-    /// Compatibility transition that poisons the pool and drops the ordinary
-    /// arm on mismatch. Aggregate [`RxArm::complete_model`] retains it opaquely.
+    /// Model transition that poisons the pool and drops the ordinary arm on
+    /// mismatch. Production uses aggregate [`RxArm::complete`].
     pub fn complete_model(self) -> Result<RxStubDelivered<'pool, COUNT>, RxPoolError> {
-        self.complete_inner_retaining_owner()
-            .map_err(|(_owner, error)| error)
-    }
-
-    /// Mark the drop stub complete after observing its terminal MAC event.
-    ///
-    /// # Safety
-    ///
-    /// Hardware must no longer write the stub address.
-    /// A mismatch poisons the pool; aggregate [`RxArm::assume_delivered`]
-    /// additionally retains the failed arm as a terminal owner.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "hardware completion is the external DMA ownership boundary"
-    )]
-    pub unsafe fn assume_delivered(self) -> Result<RxStubDelivered<'pool, COUNT>, RxPoolError> {
         self.complete_inner_retaining_owner()
             .map_err(|(_owner, error)| error)
     }
@@ -958,11 +908,12 @@ mod tests {
     fn aggregate_buffer_completion_failure_retains_terminal_owner() {
         let pool = pool::<1>(DMA_LOW).unwrap();
         let arm = pool.arm_next().unwrap();
+        let terminal = DmaTerminalEvidence::for_native_model();
 
         // Fault injection stands in for inconsistent external lifecycle
         // evidence. The aggregate API must not return an Armed token to retry.
         pool.storage.states[0].store(STATE_FREE, Ordering::Release);
-        let failure = match arm.complete_model() {
+        let failure = match arm.complete(&terminal) {
             Ok(_) => panic!("mismatched ownership state must fail"),
             Err(failure) => failure,
         };
@@ -984,10 +935,11 @@ mod tests {
         };
         let retained_frame = frame.complete_model().unwrap();
         let arm = pool.arm_next().unwrap();
+        let terminal = DmaTerminalEvidence::for_native_model();
         assert!(matches!(&arm, RxArm::Stub(_)));
 
         pool.storage.stub_state.store(STATE_FREE, Ordering::Release);
-        let failure = match arm.complete_model() {
+        let failure = match arm.complete(&terminal) {
             Ok(_) => panic!("mismatched stub ownership state must fail"),
             Err(failure) => failure,
         };
@@ -1005,11 +957,12 @@ mod tests {
     #[test]
     fn aggregate_completion_and_recycle_cover_frame_and_stub() {
         let pool = pool::<1>(DMA_LOW).unwrap();
-        let completion = pool.arm_next().unwrap().complete_model().unwrap();
+        let terminal = DmaTerminalEvidence::for_native_model();
+        let completion = pool.arm_next().unwrap().complete(&terminal).unwrap();
         assert_eq!(completion.kind(), RxCompletionKind::Frame { index: 0 });
         assert!(completion.frame().is_some());
 
-        let retained_frame = pool.arm_next().unwrap().complete_model().unwrap();
+        let retained_frame = pool.arm_next().unwrap().complete(&terminal).unwrap();
         assert_eq!(retained_frame.kind(), RxCompletionKind::Stub);
         assert!(retained_frame.frame().is_none());
         retained_frame.recycle().unwrap();
@@ -1021,7 +974,8 @@ mod tests {
     #[test]
     fn recycle_poison_survives_already_issued_arm_completion() {
         let pool = pool::<2>(DMA_LOW).unwrap();
-        let completion = pool.arm_next().unwrap().complete_model().unwrap();
+        let terminal = DmaTerminalEvidence::for_native_model();
+        let completion = pool.arm_next().unwrap().complete(&terminal).unwrap();
         let concurrent_arm = pool.arm_next().unwrap();
         pool.storage.states[0].store(STATE_ARMED, Ordering::Release);
 
@@ -1040,7 +994,7 @@ mod tests {
 
         // This arm escaped before the mismatch was detected. Its completion
         // clears the transient active bit but must never clear poison.
-        let concurrent_completion = concurrent_arm.complete_model().unwrap();
+        let concurrent_completion = concurrent_arm.complete(&terminal).unwrap();
         concurrent_completion.recycle().unwrap();
         assert!(!pool.storage.active.load(Ordering::Acquire));
         assert!(pool.storage.poisoned.load(Ordering::Acquire));

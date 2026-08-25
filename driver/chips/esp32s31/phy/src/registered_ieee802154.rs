@@ -10,6 +10,21 @@
 //! multi-client clock bit/refcount, IRQ routing, DMA ownership, or an
 //! operational IEEE 802.15.4 MAC.
 //!
+//! The dedicated HAL route establishes IEEE clocks before common-PHY client
+//! registration, matching the public enable order. The target-only PHY runner
+//! executes the existing `TargetPhyRegisterPort` directly over
+//! `Ieee802154Clocked::common_phy_parts`; it neither converts the owner through
+//! Wi-Fi nor treats model completion as RF qualification.
+//!
+//! The issued owner cannot be duplicated:
+//!
+//! ```compile_fail
+//! use open_esp_radio_esp32s31_phy::RegisteredIeee802154Clocked;
+//!
+//! fn requires_clone<T: Clone>() {}
+//! requires_clone::<RegisteredIeee802154Clocked<()>>();
+//! ```
+//!
 //! Safe callers cannot construct a registered IEEE owner from separate parts:
 //!
 //! ```compile_fail
@@ -45,17 +60,16 @@
 use core::fmt;
 
 use open_esp_radio_esp32s31_hal::{
-    Ieee802154ClockCheckpoint, Ieee802154ClockTransitionFailure, Ieee802154Clocked,
-    Ieee802154FoundationCheckpoint, Ieee802154FoundationConfigured,
+    Ieee802154Clocked, Ieee802154FoundationCheckpoint, Ieee802154FoundationConfigured,
     Ieee802154FoundationTransitionFailure, Ieee802154MacPolicy, Ieee802154MacPolicyCheckpoint,
     Ieee802154MacPolicyConfigured, Ieee802154MacPolicyRecovery,
-    Ieee802154MacPolicyTransitionFailure, Ieee802154PlatformControl, Ieee802154ReadbackError,
-    Ieee802154Reset, Ieee802154ResetCheckpoint, Ieee802154ResetTransitionFailure,
+    Ieee802154MacPolicyTransitionFailure, Ieee802154OperationCompleted, Ieee802154OperationFailed,
+    Ieee802154OperationPollBudget, Ieee802154PlatformControl, Ieee802154PolledOperationEvidence,
+    Ieee802154PolledOperationFailure, Ieee802154ReadbackError, Ieee802154Reset,
+    Ieee802154ResetCheckpoint, Ieee802154ResetTransitionFailure,
 };
 
 use crate::{PhyState, RegisteredPhyState};
-
-use super::RegisteredPhyRadio;
 
 /// Registered whole-radio owner after IEEE 802.15.4 clock readback.
 ///
@@ -69,6 +83,23 @@ pub struct RegisteredIeee802154Clocked<P> {
 }
 
 impl<P> RegisteredIeee802154Clocked<P> {
+    /// Couple the exact target-completed state to its dedicated IEEE owner.
+    ///
+    /// The private target witness means a caller-driven model transition
+    /// cannot reach this constructor. Keeping the constructor in this module
+    /// also prevents the role and proof from becoming separately observable.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn from_target_completion(
+        role: Ieee802154Clocked<P>,
+        state: PhyState,
+        witness: crate::target_port::TargetRegistrationWitness,
+    ) -> Self {
+        Self {
+            role,
+            registered: RegisteredPhyState::from_target_completion(state, witness),
+        }
+    }
+
     /// Borrow the target-registered PHY state without exposing mutable state.
     pub const fn phy_state(&self) -> &PhyState {
         self.registered.state()
@@ -198,14 +229,69 @@ impl<P> RegisteredIeee802154FoundationConfigured<P> {
 
 /// Registered whole-radio owner after static MAC-policy readback.
 ///
-/// Events and aborts remain masked. This is not PHY/RF qualification, BTBB or
-/// PLL client ownership, IRQ routing, DMA readiness, or an operational IEEE
-/// 802.15.4 MAC. In particular, the policy channel proves only the ZBMAC
-/// frequency-code field; it is not evidence of an RFPLL/PHY retune.
+/// Events and aborts remain masked between finite polled ED/CCA operations.
+/// This is not PHY/RF qualification, BTBB or PLL client ownership, IRQ routing,
+/// DMA readiness, or an operational RX/TX IEEE 802.15.4 MAC. In particular,
+/// the policy channel proves only the ZBMAC frequency-code field; it is not
+/// evidence of an RFPLL/PHY retune.
 #[must_use = "the registered IEEE 802.15.4 policy owner is unique"]
 pub struct RegisteredIeee802154MacPolicyConfigured<P> {
     role: Ieee802154MacPolicyConfigured<P>,
     registered: RegisteredPhyState,
+}
+
+/// Successful finite ED/CCA result retaining both the reusable radio owner and
+/// its target-issued PHY-registration proof.
+#[must_use = "a completed registered IEEE 802.15.4 operation retains its reusable owner"]
+pub struct RegisteredIeee802154OperationCompleted<P> {
+    operation: Ieee802154OperationCompleted<P>,
+    registered: RegisteredPhyState,
+}
+
+impl<P> RegisteredIeee802154OperationCompleted<P> {
+    /// Return the exact MAC-level result and polling evidence.
+    pub const fn evidence(&self) -> &Ieee802154PolledOperationEvidence {
+        self.operation.evidence()
+    }
+
+    /// Borrow the target-registered PHY state without separating its proof.
+    pub const fn phy_state(&self) -> &PhyState {
+        self.registered.state()
+    }
+
+    /// Recover the same registered static-policy owner for another serialized
+    /// operation.
+    pub fn into_owner(self) -> RegisteredIeee802154MacPolicyConfigured<P> {
+        RegisteredIeee802154MacPolicyConfigured {
+            role: self.operation.into_owner(),
+            registered: self.registered,
+        }
+    }
+}
+
+/// Terminal registered ED/CCA failure retaining the radio and PHY proof
+/// without a safe recovery transition.
+#[must_use = "a failed registered IEEE 802.15.4 operation retains a terminal owner"]
+pub struct RegisteredIeee802154OperationFailed<P> {
+    operation: Ieee802154OperationFailed<P>,
+    registered: RegisteredPhyState,
+}
+
+impl<P> RegisteredIeee802154OperationFailed<P> {
+    /// Return complete typed abort, timeout, or invariant evidence.
+    pub const fn failure(&self) -> Ieee802154PolledOperationFailure {
+        self.operation.failure()
+    }
+
+    /// Borrow the target-registered PHY state without separating its proof.
+    pub const fn phy_state(&self) -> &PhyState {
+        self.registered.state()
+    }
+
+    /// Borrow the integration token for terminal diagnostics only.
+    pub fn peripheral(&self) -> &P {
+        self.operation.peripheral()
+    }
 }
 
 impl<P> RegisteredIeee802154MacPolicyConfigured<P> {
@@ -219,75 +305,63 @@ impl<P> RegisteredIeee802154MacPolicyConfigured<P> {
         self.role.peripheral()
     }
 
+    /// Run finite raw energy detection while preserving target registration.
+    ///
+    /// The signed result remains uncalibrated; registration does not by itself
+    /// turn this MAC transaction into an RF-performance qualification.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the allocation-free terminal failure must retain the radio and PHY proof"
+    )]
+    pub fn energy_detection_raw(
+        self,
+        duration: u16,
+        budget: Ieee802154OperationPollBudget,
+    ) -> Result<RegisteredIeee802154OperationCompleted<P>, RegisteredIeee802154OperationFailed<P>>
+    {
+        let Self { role, registered } = self;
+        match role.energy_detection_raw(duration, budget) {
+            Ok(operation) => Ok(RegisteredIeee802154OperationCompleted {
+                operation,
+                registered,
+            }),
+            Err(operation) => Err(RegisteredIeee802154OperationFailed {
+                operation,
+                registered,
+            }),
+        }
+    }
+
+    /// Run finite CCA with the proved static policy while preserving target
+    /// registration.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the allocation-free terminal failure must retain the radio and PHY proof"
+    )]
+    pub fn clear_channel_assessment(
+        self,
+        budget: Ieee802154OperationPollBudget,
+    ) -> Result<RegisteredIeee802154OperationCompleted<P>, RegisteredIeee802154OperationFailed<P>>
+    {
+        let Self { role, registered } = self;
+        match role.clear_channel_assessment(budget) {
+            Ok(operation) => Ok(RegisteredIeee802154OperationCompleted {
+                operation,
+                registered,
+            }),
+            Err(operation) => Err(RegisteredIeee802154OperationFailed {
+                operation,
+                registered,
+            }),
+        }
+    }
+
     /// Return the static MAC policy which passed semantic readback.
     ///
     /// Its channel is only the ZBMAC frequency-code policy value, not proof of
     /// an RFPLL/PHY channel transition.
     pub const fn policy(&self) -> Ieee802154MacPolicy {
         self.role.policy()
-    }
-}
-
-/// Failed registered clock readback retaining the exact hardware epoch.
-///
-/// The enable-only HAL transition may have changed shared clock state. This
-/// owner deliberately offers no conversion back to a common or Wi-Fi owner;
-/// safe code may only inspect evidence or retry the same clock transition.
-///
-/// ```compile_fail
-/// use open_esp_radio_esp32s31_hal::{Radio, state::Powered};
-/// use open_esp_radio_esp32s31_phy::RegisteredIeee802154ClockTransitionFailure;
-///
-/// fn escape<P>(
-///     failure: RegisteredIeee802154ClockTransitionFailure<P>,
-/// ) -> Radio<P, Powered> {
-///     failure.into_powered()
-/// }
-/// ```
-#[must_use = "a failed registered clock transition still owns the radio"]
-pub struct RegisteredIeee802154ClockTransitionFailure<P> {
-    failure: Ieee802154ClockTransitionFailure<P>,
-    registered: RegisteredPhyState,
-}
-
-impl<P> RegisteredIeee802154ClockTransitionFailure<P> {
-    /// Return the first clock checkpoint whose readback mismatched.
-    pub const fn error(&self) -> Ieee802154ReadbackError<Ieee802154ClockCheckpoint> {
-        self.failure.error()
-    }
-
-    /// Borrow the retained target-registered PHY state immutably.
-    pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
-    }
-}
-
-impl<P: Ieee802154PlatformControl> RegisteredIeee802154ClockTransitionFailure<P> {
-    /// Retry clock establishment with the exact powered radio and proof.
-    ///
-    /// Failure returns a new opaque failure owner; no path releases a common
-    /// powered owner or permits transition to Wi-Fi.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the allocation-free failure must retain the exact HAL owner and PHY proof"
-    )]
-    pub fn retry(
-        self,
-    ) -> Result<RegisteredIeee802154Clocked<P>, RegisteredIeee802154ClockTransitionFailure<P>> {
-        let Self {
-            failure,
-            registered,
-        } = self;
-        enter_ieee802154_clocks(failure.into_powered(), registered)
-    }
-}
-
-impl<P> fmt::Debug for RegisteredIeee802154ClockTransitionFailure<P> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("RegisteredIeee802154ClockTransitionFailure")
-            .field("error", &self.error())
-            .finish_non_exhaustive()
     }
 }
 
@@ -452,45 +526,6 @@ impl<P: Ieee802154PlatformControl> RegisteredIeee802154MacPolicyRecovery<P> {
     }
 }
 
-impl<P: Ieee802154PlatformControl> RegisteredPhyRadio<P> {
-    /// Enter the proof-preserving IEEE 802.15.4 clock lifecycle.
-    ///
-    /// Clock failure is intentionally role-poisoning: the enable-only HAL path
-    /// may have changed shared clock state, so the returned owner supports only
-    /// an exact retry and can never be converted back to common/Wi-Fi use.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the allocation-free failure must retain the exact HAL owner and PHY proof"
-    )]
-    pub fn into_ieee802154_clocked(
-        self,
-    ) -> Result<RegisteredIeee802154Clocked<P>, RegisteredIeee802154ClockTransitionFailure<P>> {
-        let RegisteredPhyRadio { radio, phy } = self;
-        enter_ieee802154_clocks(radio, phy)
-    }
-}
-
-#[allow(
-    clippy::result_large_err,
-    reason = "the allocation-free failure must retain the exact HAL owner and PHY proof"
-)]
-fn enter_ieee802154_clocks<P: Ieee802154PlatformControl>(
-    radio: open_esp_radio_esp32s31_hal::Radio<P, open_esp_radio_esp32s31_hal::state::Powered>,
-    registered: RegisteredPhyState,
-) -> Result<RegisteredIeee802154Clocked<P>, RegisteredIeee802154ClockTransitionFailure<P>> {
-    match preserve_registration(
-        radio,
-        registered,
-        open_esp_radio_esp32s31_hal::Radio::into_ieee802154_clocked,
-    ) {
-        Ok((role, registered)) => Ok(RegisteredIeee802154Clocked { role, registered }),
-        Err((failure, registered)) => Err(RegisteredIeee802154ClockTransitionFailure {
-            failure,
-            registered,
-        }),
-    }
-}
-
 /// Move one registration proof through the exact result of a role transition.
 ///
 /// Keeping this combinator in production code makes success and failure use
@@ -524,24 +559,25 @@ fn map_registration<Before, After>(
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_hal::{
-        Ieee802154ClockCheckpoint, Ieee802154ClockImages, Ieee802154MacPolicy,
-        Ieee802154PlatformControl, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
-        Ieee802154ResetImages, Radio, wifi_bb::PhyWifiBbControl,
+        Ieee802154ClockImages, Ieee802154MacPolicy, Ieee802154Owned, Ieee802154PlatformControl,
+        Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetImages,
+        PowerClockControl, PowerClockImages,
     };
 
     use crate::{PhyConfig, PhyState, RegisteredPhyState};
 
     use super::{
-        RegisteredIeee802154FoundationTransitionFailure, RegisteredIeee802154MacPolicyConfigured,
-        RegisteredIeee802154MacPolicyRecovery, RegisteredIeee802154MacPolicyTransitionFailure,
-        RegisteredIeee802154Reset, RegisteredIeee802154ResetTransitionFailure, RegisteredPhyRadio,
-        map_registration, preserve_registration,
+        RegisteredIeee802154Clocked, RegisteredIeee802154FoundationTransitionFailure,
+        RegisteredIeee802154MacPolicyConfigured, RegisteredIeee802154MacPolicyRecovery,
+        RegisteredIeee802154MacPolicyTransitionFailure, RegisteredIeee802154Reset,
+        RegisteredIeee802154ResetTransitionFailure, map_registration, preserve_registration,
     };
 
     #[derive(Debug)]
     struct FakePlatform {
         clocks: Ieee802154ClockImages,
         resets: Ieee802154ResetImages,
+        power: PowerClockImages,
         clock_sequences: u8,
         reset_edges: u8,
     }
@@ -566,9 +602,50 @@ mod tests {
                     mac_reset_released: true,
                     apb_reset_released: true,
                 },
+                power: PowerClockImages {
+                    reset_released: true,
+                    hp_active_icg_selected: true,
+                    modem_bus_clock_enabled: true,
+                    hp_active_clock_map_configured: true,
+                    shared_clock_map_configured: true,
+                    modem_source_clocks_configured: true,
+                    phy_calibration_clocks_enabled: true,
+                    phy_i2c_160mhz_selected: true,
+                    phy_i2c_master_clock_enabled: true,
+                },
                 clock_sequences: 0,
                 reset_edges: 0,
             }
+        }
+    }
+
+    impl PowerClockControl for FakePlatform {
+        fn set_wifi_baseband_and_mac_reset(&mut self, _asserted: bool) {}
+
+        fn select_hp_active_modem_icg(&mut self) {}
+
+        fn apply_modem_icg_selection(&mut self) {}
+
+        fn apply_sleep_icg_selection(&mut self) {}
+
+        fn enable_modem_register_bus_clock(&mut self) {}
+
+        fn configure_hp_active_modem_clock_map(&mut self) {}
+
+        fn configure_shared_modem_clock_map(&mut self) {}
+
+        fn configure_modem_source_clocks(&mut self) {}
+
+        fn set_wifi_baseband_reset(&mut self, _asserted: bool) {}
+
+        fn enable_phy_calibration_clocks(&mut self) {}
+
+        fn select_phy_i2c_160mhz_source(&mut self) {}
+
+        fn enable_phy_i2c_master_clock(&mut self) {}
+
+        fn power_clock_images(&self) -> PowerClockImages {
+            self.power
         }
     }
 
@@ -608,29 +685,15 @@ mod tests {
         }
     }
 
-    impl PhyWifiBbControl for FakePlatform {
-        fn clear_cold_start_wifi_control(&mut self) {}
-
-        fn wifi_baseband_is_enabled(&self) -> bool {
-            false
-        }
-
-        fn set_wifi_baseband_enabled(&mut self, _enabled: bool) {}
-
-        fn set_bss_cbw_40_digital(&mut self, _enabled: bool) {}
-
-        fn set_bb_agc_update_encoding(&mut self, _encoding: u8) {}
-
-        fn set_mac_baseband_enabled(&mut self, _enabled: bool) {}
-    }
-
-    fn owner(platform: FakePlatform) -> RegisteredPhyRadio<FakePlatform> {
-        let radio =
-            Radio::claim_for_validation(platform).assume_powered_after_external_initialization();
-        let registered = registered_state();
-        RegisteredPhyRadio {
-            radio,
-            phy: registered,
+    fn owner(platform: FakePlatform) -> RegisteredIeee802154Clocked<FakePlatform> {
+        let role = Ieee802154Owned::claim_for_validation(platform)
+            .power_up()
+            .unwrap_or_else(|_| panic!("shared power readback must pass"))
+            .into_ieee802154_clocked()
+            .unwrap_or_else(|_| panic!("clock readback must pass"));
+        RegisteredIeee802154Clocked {
+            role,
+            registered: registered_state(),
         }
     }
 
@@ -666,11 +729,10 @@ mod tests {
     #[test]
     fn registered_full_chain_and_typed_recovery_surface_connects() {
         fn full_success_chain<P: Ieee802154PlatformControl>(
-            owner: RegisteredPhyRadio<P>,
+            owner: RegisteredIeee802154Clocked<P>,
             policy: Ieee802154MacPolicy,
         ) -> Option<RegisteredIeee802154MacPolicyConfigured<P>> {
-            let clocked = owner.into_ieee802154_clocked().ok()?;
-            let reset = clocked.reset_mac().ok()?;
+            let reset = owner.reset_mac().ok()?;
             let foundation = reset.configure_foundation().ok()?;
             foundation.configure_mac_policy(policy).ok()
         }
@@ -694,9 +756,7 @@ mod tests {
 
     #[test]
     fn registered_clock_and_reset_transitions_retain_one_proof_owner() {
-        let clocked = owner(FakePlatform::ready())
-            .into_ieee802154_clocked()
-            .unwrap_or_else(|_| panic!("clock readback must pass"));
+        let clocked = owner(FakePlatform::ready());
         assert!(clocked.phy_state().phy_registered());
         assert_eq!(clocked.peripheral().clock_sequences, 1);
 
@@ -710,32 +770,9 @@ mod tests {
 
     #[test]
     fn registered_failures_retain_proof_and_only_typed_recovery() {
-        let mut clock_platform = FakePlatform::ready();
-        clock_platform.clocks.etm_clock_enabled = false;
-        let clock_failure = match owner(clock_platform).into_ieee802154_clocked() {
-            Ok(_) => panic!("invalid clock readback must fail"),
-            Err(failure) => failure,
-        };
-        assert_eq!(
-            clock_failure.error(),
-            Ieee802154ReadbackError {
-                checkpoint: Ieee802154ClockCheckpoint::EtmClock,
-                expected: true,
-                observed: false,
-            }
-        );
-        assert!(clock_failure.phy_state().phy_registered());
-        let clock_failure = match clock_failure.retry() {
-            Ok(_) => panic!("unchanged invalid clock readback must still fail"),
-            Err(failure) => failure,
-        };
-        assert!(clock_failure.phy_state().phy_registered());
-
         let mut reset_platform = FakePlatform::ready();
         reset_platform.resets.mac_reset_released = false;
-        let clocked = owner(reset_platform)
-            .into_ieee802154_clocked()
-            .unwrap_or_else(|_| panic!("clock readback must pass"));
+        let clocked = owner(reset_platform);
         let reset_failure: RegisteredIeee802154ResetTransitionFailure<_> = match clocked.reset_mac()
         {
             Ok(_) => panic!("invalid reset readback must fail"),

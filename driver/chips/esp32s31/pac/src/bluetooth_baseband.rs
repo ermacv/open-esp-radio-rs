@@ -2,13 +2,14 @@
 //!
 //! This module is deliberately crate-private. The transaction is the observed
 //! MMIO portion of `bt_bb_v2_init_cmplx(1)`, but it is not a controller-enable
-//! API: the vendor lifecycle first completes common PHY initialization. A
-//! higher Bluetooth crate may expose this transaction only after it owns an
-//! equivalent PHY-initialized typestate.
+//! API: the vendor lifecycle first completes common PHY initialization. The
+//! standalone Bluetooth edge closes that body with a device fence. The IEEE
+//! 802.15.4 edge deliberately leaves the body unfenced so its two source-owned
+//! timing overrides and the sole final fence remain one inseparable transition.
 
 #![deny(unsafe_code)]
 
-use super::{BluetoothTaskRegisters, device_fence};
+use super::{BluetoothTaskRegisters, Ieee802154TaskRegisters, device_fence, svd};
 
 const fn gain_force_low(parameter: u8) -> u8 {
     parameter & 0x7f
@@ -25,7 +26,9 @@ impl BluetoothTaskRegisters {
     /// body from the real linked `phy_param` object at offset `0x120`. Its
     /// higher-level meaning remains unassigned. The vendor diagnostic print
     /// selected by argument one is intentionally outside this hardware
-    /// transaction and is omitted from the comparison effect contract.
+    /// transaction and is omitted from the comparison effect contract. After
+    /// the body, this standalone Bluetooth edge adds exactly one device fence
+    /// before returning to its lifecycle owner.
     ///
     /// This hidden SPI is public only because Rust has no cross-crate friend
     /// visibility. It is unsafe so safe downstream code cannot bypass the
@@ -45,6 +48,79 @@ impl BluetoothTaskRegisters {
     )]
     #[doc(hidden)]
     pub unsafe fn initialize_baseband_v2_arg_one(&mut self, gain_parameter: u8) {
+        let mut port = BluetoothBasebandV2Transaction {
+            bluetooth: &self.bluetooth,
+            radio_phy: &self.radio_phy.peripherals,
+            shared_radio: &self.shared_radio,
+        };
+        execute_standalone_bluetooth_transition(&mut port, gain_parameter);
+    }
+}
+
+impl Ieee802154TaskRegisters {
+    /// Execute the shared BTBB transaction required after common PHY setup.
+    ///
+    /// This crate-private edge is the same recovered
+    /// `bt_bb_v2_init_cmplx(1)` MMIO body used by the standalone Bluetooth
+    /// owner, without the standalone lifecycle fence. The public IEEE 802.15.4
+    /// transition is deliberately defined in `ieee802154_timing`: it appends
+    /// both protocol-specific timing overrides and the sole final fence before
+    /// returning, so downstream code cannot stop at this internal boundary.
+    ///
+    /// # Safety
+    ///
+    /// The caller must prove that controller clocks/resets are active, common
+    /// PHY initialization completed for this same hardware owner, and
+    /// `gain_parameter` came from that terminal PHY state. Every physical
+    /// owner must remain retained until a verified last-owner PHY teardown;
+    /// the task partition must not be reunited into cold ownership after this
+    /// transaction without that teardown.
+    #[allow(
+        unsafe_code,
+        reason = "the unsafe signature encodes the cross-crate common-PHY hardware prerequisite"
+    )]
+    pub(crate) unsafe fn initialize_baseband_v2_arg_one_body_without_fence(
+        &mut self,
+        gain_parameter: u8,
+    ) {
+        let mut port = BluetoothBasebandV2Transaction {
+            bluetooth: &self.peripherals.btbb.bluetooth,
+            radio_phy: &self.peripherals.radio_phy.peripherals,
+            shared_radio: &self.peripherals.btbb.shared_radio,
+        };
+        execute_ieee802154_baseband_body(&mut port, gain_parameter);
+    }
+}
+
+trait BluetoothBasebandV2TransitionPort {
+    fn execute_body(&mut self, gain_parameter: u8);
+    fn order_device_accesses(&mut self);
+}
+
+fn execute_standalone_bluetooth_transition<Port>(port: &mut Port, gain_parameter: u8)
+where
+    Port: BluetoothBasebandV2TransitionPort,
+{
+    port.execute_body(gain_parameter);
+    port.order_device_accesses();
+}
+
+fn execute_ieee802154_baseband_body<Port>(port: &mut Port, gain_parameter: u8)
+where
+    Port: BluetoothBasebandV2TransitionPort,
+{
+    port.execute_body(gain_parameter);
+}
+
+/// One borrow-scoped view of the exact generated owners touched by BTBB v2.
+struct BluetoothBasebandV2Transaction<'a> {
+    bluetooth: &'a svd::peripheral_ownership::BluetoothControllerPeripherals,
+    radio_phy: &'a svd::peripheral_ownership::RadioPhyPeripherals,
+    shared_radio: &'a svd::peripheral_ownership::SharedRadioPeripherals,
+}
+
+impl BluetoothBasebandV2TransitionPort for BluetoothBasebandV2Transaction<'_> {
+    fn execute_body(&mut self, gain_parameter: u8) {
         self.initialize_baseband_v2_tx();
         self.initialize_baseband_v2_rx(gain_parameter);
         self.initialize_gaussian_1m_coefficients();
@@ -53,14 +129,15 @@ impl BluetoothTaskRegisters {
         self.initialize_baseband_coexistence_defaults();
         self.initialize_baseband_cca_defaults();
         self.initialize_shared_receive_image();
-
-        // The vendor function ends after the final shared receive image. The
-        // Rust owner adds one reviewed device-ordering boundary before a later
-        // lifecycle state may consume the initialized hardware.
-        device_fence();
     }
 
-    fn initialize_baseband_v2_tx(&mut self) {
+    fn order_device_accesses(&mut self) {
+        device_fence();
+    }
+}
+
+impl BluetoothBasebandV2Transaction<'_> {
+    fn initialize_baseband_v2_tx(&self) {
         let baseband = &self.bluetooth.bt_v3_2_baseband;
         baseband
             .rx_setup_argument()
@@ -73,7 +150,7 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.tx_set_low_byte().set(0xf5));
     }
 
-    fn initialize_baseband_v2_rx(&mut self, gain_parameter: u8) {
+    fn initialize_baseband_v2_rx(&self, gain_parameter: u8) {
         self.initialize_baseband_rx_setup();
         self.initialize_receive_compensation();
         self.initialize_receive_gain_offsets();
@@ -120,7 +197,7 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.final_force_zero_13().clear_bit());
     }
 
-    fn initialize_baseband_rx_setup(&mut self) {
+    fn initialize_baseband_rx_setup(&self) {
         self.bluetooth
             .bt_v3_2_baseband
             .rx_setup_argument()
@@ -138,7 +215,7 @@ impl BluetoothTaskRegisters {
             .rx_setup_control_1()
             .modify(|_, w| w.enable().set_bit());
 
-        let btagc = &self.radio_phy.peripherals.phy_btagc_recovered;
+        let btagc = &self.radio_phy.phy_btagc_recovered;
         btagc
             .agc_config_00d0()
             .modify(|_, w| w.config_value_high().set(20));
@@ -194,12 +271,8 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.config_force_zero_low().set(0));
     }
 
-    fn initialize_receive_compensation(&mut self) {
-        let control = self
-            .radio_phy
-            .peripherals
-            .phy_btagc_recovered
-            .rx_comp_control();
+    fn initialize_receive_compensation(&self) {
+        let control = self.radio_phy.phy_btagc_recovered.rx_comp_control();
         control.modify(|_, w| w.dynamic_bits_7_13().set(6));
         control.modify(|_, w| w.dynamic_bits_0_6().set(6));
         control.modify(|_, w| w.finite_bits_24_28().set(6));
@@ -207,8 +280,8 @@ impl BluetoothTaskRegisters {
         control.modify(|_, w| w.finite_bits_14_18().set(8));
     }
 
-    fn initialize_receive_gain_offsets(&mut self) {
-        let btagc = &self.radio_phy.peripherals.phy_btagc_recovered;
+    fn initialize_receive_gain_offsets(&self) {
+        let btagc = &self.radio_phy.phy_btagc_recovered;
         let first = btagc.gain_offset_word_0_opaque();
         first.modify(|_, w| w.positional_bits_5_9().set(4));
         first.modify(|_, w| w.positional_bits_0_4().set(4));
@@ -220,14 +293,13 @@ impl BluetoothTaskRegisters {
         second.modify(|_, w| w.positional_bits_16_23().set(0x50));
     }
 
-    fn initialize_receive_gain(&mut self, parameter: u8) {
+    fn initialize_receive_gain(&self, parameter: u8) {
         self.radio_phy
-            .peripherals
             .phy_baseband_config_oracle
             .baseband_init_7cd0()
             .modify(|_, w| w.init_low_unknown().set(0x0f).init_high_unknown().set(0x0f));
 
-        let btagc = &self.radio_phy.peripherals.phy_btagc_recovered;
+        let btagc = &self.radio_phy.phy_btagc_recovered;
         btagc
             .rx_gain_force_opaque()
             .modify(|_, w| w.dynamic_bits_0_6().set(gain_force_low(parameter)));
@@ -236,8 +308,8 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.dynamic_bits_2_8().set(gain_image(parameter)));
     }
 
-    fn initialize_receive_rssi_thresholds(&mut self) {
-        let btagc = &self.radio_phy.peripherals.phy_btagc_recovered;
+    fn initialize_receive_rssi_thresholds(&self) {
+        let btagc = &self.radio_phy.phy_btagc_recovered;
         btagc
             .shared_rx_sense_and_detect_00a0()
             .modify(|_, w| w.positional_bits_16_23().set(0x9c));
@@ -252,8 +324,8 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.positional_bits_12_19().set(0x88));
     }
 
-    fn initialize_receive_targets(&mut self) {
-        let btagc = &self.radio_phy.peripherals.phy_btagc_recovered;
+    fn initialize_receive_targets(&self) {
+        let btagc = &self.radio_phy.phy_btagc_recovered;
         btagc
             .cte_agc_target()
             .modify(|_, w| w.baseband_target_value().set(0x1d4));
@@ -277,8 +349,8 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.target_bits_23_31().set(0x1ce));
     }
 
-    fn initialize_receive_restart(&mut self) {
-        let btagc = &self.radio_phy.peripherals.phy_btagc_recovered;
+    fn initialize_receive_restart(&self) {
+        let btagc = &self.radio_phy.phy_btagc_recovered;
         btagc
             .rx_config_0088()
             .modify(|_, w| w.config_force_zero_30().clear_bit());
@@ -348,8 +420,8 @@ impl BluetoothTaskRegisters {
         f8.modify(|_, w| w.bits_20_25().set(5));
     }
 
-    fn initialize_receive_recorrection(&mut self) {
-        let btagc = &self.radio_phy.peripherals.phy_btagc_recovered;
+    fn initialize_receive_recorrection(&self) {
+        let btagc = &self.radio_phy.phy_btagc_recovered;
         btagc
             .agc_recorrect_and_target_00b4()
             .modify(|_, w| w.recorrect_bit_8().set_bit());
@@ -391,8 +463,8 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.finite_bits_24_31().set(0x0f));
     }
 
-    fn initialize_receive_detection(&mut self) {
-        let btagc = &self.radio_phy.peripherals.phy_btagc_recovered;
+    fn initialize_receive_detection(&self) {
+        let btagc = &self.radio_phy.phy_btagc_recovered;
         btagc
             .shared_rx_sense_and_detect_00a0()
             .modify(|_, w| w.positional_bits_24_27().set(4));
@@ -418,7 +490,7 @@ impl BluetoothTaskRegisters {
         c4.modify(|_, w| w.bits_15_19().set(0x0f));
     }
 
-    fn initialize_gaussian_1m_coefficients(&mut self) {
+    fn initialize_gaussian_1m_coefficients(&self) {
         let baseband = &self.bluetooth.bt_v3_2_baseband;
         let c0 = baseband.gaussian_1m_coefficient_0();
         c0.modify(|_, w| w.bits_28_31().set(0));
@@ -438,7 +510,7 @@ impl BluetoothTaskRegisters {
         c3.modify(|_, w| w.bits_10_20().set(0x7e9));
     }
 
-    fn initialize_gaussian_2m_coefficients(&mut self) {
+    fn initialize_gaussian_2m_coefficients(&self) {
         let baseband = &self.bluetooth.bt_v3_2_baseband;
         let c0 = baseband.gaussian_2m_coefficient_and_tx_config();
         c0.modify(|_, w| w.gaussian_bits_25_31().set(0));
@@ -450,9 +522,8 @@ impl BluetoothTaskRegisters {
         c1.modify(|_, w| w.bits_0_10().set(0x78f));
     }
 
-    fn initialize_baseband_tx_timing(&mut self) {
+    fn initialize_baseband_tx_timing(&self) {
         self.radio_phy
-            .peripherals
             .phy_baseband_config_oracle
             .tx_pa_control_1()
             .modify(|_, w| w.pa_on_bt_delay().set(0x96));
@@ -479,14 +550,14 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.encoded_image().set(0x190));
     }
 
-    fn initialize_baseband_coexistence_defaults(&mut self) {
+    fn initialize_baseband_coexistence_defaults(&self) {
         let coex = self.bluetooth.bt_v3_2_baseband.coex_config();
         coex.modify(|_, w| w.config_force_one_18().set_bit());
         coex.modify(|_, w| w.config_force_one_20().set_bit());
     }
 
-    fn initialize_baseband_cca_defaults(&mut self) {
-        let btagc = &self.radio_phy.peripherals.phy_btagc_recovered;
+    fn initialize_baseband_cca_defaults(&self) {
+        let btagc = &self.radio_phy.phy_btagc_recovered;
         let cca = btagc.cca_config();
         cca.modify(|_, w| w.config_value_0().set(0x1ce));
         cca.modify(|_, w| w.config_value_1().set(0x1e));
@@ -497,7 +568,7 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.default_config_value().set(5));
     }
 
-    fn initialize_shared_receive_prefix(&mut self) {
+    fn initialize_shared_receive_prefix(&self) {
         let shared = &self.shared_radio.zbbb_radio_control;
         shared
             .shared_rx_init_image_0()
@@ -537,7 +608,7 @@ impl BluetoothTaskRegisters {
             .modify(|_, w| w.positional_force_one_0().set_bit());
     }
 
-    fn initialize_shared_receive_image(&mut self) {
+    fn initialize_shared_receive_image(&self) {
         self.initialize_shared_receive_prefix();
         self.shared_radio
             .zbbb_radio_control
@@ -548,7 +619,33 @@ impl BluetoothTaskRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{gain_force_low, gain_image};
+    use super::{
+        BluetoothBasebandV2TransitionPort, BluetoothTaskRegisters, Ieee802154TaskRegisters,
+        execute_ieee802154_baseband_body, execute_standalone_bluetooth_transition, gain_force_low,
+        gain_image,
+    };
+    use std::vec::Vec;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum BoundaryStep {
+        Body(u8),
+        DeviceFence,
+    }
+
+    #[derive(Default)]
+    struct BoundaryTrace {
+        steps: Vec<BoundaryStep>,
+    }
+
+    impl BluetoothBasebandV2TransitionPort for BoundaryTrace {
+        fn execute_body(&mut self, gain_parameter: u8) {
+            self.steps.push(BoundaryStep::Body(gain_parameter));
+        }
+
+        fn order_device_accesses(&mut self) {
+            self.steps.push(BoundaryStep::DeviceFence);
+        }
+    }
 
     #[test]
     fn linked_parameter_byte_uses_the_exact_vendor_transforms() {
@@ -558,5 +655,27 @@ mod tests {
         assert_eq!(gain_image(0x7f), 0x7a);
         assert_eq!(gain_force_low(0xff), 0x7f);
         assert_eq!(gain_image(0xff), 0x7a);
+    }
+
+    #[test]
+    fn production_helpers_keep_protocol_boundaries_distinct() {
+        let mut bluetooth = BoundaryTrace::default();
+        execute_standalone_bluetooth_transition(&mut bluetooth, 0x6d);
+        assert_eq!(
+            bluetooth.steps,
+            [BoundaryStep::Body(0x6d), BoundaryStep::DeviceFence]
+        );
+
+        let mut ieee802154 = BoundaryTrace::default();
+        execute_ieee802154_baseband_body(&mut ieee802154, 0x6d);
+        assert_eq!(ieee802154.steps, [BoundaryStep::Body(0x6d)]);
+    }
+
+    #[test]
+    fn both_protocol_owners_reuse_the_body_with_distinct_entry_shapes() {
+        let _: unsafe fn(&mut BluetoothTaskRegisters, u8) =
+            BluetoothTaskRegisters::initialize_baseband_v2_arg_one;
+        let _: unsafe fn(&mut Ieee802154TaskRegisters, u8) =
+            Ieee802154TaskRegisters::initialize_baseband_v2_arg_one_body_without_fence;
     }
 }

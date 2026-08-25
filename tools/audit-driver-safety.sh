@@ -54,17 +54,17 @@ for manifest in "${manifests[@]}"; do
     fi
 done
 
-# The restricted PAC is an implementation dependency of chip hardware
+# The restricted PAC is an implementation dependency of exact chip hardware
 # backends. Crates above those backends cannot bypass that boundary through
 # either ordinary or dev dependencies.
 for manifest in "${manifests[@]}"; do
     case "$manifest" in
-        driver/chips/esp32s31/pac/Cargo.toml|driver/chips/esp32s31/pac-raw/Cargo.toml|driver/chips/esp32s31/hal/Cargo.toml|driver/chips/esp32s31/bluetooth/Cargo.toml)
+        driver/chips/esp32s31/pac/Cargo.toml|driver/chips/esp32s31/pac-raw/Cargo.toml|driver/chips/esp32s31/hal/Cargo.toml|driver/chips/esp32s31/bluetooth/Cargo.toml|driver/chips/esp32s31/ieee802154/irq/Cargo.toml|driver/chips/esp32s31/ieee802154/runtime/Cargo.toml)
             continue
             ;;
     esac
     if rg -q 'open-esp-radio-esp32s31-pac([[:space:]]|[[:punct:]])' "$manifest"; then
-        echo "driver crate bypasses HAL with a PAC dependency: $manifest" >&2
+        echo "driver crate bypasses an exact chip hardware boundary with a PAC dependency: $manifest" >&2
         exit 1
     fi
 done

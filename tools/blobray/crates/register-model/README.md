@@ -16,11 +16,16 @@
 - generic physical-layout and write-semantics invariants;
 - reviewed PAC transaction, binding-index and evidence-catalog schemas.
 
+The PAC pack declares `sidecar-modules` for reviewed hand-written modules that
+must remain available in every generated raw PAC build. Validation-only
+sidecars use the separate feature-gated `feature-modules` list.
+
 The closed-PAC transaction pack is schema 4 only. Its
-`selected-register-writes` operation is an evidence-backed escape hatch for one
-exact `u32` volatile image to one non-array 32-bit register which the SVD keeps
-read-only. It never rewrites SVD access or accepts a dynamic image; sequencing
-and hardware qualification stay above the generated raw helper.
+`w1c-register-snapshots` operation binds one non-array 32-bit W1C register field
+to an affine sample token. The token has no public constructor, is not cloneable
+and is consumed by the exact same-register acknowledgement; no caller-built
+clear image crosses this boundary. Sequencing and hardware qualification stay
+above the generated raw helper.
 
 It does not know about ELF files, discovery facts, ESP32-S31, PAC helper
 contents or output paths. The vendor validator composes it with observed MMIO

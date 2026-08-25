@@ -7,8 +7,8 @@ extern crate std;
 use core::future::Future;
 
 use open_esp_radio_esp32s31_pac::{
-    BluetoothTaskRegisters, MacInterruptRegisters as PacMacInterruptRegisters,
-    MacInterruptSetup as PacMacInterruptSetup,
+    BluetoothTaskRegisters, Ieee802154TaskRegisters,
+    MacInterruptRegisters as PacMacInterruptRegisters, MacInterruptSetup as PacMacInterruptSetup,
     MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioHardware, RadioPhyRegisters,
     WifiColdRegisters, WifiRadioRegisters,
 };
@@ -64,6 +64,13 @@ pub use ieee802154_lifecycle::{
     Ieee802154PlatformControl, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
     Ieee802154ResetImages,
 };
+pub use ieee802154_operation::{
+    Ieee802154OperationEventMaskState, Ieee802154OperationEventObservation,
+    Ieee802154OperationPollBudget, Ieee802154OperationRxAbortMaskState, Ieee802154OperationStage,
+    Ieee802154PolledOperation, Ieee802154PolledOperationAbortEvidence,
+    Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
+    Ieee802154PolledOperationResult,
+};
 pub use ieee802154_policy::{
     IEEE802154_ACK_TIMEOUT_QUANTUM_MICROSECONDS, IEEE802154_MAX_ACK_TIMEOUT_MICROSECONDS,
     Ieee802154AckTimeout, Ieee802154AckTimeoutError, Ieee802154CcaMode, Ieee802154MacControl,
@@ -72,7 +79,9 @@ pub use ieee802154_policy::{
 pub use ieee802154_role::{
     Ieee802154ClockTransitionFailure, Ieee802154Clocked, Ieee802154FoundationConfigured,
     Ieee802154FoundationTransitionFailure, Ieee802154MacPolicyConfigured,
-    Ieee802154MacPolicyRecovery, Ieee802154MacPolicyTransitionFailure, Ieee802154Reset,
+    Ieee802154MacPolicyRecovery, Ieee802154MacPolicyTransitionFailure,
+    Ieee802154OperationCompleted, Ieee802154OperationFailed, Ieee802154Owned,
+    Ieee802154PowerTransitionFailure, Ieee802154Powered, Ieee802154Reset,
     Ieee802154ResetTransitionFailure,
 };
 #[cfg(feature = "validation-probes")]
@@ -124,20 +133,34 @@ impl WifiBasebandEnableObservation {
 /// Narrow borrowed HAL capability for the protocol-neutral radio PHY.
 ///
 /// This value cannot acquire, release, or recover the underlying PAC owner.
-/// Its lifetime is bounded by the active Wi-Fi or Bluetooth route.
+/// Its lifetime is bounded by the active Wi-Fi, Bluetooth, or IEEE 802.15.4
+/// route.
 pub struct SharedPhyHal<'owner> {
     registers: &'owner mut RadioPhyRegisters,
     wifi_baseband: WifiBasebandEnableObservation,
 }
 
 mod sealed {
-    use super::{BluetoothTaskRegisters, RadioPhyRegisters, WifiBasebandEnableObservation};
+    use super::{
+        BluetoothTaskRegisters, Ieee802154TaskRegisters, RadioPhyRegisters,
+        WifiBasebandEnableObservation,
+    };
 
     pub trait BluetoothSharedPhyBorrow {
         fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters;
     }
 
     impl BluetoothSharedPhyBorrow for BluetoothTaskRegisters {
+        fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
+            self.radio_phy_mut()
+        }
+    }
+
+    pub trait Ieee802154SharedPhyBorrow {
+        fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters;
+    }
+
+    impl Ieee802154SharedPhyBorrow for Ieee802154TaskRegisters {
         fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
             self.radio_phy_mut()
         }
@@ -181,6 +204,30 @@ pub trait BluetoothSharedPhyBorrow: sealed::BluetoothSharedPhyBorrow {
 }
 
 impl BluetoothSharedPhyBorrow for BluetoothTaskRegisters {}
+
+/// Sealed conversion from the exclusive IEEE 802.15.4 task owner to one
+/// narrow shared-PHY borrow.
+///
+/// This is the same concrete common-PHY port used by the standalone Bluetooth
+/// lifecycle. It conveys neither Wi-Fi ownership nor a PHY/RF-ready claim.
+#[doc(hidden)]
+pub trait Ieee802154SharedPhyBorrow: sealed::Ieee802154SharedPhyBorrow {
+    /// Borrow the shared PHY for one finite IEEE 802.15.4 lower-layer scope.
+    ///
+    /// `wifi_baseband` must come from the retained platform owner; selecting
+    /// the IEEE route alone is not evidence for that shared hardware bit.
+    fn borrow_shared_phy(
+        &mut self,
+        wifi_baseband: WifiBasebandEnableObservation,
+    ) -> SharedPhyHal<'_> {
+        SharedPhyHal {
+            registers: sealed::Ieee802154SharedPhyBorrow::radio_phy_mut(self),
+            wifi_baseband,
+        }
+    }
+}
+
+impl Ieee802154SharedPhyBorrow for Ieee802154TaskRegisters {}
 
 /// Sealed protocol-neutral port accepted by named PHY HAL operations.
 ///
@@ -382,14 +429,6 @@ pub(crate) fn phy_pac(access: &(impl SharedPhyAccess + ?Sized)) -> &RadioPhyRegi
 
 pub(crate) fn phy_pac_mut(access: &mut (impl SharedPhyAccess + ?Sized)) -> &mut RadioPhyRegisters {
     sealed::SharedPhyAccess::pac_mut(access)
-}
-
-/// Borrow the IEEE 802.15.4 MAC partition from the complete powered owner.
-///
-/// Unlike shared-PHY access, this capability is intentionally unavailable on
-/// a Bluetooth-only shared-PHY borrow.
-pub(crate) fn ieee802154_pac_mut(access: &mut PhyHal) -> &mut WifiRadioRegisters {
-    access.registers.radio_mut()
 }
 
 /// Type states for the coarse radio power lifecycle.

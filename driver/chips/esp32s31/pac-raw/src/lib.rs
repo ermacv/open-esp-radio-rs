@@ -46270,7 +46270,9 @@ pub mod ieee802154_mac {
         tx_dma_address: TxDmaAddress,
         _reserved25: [u8; 0x0c],
         rx_dma_address: RxDmaAddress,
-        _reserved26: [u8; 0x44],
+        _reserved26: [u8; 0x2c],
+        rxon_delay: RxonDelay,
+        _reserved27: [u8; 0x14],
         security_control: SecurityControl,
         security_address_low: SecurityAddressLow,
         security_address_high: SecurityAddressHigh,
@@ -46520,7 +46522,7 @@ pub mod ieee802154_mac {
         pub const fn event_enable(&self) -> &EventEnable {
             &self.event_enable
         }
-        #[doc = "0x64 - Fourteen-bit event snapshot read by the public LL. Its clear accessor performs a masked self-write (`status &= events`), but no write-one-to-clear or other modified-write semantic is established. The reviewed safe model therefore publishes observation only until HIL proves the clearing contract."]
+        #[doc = "0x64 - Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision."]
         #[inline(always)]
         pub const fn event_status(&self) -> &EventStatus {
             &self.event_status
@@ -46589,6 +46591,11 @@ pub mod ieee802154_mac {
         #[inline(always)]
         pub const fn rx_dma_address(&self) -> &RxDmaAddress {
             &self.rx_dma_address
+        }
+        #[doc = "0x110 - Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC."]
+        #[inline(always)]
+        pub const fn rxon_delay(&self) -> &RxonDelay {
+            &self.rxon_delay
         }
         #[doc = "0x128 - Transmit-security enable and payload-offset fields used by the public common LL."]
         #[inline(always)]
@@ -47612,15 +47619,19 @@ pub mod ieee802154_mac {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "EVENT_STATUS (r) register accessor: Fourteen-bit event snapshot read by the public LL. Its clear accessor performs a masked self-write (`status &= events`), but no write-one-to-clear or other modified-write semantic is established. The reviewed safe model therefore publishes observation only until HIL proves the clearing contract.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@event_status`] module"]
+    #[doc = "EVENT_STATUS (rw) register accessor: Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_status::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_status::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@event_status`] module"]
     #[doc(alias = "EVENT_STATUS")]
     pub type EventStatus = crate::Reg<event_status::EventStatusSpec>;
-    #[doc = "Fourteen-bit event snapshot read by the public LL. Its clear accessor performs a masked self-write (`status &= events`), but no write-one-to-clear or other modified-write semantic is established. The reviewed safe model therefore publishes observation only until HIL proves the clearing contract."]
+    #[doc = "Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision."]
     pub mod event_status {
         #[doc = "Register `EVENT_STATUS` reader"]
         pub type R = crate::R<EventStatusSpec>;
+        #[doc = "Register `EVENT_STATUS` writer"]
+        pub type W = crate::W<EventStatusSpec>;
         #[doc = "Field `EVENTS` reader - "]
         pub type EventsR = crate::FieldReader<u16>;
+        #[doc = "Field `EVENTS` writer - "]
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
         impl R {
             #[doc = "Bits 0:13"]
             #[inline(always)]
@@ -47628,13 +47639,25 @@ pub mod ieee802154_mac {
                 EventsR::new((self.bits & 0x3fff) as u16)
             }
         }
-        #[doc = "Fourteen-bit event snapshot read by the public LL. Its clear accessor performs a masked self-write (`status &= events`), but no write-one-to-clear or other modified-write semantic is established. The reviewed safe model therefore publishes observation only until HIL proves the clearing contract.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        impl W {
+            #[doc = "Bits 0:13"]
+            #[inline(always)]
+            pub fn events(&mut self) -> EventsW<'_, EventStatusSpec> {
+                EventsW::new(self, 0)
+            }
+        }
+        #[doc = "Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_status::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_status::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct EventStatusSpec;
         impl crate::RegisterSpec for EventStatusSpec {
             type Ux = u32;
         }
         #[doc = "`read()` method returns [`event_status::R`](R) reader structure"]
         impl crate::Readable for EventStatusSpec {}
+        #[doc = "`write(|w| ..)` method takes [`event_status::W`](W) writer structure"]
+        impl crate::Writable for EventStatusSpec {
+            type Safety = crate::Unsafe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0x3fff;
+        }
     }
     #[doc = "RX_ABORT_ENABLE (rw) register accessor: Low thirty-one receive-abort enable bits mutated by public LL accessors. Only the finite abort-reason values named by the LL are semantically classified.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_abort_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_abort_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_abort_enable`] module"]
     #[doc(alias = "RX_ABORT_ENABLE")]
@@ -48397,7 +48420,7 @@ pub mod ieee802154_mac {
         #[doc = "Register `TX_DMA_ADDRESS` writer"]
         pub type W = crate::W<TxDmaAddressSpec>;
         #[doc = "Field `ADDRESS` writer - "]
-        pub type AddressW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type AddressW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -48412,7 +48435,7 @@ pub mod ieee802154_mac {
         }
         #[doc = "`write(|w| ..)` method takes [`tx_dma_address::W`](W) writer structure"]
         impl crate::Writable for TxDmaAddressSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "RX_DMA_ADDRESS (w) register accessor: Complete receive frame-buffer address written by the public common LL. Address validity and buffer lifetime remain HAL responsibilities.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_dma_address::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_dma_address`] module"]
@@ -48423,7 +48446,7 @@ pub mod ieee802154_mac {
         #[doc = "Register `RX_DMA_ADDRESS` writer"]
         pub type W = crate::W<RxDmaAddressSpec>;
         #[doc = "Field `ADDRESS` writer - "]
-        pub type AddressW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type AddressW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -48438,6 +48461,45 @@ pub mod ieee802154_mac {
         }
         #[doc = "`write(|w| ..)` method takes [`rx_dma_address::W`](W) writer structure"]
         impl crate::Writable for RxDmaAddressSpec {
+            type Safety = crate::Safe;
+        }
+    }
+    #[doc = "RXON_DELAY (rw) register accessor: Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`rxon_delay::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rxon_delay::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rxon_delay`] module"]
+    #[doc(alias = "RXON_DELAY")]
+    pub type RxonDelay = crate::Reg<rxon_delay::RxonDelaySpec>;
+    #[doc = "Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC."]
+    pub mod rxon_delay {
+        #[doc = "Register `RXON_DELAY` reader"]
+        pub type R = crate::R<RxonDelaySpec>;
+        #[doc = "Register `RXON_DELAY` writer"]
+        pub type W = crate::W<RxonDelaySpec>;
+        #[doc = "Field `RXON_DELAY` reader - Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override."]
+        pub type RxonDelayR = crate::FieldReader<u16>;
+        #[doc = "Field `RXON_DELAY` writer - Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override."]
+        pub type RxonDelayW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:10 - Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override."]
+            #[inline(always)]
+            pub fn rxon_delay(&self) -> RxonDelayR {
+                RxonDelayR::new((self.bits & 0x07ff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:10 - Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override."]
+            #[inline(always)]
+            pub fn rxon_delay(&mut self) -> RxonDelayW<'_, RxonDelaySpec> {
+                RxonDelayW::new(self, 0)
+            }
+        }
+        #[doc = "Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`rxon_delay::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rxon_delay::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxonDelaySpec;
+        impl crate::RegisterSpec for RxonDelaySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rxon_delay::R`](R) reader structure"]
+        impl crate::Readable for RxonDelaySpec {}
+        #[doc = "`write(|w| ..)` method takes [`rxon_delay::W`](W) writer structure"]
+        impl crate::Writable for RxonDelaySpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -49439,9 +49501,11 @@ pub mod ieee802154_event_status_validation;
 #[doc(hidden)]
 pub mod ieee802154_ed_event_validation;
 
-#[cfg(feature = "validation-probes")]
 #[doc(hidden)]
-pub mod ieee802154_route_validation;
+pub mod ieee802154_route_observation;
+
+#[doc(hidden)]
+pub mod ieee802154_mac_ownership;
 
 /// Safe, SVD-declared read-and-acknowledge interrupt transactions.
 pub mod interrupt_snapshot {
@@ -50259,6 +50323,32 @@ pub mod full_register_write {
                 .write_with_zero(|writer| writer.events().set(value));
         }
     }
+
+    /// Write every bit of `IEEE802154_MAC`.`TX_DMA_ADDRESS` through its full-width field.
+    #[inline]
+    pub fn publish_ieee802154_tx_dma_address(registers: &crate::Ieee802154Mac, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .tx_dma_address()
+                .write_with_zero(|writer| writer.address().set(value));
+        }
+    }
+
+    /// Write every bit of `IEEE802154_MAC`.`RX_DMA_ADDRESS` through its full-width field.
+    #[inline]
+    pub fn publish_ieee802154_rx_dma_address(registers: &crate::Ieee802154Mac, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .rx_dma_address()
+                .write_with_zero(|writer| writer.address().set(value));
+        }
+    }
 }
 
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.
@@ -50341,9 +50431,48 @@ pub mod fixed_register_image {
         }
     }
 
+    /// Publish the SVD-qualified image `0x00000041` to `IEEE802154_MAC`.`COMMAND`.
+    #[inline]
+    pub fn issue_ieee802154_tx_start(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .command()
+                .write_with_zero(|writer| writer.bits(0x00000041));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000042` to `IEEE802154_MAC`.`COMMAND`.
+    #[inline]
+    pub fn issue_ieee802154_rx_start(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .command()
+                .write_with_zero(|writer| writer.bits(0x00000042));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000043` to `IEEE802154_MAC`.`COMMAND`.
+    #[inline]
+    pub fn issue_ieee802154_cca_tx_start(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .command()
+                .write_with_zero(|writer| writer.bits(0x00000043));
+        }
+    }
+
     /// Publish the SVD-qualified image `0x00000044` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
-    pub fn start_ieee802154_energy_detection(registers: &crate::Ieee802154Mac) {
+    pub fn issue_ieee802154_ed_start(registers: &crate::Ieee802154Mac) {
         // SAFETY: generator validation proves that the target is an
         // ordinary writable 32-bit register, while the SVD extension
         // and its provenance qualify this exact complete image.
@@ -50356,7 +50485,7 @@ pub mod fixed_register_image {
 
     /// Publish the SVD-qualified image `0x00000045` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
-    pub fn stop_ieee802154_energy_detection(registers: &crate::Ieee802154Mac) {
+    pub fn issue_ieee802154_stop(registers: &crate::Ieee802154Mac) {
         // SAFETY: generator validation proves that the target is an
         // ordinary writable 32-bit register, while the SVD extension
         // and its provenance qualify this exact complete image.
@@ -50602,17 +50731,42 @@ pub mod fixed_register_image {
     }
 }
 
-/// Exact selected-image writes to reviewed SVD read-only registers.
-pub mod selected_register_write {
+/// Affine sample-and-acknowledge transactions for same-register W1C fields.
+pub mod w1c_register_snapshot {
 
-    /// Publish the reviewed image `0x00000040` to `IEEE802154_MAC`.`EVENT_STATUS`.
+    /// One unforgeable `IEEE802154_MAC.EVENT_STATUS` field image sampled before acknowledgement.
+    #[must_use = "a W1C snapshot must be inspected and acknowledged"]
+    #[derive(Debug)]
+    pub struct Ieee802154EventStatusSnapshot(u32);
+    impl Ieee802154EventStatusSnapshot {
+        /// Return the complete sampled field image in register bit positions.
+        #[inline]
+        pub const fn bits(&self) -> u32 {
+            self.0
+        }
+    }
+
+    /// Sample `IEEE802154_MAC.EVENT_STATUS` once and retain only field `EVENTS` (mask `0x00003fff`).
     #[inline]
-    pub fn write_ieee802154_ed_done_selected_image(registers: &mut crate::Ieee802154Mac) {
-        // SAFETY: generator validation binds this selected operation
-        // to one read-only 32-bit SVD register. Reviewed evidence qualifies
-        // only this literal complete image; no writable PAC API is created.
+    pub fn sample_ieee802154_event_status(
+        registers: &crate::Ieee802154Mac,
+    ) -> Ieee802154EventStatusSnapshot {
+        Ieee802154EventStatusSnapshot(registers.event_status().read().bits() & 0x00003fff)
+    }
+
+    /// Acknowledge exactly the sampled field image and consume it.
+    #[inline]
+    pub fn acknowledge_ieee802154_event_status(
+        registers: &mut crate::Ieee802154Mac,
+        snapshot: Ieee802154EventStatusSnapshot,
+    ) {
+        // SAFETY: generator validation binds the affine snapshot to this
+        // exact 32-bit same-register W1C field. The token cannot be forged,
+        // cloned or replayed, and every non-field bit is zero.
         unsafe {
-            core::ptr::write_volatile(registers.event_status().as_ptr(), 0x00000040);
+            registers
+                .event_status()
+                .write_with_zero(|writer| writer.bits(snapshot.0));
         }
     }
 }
@@ -51669,6 +51823,31 @@ pub mod masked_register_modify {
     pub fn set_ieee802154_ed_duration(registers: &crate::Ieee802154Mac, input: u32) {
         registers.ed_duration().modify(|reader, writer| {
             let image = (reader.bits() & 0xff000000) | (input & 0x00ffffff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xf800ffff, accept input mask 0x07ff0000, and set 0x00000000 in SHARED_BASEBAND_TX_TIMING.AUXILIARY_TX_ON_DELAY.
+    #[inline]
+    pub fn override_ieee802154_shared_tx_on_delay(
+        registers: &crate::SharedBasebandTxTiming,
+        input: u32,
+    ) {
+        registers.auxiliary_tx_on_delay().modify(|reader, writer| {
+            let image = (reader.bits() & 0xf800ffff) | (input & 0x07ff0000);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffff800, accept input mask 0x000007ff, and set 0x00000000 in IEEE802154_MAC.RXON_DELAY.
+    #[inline]
+    pub fn set_ieee802154_rx_on_delay(registers: &crate::Ieee802154Mac, input: u32) {
+        registers.rxon_delay().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffff800) | (input & 0x000007ff);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

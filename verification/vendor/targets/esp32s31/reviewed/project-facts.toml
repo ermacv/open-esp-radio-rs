@@ -27,11 +27,21 @@ source = "esp-idf-7b9cc1ac-ieee802154-common-ll"
 locator = "ieee802154_ll_get_events"
 
 [[assertions]]
+id = "ieee802154.event-status.access"
+subject = "register:esp32s31/cpu/0x20103064/32"
+kind = "register-access"
+value = "read-write"
+
+[[assertions.evidence]]
+source = "esp-idf-7b9cc1ac-ieee802154-common-ll"
+locator = "ieee802154_ll_get_events and ieee802154_ll_clear_events"
+
+[[assertions]]
 id = "ieee802154.event-status.write-semantics"
 subject = "register:esp32s31/cpu/0x20103064/32"
 kind = "hardware-write-semantics"
-value = "unknown"
-note = "The complete fourteen-bit register remains unknown. The 2026-08-25 reset-isolated timer record qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-event-status.md observed on three boots that writing TIMER0 mask 0x0100 cleared only TIMER0 while retaining latched TIMER1 0x0200, and that writing TIMER1 mask 0x0200 then cleared TIMER1. The independent ED record qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-ed-event.md observed on three boots that ED_START terminated with ED_DONE, writing ED_DONE mask 0x0040 retained TIMER0 0x0100, and writing TIMER0 then produced zero. No semantics are assigned to other event bits or concurrent same-bit arrival."
+value = "w1c"
+note = "The pinned public LL reads the fourteen-bit event image and clears a requested mask by writing back the intersection of current status and that mask; its ISR samples the complete image and immediately clears that same image. This is the source-level W1C contract ported by the generated affine snapshot transaction. Reset-isolated timer and ED records independently observed selective one-bit clearing while retaining another latched bit. Concurrent same-bit arrival remains a hardware limitation of W1C acknowledgement, not a distinct software access model."
 
 [[assertions.evidence]]
 source = "esp-idf-7b9cc1ac-ieee802154-common-ll"

@@ -243,11 +243,16 @@ fn closed_chip_pac_is_the_only_driver_dependency_on_the_raw_pac() {
     let raw = fs::read_to_string(driver.join("chips/esp32s31/pac-raw/src/lib.rs"))
         .expect("read generated raw PAC");
     assert!(!raw.contains("input & 0x00000000"));
-    assert!(raw.contains("EVENT_STATUS (r) register accessor"));
+    assert!(raw.contains("EVENT_STATUS (rw) register accessor"));
     assert!(
-        !raw.contains("impl crate::Writable for EventStatusSpec"),
-        "EVENT_STATUS must not gain register-wide Writable access; only the fixed serialized ED_DONE selected image is HIL-qualified"
+        raw.contains("impl crate::Writable for EventStatusSpec"),
+        "EVENT_STATUS must retain the public-LL W1C access class"
     );
+    assert!(raw.contains("pub mod w1c_register_snapshot"));
+    assert!(raw.contains("pub struct Ieee802154EventStatusSnapshot(u32);"));
+    assert!(raw.contains("pub fn sample_ieee802154_event_status("));
+    assert!(raw.contains("pub fn acknowledge_ieee802154_event_status("));
+    assert!(!raw.contains("pub mod selected_register_write"));
 
     let mut closed_files = Vec::new();
     rust_files(&driver.join("chips/esp32s31/pac/src"), &mut closed_files);
@@ -306,11 +311,15 @@ fn only_esp32s31_hardware_boundaries_depend_on_the_closed_pac() {
     let driver = repository.join("driver");
     let hal_manifest = driver.join("chips/esp32s31/hal/Cargo.toml");
     let bluetooth_manifest = driver.join("chips/esp32s31/bluetooth/Cargo.toml");
+    let ieee802154_irq_manifest = driver.join("chips/esp32s31/ieee802154/irq/Cargo.toml");
+    let ieee802154_runtime_manifest = driver.join("chips/esp32s31/ieee802154/runtime/Cargo.toml");
     let pac_manifest = driver.join("chips/esp32s31/pac/Cargo.toml");
     let raw_manifest = driver.join("chips/esp32s31/pac-raw/Cargo.toml");
     let permitted = [
         hal_manifest.as_path(),
         bluetooth_manifest.as_path(),
+        ieee802154_irq_manifest.as_path(),
+        ieee802154_runtime_manifest.as_path(),
         pac_manifest.as_path(),
         raw_manifest.as_path(),
     ];
@@ -327,7 +336,7 @@ fn only_esp32s31_hardware_boundaries_depend_on_the_closed_pac() {
         .collect::<Vec<_>>();
     assert!(
         violations.is_empty(),
-        "only the exact ESP32-S31 Wi-Fi and Bluetooth hardware boundaries may depend on the closed PAC: {violations:#?}"
+        "only exact ESP32-S31 radio hardware boundaries may depend on the closed PAC: {violations:#?}"
     );
 
     let pac_manifest = fs::read_to_string(pac_manifest).expect("read closed PAC manifest");

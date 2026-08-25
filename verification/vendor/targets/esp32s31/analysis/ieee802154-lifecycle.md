@@ -5,11 +5,16 @@ This note records findings derived from public ESP-IDF source at commit
 observations from real ESP32-S31 hardware. It is a research input, not a
 production-equivalence decision. The overall lifecycle verdict remains
 **INCOMPLETE**: clock/reset order, MAC foundation writes, and channel coding are
-source-confirmed, but RF/BB initialization contains opaque calls and the
-complete `EVENT_STATUS` access class is not stated by the reviewed register
-headers and remains unresolved. Separately, bounded HIL evidence now qualifies
-one exact selected write of `ED_DONE = 0x0040` in a serialized transaction with
-both CPU routes detached; that fact does not widen the register access class.
+source-confirmed, but RF/BB initialization still contains opaque calls and no
+composed owner yet proves calibrated RF or on-air readiness. `EVENT_STATUS` is
+no longer an unresolved access-class blocker: the sparse reviewed target fact
+assigns read-write W1C semantics, the published SVD carries `oneToClear`, and
+the generated PAC exposes only snapshot-consuming acknowledgement. The current
+software slice also separates task and hard-IRQ register owners, provides a
+PAC-backed command executor, and carries acknowledged batches through a
+bounded cancellation-safe Embassy handoff. These implemented boundaries do not
+by themselves qualify source-132 delivery, RF effects, or on-air behavior;
+those remain platform integration and qualification work.
 
 No vendor-artifact-derived values are used here. Unless a section explicitly
 identifies a dated HIL observation, numeric results below are either literal
@@ -202,7 +207,7 @@ Therefore the exact mapping is:
 This mapping is suitable for a checked channel newtype. Values outside
 `11..=26` must be rejected before the register write.
 
-## 4. `EVENT_STATUS` clearing: INCOMPLETE
+## 4. `EVENT_STATUS` clearing: reviewed W1C contract
 
 The LL helper named `ieee802154_ll_clear_events(events)` performs the volatile
 bitfield RMW expression:
@@ -217,26 +222,29 @@ the RMW writes ones for selected events and zeroes for unselected events. It is
 not consistent with ordinary RW clearing, and it would clear the wrong set on
 write-zero-to-clear hardware.
 
-This is still an inference, not an authoritative access-class statement. The
-reviewed S31 register header supplies only address and mask, while the struct
-header supplies only a writable-looking bitfield; neither labels
-`EVENT_STATUS` W1C, W0C, read-only, or gives reset/concurrency semantics.
-Consequently:
+The public register and struct headers alone do not label the access class.
+The target's sparse reviewed fact now combines the pinned LL transaction with
+the bounded selective-clear observations below and assigns read-write W1C
+semantics to this exact register. That fact publishes a reviewed SVD field with
+`modifiedWriteValues = oneToClear`; it does not turn the register into ordinary
+RW storage or authorize a caller-supplied clear mask.
 
-- lifecycle status for event clearing is **INCOMPLETE**;
-- the PAC must not expose or use an ordinary `modify`-based clear as if RW were
-  proven;
-- general IRQ ownership and snapshot acknowledgement must remain outside the
-  completed foundation state. The only production-capable exception is the
-  generated literal `ED_DONE = 0x0040` selected write described below; it is
-  valid only inside its detached-route finite-operation contract.
+The generated PAC samples the complete fourteen-bit field into an affine,
+non-`Copy` token and consumes that exact token on the same-register
+acknowledgement. It therefore cannot manufacture, clone, replay, or narrow a
+W1C image after observation. The foundation snapshot still excludes
+`EVENT_STATUS` by ownership: cold/polled acknowledgement consumes the complete
+current pending image, while an active epoch separates task-owned command and
+DMA registers from `Ieee802154InterruptRegisters`, whose hard-IRQ transaction
+samples all event and selected sideband evidence before acknowledging the exact
+snapshot.
 
-The first HIL discriminator needed to latch at least two independent event
-bits, write exactly one, and verify that the selected bit cleared while the
-unselected bit remained set. The timer and ED observations below now establish
-that distinct-bit relation for their exact selected images. A remaining
-discriminator must inject the same event between observation and write to test
-whether that arrival can be lost.
+The timer and ED observations below establish selective clearing for their
+exact historical test images. A remaining HIL discriminator should inject the
+same event between observation and acknowledgement and measure level-line
+retrigger. That test qualifies hardware behavior and interrupt integration; it
+does not select an alternative software access model or block the affine W1C
+architecture.
 
 The repository contains a validation-only target transaction and the
 `ieee802154-event-status-selective-ack` HIL scenario for that discriminator.
@@ -312,10 +320,11 @@ This is positive evidence that the two selected raw writes are compatible with
 selective W1C behavior under the exact detached-route experiment. It still
 does not classify same-bit concurrent arrival, level-line retrigger, status
 generation versus visibility gating, or whether a zero read after masking
-proves the underlying latch physically clear. The generated register remains
-observation-only, both timer writes remain validation-only, the active IRQ
-route remains absent, and the overall access-class verdict remains
-**INCOMPLETE**.
+proves the underlying latch physically clear. At that recorded revision the
+production PAC remained observation-only, both timer writes were
+validation-only, and the active IRQ route was absent. The later reviewed W1C
+fact and current affine PAC API are a separate source-model advancement; they
+do not retroactively widen this bounded HIL cell.
 
 The validation API consumes a process-lifetime reset-isolation capability and
 the complete foundation owner. Its result is terminal: it exposes evidence but
@@ -335,20 +344,20 @@ changed `EVENT_STATUS` from `0x0140` (`ED_DONE` plus TIMER0) to `0x0100`; the
 separate validation-only TIMER0 write then produced zero. No RX abort or
 `STOP` occurred.
 
-This qualifies only the TOML-to-generated-PAC-to-hardware path for the literal
-ED-DONE image in that closed serialized transaction. It does not qualify a
-caller-provided mask, another event bit, same-bit arrival, active or
-level-triggered IRQ routing, `STOP`, calibrated RF readiness, or a second ED
-transaction without reset.
+This historical record qualifies only the then-generated literal ED-DONE path
+in that closed serialized transaction. It does not qualify a caller-provided
+mask, same-bit arrival, active or level-triggered IRQ routing, `STOP`,
+calibrated RF readiness, or a second ED transaction without reset.
 
-The pure finite ED/CCA engine now reflects this narrow result. It may return a
-reusable model owner only after observing lone `ED_DONE`, rechecking the
-detached route and exact active masks, issuing the fixed selected write,
-observing the complete status as exactly zero, and closing and rechecking both
-masks. Abort, timeout, conflicting status, residual status, or backend failure
-retains a non-reusable quarantine owner. A concrete production backend and its
-source-132 route guard are still pending, and the engine's back-to-back host
-test is not repeated-operation HIL evidence.
+The current finite ED/CCA engine and its concrete PAC backend no longer issue a
+selected literal clear. Recovery invokes one generated transaction that
+samples and acknowledges the complete pending W1C image and returns the exact
+observation it consumed. The owner is reusable only when that consumed image
+is exactly lone `ED_DONE`; zero, another bit, or any additional bit is retained
+as fail-closed diagnostic evidence and quarantines the backend. The detached
+source-132 route and exact masks are checked around the operation. Host tests
+cover repeated serialized ownership; repeating the path on hardware remains a
+qualification gate, not an implementation prerequisite.
 
 ## 5. Opaque calls that block an RF-ready claim
 
@@ -409,7 +418,7 @@ timing evidence at a tracking-period boundary; target execution and HIL must
 cover that distinction.
 
 Until the opaque effects above are replaced with reviewed source logic or
-bounded HIL-backed contracts, the strongest honest endpoint is:
+bounded hardware contracts, the strongest honest RF-lifecycle endpoint is:
 
 ```text
 ClockDependenciesAcquired -> MacReset -> FoundationConfigured
@@ -417,32 +426,46 @@ ClockDependenciesAcquired -> MacReset -> FoundationConfigured
 
 It must not be named `RfReady`, `ReceiveReady`, or `TransmitReady`.
 
-## Next research gates
+That RF limit does not prevent source-derived MAC architecture from advancing.
+The repository now also contains this independently honest software endpoint:
 
-1. Extend the reviewed validation boundary beyond the exact ED-DONE image to
-   same-bit arrival during acknowledgement, other required event classes, and
-   active level-line interrupt retrigger. Separately
-   distinguish event generation from masked visibility and prove whether a
-   zero masked read establishes physical latch cleanup, or obtain an
-   authoritative public `EVENT_STATUS` access classification for those
-   semantics.
-2. Bind the finite ED/CCA engine to a concrete PAC backend with a complete
-   source-132 detached-route guard, then qualify two back-to-back ED operations
-   on hardware before treating recovered ownership as repeatedly reusable.
-3. Establish a reviewed BTBB initialization contract for
+```text
+FoundationConfigured
+  -> disjoint PAC task and interrupt owners
+  -> public-LL PAC command executor plus affine W1C IRQ acknowledgement
+  -> executor-neutral MAC runtime retaining DMA ownership
+  -> bounded hard-IRQ-to-Embassy handoff and cancellation-safe async owner
+```
+
+No constructor currently joins that endpoint with proved PHY, BTBB,
+coexistence, platform route, TX power, and teardown postconditions, so it still
+does not mint a physical ready state.
+
+## Remaining implementation and qualification gates
+
+1. Implement the platform source-132 CPU-route bind/disable transition around
+   the existing interrupt setup, PAC IRQ owner, and Embassy handler. HIL should
+   qualify delivery, teardown, same-bit arrival, and level-line retrigger; it
+   is not a prerequisite for implementing the source-derived ownership shape.
+2. Establish a reviewed BTBB initialization contract for
    `bt_bb_v2_init_cmplx(1)`, including ownership and required postconditions.
-4. Recover or replace the RF calibration/wakeup and `phy_param_track_tot`
+3. Recover or replace the RF calibration/wakeup and `phy_param_track_tot`
    hardware effects behind the public PHY client manager. Reproduce the
    reviewed client-mask and tracking-scheduler protocol with explicit timer
    failure ownership, and test cold-start, warm-start, and already-owned paths
    separately.
-5. Determine the exact registers and timing rule set by
+4. Determine the exact registers and timing rule set by
    `ieee802154_txon_delay_set()`.
-6. Establish a source-legal TX-power capability contract without copying an
+5. Establish a source-legal TX-power capability contract without copying an
    extracted vendor table; validate channel-specific dBm-to-index behavior on
    hardware.
-7. Resolve coexistence-enabled PTI register effects, or explicitly qualify only
+6. Resolve coexistence-enabled PTI register effects, or explicitly qualify only
    the non-coexistence `3/3` path.
-8. Before IRQ work, split task-owned MAC configuration from ISR-owned event
-   status/enable access so one peripheral lease cannot silently cross ownership
-   domains.
+7. Compose the existing foundation, PAC task executor, interrupt setup/owner,
+   DMA runtime, and Embassy handoff only after the PHY/BTBB/coexistence and
+   route prerequisites have explicit owners. Complete terminal DMA
+   reclamation and state-specific `STOP` policy without treating `STOP` as a
+   synchronous proof.
+8. Use HIL as the final qualification gate for source-132 routing, repeated
+   operations, maximum-length RX/TX, ACK/no-ACK, CCA/ED outcomes, recovery, and
+   on-air behavior. Do not use absence of HIL as an architectural blocker.

@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 63;
+pub const PROTOCOL_VERSION: u16 = 65;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -335,6 +335,7 @@ impl Ieee802154EdEventProbeRequest {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Ieee802154EdEventProbeStop {
     Complete,
+    ProductionEdFailed,
     UnsupportedSetup,
     RouteNotQuiesced,
     ResetNotClear,
@@ -350,6 +351,68 @@ pub enum Ieee802154EdEventProbeStop {
     CleanupNotClear,
 }
 
+/// Checkpoint retained when a production polled ED invariant fails.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154PolledEdStage {
+    Prepare,
+    StartEventWindow,
+    StartCommand,
+    Poll,
+    TerminalSample,
+    AcknowledgeTerminalEvent,
+    Cleanup,
+}
+
+/// Semantic enable-mask observation retained without exposing a writable
+/// register image.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154PolledEdMaskState {
+    AllMasked,
+    OperationOnly,
+    Unexpected,
+}
+
+/// Complete terminal evidence from one production polled ED attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154PolledEdOutcome {
+    NotRun,
+    Complete {
+        rss_code: i8,
+        polls: u32,
+    },
+    Aborted {
+        event_status: u16,
+        rx_abort_status: u32,
+        polls: u32,
+    },
+    Timeout {
+        polls: u32,
+    },
+    CpuInterruptRouteAttached {
+        stage: Ieee802154PolledEdStage,
+    },
+    UnexpectedEventMask {
+        stage: Ieee802154PolledEdStage,
+        observed: Ieee802154PolledEdMaskState,
+    },
+    UnexpectedRxAbortMask {
+        stage: Ieee802154PolledEdStage,
+        observed: Ieee802154PolledEdMaskState,
+    },
+    StaleEventStatus {
+        event_status: u16,
+    },
+    UnexpectedTerminalStatus {
+        event_status: u16,
+    },
+    UnexpectedAcknowledgedEvents {
+        event_status: u16,
+    },
+    ConflictingTerminalEvents {
+        event_status: u16,
+    },
+}
+
 /// Complete raw evidence from one bounded ED-DONE/TIMER0 discriminator.
 ///
 /// The event fields preserve complete fourteen-bit images. A successful result
@@ -359,6 +422,8 @@ pub enum Ieee802154EdEventProbeStop {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Ieee802154EdEventProbeEvidence {
     pub stop: Ieee802154EdEventProbeStop,
+    pub production_ed_first: Ieee802154PolledEdOutcome,
+    pub production_ed_second: Option<Ieee802154PolledEdOutcome>,
     pub event_enable_before: u16,
     pub event_enable_active: u16,
     pub event_enable_after: u16,

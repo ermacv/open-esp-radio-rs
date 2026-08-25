@@ -8,6 +8,7 @@ use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
+    Ieee802154PolledEdOutcome,
 };
 use serde::Serialize;
 
@@ -23,7 +24,7 @@ const VALIDATION_EVENTS: u16 = RX_ABORT_EVENT | ED_TIMER_EVENTS;
 const ED_ABORT_REASONS: u32 = (1 << 23) | (1 << 24) | (1 << 25);
 const PUBLIC_EVENT_MASK: u16 = 0x3fff;
 const ED_DURATION: u32 = 8;
-const RESULT: &str = "route-detached-ed-done-selective-write-retained-timer0";
+const RESULT: &str = "back-to-back-production-ed-and-selected-write-recovery";
 const REPORT_NAME: &str = "ieee802154-ed-event.json";
 
 pub(crate) struct Config {
@@ -70,7 +71,7 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
             write_failed_report(output, &reports, &error.to_string())?;
             return Err(error);
         }
-        if let Err(error) = validate(target) {
+        if let Err(error) = validate(target, config.poll_limit) {
             write_failed_report(output, &reports, &error.to_string())?;
             return Err(error);
         }
@@ -97,7 +98,7 @@ fn write_failed_report(output: &Path, reports: &[BootReport], failure: &str) -> 
 
 fn report_document(reports: &[BootReport]) -> serde_json::Value {
     serde_json::json!({
-        "schema": 1,
+        "schema": 2,
         "status": "passed",
         "result": RESULT,
         "not_proven": [
@@ -107,6 +108,8 @@ fn report_document(reports: &[BootReport]) -> serde_json::Value {
             "level-triggered-route-behavior",
             "production-phy-rf-btbb-readiness",
             "synchronous-stop-semantics",
+            "calibrated-rss-or-dbm-conversion",
+            "rf-channel-retune",
         ],
         "boots": reports,
     })
@@ -135,7 +138,26 @@ fn probe(
     Ok(BootReport { boot, target })
 }
 
-fn validate(evidence: Ieee802154EdEventProbeEvidence) -> Result<()> {
+fn validate(evidence: Ieee802154EdEventProbeEvidence, poll_limit: u32) -> Result<()> {
+    let validate_production =
+        |attempt: &str, outcome: Ieee802154PolledEdOutcome| -> Result<()> {
+            match outcome {
+        Ieee802154PolledEdOutcome::Complete { polls, .. } if polls >= 1 && polls <= poll_limit => {
+            Ok(())
+        }
+        Ieee802154PolledEdOutcome::Complete { polls, .. } => Err(format!(
+            "IEEE 802.15.4 {attempt} production ED used {polls} polls outside 1..={poll_limit}"
+        )
+        .into()),
+        failure => Err(format!("IEEE 802.15.4 {attempt} production ED failed: {failure:?}").into()),
+            }
+        };
+    validate_production("first", evidence.production_ed_first)?;
+    let Some(second) = evidence.production_ed_second else {
+        return Err("IEEE 802.15.4 second production ED was not run".into());
+    };
+    validate_production("second", second)?;
+
     for (checkpoint, events) in [
         ("reset_events", evidence.reset_events),
         ("post_enable_events", evidence.post_enable_events),
@@ -310,6 +332,14 @@ mod tests {
     fn nominal() -> Ieee802154EdEventProbeEvidence {
         Ieee802154EdEventProbeEvidence {
             stop: Ieee802154EdEventProbeStop::Complete,
+            production_ed_first: Ieee802154PolledEdOutcome::Complete {
+                rss_code: -17,
+                polls: 2,
+            },
+            production_ed_second: Some(Ieee802154PolledEdOutcome::Complete {
+                rss_code: -18,
+                polls: 3,
+            }),
             event_enable_before: 0,
             event_enable_active: VALIDATION_EVENTS,
             event_enable_after: 0,
@@ -345,33 +375,42 @@ mod tests {
 
     #[test]
     fn accepts_only_the_exact_closed_selected_write_trace() {
-        assert!(validate(nominal()).is_ok());
+        assert!(validate(nominal(), 100_000).is_ok());
 
         let mut unexpected = nominal();
         unexpected.observed_events |= RX_ABORT_EVENT;
         unexpected.rx_status_at_abort = Some(25 << 4);
-        assert!(validate(unexpected).is_err());
+        assert!(validate(unexpected, 100_000).is_err());
 
         let mut wrong_write = nominal();
         wrong_write.after_ed_done_write_events = ED_TIMER_EVENTS;
-        assert!(validate(wrong_write).is_err());
+        assert!(validate(wrong_write, 100_000).is_err());
 
         let mut dirty_abort_mask = nominal();
         dirty_abort_mask.rx_abort_enable_before = ED_ABORT_REASONS;
-        assert!(validate(dirty_abort_mask).is_err());
+        assert!(validate(dirty_abort_mask, 100_000).is_err());
 
         let mut restored_duration = nominal();
         restored_duration.ed_duration_after = restored_duration.ed_duration_before;
-        assert!(validate(restored_duration).is_err());
+        assert!(validate(restored_duration, 100_000).is_err());
 
         let mut inactive_timer = nominal();
         inactive_timer.timer0_value_max = inactive_timer.timer0_value_min;
-        assert!(validate(inactive_timer).is_err());
+        assert!(validate(inactive_timer, 100_000).is_err());
+
+        let mut missing_second = nominal();
+        missing_second.production_ed_second = None;
+        assert!(validate(missing_second, 100_000).is_err());
+
+        let mut failed_first = nominal();
+        failed_first.production_ed_first = Ieee802154PolledEdOutcome::Timeout { polls: 100_000 };
+        assert!(validate(failed_first, 100_000).is_err());
     }
 
     #[test]
     fn rejects_every_non_complete_stop() {
         for stop in [
+            Ieee802154EdEventProbeStop::ProductionEdFailed,
             Ieee802154EdEventProbeStop::UnsupportedSetup,
             Ieee802154EdEventProbeStop::RouteNotQuiesced,
             Ieee802154EdEventProbeStop::ResetNotClear,
@@ -388,7 +427,10 @@ mod tests {
         ] {
             let mut evidence = nominal();
             evidence.stop = stop;
-            assert!(validate(evidence).is_err(), "accepted stop {stop:?}");
+            assert!(
+                validate(evidence, 100_000).is_err(),
+                "accepted stop {stop:?}"
+            );
         }
     }
 

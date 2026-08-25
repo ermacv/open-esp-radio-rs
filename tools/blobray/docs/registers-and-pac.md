@@ -148,38 +148,40 @@ The ESP32-S31 project configures these outputs under `[registers.svd]`,
 `[registers.pac-raw]`, `[registers.bindings]` and `[registers.api]` in its
 project manifest.
 
-### Selected writes to SVD read-only registers
+### Affine snapshots for same-register W1C fields
 
 The closed-PAC API pack uses schema 4. Schema 3 is rejected; there is no
-compatibility or migration path. Schema 4 adds one intentionally exceptional
-operation for a hardware write which has exact reviewed evidence while the SVD
-must remain read-only:
+compatibility or migration path. A same-register status/acknowledgement path is
+declared as one transaction rather than as a general writable register or an
+untyped integer write:
 
 ```toml
 schema = 4
 
-[[selected-register-writes]]
-name = "write_event_status_selected_image"
+[[w1c-register-snapshots]]
+name = "event_status"
 peripheral = "RADIO"
 register = "EVENT_STATUS"
-value = 0x00000040
-sources = ["HIL_EVENT_STATUS_SELECTED_IMAGE"]
+field = "EVENTS"
+sources = ["PUBLIC_EVENT_STATUS_W1C"]
 ```
 
-A selected register write is accepted only for one non-array, readable but
-SVD-nonwritable 32-bit register. Its evidence sources are resolved through the
-same reviewed evidence catalog as every other PAC operation. The generated raw
-helper requires a mutable peripheral owner and performs exactly:
+A W1C snapshot is accepted only for one non-array 32-bit read-write register
+whose reviewed SVD semantic is `oneToClear`. Its selected field is masked from
+one register read. The generated token is `must_use`, has no public constructor,
+and is neither `Copy` nor `Clone`. Acknowledge consumes the token and writes
+exactly its masked image back to the same register:
 
 ```rust,ignore
-core::ptr::write_volatile(registers.event_status().as_ptr(), 0x00000040);
+let snapshot = sample_event_status(registers);
+inspect(snapshot.bits());
+acknowledge_event_status(registers, snapshot);
 ```
 
-The generator does not change the register access class, create a `Writable`
-implementation, or accept a caller-supplied image. The review qualifies only
-the named target and literal image. Ordering, isolation, event sampling,
-acknowledgement checks and recovery remain responsibilities of the closed PAC
-wrapper and HAL; this declaration alone is not a production-readiness claim.
+The generator never accepts a caller-supplied acknowledgement image, and the
+affine token cannot be replayed. Ordering, interrupt masking, dispatch and
+recovery remain responsibilities of the closed PAC wrapper and HAL; this
+declaration alone is not a production-readiness claim.
 
 ## Existing SVDs
 

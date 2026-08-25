@@ -1,15 +1,20 @@
-//! Whole-owner IEEE 802.15.4 lifecycle bound to [`Radio`].
+//! Whole-owner lifecycle for the dedicated IEEE 802.15.4 radio route.
 //!
-//! The public role types wrap the existing powered radio owner. They never
-//! acquire a second PAC singleton and cannot skip the reviewed clock, reset,
-//! or MAC-foundation readbacks. Completion of this module's final state is
-//! intentionally weaker than PHY/RF or operational-MAC readiness.
+//! The entry owner consumes the protocol-neutral [`RadioHardware`] root
+//! directly into the PAC's IEEE 802.15.4 route. Task-side MAC/shared-PHY
+//! ownership and the inactive interrupt owner remain disjoint for the complete
+//! lifecycle; no temporary Wi-Fi register owner exists. Completion of this
+//! module's final state is intentionally weaker than common-PHY, BTBB, RF, or
+//! operational-MAC readiness.
 
 #![forbid(unsafe_code)]
 
 use core::fmt;
 
-use open_esp_radio_esp32s31_pac::{Ieee802154FoundationSnapshot, Ieee802154Pti};
+use open_esp_radio_esp32s31_pac::{
+    Ieee802154FoundationSnapshot, Ieee802154InterruptSetup, Ieee802154Pti, Ieee802154TaskRegisters,
+    RadioHardware,
+};
 
 #[cfg(feature = "validation-probes")]
 use crate::ieee802154_ed_event_probe::{
@@ -23,7 +28,7 @@ use crate::ieee802154_event_status_probe::{
 };
 
 use crate::{
-    Radio,
+    Ieee802154SharedPhyBorrow, SharedPhyHal, WifiBasebandEnableObservation,
     ieee802154::Ieee802154PacHal,
     ieee802154_lifecycle::{
         Ieee802154ClockCheckpoint, Ieee802154ClockFailure as EngineClockFailure,
@@ -33,28 +38,33 @@ use crate::{
         Ieee802154ResetCheckpoint, Ieee802154ResetFailure as EngineResetFailure,
         Ieee802154ResetImages, establish_ieee802154_clocks, state as lifecycle_state,
     },
-    ieee802154_pac_mut,
+    ieee802154_operation::{
+        Ieee802154OperationPollBudget, Ieee802154PolledOperation,
+        Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
+        run_ieee802154_polled_operation,
+    },
     ieee802154_policy::{
         Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154MacControl, Ieee802154MacPolicy,
         Ieee802154MacPolicyBackend, Ieee802154MacPolicyCheckpoint,
         Ieee802154MacPolicyFailure as EngineMacPolicyFailure, Ieee802154MacPolicyReadback,
         Ieee802154PanIdentity, configure_ieee802154_mac_policy,
     },
-    state as radio_state,
+    power::{self, PowerClockControl, PowerError},
 };
 
 struct OwnedIeee802154Backend<P> {
-    radio: Radio<P, radio_state::Powered>,
+    platform: P,
+    task: Ieee802154TaskRegisters,
+    interrupts: Ieee802154InterruptSetup,
 }
 
 impl<P> OwnedIeee802154Backend<P> {
     fn platform_mut(&mut self) -> &mut P {
-        self.radio.phy_hal_parts().0
+        &mut self.platform
     }
 
     fn mac_hal(&mut self) -> Ieee802154PacHal<'_> {
-        let (_, phy) = self.radio.phy_hal_parts();
-        Ieee802154PacHal::from_owned(ieee802154_pac_mut(phy))
+        Ieee802154PacHal::from_owned(&mut self.task)
     }
 }
 
@@ -93,7 +103,7 @@ impl<P: Ieee802154PlatformControl> Ieee802154PlatformControl for OwnedIeee802154
     }
 
     fn ieee802154_clock_images(&self) -> Ieee802154ClockImages {
-        self.radio.peripheral().ieee802154_clock_images()
+        self.platform.ieee802154_clock_images()
     }
 
     fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
@@ -105,7 +115,7 @@ impl<P: Ieee802154PlatformControl> Ieee802154PlatformControl for OwnedIeee802154
     }
 
     fn ieee802154_reset_images(&self) -> Ieee802154ResetImages {
-        self.radio.peripheral().ieee802154_reset_images()
+        self.platform.ieee802154_reset_images()
     }
 }
 
@@ -143,6 +153,117 @@ impl<P: Ieee802154PlatformControl> Ieee802154LifecycleBackend for OwnedIeee80215
     }
 }
 
+/// Exclusive cold owner of the dedicated IEEE 802.15.4 radio route.
+///
+/// Construction consumes the protocol-neutral hardware root and immediately
+/// separates the task and inactive interrupt partitions without touching
+/// MMIO. It proves neither clocks nor common-PHY, BTBB, coexistence, RF, IRQ,
+/// DMA, or MAC readiness.
+#[must_use = "the IEEE 802.15.4 owner retains every radio hardware partition"]
+pub struct Ieee802154Owned<P> {
+    backend: OwnedIeee802154Backend<P>,
+}
+
+impl<P> Ieee802154Owned<P> {
+    /// Claim the process-wide radio root directly for IEEE 802.15.4.
+    ///
+    /// A failed singleton claim returns the integration token unchanged. This
+    /// ownership-only transition performs no clock, reset, PHY, or MAC write.
+    pub fn claim(platform: P) -> Result<Self, P> {
+        #[cfg(not(test))]
+        let Some(hardware) = RadioHardware::take() else {
+            return Err(platform);
+        };
+        #[cfg(test)]
+        let hardware = RadioHardware::for_validation();
+        Ok(Self::from_hardware(platform, hardware))
+    }
+
+    /// Construct the dedicated owner without consuming the process singleton.
+    ///
+    /// This validation-only entry point exists so dependent crate tests can
+    /// exercise the exact production ownership route without raw PAC access.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn claim_for_validation(platform: P) -> Self {
+        Self::from_hardware(platform, RadioHardware::for_validation())
+    }
+
+    /// Bind an already-owned neutral radio root to the IEEE 802.15.4 route.
+    pub fn from_hardware(platform: P, hardware: RadioHardware) -> Self {
+        let (task, interrupts) = hardware.into_ieee802154().separate_interrupt_owner();
+        Self {
+            backend: OwnedIeee802154Backend {
+                platform,
+                task,
+                interrupts,
+            },
+        }
+    }
+
+    /// Return the untouched cold route to its protocol-neutral root.
+    ///
+    /// This method is intentionally unavailable after the first power
+    /// transition, whose partial mutation requires typed retry ownership.
+    pub fn release(self) -> (P, RadioHardware) {
+        let OwnedIeee802154Backend {
+            platform,
+            task,
+            interrupts,
+        } = self.backend;
+        (platform, task.into_cold(interrupts).release())
+    }
+
+    /// Borrow the integration token before any lifecycle mutation.
+    pub const fn peripheral(&self) -> &P {
+        &self.backend.platform
+    }
+}
+
+/// Dedicated IEEE 802.15.4 owner after shared modem/PHY power prerequisites.
+///
+/// This state retains the same task and inactive interrupt partitions as the
+/// cold owner. It proves only the generic modem/PHY clock and reset sequence;
+/// IEEE-specific clocks and common-PHY registration remain separate stages.
+#[must_use = "the powered IEEE 802.15.4 owner retains every radio partition"]
+pub struct Ieee802154Powered<P> {
+    backend: OwnedIeee802154Backend<P>,
+}
+
+/// Failed shared modem/PHY power transition retaining the dedicated route.
+///
+/// The finite transaction may already have changed shared clock/reset state.
+/// Safe recovery is therefore limited to inspecting the exact checkpoint or
+/// retrying with this same owner; it cannot be released as a cold radio root.
+#[must_use = "a failed IEEE 802.15.4 power transition still owns the radio"]
+pub struct Ieee802154PowerTransitionFailure<P> {
+    backend: OwnedIeee802154Backend<P>,
+    error: PowerError,
+}
+
+impl<P> Ieee802154PowerTransitionFailure<P> {
+    /// Inspect the first failed shared power prerequisite.
+    pub const fn error(&self) -> PowerError {
+        self.error
+    }
+}
+
+impl<P: PowerClockControl> Ieee802154PowerTransitionFailure<P> {
+    /// Retry the exact shared power sequence with the retained route.
+    pub fn retry(self) -> Result<Ieee802154Powered<P>, Self> {
+        enter_ieee802154_powered(self.backend)
+    }
+}
+
+impl<P> fmt::Debug for Ieee802154PowerTransitionFailure<P> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Ieee802154PowerTransitionFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Whole-radio owner after all IEEE 802.15.4 clock dependencies read back.
 pub struct Ieee802154Clocked<P> {
     inner: Ieee802154Lifecycle<OwnedIeee802154Backend<P>, lifecycle_state::Clocked>,
@@ -163,10 +284,10 @@ pub struct Ieee802154FoundationConfigured<P> {
 
 /// Terminal whole-radio owner after the validation-only status experiment.
 ///
-/// The experiment exercises register-wide behavior that remains unqualified;
-/// it is distinct from the HIL-qualified fixed `ED_DONE = 0x0040` selected
-/// image used by a serialized ED transaction. Its experimental status writes
-/// and masked cleanup cannot preserve a normal lifecycle proof. This type
+/// The reset-isolated discriminator remains validation-only and terminal.
+/// Production acknowledgement uses a separate affine full-snapshot W1C owner;
+/// this probe's raw paired-bit writes still cannot preserve a normal lifecycle
+/// proof. This type
 /// exposes only evidence and deliberately provides no route back to foundation,
 /// policy, or operational transitions. The reset-isolation capability remains
 /// consumed for the rest of the process.
@@ -188,10 +309,10 @@ impl<P> Ieee802154EventStatusProbeFinished<P> {
 
 /// Terminal whole-radio owner after the validation-only ED event experiment.
 ///
-/// The probe rechecks the HIL-qualified fixed `ED_DONE = 0x0040` selected image,
-/// but its additional experimental TIMER0 write and best-effort cleanup still
-/// end the normal lifecycle. Evidence can be inspected, but the radio cannot be
-/// recovered or promoted to a production operational state.
+/// The probe rechecks historical selective clearing with fixed ED-DONE and
+/// TIMER0 validation writes. Production acknowledgement uses the generated
+/// affine W1C snapshot instead. The experimental cleanup still ends the normal
+/// lifecycle, so this owner cannot be promoted to an operational state.
 #[cfg(feature = "validation-probes")]
 #[must_use = "the terminal validation owner retains the radio and isolation capability"]
 pub struct Ieee802154EdEventProbeFinished<P> {
@@ -256,16 +377,67 @@ impl<P> Ieee802154MacPolicyBackend for Ieee802154FoundationConfigured<P> {
 
 /// Whole-radio owner after the known static MAC policy passes readback.
 ///
-/// Event and abort delivery is still masked. This state is not PHY/RF or
-/// BTBB readiness, does not route an IRQ, owns no DMA buffer, and is not an
-/// operational MAC. It is not a complete vendor PIB because TX-power mapping
-/// remains opaque.
+/// Event and abort delivery is masked between finite polled operations. This
+/// state supports only serialized raw ED and CCA; it is not PHY/RF or BTBB
+/// readiness, does not route an IRQ, owns no DMA buffer, and is not an
+/// operational RX/TX MAC. It is not a complete vendor PIB because TX-power
+/// mapping remains opaque.
 pub struct Ieee802154MacPolicyConfigured<P> {
     foundation: Ieee802154FoundationConfigured<P>,
     policy: Ieee802154MacPolicy,
 }
 
-/// Failed clock readback with the original powered owner retained.
+/// Successfully recovered finite ED/CCA operation with the reusable whole
+/// radio owner retained.
+///
+/// The evidence is MAC-level only. An ED RSS code is uncalibrated and neither
+/// result proves RFPLL tuning, RF performance, PHY conformance, or a complete
+/// operational IEEE 802.15.4 dataplane.
+#[must_use = "a completed IEEE 802.15.4 operation retains the reusable radio owner"]
+pub struct Ieee802154OperationCompleted<P> {
+    owner: Ieee802154MacPolicyConfigured<P>,
+    evidence: Ieee802154PolledOperationEvidence,
+}
+
+impl<P> Ieee802154OperationCompleted<P> {
+    /// Return the finite operation evidence retained across exact recovery.
+    pub const fn evidence(&self) -> &Ieee802154PolledOperationEvidence {
+        &self.evidence
+    }
+
+    /// Consume the evidence wrapper and recover the same static-policy owner
+    /// for a subsequent serialized operation.
+    pub fn into_owner(self) -> Ieee802154MacPolicyConfigured<P> {
+        self.owner
+    }
+}
+
+/// Terminal failed ED/CCA operation retaining the whole radio owner without a
+/// recovery transition.
+///
+/// Abort and timeout can leave hardware activity unresolved. Invariant
+/// failures mean the exact detached polling contract was not preserved. The
+/// retained owner therefore cannot be reused through safe code.
+#[must_use = "a failed IEEE 802.15.4 operation retains a terminal radio owner"]
+pub struct Ieee802154OperationFailed<P> {
+    failure: Ieee802154PolledOperationFailure,
+    owner: Ieee802154MacPolicyConfigured<P>,
+}
+
+impl<P> Ieee802154OperationFailed<P> {
+    /// Return complete typed failure evidence.
+    pub const fn failure(&self) -> Ieee802154PolledOperationFailure {
+        self.failure
+    }
+
+    /// Borrow the integration token for diagnostics without recovering the
+    /// terminal radio owner.
+    pub fn peripheral(&self) -> &P {
+        self.owner.peripheral()
+    }
+}
+
+/// Failed clock readback retaining the dedicated powered route.
 pub struct Ieee802154ClockTransitionFailure<P> {
     inner: EngineClockFailure<OwnedIeee802154Backend<P>>,
 }
@@ -284,9 +456,14 @@ impl<P> Ieee802154ClockTransitionFailure<P> {
         self.inner.error()
     }
 
-    /// Recover the coarse powered owner for diagnosis or a controlled retry.
-    pub fn into_powered(self) -> Radio<P, radio_state::Powered> {
-        self.inner.into_backend().radio
+    /// Retry the exact clock sequence without releasing the mutated route.
+    pub fn retry(self) -> Result<Ieee802154Clocked<P>, Self>
+    where
+        P: Ieee802154PlatformControl,
+    {
+        establish_ieee802154_clocks(self.inner.into_backend())
+            .map(|inner| Ieee802154Clocked { inner })
+            .map_err(|inner| Self { inner })
     }
 }
 
@@ -392,16 +569,35 @@ impl<P> Ieee802154MacPolicyTransitionFailure<P> {
     }
 }
 
-impl<P: Ieee802154PlatformControl> Radio<P, radio_state::Powered> {
-    /// Consume the powered owner and prove all IEEE 802.15.4 clock gates.
+impl<P: PowerClockControl> Ieee802154Owned<P> {
+    /// Execute and prove the shared modem/PHY power prerequisites.
+    ///
+    /// The transaction is the same concrete target sequence used before the
+    /// common PHY registration path. It operates only through the retained
+    /// platform token and never converts the radio registers into Wi-Fi.
+    pub fn power_up(self) -> Result<Ieee802154Powered<P>, Ieee802154PowerTransitionFailure<P>> {
+        enter_ieee802154_powered(self.backend)
+    }
+}
+
+fn enter_ieee802154_powered<P: PowerClockControl>(
+    mut backend: OwnedIeee802154Backend<P>,
+) -> Result<Ieee802154Powered<P>, Ieee802154PowerTransitionFailure<P>> {
+    if let Err(error) = power::execute_owned(&mut backend.platform) {
+        return Err(Ieee802154PowerTransitionFailure { backend, error });
+    }
+    Ok(Ieee802154Powered { backend })
+}
+
+impl<P: Ieee802154PlatformControl> Ieee802154Powered<P> {
+    /// Consume the powered dedicated owner and prove IEEE 802.15.4 clock gates.
     ///
     /// The transition is enable-only. Shared modem clocks are not cleared on
     /// failure or drop because no shared client/refcount manager exists yet.
     pub fn into_ieee802154_clocked(
         self,
     ) -> Result<Ieee802154Clocked<P>, Ieee802154ClockTransitionFailure<P>> {
-        let backend = OwnedIeee802154Backend { radio: self };
-        establish_ieee802154_clocks(backend)
+        establish_ieee802154_clocks(self.backend)
             .map(|inner| Ieee802154Clocked { inner })
             .map_err(|inner| Ieee802154ClockTransitionFailure { inner })
     }
@@ -418,7 +614,26 @@ impl<P: Ieee802154PlatformControl> Ieee802154Clocked<P> {
 
     /// Borrow the integration token without releasing whole-radio ownership.
     pub fn peripheral(&self) -> &P {
-        self.inner.backend().radio.peripheral()
+        &self.inner.backend().platform
+    }
+}
+
+impl<P: crate::wifi_bb::PhyWifiBbControl> Ieee802154Clocked<P> {
+    /// Borrow the exact platform and shared-PHY partitions for the recovered
+    /// concrete common-PHY target transition.
+    ///
+    /// This method does not run that asynchronous transition or mint a
+    /// registered/RF-ready state. It exists so the PHY crate can compose the
+    /// same `TargetPhyRegisterPort` used by standalone Bluetooth while the
+    /// inactive IEEE interrupt owner stays retained here.
+    #[doc(hidden)]
+    pub fn common_phy_parts(&mut self) -> (&mut P, SharedPhyHal<'_>) {
+        let backend = self.inner.backend_mut();
+        let wifi_baseband = WifiBasebandEnableObservation::from_platform_readback(
+            backend.platform.wifi_baseband_is_enabled(),
+        );
+        let shared_phy = backend.task.borrow_shared_phy(wifi_baseband);
+        (&mut backend.platform, shared_phy)
     }
 }
 
@@ -435,7 +650,7 @@ impl<P: Ieee802154PlatformControl> Ieee802154Reset<P> {
 
     /// Borrow the integration token without releasing whole-radio ownership.
     pub fn peripheral(&self) -> &P {
-        self.inner.backend().radio.peripheral()
+        &self.inner.backend().platform
     }
 }
 
@@ -446,8 +661,8 @@ impl<P> Ieee802154FoundationConfigured<P> {
     /// zero `EVENT_ENABLE` image and the dedicated image's unique route-
     /// isolation capability. It returns a terminal owner with raw evidence;
     /// even a `Complete` stop cannot re-enter the normal lifecycle or create a
-    /// general/register-wide acknowledgement or active IRQ capability. The
-    /// separately qualified ED_DONE selected image does not broaden this probe.
+    /// general acknowledgement or active IRQ capability. Production uses the
+    /// separate generated affine W1C transaction.
     #[cfg(feature = "validation-probes")]
     pub fn validation_probe_event_status(
         mut self,
@@ -479,19 +694,76 @@ impl<P> Ieee802154FoundationConfigured<P> {
 
     /// Borrow the integration token without claiming RF readiness.
     pub fn peripheral(&self) -> &P {
-        self.inner.backend().radio.peripheral()
+        &self.inner.backend().platform
     }
 }
 
 impl<P> Ieee802154MacPolicyConfigured<P> {
+    /// Run one finite energy-detection command on the policy's proved channel.
+    ///
+    /// The returned signed code is raw and uncalibrated. The transaction owns
+    /// no DMA buffer, installs no CPU interrupt route, and polls only while
+    /// both complete source-132 route words remain at reset. Success proves
+    /// a reusable owner only when the complete snapshot actually consumed by
+    /// W1C acknowledgement is exactly lone `ED_DONE`; every other acknowledged
+    /// image or terminal condition is retained diagnostically and fails stop.
+    pub fn energy_detection_raw(
+        self,
+        duration: u16,
+        budget: Ieee802154OperationPollBudget,
+    ) -> Result<Ieee802154OperationCompleted<P>, Ieee802154OperationFailed<P>> {
+        let operation =
+            Ieee802154PolledOperation::energy_detection(self.policy.channel(), duration);
+        self.run_polled_operation(operation, budget)
+    }
+
+    /// Run one finite CCA command using the complete proved static CCA policy.
+    ///
+    /// The result is the source-confirmed `CCA_BUSY` bit. It is not an RF
+    /// sensitivity, timing-conformance, coexistence, IRQ, or dataplane claim.
+    /// Success returns the reusable owner; abort, timeout, or any invariant
+    /// mismatch is terminal.
+    pub fn clear_channel_assessment(
+        self,
+        budget: Ieee802154OperationPollBudget,
+    ) -> Result<Ieee802154OperationCompleted<P>, Ieee802154OperationFailed<P>> {
+        let operation = Ieee802154PolledOperation::clear_channel_assessment(
+            self.policy.channel(),
+            self.policy.cca_mode(),
+            self.policy.cca_threshold_code(),
+        );
+        self.run_polled_operation(operation, budget)
+    }
+
+    fn run_polled_operation(
+        mut self,
+        operation: Ieee802154PolledOperation,
+        budget: Ieee802154OperationPollBudget,
+    ) -> Result<Ieee802154OperationCompleted<P>, Ieee802154OperationFailed<P>> {
+        let result = {
+            let hal = self.foundation.inner.backend_mut().mac_hal();
+            run_ieee802154_polled_operation(hal, operation, budget)
+        };
+        match result {
+            Ok(evidence) => Ok(Ieee802154OperationCompleted {
+                owner: self,
+                evidence,
+            }),
+            Err(failure) => Err(Ieee802154OperationFailed {
+                failure,
+                owner: self,
+            }),
+        }
+    }
+
     /// Run the closed ED-DONE/TIMER0 event discriminator.
     ///
     /// Requiring this state proves that an explicit IEEE channel and the
     /// reviewed static MAC policy read back before ED starts. The transition
     /// still starts no DMA and installs no CPU interrupt route. It returns a
-    /// terminal evidence owner even on success. It rechecks the exact serialized
-    /// ED_DONE selected image, but creates no general/register-wide event
-    /// acknowledgement, active IRQ, concurrency, or RF-readiness claim.
+    /// terminal evidence owner even on success. Its fixed validation writes do
+    /// not create another production acknowledgement API, active IRQ,
+    /// concurrency, or RF-readiness claim.
     #[cfg(feature = "validation-probes")]
     pub fn validation_probe_ed_event_status(
         mut self,
@@ -522,11 +794,17 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
 mod tests {
     use std::vec::Vec;
 
-    use crate::{Radio, state as radio_state, wifi_bb::PhyWifiBbControl};
+    use open_esp_radio_esp32s31_pac::RadioHardware;
+
+    use crate::{
+        PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError, SharedPhyAccess,
+        wifi_bb::PhyWifiBbControl,
+    };
 
     use super::{
-        Ieee802154ClockCheckpoint, Ieee802154ClockImages, Ieee802154Clocked,
-        Ieee802154PlatformControl, Ieee802154ReadbackError, Ieee802154Reset, Ieee802154ResetImages,
+        Ieee802154ClockCheckpoint, Ieee802154ClockImages, Ieee802154Clocked, Ieee802154Owned,
+        Ieee802154PlatformControl, Ieee802154Powered, Ieee802154ReadbackError, Ieee802154Reset,
+        Ieee802154ResetImages,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -546,6 +824,7 @@ mod tests {
     #[derive(Debug)]
     struct FakePlatform {
         operations: Vec<Operation>,
+        power: PowerClockImages,
         clocks: Ieee802154ClockImages,
         resets: Ieee802154ResetImages,
     }
@@ -554,6 +833,17 @@ mod tests {
         fn ready() -> Self {
             Self {
                 operations: Vec::new(),
+                power: PowerClockImages {
+                    reset_released: true,
+                    hp_active_icg_selected: true,
+                    modem_bus_clock_enabled: true,
+                    hp_active_clock_map_configured: true,
+                    shared_clock_map_configured: true,
+                    modem_source_clocks_configured: true,
+                    phy_calibration_clocks_enabled: true,
+                    phy_i2c_160mhz_selected: true,
+                    phy_i2c_master_clock_enabled: true,
+                },
                 clocks: Ieee802154ClockImages {
                     modem_clock_maps_configured: true,
                     pll_160m_clock_enabled: true,
@@ -572,6 +862,36 @@ mod tests {
                     apb_reset_released: true,
                 },
             }
+        }
+    }
+
+    impl PowerClockControl for FakePlatform {
+        fn set_wifi_baseband_and_mac_reset(&mut self, _asserted: bool) {}
+
+        fn select_hp_active_modem_icg(&mut self) {}
+
+        fn apply_modem_icg_selection(&mut self) {}
+
+        fn apply_sleep_icg_selection(&mut self) {}
+
+        fn enable_modem_register_bus_clock(&mut self) {}
+
+        fn configure_hp_active_modem_clock_map(&mut self) {}
+
+        fn configure_shared_modem_clock_map(&mut self) {}
+
+        fn configure_modem_source_clocks(&mut self) {}
+
+        fn set_wifi_baseband_reset(&mut self, _asserted: bool) {}
+
+        fn enable_phy_calibration_clocks(&mut self) {}
+
+        fn select_phy_i2c_160mhz_source(&mut self) {}
+
+        fn enable_phy_i2c_master_clock(&mut self) {}
+
+        fn power_clock_images(&self) -> PowerClockImages {
+            self.power
         }
     }
 
@@ -641,20 +961,28 @@ mod tests {
         fn set_mac_baseband_enabled(&mut self, _enabled: bool) {}
     }
 
-    fn require_powered(_: &Radio<FakePlatform, radio_state::Powered>) {}
+    fn require_owned(_: &Ieee802154Owned<FakePlatform>) {}
+    fn require_powered(_: &Ieee802154Powered<FakePlatform>) {}
     fn require_clocked(_: &Ieee802154Clocked<FakePlatform>) {}
     fn require_reset(_: &Ieee802154Reset<FakePlatform>) {}
 
     #[test]
-    fn concrete_role_consumes_the_existing_powered_owner() {
-        let powered = Radio::claim(FakePlatform::ready())
-            .expect("validation claim")
-            .assume_powered_after_external_initialization();
-        require_powered(&powered);
+    fn concrete_role_consumes_the_neutral_root_into_the_dedicated_route() {
+        let owned =
+            Ieee802154Owned::from_hardware(FakePlatform::ready(), RadioHardware::for_validation());
+        require_owned(&owned);
 
-        let clocked = powered.into_ieee802154_clocked().expect("clock readback");
+        let powered = owned.power_up().expect("shared power readback");
+        require_powered(&powered);
+        let mut clocked = powered.into_ieee802154_clocked().expect("clock readback");
         require_clocked(&clocked);
         assert_eq!(clocked.peripheral().operations.len(), 8);
+
+        {
+            let (_platform, mut shared_phy) = clocked.common_phy_parts();
+            fn require_shared_phy(_: &mut impl SharedPhyAccess) {}
+            require_shared_phy(&mut shared_phy);
+        }
 
         let reset = clocked.reset_mac().expect("reset readback");
         require_reset(&reset);
@@ -662,12 +990,11 @@ mod tests {
     }
 
     #[test]
-    fn clock_failure_recovers_the_same_powered_owner() {
+    fn clock_failure_retains_the_dedicated_route_for_exact_retry() {
         let mut platform = FakePlatform::ready();
         platform.clocks.etm_clock_enabled = false;
-        let powered = Radio::claim(platform)
-            .expect("validation claim")
-            .assume_powered_after_external_initialization();
+        let owned = Ieee802154Owned::from_hardware(platform, RadioHardware::for_validation());
+        let powered = owned.power_up().expect("shared power readback");
 
         let failure = match powered.into_ieee802154_clocked() {
             Ok(_) => panic!("failed readback must not publish Clocked"),
@@ -681,8 +1008,38 @@ mod tests {
                 observed: false,
             }
         );
-        let powered = failure.into_powered();
-        require_powered(&powered);
-        assert_eq!(powered.peripheral().operations.len(), 8);
+        assert!(failure.retry().is_err());
+    }
+
+    #[test]
+    fn power_failure_retains_the_dedicated_route_for_exact_retry() {
+        let mut platform = FakePlatform::ready();
+        platform.power.hp_active_icg_selected = false;
+        let owned = Ieee802154Owned::from_hardware(platform, RadioHardware::for_validation());
+
+        let failure = match owned.power_up() {
+            Ok(_) => panic!("failed power readback must not publish Powered"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            PowerError {
+                checkpoint: PowerCheckpoint::HpActiveIcg,
+                expected: true,
+                observed: false,
+            }
+        );
+        assert!(failure.retry().is_err());
+    }
+
+    #[test]
+    fn untouched_owner_releases_the_complete_neutral_root() {
+        let owned =
+            Ieee802154Owned::from_hardware(FakePlatform::ready(), RadioHardware::for_validation());
+        let (_platform, hardware) = owned.release();
+
+        let ieee = hardware.into_ieee802154();
+        let (task, interrupts) = ieee.separate_interrupt_owner();
+        let _hardware = task.into_cold(interrupts).release();
     }
 }

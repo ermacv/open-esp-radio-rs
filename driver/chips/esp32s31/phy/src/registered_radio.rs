@@ -8,11 +8,11 @@ use crate::{PhyState, RegisteredPhyState};
 mod ieee802154;
 
 pub use ieee802154::{
-    RegisteredIeee802154ClockTransitionFailure, RegisteredIeee802154Clocked,
-    RegisteredIeee802154FoundationConfigured, RegisteredIeee802154FoundationTransitionFailure,
-    RegisteredIeee802154MacPolicyConfigured, RegisteredIeee802154MacPolicyRecovery,
-    RegisteredIeee802154MacPolicyTransitionFailure, RegisteredIeee802154Reset,
-    RegisteredIeee802154ResetTransitionFailure,
+    RegisteredIeee802154Clocked, RegisteredIeee802154FoundationConfigured,
+    RegisteredIeee802154FoundationTransitionFailure, RegisteredIeee802154MacPolicyConfigured,
+    RegisteredIeee802154MacPolicyRecovery, RegisteredIeee802154MacPolicyTransitionFailure,
+    RegisteredIeee802154OperationCompleted, RegisteredIeee802154OperationFailed,
+    RegisteredIeee802154Reset, RegisteredIeee802154ResetTransitionFailure,
 };
 
 /// Unique powered-radio owner carrying proof of target PHY registration.

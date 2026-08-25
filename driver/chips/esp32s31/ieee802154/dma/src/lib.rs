@@ -15,6 +15,7 @@ mod address;
 mod frame;
 mod ordering;
 mod rx;
+mod terminal;
 mod tx;
 
 pub use address::{DMA_HIGH, DMA_LOW, DmaAddressError, DmaFrameAddress};
@@ -27,6 +28,7 @@ pub use rx::{
     RxLifecycleFailure, RxPoolBindFailure, RxPoolError, RxPoolStorage, RxSlotState, RxStubArmed,
     RxStubDelivered,
 };
+pub use terminal::DmaTerminalEvidence;
 pub use tx::{
     PinnedTxBuffer, TxArmed, TxBindFailure, TxCompleted, TxDmaAddress, TxPrepared, TxState,
     TxStorage, TxStorageError,

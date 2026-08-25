@@ -6,8 +6,8 @@ use core::{
 };
 
 use crate::{
-    DmaAddressError, DmaFrameAddress, FRAME_BUFFER_SIZE, TxFrameError, TxFrameView,
-    frame::prepare_tx, ordering::device_fence,
+    DmaAddressError, DmaFrameAddress, DmaTerminalEvidence, FRAME_BUFFER_SIZE, TxFrameError,
+    TxFrameView, frame::prepare_tx, ordering::device_fence,
 };
 
 #[repr(C, align(4))]
@@ -284,26 +284,12 @@ impl<'owner> TxArmed<'owner> {
         }
     }
 
-    /// Complete a transition in a native model, where no external DMA actor
-    /// can still access the allocation.
-    #[cfg(not(target_arch = "riscv32"))]
-    pub fn complete_model(self) -> TxCompleted<'owner> {
-        self.complete_inner()
-    }
-
-    /// Transfer a hardware-completed TX image back to CPU ownership.
+    /// Transfer a terminal TX image back to CPU ownership.
     ///
-    /// # Safety
-    ///
-    /// The caller must have observed a terminal MAC event proving that the
-    /// hardware will no longer read this address. Calling this early could let
-    /// safe CPU code mutate a buffer still read by DMA.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "hardware completion is the external DMA ownership boundary"
-    )]
-    pub unsafe fn assume_complete(self) -> TxCompleted<'owner> {
+    /// Evidence is minted only by the sealed runtime after the exact active
+    /// operation accepts an acknowledged terminal batch. No raw event or
+    /// caller-provided completion flag can reach this boundary.
+    pub fn complete(self, _terminal: &DmaTerminalEvidence) -> TxCompleted<'owner> {
         self.complete_inner()
     }
 
@@ -362,7 +348,8 @@ mod tests {
         assert_eq!(prepared.frame().reserved_fcs(), &[0, 0]);
         let armed = prepared.arm();
         assert_eq!(armed.dma_address().as_u32(), DMA_LOW);
-        let completed = armed.complete_model();
+        let terminal = DmaTerminalEvidence::for_native_model();
+        let completed = armed.complete(&terminal);
         assert_eq!(completed.frame().mac_bytes(), &[0x61, 0x88, 0x01]);
         completed.release();
         assert_eq!(owner.state(), TxState::Free);

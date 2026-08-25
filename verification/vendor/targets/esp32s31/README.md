@@ -190,19 +190,35 @@ The pinned public-source review for the initial IEEE 802.15.4 clock, reset,
 MAC-foundation and channel-code boundary is recorded in
 [`analysis/ieee802154-lifecycle.md`](analysis/ieee802154-lifecycle.md). Its
 overall verdict is `INCOMPLETE`; in particular it does not qualify RF-ready or
-the complete `EVENT_STATUS` access class. The narrower generated
-`ED_DONE = 0x0040` selected write is HIL-qualified by
-[`2026-08-25-esp32s31-ieee802154-generated-ed-done.md`](../../../../qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-generated-ed-done.md)
-for one serialized transaction with both CPU routes detached. The pure finite
-ED/CCA engine returns reusable ownership only after that exact write and a full
-zero status readback; its concrete production backend, route guard, and
-back-to-back hardware qualification remain pending.
+on-air behavior. `EVENT_STATUS` is no longer an unresolved access-class gap:
+the sparse reviewed project fact assigns read-write W1C semantics, the SVD
+publishes `oneToClear`, and generated PAC acknowledgement consumes the exact
+affine snapshot sampled from the complete field. The finite polled ED/CCA path
+has a concrete PAC backend and detached-route guard; it returns reusable
+ownership only when the snapshot actually acknowledged is exactly lone
+`ED_DONE`. Any zero, conflicting, or additional event image is retained in a
+fail-closed quarantine. Historical selected-write HIL remains bounded evidence,
+not the current production API.
 
 The next source-only boundary for static MAC policy, direct frame storage,
-RX-buffer ownership and the still-quiesced IRQ model is recorded in
+RX-buffer ownership and interrupt dispatch is recorded in
 [`analysis/ieee802154-dataplane.md`](analysis/ieee802154-dataplane.md). It also
-remains `INCOMPLETE`: the isolated storage and dispatch contracts do not imply
-live DMA, an active interrupt route, or on-air readiness.
+remains `INCOMPLETE`, but its command/IRQ architecture is implemented rather
+than model-only. The whole-radio PAC exposes disjoint task and interrupt owners;
+interrupt setup clears stale status and publishes a named mask; the restricted
+IRQ port samples sidebands and consumes the exact W1C snapshot; and the
+PAC-backed runtime ports public-LL static policy, direct DMA-address publication
+and RX/TX/CCA/ED commands. A bounded cancellation-safe Embassy owner carries
+acknowledged values without moving PAC handles or raw addresses across the
+async boundary.
+
+The remaining IEEE 802.15.4 work is composition and qualification: bind and
+tear down platform source 132, join the existing task/IRQ/runtime owners with
+proved PHY, BTBB and coexistence readiness, complete terminal DMA reclamation
+and state-specific `STOP` policy, and establish TX-power/timing behavior. HIL is
+the qualification gate for route delivery/retrigger, repeated operations,
+maximum-length frames, ACK/abort/CCA/ED behavior and on-air service; it is not
+an architectural prerequisite for porting the source-derived logic.
 
 The `rx-done-to-pp-task`, `rx-success-to-pp-task` and
 `tx-complete-to-pp-task` routes execute the concrete queue and counted-latch

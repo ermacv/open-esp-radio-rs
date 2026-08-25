@@ -1,9 +1,9 @@
 schema = 3
 id = "ieee802154-ed-event-selective-write"
-description = "Reset-detached ED-DONE plus TIMER0 latch, exact ED abort visibility, and selected ED-DONE status write"
+description = "Two back-to-back production polled ED transactions followed by reset-detached ED-DONE plus TIMER0 selected-write validation"
 image = "diagnostic-ieee802154-ed-event"
 isolation = "reset"
-tags = ["diagnostic", "ieee802154", "event-status", "ed-done", "rx-abort", "selective-write", "timer-counter"]
+tags = ["diagnostic", "ieee802154", "production-ed", "back-to-back", "event-status", "ed-done", "rx-abort", "selective-write", "timer-counter"]
 
 [workload]
 kind = "ieee802154-ed-event"

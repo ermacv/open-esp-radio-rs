@@ -12,18 +12,27 @@
 // this closed module avoids reopening raw PAC access in that iteration.
 #![cfg_attr(not(test), allow(dead_code))]
 
-#[cfg(feature = "validation-probes")]
+use core::convert::Infallible;
+
 use open_esp_radio_esp32s31_ieee802154_irq::{Ieee802154RouteReadback, Ieee802154RouteWord};
 use open_esp_radio_esp32s31_pac::{
     Ieee802154AckTimeoutUnits as PacAckTimeoutUnits, Ieee802154CcaMode as PacCcaMode,
-    Ieee802154MacControl as PacMacControl, Ieee802154MacPolicySnapshot as PacMacPolicySnapshot,
-    Ieee802154PanIdentity as PacPanIdentity,
+    Ieee802154EdDurationUnits as PacEdDurationUnits,
+    Ieee802154EventEnableMask as PacEventEnableMask, Ieee802154MacControl as PacMacControl,
+    Ieee802154MacPolicySnapshot as PacMacPolicySnapshot,
+    Ieee802154OperationEventEnableObservation as PacOperationEventEnableObservation,
+    Ieee802154OperationRxAbortEnableObservation as PacOperationRxAbortEnableObservation,
+    Ieee802154PanIdentity as PacPanIdentity, Ieee802154RxAbortEnableMask as PacRxAbortEnableMask,
 };
 pub(crate) use open_esp_radio_esp32s31_pac::{
     Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154Pti, Ieee802154RegisterLease,
-    Ieee802154StateSnapshot, WifiRadioRegisters,
+    Ieee802154StateSnapshot, Ieee802154TaskRegisters,
 };
 
+use crate::ieee802154_operation::{
+    Ieee802154OperationEventMaskState, Ieee802154OperationEventObservation,
+    Ieee802154OperationRxAbortMaskState, Ieee802154PolledOperationBackend,
+};
 use crate::ieee802154_policy::{
     Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154MacControl, Ieee802154MacPolicySnapshot,
     Ieee802154PanIdentity,
@@ -162,8 +171,7 @@ pub(crate) struct Ieee802154Hal<B: Ieee802154RegisterBackend> {
 /// Concrete closed HAL capability backed by the generated ESP32-S31 PAC.
 pub(crate) type Ieee802154PacHal<'registers> = Ieee802154Hal<Ieee802154RegisterLease<'registers>>;
 
-#[cfg(feature = "validation-probes")]
-const fn decode_validation_interrupt_route_readback(
+const fn decode_interrupt_route_readback(
     core0_bits: u32,
     core1_bits: u32,
 ) -> Ieee802154RouteReadback {
@@ -175,7 +183,7 @@ const fn decode_validation_interrupt_route_readback(
 
 impl<'registers> Ieee802154PacHal<'registers> {
     /// Borrow the IEEE 802.15.4 leaf from the unique task-side radio owner.
-    pub(crate) fn from_owned(registers: &'registers mut WifiRadioRegisters) -> Self {
+    pub(crate) fn from_owned(registers: &'registers mut Ieee802154TaskRegisters) -> Self {
         Self::from_register_backend(registers.ieee802154_register_lease())
     }
 
@@ -194,10 +202,9 @@ impl<'registers> Ieee802154PacHal<'registers> {
         self.backend.validation_disable_all_events();
     }
 
-    #[cfg(feature = "validation-probes")]
-    pub(crate) fn validation_interrupt_route_readback(&mut self) -> Ieee802154RouteReadback {
-        let readback = self.backend.validation_interrupt_route_readback();
-        decode_validation_interrupt_route_readback(readback.core0_bits(), readback.core1_bits())
+    pub(crate) fn interrupt_route_readback(&mut self) -> Ieee802154RouteReadback {
+        let readback = self.backend.interrupt_route_readback();
+        decode_interrupt_route_readback(readback.core0_bits(), readback.core1_bits())
     }
 
     #[cfg(feature = "validation-probes")]
@@ -342,6 +349,127 @@ impl<'registers> Ieee802154PacHal<'registers> {
     }
 }
 
+impl Ieee802154PolledOperationBackend for Ieee802154PacHal<'_> {
+    type Error = Infallible;
+
+    fn set_channel(&mut self, channel: crate::Ieee802154Channel) -> Result<(), Self::Error> {
+        self.backend.set_frequency_code(channel.frequency_code());
+        Ok(())
+    }
+
+    fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) -> Result<(), Self::Error> {
+        self.backend.set_cca_mode(mode.into_pac());
+        Ok(())
+    }
+
+    fn set_cca_threshold_code(&mut self, threshold: i8) -> Result<(), Self::Error> {
+        self.backend.set_cca_threshold_code(threshold);
+        Ok(())
+    }
+
+    fn set_ed_duration(&mut self, duration: u16) -> Result<(), Self::Error> {
+        let Some(duration) = PacEdDurationUnits::new(u32::from(duration)) else {
+            unreachable!("every u16 is accepted by the reviewed ED-duration subset")
+        };
+        self.backend.set_ed_duration(duration);
+        Ok(())
+    }
+
+    fn cpu_interrupt_route_is_detached(&mut self) -> Result<bool, Self::Error> {
+        Ok(self.interrupt_route_readback().is_full_reset())
+    }
+
+    fn operation_event_mask_state(
+        &mut self,
+    ) -> Result<Ieee802154OperationEventMaskState, Self::Error> {
+        Ok(match self.backend.operation_event_enable_observation() {
+            PacOperationEventEnableObservation::AllMasked => {
+                Ieee802154OperationEventMaskState::AllMasked
+            }
+            PacOperationEventEnableObservation::EdDoneAndRxAbortOnly => {
+                Ieee802154OperationEventMaskState::EdDoneAndRxAbortOnly
+            }
+            PacOperationEventEnableObservation::Unexpected => {
+                Ieee802154OperationEventMaskState::Unexpected
+            }
+        })
+    }
+
+    fn operation_rx_abort_mask_state(
+        &mut self,
+    ) -> Result<Ieee802154OperationRxAbortMaskState, Self::Error> {
+        Ok(match self.backend.operation_rx_abort_enable_observation() {
+            PacOperationRxAbortEnableObservation::AllMasked => {
+                Ieee802154OperationRxAbortMaskState::AllMasked
+            }
+            PacOperationRxAbortEnableObservation::EdOperationReasonsOnly => {
+                Ieee802154OperationRxAbortMaskState::EdOperationReasonsOnly
+            }
+            PacOperationRxAbortEnableObservation::Unexpected => {
+                Ieee802154OperationRxAbortMaskState::Unexpected
+            }
+        })
+    }
+
+    fn enable_ed_done_and_rx_abort(&mut self) -> Result<(), Self::Error> {
+        self.backend
+            .set_event_enable(PacEventEnableMask::ED_DONE_AND_RX_ABORT);
+        Ok(())
+    }
+
+    fn enable_ed_operation_rx_abort_reasons(&mut self) -> Result<(), Self::Error> {
+        self.backend
+            .set_rx_abort_enable(PacRxAbortEnableMask::ED_OPERATION_REASONS);
+        Ok(())
+    }
+
+    fn mask_ed_done_and_rx_abort(&mut self) -> Result<(), Self::Error> {
+        self.backend.set_event_enable(PacEventEnableMask::NONE);
+        Ok(())
+    }
+
+    fn mask_ed_operation_rx_abort_reasons(&mut self) -> Result<(), Self::Error> {
+        self.backend.set_rx_abort_enable(PacRxAbortEnableMask::NONE);
+        Ok(())
+    }
+
+    fn order_device_accesses(&mut self) -> Result<(), Self::Error> {
+        self.backend.order_device_accesses();
+        Ok(())
+    }
+
+    fn request_ed_start(&mut self) -> Result<(), Self::Error> {
+        self.backend.request_ed_start();
+        Ok(())
+    }
+
+    fn sample_event_status(&mut self) -> Result<Ieee802154OperationEventObservation, Self::Error> {
+        Ok(Ieee802154OperationEventObservation::from_raw(
+            self.backend.event_status_observation().bits(),
+        ))
+    }
+
+    fn acknowledge_pending_events(
+        &mut self,
+    ) -> Result<Ieee802154OperationEventObservation, Self::Error> {
+        Ok(Ieee802154OperationEventObservation::from_raw(
+            self.backend.acknowledge_pending_events().bits(),
+        ))
+    }
+
+    fn sample_rx_abort_status(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.backend.rx_status_observation().bits())
+    }
+
+    fn sample_ed_rss_code(&mut self) -> Result<i8, Self::Error> {
+        Ok(self.backend.ed_rss_code())
+    }
+
+    fn sample_cca_busy(&mut self) -> Result<bool, Self::Error> {
+        Ok(self.backend.cca_busy())
+    }
+}
+
 impl<B: Ieee802154RegisterBackend> Ieee802154Hal<B> {
     /// Bind one exclusive semantic register backend.
     ///
@@ -452,7 +580,7 @@ mod tests {
     };
 
     #[cfg(feature = "validation-probes")]
-    use super::decode_validation_interrupt_route_readback;
+    use super::decode_interrupt_route_readback;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
@@ -688,19 +816,26 @@ mod tests {
     }
 
     #[test]
-    fn production_hal_borrows_the_generated_radio_partition() {
-        let mut cold = RadioHardware::for_validation().into_wifi();
-        let mut hal = Ieee802154PacHal::from_owned(cold.radio_mut());
+    fn production_hal_borrows_the_dedicated_ieee802154_task_partition() {
+        let cold = RadioHardware::for_validation().into_ieee802154();
+        let (mut task, interrupts) = cold.separate_interrupt_owner();
+        {
+            let mut hal = Ieee802154PacHal::from_owned(&mut task);
 
-        // Construct the real closed backend and exercise only its portable
-        // ordering boundary; host tests must not perform device MMIO.
-        hal.order_device_accesses();
+            // Construct the real closed backend and exercise only its
+            // portable ordering boundary; host tests must not perform MMIO.
+            hal.order_device_accesses();
+        }
+
+        // Reuniting proves the HAL borrow did not consume or alias the
+        // inactive interrupt owner.
+        let _hardware = task.into_cold(interrupts).release();
     }
 
     #[cfg(feature = "validation-probes")]
     #[test]
     fn validation_route_decoder_preserves_both_words_and_pure_predicates() {
-        let readback = decode_validation_interrupt_route_readback(0, 0x200);
+        let readback = decode_interrupt_route_readback(0, 0x200);
 
         assert_eq!(readback.core0().raw_bits(), 0);
         assert_eq!(readback.core1().raw_bits(), 0x200);

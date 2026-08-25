@@ -367,9 +367,10 @@ where
     /// Configure only the static, non-operational MAC foundation.
     ///
     /// Event and abort delivery remains masked throughout. `EVENT_STATUS` is
-    /// deliberately untouched because its modified-write semantics are not
-    /// authoritative yet. This transition does not claim PHY, RF, IRQ
-    /// routing, buffers or an idle/ready hardware state.
+    /// deliberately untouched because foundation setup owns no pending-event
+    /// acknowledgement; W1C acknowledgement belongs to the later polled or
+    /// hard-IRQ owner. This transition does not claim PHY, RF, IRQ routing,
+    /// buffers or an idle/ready hardware state.
     pub(crate) fn configure_foundation(
         mut self,
     ) -> Result<

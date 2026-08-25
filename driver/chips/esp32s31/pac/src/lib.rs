@@ -22,6 +22,7 @@ mod coex;
 mod frequency;
 mod generated;
 mod ieee802154;
+mod ieee802154_timing;
 mod iq_estimator;
 #[cfg(test)]
 #[doc(hidden)]
@@ -112,18 +113,18 @@ pub use generated::{
 };
 #[doc(hidden)]
 pub use ieee802154::Ieee802154RegisterLease;
-#[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 pub use ieee802154::Ieee802154RouteRawReadback;
 pub use ieee802154::{
     Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdCcaSnapshot, Ieee802154EdCommand,
     Ieee802154EdDurationUnits, Ieee802154EventEnableMask, Ieee802154EventObservation,
-    Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154MacControl,
-    Ieee802154MacPolicySnapshot, Ieee802154OperationEventEnableObservation,
-    Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154Pti,
-    Ieee802154RxAbortEnableMask, Ieee802154RxStateCode, Ieee802154RxStatusObservation,
-    Ieee802154StateSnapshot, Ieee802154TxStateCode,
+    Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154InterruptSnapshot,
+    Ieee802154MacCommand, Ieee802154MacControl, Ieee802154MacPolicySnapshot,
+    Ieee802154OperationEventEnableObservation, Ieee802154OperationRxAbortEnableObservation,
+    Ieee802154PanIdentity, Ieee802154Pti, Ieee802154RxAbortEnableMask, Ieee802154RxStateCode,
+    Ieee802154RxStatusObservation, Ieee802154StateSnapshot, Ieee802154TxStateCode,
 };
+pub use ieee802154_timing::Ieee802154TimingReady;
 pub use mac_block_ack::{
     ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, RxBlockAckEntrySnapshot,
     TxBlockAckDiagnosticSnapshot, TxBlockAckPayload, TxBlockAckRegisterImage,
@@ -186,6 +187,26 @@ struct WifiRadioPeripheralOwners {
     shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
 }
 
+/// Physical owners used by one exclusive IEEE 802.15.4 route.
+///
+/// The Bluetooth controller partition is intentionally nested behind the
+/// BTBB boundary. ESP-IDF's public IEEE 802.15.4 enable order calls the shared
+/// `esp_btbb_enable` lifecycle, but does not grant IEEE 802.15.4 authority over
+/// the Bluetooth controller. Keeping the complete generated partition private
+/// lets reviewed BTBB transactions be added without exposing BLE/EDR methods.
+struct Ieee802154TaskPeripheralOwners {
+    ieee802154_mac: svd::ieee802154_mac_ownership::TaskRegisters,
+    radio_phy: RadioPhyRegisters,
+    coexistence: svd::peripheral_ownership::CoexistencePeripherals,
+    btbb: Ieee802154BtbbPeripheralOwners,
+}
+
+/// Generated partitions retained behind the narrow IEEE 802.15.4 BTBB role.
+struct Ieee802154BtbbPeripheralOwners {
+    bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
+    shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
+}
+
 /// Unique restricted owner of the shared radio-PHY register partition.
 ///
 /// This component is created only while the complete [`RadioHardware`] root
@@ -213,6 +234,13 @@ struct RetainedWifiPeripheralOwners {
     ieee802154: svd::peripheral_ownership::Ieee802154Peripherals,
 }
 
+/// Protocol owners that IEEE 802.15.4 does not use during its exclusive epoch.
+struct RetainedIeee802154PeripheralOwners {
+    wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
+    wifi_interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
+    bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
+}
+
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
 ///
 /// This is the sole production acquisition root. It can be consumed by
@@ -227,6 +255,7 @@ struct RetainedWifiPeripheralOwners {
 /// let hardware = RadioHardware::take().unwrap();
 /// let _wifi = hardware.into_wifi();
 /// let _bluetooth = hardware.into_bluetooth();
+/// let _ieee802154 = hardware.into_ieee802154();
 /// ```
 #[must_use = "dropping the radio root permanently loses the unique hardware capability"]
 pub struct RadioHardware {
@@ -343,6 +372,53 @@ impl RadioHardware {
             },
             interrupts: BluetoothInterruptSetup {
                 peripherals: bluetooth_interrupts,
+            },
+        }
+    }
+
+    /// Consume the neutral root into the exclusive standalone IEEE 802.15.4
+    /// route.
+    ///
+    /// This ownership-only transition follows the same whole-radio rule as
+    /// [`Self::into_wifi`] and [`Self::into_bluetooth`]. It performs no module
+    /// clock, common-PHY, BTBB, coexistence, reset, DMA, or interrupt
+    /// transaction. The route owns the IEEE 802.15.4 MAC and shared resources
+    /// required by the public ESP-IDF enable sequence; Wi-Fi and Bluetooth IRQ
+    /// authority remain retained and inaccessible.
+    pub fn into_ieee802154(self) -> Ieee802154ColdRegisters {
+        let Self {
+            wifi_mac,
+            wifi_interrupts,
+            radio_phy,
+            coexistence,
+            bluetooth,
+            bluetooth_interrupts,
+            shared_radio,
+            ieee802154,
+        } = self;
+        let (task_mac, interrupt_mac) =
+            svd::ieee802154_mac_ownership::split(ieee802154.ieee802154_mac);
+        Ieee802154ColdRegisters {
+            task: Ieee802154TaskRegisters {
+                peripherals: Ieee802154TaskPeripheralOwners {
+                    ieee802154_mac: task_mac,
+                    radio_phy: RadioPhyRegisters {
+                        peripherals: radio_phy,
+                    },
+                    coexistence,
+                    btbb: Ieee802154BtbbPeripheralOwners {
+                        bluetooth,
+                        shared_radio,
+                    },
+                },
+                retained: RetainedIeee802154PeripheralOwners {
+                    wifi_mac,
+                    wifi_interrupts,
+                    bluetooth_interrupts,
+                },
+            },
+            interrupts: Ieee802154InterruptSetup {
+                registers: interrupt_mac,
             },
         }
     }
@@ -785,6 +861,150 @@ impl WifiColdRegisters {
     }
 }
 
+/// Exclusive standalone IEEE 802.15.4 owner before any IRQ handoff.
+///
+/// Unlike the old temporary Wi-Fi borrow, this value is produced only by
+/// consuming the complete [`RadioHardware`] root. It therefore owns the MAC,
+/// common PHY, shared BTBB words, and coexistence partition in one affine
+/// epoch. Possession alone does not claim that their enable sequence ran.
+#[must_use = "the cold IEEE 802.15.4 route retains every radio owner"]
+pub struct Ieee802154ColdRegisters {
+    task: Ieee802154TaskRegisters,
+    interrupts: Ieee802154InterruptSetup,
+}
+
+impl Ieee802154ColdRegisters {
+    /// Separate the ordinary task owner from the inactive interrupt owner.
+    ///
+    /// This conversion performs no MMIO. The returned interrupt setup cannot
+    /// sample or acknowledge events until its consuming activation
+    /// transaction has published the runtime event mask and cleared stale
+    /// status.
+    pub fn separate_interrupt_owner(self) -> (Ieee802154TaskRegisters, Ieee802154InterruptSetup) {
+        (self.task, self.interrupts)
+    }
+
+    /// Return every Wi-Fi, Bluetooth, IEEE 802.15.4, and shared owner to the
+    /// protocol-neutral root.
+    ///
+    /// This conversion performs no MMIO. A higher layer must first finish its
+    /// state-specific STOP and shared-resource teardown sequence.
+    pub fn release(self) -> RadioHardware {
+        self.task.into_hardware(self.interrupts)
+    }
+
+    /// Borrow the dedicated IEEE 802.15.4 radio owner during cold setup.
+    #[doc(hidden)]
+    pub const fn radio(&self) -> &Ieee802154TaskRegisters {
+        &self.task
+    }
+
+    /// Mutably borrow the dedicated IEEE 802.15.4 radio owner during cold
+    /// setup.
+    #[doc(hidden)]
+    pub fn radio_mut(&mut self) -> &mut Ieee802154TaskRegisters {
+        &mut self.task
+    }
+}
+
+/// Complete register ownership for one exclusive IEEE 802.15.4 epoch.
+///
+/// Raw generated partitions remain private. The public surface is extended
+/// only with reviewed MAC, common-PHY, BTBB, and coexistence transactions;
+/// Wi-Fi and Bluetooth-controller operations cannot be reached through this
+/// role even though their generated owners must be retained for a lossless
+/// protocol switch.
+#[must_use = "the IEEE 802.15.4 radio owner must be released as one epoch"]
+pub struct Ieee802154TaskRegisters {
+    peripherals: Ieee802154TaskPeripheralOwners,
+    retained: RetainedIeee802154PeripheralOwners,
+}
+
+impl Ieee802154TaskRegisters {
+    fn into_hardware(self, interrupts: Ieee802154InterruptSetup) -> RadioHardware {
+        let Self {
+            peripherals:
+                Ieee802154TaskPeripheralOwners {
+                    ieee802154_mac: task_mac,
+                    radio_phy,
+                    coexistence,
+                    btbb:
+                        Ieee802154BtbbPeripheralOwners {
+                            bluetooth,
+                            shared_radio,
+                        },
+                },
+            retained:
+                RetainedIeee802154PeripheralOwners {
+                    wifi_mac,
+                    wifi_interrupts,
+                    bluetooth_interrupts,
+                },
+        } = self;
+        let ieee802154_mac = svd::ieee802154_mac_ownership::reunite(task_mac, interrupts.registers);
+        RadioHardware {
+            wifi_mac,
+            wifi_interrupts,
+            radio_phy: radio_phy.peripherals,
+            coexistence,
+            bluetooth,
+            bluetooth_interrupts,
+            shared_radio,
+            ieee802154: svd::peripheral_ownership::Ieee802154Peripherals { ieee802154_mac },
+        }
+    }
+
+    /// Reunite a quiescent task owner with its inactive IRQ owner.
+    ///
+    /// This conversion performs no MMIO. The caller must first disable the
+    /// CPU route and deactivate the finite interrupt epoch.
+    pub fn into_cold(self, interrupts: Ieee802154InterruptSetup) -> Ieee802154ColdRegisters {
+        Ieee802154ColdRegisters {
+            task: self,
+            interrupts,
+        }
+    }
+
+    /// Borrow the protocol-neutral PHY partition without creating another
+    /// owner.
+    #[doc(hidden)]
+    pub const fn radio_phy(&self) -> &RadioPhyRegisters {
+        &self.peripherals.radio_phy
+    }
+
+    /// Mutably borrow the protocol-neutral PHY partition without creating
+    /// another owner.
+    #[doc(hidden)]
+    pub fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
+        &mut self.peripherals.radio_phy
+    }
+
+    /// Order descriptor memory and MMIO at a hardware ownership boundary.
+    pub fn order_device_accesses(&mut self) {
+        device_fence();
+    }
+}
+
+/// Task-side setup token before one IEEE 802.15.4 hard-IRQ epoch.
+///
+/// The raw interrupt handle is already disjoint from
+/// [`Ieee802154TaskRegisters`], but remains inactive until the reviewed setup
+/// transaction consumes this value.
+#[must_use = "the IEEE 802.15.4 interrupt setup must remain paired with its task owner"]
+pub struct Ieee802154InterruptSetup {
+    registers: svd::ieee802154_mac_ownership::InterruptRegisters,
+}
+
+/// Disjoint IEEE 802.15.4 event/status capability for the hard ISR.
+///
+/// Task command, DMA, policy, and event-enable operations are absent from this
+/// type. It must be deactivated after the platform CPU route is disabled and
+/// reunited with the task owner before the whole radio can be released.
+#[must_use = "the IEEE 802.15.4 interrupt owner must be deactivated and reunited"]
+pub struct Ieee802154InterruptRegisters {
+    registers: svd::ieee802154_mac_ownership::InterruptRegisters,
+}
+
 /// Exclusive standalone Bluetooth owner before task/interrupt separation.
 ///
 /// The cold type exposes no controller transaction. It only preserves the
@@ -938,6 +1158,30 @@ mod tests {
         // Bluetooth task and IRQ authority were separated.
         let wifi = hardware.into_wifi();
         let _hardware = wifi.release();
+    }
+
+    #[test]
+    fn ieee802154_route_roundtrip_returns_every_other_protocol_owner() {
+        let ieee802154 = RadioHardware::for_validation().into_ieee802154();
+        let hardware = ieee802154.release();
+
+        // The IEEE 802.15.4 epoch retains the complete generated Bluetooth
+        // controller partition behind its BTBB role and never consumes either
+        // protocol's interrupt owner.
+        let bluetooth = hardware.into_bluetooth();
+        let hardware = bluetooth.release();
+        let wifi = hardware.into_wifi();
+        let _hardware = wifi.release();
+    }
+
+    #[test]
+    fn ieee802154_task_and_interrupt_owners_reunite_without_mmio() {
+        let ieee802154 = RadioHardware::for_validation().into_ieee802154();
+        let (task, setup) = ieee802154.separate_interrupt_owner();
+        let hardware = task.into_cold(setup).release();
+
+        let bluetooth = hardware.into_bluetooth();
+        let _hardware = bluetooth.release();
     }
 
     #[test]

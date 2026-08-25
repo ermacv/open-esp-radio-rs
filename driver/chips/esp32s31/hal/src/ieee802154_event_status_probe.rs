@@ -86,9 +86,10 @@ impl Ieee802154EventStatusProbeConfig {
 
 /// Terminal classification for one closed validation transaction.
 ///
-/// These variants report raw experimental control flow only.  Even
-/// [`Complete`](Self::Complete) does not publish a production acknowledge
-/// operation; reviewed HIL evidence must first classify the register.
+/// These variants report raw experimental control flow only. Even
+/// [`Complete`](Self::Complete) publishes validation evidence, not a production
+/// acknowledgement capability. Production uses the separate generated affine
+/// W1C snapshot transaction; this probe never mints that owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ieee802154EventStatusProbeStop {
     /// Every expected timer-bit relation was observed and cleanup read zero.
@@ -237,7 +238,7 @@ impl Ieee802154EventStatusProbeBackend for crate::ieee802154::Ieee802154PacHal<'
     }
 
     fn interrupt_route_readback(&mut self) -> Ieee802154RouteReadback {
-        self.validation_interrupt_route_readback()
+        self.interrupt_route_readback()
     }
 
     fn event_status_events(&mut self) -> u16 {

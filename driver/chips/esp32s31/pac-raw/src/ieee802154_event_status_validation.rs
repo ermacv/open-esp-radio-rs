@@ -1,11 +1,9 @@
 //! Closed IEEE 802.15.4 `EVENT_STATUS` validation transaction.
 //!
-//! This module is compiled only into validation images.  In particular, it
-//! does not add [`crate::Writable`] to the generated read-only
-//! `EVENT_STATUS` register.  The only raw writes name timer-zero or timer-one
-//! independently so a HIL probe can test the unresolved acknowledge access
-//! class for selective-W1C compatibility without creating a general
-//! acknowledge capability.
+//! This module is compiled only into validation images. Production code uses
+//! the generated affine W1C snapshot. The literal timer-zero and timer-one
+//! writes remain isolated here solely to preserve the historical selective
+//! clearing discriminator; neither accepts a caller-provided image.
 
 const TIMER0_EVENT: u32 = 1 << 8;
 const TIMER1_EVENT: u32 = 1 << 9;
@@ -141,14 +139,13 @@ pub fn stop_timer1(registers: &crate::Ieee802154Mac) {
 /// Perform the experiment's raw write of only timer-zero's event bit.
 #[inline]
 pub fn write_timer0_event(registers: &crate::Ieee802154Mac) {
-    // SAFETY: the generated accessor is intentionally read-only because its
-    // modified-write class is unresolved.  This feature-only experiment must
-    // bypass that access class to write exactly the independently stimulated
-    // timer-zero bit.  The unique PAC lease prevents a concurrent task-side
-    // register owner.  The closed HAL transaction verifies EVENT_ENABLE; its
-    // isolated HIL caller must also keep the external CPU route unconfigured.
+    // SAFETY: the feature-only experiment writes exactly one fixed event bit.
+    // The unique PAC lease prevents a concurrent task-side register owner and
+    // the isolated caller keeps the external CPU route unconfigured.
     unsafe {
-        core::ptr::write_volatile(registers.event_status().as_ptr(), TIMER0_EVENT);
+        registers
+            .event_status()
+            .write_with_zero(|writer| writer.bits(TIMER0_EVENT));
     }
     order_device_accesses();
 }
@@ -159,7 +156,9 @@ pub fn write_timer1_event(registers: &crate::Ieee802154Mac) {
     // SAFETY: see [`write_timer0_event`].  The only difference is the
     // independently stimulated timer-one bit.
     unsafe {
-        core::ptr::write_volatile(registers.event_status().as_ptr(), TIMER1_EVENT);
+        registers
+            .event_status()
+            .write_with_zero(|writer| writer.bits(TIMER1_EVENT));
     }
     order_device_accesses();
 }

@@ -1,0 +1,26 @@
+[package]
+name = "open-esp-radio-esp32s31-ieee802154-esp-hal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ESP-HAL interrupt-route ownership for the ESP32-S31 IEEE 802.15.4 MAC"
+
+[features]
+default = []
+esp32s31 = [
+    "dep:critical-section",
+    "dep:esp-hal",
+    "dep:open-esp-radio-esp32s31-ieee802154-irq",
+    "dep:open-esp-radio-esp32s31-pac",
+]
+
+[dependencies]
+critical-section = { version = "1.2.0", optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "unstable"], optional = true }
+open-esp-radio-esp32s31-ieee802154-irq = { path = "../../../chips/esp32s31/ieee802154/irq", optional = true }
+open-esp-radio-esp32s31-pac = { path = "../../../chips/esp32s31/pac", optional = true }
+
+[lints]
+workspace = true

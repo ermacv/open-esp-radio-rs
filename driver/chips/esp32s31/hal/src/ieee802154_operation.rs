@@ -5,14 +5,16 @@
 //! while its semantic backend proves that the CPU route is detached. A stale
 //! event-status image fails closed before `ED_START`.
 //!
-//! The only acknowledged status is a lone, completed `ED_DONE`, through one
-//! fixed selected write. Recovery verifies the full status is then exactly
-//! zero before closing the event window. Abort, timeout, conflicting status,
-//! and backend failures mask the window for containment but can never return a
-//! reusable owner.
+//! Recovery samples and acknowledges the complete pending W1C image in one
+//! backend transaction. Reuse is possible only when the image actually
+//! consumed by that transaction is exactly lone `ED_DONE`. Abort, timeout,
+//! conflicting status, acknowledgement drift, and backend failures mask the
+//! window for containment but can never return a reusable owner.
 
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), allow(dead_code))]
+
+use core::convert::Infallible;
 
 use crate::{ieee802154_lifecycle::Ieee802154Channel, ieee802154_policy::Ieee802154CcaMode};
 
@@ -21,7 +23,7 @@ pub(crate) const IEEE802154_CCA_ED_DURATION: u16 = 8;
 
 /// One finite operation supported by the interrupt-detached polling boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Ieee802154PolledOperation {
+pub enum Ieee802154PolledOperation {
     /// Sample one uncalibrated signed ED RSS code.
     EnergyDetection {
         /// Checked 2.4 GHz channel selected before the command.
@@ -59,14 +61,17 @@ impl Ieee802154PolledOperation {
         }
     }
 
-    const fn channel(self) -> Ieee802154Channel {
+    /// Return the checked 2.4 GHz channel selected by this operation.
+    pub const fn channel(self) -> Ieee802154Channel {
         match self {
             Self::EnergyDetection { channel, .. }
             | Self::ClearChannelAssessment { channel, .. } => channel,
         }
     }
 
-    const fn duration(self) -> u16 {
+    /// Return the configured ED duration, including the fixed reviewed value
+    /// used by standalone CCA.
+    pub const fn duration(self) -> u16 {
         match self {
             Self::EnergyDetection { duration, .. } => duration,
             Self::ClearChannelAssessment { .. } => IEEE802154_CCA_ED_DURATION,
@@ -76,11 +81,11 @@ impl Ieee802154PolledOperation {
 
 /// Nonzero number of status samples permitted for one command.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Ieee802154OperationPollBudget(u32);
+pub struct Ieee802154OperationPollBudget(u32);
 
 impl Ieee802154OperationPollBudget {
     /// Reject a zero-sample transaction before it owns the backend.
-    pub(crate) const fn new(samples: u32) -> Option<Self> {
+    pub const fn new(samples: u32) -> Option<Self> {
         if samples == 0 {
             None
         } else {
@@ -89,14 +94,14 @@ impl Ieee802154OperationPollBudget {
     }
 
     /// Return the exact maximum number of status samples.
-    pub(crate) const fn samples(self) -> u32 {
+    pub const fn samples(self) -> u32 {
         self.0
     }
 }
 
 /// Semantic readback of event-enable state, without a raw mask image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Ieee802154OperationEventMaskState {
+pub enum Ieee802154OperationEventMaskState {
     /// Every MAC event remains masked.
     AllMasked,
     /// Exactly `ED_DONE` and `RX_ABORT` are enabled.
@@ -107,7 +112,7 @@ pub(crate) enum Ieee802154OperationEventMaskState {
 
 /// Semantic readback of receive-abort-enable state, without a raw mask image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Ieee802154OperationRxAbortMaskState {
+pub enum Ieee802154OperationRxAbortMaskState {
     /// Every receive-abort reason remains masked.
     AllMasked,
     /// Exactly ED abort, ED stop, and ED coexistence reject are enabled.
@@ -124,7 +129,7 @@ pub(crate) enum Ieee802154OperationRxAbortMaskState {
 /// Keeping the full register image is intentional: accepting only two booleans
 /// would hide an unrelated latched event and could incorrectly permit reuse.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Ieee802154OperationEventObservation(u16);
+pub struct Ieee802154OperationEventObservation(u16);
 
 impl Ieee802154OperationEventObservation {
     const RX_ABORT: u16 = 0x0010;
@@ -136,12 +141,12 @@ impl Ieee802154OperationEventObservation {
     }
 
     /// Return the complete retained status image.
-    pub(crate) const fn raw(self) -> u16 {
+    pub const fn raw(self) -> u16 {
         self.0
     }
 
     /// Return whether no event is latched.
-    pub(crate) const fn is_clear(self) -> bool {
+    pub const fn is_clear(self) -> bool {
         self.0 == 0
     }
 
@@ -165,9 +170,9 @@ impl Ieee802154OperationEventObservation {
 ///
 /// Implementations must retain exclusive ownership of the event-enable fields,
 /// command leaf, ED result fields, and CPU-route attachment decision for the
-/// complete transaction. Only `write_ed_done_selected` may acknowledge event
-/// status, and its implementation must write the fixed reviewed `ED_DONE`
-/// image rather than a caller-provided register value.
+/// complete transaction. Only `acknowledge_pending_events` may acknowledge
+/// event status. It must sample the complete pending image once, consume that
+/// exact non-replayable W1C snapshot, and return its semantic observation.
 pub(crate) trait Ieee802154PolledOperationBackend: Sized {
     /// Backend-specific failure retained in a terminal quarantine owner.
     type Error;
@@ -218,8 +223,10 @@ pub(crate) trait Ieee802154PolledOperationBackend: Sized {
     /// Sample the complete event status without acknowledging any bit.
     fn sample_event_status(&mut self) -> Result<Ieee802154OperationEventObservation, Self::Error>;
 
-    /// Write the fixed reviewed `ED_DONE` selected image.
-    fn write_ed_done_selected(&mut self) -> Result<(), Self::Error>;
+    /// Sample and acknowledge the complete pending W1C event image.
+    fn acknowledge_pending_events(
+        &mut self,
+    ) -> Result<Ieee802154OperationEventObservation, Self::Error>;
 
     /// Retain the complete receive-abort status after `RX_ABORT`.
     fn sample_rx_abort_status(&mut self) -> Result<u32, Self::Error>;
@@ -233,7 +240,7 @@ pub(crate) trait Ieee802154PolledOperationBackend: Sized {
 
 /// Observable stage at which a one-shot owner entered quarantine.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Ieee802154OperationStage {
+pub enum Ieee802154OperationStage {
     /// Preconditions and static request fields.
     Prepare,
     /// Detached-route event-enable window.
@@ -244,10 +251,8 @@ pub(crate) enum Ieee802154OperationStage {
     Poll,
     /// Terminal result sampling.
     TerminalSample,
-    /// Fixed selected `ED_DONE` write while the event window remains active.
-    RecoverSelectedWrite,
-    /// Full-status proof after the fixed selected write.
-    RecoverStatusProof,
+    /// Snapshot-consuming W1C acknowledgement of the terminal event.
+    AcknowledgeTerminalEvent,
     /// Terminal or timeout event remasking.
     Cleanup,
 }
@@ -291,9 +296,9 @@ pub(crate) enum Ieee802154OperationQuarantineReason<Error> {
         /// Complete terminal status retained for diagnosis.
         observed: Ieee802154OperationEventObservation,
     },
-    /// The selected `ED_DONE` write did not leave the full status exactly zero.
-    EventStatusNotCleared {
-        /// Complete residual status retained for diagnosis.
+    /// The W1C snapshot actually consumed was not exactly lone `ED_DONE`.
+    UnexpectedAcknowledgedEvents {
+        /// Complete acknowledged event image retained for diagnosis.
         observed: Ieee802154OperationEventObservation,
     },
     /// `ED_DONE` and `RX_ABORT` were observed together.
@@ -546,7 +551,7 @@ pub(crate) struct Ieee802154PolledOperationActive<Backend> {
 
 /// One accepted result sampled after a lone `ED_DONE`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Ieee802154PolledOperationResult {
+pub enum Ieee802154PolledOperationResult {
     /// Uncalibrated signed `ED_RSS` code.
     EnergyDetection { rss_code: i8 },
     /// Source-confirmed `CCA_BUSY` classification.
@@ -555,7 +560,7 @@ pub(crate) enum Ieee802154PolledOperationResult {
 
 /// Evidence preserved for one successfully completed operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Ieee802154PolledOperationEvidence {
+pub struct Ieee802154PolledOperationEvidence {
     operation: Ieee802154PolledOperation,
     result: Ieee802154PolledOperationResult,
     polls: u32,
@@ -563,17 +568,17 @@ pub(crate) struct Ieee802154PolledOperationEvidence {
 
 impl Ieee802154PolledOperationEvidence {
     /// Return the exact prepared operation.
-    pub(crate) const fn operation(self) -> Ieee802154PolledOperation {
+    pub const fn operation(self) -> Ieee802154PolledOperation {
         self.operation
     }
 
     /// Return the sampled terminal result.
-    pub(crate) const fn result(self) -> Ieee802154PolledOperationResult {
+    pub const fn result(self) -> Ieee802154PolledOperationResult {
         self.result
     }
 
     /// Return the number of non-acknowledging event samples consumed.
-    pub(crate) const fn polls(self) -> u32 {
+    pub const fn polls(self) -> u32 {
         self.polls
     }
 }
@@ -594,57 +599,48 @@ where
         &self.evidence
     }
 
-    /// Acknowledge exactly `ED_DONE`, prove full status clear, and close the
-    /// event window before returning a reusable owner.
+    /// Consume the complete pending W1C snapshot, require exactly `ED_DONE`,
+    /// and close the event window before returning a reusable owner.
     pub(crate) fn recover(
         self,
     ) -> Result<Ieee802154PolledOperationRecovered<Backend>, Ieee802154OperationQuarantined<Backend>>
     {
         let mut backend = self.backend;
-        if let Err(reason) =
-            require_detached_route(&mut backend, Ieee802154OperationStage::RecoverSelectedWrite)
-        {
+        if let Err(reason) = require_detached_route(
+            &mut backend,
+            Ieee802154OperationStage::AcknowledgeTerminalEvent,
+        ) {
             return Err(quarantined_after_cleanup(backend, reason));
         }
         if let Err(reason) = require_event_mask(
             &mut backend,
-            Ieee802154OperationStage::RecoverSelectedWrite,
+            Ieee802154OperationStage::AcknowledgeTerminalEvent,
             Ieee802154OperationEventMaskState::EdDoneAndRxAbortOnly,
         ) {
             return Err(quarantined_after_cleanup(backend, reason));
         }
         if let Err(reason) = require_rx_abort_mask(
             &mut backend,
-            Ieee802154OperationStage::RecoverSelectedWrite,
+            Ieee802154OperationStage::AcknowledgeTerminalEvent,
             Ieee802154OperationRxAbortMaskState::EdOperationReasonsOnly,
         ) {
             return Err(quarantined_after_cleanup(backend, reason));
         }
-        if let Err(error) = backend.write_ed_done_selected() {
-            return Err(quarantined_after_cleanup(
-                backend,
-                backend_error(Ieee802154OperationStage::RecoverSelectedWrite, error),
-            ));
-        }
-        if let Err(error) = backend.order_device_accesses() {
-            return Err(quarantined_after_cleanup(
-                backend,
-                backend_error(Ieee802154OperationStage::RecoverStatusProof, error),
-            ));
-        }
-        let status = match backend.sample_event_status() {
-            Ok(status) => status,
+        let acknowledged = match backend.acknowledge_pending_events() {
+            Ok(acknowledged) => acknowledged,
             Err(error) => {
                 return Err(quarantined_after_cleanup(
                     backend,
-                    backend_error(Ieee802154OperationStage::RecoverStatusProof, error),
+                    backend_error(Ieee802154OperationStage::AcknowledgeTerminalEvent, error),
                 ));
             }
         };
-        if !status.is_clear() {
+        if !acknowledged.is_ed_done_only() {
             return Err(quarantined_after_cleanup(
                 backend,
-                Ieee802154OperationQuarantineReason::EventStatusNotCleared { observed: status },
+                Ieee802154OperationQuarantineReason::UnexpectedAcknowledgedEvents {
+                    observed: acknowledged,
+                },
             ));
         }
 
@@ -677,7 +673,7 @@ impl<Backend> Ieee802154PolledOperationRecovered<Backend> {
 
 /// Evidence retained when the operation's `RX_ABORT` event was observed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Ieee802154PolledOperationAbortEvidence {
+pub struct Ieee802154PolledOperationAbortEvidence {
     operation: Ieee802154PolledOperation,
     event_status: Ieee802154OperationEventObservation,
     rx_abort_status: u32,
@@ -686,29 +682,29 @@ pub(crate) struct Ieee802154PolledOperationAbortEvidence {
 
 impl Ieee802154PolledOperationAbortEvidence {
     /// Return the operation that aborted.
-    pub(crate) const fn operation(self) -> Ieee802154PolledOperation {
+    pub const fn operation(self) -> Ieee802154PolledOperation {
         self.operation
     }
 
     /// Return the complete event status observed at abort.
-    pub(crate) const fn event_status(self) -> Ieee802154OperationEventObservation {
+    pub const fn event_status(self) -> Ieee802154OperationEventObservation {
         self.event_status
     }
 
     /// Return the complete receive-abort status sampled before containment.
-    pub(crate) const fn rx_abort_status(self) -> u32 {
+    pub const fn rx_abort_status(self) -> u32 {
         self.rx_abort_status
     }
 
     /// Return the number of completed event-status samples.
-    pub(crate) const fn polls(self) -> u32 {
+    pub const fn polls(self) -> u32 {
         self.polls
     }
 }
 
 /// Aborted owner after event and abort masks were closed for containment.
 ///
-/// No selected status write or `STOP` was issued, and no recovery transition
+/// No event acknowledgement or `STOP` was issued, and no recovery transition
 /// is exposed.
 #[must_use = "an aborted operation retains a non-reusable backend"]
 pub(crate) struct Ieee802154PolledOperationAborted<Backend> {
@@ -761,6 +757,143 @@ where
     Timeout(Ieee802154PolledOperationTimeout<Backend>),
     /// An invariant or backend operation failed.
     Quarantined(Ieee802154OperationQuarantined<Backend>),
+}
+
+/// Terminal reason why a production polled operation cannot return a reusable
+/// IEEE 802.15.4 owner.
+///
+/// Abort and timeout deliberately remain terminal: no source proves that a
+/// generic `STOP` makes an in-flight MAC operation synchronously reusable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154PolledOperationFailure {
+    /// `RX_ABORT` completed the operation; full status evidence is retained.
+    Aborted(Ieee802154PolledOperationAbortEvidence),
+    /// The exact status-sample budget expired without a terminal event.
+    Timeout {
+        /// Operation which may still be active in hardware.
+        operation: Ieee802154PolledOperation,
+        /// Exact number of completed status observations.
+        polls: u32,
+    },
+    /// A CPU interrupt route was not completely at reset.
+    CpuInterruptRouteAttached {
+        /// Checkpoint which detected the attached or unexpected route image.
+        stage: Ieee802154OperationStage,
+    },
+    /// Event enables differed from the exact state required at a checkpoint.
+    UnexpectedEventMask {
+        /// Checkpoint whose proof failed.
+        stage: Ieee802154OperationStage,
+        /// Complete semantic classification observed there.
+        observed: Ieee802154OperationEventMaskState,
+    },
+    /// Receive-abort enables differed from the exact required state.
+    UnexpectedRxAbortMask {
+        /// Checkpoint whose proof failed.
+        stage: Ieee802154OperationStage,
+        /// Complete semantic classification observed there.
+        observed: Ieee802154OperationRxAbortMaskState,
+    },
+    /// A nonzero event was already pending before `ED_START`.
+    StaleEventStatus {
+        /// Complete fourteen-bit pre-command status.
+        observed: Ieee802154OperationEventObservation,
+    },
+    /// A nonzero status was neither `RX_ABORT` nor lone `ED_DONE`.
+    UnexpectedTerminalStatus {
+        /// Complete fourteen-bit terminal status.
+        observed: Ieee802154OperationEventObservation,
+    },
+    /// The W1C snapshot actually consumed was not exactly lone `ED_DONE`.
+    UnexpectedAcknowledgedEvents {
+        /// Complete fourteen-bit acknowledged status.
+        observed: Ieee802154OperationEventObservation,
+    },
+    /// `ED_DONE` and `RX_ABORT` were observed in the same status sample.
+    ConflictingTerminalEvents {
+        /// Complete fourteen-bit conflicting status.
+        observed: Ieee802154OperationEventObservation,
+    },
+}
+
+/// Run one infallible semantic backend through prepare, start, finite polling,
+/// and exact recovery.
+///
+/// Concrete MMIO backends are infallible at the Rust call boundary; all
+/// hardware divergence is represented by readback-based failure variants.
+pub(crate) fn run_ieee802154_polled_operation<Backend>(
+    backend: Backend,
+    operation: Ieee802154PolledOperation,
+    budget: Ieee802154OperationPollBudget,
+) -> Result<Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure>
+where
+    Backend: Ieee802154PolledOperationBackend<Error = Infallible>,
+{
+    let prepared = Ieee802154PolledOperationOwner::from_semantic_backend(backend)
+        .prepare(operation, budget)
+        .map_err(public_failure_from_quarantine)?;
+    let mut active = prepared.start().map_err(public_failure_from_quarantine)?;
+
+    loop {
+        match active.poll() {
+            Ieee802154PolledOperationPoll::Pending(next) => active = next,
+            Ieee802154PolledOperationPoll::Completed(completed) => {
+                let recovered = completed
+                    .recover()
+                    .map_err(public_failure_from_quarantine)?;
+                let evidence = *recovered.evidence();
+                drop(recovered.into_owner());
+                return Ok(evidence);
+            }
+            Ieee802154PolledOperationPoll::Aborted(aborted) => {
+                return Err(Ieee802154PolledOperationFailure::Aborted(
+                    *aborted.evidence(),
+                ));
+            }
+            Ieee802154PolledOperationPoll::Timeout(timeout) => {
+                return Err(Ieee802154PolledOperationFailure::Timeout {
+                    operation: timeout.operation(),
+                    polls: timeout.polls(),
+                });
+            }
+            Ieee802154PolledOperationPoll::Quarantined(quarantine) => {
+                return Err(public_failure_from_quarantine(quarantine));
+            }
+        }
+    }
+}
+
+fn public_failure_from_quarantine<Backend>(
+    quarantine: Ieee802154OperationQuarantined<Backend>,
+) -> Ieee802154PolledOperationFailure
+where
+    Backend: Ieee802154PolledOperationBackend<Error = Infallible>,
+{
+    let Ieee802154OperationQuarantined { backend: _, reason } = quarantine;
+    match reason {
+        Ieee802154OperationQuarantineReason::Backend { error, .. } => match error {},
+        Ieee802154OperationQuarantineReason::CpuInterruptRouteAttached { stage } => {
+            Ieee802154PolledOperationFailure::CpuInterruptRouteAttached { stage }
+        }
+        Ieee802154OperationQuarantineReason::UnexpectedEventMask { stage, observed } => {
+            Ieee802154PolledOperationFailure::UnexpectedEventMask { stage, observed }
+        }
+        Ieee802154OperationQuarantineReason::UnexpectedRxAbortMask { stage, observed } => {
+            Ieee802154PolledOperationFailure::UnexpectedRxAbortMask { stage, observed }
+        }
+        Ieee802154OperationQuarantineReason::StaleEventStatus { observed } => {
+            Ieee802154PolledOperationFailure::StaleEventStatus { observed }
+        }
+        Ieee802154OperationQuarantineReason::UnexpectedTerminalStatus { observed } => {
+            Ieee802154PolledOperationFailure::UnexpectedTerminalStatus { observed }
+        }
+        Ieee802154OperationQuarantineReason::UnexpectedAcknowledgedEvents { observed } => {
+            Ieee802154PolledOperationFailure::UnexpectedAcknowledgedEvents { observed }
+        }
+        Ieee802154OperationQuarantineReason::ConflictingTerminalEvents { observed } => {
+            Ieee802154PolledOperationFailure::ConflictingTerminalEvents { observed }
+        }
+    }
 }
 
 impl<Backend> Ieee802154PolledOperationActive<Backend>
@@ -1058,7 +1191,7 @@ mod tests {
         Fence,
         EdStart,
         EventStatus(Ieee802154OperationEventObservation),
-        WriteEdDoneSelected,
+        AcknowledgePendingEvents(Ieee802154OperationEventObservation),
         RxAbortStatus(u32),
         EdRss(i8),
         CcaBusy(bool),
@@ -1070,7 +1203,7 @@ mod tests {
         mask: Ieee802154OperationEventMaskState,
         rx_abort_mask: Ieee802154OperationRxAbortMaskState,
         event_status: Ieee802154OperationEventObservation,
-        status_after_selected_write: Option<Ieee802154OperationEventObservation>,
+        pending_at_acknowledge: Option<Ieee802154OperationEventObservation>,
         samples: VecDeque<Ieee802154OperationEventObservation>,
         rx_abort_status: u32,
         polling: bool,
@@ -1088,7 +1221,7 @@ mod tests {
                 mask: Ieee802154OperationEventMaskState::AllMasked,
                 rx_abort_mask: Ieee802154OperationRxAbortMaskState::AllMasked,
                 event_status: Ieee802154OperationEventObservation::default(),
-                status_after_selected_write: None,
+                pending_at_acknowledge: None,
                 samples: samples.into_iter().collect(),
                 rx_abort_status: 0x0300_0000,
                 polling: false,
@@ -1213,16 +1346,16 @@ mod tests {
             Ok(self.event_status)
         }
 
-        fn write_ed_done_selected(&mut self) -> Result<(), Self::Error> {
+        fn acknowledge_pending_events(
+            &mut self,
+        ) -> Result<Ieee802154OperationEventObservation, Self::Error> {
             self.before_call()?;
-            self.operations.push(Operation::WriteEdDoneSelected);
-            self.event_status = self.status_after_selected_write.unwrap_or_else(|| {
-                Ieee802154OperationEventObservation::from_raw(
-                    self.event_status.raw() & !Ieee802154OperationEventObservation::ED_DONE,
-                )
-            });
+            let acknowledged = self.pending_at_acknowledge.unwrap_or(self.event_status);
+            self.operations
+                .push(Operation::AcknowledgePendingEvents(acknowledged));
+            self.event_status = Ieee802154OperationEventObservation::default();
             self.polling = false;
-            Ok(())
+            Ok(acknowledged)
         }
 
         fn sample_rx_abort_status(&mut self) -> Result<u32, Self::Error> {
@@ -1351,7 +1484,7 @@ mod tests {
 
         let recovered = completed
             .recover()
-            .unwrap_or_else(|_| panic!("proved ED_DONE write must recover"));
+            .unwrap_or_else(|_| panic!("exact ED_DONE acknowledgement must recover"));
         assert_eq!(
             recovered.evidence().result(),
             Ieee802154PolledOperationResult::EnergyDetection { rss_code: -42 }
@@ -1370,9 +1503,9 @@ mod tests {
             Operation::RouteRead,
             Operation::MaskRead,
             Operation::RxAbortMaskRead,
-            Operation::WriteEdDoneSelected,
-            Operation::Fence,
-            Operation::EventStatus(Ieee802154OperationEventObservation::from_raw(0)),
+            Operation::AcknowledgePendingEvents(Ieee802154OperationEventObservation::from_raw(
+                0x0040
+            ),),
             Operation::MaskOperationEvents,
             Operation::MaskOperationRxAborts,
             Operation::Fence,
@@ -1463,7 +1596,7 @@ mod tests {
                 .backend
                 .operations
                 .iter()
-                .filter(|operation| matches!(operation, Operation::WriteEdDoneSelected))
+                .filter(|operation| matches!(operation, Operation::AcknowledgePendingEvents(_)))
                 .count(),
             2
         );
@@ -1505,7 +1638,8 @@ mod tests {
             !timeout
                 .backend
                 .operations
-                .contains(&Operation::WriteEdDoneSelected)
+                .iter()
+                .any(|operation| matches!(operation, Operation::AcknowledgePendingEvents(_)))
         );
     }
 
@@ -1535,7 +1669,8 @@ mod tests {
             !quarantine
                 .backend
                 .operations
-                .contains(&Operation::WriteEdDoneSelected)
+                .iter()
+                .any(|operation| matches!(operation, Operation::AcknowledgePendingEvents(_)))
         );
         assert_eq!(
             quarantine.backend.mask,
@@ -1638,7 +1773,8 @@ mod tests {
             !quarantine
                 .backend
                 .operations
-                .contains(&Operation::WriteEdDoneSelected)
+                .iter()
+                .any(|operation| matches!(operation, Operation::AcknowledgePendingEvents(_)))
         );
     }
 
@@ -1671,7 +1807,8 @@ mod tests {
             !aborted
                 .backend
                 .operations
-                .contains(&Operation::WriteEdDoneSelected)
+                .iter()
+                .any(|operation| matches!(operation, Operation::AcknowledgePendingEvents(_)))
         );
         assert!(
             aborted
@@ -1689,7 +1826,7 @@ mod tests {
     }
 
     #[test]
-    fn unrelated_terminal_status_is_contained_without_selected_write() {
+    fn unrelated_terminal_status_is_contained_without_acknowledgement() {
         let active = start(
             FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0100)]),
             Ieee802154PolledOperation::energy_detection(channel(), 1),
@@ -1710,59 +1847,55 @@ mod tests {
             !quarantine
                 .backend
                 .operations
-                .contains(&Operation::WriteEdDoneSelected)
+                .iter()
+                .any(|operation| matches!(operation, Operation::AcknowledgePendingEvents(_)))
         );
     }
 
     #[test]
-    fn residual_status_after_selected_write_quarantines_before_masking() {
-        let mut backend = FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0040)]);
-        backend.status_after_selected_write =
-            Some(Ieee802154OperationEventObservation::from_raw(0x0100));
-        let completed = match start(
-            backend,
-            Ieee802154PolledOperation::energy_detection(channel(), 1),
-            1,
-        )
-        .poll()
-        {
-            Ieee802154PolledOperationPoll::Completed(completed) => completed,
-            _ => panic!("lone ED_DONE must complete before recovery"),
-        };
-        let quarantine = match completed.recover() {
-            Err(quarantine) => quarantine,
-            Ok(_) => panic!("residual status must block reuse"),
-        };
+    fn acknowledged_snapshot_must_be_exactly_lone_ed_done() {
+        for acknowledged_bits in [0, 0x0100, 0x0140, 0x0050] {
+            let acknowledged = Ieee802154OperationEventObservation::from_raw(acknowledged_bits);
+            let mut backend =
+                FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0040)]);
+            backend.pending_at_acknowledge = Some(acknowledged);
+            let completed = match start(
+                backend,
+                Ieee802154PolledOperation::energy_detection(channel(), 1),
+                1,
+            )
+            .poll()
+            {
+                Ieee802154PolledOperationPoll::Completed(completed) => completed,
+                _ => panic!("lone ED_DONE poll sample must complete before recovery"),
+            };
+            let quarantine = match completed.recover() {
+                Err(quarantine) => quarantine,
+                Ok(_) => panic!("non-ED_DONE acknowledgement must block reuse"),
+            };
 
-        assert_eq!(
-            quarantine.reason(),
-            &Ieee802154OperationQuarantineReason::EventStatusNotCleared {
-                observed: Ieee802154OperationEventObservation::from_raw(0x0100),
-            }
-        );
-        assert!(
-            quarantine
-                .backend
-                .operations
-                .windows(4)
-                .any(|operations| operations
+            assert_eq!(
+                quarantine.reason(),
+                &Ieee802154OperationQuarantineReason::UnexpectedAcknowledgedEvents {
+                    observed: acknowledged,
+                }
+            );
+            assert!(quarantine.backend.operations.windows(2).any(|operations| {
+                operations
                     == [
-                        Operation::WriteEdDoneSelected,
-                        Operation::Fence,
-                        Operation::EventStatus(Ieee802154OperationEventObservation::from_raw(
-                            0x0100
-                        )),
+                        Operation::AcknowledgePendingEvents(acknowledged),
                         Operation::MaskOperationEvents,
-                    ])
-        );
-        assert_eq!(
-            quarantine.backend.mask,
-            Ieee802154OperationEventMaskState::AllMasked
-        );
+                    ]
+            }));
+            assert_eq!(
+                quarantine.backend.mask,
+                Ieee802154OperationEventMaskState::AllMasked
+            );
+        }
     }
 
     #[test]
-    fn recovery_rechecks_active_window_before_selected_write() {
+    fn recovery_rechecks_active_window_before_acknowledgement() {
         let active = start(
             FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0040)]),
             Ieee802154PolledOperation::energy_detection(channel(), 1),
@@ -1781,7 +1914,7 @@ mod tests {
         assert_eq!(
             quarantine.reason(),
             &Ieee802154OperationQuarantineReason::UnexpectedEventMask {
-                stage: Ieee802154OperationStage::RecoverSelectedWrite,
+                stage: Ieee802154OperationStage::AcknowledgeTerminalEvent,
                 observed: Ieee802154OperationEventMaskState::Unexpected,
             }
         );
@@ -1789,7 +1922,8 @@ mod tests {
             !quarantine
                 .backend
                 .operations
-                .contains(&Operation::WriteEdDoneSelected)
+                .iter()
+                .any(|operation| matches!(operation, Operation::AcknowledgePendingEvents(_)))
         );
         assert_eq!(
             quarantine.backend.mask,
@@ -1798,7 +1932,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_write_backend_failure_contains_and_never_recovers() {
+    fn acknowledgement_backend_failure_contains_and_never_recovers() {
         let active = start(
             FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0040)]),
             Ieee802154PolledOperation::energy_detection(channel(), 1),
@@ -1811,13 +1945,13 @@ mod tests {
         completed.backend.fail_on_call = Some(completed.backend.calls + 3);
         let quarantine = match completed.recover() {
             Err(quarantine) => quarantine,
-            Ok(_) => panic!("failed selected write must not recover"),
+            Ok(_) => panic!("failed acknowledgement must not recover"),
         };
 
         assert!(matches!(
             quarantine.reason(),
             Ieee802154OperationQuarantineReason::Backend {
-                stage: Ieee802154OperationStage::RecoverSelectedWrite,
+                stage: Ieee802154OperationStage::AcknowledgeTerminalEvent,
                 error: FakeError::Injected,
             }
         ));

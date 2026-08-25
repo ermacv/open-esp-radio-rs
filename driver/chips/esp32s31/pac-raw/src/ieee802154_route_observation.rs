@@ -1,9 +1,10 @@
-//! Read-only IEEE 802.15.4 interrupt-route validation sidecar.
+//! Read-only IEEE 802.15.4 interrupt-route observation.
 //!
-//! This module is compiled only into isolated validation images. It samples
-//! the two ESP32-S31 MODEM_ZB_MAC interrupt-map words without exposing a
-//! pointer or any write operation. The fixed addresses and field geometry are
-//! audited against ESP-IDF commit
+//! This module samples the two ESP32-S31 MODEM_ZB_MAC interrupt-map words
+//! without exposing a pointer or any write operation. The read-only proof is
+//! required by production polling: an ED/CCA transaction may temporarily
+//! unmask MAC events only while both CPU routes remain exactly at reset. The
+//! fixed addresses and field geometry are audited against ESP-IDF commit
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`:
 //! `DR_REG_INTR0_BASE=0x20585000`, the core-one stride is `0x800`, and source
 //! 132 has map-register offset `0x210` on both cores.
@@ -21,8 +22,8 @@ impl<const ADDRESS: usize> RouteRegister<ADDRESS> {
     fn read(&self) -> u32 {
         // SAFETY: both const instantiations below are aligned, readable
         // ESP32-S31 interrupt-matrix register addresses proved by the pinned
-        // public core0/core1 register headers. This validation-only sidecar
-        // performs a volatile read and exposes neither its pointer nor a write
+        // public core0/core1 register headers. This read-only sidecar performs
+        // a volatile read and exposes neither its pointer nor a write
         // operation.
         unsafe { core::ptr::read_volatile(Self::ADDRESS as *const u32) }
     }
@@ -56,8 +57,8 @@ impl Ieee802154RouteRawReadback {
 
 /// Sample the fixed source-132 route word on both CPU cores without writing.
 ///
-/// The MAC peripheral reference anchors the call to the validation image's
-/// unique radio lease; it is not used to derive either fixed route address.
+/// The MAC peripheral reference anchors the call to the unique radio lease;
+/// it is not used to derive either fixed route address.
 #[inline]
 pub fn read_route_words(_registers: &crate::Ieee802154Mac) -> Ieee802154RouteRawReadback {
     crate::device_access::fence();

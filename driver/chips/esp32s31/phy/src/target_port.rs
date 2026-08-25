@@ -7,7 +7,8 @@
 use core::marker::PhantomData;
 
 use open_esp_radio_esp32s31_hal::{
-    PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext, state::Powered,
+    Ieee802154Clocked, PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext,
+    state::Powered,
 };
 use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl,
@@ -84,7 +85,7 @@ use crate::{
         PhyTxIqLinearPowerCompletion, PhyTxIqLinearPowerExternalBinding, PhyTxIqLoopbackCompletion,
         PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion, PhyTxIqMisPowerExternalBinding,
     },
-    registered_radio::RegisteredPhyRadio,
+    registered_radio::{RegisteredIeee802154Clocked, RegisteredPhyRadio},
     run_phy_register,
     target_executor::{
         PhyAsyncDelay, PhyTargetPortError, complete_bluetooth_i2c, complete_bluetooth_pbus,
@@ -211,6 +212,128 @@ pub struct TargetPhyRegisterSuccess<P> {
     calibration_cache: Option<PhyCalibrationCache>,
     outcome: PhyRegisterOutcome,
     counters: PhyTargetPortCounters,
+}
+
+/// Caller-owned persistence inputs for one dedicated IEEE 802.15.4 common-PHY
+/// registration.
+///
+/// The retained cache is validation input until complete replay is recovered.
+/// The target transition still performs full calibration and publishes only a
+/// fresh cache after terminal success.
+pub struct TargetIeee802154PhyRegisterConfig {
+    calibration_identity: PhyCalibrationIdentity,
+    calibration_cache: Option<PhyCalibrationCache>,
+}
+
+impl TargetIeee802154PhyRegisterConfig {
+    /// Request a fresh production registration and retain its resulting cache.
+    pub const fn new(calibration_identity: PhyCalibrationIdentity) -> Self {
+        Self {
+            calibration_identity,
+            calibration_cache: None,
+        }
+    }
+
+    /// Supply a caller-owned cache as validation input to the same transition.
+    pub fn with_calibration_cache(mut self, calibration_cache: PhyCalibrationCache) -> Self {
+        self.calibration_cache = Some(calibration_cache);
+        self
+    }
+}
+
+/// Result of one terminally successful dedicated IEEE 802.15.4 common-PHY
+/// target registration.
+///
+/// The registered state stays coupled to the exact clocked IEEE owner. This
+/// records concrete target execution, not RF qualification, BTBB timing,
+/// interrupt routing, DMA readiness, or an operational MAC.
+#[must_use = "successful IEEE 802.15.4 PHY registration retains the unique radio owner"]
+pub struct TargetIeee802154PhyRegisterSuccess<P> {
+    registered_owner: RegisteredIeee802154Clocked<P>,
+    calibration_cache: Option<PhyCalibrationCache>,
+    outcome: PhyRegisterOutcome,
+    counters: PhyTargetPortCounters,
+}
+
+impl<P> TargetIeee802154PhyRegisterSuccess<P> {
+    /// Borrow the indivisible registered IEEE owner.
+    pub const fn registered_owner(&self) -> &RegisteredIeee802154Clocked<P> {
+        &self.registered_owner
+    }
+
+    /// Borrow the fresh cache published by this terminal run, if requested.
+    pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
+        self.calibration_cache.as_ref()
+    }
+
+    /// Inspect the terminal model outcome accepted by the target runner.
+    pub const fn outcome(&self) -> PhyRegisterOutcome {
+        self.outcome
+    }
+
+    /// Inspect the concrete target operations performed by this run.
+    pub const fn counters(&self) -> PhyTargetPortCounters {
+        self.counters
+    }
+
+    /// Move all successful outputs without separating PHY proof from hardware.
+    pub fn into_registered_parts(
+        self,
+    ) -> (
+        RegisteredIeee802154Clocked<P>,
+        Option<PhyCalibrationCache>,
+        PhyRegisterOutcome,
+        PhyTargetPortCounters,
+    ) {
+        (
+            self.registered_owner,
+            self.calibration_cache,
+            self.outcome,
+            self.counters,
+        )
+    }
+}
+
+/// Exact reason a dedicated IEEE 802.15.4 common-PHY run did not publish its
+/// registered owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TargetIeee802154PhyRegisterError {
+    /// A recovered external edge or the shared registration machine failed.
+    Run(PhyRegisterRunError<PhyTargetPortError>),
+    /// The executor returned success without the terminal unique model owner.
+    MissingCompletedModelOwner,
+}
+
+/// Failed dedicated IEEE 802.15.4 registration retaining every unique owner.
+///
+/// There is deliberately no recovery or retry method. A target error can
+/// follow a partially applied hardware edge, including an error whose model
+/// cleanup is terminal, so neither the exact clocked radio nor transition is
+/// released through safe code. Reset the chip before constructing another
+/// radio owner.
+#[must_use = "failed IEEE 802.15.4 PHY registration still owns mutated hardware"]
+pub struct TargetIeee802154PhyRegisterFailure<P> {
+    _owner: Ieee802154Clocked<P>,
+    transition: PhyRegisterTransition,
+    counters: PhyTargetPortCounters,
+    error: TargetIeee802154PhyRegisterError,
+}
+
+impl<P> TargetIeee802154PhyRegisterFailure<P> {
+    /// Inspect the typed failure without releasing any owner.
+    pub const fn error(&self) -> TargetIeee802154PhyRegisterError {
+        self.error
+    }
+
+    /// Inspect target operation counts completed before failure.
+    pub const fn counters(&self) -> PhyTargetPortCounters {
+        self.counters
+    }
+
+    /// Inspect the retained model state for fail-stop diagnostics.
+    pub fn state(&self) -> Option<&PhyState> {
+        self.transition.state()
+    }
 }
 
 impl<P> TargetPhyRegisterSuccess<P> {
@@ -1637,6 +1760,93 @@ impl<
         }
         result
     }
+}
+
+/// Drive the dedicated IEEE 802.15.4 owner through the recovered common-PHY
+/// transition and the concrete ESP32-S31 target port.
+///
+/// This is the only production mint path from [`Ieee802154Clocked`] to
+/// [`RegisteredIeee802154Clocked`]. It creates a fresh transition internally,
+/// borrows the platform and shared-PHY register partitions from the same IEEE
+/// owner, and accepts success only after the target executor returns a terminal
+/// outcome and the transition yields its registered model owner.
+///
+/// # Cancellation
+///
+/// Integrations must drive this future to a terminal result. Once polled,
+/// cancelling or dropping it may strand a partially applied hardware edge and
+/// destroys the only software owner. The chip must be reset before another
+/// radio owner is constructed; cancellation is never a retry path.
+#[must_use = "IEEE 802.15.4 PHY registration must be driven to a terminal result"]
+#[allow(
+    clippy::result_large_err,
+    reason = "fail-stop error retains the exact allocation-free IEEE owner and PHY transition"
+)]
+pub async fn run_target_ieee802154_phy_register<P, D, O>(
+    mut owner: Ieee802154Clocked<P>,
+    config: TargetIeee802154PhyRegisterConfig,
+    observer: O,
+) -> Result<TargetIeee802154PhyRegisterSuccess<P>, TargetIeee802154PhyRegisterFailure<P>>
+where
+    P: PhyPreludePlatformControl
+        + PhyPmuControl
+        + PhyWifiBbControl
+        + PhyPowerDetectorPlatformControl
+        + PhyTemperatureSystemControl
+        + PhyI2cMasterControl,
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    let TargetIeee802154PhyRegisterConfig {
+        calibration_identity,
+        calibration_cache,
+    } = config;
+    let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
+        calibration_identity,
+        calibration_cache,
+    );
+
+    let (result, counters) = {
+        let (platform, mut registers) = owner.common_phy_parts();
+        let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(platform, &mut registers, observer);
+        let result = run_phy_register(&mut transition, &mut port).await;
+        (result, port.counters())
+    };
+
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return Err(TargetIeee802154PhyRegisterFailure {
+                _owner: owner,
+                transition,
+                counters,
+                error: TargetIeee802154PhyRegisterError::Run(error),
+            });
+        }
+    };
+
+    let (state, calibration_cache) = match transition.into_model_parts() {
+        Ok(parts) => parts,
+        Err(transition) => {
+            return Err(TargetIeee802154PhyRegisterFailure {
+                _owner: owner,
+                transition,
+                counters,
+                error: TargetIeee802154PhyRegisterError::MissingCompletedModelOwner,
+            });
+        }
+    };
+
+    Ok(TargetIeee802154PhyRegisterSuccess {
+        registered_owner: RegisteredIeee802154Clocked::from_target_completion(
+            owner,
+            state,
+            TargetRegistrationWitness::new(),
+        ),
+        calibration_cache,
+        outcome,
+        counters,
+    })
 }
 
 /// Drive one opaque fresh attempt through the concrete ESP32-S31 target port.

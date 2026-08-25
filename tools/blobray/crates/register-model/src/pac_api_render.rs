@@ -181,6 +181,7 @@ impl PacApiPack {
         let device = svd_parser::parse(svd).map_err(|error| Error::message(error.to_string()))?;
         let mut output = String::new();
         output.push_str(&self.render_feature_modules());
+        output.push_str(&self.render_sidecar_modules());
         output.push_str(&self.render_interrupt_snapshots());
         if !self.ownership_partitions.is_empty() {
             output.push_str(&self.render_peripheral_ownership(&device)?);
@@ -188,7 +189,7 @@ impl PacApiPack {
         output.push_str(&self.render_full_register_writes());
         output.push_str(&self.render_fixed_register_writes());
         output.push_str(&self.render_fixed_register_images(&device)?);
-        output.push_str(&self.render_selected_register_writes(&device)?);
+        output.push_str(&self.render_w1c_register_snapshots(&device)?);
         output.push_str(&self.render_register_image_writes(&device)?);
         output.push_str(&self.render_zero_based_field_writes(&device)?);
         output.push_str(&self.render_zero_register_writes(&device)?);
@@ -207,6 +208,14 @@ impl PacApiPack {
                 "\n#[cfg(feature = {:?})]\n#[doc(hidden)]\npub mod {};\n",
                 module.feature, module.name,
             ));
+        }
+        output
+    }
+
+    fn render_sidecar_modules(&self) -> String {
+        let mut output = String::new();
+        for module in &self.sidecar_modules {
+            output.push_str(&format!("\n#[doc(hidden)]\npub mod {};\n", module.name,));
         }
         output
     }
@@ -475,19 +484,17 @@ impl PacApiPack {
         Ok(output)
     }
 
-    fn render_selected_register_writes(&self, device: &Device) -> Result<String> {
-        if self.selected_register_writes.is_empty() {
+    fn render_w1c_register_snapshots(&self, device: &Device) -> Result<String> {
+        if self.w1c_register_snapshots.is_empty() {
             return Ok(String::new());
         }
         let mut output = String::from(
-            "\n/// Exact selected-image writes to reviewed SVD read-only registers.\n\
-             pub mod selected_register_write {\n",
+            "\n/// Affine sample-and-acknowledge transactions for same-register W1C fields.\n\
+             pub mod w1c_register_snapshot {\n",
         );
-        for binding in &self.selected_register_writes {
+        for binding in &self.w1c_register_snapshots {
             let peripheral_type = type_binding_name(&binding.peripheral);
             let register = member_binding_name(&binding.register);
-            // Keep this lookup here even though validation already rejected
-            // arrays: rendering must remain tied to the same exact SVD target.
             let register_binding = pac_api_svd::register(
                 device,
                 &binding.name,
@@ -495,21 +502,52 @@ impl PacApiPack {
                 &binding.register,
             )?;
             debug_assert!(!register_binding.is_array);
+            let field = pac_api_svd::field(&binding.name, register_binding.info, &binding.field)?;
+            let width = field.bit_width();
+            let offset = field.bit_offset();
+            let mask = if width == 32 {
+                u32::MAX
+            } else {
+                (((1_u64 << width) - 1) << offset) as u32
+            };
+            let snapshot_type = format!("{}Snapshot", type_binding_name(&binding.name));
             output.push_str(&format!(
-                "\n    /// Publish the reviewed image `0x{:08x}` to `{}`.`{}`.\n\
+                "\n    /// One unforgeable `{}.{}` field image sampled before acknowledgement.\n\
+                 #[must_use = \"a W1C snapshot must be inspected and acknowledged\"]\n\
+                 #[derive(Debug)]\n\
+                 pub struct {snapshot_type}(u32);\n\
+                 impl {snapshot_type} {{\n\
+                     /// Return the complete sampled field image in register bit positions.\n\
+                     #[inline]\n\
+                     pub const fn bits(&self) -> u32 {{ self.0 }}\n\
+                 }}\n\
+                 \n\
+                 /// Sample `{}.{}` once and retain only field `{}` (mask `0x{mask:08x}`).\n\
                  #[inline]\n\
-                 pub fn {}(registers: &mut crate::{peripheral_type}) {{\n\
-                     // SAFETY: generator validation binds this selected operation\n\
-                     // to one read-only 32-bit SVD register. Reviewed evidence qualifies\n\
-                     // only this literal complete image; no writable PAC API is created.\n\
+                 pub fn sample_{}(registers: &crate::{peripheral_type}) -> {snapshot_type} {{\n\
+                     {snapshot_type}(registers.{register}().read().bits() & 0x{mask:08x})\n\
+                 }}\n\
+                 \n\
+                 /// Acknowledge exactly the sampled field image and consume it.\n\
+                 #[inline]\n\
+                 pub fn acknowledge_{}(\n\
+                     registers: &mut crate::{peripheral_type},\n\
+                     snapshot: {snapshot_type},\n\
+                 ) {{\n\
+                     // SAFETY: generator validation binds the affine snapshot to this\n\
+                     // exact 32-bit same-register W1C field. The token cannot be forged,\n\
+                     // cloned or replayed, and every non-field bit is zero.\n\
                      unsafe {{\n\
-                         core::ptr::write_volatile(\n\
-                             registers.{register}().as_ptr(),\n\
-                             0x{:08x},\n\
-                         );\n\
+                         registers.{register}().write_with_zero(|writer| writer.bits(snapshot.0));\n\
                      }}\n\
                  }}\n",
-                binding.value, binding.peripheral, binding.register, binding.name, binding.value,
+                binding.peripheral,
+                binding.register,
+                binding.peripheral,
+                binding.register,
+                binding.field,
+                binding.name,
+                binding.name,
             ));
         }
         output.push_str("}\n");
@@ -948,16 +986,33 @@ feature = "validation-probes"
     }
 
     #[test]
-    fn selected_register_write_renders_only_one_literal_volatile_image() {
+    fn sidecar_modules_are_reproducible_without_a_feature_gate() {
         let pack: PacApiPack = toml_edit::de::from_str(
             r#"schema = 4
 
-[[selected-register-writes]]
-name = "write_event_status_selected_image"
+[[sidecar-modules]]
+name = "interrupt_route_observation"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pack.render_sidecar_modules(),
+            "\n#[doc(hidden)]\npub mod interrupt_route_observation;\n"
+        );
+    }
+
+    #[test]
+    fn w1c_register_snapshot_renders_an_affine_masked_transaction() {
+        let pack: PacApiPack = toml_edit::de::from_str(
+            r#"schema = 4
+
+[[w1c-register-snapshots]]
+name = "event_status"
 peripheral = "RADIO"
 register = "EVENT_STATUS"
-value = 64
-sources = ["HIL_EVENT_STATUS_SELECTED_IMAGE"]
+field = "EVENTS"
+sources = ["PUBLIC_EVENT_STATUS_W1C"]
 "#,
         )
         .unwrap();
@@ -965,7 +1020,7 @@ sources = ["HIL_EVENT_STATUS_SELECTED_IMAGE"]
 <device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
   <name>FIXTURE</name>
   <version>1</version>
-  <description>selected write fixture</description>
+  <description>W1C snapshot fixture</description>
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>
   <peripherals>
@@ -976,10 +1031,14 @@ sources = ["HIL_EVENT_STATUS_SELECTED_IMAGE"]
       <registers>
         <register>
           <name>EVENT_STATUS</name>
-          <description>event status</description>
+          <description>event status W1C field</description>
           <addressOffset>0</addressOffset>
           <size>32</size>
-          <access>read-only</access>
+          <access>read-write</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
+          <fields>
+            <field><name>EVENTS</name><description>events</description><bitOffset>0</bitOffset><bitWidth>14</bitWidth></field>
+          </fields>
         </register>
       </registers>
     </peripheral>
@@ -988,17 +1047,18 @@ sources = ["HIL_EVENT_STATUS_SELECTED_IMAGE"]
 "#;
 
         let source = pack.render_rust(svd).unwrap();
-        assert!(source.contains("pub mod selected_register_write"));
-        assert!(
-            source
-                .contains("pub fn write_event_status_selected_image(registers: &mut crate::Radio)")
-        );
+        assert!(source.contains("pub mod w1c_register_snapshot"));
+        assert!(source.contains("pub fn sample_event_status(registers: &crate::Radio)"));
         assert!(!source.contains("#[cfg(feature"));
-        assert!(source.contains("registers.event_status().as_ptr()"));
-        assert!(source.contains("0x00000040,"));
+        assert!(!source.contains("core::ptr::write_volatile"));
+        assert!(source.contains("pub struct EventStatusSnapshot(u32)"));
+        assert!(source.contains("read().bits() & 0x00003fff"));
+        assert!(source.contains("pub fn acknowledge_event_status("));
+        assert!(source.contains("snapshot: EventStatusSnapshot"));
+        assert!(source.contains("writer.bits(snapshot.0)"));
         assert!(!source.contains("image: u32"));
-        assert!(!source.contains("write_with_zero"));
-        assert!(!source.contains("writer.bits"));
+        assert!(!source.contains("impl Clone for EventStatusSnapshot"));
+        assert!(!source.contains("impl Copy for EventStatusSnapshot"));
     }
 
     #[test]

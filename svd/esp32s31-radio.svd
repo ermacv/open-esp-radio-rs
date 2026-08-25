@@ -19338,10 +19338,11 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>EVENT_STATUS</name>
-          <description>Fourteen-bit event snapshot read by the public LL. Its clear accessor performs a masked self-write (`status &amp;= events`), but no write-one-to-clear or other modified-write semantic is established. The reviewed safe model therefore publishes observation only until HIL proves the clearing contract.</description>
+          <description>Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision.</description>
           <addressOffset>0x64</addressOffset>
           <size>0x20</size>
-          <access>read-only</access>
+          <access>read-write</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
               <name>EVENTS</name>
@@ -19733,6 +19734,12 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               <name>ADDRESS</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -19747,6 +19754,33 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               <name>ADDRESS</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RXON_DELAY</name>
+          <description>Receive-on delay image updated by the pinned public ESP32-S31 IEEE 802.15.4 initializer. The literal value 50 is reviewed; physical units remain outside the PAC.</description>
+          <addressOffset>0x110</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>RXON_DELAY</name>
+              <description>Eleven-bit preserving field written with literal 50 after the shared BTBB transmit-on delay override.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>11</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>2047</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

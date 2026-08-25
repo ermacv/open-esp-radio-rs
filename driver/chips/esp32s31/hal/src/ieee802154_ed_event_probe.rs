@@ -255,7 +255,7 @@ impl Ieee802154EdEventProbeBackend for crate::ieee802154::Ieee802154PacHal<'_> {
     }
 
     fn interrupt_route_readback(&mut self) -> Ieee802154RouteReadback {
-        self.validation_interrupt_route_readback()
+        self.interrupt_route_readback()
     }
 
     fn event_status_events(&mut self) -> u16 {

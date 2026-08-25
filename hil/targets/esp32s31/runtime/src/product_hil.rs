@@ -49,13 +49,16 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-use open_esp_radio_esp32s31_hal::Radio;
+use open_esp_radio_esp32s31_hal::Ieee802154Owned;
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use open_esp_radio_esp32s31_hal::{
     Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154Channel, Ieee802154EdEventProbeConfig,
     Ieee802154EdEventProbeEvidence as HalIeee802154EdEventProbeEvidence,
     Ieee802154EdEventProbeIsolation, Ieee802154EdEventProbeStop as HalIeee802154EdEventProbeStop,
-    Ieee802154MacControl, Ieee802154MacPolicy, Ieee802154PanIdentity,
+    Ieee802154MacControl, Ieee802154MacPolicy, Ieee802154OperationEventMaskState,
+    Ieee802154OperationPollBudget, Ieee802154OperationRxAbortMaskState, Ieee802154OperationStage,
+    Ieee802154PanIdentity, Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
+    Ieee802154PolledOperationResult,
 };
 #[cfg(feature = "ieee802154-event-status-probe")]
 use open_esp_radio_esp32s31_hal::{
@@ -96,6 +99,7 @@ use open_esp_radio_hil_protocol::{
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use open_esp_radio_hil_protocol::{
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
+    Ieee802154PolledEdMaskState, Ieee802154PolledEdOutcome, Ieee802154PolledEdStage,
 };
 #[cfg(feature = "ieee802154-event-status-probe")]
 use open_esp_radio_hil_protocol::{
@@ -1591,7 +1595,7 @@ fn run_ieee802154_event_status_probe(
     else {
         return unsupported_ieee802154_event_status_probe();
     };
-    let Ok(owned) = Radio::claim(platform) else {
+    let Ok(owned) = Ieee802154Owned::claim(platform) else {
         return unsupported_ieee802154_event_status_probe();
     };
     let Ok(powered) = owned.power_up() else {
@@ -1614,6 +1618,8 @@ fn run_ieee802154_event_status_probe(
 const fn unsupported_ieee802154_ed_event_probe() -> Ieee802154EdEventProbeEvidence {
     Ieee802154EdEventProbeEvidence {
         stop: Ieee802154EdEventProbeStop::UnsupportedSetup,
+        production_ed_first: Ieee802154PolledEdOutcome::NotRun,
+        production_ed_second: None,
         event_enable_before: 0,
         event_enable_active: 0,
         event_enable_after: 0,
@@ -1645,6 +1651,127 @@ const fn unsupported_ieee802154_ed_event_probe() -> Ieee802154EdEventProbeEviden
         stop_command_issued: false,
         cleanup_clear: false,
     }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_polled_stage(stage: Ieee802154OperationStage) -> Ieee802154PolledEdStage {
+    match stage {
+        Ieee802154OperationStage::Prepare => Ieee802154PolledEdStage::Prepare,
+        Ieee802154OperationStage::StartEventWindow => Ieee802154PolledEdStage::StartEventWindow,
+        Ieee802154OperationStage::StartCommand => Ieee802154PolledEdStage::StartCommand,
+        Ieee802154OperationStage::Poll => Ieee802154PolledEdStage::Poll,
+        Ieee802154OperationStage::TerminalSample => Ieee802154PolledEdStage::TerminalSample,
+        Ieee802154OperationStage::AcknowledgeTerminalEvent => {
+            Ieee802154PolledEdStage::AcknowledgeTerminalEvent
+        }
+        Ieee802154OperationStage::Cleanup => Ieee802154PolledEdStage::Cleanup,
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_event_mask(
+    state: Ieee802154OperationEventMaskState,
+) -> Ieee802154PolledEdMaskState {
+    match state {
+        Ieee802154OperationEventMaskState::AllMasked => Ieee802154PolledEdMaskState::AllMasked,
+        Ieee802154OperationEventMaskState::EdDoneAndRxAbortOnly => {
+            Ieee802154PolledEdMaskState::OperationOnly
+        }
+        Ieee802154OperationEventMaskState::Unexpected => Ieee802154PolledEdMaskState::Unexpected,
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_rx_abort_mask(
+    state: Ieee802154OperationRxAbortMaskState,
+) -> Ieee802154PolledEdMaskState {
+    match state {
+        Ieee802154OperationRxAbortMaskState::AllMasked => Ieee802154PolledEdMaskState::AllMasked,
+        Ieee802154OperationRxAbortMaskState::EdOperationReasonsOnly => {
+            Ieee802154PolledEdMaskState::OperationOnly
+        }
+        Ieee802154OperationRxAbortMaskState::Unexpected => Ieee802154PolledEdMaskState::Unexpected,
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_polled_failure(
+    failure: Ieee802154PolledOperationFailure,
+) -> Ieee802154PolledEdOutcome {
+    match failure {
+        Ieee802154PolledOperationFailure::Aborted(evidence) => Ieee802154PolledEdOutcome::Aborted {
+            event_status: evidence.event_status().raw(),
+            rx_abort_status: evidence.rx_abort_status(),
+            polls: evidence.polls(),
+        },
+        Ieee802154PolledOperationFailure::Timeout { polls, .. } => {
+            Ieee802154PolledEdOutcome::Timeout { polls }
+        }
+        Ieee802154PolledOperationFailure::CpuInterruptRouteAttached { stage } => {
+            Ieee802154PolledEdOutcome::CpuInterruptRouteAttached {
+                stage: map_ieee802154_polled_stage(stage),
+            }
+        }
+        Ieee802154PolledOperationFailure::UnexpectedEventMask { stage, observed } => {
+            Ieee802154PolledEdOutcome::UnexpectedEventMask {
+                stage: map_ieee802154_polled_stage(stage),
+                observed: map_ieee802154_event_mask(observed),
+            }
+        }
+        Ieee802154PolledOperationFailure::UnexpectedRxAbortMask { stage, observed } => {
+            Ieee802154PolledEdOutcome::UnexpectedRxAbortMask {
+                stage: map_ieee802154_polled_stage(stage),
+                observed: map_ieee802154_rx_abort_mask(observed),
+            }
+        }
+        Ieee802154PolledOperationFailure::StaleEventStatus { observed } => {
+            Ieee802154PolledEdOutcome::StaleEventStatus {
+                event_status: observed.raw(),
+            }
+        }
+        Ieee802154PolledOperationFailure::UnexpectedTerminalStatus { observed } => {
+            Ieee802154PolledEdOutcome::UnexpectedTerminalStatus {
+                event_status: observed.raw(),
+            }
+        }
+        Ieee802154PolledOperationFailure::UnexpectedAcknowledgedEvents { observed } => {
+            Ieee802154PolledEdOutcome::UnexpectedAcknowledgedEvents {
+                event_status: observed.raw(),
+            }
+        }
+        Ieee802154PolledOperationFailure::ConflictingTerminalEvents { observed } => {
+            Ieee802154PolledEdOutcome::ConflictingTerminalEvents {
+                event_status: observed.raw(),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_polled_ed_success(
+    evidence: Ieee802154PolledOperationEvidence,
+) -> Option<Ieee802154PolledEdOutcome> {
+    match evidence.result() {
+        Ieee802154PolledOperationResult::EnergyDetection { rss_code } => {
+            Some(Ieee802154PolledEdOutcome::Complete {
+                rss_code,
+                polls: evidence.polls(),
+            })
+        }
+        Ieee802154PolledOperationResult::ClearChannelAssessment { .. } => None,
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+fn failed_ieee802154_production_ed(
+    first: Ieee802154PolledEdOutcome,
+    second: Option<Ieee802154PolledEdOutcome>,
+) -> Ieee802154EdEventProbeEvidence {
+    let mut evidence = unsupported_ieee802154_ed_event_probe();
+    evidence.stop = Ieee802154EdEventProbeStop::ProductionEdFailed;
+    evidence.production_ed_first = first;
+    evidence.production_ed_second = second;
+    evidence
 }
 
 #[cfg(feature = "ieee802154-ed-event-probe")]
@@ -1691,6 +1818,8 @@ const fn map_ieee802154_ed_event_probe(
     };
     Ieee802154EdEventProbeEvidence {
         stop,
+        production_ed_first: Ieee802154PolledEdOutcome::NotRun,
+        production_ed_second: None,
         event_enable_before: evidence.event_enable_before,
         event_enable_active: evidence.event_enable_active,
         event_enable_after: evidence.event_enable_after,
@@ -1739,7 +1868,7 @@ fn run_ieee802154_ed_event_probe(
     let Some(isolation) = Ieee802154EdEventProbeIsolation::claim_for_reset_isolated_image() else {
         return unsupported_ieee802154_ed_event_probe();
     };
-    let Ok(owned) = Radio::claim(platform) else {
+    let Ok(owned) = Ieee802154Owned::claim(platform) else {
         return unsupported_ieee802154_ed_event_probe();
     };
     let Ok(powered) = owned.power_up() else {
@@ -1768,8 +1897,43 @@ fn run_ieee802154_ed_event_probe(
     let Ok(policy_configured) = foundation.configure_mac_policy(policy) else {
         return unsupported_ieee802154_ed_event_probe();
     };
-    let finished = policy_configured.validation_probe_ed_event_status(config, isolation);
-    map_ieee802154_ed_event_probe(*finished.evidence())
+    let Some(budget) = Ieee802154OperationPollBudget::new(request.poll_limit) else {
+        return unsupported_ieee802154_ed_event_probe();
+    };
+    let first = match policy_configured.energy_detection_raw(8, budget) {
+        Ok(completed) => completed,
+        Err(failed) => {
+            return failed_ieee802154_production_ed(
+                map_ieee802154_polled_failure(failed.failure()),
+                None,
+            );
+        }
+    };
+    let Some(first_evidence) = map_ieee802154_polled_ed_success(*first.evidence()) else {
+        return failed_ieee802154_production_ed(Ieee802154PolledEdOutcome::NotRun, None);
+    };
+    let second = match first.into_owner().energy_detection_raw(8, budget) {
+        Ok(completed) => completed,
+        Err(failed) => {
+            return failed_ieee802154_production_ed(
+                first_evidence,
+                Some(map_ieee802154_polled_failure(failed.failure())),
+            );
+        }
+    };
+    let Some(second_evidence) = map_ieee802154_polled_ed_success(*second.evidence()) else {
+        return failed_ieee802154_production_ed(
+            first_evidence,
+            Some(Ieee802154PolledEdOutcome::NotRun),
+        );
+    };
+    let finished = second
+        .into_owner()
+        .validation_probe_ed_event_status(config, isolation);
+    let mut evidence = map_ieee802154_ed_event_probe(*finished.evidence());
+    evidence.production_ed_first = first_evidence;
+    evidence.production_ed_second = Some(second_evidence);
+    evidence
 }
 
 pub async fn run(

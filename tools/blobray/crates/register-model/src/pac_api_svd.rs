@@ -140,18 +140,32 @@ impl PacApiPack {
                 &operation.register,
             )?;
         }
-        for operation in &self.selected_register_writes {
+        for operation in &self.w1c_register_snapshots {
             let binding = register(
                 &device,
                 &operation.name,
                 &operation.peripheral,
                 &operation.register,
             )?;
-            require_size_access(&operation.name, binding, Access::ReadOnly, "read-only")?;
+            require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
+            if binding.info.modified_write_values != Some(ModifiedWriteValues::OneToClear) {
+                return Err(Error::message(format!(
+                    "PAC API w1c-register-snapshot {:?} register must be one-to-clear",
+                    operation.name
+                )));
+            }
             if binding.is_array {
                 return Err(Error::message(format!(
-                    "PAC API selected-register-write {:?} requires one exact non-array register",
+                    "PAC API w1c-register-snapshot {:?} requires one exact non-array register",
                     operation.name
+                )));
+            }
+            let field = field(&operation.name, binding.info, &operation.field)?;
+            if field.bit_width() == 0 || field.bit_width() > 32 {
+                return Err(Error::message(format!(
+                    "PAC API w1c-register-snapshot {:?} field has invalid width {}",
+                    operation.name,
+                    field.bit_width()
                 )));
             }
         }
@@ -748,11 +762,11 @@ mod tests {
 </device>
 "#;
 
-    const SELECTED_REGISTER_WRITE_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+    const W1C_REGISTER_SNAPSHOT_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
   <name>FIXTURE</name>
   <version>1</version>
-  <description>selected register write fixture</description>
+  <description>same-register W1C snapshot fixture</description>
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>
   <peripherals>
@@ -763,10 +777,12 @@ mod tests {
       <registers>
         <register>
           <name>EVENT_STATUS</name>
-          <description>read-only event status view</description>
+          <description>W1C event status view</description>
           <addressOffset>0</addressOffset>
           <size>32</size>
-          <access>read-only</access>
+          <access>read-write</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
+          <fields><field><name>EVENTS</name><description>events</description><bitOffset>0</bitOffset><bitWidth>14</bitWidth></field></fields>
         </register>
         <register>
           <name>CONTROL</name>
@@ -774,23 +790,28 @@ mod tests {
           <addressOffset>4</addressOffset>
           <size>32</size>
           <access>read-write</access>
+          <fields><field><name>EVENTS</name><description>events</description><bitOffset>0</bitOffset><bitWidth>14</bitWidth></field></fields>
         </register>
         <register>
           <name>SHORT_STATUS</name>
-          <description>narrow read-only status</description>
+          <description>narrow W1C status</description>
           <addressOffset>8</addressOffset>
           <size>16</size>
-          <access>read-only</access>
+          <access>read-write</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
+          <fields><field><name>EVENTS</name><description>events</description><bitOffset>0</bitOffset><bitWidth>14</bitWidth></field></fields>
         </register>
         <register>
           <dim>2</dim>
           <dimIncrement>4</dimIncrement>
           <dimIndex>0-1</dimIndex>
           <name>STATUS%s</name>
-          <description>read-only status array</description>
+          <description>W1C status array</description>
           <addressOffset>12</addressOffset>
           <size>32</size>
-          <access>read-only</access>
+          <access>read-write</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
+          <fields><field><name>EVENTS</name><description>events</description><bitOffset>0</bitOffset><bitWidth>14</bitWidth></field></fields>
         </register>
       </registers>
     </peripheral>
@@ -798,16 +819,16 @@ mod tests {
 </device>
 "#;
 
-    fn selected_register_write_pack(register: &str) -> PacApiPack {
+    fn w1c_register_snapshot_pack(register: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
             r#"schema = 4
 
-[[selected-register-writes]]
-name = "write_event_status_selected_image"
+[[w1c-register-snapshots]]
+name = "event_status"
 peripheral = "RADIO"
 register = "{register}"
-value = 64
-sources = ["HIL_EVENT_STATUS_SELECTED_IMAGE"]
+field = "EVENTS"
+sources = ["PUBLIC_EVENT_STATUS_W1C"]
 "#
         ))
         .unwrap()
@@ -854,20 +875,22 @@ peripherals = ["INTERRUPT"]
     }
 
     #[test]
-    fn selected_register_write_requires_one_read_only_32_bit_target() {
+    fn w1c_register_snapshot_requires_one_read_write_w1c_32_bit_target() {
         assert!(
-            selected_register_write_pack("EVENT_STATUS")
-                .validate_against_svd(SELECTED_REGISTER_WRITE_SVD)
+            w1c_register_snapshot_pack("EVENT_STATUS")
+                .validate_against_svd(W1C_REGISTER_SNAPSHOT_SVD)
                 .is_ok()
         );
 
         for register in ["CONTROL", "SHORT_STATUS", "STATUS%s"] {
-            let error = selected_register_write_pack(register)
-                .validate_against_svd(SELECTED_REGISTER_WRITE_SVD)
+            let error = w1c_register_snapshot_pack(register)
+                .validate_against_svd(W1C_REGISTER_SNAPSHOT_SVD)
                 .unwrap_err()
                 .to_string();
             assert!(
-                error.contains("read-only") || error.contains("non-array"),
+                error.contains("one-to-clear")
+                    || error.contains("32-bit")
+                    || error.contains("non-array"),
                 "unexpected rejection for {register}: {error}"
             );
         }

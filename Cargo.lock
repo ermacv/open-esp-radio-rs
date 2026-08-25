@@ -2332,8 +2332,33 @@ name = "open-esp-radio-esp32s31-ieee802154-dma"
 version = "0.1.0"
 
 [[package]]
+name = "open-esp-radio-esp32s31-ieee802154-embassy"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "open-esp-radio-esp32s31-ieee802154-dma",
+ "open-esp-radio-esp32s31-ieee802154-irq",
+ "open-esp-radio-esp32s31-ieee802154-mac",
+ "open-esp-radio-esp32s31-ieee802154-runtime",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-ieee802154-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "open-esp-radio-esp32s31-ieee802154-irq",
+ "open-esp-radio-esp32s31-pac",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-ieee802154-irq"
 version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-pac",
+]
 
 [[package]]
 name = "open-esp-radio-esp32s31-ieee802154-mac"
@@ -2350,6 +2375,7 @@ dependencies = [
  "open-esp-radio-esp32s31-ieee802154-dma",
  "open-esp-radio-esp32s31-ieee802154-irq",
  "open-esp-radio-esp32s31-ieee802154-mac",
+ "open-esp-radio-esp32s31-pac",
 ]
 
 [[package]]

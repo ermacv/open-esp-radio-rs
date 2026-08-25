@@ -7,12 +7,13 @@ extracted table is an input.
 
 The overall verdict remains **INCOMPLETE**. Static MAC fields, direct frame
 storage, RX-buffer ownership, interrupt-source identity, and interrupt dispatch
-order are source-confirmed. RF/BTBB initialization, TX-power conversion,
-general `EVENT_STATUS` acknowledgement, active IRQ routing, and live RX/TX
-command sequencing are not qualified by this slice. A later HIL record
-qualifies exactly the generated `ED_DONE = 0x0040` selected write for one
-serialized detached-route ED transaction; it does not change this dataplane
-verdict.
+order are source-confirmed. The repository now additionally has reviewed
+read-write W1C semantics for `EVENT_STATUS`, generated affine snapshot
+acknowledgement, disjoint task/IRQ PAC owners, a PAC-backed public-LL command
+executor, an IRQ port, and a bounded cancellation-safe Embassy handoff. The
+verdict remains incomplete because RF/BTBB/coexistence readiness, TX-power
+conversion, platform source-132 routing, terminal DMA reclamation and on-air
+service composition are not yet joined and qualified.
 
 ## Source ledger
 
@@ -135,7 +136,7 @@ The hardware-address token and the storage lease must be non-forgeable outside
 the DMA leaf. A device-ordering fence is required before publishing an armed
 buffer and before making completion-visible bytes available to task code.
 
-## 4. IRQ remains quiesced
+## 4. IRQ ownership and affine acknowledgement
 
 The peripheral interrupt source is exactly `132`. Both cores have a dedicated
 mapping word at route offset `0x210`; the CPU interrupt number occupies bits
@@ -158,26 +159,31 @@ snapshot, then dispatches in this order:
 3. RX-abort phase two, TX abort, ED done, timer 0, timer 1;
 4. one deferred `next_operation` decision.
 
-That order can be represented and exhaustively tested as pure logic. It does
-not authorize a live route or an arbitrary status write.
+That order remains represented and exhaustively tested as pure logic, and the
+production path now connects it to a restricted PAC interrupt port. The target
+reviewed fact assigns read-write W1C semantics to `EVENT_STATUS`; the published
+SVD carries `oneToClear`, and the generated code samples the complete
+fourteen-bit field into a non-`Copy` token consumed by acknowledgement. No
+caller can supply, narrow, clone, or replay the write image.
 
-The complete `EVENT_STATUS` access class remains a blocker. The public LL
-performs `event_status.events &= events`, which is operationally compatible
-with W1C, but the S31 register and struct headers provide no access class,
-reset value, or concurrent-arrival rule. The reviewed SVD therefore publishes
-this register as observation-only, and the IRQ route must remain disabled.
+The whole-radio PAC route now separates `Ieee802154TaskRegisters` from inactive
+`Ieee802154InterruptSetup`. Activation masks delivery, consumes one complete
+stale W1C snapshot, publishes the named runtime event mask, and returns a
+disjoint `Ieee802154InterruptRegisters` owner. Its hard-IRQ transaction samples
+the complete event image plus selected RX/TX abort and ED/CCA sidebands before
+consuming the exact W1C token. A production port adapter posts the resulting
+non-replayable value to the bounded Embassy queue; task code never receives
+status-register authority.
 
-There is now one deliberately narrower production-capable PAC operation: the
-literal-only Blobray-generated `ED_DONE = 0x0040` selected write qualified in
-[`2026-08-25-esp32s31-ieee802154-generated-ed-done.md`](../../../../../qualification/targets/esp32s31/records/2026-08-25-esp32s31-ieee802154-generated-ed-done.md).
-It accepts no caller image and is valid only for lone ED-DONE inside the
-serialized detached-route finite ED/CCA contract. It does not acknowledge an
-IRQ snapshot or qualify another event bit, same-bit concurrency, active route,
-or whole-register W1C semantics.
+The remaining route gap is platform-specific: no current composition installs,
+enables, disables, and tears down CPU source 132 around that prepared owner.
+Same-bit arrival and level-line retrigger also still need HIL qualification.
+Neither gap reopens the W1C access model or blocks implementation of the task
+and IRQ ownership split.
 
 ## 5. Strongest honest endpoint
 
-This source set can support the following independent, non-operational pieces:
+The current implementation supports the following connected software pieces:
 
 ```text
 FoundationConfigured -> StaticMacPolicyConfigured
@@ -185,33 +191,44 @@ FoundationConfigured -> StaticMacPolicyConfigured
 TxFrameStoragePrepared
 RxPool: Free -> Armed -> Delivered -> Free, with Stub on exhaustion
 
-QuiescedIrqPlan -> pure ordered dispatch model
+Ieee802154TaskRegisters -> PAC public-LL command executor -> MacRuntime
+Ieee802154InterruptSetup -> affine sample/ack IRQ owner -> Embassy queue
 
-SerializedPolledEdCca -> reusable model owner only after exact ED-DONE write
-                         and complete zero status readback
+MacRuntime retains the executor and exact RX/TX resources until an
+acknowledged batch is accepted by the pure ordered actor
+
+SerializedPolledEdCca -> reusable owner only after the complete consumed W1C
+                         snapshot is exactly lone ED_DONE
 ```
 
-The finite ED/CCA engine is currently a pure semantic-backend boundary; its
-concrete PAC/backend and source-132 route guard remain pending. The project
-cannot yet connect the storage and dispatch pieces into receive/transmit
-operations. In particular, none of these types proves RF, BTBB, coexistence,
-active-IRQ acknowledgement, RX/TX command completion, or on-air behavior.
+The PAC executor ports static-policy refresh, direct TX/RX address publication,
+and RX, TX, CCA-gated TX, standalone CCA, and ED command intents. `STOP` is not
+used as a synchronous completion proof. The Embassy owner is cancellation-safe
+and fails closed if its bounded acknowledged-event queue overflows.
 
-## Next research and HIL gates
+This is an implemented command/IRQ/DMA architecture, but not yet an operational
+radio service. No current constructor joins it with proved PHY, BTBB,
+coexistence and CPU-route readiness; terminal DMA reclamation and state-specific
+stop policy are incomplete; TX power and on-air behavior remain unqualified.
 
-1. Preserve the exact ED-DONE selected write as the only qualified production
-   image; prove every other required event class, same-bit concurrent arrival,
-   level-line retrigger, and reset/stale-state cases before widening it.
-2. Bind the finite ED/CCA engine to a concrete PAC backend and complete
-   detached-route guard, then qualify two back-to-back ED operations on real
-   hardware.
-3. Verify source `132` delivery and teardown on both cores without hard-coding
-   a CPU vector.
-4. Measure whether `STOP` is synchronous in every MAC state; if not, recover a
-   bounded completion predicate before publishing new DMA addresses.
-5. Prove direct TX/RX address alignment and full-range requirements on real
-   internal SRAM, including maximum-length frames and an exhausted RX pool.
-6. Replace or bound `bt_bb_v2_init_cmplx(1)`, PHY calibration/wakeup/PLL
-   tracking, `ieee802154_txon_delay_set()`, and the TX-power table dependency.
-7. Only after those gates, connect command issue, active IRQ ownership, and
-   DMA leases into one operational MAC state machine.
+## Remaining implementation and qualification gates
+
+1. Add the platform source-132 route owner around the existing PAC setup and
+   hard-IRQ handler without hard-coding a CPU vector. HIL qualifies delivery,
+   teardown, same-bit arrival and retrigger; it does not gate the ownership
+   architecture.
+2. Compose the task executor and IRQ owner with reviewed PHY, BTBB and
+   coexistence-ready owners. Replace or bound `bt_bb_v2_init_cmplx(1)`, PHY
+   calibration/wakeup/PLL tracking, `ieee802154_txon_delay_set()`, and the
+   TX-power table dependency.
+3. Complete terminal RX/TX DMA reclamation and state-specific `STOP`
+   reconciliation. Do not publish a new address based only on command issue or
+   an unbounded assumption that `STOP` is synchronous.
+4. Finish TX-power and timing policy needed by transmit commands.
+5. Qualify direct-address alignment and full-range requirements, maximum-length
+   RX/TX, and exhausted-pool behavior on real internal SRAM.
+6. Exercise ordered multi-event batches, route retrigger, ACK/no-ACK, abort,
+   CCA busy/clear, ED, repeated-operation, and recovery paths in HIL.
+7. Expose a public asynchronous MAC service only after the remaining software
+   owners are composed; require on-air HIL before upgrading qualification, not
+   before implementing the source-derived logic.

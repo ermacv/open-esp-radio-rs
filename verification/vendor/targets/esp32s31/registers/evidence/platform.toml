@@ -42,6 +42,18 @@ id = "ESP_IDF_7B9CC1AC_S31_IEEE802154_LL"
 description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/esp_hal_ieee802154/esp32s31/include/hal/ieee802154_ll.h, sha256 a66a3562ff6ef62ffa6dda90bc08e97f0d4509bcf3817cdc57795fd97daeaa30. The ESP32-S31 extension independently reads the two high-half diagnostic counters declared by the public struct."
 
 [[sources]]
+id = "ESP_RADIO_7F914782_S31_IEEE802154_INIT"
+description = "Pinned public esp-radio commit 7f914782f5c689a74f37df83b89a0827d3800323, https://github.com/ermacv/esp-hal/blob/7f914782f5c689a74f37df83b89a0827d3800323/esp-radio/src/ieee802154/raw.rs, sha256 36785d992099512dce4cd23f95b8de0355d0cc4849157712ce57ec846f8d709a. The public ESP32-S31 enable path calls bt_bb_v2_init_cmplx(1) before ieee802154_mac_init; that initializer then calls bt_bb_set_zb_tx_on_delay(50) immediately before set_rx_on_delay(50). This source proves the protocol-specific values and order, while the closed setter evidence separately proves the shared-register encoding."
+
+[[sources]]
+id = "ESP_RADIO_7F914782_S31_IEEE802154_HAL"
+description = "Pinned public esp-radio commit 7f914782f5c689a74f37df83b89a0827d3800323, https://github.com/ermacv/esp-hal/blob/7f914782f5c689a74f37df83b89a0827d3800323/esp-radio/src/ieee802154/hal.rs, sha256 1a7c806723c050f4de3e150fb0255ca97eed0080f3eb43ba4252672e500b8b1b. The complete public set_rx_on_delay accessor performs one preserving field update of IEEE802154.RXON_DELAY.RXON_DELAY from its u16 argument."
+
+[[sources]]
+id = "ESP_PACS_AAA5C2EA_S31_IEEE802154_RXON_DELAY"
+description = "Official esp-rs/esp-pacs commit aaa5c2ea8a82f0aa202422d69682e3179d7b2365, https://github.com/esp-rs/esp-pacs/blob/aaa5c2ea8a82f0aa202422d69682e3179d7b2365/esp32s31/src/ieee802154.rs sha256 e102b36158d5d1000108d04bf51d86be3fbeec3f8abd25c56f41f2f559db9825 and https://github.com/esp-rs/esp-pacs/blob/aaa5c2ea8a82f0aa202422d69682e3179d7b2365/esp32s31/src/ieee802154/rxon_delay.rs sha256 b36584fd316421b0e640f44264329727a72994f51bc817b9bb8c7651a59dfbd9. The generated public PAC independently places RXON_DELAY at offset 0x110 and exposes its preserving read-write field as bits 0:10. No reset-value claim is imported."
+
+[[sources]]
 id = "ESP_IDF_25FE69F_S31_PHY_RETENTION"
 description = "Official ESP-IDF commit 25fe69f946311abdaf9ad56591f25fedbc20ac98. components/esp_phy/esp32s31/phy_init_data.c sha256 03176e75102562df905e7ec342860ddd120443c2bff043f06d66faef4285b217 defines the FECOEX, FEDATA, FECTRL, FEDATA_WIFI, AGC, NRX, BB and BRX retention bases and register counts. components/esp_phy/esp32s31/include/btbb_retention_reg.h sha256 8acdbdff2393e3d4dc15f1a6aedd240afeb95010e50446c9d596a878fc8af7f3 defines the BTAGC/BB_PART_1 base and count."
 

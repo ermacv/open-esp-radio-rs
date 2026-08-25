@@ -1,18 +1,17 @@
-//! Quiesced interrupt planning for the ESP32-S31 IEEE 802.15.4 MAC.
+//! Interrupt vocabulary and executor-neutral hard-IRQ handoff for the
+//! ESP32-S31 IEEE 802.15.4 MAC.
 //!
-//! This crate deliberately contains no concrete MMIO, interrupt binding,
-//! route-enable, or general interrupt-status acknowledgement operation. Public
-//! code can inspect the source-confirmed OR-operation order and apply a pure
-//! subset readback predicate, but it cannot supply a backend or mint an
-//! execution result. A consuming IRQ transaction exists only in unit tests and
-//! has no production backend until a target ownership split is reviewed.
+//! This crate defines the finite hard-IRQ handoff: sample one opaque status
+//! snapshot and its sidebands, acknowledge that exact snapshot, then move a
+//! non-replayable value to the executor-side sink. Its restricted PAC adapter
+//! supplies the production event/status MMIO port. CPU interrupt binding,
+//! route enable, and Embassy integration remain platform concerns. Raw
+//! unsupported event bits cross the boundary unchanged so the bottom half can
+//! reject them without losing acknowledgement evidence.
 //!
-//! `EVENT_STATUS` is available through one deliberately narrow boundary outside
-//! this crate: a fixed `ED_DONE = 0x0040` selected image is HIL-qualified for a
-//! serialized, route-detached ED completion transaction. That result does not
-//! classify the register as generally W1C, authorize acknowledgement of any
-//! other event, define concurrent-arrival behavior, or establish an active IRQ
-//! owner. Those broader capabilities remain unavailable.
+//! The production port receives an affine PAC snapshot of the complete
+//! fourteen-bit `EVENT_STATUS` field. Acknowledgement consumes that exact
+//! snapshot, so an ISR cannot manufacture, clone, or replay a W1C image.
 //!
 //! Register identities and values below are audited against ESP-IDF commit
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`:
@@ -31,6 +30,8 @@
 
 #[cfg(test)]
 use core::fmt;
+
+mod pac_port;
 
 /// The only interrupt source identity represented by this crate.
 ///
@@ -356,6 +357,29 @@ pub enum Ieee802154RxAbortReason {
 }
 
 impl Ieee802154RxAbortReason {
+    /// Decode one raw `RX_STATUS[8:4]` reason code when it has a reviewed name.
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            1 => Some(Self::RxStop),
+            2 => Some(Self::SfdTimeout),
+            3 => Some(Self::CrcError),
+            4 => Some(Self::InvalidLength),
+            5 => Some(Self::FilterFail),
+            6 => Some(Self::NoRss),
+            7 => Some(Self::CoexistenceBreak),
+            8 => Some(Self::UnexpectedAck),
+            9 => Some(Self::RxRestart),
+            16 => Some(Self::TxAckTimeout),
+            17 => Some(Self::TxAckStop),
+            18 => Some(Self::TxAckCoexistenceBreak),
+            19 => Some(Self::EnhancedAckSecurityError),
+            24 => Some(Self::EdAbort),
+            25 => Some(Self::EdStop),
+            26 => Some(Self::EdCoexistenceReject),
+            _ => None,
+        }
+    }
+
     /// Return the source-confirmed reason code sampled from `RX_STATUS[8:4]`.
     pub const fn code(self) -> u8 {
         self as u8
@@ -409,6 +433,28 @@ pub enum Ieee802154TxAbortReason {
 }
 
 impl Ieee802154TxAbortReason {
+    /// Decode one raw `TX_STATUS[8:4]` reason code when it has a reviewed name.
+    pub const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            1 => Some(Self::RxAckStop),
+            2 => Some(Self::RxAckSfdTimeout),
+            3 => Some(Self::RxAckCrcError),
+            4 => Some(Self::RxAckInvalidLength),
+            5 => Some(Self::RxAckFilterFail),
+            6 => Some(Self::RxAckNoRss),
+            7 => Some(Self::RxAckCoexistenceBreak),
+            8 => Some(Self::RxAckTypeNotAck),
+            9 => Some(Self::RxAckRestart),
+            16 => Some(Self::RxAckTimeout),
+            17 => Some(Self::TxStop),
+            18 => Some(Self::TxCoexistenceBreak),
+            19 => Some(Self::TxSecurityError),
+            24 => Some(Self::CcaFailed),
+            25 => Some(Self::CcaBusy),
+            _ => None,
+        }
+    }
+
     /// Return the source-confirmed reason code sampled from `TX_STATUS[8:4]`.
     pub const fn code(self) -> u8 {
         self as u8
@@ -423,6 +469,167 @@ impl Ieee802154TxAbortReason {
     pub const fn mask(self) -> Ieee802154TxAbortMask {
         Ieee802154TxAbortMask(self.enable_bit())
     }
+}
+
+/// Opaque status sample consumed by one hard-IRQ transaction.
+///
+/// A concrete port may use an affine PAC snapshot which cannot be recreated by
+/// callers. All sideband getters must describe the same observation epoch as
+/// [`Self::raw_event_bits`]. A concrete port may return the neutral value zero
+/// (or `false`) when the corresponding event bit is absent. The bottom half
+/// must associate a sideband with an operation only when its event bit is
+/// present.
+pub trait Ieee802154InterruptSnapshot {
+    /// Return the complete raw `EVENT_STATUS` field image.
+    fn raw_event_bits(&self) -> u16;
+
+    /// Return the raw `RX_STATUS[8:4]` receive-abort reason code.
+    fn raw_rx_abort_reason_code(&self) -> u8;
+
+    /// Return the raw `TX_STATUS[8:4]` transmit-abort reason code.
+    fn raw_tx_abort_reason_code(&self) -> u8;
+
+    /// Return the uncalibrated signed energy-detection RSS code.
+    fn ed_rss_code(&self) -> i8;
+
+    /// Return the separately sampled clear-channel busy indication.
+    fn cca_busy(&self) -> bool;
+}
+
+/// Finite interrupt-status capability lent to the active hard IRQ.
+///
+/// [`Self::Snapshot`] is deliberately opaque to this crate. A target adapter
+/// is responsible for making `status` sample one internally consistent epoch
+/// and for making `acknowledge` consume exactly the supplied snapshot.
+pub trait Ieee802154InterruptPort {
+    /// Opaque, single-use status snapshot owned by this port.
+    type Snapshot: Ieee802154InterruptSnapshot;
+
+    /// Sample one complete event image and all required sidebands.
+    fn status(&mut self) -> Self::Snapshot;
+
+    /// Acknowledge the exact opaque snapshot returned by [`Self::status`].
+    fn acknowledge(&mut self, snapshot: Self::Snapshot);
+}
+
+/// One non-replayable interrupt observation after its exact snapshot was
+/// acknowledged.
+///
+/// The constructor is private and this type is neither [`Clone`] nor [`Copy`].
+/// Moving it into [`Ieee802154AcknowledgedInterruptSink::post`] is the only
+/// public way to cross the hard-IRQ boundary with acknowledgement evidence.
+#[derive(Debug, Eq, PartialEq)]
+pub struct Ieee802154AcknowledgedInterrupt {
+    raw_event_bits: u16,
+    raw_rx_abort_reason_code: u8,
+    raw_tx_abort_reason_code: u8,
+    ed_rss_code: i8,
+    cca_busy: bool,
+}
+
+impl Ieee802154AcknowledgedInterrupt {
+    const fn new(
+        raw_event_bits: u16,
+        raw_rx_abort_reason_code: u8,
+        raw_tx_abort_reason_code: u8,
+        ed_rss_code: i8,
+        cca_busy: bool,
+    ) -> Self {
+        Self {
+            raw_event_bits,
+            raw_rx_abort_reason_code,
+            raw_tx_abort_reason_code,
+            ed_rss_code,
+            cca_busy,
+        }
+    }
+
+    /// Return the complete raw event image, including unsupported bits.
+    pub const fn raw_event_bits(&self) -> u16 {
+        self.raw_event_bits
+    }
+
+    /// Return the raw receive-abort reason code without assuming it is named.
+    pub const fn raw_rx_abort_reason_code(&self) -> u8 {
+        self.raw_rx_abort_reason_code
+    }
+
+    /// Decode the receive-abort reason when its raw code has a reviewed name.
+    pub const fn rx_abort_reason(&self) -> Option<Ieee802154RxAbortReason> {
+        Ieee802154RxAbortReason::from_code(self.raw_rx_abort_reason_code)
+    }
+
+    /// Return the raw transmit-abort reason code without assuming it is named.
+    pub const fn raw_tx_abort_reason_code(&self) -> u8 {
+        self.raw_tx_abort_reason_code
+    }
+
+    /// Decode the transmit-abort reason when its raw code has a reviewed name.
+    pub const fn tx_abort_reason(&self) -> Option<Ieee802154TxAbortReason> {
+        Ieee802154TxAbortReason::from_code(self.raw_tx_abort_reason_code)
+    }
+
+    /// Return the uncalibrated signed energy-detection RSS code.
+    pub const fn ed_rss_code(&self) -> i8 {
+        self.ed_rss_code
+    }
+
+    /// Return the sampled clear-channel busy indication.
+    pub const fn cca_busy(&self) -> bool {
+        self.cca_busy
+    }
+}
+
+/// Executor-side receiver of one acknowledged interrupt observation.
+pub trait Ieee802154AcknowledgedInterruptSink {
+    /// Post a non-replayable observation after hard-IRQ acknowledgement.
+    fn post(&self, acknowledged: Ieee802154AcknowledgedInterrupt);
+}
+
+/// Outcome of one finite hard-IRQ invocation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154InterruptDisposition {
+    /// A nonzero event snapshot was acknowledged and posted.
+    Posted,
+    /// The sampled raw event image was zero, so nothing was acknowledged or
+    /// posted.
+    Spurious,
+}
+
+/// Handle one status epoch without depending on a concrete executor.
+///
+/// A zero event image is treated as spurious. For every nonzero image, all raw
+/// sidebands are copied before the exact opaque snapshot is acknowledged. The
+/// acknowledged value is posted only afterwards. Unsupported raw event bits
+/// are deliberately posted unchanged so bottom-half validation can fail closed
+/// without leaving their hardware status latched.
+pub fn handle_ieee802154_interrupt<
+    Port: Ieee802154InterruptPort,
+    Sink: Ieee802154AcknowledgedInterruptSink + ?Sized,
+>(
+    port: &mut Port,
+    sink: &Sink,
+) -> Ieee802154InterruptDisposition {
+    let snapshot = port.status();
+    let raw_event_bits = snapshot.raw_event_bits();
+    if raw_event_bits == 0 {
+        return Ieee802154InterruptDisposition::Spurious;
+    }
+
+    let raw_rx_abort_reason_code = snapshot.raw_rx_abort_reason_code();
+    let raw_tx_abort_reason_code = snapshot.raw_tx_abort_reason_code();
+    let ed_rss_code = snapshot.ed_rss_code();
+    let cca_busy = snapshot.cca_busy();
+
+    port.acknowledge(snapshot);
+    sink.post(Ieee802154AcknowledgedInterrupt::new(
+        raw_event_bits,
+        raw_rx_abort_reason_code,
+        raw_tx_abort_reason_code,
+        ed_rss_code,
+        cca_busy,
+    ));
+    Ieee802154InterruptDisposition::Posted
 }
 
 const NAMED_RX_ABORT_BITS: u32 = 0x0387_81ff;
@@ -575,9 +782,10 @@ pub enum QuiescedIrqMaskStep {
 
 /// A validated desired-mask plan that cannot activate an interrupt.
 ///
-/// This value has no hardware capability. It records only the field images a
-/// future, separately audited owner may install while the route is quiesced.
-/// The named-but-unhandled clock-count event is rejected.
+/// This value has no hardware capability. The separate PAC task/interrupt
+/// owners may install the validated masks; this pure plan cannot activate a
+/// route or access `EVENT_STATUS`. The named-but-unhandled clock-count event is
+/// rejected.
 ///
 /// There is deliberately no activation transition:
 ///
@@ -1047,7 +1255,7 @@ pub fn dispatch_event_batch<S: Ieee802154EventSink + ?Sized>(
 mod tests {
     extern crate std;
 
-    use std::vec::Vec;
+    use std::{cell::RefCell, rc::Rc, vec::Vec};
 
     use super::*;
 
@@ -1205,6 +1413,10 @@ mod tests {
         let mut combined = 0u32;
         for (reason, expected_code) in RX_REASONS.into_iter().zip(expected_codes) {
             assert_eq!(reason.code(), expected_code);
+            assert_eq!(
+                Ieee802154RxAbortReason::from_code(expected_code),
+                Some(reason)
+            );
             assert_eq!(reason.enable_bit(), 1u32 << (u32::from(expected_code) - 1));
             assert_eq!(combined & reason.enable_bit(), 0);
             combined |= reason.enable_bit();
@@ -1232,6 +1444,10 @@ mod tests {
         let mut combined = 0u32;
         for (reason, expected_code) in TX_REASONS.into_iter().zip(expected_codes) {
             assert_eq!(reason.code(), expected_code);
+            assert_eq!(
+                Ieee802154TxAbortReason::from_code(expected_code),
+                Some(reason)
+            );
             assert_eq!(reason.enable_bit(), 1u32 << (u32::from(expected_code) - 1));
             assert_eq!(combined & reason.enable_bit(), 0);
             combined |= reason.enable_bit();
@@ -1251,6 +1467,20 @@ mod tests {
                 .unsupported_bits(),
             !NAMED_TX_ABORT_BITS
         );
+    }
+
+    #[test]
+    fn abort_reason_decoders_preserve_the_closed_named_sets() {
+        for code in 0..=u8::MAX {
+            assert_eq!(
+                Ieee802154RxAbortReason::from_code(code).is_some(),
+                RX_REASONS.iter().any(|reason| reason.code() == code)
+            );
+            assert_eq!(
+                Ieee802154TxAbortReason::from_code(code).is_some(),
+                TX_REASONS.iter().any(|reason| reason.code() == code)
+            );
+        }
     }
 
     #[test]
@@ -1389,6 +1619,241 @@ mod tests {
         dispatch_event_batch(Ieee802154EventMask::NONE, &mut sink)
             .expect("empty batch is supported");
         assert!(sink.events.is_empty());
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum HardIrqOperation {
+        Status,
+        ReadEventBits,
+        ReadRxAbortReason,
+        ReadTxAbortReason,
+        ReadEdRss,
+        ReadCcaBusy,
+        Acknowledge(u8),
+        Post,
+    }
+
+    struct ModelInterruptSnapshot {
+        identity: u8,
+        raw_event_bits: u16,
+        raw_rx_abort_reason_code: u8,
+        raw_tx_abort_reason_code: u8,
+        ed_rss_code: i8,
+        cca_busy: bool,
+        operations: Rc<RefCell<Vec<HardIrqOperation>>>,
+    }
+
+    impl Ieee802154InterruptSnapshot for ModelInterruptSnapshot {
+        fn raw_event_bits(&self) -> u16 {
+            self.operations
+                .borrow_mut()
+                .push(HardIrqOperation::ReadEventBits);
+            self.raw_event_bits
+        }
+
+        fn raw_rx_abort_reason_code(&self) -> u8 {
+            self.operations
+                .borrow_mut()
+                .push(HardIrqOperation::ReadRxAbortReason);
+            self.raw_rx_abort_reason_code
+        }
+
+        fn raw_tx_abort_reason_code(&self) -> u8 {
+            self.operations
+                .borrow_mut()
+                .push(HardIrqOperation::ReadTxAbortReason);
+            self.raw_tx_abort_reason_code
+        }
+
+        fn ed_rss_code(&self) -> i8 {
+            self.operations
+                .borrow_mut()
+                .push(HardIrqOperation::ReadEdRss);
+            self.ed_rss_code
+        }
+
+        fn cca_busy(&self) -> bool {
+            self.operations
+                .borrow_mut()
+                .push(HardIrqOperation::ReadCcaBusy);
+            self.cca_busy
+        }
+    }
+
+    struct ModelInterruptPort {
+        snapshot: Option<ModelInterruptSnapshot>,
+        operations: Rc<RefCell<Vec<HardIrqOperation>>>,
+    }
+
+    impl Ieee802154InterruptPort for ModelInterruptPort {
+        type Snapshot = ModelInterruptSnapshot;
+
+        fn status(&mut self) -> Self::Snapshot {
+            self.operations.borrow_mut().push(HardIrqOperation::Status);
+            self.snapshot
+                .take()
+                .expect("one model status snapshot is available")
+        }
+
+        fn acknowledge(&mut self, snapshot: Self::Snapshot) {
+            self.operations
+                .borrow_mut()
+                .push(HardIrqOperation::Acknowledge(snapshot.identity));
+        }
+    }
+
+    struct ModelAcknowledgedSink {
+        operations: Rc<RefCell<Vec<HardIrqOperation>>>,
+        posted: RefCell<Option<Ieee802154AcknowledgedInterrupt>>,
+    }
+
+    impl Ieee802154AcknowledgedInterruptSink for ModelAcknowledgedSink {
+        fn post(&self, acknowledged: Ieee802154AcknowledgedInterrupt) {
+            self.operations.borrow_mut().push(HardIrqOperation::Post);
+            assert!(self.posted.replace(Some(acknowledged)).is_none());
+        }
+    }
+
+    fn hard_irq_fixture(
+        identity: u8,
+        raw_event_bits: u16,
+        raw_rx_abort_reason_code: u8,
+        raw_tx_abort_reason_code: u8,
+        ed_rss_code: i8,
+        cca_busy: bool,
+    ) -> (ModelInterruptPort, ModelAcknowledgedSink) {
+        let operations = Rc::new(RefCell::new(Vec::new()));
+        let snapshot = ModelInterruptSnapshot {
+            identity,
+            raw_event_bits,
+            raw_rx_abort_reason_code,
+            raw_tx_abort_reason_code,
+            ed_rss_code,
+            cca_busy,
+            operations: Rc::clone(&operations),
+        };
+        (
+            ModelInterruptPort {
+                snapshot: Some(snapshot),
+                operations: Rc::clone(&operations),
+            },
+            ModelAcknowledgedSink {
+                operations,
+                posted: RefCell::new(None),
+            },
+        )
+    }
+
+    #[test]
+    fn hard_irq_acknowledges_the_exact_snapshot_before_posting() {
+        let (mut port, sink) = hard_irq_fixture(
+            0xa5,
+            Ieee802154Event::RxAbort.bit() | Ieee802154Event::EdDone.bit(),
+            Ieee802154RxAbortReason::CrcError.code(),
+            Ieee802154TxAbortReason::CcaBusy.code(),
+            -73,
+            true,
+        );
+
+        assert_eq!(
+            handle_ieee802154_interrupt(&mut port, &sink),
+            Ieee802154InterruptDisposition::Posted
+        );
+        assert_eq!(
+            *sink.operations.borrow(),
+            [
+                HardIrqOperation::Status,
+                HardIrqOperation::ReadEventBits,
+                HardIrqOperation::ReadRxAbortReason,
+                HardIrqOperation::ReadTxAbortReason,
+                HardIrqOperation::ReadEdRss,
+                HardIrqOperation::ReadCcaBusy,
+                HardIrqOperation::Acknowledge(0xa5),
+                HardIrqOperation::Post,
+            ]
+        );
+    }
+
+    #[test]
+    fn hard_irq_posts_exact_raw_values_and_named_reason_views() {
+        let raw_events = Ieee802154Event::RxAbort.bit()
+            | Ieee802154Event::TxAbort.bit()
+            | Ieee802154Event::EdDone.bit();
+        let (mut port, sink) = hard_irq_fixture(
+            7,
+            raw_events,
+            Ieee802154RxAbortReason::CoexistenceBreak.code(),
+            Ieee802154TxAbortReason::TxSecurityError.code(),
+            -101,
+            false,
+        );
+
+        assert_eq!(
+            handle_ieee802154_interrupt(&mut port, &sink),
+            Ieee802154InterruptDisposition::Posted
+        );
+        let acknowledged = sink
+            .posted
+            .borrow_mut()
+            .take()
+            .expect("the acknowledged observation was posted");
+        assert_eq!(acknowledged.raw_event_bits(), raw_events);
+        assert_eq!(
+            acknowledged.raw_rx_abort_reason_code(),
+            Ieee802154RxAbortReason::CoexistenceBreak.code()
+        );
+        assert_eq!(
+            acknowledged.rx_abort_reason(),
+            Some(Ieee802154RxAbortReason::CoexistenceBreak)
+        );
+        assert_eq!(
+            acknowledged.raw_tx_abort_reason_code(),
+            Ieee802154TxAbortReason::TxSecurityError.code()
+        );
+        assert_eq!(
+            acknowledged.tx_abort_reason(),
+            Some(Ieee802154TxAbortReason::TxSecurityError)
+        );
+        assert_eq!(acknowledged.ed_rss_code(), -101);
+        assert!(!acknowledged.cca_busy());
+    }
+
+    #[test]
+    fn zero_event_snapshot_is_spurious_without_acknowledgement_or_post() {
+        let (mut port, sink) = hard_irq_fixture(3, 0, 31, 31, i8::MIN, true);
+
+        assert_eq!(
+            handle_ieee802154_interrupt(&mut port, &sink),
+            Ieee802154InterruptDisposition::Spurious
+        );
+        assert_eq!(
+            *sink.operations.borrow(),
+            [HardIrqOperation::Status, HardIrqOperation::ReadEventBits]
+        );
+        assert!(sink.posted.borrow().is_none());
+    }
+
+    #[test]
+    fn unsupported_raw_event_bits_and_reason_codes_reach_the_bottom_half() {
+        let unsupported_events = (1 << 7) | (1 << 13) | (1 << 15);
+        let (mut port, sink) = hard_irq_fixture(9, unsupported_events, 10, 26, -1, true);
+
+        assert_eq!(
+            handle_ieee802154_interrupt(&mut port, &sink),
+            Ieee802154InterruptDisposition::Posted
+        );
+        let acknowledged = sink
+            .posted
+            .borrow_mut()
+            .take()
+            .expect("unsupported raw values are posted for fail-closed validation");
+        assert_eq!(acknowledged.raw_event_bits(), unsupported_events);
+        assert_eq!(acknowledged.raw_rx_abort_reason_code(), 10);
+        assert_eq!(acknowledged.rx_abort_reason(), None);
+        assert_eq!(acknowledged.raw_tx_abort_reason_code(), 26);
+        assert_eq!(acknowledged.tx_abort_reason(), None);
+        assert_eq!(acknowledged.ed_rss_code(), -1);
+        assert!(acknowledged.cca_busy());
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]

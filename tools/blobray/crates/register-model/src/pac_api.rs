@@ -17,6 +17,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub feature_modules: Vec<FeatureModule>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sidecar_modules: Vec<SidecarModule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flag_domains: Vec<FlagDomain>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enum_domains: Vec<EnumDomain>,
@@ -33,7 +35,7 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fixed_register_images: Vec<FixedRegisterImage>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub selected_register_writes: Vec<SelectedRegisterWrite>,
+    pub w1c_register_snapshots: Vec<W1cRegisterSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub register_image_writes: Vec<RegisterImageWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -81,6 +83,13 @@ pub struct OwnershipPartition {
 pub struct FeatureModule {
     pub name: String,
     pub feature: String,
+}
+
+/// Always-available hand-written module retained at the generated raw PAC root.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct SidecarModule {
+    pub name: String,
 }
 
 /// Closed writable bit-mask domain emitted into the public PAC facade.
@@ -183,19 +192,19 @@ common_operation!(FixedRegisterImage {
     register: String,
     value: u32,
 });
-/// One reviewed exact image write to a register which the SVD keeps read-only.
+/// One sampled, same-register write-one-to-clear transaction.
 ///
-/// This is a deliberately narrow, evidence-backed operation boundary. It
-/// neither changes the register's SVD access class nor accepts a
-/// caller-provided image.
+/// The generated sample is an affine token: callers may inspect its masked
+/// image, but cannot construct, clone or acknowledge it more than once. The
+/// acknowledge leaf consumes that token and writes exactly the sampled field
+/// image back to the same W1C register.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct SelectedRegisterWrite {
+pub struct W1cRegisterSnapshot {
     pub name: String,
     pub peripheral: String,
     pub register: String,
-    /// The only complete image this operation may publish.
-    pub value: u32,
+    pub field: String,
     pub sources: Vec<String>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -260,7 +269,7 @@ impl PacApiPack {
         self.validate_ownership_partitions()?;
         self.validate_domains()?;
         let domain_names = self.domain_names();
-        let mut feature_module_names = BTreeSet::new();
+        let mut module_names = BTreeSet::new();
         for module in &self.feature_modules {
             if !is_lower_snake_case(&module.name) {
                 return Err(Error::message(format!(
@@ -274,9 +283,23 @@ impl PacApiPack {
                     module.name, module.feature
                 )));
             }
-            if !feature_module_names.insert(&module.name) {
+            if !module_names.insert(&module.name) {
                 return Err(Error::message(format!(
                     "PAC API contains duplicate feature-module name {:?}",
+                    module.name
+                )));
+            }
+        }
+        for module in &self.sidecar_modules {
+            if !is_lower_snake_case(&module.name) {
+                return Err(Error::message(format!(
+                    "PAC API sidecar-module name {:?} is not lower snake case",
+                    module.name
+                )));
+            }
+            if !module_names.insert(&module.name) {
+                return Err(Error::message(format!(
+                    "PAC API contains duplicate module name {:?}",
                     module.name
                 )));
             }
@@ -285,7 +308,7 @@ impl PacApiPack {
         validate_operations("full-register-write", &self.full_register_writes)?;
         validate_operations("fixed-register-write", &self.fixed_register_writes)?;
         validate_operations("fixed-register-image", &self.fixed_register_images)?;
-        validate_operations("selected-register-write", &self.selected_register_writes)?;
+        validate_operations("w1c-register-snapshot", &self.w1c_register_snapshots)?;
         validate_operations("register-image-write", &self.register_image_writes)?;
         validate_operations("zero-based-field-write", &self.zero_based_field_writes)?;
         validate_operations("zero-register-write", &self.zero_register_writes)?;
@@ -299,6 +322,9 @@ impl PacApiPack {
         for operation in &self.fixed_register_writes {
             validate_component("field", &operation.name, &operation.field)?;
             validate_component("variant", &operation.name, &operation.variant)?;
+        }
+        for operation in &self.w1c_register_snapshots {
+            validate_component("field", &operation.name, &operation.field)?;
         }
         for operation in &self.full_register_writes {
             validate_component("field", &operation.name, &operation.field)?;
@@ -507,7 +533,7 @@ impl PacApiPack {
             + self.full_register_writes.len()
             + self.fixed_register_writes.len()
             + self.fixed_register_images.len()
-            + self.selected_register_writes.len()
+            + self.w1c_register_snapshots.len()
             + self.register_image_writes.len()
             + self.zero_based_field_writes.len()
             + self.zero_register_writes.len()
@@ -558,7 +584,7 @@ impl PacApiPack {
                     .chain(self.full_register_writes.iter().map(Operation::sources))
                     .chain(self.fixed_register_writes.iter().map(Operation::sources))
                     .chain(self.fixed_register_images.iter().map(Operation::sources))
-                    .chain(self.selected_register_writes.iter().map(Operation::sources))
+                    .chain(self.w1c_register_snapshots.iter().map(Operation::sources))
                     .chain(self.register_image_writes.iter().map(Operation::sources))
                     .chain(self.zero_based_field_writes.iter().map(Operation::sources))
                     .chain(self.zero_register_writes.iter().map(Operation::sources))
@@ -793,7 +819,7 @@ impl Operation for InterruptSnapshot {
 impl_register_operation!(FullRegisterWrite);
 impl_register_operation!(FixedRegisterWrite);
 impl_register_operation!(FixedRegisterImage);
-impl_register_operation!(SelectedRegisterWrite);
+impl_register_operation!(W1cRegisterSnapshot);
 impl_register_operation!(RegisterImageWrite);
 impl_register_operation!(ZeroBasedFieldWrite);
 impl_register_operation!(ZeroRegisterWrite);
@@ -950,6 +976,7 @@ mod tests {
             options: PacApiOptions::default(),
             ownership_partitions: Vec::new(),
             feature_modules: Vec::new(),
+            sidecar_modules: Vec::new(),
             flag_domains: Vec::new(),
             enum_domains: Vec::new(),
             bounded_domains: Vec::new(),
@@ -958,7 +985,7 @@ mod tests {
             full_register_writes: Vec::new(),
             fixed_register_writes: Vec::new(),
             fixed_register_images: Vec::new(),
-            selected_register_writes: Vec::new(),
+            w1c_register_snapshots: Vec::new(),
             register_image_writes: Vec::new(),
             zero_based_field_writes: Vec::new(),
             zero_register_writes: Vec::new(),
@@ -979,6 +1006,21 @@ mod tests {
         pack.feature_modules.push(FeatureModule {
             name: "event_status_validation".to_owned(),
             feature: "invalid feature".to_owned(),
+        });
+        assert!(pack.validate().is_err());
+    }
+
+    #[test]
+    fn validates_always_available_sidecar_modules() {
+        let mut pack = empty_pack();
+        pack.sidecar_modules.push(SidecarModule {
+            name: "interrupt_route_observation".to_owned(),
+        });
+        assert!(pack.validate().is_ok());
+
+        pack.feature_modules.push(FeatureModule {
+            name: "interrupt_route_observation".to_owned(),
+            feature: "validation-probes".to_owned(),
         });
         assert!(pack.validate().is_err());
     }
@@ -1130,21 +1172,21 @@ peripheral-ownership = true
     }
 
     #[test]
-    fn selected_register_write_is_exact_and_evidenced() {
+    fn w1c_register_snapshot_is_affine_and_evidenced() {
         let mut pack = empty_pack();
-        pack.selected_register_writes.push(SelectedRegisterWrite {
-            name: "write_event_status_selected_image".to_owned(),
+        pack.w1c_register_snapshots.push(W1cRegisterSnapshot {
+            name: "event_status".to_owned(),
             peripheral: "RADIO".to_owned(),
             register: "EVENT_STATUS".to_owned(),
-            value: 1 << 6,
-            sources: vec!["HIL_EVENT_STATUS_SELECTED_IMAGE".to_owned()],
+            field: "EVENTS".to_owned(),
+            sources: vec!["PUBLIC_EVENT_STATUS_W1C".to_owned()],
         });
 
         assert!(pack.validate().is_ok());
         assert_eq!(pack.operation_count(), 1);
         assert_eq!(
             pack.source_ids(),
-            BTreeSet::from(["HIL_EVENT_STATUS_SELECTED_IMAGE"])
+            BTreeSet::from(["PUBLIC_EVENT_STATUS_W1C"])
         );
     }
 

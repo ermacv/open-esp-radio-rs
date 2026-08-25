@@ -7,10 +7,14 @@ license.workspace = true
 repository.workspace = true
 description = "Affine executor-neutral runtime owner for the ESP32-S31 IEEE 802.15.4 MAC"
 
+[features]
+validation-probes = []
+
 [dependencies]
 open-esp-radio-esp32s31-ieee802154-dma = { path = "../dma" }
 open-esp-radio-esp32s31-ieee802154-irq = { path = "../irq" }
 open-esp-radio-esp32s31-ieee802154-mac = { path = "../mac" }
+open-esp-radio-esp32s31-pac = { path = "../../pac" }
 
 [lints]
 workspace = true

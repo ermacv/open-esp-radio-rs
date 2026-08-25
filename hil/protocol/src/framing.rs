@@ -361,10 +361,10 @@ mod tests {
         Command, Completion, Direction, Envelope, Event, FlowConfig,
         Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
         Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
-        Ieee802154EventStatusProbeStop, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
-        StackUsage, StackWatermark, StartupArtifactChunk, StationAttemptFailureReason,
-        StationDisconnectReason, StationFailureStage, StationLifecycleEvent, Transport, WifiRole,
-        WifiRoleTransitionEvidence, WireKind,
+        Ieee802154EventStatusProbeStop, Ieee802154PolledEdOutcome, Ipv4Endpoint, SessionConfig,
+        SessionLinkRequirements, StackUsage, StackWatermark, StartupArtifactChunk,
+        StationAttemptFailureReason, StationDisconnectReason, StationFailureStage,
+        StationLifecycleEvent, Transport, WifiRole, WifiRoleTransitionEvidence, WireKind,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -555,6 +555,14 @@ mod tests {
             2,
             Event::Ieee802154EdEventProbeCompleted(Ieee802154EdEventProbeEvidence {
                 stop: Ieee802154EdEventProbeStop::Complete,
+                production_ed_first: Ieee802154PolledEdOutcome::Complete {
+                    rss_code: i8::MIN,
+                    polls: u32::MAX,
+                },
+                production_ed_second: Some(Ieee802154PolledEdOutcome::Complete {
+                    rss_code: i8::MAX,
+                    polls: u32::MAX,
+                }),
                 event_enable_before: u16::MAX,
                 event_enable_active: u16::MAX,
                 event_enable_after: u16::MAX,

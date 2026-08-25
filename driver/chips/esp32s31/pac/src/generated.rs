@@ -57,6 +57,36 @@ impl MacInterface {
     }
 }
 
+/// The sole aligned shared-baseband field image accepted after the common BTBB initializer when entering the pinned IEEE 802.15.4 lifecycle.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Ieee802154SharedTxOnDelayOverride {
+    /// Argument 50 encoded by the complete shared setter as ((50 - 10) << 3) = 0x140, then aligned to AUXILIARY_TX_ON_DELAY bits 16:26.
+    Delay50 = 0x01400000,
+}
+
+impl Ieee802154SharedTxOnDelayOverride {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// The sole receive-on delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 initialization transaction.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Ieee802154RxOnDelay {
+    /// Literal eleven-bit RXON_DELAY image written immediately after the shared transmit-on delay override.
+    Delay50 = 0x00000032,
+}
+
+impl Ieee802154RxOnDelay {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Reviewed receive-beacon clear requests. The type cannot select an unknown request bit.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -412,6 +442,38 @@ impl Ieee802154EdDurationUnits {
     }
 
     /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific complete transmit frame-buffer address. Buffer provenance, alignment and lifetime remain HAL obligations.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154TxDmaAddress(u32);
+
+impl Ieee802154TxDmaAddress {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific complete receive frame-buffer address. Buffer provenance, alignment and lifetime remain HAL obligations.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154RxDmaAddress(u32);
+
+impl Ieee802154RxDmaAddress {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
     pub const fn get(self) -> u32 {
         self.0
     }
@@ -1062,6 +1124,24 @@ pub(crate) fn mac_tx_queue_state_clear(
     crate::svd::full_register_write::mac_tx_queue_state_clear(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `publish_ieee802154_tx_dma_address` complete-register transaction.
+#[inline]
+pub(crate) fn publish_ieee802154_tx_dma_address(
+    registers: &crate::svd::Ieee802154Mac,
+    value: Ieee802154TxDmaAddress,
+) {
+    crate::svd::full_register_write::publish_ieee802154_tx_dma_address(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_ieee802154_rx_dma_address` complete-register transaction.
+#[inline]
+pub(crate) fn publish_ieee802154_rx_dma_address(
+    registers: &crate::svd::Ieee802154Mac,
+    value: Ieee802154RxDmaAddress,
+) {
+    crate::svd::full_register_write::publish_ieee802154_rx_dma_address(registers, value.get());
+}
+
 /// Typed bridge for the reviewed `publish_mac_tx_control` complete-image transaction.
 #[inline]
 pub(crate) fn publish_mac_tx_control(
@@ -1199,6 +1279,27 @@ pub(crate) fn set_ieee802154_ed_duration(
     value: Ieee802154EdDurationUnits,
 ) {
     crate::svd::masked_register_modify::set_ieee802154_ed_duration(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `override_ieee802154_shared_tx_on_delay` masked transaction.
+#[inline]
+pub(crate) fn override_ieee802154_shared_tx_on_delay(
+    registers: &crate::svd::SharedBasebandTxTiming,
+    value: Ieee802154SharedTxOnDelayOverride,
+) {
+    crate::svd::masked_register_modify::override_ieee802154_shared_tx_on_delay(
+        registers,
+        value.bits(),
+    );
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_rx_on_delay` masked transaction.
+#[inline]
+pub(crate) fn set_ieee802154_rx_on_delay(
+    registers: &crate::svd::Ieee802154Mac,
+    value: Ieee802154RxOnDelay,
+) {
+    crate::svd::masked_register_modify::set_ieee802154_rx_on_delay(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `publish_pbus_force_test` masked transaction.

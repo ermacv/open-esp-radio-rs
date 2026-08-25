@@ -11,9 +11,11 @@ their exact implemented and deliberate fail-closed limits are documented in
 qualification or HIL claims. The ESP32-S31 IEEE 802.15.4 path currently
 reaches source-reviewed digital clocks, private MAC reset, an interrupt-masked
 static policy, and isolated DMA/IRQ semantic leaves plus a pure fail-closed MAC
-control model; PHY/RF, active IRQ, command issue and operational MAC readiness
-remain incomplete. ESP32-C5 and operational Bluetooth/BLE support remain
-future work. The ESP32-S31 Bluetooth tree now also carries an explicit
+control model. It now exposes serialized, route-detached polled ED and CCA
+commands with exact selected `ED_DONE` recovery; their RSS result is explicitly
+uncalibrated. PHY/RF qualification, active IRQ, RX/TX dataplanes and operational
+MAC readiness remain incomplete. ESP32-C5 and operational Bluetooth/BLE support
+remain future work. The ESP32-S31 Bluetooth tree now also carries an explicit
 [BLE feature frontier](driver/chips/esp32s31/bluetooth/FEATURES.md) and a
 portable bounded asynchronous HCI transport; neither is an on-air readiness
 claim. Its closed Host-bootstrap command table rejects every Link-Layer

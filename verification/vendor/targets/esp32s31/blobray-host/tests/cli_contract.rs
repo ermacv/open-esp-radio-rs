@@ -188,13 +188,14 @@ fn inspect_register_schema_seven_exposes_typed_validation_actions() {
     let assertions = event_status["reviewed_assertions"]["assertions"]
         .as_array()
         .unwrap();
-    assert_eq!(assertions.len(), 2);
+    assert_eq!(assertions.len(), 3);
     assert_eq!(
         assertions
             .iter()
             .map(|assertion| assertion["id"].as_str().unwrap())
             .collect::<std::collections::BTreeSet<_>>(),
         [
+            "ieee802154.event-status.access",
             "ieee802154.event-status.identity",
             "ieee802154.event-status.write-semantics",
         ]

@@ -9139,7 +9139,7 @@ access = "read-write"
 [[registers]]
 address = 537931876
 width = 32
-access = "read-only"
+access = "read-write"
 identity = "IEEE802154_MAC.EVENT_STATUS"
 peripheral = "IEEE802154_MAC"
 peripheral-type = "Ieee802154Mac"
@@ -9152,7 +9152,7 @@ svd-name = "EVENTS"
 method = "events"
 bit-offset = 0
 bit-width = 14
-access = "read-only"
+access = "read-write"
 
 [[registers]]
 address = 537931880
@@ -9461,6 +9461,24 @@ method = "address"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
+
+[[registers]]
+address = 537932048
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.RXON_DELAY"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rxon_delay"
+
+[[registers.fields]]
+svd-name = "RXON_DELAY"
+method = "rxon_delay"
+bit-offset = 0
+bit-width = 11
+access = "read-write"
 
 [[registers]]
 address = 537932072

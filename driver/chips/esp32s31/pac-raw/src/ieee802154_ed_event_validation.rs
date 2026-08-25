@@ -1,11 +1,9 @@
 //! Closed ED-DONE/TIMER0 `EVENT_STATUS` validation transaction vocabulary.
 //!
-//! This module is intended only for a reset-isolated validation image. It does
-//! not make the generated read-only `EVENT_STATUS` register writable and does
-//! not publish a general acknowledgement operation. ED-DONE crosses the
-//! generated, reviewed selected-image boundary; the remaining experimental
-//! raw write is fixed to TIMER0 so HIL can test whether selecting ED-DONE
-//! preserves an independently latched TIMER0 bit.
+//! This module is intended only for a reset-isolated validation image. The
+//! production API uses the generated affine W1C snapshot; these two literal
+//! writes remain feature-gated so the historical discriminator can compare
+//! ED-DONE and TIMER0 independently without exposing a general raw image.
 
 const RX_ABORT_EVENT: u32 = 1 << 4;
 const ED_DONE_EVENT: u32 = 1 << 6;
@@ -213,15 +211,29 @@ pub fn stop_operation(registers: &mut crate::Ieee802154Mac) {
     order_device_accesses();
 }
 
+/// Perform the discriminator's raw write of only ED-DONE.
+#[inline]
+pub fn write_ed_done_event(registers: &mut crate::Ieee802154Mac) {
+    // SAFETY: this reset-isolated validation experiment publishes one fixed
+    // source-confirmed event bit. Production acknowledgement goes through the
+    // generated affine W1C snapshot and cannot call this feature-only leaf.
+    unsafe {
+        registers
+            .event_status()
+            .write_with_zero(|writer| writer.bits(ED_DONE_EVENT));
+    }
+    order_device_accesses();
+}
+
 /// Perform the discriminator's raw write of only TIMER0.
 #[inline]
 pub fn write_timer0_event(registers: &mut crate::Ieee802154Mac) {
-    // SAFETY: this reset-isolated validation experiment bypasses the generated
-    // read-only access class only to write the retained TIMER0 bit after the
-    // generated ED-DONE selection has been sampled. A unique PAC lease and
-    // detached CPU route exclude a concurrent software owner.
+    // SAFETY: as above, the validation image publishes one fixed event bit and
+    // retains a unique PAC lease with the CPU route detached.
     unsafe {
-        core::ptr::write_volatile(registers.event_status().as_ptr(), TIMER0_EVENT);
+        registers
+            .event_status()
+            .write_with_zero(|writer| writer.bits(TIMER0_EVENT));
     }
     order_device_accesses();
 }

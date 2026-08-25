@@ -340,13 +340,23 @@ fn build_retention_plan(
 }
 
 fn validate_retention_plan(plan: &QueryStoreRetentionPlan) -> Result<()> {
-    if !plan.maintenance.supported
-        || plan.maintenance.over_max_size_bytes != 0
-        || !plan.maintenance.enough_free_space
-    {
+    validate_retention_size_limit(plan)?;
+    if !plan.maintenance.supported || !plan.maintenance.enough_free_space {
         return Err(crate::Error::invalid(plan.reason.clone().unwrap_or_else(
             || "query cache retention preflight failed".to_owned(),
         )));
+    }
+    Ok(())
+}
+
+fn validate_retention_size_limit(plan: &QueryStoreRetentionPlan) -> Result<()> {
+    if plan.maintenance.over_max_size_bytes != 0 {
+        return Err(crate::Error::invalid(
+            plan.maintenance
+                .reason
+                .clone()
+                .unwrap_or_else(|| "query cache retention cannot satisfy --max-size".to_owned()),
+        ));
     }
     Ok(())
 }
@@ -844,6 +854,10 @@ impl QueryStore {
         max_size_bytes: Option<u64>,
     ) -> Result<QueryStorePruneResult> {
         let plan = Self::retention_plan(project_manifest, retention, max_size_bytes)?;
+        // `--max-size` is a hard post-prune assessment even when retention has
+        // no eligible objects. A successful no-op must never imply that the
+        // requested bound was satisfied.
+        validate_retention_size_limit(&plan)?;
         if !plan.would_prune {
             return Ok(QueryStorePruneResult {
                 final_root_bytes: plan.maintenance.root_bytes,
@@ -5727,6 +5741,32 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn retention_hard_quota_fails_when_no_retired_object_is_eligible() {
+        let manifest = manifest("retention-hard-quota-noop");
+        let live = vec![0x73; INLINE_VALUE_LIMIT + 1];
+        {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            store
+                .put("live-function", "function", "inputs", &[], &live)
+                .unwrap();
+        }
+        let project_root = manifest.parent().unwrap();
+        let before = snapshot_tree(project_root);
+        let plan = QueryStore::retention_plan(&manifest, Duration::ZERO, Some(1)).unwrap();
+        assert!(!plan.would_prune);
+        assert_eq!(plan.eligible_objects, 0);
+        assert!(plan.maintenance.over_max_size_bytes > 0);
+
+        let error = QueryStore::prune_cache(&manifest, Duration::ZERO, Some(1)).unwrap_err();
+
+        assert!(error.to_string().contains("over --max-size"));
+        assert_eq!(snapshot_tree(project_root), before);
+        let store = QueryStore::open(&manifest).unwrap();
+        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
     }
 
     #[test]

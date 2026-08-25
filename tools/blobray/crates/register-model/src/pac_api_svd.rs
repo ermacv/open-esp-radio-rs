@@ -97,6 +97,50 @@ impl PacApiPack {
             require_full_range(&operation.name, field, 32)?;
         }
 
+        for operation in &self.full_register_reads {
+            let binding = readable_register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            let fields = binding.info.fields.as_deref().ok_or_else(|| {
+                Error::message(format!(
+                    "PAC API operation {:?} register has no fields",
+                    operation.name
+                ))
+            })?;
+            if fields.len() != 1 {
+                return Err(Error::message(format!(
+                    "PAC API full-register-read {:?} requires exactly one field",
+                    operation.name
+                )));
+            }
+            let field = field(&operation.name, binding.info, &operation.field)?;
+            require_full_field(&operation.name, field)?;
+            if binding.is_array {
+                return Err(Error::message(format!(
+                    "PAC API full-register-read {:?} requires one exact non-array register",
+                    operation.name
+                )));
+            }
+            if !matches!(
+                field.access.or(binding.properties.access),
+                Some(Access::ReadOnly | Access::ReadWrite)
+            ) {
+                return Err(Error::message(format!(
+                    "PAC API full-register-read {:?} field must be readable",
+                    operation.name
+                )));
+            }
+            if binding.info.read_action.is_some() || field.read_action.is_some() {
+                return Err(Error::message(format!(
+                    "PAC API full-register-read {:?} cannot target read-side-effect semantics",
+                    operation.name
+                )));
+            }
+        }
+
         for operation in &self.fixed_register_writes {
             let binding = writable_register(
                 &device,
@@ -239,10 +283,21 @@ impl PacApiPack {
         }
         for domain in &self.opaque_domains {
             // A register-specific opaque value domain is a type boundary, not
-            // an access semantic. It is valid for ordinary, W1C and other
-            // SVD-declared writable registers; the bound operation below is
-            // still responsible for validating the actual transaction.
-            writable_register(&device, &domain.name, &domain.peripheral, &domain.register)?;
+            // an access semantic. It is valid for readable or writable 32-bit
+            // registers; the bound operation remains responsible for proving
+            // the transaction's exact access direction.
+            let binding = register(&device, &domain.name, &domain.peripheral, &domain.register)?;
+            if binding.properties.size != Some(32)
+                || !matches!(
+                    binding.properties.access,
+                    Some(Access::ReadOnly | Access::WriteOnly | Access::ReadWrite)
+                )
+            {
+                return Err(Error::message(format!(
+                    "PAC API opaque domain {:?} requires an accessible 32-bit register",
+                    domain.name
+                )));
+            }
         }
         Ok(())
     }
@@ -574,6 +629,26 @@ fn writable_register<'a>(
     Ok(binding)
 }
 
+fn readable_register<'a>(
+    device: &'a Device,
+    operation: &str,
+    peripheral: &str,
+    register_name: &str,
+) -> Result<RegisterBinding<'a>> {
+    let binding = register(device, operation, peripheral, register_name)?;
+    if binding.properties.size != Some(32)
+        || !matches!(
+            binding.properties.access,
+            Some(Access::ReadOnly | Access::ReadWrite)
+        )
+    {
+        return Err(Error::message(format!(
+            "PAC API operation {operation:?} requires a readable 32-bit register"
+        )));
+    }
+    Ok(binding)
+}
+
 fn ordinary_writable_register<'a>(
     device: &'a Device,
     operation: &str,
@@ -819,6 +894,61 @@ mod tests {
 </device>
 "#;
 
+    const FULL_REGISTER_READ_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name>
+  <version>1</version>
+  <description>full register read fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>RADIO</name>
+      <description>radio</description>
+      <baseAddress>0x40000000</baseAddress>
+      <registers>
+        <register>
+          <name>GOOD</name>
+          <description>ordinary observation</description>
+          <addressOffset>0</addressOffset>
+          <size>32</size>
+          <access>read-only</access>
+          <fields><field><name>WORD</name><description>word</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>FIELD_WRITE_ONLY</name>
+          <description>register-readable but field-write-only</description>
+          <addressOffset>4</addressOffset>
+          <size>32</size>
+          <access>read-write</access>
+          <fields><field><name>WORD</name><description>word</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth><access>write-only</access></field></fields>
+        </register>
+        <register>
+          <name>READ_SIDE_EFFECT</name>
+          <description>read clears the word</description>
+          <addressOffset>8</addressOffset>
+          <size>32</size>
+          <access>read-only</access>
+          <readAction>clear</readAction>
+          <fields><field><name>WORD</name><description>word</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <dim>2</dim>
+          <dimIncrement>4</dimIncrement>
+          <dimIndex>0-1</dimIndex>
+          <name>ARRAY%s</name>
+          <description>readable array</description>
+          <addressOffset>12</addressOffset>
+          <size>32</size>
+          <access>read-only</access>
+          <fields><field><name>WORD</name><description>word</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>
+"#;
+
     fn w1c_register_snapshot_pack(register: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
             r#"schema = 4
@@ -829,6 +959,30 @@ peripheral = "RADIO"
 register = "{register}"
 field = "EVENTS"
 sources = ["PUBLIC_EVENT_STATUS_W1C"]
+"#
+        ))
+        .unwrap()
+    }
+
+    fn full_register_read_pack(register: &str) -> PacApiPack {
+        toml_edit::de::from_str(&format!(
+            r#"schema = 4
+
+[[opaque-domains]]
+name = "ObservedWord"
+description = "Register-specific observed word."
+peripheral = "RADIO"
+register = "{register}"
+sources = ["PUBLIC_READ"]
+
+[[full-register-reads]]
+name = "observe_word"
+peripheral = "RADIO"
+register = "{register}"
+field = "WORD"
+domain = "ObservedWord"
+exposure = "raw-only"
+sources = ["PUBLIC_READ"]
 "#
         ))
         .unwrap()
@@ -890,6 +1044,28 @@ peripherals = ["INTERRUPT"]
             assert!(
                 error.contains("one-to-clear")
                     || error.contains("32-bit")
+                    || error.contains("non-array"),
+                "unexpected rejection for {register}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn full_register_read_requires_ordinary_readable_non_array_field() {
+        assert!(
+            full_register_read_pack("GOOD")
+                .validate_against_svd(FULL_REGISTER_READ_SVD)
+                .is_ok()
+        );
+
+        for register in ["FIELD_WRITE_ONLY", "READ_SIDE_EFFECT", "ARRAY%s"] {
+            let error = full_register_read_pack(register)
+                .validate_against_svd(FULL_REGISTER_READ_SVD)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("readable")
+                    || error.contains("read-side-effect")
                     || error.contains("non-array"),
                 "unexpected rejection for {register}: {error}"
             );

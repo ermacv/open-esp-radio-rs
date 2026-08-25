@@ -690,6 +690,7 @@ peripheral = "WIFI_MAC_INTERRUPT"
 register = "ENABLE"
 field = "EVENT_MASK"
 domain = "MacInterruptMask"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_ENABLE_MAC", "BLOB_LIBPP_HAL_INIT_TAIL"]
 
 [[full-register-writes]]
@@ -698,6 +699,7 @@ peripheral = "WIFI_MAC_INTERRUPT"
 register = "CLEAR"
 field = "EVENTS"
 domain = "MacInterruptClearImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
 
 [[zero-register-writes]]
@@ -724,6 +726,7 @@ peripheral = "WIFI_MAC_POWER_INTERRUPT"
 register = "CLEAR"
 field = "EVENTS"
 domain = "MacPowerInterruptClearImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
 
 [[full-register-writes]]
@@ -732,6 +735,7 @@ peripheral = "WIFI_MAC_STA_TSF_LOAD"
 register = "VALUE_LOW"
 field = "VALUE"
 domain = "StationTsfLowWord"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 
 [[full-register-writes]]
@@ -740,6 +744,7 @@ peripheral = "WIFI_MAC_STA_TSF_LOAD"
 register = "VALUE_HIGH"
 field = "VALUE"
 domain = "StationTsfHighWord"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 
 [[full-register-writes]]
@@ -748,6 +753,7 @@ peripheral = "WIFI_MAC_RX_DMA"
 register = "RX_DESCRIPTOR_BASE"
 field = "ADDRESS"
 domain = "MacRxDescriptorBaseAddress"
+exposure = "facade"
 sources = ["ROM_REV0_WDEV_APPEND_RX_BLOCKS", "BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
 
 [[full-register-writes]]
@@ -756,6 +762,7 @@ peripheral = "PHY_MEMORY"
 register = "DATA_0"
 field = "OPAQUE_DATA"
 domain = "PhyMemoryData0"
+exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "ROM_REV0_PHY_WRITE_GAIN_MEM"]
 
 [[full-register-writes]]
@@ -764,6 +771,7 @@ peripheral = "PHY_MEMORY"
 register = "DATA_1"
 field = "OPAQUE_DATA"
 domain = "PhyMemoryData1"
+exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 
 [[full-register-writes]]
@@ -772,6 +780,7 @@ peripheral = "PHY_MEMORY"
 register = "DATA_2"
 field = "OPAQUE_DATA"
 domain = "PhyMemoryData2"
+exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 
 [[full-register-writes]]
@@ -780,6 +789,7 @@ peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
 register = "FREQUENCY_PARAMETER_0_OPAQUE"
 field = "OPAQUE_VALUE"
 domain = "FrequencyParameter0Image"
+exposure = "facade"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 
 [[full-register-writes]]
@@ -788,6 +798,7 @@ peripheral = "PHY_AGC_ORACLE"
 register = "SATURATION_GAIN_LOW"
 field = "OPAQUE_VALUE"
 domain = "AgcSaturationGainLow"
+exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
 [[full-register-writes]]
@@ -796,6 +807,7 @@ peripheral = "PHY_AGC_ORACLE"
 register = "SATURATION_GAIN_HIGH"
 field = "OPAQUE_VALUE"
 domain = "AgcSaturationGainHigh"
+exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
 [[full-register-writes]]
@@ -804,6 +816,7 @@ peripheral = "WIFI_MAC_TX_COMMON"
 register = "COMPLETE_CLEAR"
 field = "STATE"
 domain = "MacTxCompleteClearImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[full-register-writes]]
@@ -812,6 +825,7 @@ peripheral = "WIFI_MAC_TX_COMMON"
 register = "QUEUE_STATE_CLEAR"
 field = "EVENTS"
 domain = "MacTxQueueStateClearMask"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[full-register-writes]]
@@ -820,6 +834,7 @@ peripheral = "IEEE802154_MAC"
 register = "TX_DMA_ADDRESS"
 field = "ADDRESS"
 domain = "Ieee802154TxDmaAddress"
+exposure = "facade"
 sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
 
 [[full-register-writes]]
@@ -828,6 +843,7 @@ peripheral = "IEEE802154_MAC"
 register = "RX_DMA_ADDRESS"
 field = "ADDRESS"
 domain = "Ieee802154RxDmaAddress"
+exposure = "facade"
 sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
 
 [[fixed-register-writes]]
@@ -1050,6 +1066,7 @@ name = "publish_mac_tx_control"
 peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
 register = "CONTROL%s"
 domain = "MacTxControlImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[register-image-writes]]
@@ -1057,6 +1074,7 @@ name = "publish_mac_tx_plcp1"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "PLCP1%s"
 domain = "MacTxPlcp1Image"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
@@ -1064,6 +1082,7 @@ name = "publish_mac_tx_ht_signal"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HT_SIGNAL%s"
 domain = "MacTxHtSignalImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
@@ -1071,6 +1090,7 @@ name = "publish_mac_tx_he_signal_a1"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_SU_SIGNAL_A1%s"
 domain = "MacTxHeSignalA1Image"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_HE_TX"]
 
 [[register-image-writes]]
@@ -1078,6 +1098,7 @@ name = "publish_mac_tx_he_signal_a2_length"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_SU_SIGNAL_A2_LENGTH%s"
 domain = "MacTxHeSignalA2LengthImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_HE_TX"]
 
 [[register-image-writes]]
@@ -1085,6 +1106,7 @@ name = "publish_mac_tx_he_control"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_CONTROL%s"
 domain = "MacTxHeControlImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_HE_TX", "BLOB_LIBNET80211_HE_CONTROL_TX"]
 
 [[register-image-writes]]
@@ -1092,6 +1114,7 @@ name = "publish_mac_tx_power"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "POWER%s"
 domain = "MacTxPowerImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
@@ -1099,6 +1122,7 @@ name = "publish_mac_tx_data_length"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "DATA_LENGTH%s"
 domain = "MacTxDataLengthImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
@@ -1106,6 +1130,7 @@ name = "publish_mac_tx_length_control"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "LENGTH_CONTROL%s"
 domain = "MacTxLengthControlImage"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
@@ -1113,6 +1138,7 @@ name = "publish_power_detector_table_1_image"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "POWER_DETECTOR_TABLE_1"
 domain = "PowerDetectorTable1Image"
+exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
 
 [[register-image-writes]]
@@ -1120,6 +1146,7 @@ name = "publish_power_detector_control_image"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "POWER_DETECTOR_CONTROL"
 domain = "PowerDetectorControlImage"
+exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
 
 [[register-image-writes]]
@@ -1127,6 +1154,7 @@ name = "restore_txiq_tone_control"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TONE_PATH_0_CONTROL"
 domain = "TxiqToneControlImage"
+exposure = "facade"
 sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
 [[zero-based-field-writes]]
 name = "ersu_ack_rate_baseline"
@@ -1419,6 +1447,7 @@ domain = "StationTbttTargetBits35To10"
 preserve-mask = 0xfc000000
 input-mask = 0x03ffffff
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 
 [[masked-register-modifies]]
@@ -1429,6 +1458,7 @@ domain = "Ieee802154EdDurationUnits"
 preserve-mask = 0xff000000
 input-mask = 0x00ffffff
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
 
 [[masked-register-modifies]]
@@ -1439,6 +1469,7 @@ domain = "Ieee802154TxPowerCode"
 preserve-mask = 0xffffff00
 input-mask = 0x000000ff
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
 
 [[masked-register-modifies]]
@@ -1449,6 +1480,7 @@ domain = "Ieee802154SharedTxOnDelayOverride"
 preserve-mask = 0xf800ffff
 input-mask = 0x07ff0000
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT", "ESP_RADIO_7F914782_S31_IEEE802154_INIT"]
 
 [[masked-register-modifies]]
@@ -1459,6 +1491,7 @@ domain = "Ieee802154RxOnDelay"
 preserve-mask = 0xfffff800
 input-mask = 0x000007ff
 set-mask = 0x00000000
+exposure = "facade"
 sources = [
     "ESP_RADIO_7F914782_S31_IEEE802154_INIT",
     "ESP_RADIO_7F914782_S31_IEEE802154_HAL",
@@ -1473,6 +1506,7 @@ domain = "PbusForceTestInput"
 preserve-mask = 0xfffe0001
 input-mask = 0x0001fffc
 set-mask = 0x00000002
+exposure = "facade"
 sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_RX_DCO"]
 
 [[masked-register-modifies]]
@@ -1483,6 +1517,7 @@ domain = "TonePath0MaskedInput"
 preserve-mask = 0xf0000000
 input-mask = 0x0fffffff
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
 
 [[masked-register-modifies]]
@@ -1493,6 +1528,7 @@ domain = "TonePath1MaskedInput"
 preserve-mask = 0xf0000000
 input-mask = 0x0fffffff
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
 
 [[masked-register-modifies]]
@@ -1503,6 +1539,7 @@ domain = "TxiqFirstMismatchInput"
 preserve-mask = 0xf0000000
 input-mask = 0x0fffffff
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
 
 [[masked-register-modifies]]
@@ -1513,6 +1550,7 @@ domain = "TxiqSecondMismatchInput"
 preserve-mask = 0xf0ffffff
 input-mask = 0x0f000000
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
 
 [[masked-register-modifies]]
@@ -1523,6 +1561,7 @@ domain = "MacRxBeaconPtiMaskedInput"
 preserve-mask = 0xffff0fff
 input-mask = 0x0000f000
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
 [[masked-register-modifies]]
@@ -1533,6 +1572,7 @@ domain = "MacSharedRxPtiMaskedInput"
 preserve-mask = 0xfffffff0
 input-mask = 0x0000000f
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
 [[masked-register-modifies]]
@@ -1543,6 +1583,7 @@ domain = "MacItwtControlMaskedInput"
 preserve-mask = 0xffffff00
 input-mask = 0x000000ff
 set-mask = 0x00000000
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
 [[indexed-bit-set-modifies]]
@@ -1551,6 +1592,7 @@ peripheral = "WIFI_MAC_COEX_RUNTIME"
 register = "CLEAR_REQUEST"
 field = "REQUESTS_UNKNOWN"
 domain = "MacRxBeaconClearRequest"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
 [[indexed-bit-set-modifies]]
@@ -1559,4 +1601,5 @@ peripheral = "WIFI_MAC_COEX_RUNTIME"
 register = "CLEAR_REQUEST"
 field = "REQUESTS_UNKNOWN"
 domain = "MacItwtClearIndex"
+exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]

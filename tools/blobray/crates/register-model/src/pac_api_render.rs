@@ -102,6 +102,9 @@ impl PacApiPack {
             .chain(self.enum_domains.iter().map(|domain| domain.name.as_str()))
             .collect::<BTreeSet<_>>();
         for operation in &self.full_register_writes {
+            if !operation.exposure.exposes_facade() {
+                continue;
+            }
             let domain = operation.domain.as_str();
             let value = domain_value_expression(domain, &flag_or_enum_domains);
             output.push_str(&format!(
@@ -114,7 +117,39 @@ impl PacApiPack {
                 value,
             ));
         }
+        for operation in &self.full_register_reads {
+            if !operation.exposure.exposes_facade() {
+                continue;
+            }
+            let domain = operation.domain.as_str();
+            let raw = format!(
+                "crate::svd::full_register_read::{}(registers)",
+                operation.name
+            );
+            let value = if self
+                .opaque_domains
+                .iter()
+                .any(|candidate| candidate.name == operation.domain)
+            {
+                format!("{domain}::new({raw})")
+            } else {
+                format!(
+                    "{domain}::new({raw}).expect(\"full-register read domain represents every u32\")"
+                )
+            };
+            output.push_str(&format!(
+                "/// Typed bridge for the reviewed `{}` complete-register observation.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}) -> {} {{\n    {}\n}}\n\n",
+                operation.name,
+                operation.name,
+                type_binding_name(&operation.peripheral),
+                domain,
+                value,
+            ));
+        }
         for operation in &self.register_image_writes {
+            if !operation.exposure.exposes_facade() {
+                continue;
+            }
             let domain = operation.domain.as_str();
             let value = domain_value_expression(domain, &flag_or_enum_domains);
             let (index_parameter, index_argument) = if operation.register.contains("%s") {
@@ -133,6 +168,9 @@ impl PacApiPack {
             ));
         }
         for operation in &self.masked_register_modifies {
+            if !operation.exposure.exposes_facade() {
+                continue;
+            }
             let domain = operation.domain.as_str();
             let value = domain_value_expression(domain, &flag_or_enum_domains);
             let (index_parameter, index_argument) = if operation.register.contains("%s") {
@@ -151,6 +189,9 @@ impl PacApiPack {
             ));
         }
         for operation in &self.indexed_bit_set_modifies {
+            if !operation.exposure.exposes_facade() {
+                continue;
+            }
             let domain = operation.domain.as_str();
             let index = if flag_or_enum_domains.contains(domain) {
                 "index.bits()"
@@ -187,6 +228,7 @@ impl PacApiPack {
             output.push_str(&self.render_peripheral_ownership(&device)?);
         }
         output.push_str(&self.render_full_register_writes());
+        output.push_str(&self.render_full_register_reads());
         output.push_str(&self.render_fixed_register_writes());
         output.push_str(&self.render_fixed_register_images(&device)?);
         output.push_str(&self.render_w1c_register_snapshots(&device)?);
@@ -402,6 +444,31 @@ impl PacApiPack {
                              writer.{field}().set(value)\n\
                          );\n\
                      }}\n\
+                 }}\n",
+                binding.peripheral, binding.register, binding.name,
+            ));
+        }
+        output.push_str("}\n");
+        output
+    }
+
+    fn render_full_register_reads(&self) -> String {
+        if self.full_register_reads.is_empty() {
+            return String::new();
+        }
+        let mut output = String::from(
+            "\n/// Safe, SVD-declared observations which cover a complete register.\n\
+             pub mod full_register_read {\n",
+        );
+        for binding in &self.full_register_reads {
+            let peripheral_type = type_binding_name(&binding.peripheral);
+            let register = member_binding_name(&binding.register);
+            let field = member_binding_name(&binding.field);
+            output.push_str(&format!(
+                "\n    /// Read every bit of `{}`.`{}` through its full-width field.\n\
+                 #[inline]\n\
+                 pub fn {}(registers: &crate::{peripheral_type}) -> u32 {{\n\
+                     registers.{register}().read().{field}().bits()\n\
                  }}\n",
                 binding.peripheral, binding.register, binding.name,
             ));
@@ -1126,6 +1193,7 @@ peripheral = "RADIO"
 register = "ENABLE"
 field = "EVENTS"
 domain = "InterruptMask"
+exposure = "facade"
 sources = ["VENDOR_IRQ"]
 
 [[register-image-writes]]
@@ -1133,6 +1201,7 @@ name = "write_calibration"
 peripheral = "RADIO"
 register = "CALIBRATION"
 domain = "CalibrationWord"
+exposure = "facade"
 sources = ["VENDOR_CALIBRATION"]
 
 [[indexed-bit-set-modifies]]
@@ -1141,6 +1210,7 @@ peripheral = "RADIO"
 register = "REQUESTS"
 field = "REQUEST"
 domain = "RadioMode"
+exposure = "facade"
 sources = ["VENDOR_MODE"]
 "#,
         )
@@ -1163,5 +1233,134 @@ sources = ["VENDOR_MODE"]
         );
         assert!(!source.contains("from_bits"));
         assert!(!source.contains("impl InterruptMask {\n    pub fn new"));
+    }
+
+    #[test]
+    fn raw_only_operations_skip_facade_bridges_but_keep_generated_leaves() {
+        let pack: PacApiPack = toml_edit::de::from_str(
+            r#"schema = 4
+
+[[opaque-domains]]
+name = "CommandWord"
+description = "Complete command word."
+peripheral = "RADIO"
+register = "COMMAND"
+sources = ["PUBLIC_LL"]
+
+[[opaque-domains]]
+name = "StatusWord"
+description = "Complete status word."
+peripheral = "RADIO"
+register = "STATUS"
+sources = ["PUBLIC_LL"]
+
+[[opaque-domains]]
+name = "ControlWord"
+description = "Complete control image."
+peripheral = "RADIO"
+register = "CONTROL"
+sources = ["PUBLIC_LL"]
+
+[[opaque-domains]]
+name = "MaskedBits"
+description = "Reviewed caller-controlled masked bits."
+peripheral = "RADIO"
+register = "MASKED"
+sources = ["PUBLIC_LL"]
+
+[[full-register-writes]]
+name = "publish_command"
+peripheral = "RADIO"
+register = "COMMAND"
+field = "WORD"
+domain = "CommandWord"
+exposure = "raw-only"
+sources = ["PUBLIC_LL"]
+
+[[full-register-reads]]
+name = "observe_status"
+peripheral = "RADIO"
+register = "STATUS"
+field = "WORD"
+domain = "StatusWord"
+exposure = "raw-only"
+sources = ["PUBLIC_LL"]
+
+[[register-image-writes]]
+name = "publish_control"
+peripheral = "RADIO"
+register = "CONTROL"
+domain = "ControlWord"
+exposure = "raw-only"
+sources = ["PUBLIC_LL"]
+
+[[masked-register-modifies]]
+name = "publish_masked_bits"
+peripheral = "RADIO"
+register = "MASKED"
+domain = "MaskedBits"
+preserve-mask = 0xffff0000
+input-mask = 0x0000ffff
+set-mask = 0
+exposure = "raw-only"
+sources = ["PUBLIC_LL"]
+"#,
+        )
+        .unwrap();
+        let svd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name>
+  <version>1</version>
+  <description>full-word fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>RADIO</name>
+      <description>radio</description>
+      <baseAddress>0x40000000</baseAddress>
+      <registers>
+        <register>
+          <name>COMMAND</name><description>command</description><addressOffset>0</addressOffset>
+          <size>32</size><access>write-only</access>
+          <fields><field><name>WORD</name><description>word</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>4294967295</maximum></range></writeConstraint></field></fields>
+        </register>
+        <register>
+          <name>STATUS</name><description>status</description><addressOffset>4</addressOffset>
+          <size>32</size><access>read-only</access>
+          <fields><field><name>WORD</name><description>word</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>CONTROL</name><description>control</description><addressOffset>8</addressOffset>
+          <size>32</size><access>read-write</access>
+          <fields><field><name>WORD</name><description>word</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>MASKED</name><description>masked control</description><addressOffset>12</addressOffset>
+          <size>32</size><access>read-write</access>
+          <fields><field><name>WORD</name><description>word</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>
+"#;
+
+        let facade = pack.render_facade_rust().unwrap();
+        assert!(facade.contains("pub struct CommandWord(u32);"));
+        assert!(facade.contains("pub struct StatusWord(u32);"));
+        assert!(!facade.contains("fn publish_command"));
+        assert!(!facade.contains("fn observe_status"));
+        assert!(!facade.contains("fn publish_control"));
+        assert!(!facade.contains("fn publish_masked_bits"));
+
+        let raw = pack.render_rust(svd).unwrap();
+        assert!(raw.contains("pub mod full_register_write"));
+        assert!(raw.contains("pub fn publish_command"));
+        assert!(raw.contains("pub mod full_register_read"));
+        assert!(raw.contains("pub fn observe_status"));
+        assert!(raw.contains("registers.status().read().word().bits()"));
+        assert!(raw.contains("pub fn publish_control"));
+        assert!(raw.contains("pub fn publish_masked_bits"));
     }
 }

@@ -148,6 +148,22 @@ The ESP32-S31 project configures these outputs under `[registers.svd]`,
 `[registers.pac-raw]`, `[registers.bindings]` and `[registers.api]` in its
 project manifest.
 
+### Complete-word observations and raw-only leaves
+
+Schema-4 API packs may declare a reviewed 32-bit observation with
+`[[full-register-reads]]`. Publication accepts only one non-array readable
+32-bit register with one full-width readable field, rejects read-side effects,
+and requires the declared domain to represent every `u32`. The generated raw
+leaf returns the complete word without an address, mask or handwritten
+accessor.
+
+Every operation kind that can emit a direct restricted-PAC bridge declares an
+explicit `exposure`. `exposure = "raw-only"` is used when a hand-written affine
+owner must mediate the generated leaf; `exposure = "facade"` requests the
+direct bridge. Raw-only value domains are still generated for the restricted
+PAC, but no redundant full-block facade function is emitted. There is no
+implicit/default exposure and no compatibility escape hatch.
+
 ### Affine snapshots for same-register W1C fields
 
 The closed-PAC API pack uses schema 4. Schema 3 is rejected; there is no

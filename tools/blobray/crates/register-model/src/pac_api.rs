@@ -31,6 +31,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub full_register_writes: Vec<FullRegisterWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub full_register_reads: Vec<FullRegisterRead>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fixed_register_writes: Vec<FixedRegisterWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fixed_register_images: Vec<FixedRegisterImage>,
@@ -150,6 +152,24 @@ pub struct OpaqueDomain {
     pub sources: Vec<String>,
 }
 
+/// Select whether an operation receives a direct closed-PAC facade bridge.
+///
+/// `RawOnly` keeps the generated leaf available to a hand-written affine
+/// ownership sidecar without also exposing a redundant full-block wrapper in
+/// the restricted parent PAC.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PacApiExposure {
+    Facade,
+    RawOnly,
+}
+
+impl PacApiExposure {
+    pub const fn exposes_facade(self) -> bool {
+        matches!(self, Self::Facade)
+    }
+}
+
 macro_rules! common_operation {
     ($name:ident { $($field:ident: $type:ty),* $(,)? }) => {
         #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -181,6 +201,23 @@ pub struct FullRegisterWrite {
     /// complete-register write crossing from the closed PAC into the raw PAC
     /// must carry a register-specific or otherwise reviewed value type.
     pub domain: String,
+    pub exposure: PacApiExposure,
+    pub sources: Vec<String>,
+}
+/// One complete-register observation returned through a reviewed data domain.
+///
+/// The raw generated leaf returns `u32`; the optional facade bridge wraps that
+/// image in the declared domain. `RawOnly` is intended for affine ownership
+/// sidecars which must not recover the complete SVD block.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FullRegisterRead {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    pub field: String,
+    pub domain: String,
+    pub exposure: PacApiExposure,
     pub sources: Vec<String>,
 }
 common_operation!(FixedRegisterWrite {
@@ -215,6 +252,7 @@ pub struct RegisterImageWrite {
     pub register: String,
     /// Reviewed domain for the complete image crossing into the raw PAC.
     pub domain: String,
+    pub exposure: PacApiExposure,
     pub sources: Vec<String>,
 }
 common_operation!(ZeroBasedFieldWrite {
@@ -233,6 +271,7 @@ pub struct MaskedRegisterModify {
     pub preserve_mask: u32,
     pub input_mask: u32,
     pub set_mask: u32,
+    pub exposure: PacApiExposure,
     pub sources: Vec<String>,
 }
 
@@ -246,6 +285,7 @@ pub struct IndexedBitSetModify {
     pub register: String,
     pub field: String,
     pub domain: String,
+    pub exposure: PacApiExposure,
     pub sources: Vec<String>,
 }
 
@@ -306,6 +346,7 @@ impl PacApiPack {
         }
         validate_operations("interrupt-snapshot", &self.interrupt_snapshots)?;
         validate_operations("full-register-write", &self.full_register_writes)?;
+        validate_operations("full-register-read", &self.full_register_reads)?;
         validate_operations("fixed-register-write", &self.fixed_register_writes)?;
         validate_operations("fixed-register-image", &self.fixed_register_images)?;
         validate_operations("w1c-register-snapshot", &self.w1c_register_snapshots)?;
@@ -336,6 +377,29 @@ impl PacApiPack {
                 &operation.domain,
                 &domain_names,
             )?;
+        }
+        for operation in &self.full_register_reads {
+            validate_component("field", &operation.name, &operation.field)?;
+            self.validate_operation_domain(
+                "full-register-read",
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+                &operation.domain,
+                &domain_names,
+            )?;
+            let covers_every_word = self.bounded_domains.iter().any(|domain| {
+                domain.name == operation.domain && domain.min == 0 && domain.max == u32::MAX
+            }) || self
+                .opaque_domains
+                .iter()
+                .any(|domain| domain.name == operation.domain);
+            if !covers_every_word {
+                return Err(Error::message(format!(
+                    "PAC API full-register-read {:?} domain must represent every u32",
+                    operation.name
+                )));
+            }
         }
         for operation in &self.register_image_writes {
             self.validate_operation_domain(
@@ -531,6 +595,7 @@ impl PacApiPack {
     pub fn operation_count(&self) -> usize {
         self.interrupt_snapshots.len()
             + self.full_register_writes.len()
+            + self.full_register_reads.len()
             + self.fixed_register_writes.len()
             + self.fixed_register_images.len()
             + self.w1c_register_snapshots.len()
@@ -582,6 +647,7 @@ impl PacApiPack {
                     .iter()
                     .map(Operation::sources)
                     .chain(self.full_register_writes.iter().map(Operation::sources))
+                    .chain(self.full_register_reads.iter().map(Operation::sources))
                     .chain(self.fixed_register_writes.iter().map(Operation::sources))
                     .chain(self.fixed_register_images.iter().map(Operation::sources))
                     .chain(self.w1c_register_snapshots.iter().map(Operation::sources))
@@ -817,6 +883,7 @@ impl Operation for InterruptSnapshot {
 }
 
 impl_register_operation!(FullRegisterWrite);
+impl_register_operation!(FullRegisterRead);
 impl_register_operation!(FixedRegisterWrite);
 impl_register_operation!(FixedRegisterImage);
 impl_register_operation!(W1cRegisterSnapshot);
@@ -983,6 +1050,7 @@ mod tests {
             opaque_domains: Vec::new(),
             interrupt_snapshots: Vec::new(),
             full_register_writes: Vec::new(),
+            full_register_reads: Vec::new(),
             fixed_register_writes: Vec::new(),
             fixed_register_images: Vec::new(),
             w1c_register_snapshots: Vec::new(),
@@ -1061,6 +1129,7 @@ mod tests {
             preserve_mask: 0xffff_0000,
             input_mask: 0x0000_fff0,
             set_mask: 0x0000_000f,
+            exposure: PacApiExposure::Facade,
             sources: vec!["REVIEW".to_owned()],
         });
         assert_eq!(pack.operation_count(), 1);
@@ -1083,6 +1152,7 @@ mod tests {
             register: "REQUESTS".to_owned(),
             field: "REQUESTS_UNKNOWN".to_owned(),
             domain: "RequestIndex".to_owned(),
+            exposure: PacApiExposure::Facade,
             sources: vec!["REVIEW".to_owned()],
         });
 
@@ -1110,6 +1180,7 @@ mod tests {
             register: "REQUESTS".to_owned(),
             field: "REQUESTS_UNKNOWN".to_owned(),
             domain: "RequestIndex".to_owned(),
+            exposure: PacApiExposure::Facade,
             sources: vec!["REVIEW".to_owned()],
         });
 
@@ -1144,6 +1215,7 @@ mod tests {
             preserve_mask: 0xffff_0000,
             input_mask: 0x0000_fff0,
             set_mask: 0,
+            exposure: PacApiExposure::Facade,
             sources: vec!["REVIEW".to_owned()],
         });
         assert!(pack.validate().is_err());
@@ -1215,6 +1287,7 @@ peripheral-ownership = true
             register: "ENABLE".to_owned(),
             field: "EVENTS".to_owned(),
             domain: "InterruptMask".to_owned(),
+            exposure: PacApiExposure::Facade,
             sources: vec!["VENDOR_IRQ".to_owned()],
         });
         assert!(

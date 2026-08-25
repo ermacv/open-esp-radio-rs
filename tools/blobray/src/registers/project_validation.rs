@@ -110,7 +110,19 @@ pub(crate) fn validate_register_evidence(
         model
             .review()
             .iter()
-            .flat_map(|annotation| annotation.sources.iter().map(String::as_str)),
+            .flat_map(|annotation| annotation.sources.iter().map(String::as_str))
+            .chain(
+                model
+                    .reviewed_register_identities()
+                    .iter()
+                    .flat_map(|identity| {
+                        identity
+                            .assertion
+                            .evidence
+                            .iter()
+                            .map(|reference| reference.source.as_str())
+                    }),
+            ),
     )?;
     if let Some(path) = &paths.api_pack {
         let api = PacApiPack::load(path)?;
@@ -132,4 +144,159 @@ pub(crate) fn validate_register_evidence(
         )));
     }
     Ok(Some(evidence))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn retained_identity_evidence_is_validated_for_existing_and_absent_registers() {
+        for (case, address, register) in [
+            (
+                "existing",
+                0x1000_u64,
+                r#"
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "STATUS"
+addressOffset = 0
+size = 32
+access = "read-write"
+"#,
+            ),
+            ("absent", 0x1004_u64, ""),
+        ] {
+            assert_identity_evidence_is_required(case, address, register);
+        }
+    }
+
+    fn assert_identity_evidence_is_required(case: &str, address: u64, register: &str) {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-register-identity-evidence-{case}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let model = directory.join("device.toml");
+        let fragment = directory.join("radio.toml");
+        let reviewed = directory.join("reviewed.toml");
+        let catalog = directory.join("evidence.toml");
+        let memory_map = directory.join("memory-map.toml");
+        std::fs::write(
+            &model,
+            r#"schema = 2
+address-space = "cpu"
+fragments = ["radio.toml"]
+
+[device]
+name = "fixture"
+version = "1"
+description = "fixture"
+address-unit-bits = 8
+width = 32
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &fragment,
+            format!(
+                r#"schema = 2
+
+[[peripherals]]
+name = "RADIO"
+baseAddress = 0x1000
+{register}"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            &reviewed,
+            format!(
+                r#"schema = 1
+id = "fixture.identity"
+
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+
+[[assertions]]
+id = "fixture.identity.{case}"
+subject = "mmio:cpu:{address:#x}/32"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
+[[assertions.evidence]]
+source = "IDENTITY_SOURCE"
+locator = "manual"
+"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(&catalog, "schema = 1\n").unwrap();
+        std::fs::write(
+            &memory_map,
+            r#"schema = 1
+default-address-space = "cpu"
+
+[[address-spaces]]
+id = "cpu"
+address-width = 32
+endianness = "little"
+
+[[regions]]
+name = "radio"
+address-space = "cpu"
+kind = "mmio"
+start = 0x1000
+end-exclusive = 0x2000
+permissions = "rw"
+"#,
+        )
+        .unwrap();
+        let paths = register_paths(&model, &reviewed, &catalog);
+        let memory = MemoryMap::load(&memory_map).unwrap();
+
+        let error = validate_register_evidence(&paths, Some(&memory)).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("undefined evidence source \"IDENTITY_SOURCE\""),
+            "{case}: {error}"
+        );
+
+        std::fs::write(
+            &catalog,
+            r#"schema = 1
+
+[[sources]]
+id = "IDENTITY_SOURCE"
+description = "manually reviewed register identity"
+"#,
+        )
+        .unwrap();
+        validate_register_evidence(&paths, Some(&memory)).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn register_paths(model: &Path, reviewed: &Path, catalog: &Path) -> RegisterWorkspacePaths {
+        RegisterWorkspacePaths {
+            facts: model.with_file_name("unused-mmio.json"),
+            model: model.to_owned(),
+            owned_ranges: vec!["radio".to_owned()],
+            non_operational_functions: Vec::new(),
+            review_output: None,
+            review_ir_reports: Vec::new(),
+            svd_output: None,
+            pac_raw: None,
+            bindings: None,
+            api_pack: None,
+            api_output: None,
+            lint_pack: None,
+            evidence_catalogs: vec![catalog.to_owned()],
+            reviewed_knowledge: vec![reviewed.to_owned()],
+            review_context: open_radio_vendor_review::ApplicabilityContext::default(),
+        }
+    }
 }

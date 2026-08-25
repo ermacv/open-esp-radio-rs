@@ -49,7 +49,10 @@ For an exact register lookup, interpret the states in this order:
   protocol/scope filter excludes all of them;
 - `condition-satisfied`: exact retained reviewed evidence makes the current
   producer predicate false. This describes current state, not a historical
-  transition and not completion;
+  transition and not completion. For a register-model finding this requires
+  one retained configured `register-identity = "REGION.NAME"` assertion for
+  the exact physical subject; a reusable base-model identity alone is not
+  enough;
 - `not-present`: no typed attribution supports a stronger conclusion. A
   base-model identity or an unknown arbitrary ID is not resolution proof.
 

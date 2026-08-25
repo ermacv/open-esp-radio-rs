@@ -8,8 +8,9 @@
 - deterministic clean SVD materialization and expanded register identities;
 - deterministic sparse reviewed-assertion overlays keyed by address and bit
   range;
-- explicit sparse `register-declaration` materialization into an existing
-  non-array peripheral, with retained evidence and applicability;
+- one explicit sparse `register-identity = "REGION.NAME"` fact for renaming,
+  no-op confirmation or materialization in a concrete singular peripheral,
+  with retained evidence and applicability;
 - generic physical-layout and write-semantics invariants;
 - reviewed PAC transaction, binding-index and evidence-catalog schemas.
 
@@ -20,11 +21,13 @@ logging and delay semantics remain outside this crate.
 
 The format and editing workflow are documented in
 [`../../docs/registers-and-pac.md`](../../docs/registers-and-pac.md).
-An absent physical register is created only by a reviewed
-`register-declaration = "PERIPHERAL"` plus a `register-name` assertion for the
-same MMIO subject and effective applicability. The subject must match this
-model's address space, have a supported aligned width, fit the named concrete
-region (and its register address blocks when present), and not alias or overlap
-existing geometry. Declaration application is atomic. Generated observations
-are never consulted for access or modified-write semantics; those require
-their own explicit reviewed assertions.
+An absent physical register is created only by one reviewed
+`register-identity = "REGION.NAME"` assertion. The removed
+`register-declaration` and `register-name` kinds are explicit errors. The
+subject must match this model's address space, have a supported aligned width,
+fit the named concrete region (and its register address blocks when present),
+and not alias or overlap existing geometry. Identity application is atomic and
+rejects arrays, clusters, derived regions, placeholders and noncanonical SVD
+identifiers. Generated observations are never consulted for access or
+modified-write semantics; those require their own explicit reviewed
+assertions.

@@ -17,10 +17,11 @@ Generated observations are not accepted facts and do not belong in these
 packs. A project should add a record only after a reviewer accepts a name,
 hardware semantic, ABI meaning or vendor defect.
 
-Register-model consumers reserve `register-declaration` as the explicit
-authorization to add geometry that is absent from the reusable base model.
-Its MMIO subject owns address space, address and width; its string value names
-an existing peripheral/region. A separate `register-name` assertion supplies
-the required SVD identity. Both records carry evidence and must have identical
-effective applicability. Merely observing software reads or writes never
-constitutes a declaration and never proves hardware access or W1C semantics.
+Register-model consumers accept one `register-identity` assertion whose MMIO
+subject owns address space, address and width and whose scalar string value is
+`REGION.NAME`. That one reviewed fact identifies existing geometry or
+authorizes materializing absent geometry. The domain-agnostic review-model
+keeps the vocabulary opaque; the register consumer validates the scalar and
+rejects the retired `register-declaration` and `register-name` kinds. Merely
+observing software reads or writes never constitutes an identity fact and
+never proves hardware access or W1C semantics.

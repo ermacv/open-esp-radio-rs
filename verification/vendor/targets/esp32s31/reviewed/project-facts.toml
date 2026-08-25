@@ -17,10 +17,10 @@ chip-revisions = ["rev0"]
 artifact-lineages = ["esp32s31-radio"]
 
 [[assertions]]
-id = "ieee802154.event-status.name"
+id = "ieee802154.event-status.identity"
 subject = "mmio:cpu:0x20103064/32"
-kind = "register-name"
-value = "EVENT_STATUS"
+kind = "register-identity"
+value = "IEEE802154_MAC.EVENT_STATUS"
 
 [[assertions.evidence]]
 source = "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"

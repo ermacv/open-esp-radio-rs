@@ -535,9 +535,9 @@ mod tests {
     }
 
     #[test]
-    fn generated_observations_and_sparse_declaration_merge_without_inferred_hardware_semantics() {
+    fn generated_observations_and_sparse_identity_merge_without_inferred_hardware_semantics() {
         let directory = std::env::temp_dir().join(format!(
-            "blobray-register-declaration-integration-{}",
+            "blobray-register-identity-integration-{}",
             std::process::id()
         ));
         std::fs::create_dir_all(&directory).unwrap();
@@ -622,22 +622,13 @@ completeness = "partial"
 chips = ["fixture-chip"]
 
 [[assertions]]
-id = "fixture.status.declaration"
+id = "fixture.status.identity"
 subject = "mmio:cpu:0x1010/32"
-kind = "register-declaration"
-value = "RADIO"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
 source = "FIXTURE"
-locator = "region-and-address"
-
-[[assertions]]
-id = "fixture.status.name"
-subject = "mmio:cpu:0x1010/32"
-kind = "register-name"
-value = "EVENT_STATUS"
-[[assertions.evidence]]
-source = "FIXTURE"
-locator = "name"
+locator = "region-and-name"
 "#,
         )
         .unwrap();
@@ -685,7 +676,7 @@ locator = "name"
         );
         let summary = workspace.summary().unwrap();
         let (svd, export) = workspace.render_svd().unwrap();
-        let declaration = &workspace.model().reviewed_register_declarations()[0];
+        let identity = &workspace.model().reviewed_register_identities()[0];
         std::fs::remove_dir_all(directory).unwrap();
 
         assert_eq!(summary.observed, 1);
@@ -696,7 +687,7 @@ locator = "name"
         assert!(svd.contains("<name>EVENT_STATUS</name>"));
         assert!(!svd.contains("<access>"));
         assert!(!svd.contains("modifiedWriteValues"));
-        assert_eq!(declaration.declaration.id, "fixture.status.declaration");
-        assert_eq!(declaration.declaration.applies_to.chips, ["fixture-chip"]);
+        assert_eq!(identity.assertion.id, "fixture.status.identity");
+        assert_eq!(identity.assertion.applies_to.chips, ["fixture-chip"]);
     }
 }

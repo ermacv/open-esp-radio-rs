@@ -1016,7 +1016,7 @@ fn validate_finding_resolution(report: &ResearchNextReport) -> Result<()> {
             ResearchFindingQueryState::ConditionSatisfied,
             Some(ResearchFindingResolutionEvidence::AbsentRegisterModel {
                 current_observation: Some(observation),
-                current_identity: Some(_),
+                current_identity: Some(current_identity),
                 matching_scopes,
                 applied_assertions,
                 ..
@@ -1025,15 +1025,7 @@ fn validate_finding_resolution(report: &ResearchNextReport) -> Result<()> {
             observation.publication_ownership == ResearchRegisterPublicationOwnership::Owned
                 && !matching_scopes.is_empty()
                 && intersects_selected(matching_scopes)
-                && applied_assertions.len() == 2
-                && applied_assertions
-                    .iter()
-                    .map(|assertion| assertion.kind.as_str())
-                    .collect::<BTreeSet<_>>()
-                    == ["register-declaration", "register-name"].into()
-                && applied_assertions
-                    .iter()
-                    .all(|assertion| !assertion.evidence.is_empty())
+                && register_identity_assertion_matches(current_identity, applied_assertions)
         }
         (
             ResearchFindingQueryState::ConditionSatisfied,
@@ -1149,10 +1141,6 @@ fn resolution_evidence_matches_finding(
         } => {
             register_finding_id(subject.address, subject.width) == finding_id
                 && assertions_match_register_subject(applied_assertions, subject)
-                && (applied_assertions.len() < 2
-                    || applied_assertions
-                        .windows(2)
-                        .all(|pair| pair[0].applies_to == pair[1].applies_to))
         }
         ResearchFindingResolutionEvidence::UnknownHardwareWriteSemantics {
             assertion_id,
@@ -1195,6 +1183,22 @@ fn semantic_assertion_matches(
                 && !assertion.evidence.is_empty()
                 && normalize_write_semantics(&assertion.value).as_deref()
                     == Some(effective_write_semantics)
+        })
+}
+
+fn register_identity_assertion_matches(
+    current_identity: &str,
+    applied_assertions: &[open_radio_vendor_review::EffectiveAssertion],
+) -> bool {
+    applied_assertions.len() == 1
+        && applied_assertions.first().is_some_and(|assertion| {
+            assertion.kind == "register-identity"
+                && !assertion.evidence.is_empty()
+                && matches!(
+                    &assertion.value,
+                    open_radio_vendor_review::AssertionValue::String(value)
+                        if value == current_identity
+                )
         })
 }
 
@@ -1811,7 +1815,7 @@ fn add_registers(
                     assertion: None,
                 },
                 consumers: register_publication_consumers(ownership, || {
-                    reviewed_knowledge_consumer(session, &["register-declaration", "register-name"])
+                    reviewed_knowledge_consumer(session, &["register-identity"])
                 }),
             },
         )?;
@@ -2435,24 +2439,22 @@ fn resolve_register_model_finding(
     }
     let retained = workspace
         .model()
-        .reviewed_register_declarations()
+        .reviewed_register_identities()
         .iter()
-        .find(|declaration| {
-            declaration.address_space == workspace.model().address_space()
-                && declaration.address == u64::from(address)
-                && declaration.width == u32::from(width)
-                && current_identity.as_deref() == Some(declaration.identity.as_str())
+        .find(|identity| {
+            identity.address_space == workspace.model().address_space()
+                && identity.address == u64::from(address)
+                && identity.width == u32::from(width)
+                && current_identity.as_deref() == Some(identity.identity.as_str())
         })
-        .and_then(|declaration| {
-            let configured_declaration = knowledge.assertions().get(&declaration.declaration.id)?;
-            let configured_name = knowledge.assertions().get(&declaration.name.id)?;
-            (configured_declaration == &declaration.declaration
-                && configured_name == &declaration.name
-                && configured_declaration.subject == configured_name.subject
-                && configured_declaration.applies_to == configured_name.applies_to
-                && !configured_declaration.evidence.is_empty()
-                && !configured_name.evidence.is_empty())
-            .then(|| vec![configured_declaration.clone(), configured_name.clone()])
+        .and_then(|identity| {
+            let configured = knowledge.assertions().get(&identity.assertion.id)?;
+            (configured == &identity.assertion
+                && register_identity_assertion_matches(
+                    &identity.identity,
+                    std::slice::from_ref(configured),
+                ))
+            .then(|| vec![configured.clone()])
         });
     let state =
         modeled_register_resolution_state(observation.publication_ownership, retained.is_some());
@@ -2469,7 +2471,7 @@ fn resolve_register_model_finding(
                 applied_assertions,
                 model_sources,
             },
-            "the current producer predicate is false: the observed relevant project-owned register has an exact retained reviewed declaration/name pair",
+            "the current producer predicate is false: the observed relevant project-owned register has one exact retained reviewed identity assertion",
         ));
     }
     Ok(register_resolution(
@@ -2483,7 +2485,7 @@ fn resolve_register_model_finding(
             applied_assertions: Vec::new(),
             model_sources,
         },
-        "the finding is not current, but no exact retained reviewed declaration/name pair attributes that absence; a base-model identity alone is not satisfaction proof",
+        "the finding is not current, but no exact retained reviewed identity assertion attributes that absence; a base-model identity alone is not satisfaction proof",
     ))
 }
 
@@ -3415,7 +3417,7 @@ fn evidence_required(kind: &str) -> Vec<String> {
         "register-model" => &[
             "generated MMIO read/write observations",
             "reviewed address-space, register width and owning region",
-            "authoritative or cross-checked register-name evidence",
+            "authoritative or cross-checked register identity evidence",
         ],
         "register-write-semantics" => &[
             "reviewed HIL trace or authoritative hardware documentation",
@@ -4288,6 +4290,84 @@ mod tests {
     }
 
     #[test]
+    fn satisfied_register_resolution_requires_one_exact_identity_assertion() {
+        let pack = open_radio_vendor_review::ReviewPack::from_toml(
+            r#"
+schema = 1
+id = "fixture"
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+[[assertions]]
+id = "radio.status.identity"
+subject = "mmio:cpu:0x10000000/32"
+kind = "register-identity"
+value = "RADIO.STATUS"
+[[assertions.evidence]]
+source = "MANUAL"
+locator = "RADIO.STATUS"
+"#,
+        )
+        .unwrap();
+        let knowledge = open_radio_vendor_review::ReviewKnowledge::merge([pack]).unwrap();
+        let assertion = knowledge.assertions()["radio.status.identity"].clone();
+        let observation = ResearchRegisterObservationEvidence {
+            analysis_artifacts: Vec::new(),
+            range: "radio".to_owned(),
+            publication_ownership: ResearchRegisterPublicationOwnership::Owned,
+            read_functions: vec!["vendor::read".to_owned()],
+            write_functions: Vec::new(),
+            read_sites: vec![ResearchRegisterObservationSite {
+                function: "vendor::read".to_owned(),
+                pc: 0x1000,
+            }],
+            write_sites: Vec::new(),
+        };
+        let mut report = report_from_actions(
+            vec![ranked_candidate("selected", 100, 21, 4)],
+            ResearchRankingStrategy::Impact,
+            1,
+            None,
+        );
+        report.finding_query = ResearchFindingQuery {
+            state: ResearchFindingQueryState::ConditionSatisfied,
+            finding_id: Some("register-0x10000000-32".to_owned()),
+            completion_claim: false,
+            historical_finding_claim: false,
+            interpretation: "fixture satisfied query".to_owned(),
+            resolution_evidence: Some(ResearchFindingResolutionEvidence::AbsentRegisterModel {
+                subject: ResearchRegisterResolutionSubject {
+                    address_space: "cpu".to_owned(),
+                    address: 0x1000_0000,
+                    width: 32,
+                },
+                current_observation: Some(observation),
+                current_identity: Some("RADIO.STATUS".to_owned()),
+                matching_scopes: vec!["radio".to_owned()],
+                applied_assertions: vec![assertion],
+                model_sources: Vec::new(),
+            }),
+        };
+        validate_finding_resolution(&report).unwrap();
+
+        let Some(ResearchFindingResolutionEvidence::AbsentRegisterModel {
+            applied_assertions, ..
+        }) = report.finding_query.resolution_evidence.as_mut()
+        else {
+            panic!("fixture must contain register identity evidence");
+        };
+        applied_assertions[0].value =
+            open_radio_vendor_review::AssertionValue::String("RADIO.OTHER".to_owned());
+        assert!(
+            validate_finding_resolution(&report)
+                .unwrap_err()
+                .to_string()
+                .contains("does not satisfy state ConditionSatisfied")
+        );
+    }
+
+    #[test]
     fn semantic_resolution_requires_owned_identity_for_a_positive_current_claim() {
         assert_eq!(
             semantic_resolution_state(
@@ -4394,7 +4474,7 @@ mod tests {
             resolution: ResearchConsumerResolution::NeedsDestination,
             configured_paths: vec![PathBuf::from("facts.toml")],
             selected_path: None,
-            assertion_kinds: vec!["register-name".to_owned()],
+            assertion_kinds: vec!["register-identity".to_owned()],
             diagnostic: Some("select default-pack".to_owned()),
         }];
         let action = finalize(
@@ -4565,7 +4645,7 @@ mod tests {
     }
 
     #[test]
-    fn external_registers_cannot_route_declarations_or_write_semantics() {
+    fn external_registers_cannot_route_identities_or_write_semantics() {
         let facts = crate::registers::RegisterFacts {
             artifacts: Vec::new(),
             ranges: vec![
@@ -4596,7 +4676,7 @@ mod tests {
             resolution: ResearchConsumerResolution::Ready,
             configured_paths: vec![PathBuf::from("reviewed/project-facts.toml")],
             selected_path: Some(PathBuf::from("reviewed/project-facts.toml")),
-            assertion_kinds: vec!["register-declaration".to_owned()],
+            assertion_kinds: vec!["register-identity".to_owned()],
             diagnostic: None,
         };
 
@@ -4692,7 +4772,7 @@ mod tests {
             resolution: ResearchConsumerResolution::NeedsDestination,
             configured_paths: vec![PathBuf::from("a.toml"), PathBuf::from("b.toml")],
             selected_path: None,
-            assertion_kinds: vec!["register-declaration".to_owned()],
+            assertion_kinds: vec!["register-identity".to_owned()],
             diagnostic: Some("select one pack".to_owned()),
         }];
         let action = finalize(

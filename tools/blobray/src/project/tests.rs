@@ -168,9 +168,9 @@ chip-revisions = ["{revision}"]
 artifact-lineages = ["fixture-radio"]
 artifacts = [{{ source = "fixture-blob", sha256 = "{ARTIFACT_SHA256}" }}]
 [[assertions]]
-id = "{id}.name"
+id = "{id}.identity"
 subject = "mmio:cpu:0x1000/32"
-kind = "register-name"
+kind = "register-identity"
 value = "{name}"
 [[assertions.evidence]]
 source = "FIXTURE"
@@ -180,8 +180,8 @@ locator = "manual"
         )
         .unwrap();
     };
-    make_pack("rev0", "rev0", "CONTROL_REV0");
-    make_pack("rev1", "rev1", "CONTROL_REV1");
+    make_pack("rev0", "rev0", "RADIO.CONTROL_REV0");
+    make_pack("rev1", "rev1", "RADIO.CONTROL_REV1");
     std::fs::write(
         directory.join(DEFAULT_PROJECT_MANIFEST),
         format!(
@@ -368,10 +368,10 @@ provenance = "reviewed"
 accuracy = "exact"
 completeness = "partial"
 [[assertions]]
-id = "radio.control.name"
+id = "radio.control.identity"
 subject = "mmio:cpu:0x1000/32"
-kind = "register-name"
-value = "CONTROL"
+kind = "register-identity"
+value = "RADIO.CONTROL"
 [[assertions.evidence]]
 source = "FIXTURE"
 locator = "review"

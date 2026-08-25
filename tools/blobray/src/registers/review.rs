@@ -559,9 +559,11 @@ mod tests {
         assert_eq!(summary.field_candidates, 2);
         assert!(report.contains("`rom:read_status`"));
         assert!(report.contains("subject = \"mmio:cpu:0x00001010/32\""));
-        assert!(report.contains("kind = \"register-declaration\""));
-        assert!(report.contains("kind = \"register-name\""));
-        assert!(report.contains("value = \"REVIEW_REQUIRED_REGISTER_NAME\""));
+        assert!(report.contains("kind = \"register-identity\""));
+        assert!(
+            report.contains("value = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\"")
+        );
+        assert_eq!(report.matches("[[assertions]]").count(), 1);
         assert!(!report.contains("[[peripherals.registers]]"));
         assert!(!report.contains("kind = \"register-access\""));
         assert!(!report.contains("hardware-write-semantics"));

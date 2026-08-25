@@ -34,21 +34,12 @@ pub(crate) fn render_sparse_review_draft(fact: &RegisterFact, address_space: &st
     .expect("writing to String cannot fail");
     writeln!(
         output,
-        "[[assertions]]\nid = \"REVIEW_REQUIRED.register-declaration\"\nsubject = \"mmio:{address_space}:{:#010x}/{}\"\nkind = \"register-declaration\"\nvalue = \"REVIEW_REQUIRED_EXISTING_REGION\"\nnote = \"Declares geometry only; observed accesses do not prove hardware semantics.\"\n",
+        "[[assertions]]\nid = \"REVIEW_REQUIRED.register-identity\"\nsubject = \"mmio:{address_space}:{:#010x}/{}\"\nkind = \"register-identity\"\nvalue = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\"\nnote = \"Identifies geometry only; observed accesses do not prove hardware semantics.\"\n",
         fact.address, fact.width
     )
     .expect("writing to String cannot fail");
     output.push_str(
-        "[assertions.applies-to]\nchips = [\"REVIEW_REQUIRED_CHIP\"]\nchip-revisions = [\"REVIEW_REQUIRED_REVISION\"]\n\n[[assertions.evidence]]\nsource = \"REVIEW_REQUIRED_EVIDENCE_ID\"\nlocator = \"REVIEW_REQUIRED_DECLARATION_LOCATOR\"\n\n",
-    );
-    writeln!(
-        output,
-        "[[assertions]]\nid = \"REVIEW_REQUIRED.register-name\"\nsubject = \"mmio:{address_space}:{:#010x}/{}\"\nkind = \"register-name\"\nvalue = \"REVIEW_REQUIRED_REGISTER_NAME\"\n",
-        fact.address, fact.width
-    )
-    .expect("writing to String cannot fail");
-    output.push_str(
-        "[assertions.applies-to]\nchips = [\"REVIEW_REQUIRED_CHIP\"]\nchip-revisions = [\"REVIEW_REQUIRED_REVISION\"]\n\n[[assertions.evidence]]\nsource = \"REVIEW_REQUIRED_EVIDENCE_ID\"\nlocator = \"REVIEW_REQUIRED_NAME_LOCATOR\"\n",
+        "[assertions.applies-to]\nchips = [\"REVIEW_REQUIRED_CHIP\"]\nchip-revisions = [\"REVIEW_REQUIRED_REVISION\"]\n\n[[assertions.evidence]]\nsource = \"REVIEW_REQUIRED_EVIDENCE_ID\"\nlocator = \"REVIEW_REQUIRED_IDENTITY_LOCATOR\"\n",
     );
     output
 }
@@ -133,17 +124,18 @@ mod tests {
         let draft = render_sparse_review_draft(&fact, "cpu");
         let parsed = draft.parse::<toml_edit::DocumentMut>().unwrap();
 
-        assert_eq!(parsed["assertions"].as_array_of_tables().unwrap().len(), 2);
+        assert_eq!(parsed["assertions"].as_array_of_tables().unwrap().len(), 1);
         assert!(draft.contains("subject = \"mmio:cpu:0x20103100/32\""));
-        assert!(draft.contains("REVIEW_REQUIRED.register-declaration"));
-        assert!(draft.contains("REVIEW_REQUIRED.register-name"));
+        assert!(draft.contains("REVIEW_REQUIRED.register-identity"));
+        assert!(draft.contains("kind = \"register-identity\""));
+        assert!(draft.contains("value = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\""));
         assert!(draft.contains("RADIO.REG_20103100 [[assertions]]"));
         assert_eq!(
             draft
                 .lines()
                 .filter(|line| *line == "[[assertions]]")
                 .count(),
-            2
+            1
         );
         assert!(!draft.contains("kind = \"register-access\""));
         assert!(!draft.contains("hardware-write-semantics"));

@@ -179,7 +179,7 @@ pub struct RegisterModel {
     address_space: String,
     device: Device,
     review: Vec<ReviewAnnotation>,
-    reviewed_register_declarations: Vec<ReviewedRegisterDeclaration>,
+    reviewed_register_identities: Vec<ReviewedRegisterIdentity>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -190,21 +190,20 @@ pub struct ReviewApplicationSummary {
     pub materialized: usize,
 }
 
-/// Provenance retained for a register created by a sparse reviewed declaration.
+/// Provenance retained for a register identity applied to the effective model.
 ///
 /// The effective assertions include their pack, evidence, classification and
 /// applicability. Keeping them beside the effective in-memory model prevents
 /// SVD materialization from erasing the review boundary that authorized new
 /// geometry.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReviewedRegisterDeclaration {
+pub struct ReviewedRegisterIdentity {
     pub address_space: String,
     pub address: u64,
     pub width: u32,
     pub region: String,
     pub identity: String,
-    pub declaration: EffectiveAssertion,
-    pub name: EffectiveAssertion,
+    pub assertion: EffectiveAssertion,
 }
 
 impl RegisterModel {
@@ -371,7 +370,7 @@ impl RegisterModel {
             address_space: manifest.address_space,
             device,
             review,
-            reviewed_register_declarations: Vec::new(),
+            reviewed_register_identities: Vec::new(),
         };
         model
             .register_identities()
@@ -431,9 +430,9 @@ impl RegisterModel {
         &self.review
     }
 
-    /// Sparse declarations that contributed geometry to this effective model.
-    pub fn reviewed_register_declarations(&self) -> &[ReviewedRegisterDeclaration] {
-        &self.reviewed_register_declarations
+    /// Sparse reviewed identities applied to existing or materialized registers.
+    pub fn reviewed_register_identities(&self) -> &[ReviewedRegisterIdentity] {
+        &self.reviewed_register_identities
     }
 
     /// Stable address-space identifier used by sparse reviewed assertions.
@@ -462,13 +461,27 @@ impl RegisterModel {
         knowledge: &ReviewKnowledge,
     ) -> Result<ReviewApplicationSummary> {
         let mut assertions = knowledge.assertions().values().collect::<Vec<_>>();
+        if let Some(removed) = assertions.iter().find(|assertion| {
+            matches!(
+                assertion.kind.as_str(),
+                "register-declaration" | "register-name"
+            )
+        }) {
+            return Err(Error::message(format!(
+                "reviewed assertion {:?} uses removed kind {:?}; register-model accepts only one register-identity assertion with canonical REGION.NAME value",
+                removed.id, removed.kind
+            )));
+        }
         ensure_single_applicable_register_fact(&assertions, &self.address_space)?;
         assertions.sort_by_key(|assertion| (assertion_priority(&assertion.kind), &assertion.id));
-        let declarations = prepare_register_declarations(&assertions, &self.address_space)?;
-        for declaration in &declarations {
-            self.materialize_reviewed_register(declaration)?;
-        }
+        let identities = prepare_register_identities(&assertions, &self.address_space)?;
         let mut summary = ReviewApplicationSummary::default();
+        for identity in &identities {
+            let outcome = self.apply_reviewed_register_identity(identity)?;
+            summary.matched += 1;
+            summary.changed += usize::from(outcome.changed);
+            summary.materialized += usize::from(outcome.materialized);
+        }
         for assertion in assertions {
             if !is_register_assertion(&assertion.kind) {
                 summary.ignored += 1;
@@ -484,10 +497,7 @@ impl RegisterModel {
                 summary.ignored += 1;
                 continue;
             }
-            if assertion.kind == "register-declaration" {
-                summary.matched += 1;
-                summary.changed += 1;
-                summary.materialized += 1;
+            if assertion.kind == "register-identity" {
                 continue;
             }
             let old_identities = self.register_identities()?;
@@ -496,7 +506,7 @@ impl RegisterModel {
                 .cloned()
                 .ok_or_else(|| {
                     Error::message(format!(
-                        "reviewed assertion {:?} targets absent register {:#010x}/{} in address space {:?}; add an explicit register-declaration and matching register-name first",
+                        "reviewed assertion {:?} targets absent register {:#010x}/{} in address space {:?}; add one explicit register-identity assertion first",
                         assertion.id, subject.address, subject.width, subject.address_space
                     ))
                 })?;
@@ -534,14 +544,7 @@ impl RegisterModel {
             summary.matched += 1;
             if changed {
                 summary.changed += 1;
-                if assertion.kind == "register-name" {
-                    let new_identity = self
-                        .register_identities()?
-                        .get(&(subject.address, subject.width))
-                        .cloned()
-                        .ok_or_else(|| Error::message("renamed register disappeared"))?;
-                    rewrite_review_entity_prefix(&mut self.review, &old_identity, &new_identity);
-                } else if assertion.kind == "field-name"
+                if assertion.kind == "field-name"
                     && let Some(old_field) = renamed_field
                 {
                     let new_field = string_value(assertion, "field name")?;
@@ -558,66 +561,114 @@ impl RegisterModel {
         Ok(summary)
     }
 
-    fn materialize_reviewed_register(&mut self, plan: &RegisterDeclarationPlan) -> Result<()> {
-        if self
-            .register_identities()?
-            .contains_key(&(plan.subject.address, plan.subject.width))
+    fn apply_reviewed_register_identity(
+        &mut self,
+        plan: &RegisterIdentityPlan,
+    ) -> Result<RegisterIdentityOutcome> {
+        let identities = self.register_identities()?;
+        let physical = (plan.subject.address, plan.subject.width);
+        if let Some(((address, width), _)) = identities
+            .iter()
+            .find(|(candidate, identity)| **identity == plan.identity && **candidate != physical)
         {
             return Err(Error::message(format!(
-                "reviewed assertion {:?} declares register {:#010x}/{} that already exists in the base model",
-                plan.declaration.id, plan.subject.address, plan.subject.width
+                "reviewed assertion {:?} identity {:?} collides with physical register {address:#010x}/{width}",
+                plan.assertion.id, plan.identity
             )));
         }
+        let region_index = self.concrete_region_index(plan)?;
+        if let Some(old_identity) = identities.get(&physical) {
+            let (old_region, old_name) = old_identity.split_once('.').ok_or_else(|| {
+                Error::message(format!(
+                    "existing register identity {old_identity:?} is not a direct REGION.NAME identity"
+                ))
+            })?;
+            if old_name.contains('.') {
+                return Err(Error::message(format!(
+                    "reviewed assertion {:?} targets register {old_identity:?} inside a cluster; register-identity accepts only a direct singular register",
+                    plan.assertion.id
+                )));
+            }
+            if old_region != plan.region {
+                return Err(Error::message(format!(
+                    "reviewed assertion {:?} names region {:?}, but physical register {:#010x}/{} belongs to region {:?}",
+                    plan.assertion.id,
+                    plan.region,
+                    plan.subject.address,
+                    plan.subject.width,
+                    old_region
+                )));
+            }
+            let mut changed = false;
+            let outcome = edit_register(
+                &mut self.device,
+                plan.subject.address,
+                plan.subject.width,
+                &mut |register| {
+                    if register.derived_from.is_some() {
+                        return Err(Error::message(format!(
+                            "reviewed assertion {:?} targets a derived register; register-identity requires one concrete non-derived register",
+                            plan.assertion.id
+                        )));
+                    }
+                    changed = register.name != plan.name;
+                    register.name.clone_from(&plan.name);
+                    Ok(())
+                },
+            )?;
+            match outcome {
+                RegisterEditOutcome::Edited => {}
+                RegisterEditOutcome::ArrayInstance => {
+                    return Err(Error::message(format!(
+                        "reviewed assertion {:?} targets an array register instance; register-identity requires one direct singular register",
+                        plan.assertion.id
+                    )));
+                }
+                RegisterEditOutcome::NotFound => {
+                    return Err(Error::message(format!(
+                        "reviewed assertion {:?} could not locate existing physical register {:#010x}/{}",
+                        plan.assertion.id, plan.subject.address, plan.subject.width
+                    )));
+                }
+            }
+            if changed {
+                rewrite_review_entity_prefix(&mut self.review, old_identity, &plan.identity);
+            }
+            self.retain_reviewed_register_identity(plan)?;
+            return Ok(RegisterIdentityOutcome {
+                changed,
+                materialized: false,
+            });
+        }
+
         if self.device.address_unit_bits != 8 {
             return Err(Error::message(format!(
-                "reviewed assertion {:?} cannot declare byte-addressed MMIO in a model with address-unit-bits = {}",
-                plan.declaration.id, self.device.address_unit_bits
+                "reviewed assertion {:?} cannot materialize byte-addressed MMIO in a model with address-unit-bits = {}",
+                plan.assertion.id, self.device.address_unit_bits
             )));
         }
         if !(1..=128).contains(&plan.subject.width) {
             return Err(Error::message(format!(
-                "reviewed assertion {:?} declares unsupported register width {}",
-                plan.declaration.id, plan.subject.width
+                "reviewed assertion {:?} has unsupported register width {}",
+                plan.assertion.id, plan.subject.width
             )));
         }
         let byte_width = u64::from(plan.subject.width).div_ceil(8);
         if !plan.subject.address.is_multiple_of(byte_width) {
             return Err(Error::message(format!(
-                "reviewed assertion {:?} declares register at {:#010x}/{} that is not aligned to {byte_width} bytes",
-                plan.declaration.id, plan.subject.address, plan.subject.width
+                "reviewed assertion {:?} materializes register at {:#010x}/{} that is not aligned to {byte_width} bytes",
+                plan.assertion.id, plan.subject.address, plan.subject.width
             )));
         }
         plan.subject
             .address
             .checked_add(byte_width)
-            .ok_or_else(|| Error::message("reviewed register declaration address overflow"))?;
+            .ok_or_else(|| Error::message("reviewed register identity address overflow"))?;
 
-        let region_index = self
-            .device
-            .peripherals
-            .iter()
-            .position(|peripheral| peripheral.name == plan.region)
-            .ok_or_else(|| {
-                Error::message(format!(
-                    "reviewed assertion {:?} names absent peripheral/region {:?}",
-                    plan.declaration.id, plan.region
-                ))
-            })?;
         let peripheral = match &self.device.peripherals[region_index] {
             MaybeArray::Single(peripheral) => peripheral,
-            MaybeArray::Array(_, _) => {
-                return Err(Error::message(format!(
-                    "reviewed assertion {:?} names array peripheral/region {:?}; sparse declarations require one unambiguous physical region",
-                    plan.declaration.id, plan.region
-                )));
-            }
+            MaybeArray::Array(_, _) => unreachable!("concrete_region_index rejected arrays"),
         };
-        if peripheral.derived_from.is_some() {
-            return Err(Error::message(format!(
-                "reviewed assertion {:?} names derived peripheral/region {:?}; declare against a concrete non-derived region",
-                plan.declaration.id, plan.region
-            )));
-        }
         let offset = plan
             .subject
             .address
@@ -625,22 +676,22 @@ impl RegisterModel {
             .ok_or_else(|| {
                 Error::message(format!(
                     "reviewed assertion {:?} address {:#010x} precedes region {:?} base {:#010x}",
-                    plan.declaration.id, plan.subject.address, plan.region, peripheral.base_address
+                    plan.assertion.id, plan.subject.address, plan.region, peripheral.base_address
                 ))
             })?;
         let address_offset = u32::try_from(offset).map_err(|_| {
             Error::message(format!(
                 "reviewed assertion {:?} address offset {offset:#x} does not fit the SVD region {:?}",
-                plan.declaration.id, plan.region
+                plan.assertion.id, plan.region
             ))
         })?;
-        let offset_end = offset.checked_add(byte_width).ok_or_else(|| {
-            Error::message("reviewed register declaration region offset overflow")
-        })?;
+        let offset_end = offset
+            .checked_add(byte_width)
+            .ok_or_else(|| Error::message("reviewed register identity region offset overflow"))?;
         if offset_end > u64::from(u32::MAX) + 1 {
             return Err(Error::message(format!(
                 "reviewed assertion {:?} register extent does not fit the SVD region {:?}",
-                plan.declaration.id, plan.region
+                plan.assertion.id, plan.region
             )));
         }
         if let Some(blocks) = &peripheral.address_block
@@ -652,7 +703,7 @@ impl RegisterModel {
         {
             return Err(Error::message(format!(
                 "reviewed assertion {:?} extent {:#x}..{offset_end:#x} lies outside register address blocks of region {:?}",
-                plan.declaration.id, offset, plan.region
+                plan.assertion.id, offset, plan.region
             )));
         }
         let inherited = merge_properties(
@@ -662,14 +713,12 @@ impl RegisterModel {
         if inherited.access.is_some() && plan.access.is_none() {
             return Err(Error::message(format!(
                 "reviewed assertion {:?} would inherit hardware access from region {:?}; add an explicit register-access assertion with identical applicability",
-                plan.declaration.id, plan.region
+                plan.assertion.id, plan.region
             )));
         }
 
-        let name = string_value(&plan.name, "register name")?;
-        let identity = format!("{}.{}", plan.region, name);
         let register = RegisterInfo::builder()
-            .name(name.to_owned())
+            .name(plan.name.clone())
             .address_offset(address_offset)
             .size(Some(plan.subject.width))
             .build(ValidateLevel::Strict)?;
@@ -681,31 +730,85 @@ impl RegisterModel {
             .registers
             .get_or_insert_with(Vec::new)
             .push(RegisterCluster::Register(MaybeArray::Single(register)));
+        self.retain_reviewed_register_identity(plan)?;
+        Ok(RegisterIdentityOutcome {
+            changed: true,
+            materialized: true,
+        })
+    }
+
+    fn concrete_region_index(&self, plan: &RegisterIdentityPlan) -> Result<usize> {
+        let region_index = self
+            .device
+            .peripherals
+            .iter()
+            .position(|peripheral| peripheral.name == plan.region)
+            .ok_or_else(|| {
+                Error::message(format!(
+                    "reviewed assertion {:?} names absent peripheral/region {:?}",
+                    plan.assertion.id, plan.region
+                ))
+            })?;
+        let peripheral = match &self.device.peripherals[region_index] {
+            MaybeArray::Single(peripheral) => peripheral,
+            MaybeArray::Array(_, _) => {
+                return Err(Error::message(format!(
+                    "reviewed assertion {:?} names array peripheral/region {:?}; register-identity requires one concrete singular region",
+                    plan.assertion.id, plan.region
+                )));
+            }
+        };
+        if peripheral.derived_from.is_some() {
+            return Err(Error::message(format!(
+                "reviewed assertion {:?} names derived peripheral/region {:?}; register-identity requires a concrete non-derived region",
+                plan.assertion.id, plan.region
+            )));
+        }
+        Ok(region_index)
+    }
+
+    fn retain_reviewed_register_identity(&mut self, plan: &RegisterIdentityPlan) -> Result<()> {
+        if let Some(existing) = self.reviewed_register_identities.iter().find(|existing| {
+            existing.address == plan.subject.address && existing.width == plan.subject.width
+                || existing.assertion.id == plan.assertion.id
+        }) {
+            if existing.address_space == plan.subject.address_space
+                && existing.address == plan.subject.address
+                && existing.width == plan.subject.width
+                && existing.region == plan.region
+                && existing.identity == plan.identity
+                && existing.assertion == plan.assertion
+            {
+                return Ok(());
+            }
+            return Err(Error::message(format!(
+                "reviewed assertion {:?} conflicts with retained register identity {:?} at {:#010x}/{}",
+                plan.assertion.id, existing.identity, existing.address, existing.width
+            )));
+        }
         let mut sources = plan
-            .declaration
+            .assertion
             .evidence
             .iter()
-            .chain(&plan.name.evidence)
             .map(|evidence| evidence.source.clone())
             .collect::<Vec<_>>();
         sources.sort();
         sources.dedup();
         self.review.push(ReviewAnnotation {
-            entity: identity.clone(),
+            entity: plan.identity.clone(),
             sources,
-            provenance: Some(plan.declaration.classification.provenance),
-            accuracy: Some(plan.declaration.classification.accuracy),
-            completeness: Some(plan.declaration.classification.completeness),
+            provenance: Some(plan.assertion.classification.provenance),
+            accuracy: Some(plan.assertion.classification.accuracy),
+            completeness: Some(plan.assertion.classification.completeness),
         });
-        self.reviewed_register_declarations
-            .push(ReviewedRegisterDeclaration {
+        self.reviewed_register_identities
+            .push(ReviewedRegisterIdentity {
                 address_space: plan.subject.address_space.clone(),
                 address: plan.subject.address,
                 width: plan.subject.width,
                 region: plan.region.clone(),
-                identity,
-                declaration: plan.declaration.clone(),
-                name: plan.name.clone(),
+                identity: plan.identity.clone(),
+                assertion: plan.assertion.clone(),
             });
         Ok(())
     }
@@ -813,69 +916,73 @@ impl RegisterSubject {
 }
 
 #[derive(Clone, Debug)]
-struct RegisterDeclarationPlan {
+struct RegisterIdentityPlan {
     subject: RegisterSubject,
     region: String,
-    declaration: EffectiveAssertion,
-    name: EffectiveAssertion,
+    name: String,
+    identity: String,
+    assertion: EffectiveAssertion,
     access: Option<EffectiveAssertion>,
 }
 
-fn prepare_register_declarations(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RegisterIdentityOutcome {
+    changed: bool,
+    materialized: bool,
+}
+
+fn prepare_register_identities(
     assertions: &[&EffectiveAssertion],
     address_space: &str,
-) -> Result<Vec<RegisterDeclarationPlan>> {
+) -> Result<Vec<RegisterIdentityPlan>> {
     let mut plans = Vec::new();
     let mut physical_subjects = BTreeMap::<(u64, u32), String>::new();
-    for declaration in assertions
+    for assertion in assertions
         .iter()
         .copied()
-        .filter(|assertion| assertion.kind == "register-declaration")
+        .filter(|assertion| assertion.kind == "register-identity")
     {
-        let subject = parse_assertion_subject(declaration)?;
+        let subject = parse_assertion_subject(assertion)?;
         if subject.address_space != address_space {
             continue;
         }
         if subject.field.is_some() {
             return Err(Error::message(format!(
-                "reviewed assertion {:?} register-declaration requires a physical register subject without #bits",
-                declaration.id
+                "reviewed assertion {:?} register-identity requires a physical register subject without #bits",
+                assertion.id
             )));
         }
         if let Some(previous) =
-            physical_subjects.insert((subject.address, subject.width), declaration.id.clone())
+            physical_subjects.insert((subject.address, subject.width), assertion.id.clone())
         {
             return Err(Error::message(format!(
-                "reviewed assertions {previous:?} and {:?} both declare the same physical register {:#010x}/{}; select one applicability-specific pack before composing the model",
-                declaration.id, subject.address, subject.width
+                "reviewed assertions {previous:?} and {:?} both identify the same physical register {:#010x}/{}; select one applicability-specific pack before composing the model",
+                assertion.id, subject.address, subject.width
             )));
         }
-        for assertion in assertions.iter().copied().filter(|assertion| {
-            is_register_assertion(&assertion.kind) && assertion.id != declaration.id
+        for companion in assertions.iter().copied().filter(|candidate| {
+            is_register_assertion(&candidate.kind) && candidate.id != assertion.id
         }) {
-            let candidate = parse_assertion_subject(assertion)?;
+            let candidate = parse_assertion_subject(companion)?;
             if candidate.address_space == subject.address_space
                 && candidate.address == subject.address
                 && candidate.width == subject.width
-                && assertion.applies_to != declaration.applies_to
+                && companion.applies_to != assertion.applies_to
             {
                 return Err(Error::message(format!(
-                    "reviewed assertion {:?} cannot contribute to declaration {:?}: effective applicability differs for physical register {:#010x}/{}",
-                    assertion.id, declaration.id, subject.address, subject.width
+                    "reviewed assertion {:?} cannot contribute to register identity {:?}: effective applicability differs for physical register {:#010x}/{}",
+                    companion.id, assertion.id, subject.address, subject.width
                 )));
             }
         }
-        let region = string_value(declaration, "register declaration region")?.to_owned();
-        let name =
-            find_companion_assertion(assertions, declaration, &subject, "register-name", true)?
-                .expect("required companion returned by fail-closed lookup");
-        let access =
-            find_companion_assertion(assertions, declaration, &subject, "register-access", false)?;
-        plans.push(RegisterDeclarationPlan {
+        let (region, name, identity) = parse_canonical_register_identity(assertion)?;
+        let access = find_companion_assertion(assertions, assertion, &subject, "register-access")?;
+        plans.push(RegisterIdentityPlan {
             subject,
             region,
-            declaration: declaration.clone(),
-            name: name.clone(),
+            name,
+            identity,
+            assertion: assertion.clone(),
             access: access.cloned(),
         });
     }
@@ -884,10 +991,9 @@ fn prepare_register_declarations(
 
 fn find_companion_assertion<'a>(
     assertions: &'a [&EffectiveAssertion],
-    declaration: &EffectiveAssertion,
+    identity: &EffectiveAssertion,
     subject: &RegisterSubject,
     kind: &str,
-    required: bool,
 ) -> Result<Option<&'a EffectiveAssertion>> {
     let mut physical_matches = Vec::new();
     for assertion in assertions
@@ -903,27 +1009,57 @@ fn find_companion_assertion<'a>(
     let matching = physical_matches
         .iter()
         .copied()
-        .filter(|assertion| assertion.applies_to == declaration.applies_to)
+        .filter(|assertion| assertion.applies_to == identity.applies_to)
         .collect::<Vec<_>>();
     match matching.as_slice() {
         [assertion] => Ok(Some(*assertion)),
-        [] if required => {
-            let reason = if physical_matches.is_empty() {
-                format!("is missing required companion {kind:?}")
-            } else {
-                format!("has no {kind:?} companion with identical effective applicability")
-            };
-            Err(Error::message(format!(
-                "reviewed assertion {:?} {reason}",
-                declaration.id
-            )))
-        }
         [] => Ok(None),
         _ => Err(Error::message(format!(
             "reviewed assertion {:?} has multiple {kind:?} companions with identical effective applicability",
-            declaration.id
+            identity.id
         ))),
     }
+}
+
+fn parse_canonical_register_identity(
+    assertion: &EffectiveAssertion,
+) -> Result<(String, String, String)> {
+    let identity = string_value(assertion, "register identity")?;
+    let mut parts = identity.split('.');
+    let region = parts.next().unwrap_or_default();
+    let name = parts.next().unwrap_or_default();
+    if region.is_empty() || name.is_empty() || parts.next().is_some() {
+        return Err(Error::message(format!(
+            "reviewed assertion {:?} register-identity value must contain exactly one dot as canonical REGION.NAME",
+            assertion.id
+        )));
+    }
+    for (label, value) in [("region", region), ("register", name)] {
+        if !is_canonical_svd_identifier(value) {
+            return Err(Error::message(format!(
+                "reviewed assertion {:?} register-identity {label} {value:?} is not a canonical singular SVD identifier",
+                assertion.id
+            )));
+        }
+    }
+    Ok((region.to_owned(), name.to_owned(), identity.to_owned()))
+}
+
+fn is_canonical_svd_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    let valid_start = chars
+        .next()
+        .is_some_and(|first| first == '_' || first.is_ascii_alphabetic());
+    let mut has_alphanumeric = value
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric());
+    valid_start
+        && chars.all(|character| {
+            has_alphanumeric |= character.is_ascii_alphanumeric();
+            character == '_' || character.is_ascii_alphanumeric()
+        })
+        && has_alphanumeric
 }
 
 fn parse_assertion_subject(assertion: &EffectiveAssertion) -> Result<RegisterSubject> {
@@ -1146,7 +1282,6 @@ fn apply_register_assertion(
         return apply_field_assertion(register, field, assertion);
     }
     match assertion.kind.as_str() {
-        "register-name" => replace_string(&mut register.name, assertion, "register name"),
         "register-description" => {
             replace_optional_string(&mut register.description, assertion, "register description")
         }
@@ -1342,8 +1477,7 @@ fn parse_write_semantics(assertion: &EffectiveAssertion) -> Result<Option<Modifi
 fn is_register_assertion(kind: &str) -> bool {
     matches!(
         kind,
-        "register-declaration"
-            | "register-name"
+        "register-identity"
             | "register-description"
             | "register-access"
             | "hardware-write-semantics"
@@ -1356,8 +1490,8 @@ fn is_register_assertion(kind: &str) -> bool {
 
 fn assertion_priority(kind: &str) -> u8 {
     match kind {
-        "register-declaration" => 0,
-        "register-name" | "field-name" => 1,
+        "register-identity" => 0,
+        "field-name" => 1,
         "register-description" | "field-description" => 2,
         "register-access" | "field-access" => 3,
         "hardware-write-semantics" | "field-write-semantics" => 4,
@@ -1735,8 +1869,8 @@ mod tests {
 [[assertions]]
 id = "overlay.register.name"
 subject = "mmio:cpu:0x1000/32"
-kind = "register-name"
-value = "EVENT_STATUS"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
 source = "FIXTURE"
 locator = "register"
@@ -1792,7 +1926,11 @@ locator = "function"
                 .iter()
                 .map(|annotation| annotation.entity.as_str())
                 .collect::<Vec<_>>(),
-            ["RADIO.EVENT_STATUS", "RADIO.EVENT_STATUS.PENDING"]
+            [
+                "RADIO.EVENT_STATUS",
+                "RADIO.EVENT_STATUS.PENDING",
+                "RADIO.EVENT_STATUS"
+            ]
         );
     }
 
@@ -1812,8 +1950,8 @@ chip-revisions = ["{revision}"]
 [[assertions]]
 id = "{id}.name"
 subject = "mmio:cpu:0x1000/32"
-kind = "register-name"
-value = "{value}"
+kind = "register-identity"
+value = "RADIO.{value}"
 [[assertions.evidence]]
 source = "FIXTURE"
 locator = "manual"
@@ -1869,54 +2007,42 @@ locator = "write"
     }
 
     #[test]
-    fn explicit_declaration_materializes_an_absent_register_and_retains_review_bounds() {
+    fn register_identity_materializes_an_absent_register_and_retains_one_assertion() {
         let (directory, mut model) = fixture_model("declare", None);
         let knowledge = knowledge(
             r#"
 [[assertions]]
-id = "overlay.register.declaration"
+id = "overlay.register.identity"
 subject = "mmio:cpu:0x1004/32"
-kind = "register-declaration"
-value = "RADIO"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
 [assertions.applies-to]
 chips = ["fixture-chip"]
 chip-revisions = ["rev-a"]
 [[assertions.evidence]]
 source = "FIXTURE"
-locator = "region-and-address"
-
-[[assertions]]
-id = "overlay.register.name"
-subject = "mmio:cpu:0x1004/32"
-kind = "register-name"
-value = "EVENT_STATUS"
-[assertions.applies-to]
-chips = ["fixture-chip"]
-chip-revisions = ["rev-a"]
-[[assertions.evidence]]
-source = "FIXTURE"
-locator = "register-name"
+locator = "identity"
 "#,
         );
 
         let summary = model.apply_review_knowledge(&knowledge).unwrap();
         let identities = model.register_identities().unwrap();
         let (svd, export) = model.render_svd().unwrap();
-        let declaration = &model.reviewed_register_declarations()[0];
+        let retained = &model.reviewed_register_identities()[0];
         let MaybeArray::Single(peripheral) = &model.device.peripherals[0] else {
             panic!("fixture peripheral must be singular")
         };
         let RegisterCluster::Register(MaybeArray::Single(register)) =
             peripheral.registers.as_ref().unwrap().last().unwrap()
         else {
-            panic!("declared register must be singular")
+            panic!("materialized register must be singular")
         };
         fs::remove_dir_all(directory).unwrap();
 
         assert_eq!(
             summary,
             ReviewApplicationSummary {
-                matched: 2,
+                matched: 1,
                 changed: 1,
                 ignored: 0,
                 materialized: 1,
@@ -1931,19 +2057,16 @@ locator = "register-name"
         assert_eq!(register.properties.size, Some(32));
         assert_eq!(register.properties.access, None);
         assert_eq!(register.modified_write_values, None);
-        assert_eq!(declaration.address_space, "cpu");
-        assert_eq!(declaration.region, "RADIO");
-        assert_eq!(declaration.identity, "RADIO.EVENT_STATUS");
-        assert_eq!(declaration.declaration.pack, "fixture.overlay");
+        assert_eq!(retained.address_space, "cpu");
+        assert_eq!(retained.region, "RADIO");
+        assert_eq!(retained.identity, "RADIO.EVENT_STATUS");
+        assert_eq!(retained.assertion.pack, "fixture.overlay");
+        assert_eq!(retained.assertion.evidence[0].locator, "identity");
         assert_eq!(
-            declaration.declaration.evidence[0].locator,
-            "region-and-address"
-        );
-        assert_eq!(
-            declaration.declaration.applies_to.chips,
+            retained.assertion.applies_to.chips,
             ["fixture-chip".to_owned()]
         );
-        assert_eq!(declaration.name.id, "overlay.register.name");
+        assert_eq!(retained.assertion.id, "overlay.register.identity");
         let annotation = model
             .review()
             .iter()
@@ -1957,139 +2080,160 @@ locator = "register-name"
     }
 
     #[test]
-    fn declaration_requires_a_name_with_identical_applicability_and_is_atomic() {
-        let (directory, mut model) = fixture_model("declare-bounds", None);
-        let before = model.register_identities().unwrap();
-        let mismatched = knowledge(
+    fn register_identity_renames_existing_register_and_reapply_is_idempotent() {
+        let (directory, mut model) = fixture_model("rename", None);
+        let reviewed = knowledge(
             r#"
 [[assertions]]
-id = "overlay.register.declaration"
-subject = "mmio:cpu:0x1004/32"
-kind = "register-declaration"
-value = "RADIO"
-[assertions.applies-to]
-chip-revisions = ["rev-a"]
+id = "overlay.register.identity"
+subject = "mmio:cpu:0x1000/32"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
 source = "FIXTURE"
-locator = "region"
-
-[[assertions]]
-id = "overlay.register.name"
-subject = "mmio:cpu:0x1004/32"
-kind = "register-name"
-value = "EVENT_STATUS"
-[assertions.applies-to]
-chip-revisions = ["rev-b"]
-[[assertions.evidence]]
-source = "FIXTURE"
-locator = "name"
+locator = "identity"
 "#,
         );
-
-        let error = model.apply_review_knowledge(&mismatched).unwrap_err();
-        assert!(error.to_string().contains("applicability differs"));
-        assert_eq!(model.register_identities().unwrap(), before);
-        assert!(model.reviewed_register_declarations().is_empty());
-
-        let missing_name = knowledge(
-            r#"
-[[assertions]]
-id = "overlay.register.declaration"
-subject = "mmio:cpu:0x1004/32"
-kind = "register-declaration"
-value = "RADIO"
-[[assertions.evidence]]
-source = "FIXTURE"
-locator = "region"
-"#,
-        );
-        let error = model.apply_review_knowledge(&missing_name).unwrap_err();
+        let renamed = model.apply_review_knowledge(&reviewed).unwrap();
+        let noop = model.apply_review_knowledge(&reviewed).unwrap();
         fs::remove_dir_all(directory).unwrap();
 
-        assert!(error.to_string().contains("missing required companion"));
-        assert_eq!(model.register_identities().unwrap(), before);
+        assert_eq!(renamed.matched, 1);
+        assert_eq!(renamed.changed, 1);
+        assert_eq!(renamed.materialized, 0);
+        assert_eq!(noop.matched, 1);
+        assert_eq!(noop.changed, 0);
+        assert_eq!(model.reviewed_register_identities().len(), 1);
+        assert_eq!(
+            model
+                .review()
+                .iter()
+                .filter(|annotation| annotation.entity == "RADIO.EVENT_STATUS")
+                .count(),
+            2
+        );
     }
 
     #[test]
-    fn register_name_alone_cannot_authorize_new_geometry() {
-        let (directory, mut model) = fixture_model("name-is-not-declaration", None);
-        let name_only = knowledge(
-            r#"
+    fn removed_declaration_and_name_kinds_are_explicit_errors_and_atomic() {
+        for kind in ["register-declaration", "register-name"] {
+            let (directory, mut model) = fixture_model(kind, None);
+            let before = model.register_identities().unwrap();
+            let reviewed = knowledge(&format!(
+                r#"
 [[assertions]]
-id = "overlay.register.name"
+id = "overlay.removed"
 subject = "mmio:cpu:0x1004/32"
-kind = "register-name"
-value = "EVENT_STATUS"
+kind = "{kind}"
+value = "RADIO"
 [[assertions.evidence]]
 source = "FIXTURE"
-locator = "name"
-"#,
-        );
-
-        let error = model.apply_review_knowledge(&name_only).unwrap_err();
-        fs::remove_dir_all(directory).unwrap();
-
-        assert!(error.to_string().contains("explicit register-declaration"));
-        assert_eq!(model.register_identities().unwrap().len(), 1);
+locator = "removed"
+"#
+            ));
+            let error = model.apply_review_knowledge(&reviewed).unwrap_err();
+            fs::remove_dir_all(directory).unwrap();
+            assert!(error.to_string().contains("uses removed kind"));
+            assert!(error.to_string().contains("register-identity"));
+            assert_eq!(model.register_identities().unwrap(), before);
+            assert!(model.reviewed_register_identities().is_empty());
+        }
     }
 
     #[test]
-    fn declarations_fail_closed_on_subject_width_alignment_region_and_overlap() {
+    fn register_identity_fails_closed_on_shape_subject_region_and_overlap() {
         let cases = [
             (
                 "field",
                 "mmio:cpu:0x1004/32#bits:0/1",
-                "RADIO",
+                "RADIO.NEW_REGISTER",
                 "without #bits",
             ),
             (
                 "width",
                 "mmio:cpu:0x1020/129",
-                "RADIO",
+                "RADIO.NEW_REGISTER",
                 "unsupported register width",
             ),
-            ("alignment", "mmio:cpu:0x1002/32", "RADIO", "not aligned"),
-            ("before", "mmio:cpu:0x0ffc/32", "RADIO", "precedes region"),
+            (
+                "alignment",
+                "mmio:cpu:0x1002/32",
+                "RADIO.NEW_REGISTER",
+                "not aligned",
+            ),
+            (
+                "before",
+                "mmio:cpu:0x0ffc/32",
+                "RADIO.NEW_REGISTER",
+                "precedes region",
+            ),
             (
                 "region",
                 "mmio:cpu:0x1004/32",
-                "MISSING",
+                "MISSING.NEW_REGISTER",
                 "absent peripheral/region",
             ),
             (
                 "overlap",
                 "mmio:cpu:0x1002/16",
-                "RADIO",
+                "RADIO.NEW_REGISTER",
                 "physical register ranges overlap",
             ),
             (
-                "existing",
-                "mmio:cpu:0x1000/32",
+                "identity-collision",
+                "mmio:cpu:0x1004/32",
+                "RADIO.STATUS",
+                "identity \"RADIO.STATUS\" collides",
+            ),
+            (
+                "missing-dot",
+                "mmio:cpu:0x1004/32",
                 "RADIO",
-                "already exists in the base model",
+                "exactly one dot",
+            ),
+            (
+                "extra-dot",
+                "mmio:cpu:0x1004/32",
+                "RADIO.BLOCK.STATUS",
+                "exactly one dot",
+            ),
+            (
+                "placeholder",
+                "mmio:cpu:0x1004/32",
+                "RADIO.REG%s",
+                "canonical singular SVD identifier",
+            ),
+            (
+                "whitespace",
+                "mmio:cpu:0x1004/32",
+                "RADIO.EVENT STATUS",
+                "canonical singular SVD identifier",
+            ),
+            (
+                "underscore-only-region",
+                "mmio:cpu:0x1004/32",
+                "_.STATUS",
+                "canonical singular SVD identifier",
+            ),
+            (
+                "underscore-only-register",
+                "mmio:cpu:0x1004/32",
+                "RADIO._",
+                "canonical singular SVD identifier",
             ),
         ];
-        for (name, subject, region, expected) in cases {
+        for (name, subject, identity, expected) in cases {
             let (directory, mut model) = fixture_model(name, None);
             let reviewed = knowledge(&format!(
                 r#"
 [[assertions]]
-id = "overlay.register.declaration"
+id = "overlay.register.identity"
 subject = "{subject}"
-kind = "register-declaration"
-value = "{region}"
+kind = "register-identity"
+value = "{identity}"
 [[assertions.evidence]]
 source = "FIXTURE"
-locator = "region"
-
-[[assertions]]
-id = "overlay.register.name"
-subject = "{subject}"
-kind = "register-name"
-value = "NEW_REGISTER"
-[[assertions.evidence]]
-source = "FIXTURE"
-locator = "name"
+locator = "identity"
 "#
             ));
 
@@ -2104,7 +2248,7 @@ locator = "name"
     }
 
     #[test]
-    fn declaration_respects_address_blocks_and_does_not_cross_address_spaces() {
+    fn register_identity_respects_address_blocks_and_does_not_cross_address_spaces() {
         let (directory, mut model) = fixture_model("declare-region", None);
         let MaybeArray::Single(peripheral) = &mut model.device.peripherals[0] else {
             panic!("fixture peripheral must be singular")
@@ -2120,22 +2264,13 @@ locator = "name"
         let outside = knowledge(
             r#"
 [[assertions]]
-id = "overlay.register.declaration"
+id = "overlay.register.identity"
 subject = "mmio:cpu:0x1004/32"
-kind = "register-declaration"
-value = "RADIO"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
 source = "FIXTURE"
-locator = "region"
-
-[[assertions]]
-id = "overlay.register.name"
-subject = "mmio:cpu:0x1004/32"
-kind = "register-name"
-value = "EVENT_STATUS"
-[[assertions.evidence]]
-source = "FIXTURE"
-locator = "name"
+locator = "identity"
 "#,
         );
         assert!(
@@ -2149,54 +2284,36 @@ locator = "name"
         let foreign = knowledge(
             r#"
 [[assertions]]
-id = "overlay.register.declaration"
+id = "overlay.register.identity"
 subject = "mmio:other:0x1004/32"
-kind = "register-declaration"
-value = "RADIO"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
 source = "FIXTURE"
-locator = "region"
-
-[[assertions]]
-id = "overlay.register.name"
-subject = "mmio:other:0x1004/32"
-kind = "register-name"
-value = "EVENT_STATUS"
-[[assertions.evidence]]
-source = "FIXTURE"
-locator = "name"
+locator = "identity"
 "#,
         );
         let summary = model.apply_review_knowledge(&foreign).unwrap();
         fs::remove_dir_all(directory).unwrap();
 
-        assert_eq!(summary.ignored, 2);
+        assert_eq!(summary.ignored, 1);
         assert_eq!(summary.materialized, 0);
         assert_eq!(model.register_identities().unwrap().len(), 1);
     }
 
     #[test]
-    fn declaration_rejects_ambiguous_regions_and_implicit_access() {
+    fn register_identity_rejects_array_derived_regions_and_implicit_access() {
         let reviewed = || {
             knowledge(
                 r#"
 [[assertions]]
-id = "overlay.register.declaration"
+id = "overlay.register.identity"
 subject = "mmio:cpu:0x1004/32"
-kind = "register-declaration"
-value = "RADIO"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
 source = "FIXTURE"
-locator = "region"
-
-[[assertions]]
-id = "overlay.register.name"
-subject = "mmio:cpu:0x1004/32"
-kind = "register-name"
-value = "EVENT_STATUS"
-[[assertions.evidence]]
-source = "FIXTURE"
-locator = "name"
+locator = "identity"
 "#,
             )
         };
@@ -2250,6 +2367,129 @@ locator = "name"
                 .contains("would inherit hardware access")
         );
         fs::remove_dir_all(access_directory).unwrap();
+    }
+
+    #[test]
+    fn register_identity_keeps_access_separate_and_rejects_register_arrays_and_clusters() {
+        let (access_directory, mut access_model) = fixture_model("explicit-access", None);
+        let MaybeArray::Single(peripheral) = &mut access_model.device.peripherals[0] else {
+            panic!("fixture peripheral must be singular")
+        };
+        peripheral.default_register_properties.access = Some(Access::ReadOnly);
+        let with_access = knowledge(
+            r#"
+[[assertions]]
+id = "overlay.register.identity"
+subject = "mmio:cpu:0x1004/32"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
+[[assertions.evidence]]
+source = "FIXTURE"
+locator = "identity"
+
+[[assertions]]
+id = "overlay.register.access"
+subject = "mmio:cpu:0x1004/32"
+kind = "register-access"
+value = "read-write"
+[[assertions.evidence]]
+source = "FIXTURE"
+locator = "access"
+"#,
+        );
+        let summary = access_model.apply_review_knowledge(&with_access).unwrap();
+        let (svd, _) = access_model.render_svd().unwrap();
+        fs::remove_dir_all(access_directory).unwrap();
+        assert_eq!(summary.matched, 2);
+        assert_eq!(summary.materialized, 1);
+        assert!(svd.contains("<access>read-write</access>"));
+
+        let rename = || {
+            knowledge(
+                r#"
+[[assertions]]
+id = "overlay.register.identity"
+subject = "mmio:cpu:0x1000/32"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
+[[assertions.evidence]]
+source = "FIXTURE"
+locator = "identity"
+"#,
+            )
+        };
+        let (array_directory, mut array_model) = fixture_model("register-array", None);
+        let MaybeArray::Single(peripheral) = &mut array_model.device.peripherals[0] else {
+            panic!("fixture peripheral must be singular")
+        };
+        let RegisterCluster::Register(MaybeArray::Single(mut register)) =
+            peripheral.registers.as_mut().unwrap().remove(0)
+        else {
+            panic!("fixture register must be singular")
+        };
+        register.name = "STATUS%s".to_owned();
+        let dim = svd_rs::DimElement::builder()
+            .dim(2)
+            .dim_increment(4)
+            .build(ValidateLevel::Disabled)
+            .unwrap();
+        peripheral
+            .registers
+            .as_mut()
+            .unwrap()
+            .push(RegisterCluster::Register(MaybeArray::Array(register, dim)));
+        assert!(
+            array_model
+                .apply_review_knowledge(&rename())
+                .unwrap_err()
+                .to_string()
+                .contains("array register instance")
+        );
+        fs::remove_dir_all(array_directory).unwrap();
+
+        let (cluster_directory, mut cluster_model) = fixture_model("register-cluster", None);
+        let MaybeArray::Single(peripheral) = &mut cluster_model.device.peripherals[0] else {
+            panic!("fixture peripheral must be singular")
+        };
+        let register = peripheral.registers.as_mut().unwrap().remove(0);
+        let cluster = svd_rs::ClusterInfo::builder()
+            .name("GROUP".to_owned())
+            .address_offset(0)
+            .children(vec![register])
+            .build(ValidateLevel::Strict)
+            .unwrap();
+        peripheral
+            .registers
+            .as_mut()
+            .unwrap()
+            .push(RegisterCluster::Cluster(MaybeArray::Single(cluster)));
+        assert!(
+            cluster_model
+                .apply_review_knowledge(&rename())
+                .unwrap_err()
+                .to_string()
+                .contains("inside a cluster")
+        );
+        fs::remove_dir_all(cluster_directory).unwrap();
+
+        let (derived_directory, mut derived_model) = fixture_model("derived-register", None);
+        let MaybeArray::Single(peripheral) = &mut derived_model.device.peripherals[0] else {
+            panic!("fixture peripheral must be singular")
+        };
+        let RegisterCluster::Register(MaybeArray::Single(register)) =
+            &mut peripheral.registers.as_mut().unwrap()[0]
+        else {
+            panic!("fixture register must be singular")
+        };
+        register.derived_from = Some("RADIO_BASE.STATUS".to_owned());
+        assert!(
+            derived_model
+                .apply_review_knowledge(&rename())
+                .unwrap_err()
+                .to_string()
+                .contains("derived register")
+        );
+        fs::remove_dir_all(derived_directory).unwrap();
     }
 
     #[test]

@@ -19,37 +19,29 @@ New human conclusions belong in the project manifest's explicit
 `[reviewed-knowledge].default-pack`; Blobray never guesses a destination from
 pack order or protocol naming. A stable
 physical subject such as `mmio:cpu:0x20103064/32` can independently acquire a
-`register-name` or `hardware-write-semantics` assertion. If that physical
-register is absent from the reusable model, exactly one explicit
-`register-declaration` assertion may authorize creating it. Its string value
-names an existing, concrete, non-array peripheral/region; a separate
-`register-name` for the same subject and effective applicability supplies the
-SVD identity:
+`register-identity` or `hardware-write-semantics` assertion. The identity is
+one scalar `REGION.NAME`; it atomically names the existing concrete non-array
+peripheral/region and the register. If the physical register is absent from
+the reusable model, that same assertion authorizes materializing it:
 
 ```toml
 [[assertions]]
-id = "radio.event-status.declaration"
+id = "radio.event-status.identity"
 subject = "mmio:cpu:0x20103064/32"
-kind = "register-declaration"
-value = "RADIO"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
 source = "REVIEWED_REGISTER_HEADER"
-locator = "RADIO event-status offset"
-
-[[assertions]]
-id = "radio.event-status.name"
-subject = "mmio:cpu:0x20103064/32"
-kind = "register-name"
-value = "EVENT_STATUS"
-[[assertions.evidence]]
-source = "REVIEWED_REGISTER_HEADER"
-locator = "RADIO event-status name"
+locator = "RADIO event-status identity and offset"
 ```
 
-The declaration fails closed when its address space differs, the width or
+The identity fails closed when it is not one scalar `REGION.NAME`, its address
+space differs, the width or
 alignment is invalid, the extent falls outside a published register address
 block, the region is absent/array/derived, or the new extent aliases existing
-geometry. Its effective assertion (pack, classification, applicability and
+geometry. The retired `register-declaration` and `register-name` kinds are
+rejected; there is no compatibility or pair-merging path. The effective
+identity assertion (pack, classification, applicability and
 evidence) remains attached to the in-memory effective model. If a region has
 no address blocks, the explicit reviewed region assertion is the ownership
 boundary and the offset must still fit the SVD representation.
@@ -99,11 +91,11 @@ disposable rather than hand-authored knowledge. Promote a conclusion from a
 project pack into the chip model only when its applicability and evidence
 support reuse by other blob revisions or projects.
 
-For an unreviewed physical register, `registers review` emits only a sparse
-`register-declaration` plus `register-name` template with deliberately
-unresolved `REVIEW_REQUIRED` placeholders. It never emits a complete
-peripheral fragment and never promotes observed reads, writes, masks or field
-partitions into access, W1C, self-clear or field assertions.
+For an unreviewed physical register, `registers review` emits only one sparse
+`register-identity` template with a deliberately unresolved
+`REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME` value. It never emits a
+complete peripheral fragment and never promotes observed reads, writes, masks
+or field partitions into access, W1C, self-clear or field assertions.
 
 Publication produces the configured clean SVD, raw PAC/register
 representation and restricted capability API. Outputs are reproducible from

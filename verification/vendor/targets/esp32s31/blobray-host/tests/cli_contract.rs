@@ -110,8 +110,22 @@ fn inspect_register_schema_five_exposes_assertions_and_drafts_only_owned_unrevie
     );
     let raw = owned["review_draft"]["raw_toml"].as_str().unwrap();
     assert!(raw.parse::<toml_edit::DocumentMut>().is_ok());
-    assert!(raw.contains("REVIEW_REQUIRED.register-declaration"));
+    assert!(raw.contains("REVIEW_REQUIRED.register-identity"));
+    assert!(raw.contains("kind = \"register-identity\""));
+    assert!(raw.contains("value = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\""));
+    assert_eq!(raw.matches("[[assertions]]").count(), 1);
     assert!(!raw.contains("hardware-write-semantics"));
+    assert_eq!(
+        owned["recording"]["supported_register_facts"][0],
+        "register-identity"
+    );
+    assert!(
+        !owned["recording"]["supported_register_facts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|kind| kind == "register-declaration" || kind == "register-name")
+    );
     let commands = owned["review_draft"]["validation_commands"]
         .as_array()
         .unwrap();
@@ -162,7 +176,7 @@ fn inspect_register_schema_five_exposes_assertions_and_drafts_only_owned_unrevie
             .map(|assertion| assertion["id"].as_str().unwrap())
             .collect::<std::collections::BTreeSet<_>>(),
         [
-            "ieee802154.event-status.name",
+            "ieee802154.event-status.identity",
             "ieee802154.event-status.write-semantics",
         ]
         .into()
@@ -173,6 +187,12 @@ fn inspect_register_schema_five_exposes_assertions_and_drafts_only_owned_unrevie
             && !assertion["kind"].as_str().unwrap().is_empty()
             && !assertion["evidence"].as_array().unwrap().is_empty()
     }));
+    let identity = assertions
+        .iter()
+        .find(|assertion| assertion["id"] == "ieee802154.event-status.identity")
+        .unwrap();
+    assert_eq!(identity["kind"], "register-identity");
+    assert_eq!(identity["value"], "IEEE802154_MAC.EVENT_STATUS");
     assert!(event_status["review_draft"].is_null());
 }
 
@@ -219,6 +239,10 @@ fn research_schema_ten_exact_finding_resolution_is_current_and_not_a_completion_
     assert_eq!(
         open["inventory"]["findings"][0]["id"],
         "register-0x20103100-32"
+    );
+    assert_eq!(
+        open["inventory"]["findings"][0]["consumers"][0]["assertion_kinds"],
+        serde_json::json!(["register-identity"])
     );
 
     let input_not_observed = lookup("ieee802154-baseband-leaves", "register-0x20103064-32");

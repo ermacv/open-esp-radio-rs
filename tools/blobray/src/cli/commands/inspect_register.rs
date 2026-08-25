@@ -206,8 +206,7 @@ fn recording_guide(
             .as_ref()
             .map(|path| path.display().to_string()),
         supported_register_facts: vec![
-            "register-declaration",
-            "register-name",
+            "register-identity",
             "register-description",
             "register-access",
             "hardware-write-semantics",

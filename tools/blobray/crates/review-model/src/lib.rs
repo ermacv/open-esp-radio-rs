@@ -165,7 +165,7 @@ pub struct ReviewedAssertion {
     /// Stable entity reference, for example `mmio:cpu:0x20103128/32` or a
     /// revision-independent function identity.
     pub subject: String,
-    /// Consumer-owned fact vocabulary, for example `register-name` or
+    /// Consumer-owned fact vocabulary, for example `register-identity` or
     /// `hardware-write-semantics`.
     pub kind: String,
     pub value: AssertionValue,
@@ -748,10 +748,10 @@ chips = ["esp32s31"]
 chip-revisions = ["rev0"]
 
 [[assertions]]
-id = "ieee802154.event-status.name"
+id = "ieee802154.event-status.identity"
 subject = "mmio:cpu:0x20103128/32"
-kind = "register-name"
-value = "EVENT_STATUS"
+kind = "register-identity"
+value = "IEEE802154_MAC.EVENT_STATUS"
 
 [[assertions.evidence]]
 source = "ESP_IDF_IEEE802154_COMMON_LL"
@@ -797,13 +797,13 @@ locator = "ieee802154_ll_clear_events"
         let pack = ReviewPack::from_toml(BASE).unwrap();
         let effective = ReviewKnowledge::merge([pack]).unwrap();
         assert_eq!(
-            effective.assertions()["ieee802154.event-status.name"]
+            effective.assertions()["ieee802154.event-status.identity"]
                 .applies_to
                 .chips,
             ["esp32s31"]
         );
         assert_eq!(
-            effective.assertions()["ieee802154.event-status.name"]
+            effective.assertions()["ieee802154.event-status.identity"]
                 .applies_to
                 .chip_revisions,
             ["rev0"]
@@ -811,11 +811,11 @@ locator = "ieee802154_ll_clear_events"
     }
 
     #[test]
-    fn register_declaration_keeps_authorization_provenance_and_applicability() {
+    fn consumer_owned_identity_keeps_provenance_and_applicability() {
         let pack = ReviewPack::from_toml(
             r#"
 schema = 1
-id = "esp32s31-register-declaration"
+id = "esp32s31-register-identity"
 
 [classification]
 provenance = "reviewed"
@@ -826,10 +826,10 @@ completeness = "partial"
 chips = ["esp32s31"]
 
 [[assertions]]
-id = "ieee802154.new-status.declaration"
+id = "ieee802154.new-status.identity"
 subject = "mmio:cpu:0x2010312c/32"
-kind = "register-declaration"
-value = "IEEE802154_MAC"
+kind = "register-identity"
+value = "IEEE802154_MAC.NEW_STATUS"
 [assertions.applies-to]
 chip-revisions = ["rev0"]
 [[assertions.evidence]]
@@ -840,19 +840,16 @@ locator = "status register offset"
         .unwrap();
 
         let effective = ReviewKnowledge::merge([pack]).unwrap();
-        let declaration = &effective.assertions()["ieee802154.new-status.declaration"];
-        assert_eq!(declaration.kind, "register-declaration");
+        let identity = &effective.assertions()["ieee802154.new-status.identity"];
+        assert_eq!(identity.kind, "register-identity");
         assert_eq!(
-            declaration.value,
-            AssertionValue::String("IEEE802154_MAC".to_owned())
+            identity.value,
+            AssertionValue::String("IEEE802154_MAC.NEW_STATUS".to_owned())
         );
-        assert_eq!(declaration.applies_to.chips, ["esp32s31"]);
-        assert_eq!(declaration.applies_to.chip_revisions, ["rev0"]);
-        assert_eq!(
-            declaration.classification.provenance,
-            FactProvenance::Reviewed
-        );
-        assert_eq!(declaration.evidence[0].source, "ESP_IDF_IEEE802154_REG");
+        assert_eq!(identity.applies_to.chips, ["esp32s31"]);
+        assert_eq!(identity.applies_to.chip_revisions, ["rev0"]);
+        assert_eq!(identity.classification.provenance, FactProvenance::Reviewed);
+        assert_eq!(identity.evidence[0].source, "ESP_IDF_IEEE802154_REG");
     }
 
     #[test]
@@ -865,8 +862,8 @@ locator = "status register offset"
                     "id = \"esp32s31-radio-conflict\"",
                 )
                 .replace(
-                    "id = \"ieee802154.event-status.name\"",
-                    "id = \"ieee802154.event-status.name-conflict\"",
+                    "id = \"ieee802154.event-status.identity\"",
+                    "id = \"ieee802154.event-status.identity-conflict\"",
                 )
                 .replace(
                     "id = \"ieee802154.event-status.access\"",
@@ -898,7 +895,7 @@ chip-revisions = ["{revision}"]
 [[assertions]]
 id = "{id}.fact"
 subject = "mmio:cpu:0x1000/32"
-kind = "register-name"
+kind = "register-identity"
 value = "{value}"
 [[assertions.evidence]]
 source = "MANUAL"
@@ -908,8 +905,8 @@ locator = "review"
             .unwrap()
         };
         let merged = ReviewKnowledge::merge([
-            make("rev-a", "a", "CONTROL_A"),
-            make("rev-b", "b", "CONTROL_B"),
+            make("rev-a", "a", "RADIO.CONTROL_A"),
+            make("rev-b", "b", "RADIO.CONTROL_B"),
         ])
         .unwrap();
         assert_eq!(merged.assertions().len(), 2);
@@ -923,7 +920,7 @@ locator = "review"
         assert_eq!(rev_a.assertions().len(), 1);
         assert_eq!(
             rev_a.assertions()["rev-a.fact"].value,
-            AssertionValue::String("CONTROL_A".to_owned())
+            AssertionValue::String("RADIO.CONTROL_A".to_owned())
         );
 
         let ambiguous = merged

@@ -11,6 +11,12 @@ Query values of at most 65,536 bytes are stored as SQLite BLOBs. Larger values
 are stored once in the SHA-256 CAS pack; each pack record adds a 48-byte header.
 Generated stage outputs always use CAS, independent of size.
 
+SQLite owns its WAL and shared-memory sidecars. Blobray checkpoints them only
+when SQLite reports an unblocked, complete checkpoint and never unlinks them
+manually; an external reader may legitimately keep either file live. New or
+renamed CAS packs and the pinned cache directory are synced before SQLite can
+publish their locations.
+
 The boundary is deliberately unchanged in schema 8. The production-path
 diagnostic uses 16 deterministic, unique values at 16 KiB, 64 KiB, 64 KiB + 1
 and 256 KiB. It measures fresh-cache writes (including the normal SQLite
@@ -52,6 +58,13 @@ still protected from ordinary compaction. If the same digest becomes current
 again, publication removes its retirement marker. Function facts and current
 stage/query references are never age or LRU candidates.
 
+Query-result rows are currently durable roots rather than age candidates, so
+several unrelated artifact revisions can accumulate old function facts. The
+hard quota reports that state without deleting it; until revision-scoped query
+epochs are implemented, the safe cold-start escape hatch is explicit removal
+of the whole disposable cache after durable revision snapshots and reviewed
+facts have been preserved.
+
 Preview a retention prune before applying it:
 
 ```console
@@ -65,7 +78,9 @@ The preview is read-only. Apply acquires the exclusive cache lock, rechecks the
 same cutoff and filesystem/quota preflight, copies every current or
 retention-protected digest to a new pack, verifies it, and switches the SQLite
 index atomically. Only persisted retired objects at or before the cutoff are
-omitted. `--max-size` is a hard post-prune assessment: when current and younger
+age-pruned; unreachable indexed crash garbage may be removed by the same
+reachability rewrite and contributes only to the reported reclaimed bytes.
+`--max-size` is a hard post-prune assessment: when current and younger
 protected state cannot fit, the command fails before rewriting the cache and
 suggests a shorter retention age, a larger limit, or deleting the whole disposable
 cache. It never evicts current results to meet a budget.

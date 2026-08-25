@@ -496,6 +496,23 @@ struct PinnedConnectionCleanup {
     database_file: File,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WalCheckpointStatus {
+    busy: i64,
+    log_frames: i64,
+    checkpointed_frames: i64,
+}
+
+impl WalCheckpointStatus {
+    fn completed(self) -> bool {
+        self.busy == 0
+            && ((self.log_frames == -1 && self.checkpointed_frames == -1)
+                || (self.log_frames >= 0
+                    && self.checkpointed_frames >= 0
+                    && self.log_frames == self.checkpointed_frames))
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CacheRootIdentity {
     parent: DirectoryIdentity,
@@ -1268,6 +1285,17 @@ impl QueryStore {
         connection
             .busy_timeout(Duration::from_secs(30))
             .map_err(|error| store_error("configure query database timeout", error))?;
+        // Inspect compatibility before changing journal mode or creating WAL
+        // sidecars. Unsupported stores fail byte-preserving and require an
+        // explicit caller decision instead of being mutated during rejection.
+        let schema = connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .map_err(|error| store_error("read query database schema", error))?;
+        if schema != 0 && schema != 7 && schema != STORE_SCHEMA {
+            return Err(crate::Error::invalid(format!(
+                "query cache schema {schema} is unsupported; expected 0, 7 or {STORE_SCHEMA}; preserve or remove the disposable cache explicitly instead of resetting it implicitly"
+            )));
+        }
         connection
             .execute_batch(
                 "PRAGMA journal_mode=WAL;
@@ -1276,15 +1304,8 @@ impl QueryStore {
             )
             .map_err(|error| store_error("configure query database", error))?;
 
-        let schema = connection
-            .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
-            .map_err(|error| store_error("read query database schema", error))?;
         if schema == 7 {
             migrate_store_schema_7_to_8(&connection)?;
-        } else if schema != 0 && schema != STORE_SCHEMA {
-            return Err(crate::Error::invalid(format!(
-                "query cache schema {schema} is unsupported; expected 0, 7 or {STORE_SCHEMA}; preserve or remove the disposable cache explicitly instead of resetting it implicitly"
-            )));
         }
         connection
             .execute_batch(
@@ -2144,9 +2165,7 @@ impl QueryStore {
         }
         pack.flush()?;
         pack.sync_data()?;
-        verify_open_file_path(&pack, &storage_pack_path, "query cache active pack")?;
-        self.validate_root_identity()?;
-        self.index_objects(locations)
+        self.publish_pack_locations(&pack, &storage_pack_path, locations, |_| {})
     }
 
     /// Append a batch before publishing any SQLite location. One durability
@@ -2156,13 +2175,14 @@ impl QueryStore {
         &mut self,
         values: impl IntoIterator<Item = (&'a str, &'a [u8])>,
     ) -> Result<()> {
-        self.ensure_objects_after_pack_sync(values, || {})
+        self.ensure_objects_after_pack_sync(values, || {}, |_| {})
     }
 
     fn ensure_objects_after_pack_sync<'a>(
         &mut self,
         values: impl IntoIterator<Item = (&'a str, &'a [u8])>,
         after_pack_sync: impl FnOnce(),
+        before_sqlite_index: impl FnOnce(&Connection),
     ) -> Result<()> {
         let mut missing = Vec::new();
         let mut scheduled = BTreeSet::new();
@@ -2204,8 +2224,24 @@ impl QueryStore {
         pack.flush()?;
         pack.sync_data()?;
         after_pack_sync();
-        verify_open_file_path(&pack, &storage_pack_path, "query cache active pack")?;
+        self.publish_pack_locations(&pack, &storage_pack_path, locations, before_sqlite_index)
+    }
+
+    fn publish_pack_locations(
+        &mut self,
+        pack: &File,
+        storage_pack_path: &Path,
+        locations: PackedObjectLocations,
+        before_sqlite_index: impl FnOnce(&Connection),
+    ) -> Result<()> {
+        verify_open_file_path(pack, storage_pack_path, "query cache active pack")?;
+        // `sync_data` makes the record durable, but a newly created pack's
+        // directory entry is not ordered before the SQLite location until the
+        // pinned cache directory is synced as well. The test observer makes
+        // this ordering explicit without weakening the transaction boundary.
+        self._root_pin.sync_directory()?;
         self.validate_root_identity()?;
+        before_sqlite_index(&self.connection);
         self.index_objects(locations)
     }
 
@@ -2482,6 +2518,10 @@ impl QueryStore {
         };
         fs::rename(&temporary, &destination)?;
         verify_open_file_path(&output, &destination, "query cache compacted pack")?;
+        // The SQLite redirect must never become durable before the renamed
+        // pack entry. A file sync alone does not make its directory entry
+        // crash-durable.
+        self._root_pin.sync_directory()?;
         self.validate_root_identity()?;
 
         let transaction = self
@@ -2565,6 +2605,7 @@ impl QueryStore {
             );
         }
         drop(statement);
+        let mut removed = false;
         for path in pack_files(&self.storage_root)? {
             let name = path
                 .file_name()
@@ -2574,7 +2615,11 @@ impl QueryStore {
                 })?;
             if !referenced.contains(name) {
                 fs::remove_file(path)?;
+                removed = true;
             }
+        }
+        if removed {
+            self._root_pin.sync_directory()?;
         }
         self.validate_root_identity()
     }
@@ -3427,6 +3472,12 @@ impl PinnedCacheRoot {
             })
         }
     }
+
+    fn sync_directory(&self) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        self.directory.sync_all()?;
+        Ok(())
+    }
 }
 
 impl PinnedConnection {
@@ -3492,34 +3543,32 @@ impl Drop for PinnedConnection {
                 )
                 .is_ok()
         });
-        let checkpointed = !storage_binding_is_current
-            || connection
-                .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
-                .is_ok();
-        let closed = match connection.close() {
-            Ok(()) => true,
-            Err((connection, _)) => {
-                // NO_CKPT_ON_CLOSE remains set on this fallback drop.
-                drop(connection);
-                false
-            }
-        };
-        if !storage_binding_is_current || !checkpointed || !closed {
-            return;
+        if storage_binding_is_current && truncate_wal_if_unblocked(&connection) {
+            // Once the typed checkpoint result proves that every WAL frame is
+            // in the database, restore SQLite's normal close ownership. The
+            // VFS may then remove sidecars only when it knows this is the last
+            // connection. Blobray must never unlink WAL/SHM itself: its flock
+            // cannot exclude an external SQLite reader or writer.
+            let _ = connection.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false);
         }
-        let cleanup = cleanup.expect("current storage binding requires writer cleanup state");
-        for suffix in ["-wal", "-shm", "-journal"] {
-            let path = sqlite_sidecar_path(&cleanup.storage_database_path, suffix);
-            match fs::symlink_metadata(&path) {
-                Ok(metadata) if metadata.is_file() || metadata.file_type().is_symlink() => {
-                    let _ = fs::remove_file(path);
-                }
-                Ok(_) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => {}
-            }
+        if let Err((connection, _)) = connection.close() {
+            // If close fails, retain NO_CKPT_ON_CLOSE and let SQLite drop the
+            // handle without an implicit checkpoint against a stale binding.
+            drop(connection);
         }
     }
+}
+
+fn truncate_wal_if_unblocked(connection: &Connection) -> bool {
+    connection
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE);", [], |row| {
+            Ok(WalCheckpointStatus {
+                busy: row.get(0)?,
+                log_frames: row.get(1)?,
+                checkpointed_frames: row.get(2)?,
+            })
+        })
+        .is_ok_and(WalCheckpointStatus::completed)
 }
 
 impl DirectoryIdentity {
@@ -4258,6 +4307,38 @@ mod tests {
     }
 
     #[test]
+    fn writer_rejects_an_unsupported_non_wal_schema_without_side_effects() {
+        let manifest = manifest("writer-unsupported-non-wal");
+        let project_root = manifest.parent().unwrap();
+        let cache_root = project_root.join("generated/.blobray-cache");
+        fs::create_dir_all(&cache_root).unwrap();
+        let database = cache_root.join("queries.sqlite3");
+        {
+            let connection = Connection::open(&database).unwrap();
+            connection
+                .execute_batch(
+                    "PRAGMA journal_mode=DELETE;
+                     PRAGMA user_version=99;
+                     CREATE TABLE sentinel(value TEXT NOT NULL);
+                     INSERT INTO sentinel(value) VALUES ('preserve me');",
+                )
+                .unwrap();
+        }
+        fs::write(cache_root.join("objects-7.pack"), b"preserve pack bytes").unwrap();
+        let before = snapshot_tree(project_root);
+
+        let error = match QueryStore::open(&manifest) {
+            Ok(_) => panic!("unsupported cache schema unexpectedly opened"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("schema 99 is unsupported"));
+        assert_eq!(snapshot_tree(project_root), before);
+        assert!(!sqlite_sidecar_path(&database, "-wal").exists());
+        assert!(!sqlite_sidecar_path(&database, "-shm").exists());
+    }
+
+    #[test]
     fn schema_seven_migrates_in_place_without_losing_queries_bindings_or_pack_references() {
         let manifest = manifest("schema-seven-migration");
         let large = vec![0x67; INLINE_VALUE_LIMIT + 1];
@@ -4460,6 +4541,93 @@ mod tests {
     }
 
     #[test]
+    fn writer_drop_leaves_wal_owned_by_an_external_reader() {
+        let manifest = manifest("writer-external-reader");
+        let project_root = manifest.parent().unwrap();
+        let database = project_root.join("generated/.blobray-cache/queries.sqlite3");
+        let mut store = QueryStore::open(&manifest).unwrap();
+        store
+            .put("first", "function", "inputs-a", &[], b"first result")
+            .unwrap();
+
+        // This connection deliberately bypasses Blobray's advisory file lock.
+        // Its snapshot prevents TRUNCATE from completing after the next write.
+        let external = Connection::open(&database).unwrap();
+        external.execute_batch("BEGIN;").unwrap();
+        assert_eq!(
+            external
+                .query_row("SELECT COUNT(*) FROM query_results", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            1
+        );
+        store
+            .put("second", "function", "inputs-b", &[], b"second result")
+            .unwrap();
+        store
+            .connection
+            .busy_timeout(Duration::from_millis(1))
+            .unwrap();
+
+        drop(store);
+
+        let wal = sqlite_sidecar_path(&database, "-wal");
+        assert!(wal.is_file());
+        assert!(fs::metadata(&wal).unwrap().len() > 0);
+        assert_eq!(
+            external
+                .query_row("SELECT COUNT(*) FROM query_results", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            1
+        );
+        external.execute_batch("ROLLBACK;").unwrap();
+        drop(external);
+
+        let store = QueryStore::open(&manifest).unwrap();
+        assert_eq!(store.get("first").unwrap().unwrap(), b"first result");
+        assert_eq!(store.get("second").unwrap().unwrap(), b"second result");
+    }
+
+    #[test]
+    fn typed_wal_checkpoint_status_rejects_busy_and_partial_results() {
+        assert!(
+            WalCheckpointStatus {
+                busy: 0,
+                log_frames: 0,
+                checkpointed_frames: 0,
+            }
+            .completed()
+        );
+        assert!(
+            WalCheckpointStatus {
+                busy: 0,
+                log_frames: -1,
+                checkpointed_frames: -1,
+            }
+            .completed()
+        );
+        assert!(
+            !WalCheckpointStatus {
+                busy: 1,
+                log_frames: 4,
+                checkpointed_frames: 3,
+            }
+            .completed()
+        );
+        assert!(
+            !WalCheckpointStatus {
+                busy: 0,
+                log_frames: 4,
+                checkpointed_frames: 3,
+            }
+            .completed()
+        );
+    }
+
+    #[test]
     fn statistics_fail_closed_when_a_writer_starts_after_preflight() {
         let manifest = manifest("statistics-postflight-writer");
         {
@@ -4601,6 +4769,37 @@ mod tests {
     }
 
     #[test]
+    fn durable_pack_publish_precedes_the_sqlite_location() {
+        let manifest = manifest("pack-publish-order");
+        let mut store = QueryStore::open(&manifest).unwrap();
+        let value = vec![0x5b; INLINE_VALUE_LIMIT + 1];
+        let digest = sha256_hex(&value);
+        let storage_pack = store.active_storage_pack_path().unwrap();
+
+        store
+            .ensure_objects_after_pack_sync(
+                std::iter::once((digest.as_str(), value.as_slice())),
+                || {},
+                |connection| {
+                    assert!(storage_pack.is_file());
+                    assert_eq!(
+                        connection
+                            .query_row(
+                                "SELECT COUNT(*) FROM objects WHERE digest = ?1",
+                                [&digest],
+                                |row| row.get::<_, i64>(0),
+                            )
+                            .unwrap(),
+                        0
+                    );
+                },
+            )
+            .unwrap();
+
+        assert_eq!(store.read_object(&digest).unwrap(), value);
+    }
+
+    #[test]
     fn pack_replacement_after_fsync_is_rejected_before_sqlite_indexing() {
         let manifest = manifest("pack-replaced-before-index");
         let mut store = QueryStore::open(&manifest).unwrap();
@@ -4616,6 +4815,7 @@ mod tests {
                     fs::rename(&active_pack, &detached_pack).unwrap();
                     fs::write(&active_pack, b"replacement pack").unwrap();
                 },
+                |_| {},
             )
             .unwrap_err();
 

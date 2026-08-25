@@ -151,12 +151,19 @@ measured boundary and retention policy are documented in
 output files are always streamed into the same CAS and may be atomically
 restored; generated IR bundles remain publication artifacts and are not the
 cache database. Reviewed packs and the qualification ledger must never be
-copied into or modified by the store. Schema 7 migrates atomically to schema 8
-without discarding queries or packs. Unsupported schemas fail closed and
-require the caller to preserve or explicitly remove the disposable cache.
+copied into or modified by the store. In schema 9, every persisted query result
+belongs to at least one analysis epoch; an unowned result is invalid cache state
+rather than a GC candidate. Query results are never selected by per-result LRU
+or filesystem mtime.
 
-Pack lifetime is reachability-based with explicit retention roots. Query
-results, stage-output bindings and timestamped retired objects are preserved.
+Schema 9 is created only from a cold store. Blobray does not import, upgrade or
+accept an older cache schema. After preserving reviewed inputs and durable
+generated artifacts, recovery requires explicit removal of the entire
+`generated/.blobray-cache/` directory and a fresh analysis.
+
+Pack lifetime is reachability-based with explicit retention roots. Analysis
+epoch memberships, query results, stage-output bindings and timestamped retired
+objects are preserved.
 When unprotected unreachable records exceed the bounded compaction
 threshold, the store streams all live objects into a new immutable generation,
 fsyncs it, atomically redirects SQLite, and only then removes old generations.

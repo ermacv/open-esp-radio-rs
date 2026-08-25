@@ -281,8 +281,9 @@ The command reports cache-file, database and pack sizes, query kinds, dependency
 and object counts, live records, and currently reclaimable pack bytes. It opens
 an existing cache read-only. If the store has not been created, that state is
 reported without creating `generated/.blobray-cache/` or any SQLite sidecar.
-`cache stats` does not perform garbage collection, compaction, pruning, schema
-migration, or quota enforcement; it only describes the state already on disk.
+`cache stats` does not perform garbage collection, compaction, pruning or quota
+enforcement, and it neither creates nor upgrades a cache schema; it only
+describes the state already on disk.
 Its assessment reports the platform support and exact thresholds for automatic
 pack compaction. `cache gc --dry-run` reports the reachable-pack or explicit
 retention projection, temporary space requirement, available space and an
@@ -298,12 +299,19 @@ insufficient working space and a size limit that cannot be met without
 evicting live results. The size limit is therefore an actionable guard, not a
 silent lossy quota.
 
-Age retention is never guessed from file mtimes. Schema 8 persists the time at
-which a CAS object loses its final stage/query reference; current results and
-unretired function facts are not LRU candidates. The complete measurement,
-migration, retention and 64-KiB storage rationale is in
-[`cache-policy.md`](cache-policy.md). Removing the entire disposable cache
-remains the safe cold-start escape hatch. `project analyze --plan` is the
+Age retention is never guessed from file mtimes. Schema 9 persists the time at
+which a CAS object loses its final stage/query reference and requires every
+query result to belong to at least one analysis epoch. An unowned result is
+invalid cache state, not a GC candidate. Current results and unretired function
+facts are not per-result LRU candidates.
+
+Schema 9 is created only from a cold store. A cache at any other schema must be
+removed explicitly after reviewed TOML, revision snapshots, linked IR and other
+durable artifacts have been preserved. Remove the entire
+`generated/.blobray-cache/` directory, not selected SQLite or pack files, and
+rerun analysis; there is no cache import or upgrade path. The complete
+measurement, hard-cutover, retention and 64-KiB storage rationale is in
+[`cache-policy.md`](cache-policy.md). `project analyze --plan` is the
 read-only way to see whether
 each stage is current, restorable from CAS, or requires recomputation. Plan
 schema 2 keeps the default decision summary bounded while exposing every

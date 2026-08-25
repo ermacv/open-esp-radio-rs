@@ -1,9 +1,10 @@
 # Project cache storage and retention policy
 
 The project cache is disposable derived state. SQLite stores immutable query
-identity, dependencies and current stage bindings. The append-only CAS pack
-stores generated outputs and large query values. Reviewed TOML, revision
-snapshots and reproducible linked IR remain outside this cache.
+identity, dependencies, analysis-epoch membership and current stage bindings.
+The append-only CAS pack stores generated outputs and large query values.
+Reviewed TOML, revision snapshots and reproducible linked IR remain outside
+this cache.
 
 ## Inline versus CAS
 
@@ -17,7 +18,7 @@ manually; an external reader may legitimately keep either file live. New or
 renamed CAS packs and the pinned cache directory are synced before SQLite can
 publish their locations.
 
-The boundary is deliberately unchanged in schema 8. The production-path
+The boundary is deliberately unchanged in schema 9. The production-path
 diagnostic uses 16 deterministic, unique values at 16 KiB, 64 KiB, 64 KiB + 1
 and 256 KiB. It measures fresh-cache writes (including the normal SQLite
 transaction/fsync path), verified reads and physical database/pack sizes:
@@ -58,12 +59,11 @@ still protected from ordinary compaction. If the same digest becomes current
 again, publication removes its retirement marker. Function facts and current
 stage/query references are never age or LRU candidates.
 
-Query-result rows are currently durable roots rather than age candidates, so
-several unrelated artifact revisions can accumulate old function facts. The
-hard quota reports that state without deleting it; until revision-scoped query
-epochs are implemented, the safe cold-start escape hatch is explicit removal
-of the whole disposable cache after durable revision snapshots and reviewed
-facts have been preserved.
+Every schema-9 query-result row belongs to at least one analysis epoch. This is
+a store invariant: a result without epoch membership is invalid cache state,
+not a garbage-collection candidate. Query results remain durable roots rather
+than age or per-result LRU candidates. The hard quota reports live state that
+cannot fit without deleting it.
 
 Preview a retention prune before applying it:
 
@@ -91,11 +91,10 @@ SQLite WAL locking and descriptor-relative destructive cleanup cannot be
 guaranteed there. Ordinary reachability compaction may remove unindexed crash
 orphans, but it preserves timestamped retired objects until explicit prune.
 
-Schema 7 migrates atomically in place. Existing query results, bindings, object
-locations and pack bytes are preserved; already-unreachable indexed objects
-receive the migration timestamp and therefore a full grace period. A malformed
-or conflicting schema-7 database fails closed instead of falling through to a
-destructive cache reset. Read-only `cache stats` can inspect schema 7 without
-creating the metadata table. Retention planning intentionally requires one
-normal writing analysis to perform the migration first, because a read-only
-command cannot assign trustworthy retirement timestamps.
+Schema 9 is created only from a cold store. A cache database at any other schema
+fails closed; Blobray has no in-place cache import or upgrade path. Preserve
+reviewed TOML, revision snapshots, linked IR and other durable artifacts first,
+then explicitly remove the **entire**
+`generated/.blobray-cache/` directory and rerun analysis. Removing only the
+SQLite database or copying individual rows, loose objects or pack-index entries
+into a new store is unsupported.

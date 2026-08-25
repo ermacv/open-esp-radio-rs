@@ -74,18 +74,25 @@ This closes route identity, level, residency policy, baseline masks and the
 setup/teardown prefix. The complete primary suffix review now structurally
 classifies dynamic groups `0x1820_0000` and `0x0000_0008`, including bank-one
 precedence, two distinct scheduler-state observations and the sticky coalesced
-work marker. Individual bit names remain positional. The public OSAL and the
-complete static-event consumer prove that this scheduler work is intentionally
-coalesced and drained, while the synchronous callback registry is vendor
-software architecture rather than silicon ABI. The distilled contract and
-RTOS-free replacement boundary are recorded in
+work marker. Individual bit names remain positional. The scheduler words are
+now transferred with the affine interrupt-register partition, so the hard
+handler can preserve the exact read/optional-clear/read order without a
+task-side MMIO alias. The public OSAL and complete producer/consumer review
+prove that this scheduler work is intentionally coalesced and drained through
+a software intrusive completion list, not a hardware FIFO. The default BLE
+callback graph further proves that selector 4 drives conditional scheduler
+retry and selector 6 drives a post-clear transaction/list consistency action.
+The callback registry and list-node layout are vendor software architecture,
+but those two effects must have typed open replacements. The distilled
+contract and RTOS-free replacement boundary are recorded in
 [`bluetooth-interrupt-runtime.md`](bluetooth-interrupt-runtime.md). The
 pinned `esp-pacs` revision now names source 124 as `BT_MAC` and source 133 as
 `BT_MAC_INT1`. The ESP-HAL adapter compile-checks both identities against the
 chip policy, requires level-three handlers, binds the complete pair on one
 core and disables both through the same retained core identity. Those
-primitives stay crate-private until shared ISR storage, feature-specific NRT
-policy and the scheduler-list consumer can make a lossless live epoch. The
+primitives stay crate-private until the staged ISR owner, feature-specific NRT
+policy, typed selector-4/6 actions, open completion queue and lost-wake-safe
+waker can make a lossless live epoch. The
 baseline groups are no longer opaque completion candidates: the complete
 source-124 prefix proves four fault/assert lanes, and the restricted PAC
 atomically retains their conditional diagnostic words before Bluetooth policy
@@ -111,7 +118,7 @@ minimum dependency graph and publication gate for each unit are:
 | Unit | Responsibility | Current S31 state | Exit criterion |
 | --- | --- | --- | --- |
 | Register evidence and SVD | Address, field, access and transaction provenance | Partial but substantial; generated model is fail-closed | Every register used by the first vertical slice is reviewed and generated with no raw-address escape in upper layers. |
-| Restricted PAC | Affine peripheral ownership and finite MMIO operations | Cold ownership, scheduler prefix, full 50-operation HAL body, memory-pointer geometry and IRQ prefixes exist | DTM trace uses only typed operations and has exact rollback/quiescence edges. |
+| Restricted PAC | Affine peripheral ownership and finite MMIO operations | Cold ownership, scheduler prefix, full 50-operation HAL body, memory-pointer geometry, IRQ prefixes and the ISR scheduler read/clear plus worker diagnostic transfer exist | DTM trace uses only typed operations and has exact rollback/quiescence edges. |
 | Platform/HAL lifecycle | Clocks, reset, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset is live; PHY/BTBB are disconnected; typed IRQ pair primitives exist but the live epoch remains closed | One owner can power, route both IRQs, run and return cold without owner duplication. |
 | Controller timer and scheduler | Radio timebase, prepare/abort/doorbell/completion and collision policy | Command/status semantics absent | Virtual-time model plus register trace proves one scheduled event, cancellation and late/error handling. |
 | Packet memory dataplane | Static RX/TX/free/ready storage, DMA visibility and backpressure | Pointer encoding exists; list roles/layouts do not | Every buffer has an affine CPU/hardware state and is reclaimed on success, error, abort and shutdown. |
@@ -197,7 +204,7 @@ shared hardware lease can be dropped.
 | `btdm_coex_enable` | profile-optional for standalone | A no-op success is source-correct only while the product contract excludes simultaneous Wi-Fi. |
 | `ble_stack_enable` | unresolved composite | Replace protocol activation; recover any remaining radio-engine activation transaction separately. |
 | `r_btdm_hci_fc_enable` | open-controller replacement | Start a fresh bounded HCI credit epoch in Rust. |
-| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline fault masks and diagnostic capture, controller-output strobes, typed two-route ESP-HAL primitives, dynamic scheduler classifier and RTOS-free coalesced wake cell are recovered as separate contracts. Replace the RTOS task with one affine async Controller owner; shared ISR storage, feature-specific NRT policy, live-route composition, scheduler-list drain and timer/scheduler activation remain unresolved. |
+| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline fault masks and diagnostic capture, controller-output strobes, typed two-route ESP-HAL primitives, affine ISR scheduler MMIO, dynamic scheduler classifier and RTOS-free coalesced wake cell are recovered as separate contracts. Replace the RTOS task with one affine async Controller owner; feature-specific NRT policy, live-route composition, typed selector-4/6 actions, the open scheduler queue and timer/scheduler activation remain unresolved. |
 | `r_btdm_task_disable` and `ble_stack_disable` | unresolved composite | Define a stop barrier: mask sources, cancel/abort commands, acknowledge residual status, reclaim every packet, then expose a quiesced owner. |
 
 The public OSAL demonstrates that the vendor implementation uses FreeRTOS
@@ -243,9 +250,10 @@ The implementation order is:
 1. finish restricted PAC access for scheduler command/status words, controller
    timer and memory-list pointer geometry; both interrupt snapshot modes,
    baseline setup/teardown masks, route identities, policies and typed ESP-HAL
-   pair binding, dynamic scheduler classification and sticky coalesced wake
-   state are finite components, but shared ISR storage, feature-specific NRT policy
-   and scheduler-list drain are still absent, so this is not a live interrupt
+   pair binding, dynamic scheduler classification, affine ISR scheduler MMIO
+   and sticky coalesced wake state are finite components, but live ISR
+   composition, feature-specific NRT policy, typed selector-4/6 actions and the
+   open scheduler queue are still absent, so this is not a live interrupt
    epoch;
 2. recover a hardware-only init transition from the composite task/BLE init
    functions, with read-back or bounded postconditions and exact rollback up
@@ -280,9 +288,12 @@ The decisive gaps are not HCI packet syntax. They are:
 
 - feature-specific raw NRT meanings plus their mask/re-arm ordering; the
   primary fault disposition and diagnostics, dynamic scheduler branch, source
-  identities, level-3 policy, exact masks, coalesced marker contract and shared
-  clear-bank prefix are no longer unknown, but shared live ISR storage remains
-  absent;
+  identities, level-3 policy, exact masks, coalesced marker contract, affine
+  ISR scheduler MMIO and shared clear-bank prefix are no longer unknown, but
+  live route composition and a lost-wake-safe waker remain absent;
+- typed open scheduler equivalents for selector-4 conditional retry,
+  selector-6 post-clear consistency and the recovered software completion-list
+  lifecycle;
 - scheduler command opcodes, completion/error status and timebase semantics;
 - the roles and element layouts of the three compressed-pointer memory-list
   pairs, including alignment and ownership barriers;

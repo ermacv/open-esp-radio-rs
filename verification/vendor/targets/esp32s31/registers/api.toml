@@ -139,6 +139,7 @@ member = "bluetooth_interrupts"
 description = "Bluetooth controller interrupt registers transferred independently from task lifecycle ownership to the hard ISR."
 peripherals = [
     "BLUETOOTH_INTERRUPT_BANK",
+    "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME",
 ]
 
 [[ownership-partitions]]
@@ -565,6 +566,13 @@ register = "SECONDARY_TARGET%s"
 fields = ["SECONDARY_TICK_IMAGE"]
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
 
+[[zero-based-field-writes]]
+name = "bluetooth_scheduler_diagnostic_latch"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_DIAGNOSTIC_LATCH"
+fields = ["VALUE_LOW_16"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+
 [[interrupt-snapshots]]
 name = "mac_interrupt"
 peripheral = "WIFI_MAC_INTERRUPT"
@@ -634,6 +642,12 @@ name = "disable_mac_interrupt_raw"
 peripheral = "WIFI_MAC_INTERRUPT"
 register = "RAW"
 sources = ["BLOB_LIBPP_HAL_DISABLE_MAC"]
+
+[[zero-register-writes]]
+name = "clear_bluetooth_scheduler_reference"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+register = "SCHEDULER_REFERENCE"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 
 [[zero-register-writes]]
 name = "disable_mac_interrupt_1_raw"

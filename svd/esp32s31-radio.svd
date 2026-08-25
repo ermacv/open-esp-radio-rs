@@ -14360,11 +14360,12 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
     <peripheral>
       <name>BLUETOOTH_CONTROLLER_CORE</name>
       <description>Bluetooth controller-core register view grouped by runtime responsibility rather
-than vendor object boundaries. It owns scheduler, sleep-timer, controller
-initialization, memory-list, scan-snapshot and ISO-coexistence state reached
-through the 0x20101000 physical block. Interrupt programming, enable/status,
-acknowledgement and ISR diagnostics belong exclusively to
-BLUETOOTH_INTERRUPT_BANK.
+than vendor object boundaries. It owns task-side scheduler, sleep-timer,
+controller initialization, memory-list, scan-snapshot and ISO-coexistence state
+reached through the 0x20101000 physical block. Interrupt programming,
+enable/status, acknowledgement and fault diagnostics belong exclusively to
+BLUETOOTH_INTERRUPT_BANK; the two scheduler words accessed by the hard handler
+belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
 </description>
       <baseAddress>0x20101000</baseAddress>
       <registers>
@@ -14407,54 +14408,6 @@ BLUETOOTH_INTERRUPT_BANK.
               <name>ADDRESS_PREFIX</name>
               <bitOffset>22</bitOffset>
               <bitWidth>10</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>SCHEDULER_REFERENCE</name>
-          <description>Scheduler users compare bits 0..19 and also publish complete images. Upper encoding remains unknown.</description>
-          <addressOffset>0x78</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <fields>
-            <field>
-              <name>VALUE_LOW_20</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>20</bitWidth>
-            </field>
-            <field>
-              <name>OPAQUE_HIGH_12</name>
-              <bitOffset>20</bitOffset>
-              <bitWidth>12</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>SCHEDULER_STATE</name>
-          <description>Shared scheduler state. Command transactions wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits.</description>
-          <addressOffset>0x7C</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <fields>
-            <field>
-              <name>VALUE_LOW_20</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>20</bitWidth>
-            </field>
-            <field>
-              <name>OPAQUE_STATE_20_29</name>
-              <bitOffset>20</bitOffset>
-              <bitWidth>10</bitWidth>
-            </field>
-            <field>
-              <name>OPAQUE_STATE_30</name>
-              <bitOffset>30</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>BUSY</name>
-              <bitOffset>31</bitOffset>
-              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
@@ -15107,6 +15060,12 @@ BLUETOOTH_INTERRUPT_BANK.
               <name>VALUE_LOW_16</name>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -15666,6 +15625,66 @@ also exposing scheduler, sleep or memory-management state.
               <name>PENDING_BITS</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME</name>
+      <description>Two scheduler words transferred with BLUETOOTH_INTERRUPT_BANK to the primary
+hard handler. The complete source-124 suffix can read SCHEDULER_STATE at two
+distinct temporal points and can write a complete zero image to
+SCHEDULER_REFERENCE. Keeping this sparse physical view outside the task-side
+controller partition prevents either owner from manufacturing an MMIO alias.
+</description>
+      <baseAddress>0x20101000</baseAddress>
+      <registers>
+        <register>
+          <name>SCHEDULER_REFERENCE</name>
+          <description>The source-124 handler can publish the complete zero image when bank-one source 3 observes an idle scheduler. Other scheduler users compare bits 0..19 or publish complete images; upper encoding remains unknown.</description>
+          <addressOffset>0x78</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>VALUE_LOW_20</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>20</bitWidth>
+            </field>
+            <field>
+              <name>OPAQUE_HIGH_12</name>
+              <bitOffset>20</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>SCHEDULER_STATE</name>
+          <description>The source-124 handler reads this complete shared scheduler state at a bank-one reference gate and again before publishing deferred work. Command transactions also wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits.</description>
+          <addressOffset>0x7C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>VALUE_LOW_20</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>20</bitWidth>
+            </field>
+            <field>
+              <name>OPAQUE_STATE_20_29</name>
+              <bitOffset>20</bitOffset>
+              <bitWidth>10</bitWidth>
+            </field>
+            <field>
+              <name>OPAQUE_STATE_30</name>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>BUSY</name>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

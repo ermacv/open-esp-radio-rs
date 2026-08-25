@@ -76,6 +76,7 @@ fragments = [
     "peripherals/btmac-ble-phy-init.toml",
     "peripherals/bluetooth-controller-core.toml",
     "peripherals/bluetooth-interrupt-bank.toml",
+    "peripherals/bluetooth-scheduler-interrupt-runtime.toml",
     "peripherals/bluetooth-reset-idle-status-0.toml",
     "peripherals/shared-baseband-reset-idle-status.toml",
     "peripherals/shared-baseband-tx-timing.toml",

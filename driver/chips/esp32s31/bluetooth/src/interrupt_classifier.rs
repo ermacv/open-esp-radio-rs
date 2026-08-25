@@ -16,6 +16,7 @@
 
 pub use open_esp_radio_esp32s31_pac::{
     BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
+    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
 };
 use open_esp_radio_esp32s31_pac::{
     BluetoothPrimaryFaultEvidence, BluetoothPrimaryInterruptEpoch,
@@ -190,23 +191,6 @@ impl BluetoothPrimaryControllerFault {
     }
 }
 
-/// First scheduler-state observation made only for bank-one source 3.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothSchedulerReferenceGateObservation(u32);
-
-impl BluetoothSchedulerReferenceGateObservation {
-    /// Wrap one complete `SCHEDULER_STATE` image read at the reference-gate
-    /// point of the hard-handler suffix.
-    pub const fn from_bits(bits: u32) -> Self {
-        Self(bits)
-    }
-
-    /// Return the complete observed register image.
-    pub const fn bits(self) -> u32 {
-        self.0
-    }
-}
-
 /// Classifier token proving that bank-one source 3 requires a reference gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothSchedulerReferenceGate;
@@ -218,41 +202,25 @@ impl BluetoothSchedulerReferenceGate {
         observation: BluetoothSchedulerReferenceGateObservation,
     ) -> BluetoothSchedulerReferenceAction {
         if observation.bits() & SCHEDULER_BUSY == 0 {
-            BluetoothSchedulerReferenceAction::ClearReference
+            BluetoothSchedulerReferenceAction::ClearReferenceAndRunPostClearSchedulerAction
         } else {
             BluetoothSchedulerReferenceAction::PreserveReference
         }
     }
 }
 
-/// Hardware action selected for `SCHEDULER_REFERENCE` after the first read.
+/// Required reference-path disposition selected after the first state read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothSchedulerReferenceAction {
-    /// Write the complete zero image to `SCHEDULER_REFERENCE`.
-    ClearReference,
+    /// Write zero to `SCHEDULER_REFERENCE`, then run the mandatory open
+    /// equivalent of the reviewed selector-6 scheduler action.
+    ///
+    /// The register write alone is not a complete disposition. The pinned BLE
+    /// consumer immediately checks scheduler transaction/list consistency.
+    /// That typed open action is still a publication blocker.
+    ClearReferenceAndRunPostClearSchedulerAction,
     /// Leave `SCHEDULER_REFERENCE` unchanged while the busy bit is set.
     PreserveReference,
-}
-
-/// Later scheduler-state observation used to construct the worker wake.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothSchedulerWorkObservation(u32);
-
-impl BluetoothSchedulerWorkObservation {
-    /// Wrap one complete `SCHEDULER_STATE` image read at the scheduler-work
-    /// point, after any reference-gate action.
-    pub const fn from_bits(bits: u32) -> Self {
-        Self(bits)
-    }
-
-    /// Return the complete observed register image.
-    pub const fn bits(self) -> u32 {
-        self.0
-    }
-
-    const fn reference_state(self) -> bool {
-        self.0 & (SCHEDULER_BUSY | SCHEDULER_STATE_29) == (SCHEDULER_BUSY | SCHEDULER_STATE_29)
-    }
 }
 
 /// Deferred-work classifier retaining the two booleans selected by the ISR.
@@ -268,7 +236,8 @@ impl BluetoothSchedulerWorkClassifier {
         self,
         observation: BluetoothSchedulerWorkObservation,
     ) -> BluetoothSchedulerWorkerWake {
-        let reference_state = observation.reference_state();
+        let reference_state = observation.bits() & (SCHEDULER_BUSY | SCHEDULER_STATE_29)
+            == (SCHEDULER_BUSY | SCHEDULER_STATE_29);
         BluetoothSchedulerWorkerWake {
             class: if self.mark_candidate && reference_state {
                 BluetoothSchedulerWorkerWakeClass::Marked
@@ -442,12 +411,12 @@ mod tests {
     }
 
     #[test]
-    fn reference_gate_clears_only_when_the_first_observation_is_not_busy() {
+    fn reference_gate_requires_post_clear_action_only_when_not_busy() {
         let gate = BluetoothSchedulerReferenceGate;
 
         assert_eq!(
             gate.classify(BluetoothSchedulerReferenceGateObservation::from_bits(0)),
-            BluetoothSchedulerReferenceAction::ClearReference
+            BluetoothSchedulerReferenceAction::ClearReferenceAndRunPostClearSchedulerAction
         );
         assert_eq!(
             gate.classify(BluetoothSchedulerReferenceGateObservation::from_bits(

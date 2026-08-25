@@ -34680,7 +34680,7 @@ pub mod btmac_ble_phy_init {
         }
     }
 }
-#[doc = "Bluetooth controller-core register view grouped by runtime responsibility rather than vendor object boundaries. It owns scheduler, sleep-timer, controller initialization, memory-list, scan-snapshot and ISO-coexistence state reached through the 0x20101000 physical block. Interrupt programming, enable/status, acknowledgement and ISR diagnostics belong exclusively to BLUETOOTH_INTERRUPT_BANK."]
+#[doc = "Bluetooth controller-core register view grouped by runtime responsibility rather than vendor object boundaries. It owns task-side scheduler, sleep-timer, controller initialization, memory-list, scan-snapshot and ISO-coexistence state reached through the 0x20101000 physical block. Interrupt programming, enable/status, acknowledgement and fault diagnostics belong exclusively to BLUETOOTH_INTERRUPT_BANK; the two scheduler words accessed by the hard handler belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME."]
 pub type BluetoothControllerCore =
     crate::Periph<bluetooth_controller_core::RegisterBlock, 0x2010_1000>;
 impl core::fmt::Debug for BluetoothControllerCore {
@@ -34688,7 +34688,7 @@ impl core::fmt::Debug for BluetoothControllerCore {
         f.debug_struct("BluetoothControllerCore").finish()
     }
 }
-#[doc = "Bluetooth controller-core register view grouped by runtime responsibility rather than vendor object boundaries. It owns scheduler, sleep-timer, controller initialization, memory-list, scan-snapshot and ISO-coexistence state reached through the 0x20101000 physical block. Interrupt programming, enable/status, acknowledgement and ISR diagnostics belong exclusively to BLUETOOTH_INTERRUPT_BANK."]
+#[doc = "Bluetooth controller-core register view grouped by runtime responsibility rather than vendor object boundaries. It owns task-side scheduler, sleep-timer, controller initialization, memory-list, scan-snapshot and ISO-coexistence state reached through the 0x20101000 physical block. Interrupt programming, enable/status, acknowledgement and fault diagnostics belong exclusively to BLUETOOTH_INTERRUPT_BANK; the two scheduler words accessed by the hard handler belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME."]
 pub mod bluetooth_controller_core {
     #[repr(C)]
     #[doc = "Register block"]
@@ -34697,35 +34697,34 @@ pub mod bluetooth_controller_core {
         scheduler_disable_command: SchedulerDisableCommand,
         _reserved2: [u8; 0x6c],
         scheduler_sram_pointer_prefix: SchedulerSramPointerPrefix,
-        scheduler_reference: SchedulerReference,
-        scheduler_state: SchedulerState,
+        _reserved3: [u8; 0x08],
         controller_auxiliary_pointer: ControllerAuxiliaryPointer,
         hal_init_bytes: HalInitBytes,
-        _reserved7: [u8; 0x04],
+        _reserved5: [u8; 0x04],
         init_zero_008c: InitZero008c,
         sleep_timer_control: SleepTimerControl,
         sleep_timer_value_0: SleepTimerValue0,
         sleep_timer_value_1: SleepTimerValue1,
         sleep_timer_value_2: SleepTimerValue2,
-        _reserved12: [u8; 0x0c],
+        _reserved10: [u8; 0x0c],
         sleep_timer_latched_time_0: SleepTimerLatchedTime0,
         sleep_timer_latched_time_1: SleepTimerLatchedTime1,
         sleep_timer_latched_time_2: SleepTimerLatchedTime2,
         init_zero_00b8: InitZero00b8,
-        _reserved16: [u8; 0x08],
+        _reserved14: [u8; 0x08],
         controller_transaction_0: ControllerTransaction0,
         scheduler_list_pointer_0: SchedulerListPointer0,
         scheduler_list_pointer_1: SchedulerListPointer1,
-        _reserved19: [u8; 0x08],
+        _reserved17: [u8; 0x08],
         controller_transaction_1: ControllerTransaction1,
         hal_init_control_0: HalInitControl0,
         hal_init_control_1: HalInitControl1,
-        _reserved22: [u8; 0x08],
+        _reserved20: [u8; 0x08],
         scheduler_pointer_command: SchedulerPointerCommand,
-        _reserved23: [u8; 0xd0],
+        _reserved21: [u8; 0xd0],
         hal_init_latch: HalInitLatch,
         hal_init_low_20: HalInitLow20,
-        _reserved25: [u8; 0x28],
+        _reserved23: [u8; 0x28],
         phy_init_value_01f0: PhyInitValue01f0,
         iso_coex_enable: IsoCoexEnable,
         iso_coex_control_0: IsoCoexControl0,
@@ -34737,9 +34736,9 @@ pub mod bluetooth_controller_core {
         iso_coex_state_1: IsoCoexState1,
         iso_coex_timing_0: IsoCoexTiming0,
         operational_value_0218: OperationalValue0218,
-        _reserved36: [u8; 0x18],
+        _reserved34: [u8; 0x18],
         iso_coex_timing_1: IsoCoexTiming1,
-        _reserved37: [u8; 0x0c],
+        _reserved35: [u8; 0x0c],
         phy_init_zero_0244: PhyInitZero0244,
         phy_init_value_0248: PhyInitValue0248,
         phy_init_dynamic_image_024c: PhyInitDynamicImage024c,
@@ -34748,7 +34747,7 @@ pub mod bluetooth_controller_core {
         scheduler_command_1: SchedulerCommand1,
         scheduler_diagnostic_source: SchedulerDiagnosticSource,
         scheduler_diagnostic_latch: SchedulerDiagnosticLatch,
-        _reserved45: [u8; 0x18],
+        _reserved43: [u8; 0x18],
         hal_init_low_half: HalInitLowHalf,
         mmgmt_list_1_pointer_a: MmgmtList1PointerA,
         mmgmt_list_1_pointer_b: MmgmtList1PointerB,
@@ -34756,13 +34755,13 @@ pub mod bluetooth_controller_core {
         mmgmt_list_2_pointer_b: MmgmtList2PointerB,
         mmgmt_list_3_pointer_a: MmgmtList3PointerA,
         mmgmt_list_3_pointer_b: MmgmtList3PointerB,
-        _reserved52: [u8; 0x08],
+        _reserved50: [u8; 0x08],
         scan_hw_snapshot: ScanHwSnapshot,
-        _reserved53: [u8; 0x80],
+        _reserved51: [u8; 0x80],
         operational_status_0324: OperationalStatus0324,
-        _reserved54: [u8; 0x24],
+        _reserved52: [u8; 0x24],
         hal_init_slot_map: [HalInitSlotMap; 2],
-        _reserved55: [u8; 0x18],
+        _reserved53: [u8; 0x18],
         operational_word_036c: OperationalWord036c,
     }
     impl RegisterBlock {
@@ -34780,16 +34779,6 @@ pub mod bluetooth_controller_core {
         #[inline(always)]
         pub const fn scheduler_sram_pointer_prefix(&self) -> &SchedulerSramPointerPrefix {
             &self.scheduler_sram_pointer_prefix
-        }
-        #[doc = "0x78 - Scheduler users compare bits 0..19 and also publish complete images. Upper encoding remains unknown."]
-        #[inline(always)]
-        pub const fn scheduler_reference(&self) -> &SchedulerReference {
-            &self.scheduler_reference
-        }
-        #[doc = "0x7c - Shared scheduler state. Command transactions wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits."]
-        #[inline(always)]
-        pub const fn scheduler_state(&self) -> &SchedulerState {
-            &self.scheduler_state
         }
         #[doc = "0x80 - Three observed controller paths read the low twenty bits after consulting SCHEDULER_STATE and reconstruct an SRAM address as 0x2F000000 | (value << 2). The relationship between the two pointer sources remains unknown."]
         #[inline(always)]
@@ -35143,140 +35132,6 @@ pub mod bluetooth_controller_core {
         impl crate::Readable for SchedulerSramPointerPrefixSpec {}
         #[doc = "`write(|w| ..)` method takes [`scheduler_sram_pointer_prefix::W`](W) writer structure"]
         impl crate::Writable for SchedulerSramPointerPrefixSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-    #[doc = "SCHEDULER_REFERENCE (rw) register accessor: Scheduler users compare bits 0..19 and also publish complete images. Upper encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_reference::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_reference::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_reference`] module"]
-    #[doc(alias = "SCHEDULER_REFERENCE")]
-    pub type SchedulerReference = crate::Reg<scheduler_reference::SchedulerReferenceSpec>;
-    #[doc = "Scheduler users compare bits 0..19 and also publish complete images. Upper encoding remains unknown."]
-    pub mod scheduler_reference {
-        #[doc = "Register `SCHEDULER_REFERENCE` reader"]
-        pub type R = crate::R<SchedulerReferenceSpec>;
-        #[doc = "Register `SCHEDULER_REFERENCE` writer"]
-        pub type W = crate::W<SchedulerReferenceSpec>;
-        #[doc = "Field `VALUE_LOW_20` reader - "]
-        pub type ValueLow20R = crate::FieldReader<u32>;
-        #[doc = "Field `VALUE_LOW_20` writer - "]
-        pub type ValueLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
-        #[doc = "Field `OPAQUE_HIGH_12` reader - "]
-        pub type OpaqueHigh12R = crate::FieldReader<u16>;
-        #[doc = "Field `OPAQUE_HIGH_12` writer - "]
-        pub type OpaqueHigh12W<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
-        impl R {
-            #[doc = "Bits 0:19"]
-            #[inline(always)]
-            pub fn value_low_20(&self) -> ValueLow20R {
-                ValueLow20R::new(self.bits & 0x000f_ffff)
-            }
-            #[doc = "Bits 20:31"]
-            #[inline(always)]
-            pub fn opaque_high_12(&self) -> OpaqueHigh12R {
-                OpaqueHigh12R::new(((self.bits >> 20) & 0x0fff) as u16)
-            }
-        }
-        impl W {
-            #[doc = "Bits 0:19"]
-            #[inline(always)]
-            pub fn value_low_20(&mut self) -> ValueLow20W<'_, SchedulerReferenceSpec> {
-                ValueLow20W::new(self, 0)
-            }
-            #[doc = "Bits 20:31"]
-            #[inline(always)]
-            pub fn opaque_high_12(&mut self) -> OpaqueHigh12W<'_, SchedulerReferenceSpec> {
-                OpaqueHigh12W::new(self, 20)
-            }
-        }
-        #[doc = "Scheduler users compare bits 0..19 and also publish complete images. Upper encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_reference::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_reference::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SchedulerReferenceSpec;
-        impl crate::RegisterSpec for SchedulerReferenceSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`scheduler_reference::R`](R) reader structure"]
-        impl crate::Readable for SchedulerReferenceSpec {}
-        #[doc = "`write(|w| ..)` method takes [`scheduler_reference::W`](W) writer structure"]
-        impl crate::Writable for SchedulerReferenceSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-    #[doc = "SCHEDULER_STATE (rw) register accessor: Shared scheduler state. Command transactions wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_state`] module"]
-    #[doc(alias = "SCHEDULER_STATE")]
-    pub type SchedulerState = crate::Reg<scheduler_state::SchedulerStateSpec>;
-    #[doc = "Shared scheduler state. Command transactions wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits."]
-    pub mod scheduler_state {
-        #[doc = "Register `SCHEDULER_STATE` reader"]
-        pub type R = crate::R<SchedulerStateSpec>;
-        #[doc = "Register `SCHEDULER_STATE` writer"]
-        pub type W = crate::W<SchedulerStateSpec>;
-        #[doc = "Field `VALUE_LOW_20` reader - "]
-        pub type ValueLow20R = crate::FieldReader<u32>;
-        #[doc = "Field `VALUE_LOW_20` writer - "]
-        pub type ValueLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
-        #[doc = "Field `OPAQUE_STATE_20_29` reader - "]
-        pub type OpaqueState20_29R = crate::FieldReader<u16>;
-        #[doc = "Field `OPAQUE_STATE_20_29` writer - "]
-        pub type OpaqueState20_29W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
-        #[doc = "Field `OPAQUE_STATE_30` reader - "]
-        pub type OpaqueState30R = crate::BitReader;
-        #[doc = "Field `OPAQUE_STATE_30` writer - "]
-        pub type OpaqueState30W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BUSY` reader - "]
-        pub type BusyR = crate::BitReader;
-        #[doc = "Field `BUSY` writer - "]
-        pub type BusyW<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bits 0:19"]
-            #[inline(always)]
-            pub fn value_low_20(&self) -> ValueLow20R {
-                ValueLow20R::new(self.bits & 0x000f_ffff)
-            }
-            #[doc = "Bits 20:29"]
-            #[inline(always)]
-            pub fn opaque_state_20_29(&self) -> OpaqueState20_29R {
-                OpaqueState20_29R::new(((self.bits >> 20) & 0x03ff) as u16)
-            }
-            #[doc = "Bit 30"]
-            #[inline(always)]
-            pub fn opaque_state_30(&self) -> OpaqueState30R {
-                OpaqueState30R::new(((self.bits >> 30) & 1) != 0)
-            }
-            #[doc = "Bit 31"]
-            #[inline(always)]
-            pub fn busy(&self) -> BusyR {
-                BusyR::new(((self.bits >> 31) & 1) != 0)
-            }
-        }
-        impl W {
-            #[doc = "Bits 0:19"]
-            #[inline(always)]
-            pub fn value_low_20(&mut self) -> ValueLow20W<'_, SchedulerStateSpec> {
-                ValueLow20W::new(self, 0)
-            }
-            #[doc = "Bits 20:29"]
-            #[inline(always)]
-            pub fn opaque_state_20_29(&mut self) -> OpaqueState20_29W<'_, SchedulerStateSpec> {
-                OpaqueState20_29W::new(self, 20)
-            }
-            #[doc = "Bit 30"]
-            #[inline(always)]
-            pub fn opaque_state_30(&mut self) -> OpaqueState30W<'_, SchedulerStateSpec> {
-                OpaqueState30W::new(self, 30)
-            }
-            #[doc = "Bit 31"]
-            #[inline(always)]
-            pub fn busy(&mut self) -> BusyW<'_, SchedulerStateSpec> {
-                BusyW::new(self, 31)
-            }
-        }
-        #[doc = "Shared scheduler state. Command transactions wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SchedulerStateSpec;
-        impl crate::RegisterSpec for SchedulerStateSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`scheduler_state::R`](R) reader structure"]
-        impl crate::Readable for SchedulerStateSpec {}
-        #[doc = "`write(|w| ..)` method takes [`scheduler_state::W`](W) writer structure"]
-        impl crate::Writable for SchedulerStateSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -36945,7 +36800,7 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `VALUE_LOW_16` reader - "]
         pub type ValueLow16R = crate::FieldReader<u16>;
         #[doc = "Field `VALUE_LOW_16` writer - "]
-        pub type ValueLow16W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type ValueLow16W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -38374,6 +38229,171 @@ pub mod bluetooth_interrupt_bank {
         }
         #[doc = "`read()` method returns [`irq_status_snapshot_1::R`](R) reader structure"]
         impl crate::Readable for IrqStatusSnapshot1Spec {}
+    }
+}
+#[doc = "Two scheduler words transferred with BLUETOOTH_INTERRUPT_BANK to the primary hard handler. The complete source-124 suffix can read SCHEDULER_STATE at two distinct temporal points and can write a complete zero image to SCHEDULER_REFERENCE. Keeping this sparse physical view outside the task-side controller partition prevents either owner from manufacturing an MMIO alias."]
+pub type BluetoothSchedulerInterruptRuntime =
+    crate::Periph<bluetooth_scheduler_interrupt_runtime::RegisterBlock, 0x2010_1000>;
+impl core::fmt::Debug for BluetoothSchedulerInterruptRuntime {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("BluetoothSchedulerInterruptRuntime")
+            .finish()
+    }
+}
+#[doc = "Two scheduler words transferred with BLUETOOTH_INTERRUPT_BANK to the primary hard handler. The complete source-124 suffix can read SCHEDULER_STATE at two distinct temporal points and can write a complete zero image to SCHEDULER_REFERENCE. Keeping this sparse physical view outside the task-side controller partition prevents either owner from manufacturing an MMIO alias."]
+pub mod bluetooth_scheduler_interrupt_runtime {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x78],
+        scheduler_reference: SchedulerReference,
+        scheduler_state: SchedulerState,
+    }
+    impl RegisterBlock {
+        #[doc = "0x78 - The source-124 handler can publish the complete zero image when bank-one source 3 observes an idle scheduler. Other scheduler users compare bits 0..19 or publish complete images; upper encoding remains unknown."]
+        #[inline(always)]
+        pub const fn scheduler_reference(&self) -> &SchedulerReference {
+            &self.scheduler_reference
+        }
+        #[doc = "0x7c - The source-124 handler reads this complete shared scheduler state at a bank-one reference gate and again before publishing deferred work. Command transactions also wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits."]
+        #[inline(always)]
+        pub const fn scheduler_state(&self) -> &SchedulerState {
+            &self.scheduler_state
+        }
+    }
+    #[doc = "SCHEDULER_REFERENCE (rw) register accessor: The source-124 handler can publish the complete zero image when bank-one source 3 observes an idle scheduler. Other scheduler users compare bits 0..19 or publish complete images; upper encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_reference::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_reference::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_reference`] module"]
+    #[doc(alias = "SCHEDULER_REFERENCE")]
+    pub type SchedulerReference = crate::Reg<scheduler_reference::SchedulerReferenceSpec>;
+    #[doc = "The source-124 handler can publish the complete zero image when bank-one source 3 observes an idle scheduler. Other scheduler users compare bits 0..19 or publish complete images; upper encoding remains unknown."]
+    pub mod scheduler_reference {
+        #[doc = "Register `SCHEDULER_REFERENCE` reader"]
+        pub type R = crate::R<SchedulerReferenceSpec>;
+        #[doc = "Register `SCHEDULER_REFERENCE` writer"]
+        pub type W = crate::W<SchedulerReferenceSpec>;
+        #[doc = "Field `VALUE_LOW_20` reader - "]
+        pub type ValueLow20R = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE_LOW_20` writer - "]
+        pub type ValueLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        #[doc = "Field `OPAQUE_HIGH_12` reader - "]
+        pub type OpaqueHigh12R = crate::FieldReader<u16>;
+        #[doc = "Field `OPAQUE_HIGH_12` writer - "]
+        pub type OpaqueHigh12W<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn value_low_20(&self) -> ValueLow20R {
+                ValueLow20R::new(self.bits & 0x000f_ffff)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn opaque_high_12(&self) -> OpaqueHigh12R {
+                OpaqueHigh12R::new(((self.bits >> 20) & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn value_low_20(&mut self) -> ValueLow20W<'_, SchedulerReferenceSpec> {
+                ValueLow20W::new(self, 0)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn opaque_high_12(&mut self) -> OpaqueHigh12W<'_, SchedulerReferenceSpec> {
+                OpaqueHigh12W::new(self, 20)
+            }
+        }
+        #[doc = "The source-124 handler can publish the complete zero image when bank-one source 3 observes an idle scheduler. Other scheduler users compare bits 0..19 or publish complete images; upper encoding remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_reference::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_reference::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SchedulerReferenceSpec;
+        impl crate::RegisterSpec for SchedulerReferenceSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`scheduler_reference::R`](R) reader structure"]
+        impl crate::Readable for SchedulerReferenceSpec {}
+        #[doc = "`write(|w| ..)` method takes [`scheduler_reference::W`](W) writer structure"]
+        impl crate::Writable for SchedulerReferenceSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "SCHEDULER_STATE (rw) register accessor: The source-124 handler reads this complete shared scheduler state at a bank-one reference gate and again before publishing deferred work. Command transactions also wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_state`] module"]
+    #[doc(alias = "SCHEDULER_STATE")]
+    pub type SchedulerState = crate::Reg<scheduler_state::SchedulerStateSpec>;
+    #[doc = "The source-124 handler reads this complete shared scheduler state at a bank-one reference gate and again before publishing deferred work. Command transactions also wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits."]
+    pub mod scheduler_state {
+        #[doc = "Register `SCHEDULER_STATE` reader"]
+        pub type R = crate::R<SchedulerStateSpec>;
+        #[doc = "Register `SCHEDULER_STATE` writer"]
+        pub type W = crate::W<SchedulerStateSpec>;
+        #[doc = "Field `VALUE_LOW_20` reader - "]
+        pub type ValueLow20R = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE_LOW_20` writer - "]
+        pub type ValueLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        #[doc = "Field `OPAQUE_STATE_20_29` reader - "]
+        pub type OpaqueState20_29R = crate::FieldReader<u16>;
+        #[doc = "Field `OPAQUE_STATE_20_29` writer - "]
+        pub type OpaqueState20_29W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `OPAQUE_STATE_30` reader - "]
+        pub type OpaqueState30R = crate::BitReader;
+        #[doc = "Field `OPAQUE_STATE_30` writer - "]
+        pub type OpaqueState30W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BUSY` reader - "]
+        pub type BusyR = crate::BitReader;
+        #[doc = "Field `BUSY` writer - "]
+        pub type BusyW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn value_low_20(&self) -> ValueLow20R {
+                ValueLow20R::new(self.bits & 0x000f_ffff)
+            }
+            #[doc = "Bits 20:29"]
+            #[inline(always)]
+            pub fn opaque_state_20_29(&self) -> OpaqueState20_29R {
+                OpaqueState20_29R::new(((self.bits >> 20) & 0x03ff) as u16)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn opaque_state_30(&self) -> OpaqueState30R {
+                OpaqueState30R::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn busy(&self) -> BusyR {
+                BusyR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:19"]
+            #[inline(always)]
+            pub fn value_low_20(&mut self) -> ValueLow20W<'_, SchedulerStateSpec> {
+                ValueLow20W::new(self, 0)
+            }
+            #[doc = "Bits 20:29"]
+            #[inline(always)]
+            pub fn opaque_state_20_29(&mut self) -> OpaqueState20_29W<'_, SchedulerStateSpec> {
+                OpaqueState20_29W::new(self, 20)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn opaque_state_30(&mut self) -> OpaqueState30W<'_, SchedulerStateSpec> {
+                OpaqueState30W::new(self, 30)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn busy(&mut self) -> BusyW<'_, SchedulerStateSpec> {
+                BusyW::new(self, 31)
+            }
+        }
+        #[doc = "The source-124 handler reads this complete shared scheduler state at a bank-one reference gate and again before publishing deferred work. Command transactions also wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SchedulerStateSpec;
+        impl crate::RegisterSpec for SchedulerStateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`scheduler_state::R`](R) reader structure"]
+        impl crate::Readable for SchedulerStateSpec {}
+        #[doc = "`write(|w| ..)` method takes [`scheduler_state::W`](W) writer structure"]
+        impl crate::Writable for SchedulerStateSpec {
+            type Safety = crate::Unsafe;
+        }
     }
 }
 #[doc = "One independently bounded Bluetooth baseband reset-idle status word. The complete bbmac_idle_for_swrst leaf proves the exact predicate but neither address adjacency nor the function name proves a wider physical block."]
@@ -49210,6 +49230,8 @@ pub struct Peripherals {
     pub bluetooth_controller_core: BluetoothControllerCore,
     #[doc = "BLUETOOTH_INTERRUPT_BANK"]
     pub bluetooth_interrupt_bank: BluetoothInterruptBank,
+    #[doc = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"]
+    pub bluetooth_scheduler_interrupt_runtime: BluetoothSchedulerInterruptRuntime,
     #[doc = "BLUETOOTH_RESET_IDLE_STATUS_0"]
     pub bluetooth_reset_idle_status_0: BluetoothResetIdleStatus0,
     #[doc = "SHARED_BASEBAND_RESET_IDLE_STATUS"]
@@ -49356,6 +49378,9 @@ impl Peripherals {
             btmac_ble_phy_init: unsafe { BtmacBlePhyInit::steal() },
             bluetooth_controller_core: unsafe { BluetoothControllerCore::steal() },
             bluetooth_interrupt_bank: unsafe { BluetoothInterruptBank::steal() },
+            bluetooth_scheduler_interrupt_runtime: unsafe {
+                BluetoothSchedulerInterruptRuntime::steal()
+            },
             bluetooth_reset_idle_status_0: unsafe { BluetoothResetIdleStatus0::steal() },
             shared_baseband_reset_idle_status: unsafe { SharedBasebandResetIdleStatus::steal() },
             shared_baseband_tx_timing: unsafe { SharedBasebandTxTiming::steal() },
@@ -49756,6 +49781,7 @@ pub mod peripheral_ownership {
     /// Bluetooth controller interrupt registers transferred independently from task lifecycle ownership to the hard ISR.
     pub struct BluetoothInterruptPeripherals {
         pub bluetooth_interrupt_bank: crate::BluetoothInterruptBank,
+        pub bluetooth_scheduler_interrupt_runtime: crate::BluetoothSchedulerInterruptRuntime,
     }
 
     /// Protocol-neutral physical register words touched by more than one radio lifecycle and serialized before either protocol receives a narrow capability.
@@ -49869,6 +49895,7 @@ pub mod peripheral_ownership {
             btmac_ble_phy_init,
             bluetooth_controller_core,
             bluetooth_interrupt_bank,
+            bluetooth_scheduler_interrupt_runtime,
             bluetooth_reset_idle_status_0,
             shared_baseband_reset_idle_status,
             shared_baseband_tx_timing,
@@ -50001,6 +50028,7 @@ pub mod peripheral_ownership {
             },
             bluetooth_interrupts: BluetoothInterruptPeripherals {
                 bluetooth_interrupt_bank,
+                bluetooth_scheduler_interrupt_runtime,
             },
             shared_radio: SharedRadioPeripherals {
                 shared_radio_init_control,
@@ -50758,6 +50786,22 @@ pub mod zero_based_field_write {
         }
     }
 
+    /// Write `VALUE_LOW_16` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_DIAGNOSTIC_LATCH` while publishing zero to every other register bit.
+    #[inline]
+    pub fn bluetooth_scheduler_diagnostic_latch(
+        registers: &crate::BluetoothControllerCore,
+        value: u16,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .scheduler_diagnostic_latch()
+                .write_with_zero(|writer| writer.value_low_16().set(value));
+        }
+    }
+
     /// Write `RATE_0`, `RATE_1`, `RATE_2`, `RATE_3` in `WIFI_MAC_HE_INIT_SUFFIX`.`ERSU_ACK_RATE` while publishing zero to every other register bit.
     #[inline]
     pub fn ersu_ack_rate_baseline(
@@ -51386,6 +51430,20 @@ pub mod zero_register_write {
         // qualify a complete zero write to this ordinary register.
         unsafe {
             registers.raw().write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_REFERENCE`.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_reference(
+        registers: &crate::BluetoothSchedulerInterruptRuntime,
+    ) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .scheduler_reference()
+                .write_with_zero(|writer| writer);
         }
     }
 

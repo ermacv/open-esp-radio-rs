@@ -13,6 +13,7 @@ mod bluetooth_interrupt;
 mod bluetooth_memory_lists;
 mod bluetooth_phy_init;
 mod bluetooth_scheduler;
+mod bluetooth_scheduler_runtime;
 mod cfr;
 pub mod clock;
 mod coex;
@@ -75,6 +76,10 @@ pub use bluetooth_interrupt::{
 pub use bluetooth_memory_lists::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
+};
+pub use bluetooth_scheduler_runtime::{
+    BluetoothSchedulerDiagnosticObservation, BluetoothSchedulerReferenceGateObservation,
+    BluetoothSchedulerWorkObservation,
 };
 pub use cfr::CfrValue;
 pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};

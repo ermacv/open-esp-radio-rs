@@ -3,10 +3,12 @@
 Verdict: **PARTIAL**. The primary source-124 handler now has a lossless typed
 prefix and disposition: its four baseline groups are fatal assertion lanes,
 including the two conditional diagnostic captures, while its dynamic suffix
-retains two temporally distinct scheduler-state observations and a coalesced
-deferred-work contract. NRT source meanings, shared live ISR ownership and the
-scheduler-list consumer remain unresolved, so neither CPU route may yet form a
-live production interrupt epoch.
+retains two temporally distinct scheduler-state observations, affine MMIO
+ownership and a coalesced deferred-work contract. The exact software-list
+producer/consumer graph and the default BLE consumers of selectors 4 and 6
+are recovered. Their open scheduler actions, NRT feature meanings and the live
+async ISR owner remain unresolved, so neither CPU route may yet form a live
+production interrupt epoch.
 
 This review separates silicon behavior from the internal callback and RTOS
 architecture of the reference Controller. The Rust driver does not reproduce
@@ -39,6 +41,10 @@ inputs. The table below records only the distilled control and MMIO facts.
 | `r_sym_bt_37HcX0qW6j1XVtKakUIG` / `r_sym_bt_zczKhmPr5kLPCXpBc7GE` | 80 / 92 bytes | Decode `SCHEDULER_STATE`; the boolean consumed by deferred-work construction is exactly bit 31 AND bit 29. |
 | `r_sym_bt_iEsFo1nbR5S71P2lMKhY` / `r_sym_bt_gs5GeSH15pdzrMDbb7oK` | 90 / 78 bytes | Build one static deferred event, optionally set its one-bit argument, and optionally publish the decoded state through selector 4. |
 | `r_sym_bt_uNi9OHmE7XdXfGqTelU5` | 112 bytes | Consume and clear the marker, drain scheduler work, then publish selector `0x8000_0001`; this is a drain event, not one callback per hardware edge. |
+| `r_sym_bt_E8c5Eimm0z6kYe9v4wHr` / `r_sym_bt_YRnBzKlWCjsIbotqvNyS` | 360 / 574 bytes | Insert a scheduler item through its `+0x54` intrusive link into the manager-root completion queue; task-side removal/reordering calls the insertion path. This proves a software producer, not a hardware completion FIFO. |
+| `r_sym_bt_WHYoiw8ufY0AEM2KSRK1` | 120 bytes | On every worker pop attempt, copy the low halfword from `0x2010_125c` to a zero-high image at `0x2010_1260`, then combine task state with the software list head and attempt a pop. |
+| `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` / `r_sym_ble_T40PqM3CeultOGiVkAp0` | 136 / 186 bytes | Default manager-0 selector-6 consumer and its scheduler action. Selector 6 walks active BLE scheduler transactions/list entries and asserts on an inconsistent `item+0x38` state. |
+| `r_sym_ble_zrorswmoCrQoX5oTeECu` / `r_sym_ble_3wftOXafF5ZkxLriL8L3` / `r_sym_ble_q4hMJ7XLGGCzxwmAKSge` | 62 / 188 / 102 bytes | Default manager-0 selector-4 consumer. It checks BLE scheduler/current-item state and, for a false publication when the predicate holds, retries a scheduler operation while it returns `-2`, increasing the delay in steps of 100. |
 | `r_sym_ble_ywjh0f9yjTBeI7XgS5da` | 74 bytes | NRT ISR: raw sample at `0x2010_1340/1348`, shared W1C acknowledgement and selector `0x8000_0000`. |
 
 ## Exact primary suffix
@@ -78,11 +84,17 @@ proven:
 
 Bank 1 source 3 has precedence over the bank-zero branch. Its reference gate
 reads `SCHEDULER_STATE` at `0x2010_107c`; when bit 31 is clear it writes zero
-to `SCHEDULER_REFERENCE` at `0x2010_1078` and dispatches selector 6. Any
+to `SCHEDULER_REFERENCE` at `0x2010_1078` and dispatches selector 6. The
+default BLE selector-6 consumer immediately performs a scheduler
+transaction/list consistency action. The typed classifier therefore returns
+`ClearReferenceAndRunPostClearSchedulerAction`: executing only the register
+write is deliberately not representable as a complete disposition. Any
 dynamic branch then makes a later, independent `SCHEDULER_STATE` read. The
 derived reference state is `bit31 && bit29`. Deferred work is marked only when
 the first work input and that derived state are both true. Selector 4 receives
-the same derived state when the table requests state publication.
+the same derived state when the table requests state publication; the default
+BLE consumer uses both its presence and boolean payload to decide whether to
+retry scheduler work.
 
 The two reads cannot be folded into one observation: the reference clear and
 selector-6 software path occur between their positions. The Rust classifier
@@ -106,6 +118,25 @@ runs. Consequently the required deferred contract is:
 It is not an async primitive by itself: the platform must still install a
 lost-wake-safe waker registration and the Controller worker must drain the
 real scheduler list before considering the epoch complete.
+
+The drained list is not a hidden hardware FIFO. Complete producer review shows
+that task-side scheduler item removal/reordering inserts items into a
+manager-root intrusive completion list through the link at `item+0x54`. The
+worker attempts to pop that software list after an unconditional diagnostic
+halfword transfer from `0x2010_125c` to `0x2010_1260`. An open Controller must
+therefore define its own typed scheduler item lifecycle and bounded completion
+queue; reproducing the vendor list nodes or OSAL event object is neither
+required nor desirable.
+
+Complete default BLE registration review found exactly three manager-0
+consumers. `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` owns selector 6,
+`r_sym_ble_zrorswmoCrQoX5oTeECu` owns selector 4, and
+`r_sym_ble_xwc69LJVHnjhZA8uSJnQ` handles selectors 0 and `0x8000_0000` while
+ignoring 4 and 6. Thus selectors 4 and 6 are replaceable software ABI, but
+their effects are not optional. The open replacement needs typed operations
+for post-clear consistency and reference-state-driven scheduler retry. The
+current wake cell retains only the proven pending/marked coalescing contract;
+it intentionally does not pretend to retain or execute the selector-4 action.
 
 The linked callback selectors are boundaries between closed vendor software
 components, not ESP32-S31 hardware ABI. An open Link Layer may use its own
@@ -133,12 +164,15 @@ them.
 
 - feature-specific meanings and mask/re-arm policy for NRT raw status beyond
   the pinned default lifecycle's acknowledge-only callback graph;
-- shared same-core storage that combines the interrupt-bank owner with narrow
-  scheduler reference/state access without exposing concurrent PAC aliases;
-- exact scheduler-list drain, abort and completion behavior behind the static
-  event handler;
+- typed open equivalents for the selector-6 post-clear consistency action and
+  selector-4 reference-state-driven scheduler retry;
+- an affine scheduler item lifecycle and bounded completion queue that replace
+  the recovered software intrusive list, including abort and shutdown drain;
 - executor-neutral waker registration with a register-then-recheck poll
   protocol and a quiescent teardown barrier;
+- composition of the staged interrupt-bank plus scheduler-runtime owner into
+  the same-core primary ISR, without returning either MMIO capability to task
+  code while the routes are live;
 - compiled-production trace and HIL for simultaneous, repeated and teardown
   interrupt epochs.
 

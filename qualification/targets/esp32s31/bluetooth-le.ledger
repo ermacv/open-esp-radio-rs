@@ -96,6 +96,9 @@ owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothPrimaryInter
 owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothPrimaryInterruptEpoch
 owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothPrimaryFaultEvidence
 owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothInterruptOutputPrepared
+owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs BluetoothSchedulerReferenceGateObservation
+owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs BluetoothSchedulerWorkObservation
+owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs BluetoothSchedulerDiagnosticObservation
 owner driver/chips/esp32s31/bluetooth/src/interrupt.rs BluetoothCpuInterruptRoutePolicy
 owner driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs BluetoothPrimaryInterruptClassification
 owner driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs BluetoothPrimaryControllerFault
@@ -110,11 +113,14 @@ test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_epoch_skips_di
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_prepare_preserves_clear_enable_strobe_order
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_release_preserves_strobe_then_mask_order
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs interrupt_control_geometry_matches_the_three_reviewed_strobes
+test driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs temporal_state_reads_remain_distinct_across_reference_clear
+test driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs worker_diagnostic_transfer_reads_before_complete_low_halfword_write
+test driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs scheduler_runtime_words_have_exact_disjoint_owner_geometry
 test driver/chips/esp32s31/bluetooth/src/interrupt.rs primary_route_is_source_124_level_three_and_iram
 test driver/chips/esp32s31/bluetooth/src/interrupt.rs nrt_route_is_distinct_source_133_without_iram_request
 test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs bank_zero_trigger_table_preserves_source_precedence_and_pairing
 test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs bank_one_source_three_has_precedence_and_retains_mark_candidate
-test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs reference_gate_clears_only_when_the_first_observation_is_not_busy
+test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs reference_gate_requires_post_clear_action_only_when_not_busy
 test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs combined_bank_zero_trigger_marks_and_publishes_the_same_second_read
 test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs baseline_fault_preempts_dynamic_scheduler_work_and_retains_diagnostics
 test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs fault_free_epoch_reaches_dynamic_scheduler_classifier
@@ -125,8 +131,8 @@ test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.
 test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs quiesce_is_affine_to_the_binding_core
 vendor-anchor verification/vendor/targets/esp32s31/README.md 0x00008000
 depends-on controller-initialization
-gap implementation shared-isr-storage-and-live-route-lifecycle-missing
-gap implementation shared-isr-storage-and-nrt-dispatch-missing
+gap implementation typed-selector-4-and-selector-6-scheduler-actions-missing
+gap implementation live-isr-composition-and-nrt-dispatch-missing
 gap vendor complete-interrupt-production-trace-missing
 gap hil bluetooth-interrupt-epoch-cell-missing
 gap async registered-waker-scheduler-drain-and-rearm-contract-missing

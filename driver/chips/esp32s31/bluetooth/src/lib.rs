@@ -7,11 +7,12 @@
 //! BTDM HAL-init body are implemented as later enable-stage components. The
 //! two Controller interrupt sources, level/residency policies, baseline masks,
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
-//! state and shared-register staging are also represented. They are
-//! deliberately not connected across the missing event/list, LP, BLE,
-//! shared-ISR, NRT feature classification and live-route prerequisites. No
-//! current finite state claims that the complete controller lifecycle, HCI
-//! transport, task or live interrupt epoch has completed.
+//! state and affine ISR scheduler-register staging are also represented. They
+//! are deliberately not connected across the missing typed selector-4/6
+//! scheduler actions, completion-list owner, lost-wake-safe async bridge, LP,
+//! BLE, NRT feature classification and live-route prerequisites. No current
+//! finite state claims that the complete controller lifecycle, HCI transport,
+//! task or live interrupt epoch has completed.
 
 #![no_std]
 #![deny(unsafe_code)]

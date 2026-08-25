@@ -515,12 +515,28 @@ kind = "global"
 symbol = "phy_param"
 
 [[types.fields]]
+offset = 0x000
+width = 16
+status = "reviewed"
+name = "current_temperature"
+display-type = "i16"
+description = "Current signed PHY temperature consumed by periodic power tracking."
+
+[[types.fields]]
 offset = 0x002
 width = 8
 status = "reviewed"
 name = "pbus_rx_path"
 display-type = "u8"
 description = "PBUS receive-path selector consumed by RF and Bluetooth calibration."
+
+[[types.fields]]
+offset = 0x004
+width = 16
+status = "reviewed"
+name = "last_tracking_temperature"
+display-type = "i16"
+description = "Raw current temperature committed when periodic tracking republishes a gain table."
 
 [[types.fields]]
 offset = 0x00e
@@ -627,6 +643,38 @@ display-type = "u16"
 description = "Current Wi-Fi channel published by the channel transition."
 
 [[types.fields]]
+offset = 0x122
+width = 8
+status = "reviewed"
+name = "last_tracking_gain_base"
+display-type = "i8"
+description = "Last temperature-derived gain base reused while temperature drift remains below the active threshold."
+
+[[types.fields]]
+offset = 0x123
+width = 8
+status = "reviewed"
+name = "wifi_gain_base"
+display-type = "i8"
+description = "Wi-Fi gain-table base compared and updated by periodic tracking before gain regeneration."
+
+[[types.fields]]
+offset = 0x124
+width = 8
+status = "reviewed"
+name = "bluetooth_ieee802154_gain_base"
+display-type = "i8"
+description = "Bluetooth/IEEE 802.15.4 gain-table base compared and updated by periodic tracking before gain regeneration."
+
+[[types.fields]]
+offset = 0x12e
+width = 16
+status = "reviewed"
+name = "tracking_reference_temperature"
+display-type = "i16"
+description = "Signed reference temperature used to derive the periodic gain base."
+
+[[types.fields]]
 offset = 0x18e
 width = 8
 status = "reviewed"
@@ -649,6 +697,14 @@ status = "reviewed"
 name = "xtal_duty_result_0"
 display-type = "u8"
 description = "First byte of the crystal-duty calibration result."
+
+[[types.fields]]
+offset = 0x1ab
+width = 8
+status = "reviewed"
+name = "relaxed_power_tracking_threshold"
+display-type = "bool"
+description = "Nonzero selects the fixed ten-unit periodic power-tracking threshold."
 
 [[types.fields]]
 offset = 0x1ac

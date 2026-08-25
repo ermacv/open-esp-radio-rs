@@ -21,6 +21,7 @@ use crate::{
     phy_frequency::PhyChannelFrequencyInitControl,
     phy_i2c::{FilterDcapParameters, PhyRfInitPrefixOutcome},
     phy_pbus_memory::{PhyPbusMemoryOutcome, PhyPbusMemoryParameters},
+    phy_power_tracking::{PhyTxPowerTrackingOutcome, PhyTxPowerTrackingParameters},
     phy_pwdet::{PhyPwdetOutcome, PhyPwdetParameters},
     phy_rx_gain::{PhyRxGainInitOutcome, PhyRxGainInitParameters},
     phy_rx_gain_cal::{PhyRxGainDcOutcome, PhyRxGainDcParameters},
@@ -126,6 +127,8 @@ impl Default for PhyConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CommonPhyState {
     temperature: i16,
+    tracking_temperature: i16,
+    tracking_gain_base: i8,
     sensor_index: u8,
     crystal_selector: u8,
     rc_result: u8,
@@ -358,6 +361,8 @@ impl PhyState {
             config,
             common: CommonPhyState {
                 temperature: 0,
+                tracking_temperature: 0,
+                tracking_gain_base: 0,
                 sensor_index: 2,
                 crystal_selector: 0,
                 rc_result: 0,
@@ -737,6 +742,42 @@ impl PhyState {
     pub fn apply_temperature_outcome(&mut self, outcome: PhyTemperatureOutcome) {
         self.common.temperature = outcome.temperature;
         self.common.sensor_index = outcome.sensor_index;
+    }
+
+    /// Project the semantic state consumed by periodic TX-power tracking.
+    ///
+    /// `relaxed_threshold` is supplied by the reviewed outer tracking policy;
+    /// it is not persisted as an unexplained vendor parameter byte.
+    pub const fn tx_power_tracking_parameters(
+        &self,
+        relaxed_threshold: bool,
+    ) -> PhyTxPowerTrackingParameters {
+        PhyTxPowerTrackingParameters {
+            current_temperature: self.common.temperature,
+            reference_temperature: self.wifi.calibration_temperature,
+            previous_tracking_temperature: self.common.tracking_temperature,
+            previous_tracking_gain_base: self.common.tracking_gain_base,
+            wifi_gain_base: self.config.tx_gain_base as i8,
+            bluetooth_ieee802154_gain_base: self.config.bluetooth_tx_gain_base as i8,
+            relaxed_threshold,
+        }
+    }
+
+    /// Commit a completed tracking transaction to the live radio owner.
+    pub fn apply_tx_power_tracking_outcome(&mut self, outcome: PhyTxPowerTrackingOutcome) {
+        if !outcome.gain_updated {
+            return;
+        }
+        self.common.tracking_temperature = outcome.tracking_temperature;
+        self.common.tracking_gain_base = outcome.tracking_gain_base;
+        match outcome.class {
+            crate::phy_param_tracking::PhyCalibrationTrackClass::Wifi => {
+                self.config.tx_gain_base = outcome.wifi_gain_base as u8;
+            }
+            crate::phy_param_tracking::PhyCalibrationTrackClass::BluetoothIeee802154 => {
+                self.config.bluetooth_tx_gain_base = outcome.bluetooth_ieee802154_gain_base as u8;
+            }
+        }
     }
 
     pub const fn dcode_parameters(&self) -> PhyDcodeParameters {
@@ -1180,6 +1221,62 @@ mod tests {
             mac_sys0: 11,
             mac_sys1: 13,
         };
+
+    #[test]
+    fn periodic_gain_tracking_commits_only_terminal_runtime_outcomes() {
+        let mut state = PhyState::new(PhyConfig::production());
+        state.apply_temperature_outcome(PhyTemperatureOutcome {
+            temperature: 25,
+            sensor_index: 3,
+            next_dac: 4,
+        });
+        assert_eq!(
+            state.tx_power_tracking_parameters(true),
+            PhyTxPowerTrackingParameters {
+                current_temperature: 25,
+                reference_temperature: 0,
+                previous_tracking_temperature: 0,
+                previous_tracking_gain_base: 0,
+                wifi_gain_base: 0,
+                bluetooth_ieee802154_gain_base: 0,
+                relaxed_threshold: true,
+            }
+        );
+
+        state.apply_tx_power_tracking_outcome(PhyTxPowerTrackingOutcome {
+            class: crate::phy_param_tracking::PhyCalibrationTrackClass::BluetoothIeee802154,
+            gain_updated: true,
+            tracking_temperature: 25,
+            tracking_gain_base: 5,
+            wifi_gain_base: 0,
+            bluetooth_ieee802154_gain_base: 5,
+        });
+        assert_eq!(state.bluetooth_tx_gain_parameters().base, 5);
+        assert_eq!(state.channel_parameters().tx_gain_base, 0);
+        assert_eq!(
+            state.tx_power_tracking_parameters(false),
+            PhyTxPowerTrackingParameters {
+                current_temperature: 25,
+                reference_temperature: 0,
+                previous_tracking_temperature: 25,
+                previous_tracking_gain_base: 5,
+                wifi_gain_base: 0,
+                bluetooth_ieee802154_gain_base: 5,
+                relaxed_threshold: false,
+            }
+        );
+
+        state.apply_tx_power_tracking_outcome(PhyTxPowerTrackingOutcome {
+            class: crate::phy_param_tracking::PhyCalibrationTrackClass::Wifi,
+            gain_updated: false,
+            tracking_temperature: -60,
+            tracking_gain_base: -12,
+            wifi_gain_base: -12,
+            bluetooth_ieee802154_gain_base: -12,
+        });
+        assert_eq!(state.bluetooth_tx_gain_parameters().base, 5);
+        assert_eq!(state.channel_parameters().tx_gain_base, 0);
+    }
 
     #[test]
     fn cache_contains_calibration_but_not_runtime_role_state() {

@@ -350,13 +350,13 @@ insufficient working space and a size limit that cannot be met without
 evicting live results. The size limit is therefore an actionable guard, not a
 silent lossy quota.
 
-Age retention is never guessed from file mtimes. Schema 9 persists the time at
+Age retention is never guessed from file mtimes. Schema 10 persists the time at
 which a CAS object loses its final stage/query reference and requires every
 query result to belong to at least one analysis epoch. An unowned result is
 invalid cache state, not a GC candidate. Current results and unretired function
 facts are not per-result LRU candidates.
 
-Schema 9 is created only from a cold store. A cache at any other schema must be
+Schema 10 is created only from a cold store. A cache at any other schema must be
 removed explicitly after reviewed TOML, revision snapshots, linked IR and other
 durable artifacts have been preserved. Remove the entire
 `generated/.blobray-cache/` directory, not selected SQLite or pack files, and
@@ -405,9 +405,12 @@ cargo blobray project inputs init \
   --bind source-artifact:vendor=/opt/vendor/libvendor.a
 ```
 
-Generated files are disposable analysis results. Reviewed packs, policies,
-register models and dispositions are source inputs. `_oracles/`, vendor
-binaries, disassembly dumps and credentials remain private.
+Generated analysis files under `generated/` are disposable results. Durable
+machine-written revision snapshots and complete-run vendor-evidence indexes are
+separate correspondence/publication records: preserve them in version control
+or equivalent controlled storage, but do not edit them as reviewed facts.
+Reviewed packs, policies, register models and dispositions are source inputs.
+`_oracles/`, vendor binaries, disassembly dumps and credentials remain private.
 
 ## Investigating one function
 

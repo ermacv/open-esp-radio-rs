@@ -18,7 +18,7 @@ manually; an external reader may legitimately keep either file live. New or
 renamed CAS packs and the pinned cache directory are synced before SQLite can
 publish their locations.
 
-The boundary is deliberately unchanged in schema 9. The production-path
+The boundary is deliberately unchanged in schema 10. The production-path
 diagnostic uses 16 deterministic, unique values at 16 KiB, 64 KiB, 64 KiB + 1
 and 256 KiB. It measures fresh-cache writes (including the normal SQLite
 transaction/fsync path), verified reads and physical database/pack sizes:
@@ -59,7 +59,7 @@ still protected from ordinary compaction. If the same digest becomes current
 again, publication removes its retirement marker. Function facts and current
 stage/query references are never age or LRU candidates.
 
-Every schema-9 query-result row belongs to at least one analysis epoch. This is
+Every schema-10 query-result row belongs to at least one analysis epoch. This is
 a store invariant: a result without epoch membership is invalid cache state,
 not a garbage-collection candidate. Query results remain durable roots rather
 than age or per-result LRU candidates. The hard quota reports live state that
@@ -91,7 +91,7 @@ SQLite WAL locking and descriptor-relative destructive cleanup cannot be
 guaranteed there. Ordinary reachability compaction may remove unindexed crash
 orphans, but it preserves timestamped retired objects until explicit prune.
 
-Schema 9 is created only from a cold store. A cache database at any other schema
+Schema 10 is created only from a cold store. A cache database at any other schema
 fails closed; Blobray has no in-place cache import or upgrade path. Preserve
 reviewed TOML, revision snapshots, linked IR and other durable artifacts first,
 then explicitly remove the **entire**

@@ -178,9 +178,18 @@ a fresh schema-2 baseline from the live typed vendor bindings.
   artifacts/profiles, and audited public-family exclusions. `ready` never means
   that a review scope has no remaining work.
 
-Generated outputs are disposable and reproducible. They must preserve source
-artifact identity/provenance and must not contain proprietary payloads or full
-disassembly dumps. A generated file cannot replace its reviewed input.
+Ordinary generated analysis outputs under `generated/` are disposable and
+reproducible. They must preserve source artifact identity/provenance and must
+not contain proprietary payloads or full disassembly dumps. A generated file
+cannot replace its reviewed input.
+
+Two machine-written records are intentionally durable rather than disposable:
+the immutable revision snapshots described above, and the complete-run vendor
+evidence index selected by a verification add-on. The evidence index is a
+compact qualification publication whose source hashes are rechecked by the
+qualification ledger; preserve both record classes in version control or
+equivalent controlled storage. They remain tool-owned records, not manually
+reviewed fact packs.
 
 ## Internal persistent query store
 

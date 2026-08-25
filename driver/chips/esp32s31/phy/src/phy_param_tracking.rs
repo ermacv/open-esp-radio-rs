@@ -4,12 +4,16 @@
 //! instructions and eleven basic blocks. This module preserves that body's
 //! critical-section boundary, guards, child-call order, arguments and optional
 //! branches. The child actions remain explicit obligations: completing this
-//! transition does not claim that their still-unrecovered register effects are
-//! implemented.
+//! transition does not claim that every child effect is implemented. The two
+//! TX-power actions lower into the complete source-owned transition in
+//! [`crate::phy_power_tracking`]; RFPLL-cap, calibration, Wi-Fi PHY-I2C and
+//! temperature children remain separate obligations.
 //!
 //! The vendor function reads six bytes from a 508-byte `phy_param` image. The
 //! live driver does not retain that ABI layout. Its only behaviorally relevant
 //! projections are represented below as booleans and owned child inputs.
+
+use core::fmt;
 
 /// Active protocol classes passed by the shared-PHY scheduler.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,6 +52,7 @@ pub struct PhyParamTrackingParameters {
     pub shared_tracking_control: u8,
     pub bluetooth_ieee802154_power_control: u8,
     pub calibration_tracking_enabled: bool,
+    pub relaxed_power_tracking_threshold: bool,
 }
 
 /// Calibration class passed as the second `phy_cal_param_track` argument.
@@ -313,6 +318,15 @@ impl PhyParamTrackingTransition {
         Ok(())
     }
 
+    /// Lower only the currently selected TX-power child, using the immutable
+    /// parameter snapshot captured with this outer transition.
+    pub fn begin_tx_power_tracking<'state>(
+        &self,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<PhyParamTrackingTxPowerTransition<'state>, PhyParamTrackingChildError> {
+        PhyParamTrackingTxPowerTransition::lower(self.action(), self.parameters, state)
+    }
+
     const fn first_client_step(self) -> PhyParamTrackingStep {
         if self.request.bluetooth_ieee802154 {
             PhyParamTrackingStep::BluetoothIeee802154TxPowerTrack
@@ -330,6 +344,127 @@ impl PhyParamTrackingTransition {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyParamTrackingChildError {
+    UnsupportedAction,
+}
+
+/// One exact TX-power child selected by the outer tracking transition.
+///
+/// This owner deliberately exposes no way to manufacture the corresponding
+/// outer completion. The child must first reach its terminal action and commit
+/// that outcome into the same live [`crate::phy_state::PhyState`].
+pub struct PhyParamTrackingTxPowerTransition<'state> {
+    parent_action: PhyParamTrackingAction,
+    child: crate::phy_power_tracking::PhyTxPowerTrackingTransition,
+    state: &'state mut crate::phy_state::PhyState,
+}
+
+impl fmt::Debug for PhyParamTrackingTxPowerTransition<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PhyParamTrackingTxPowerTransition")
+            .field("parent_action", &self.parent_action)
+            .field("action", &self.child.action())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'state> PhyParamTrackingTxPowerTransition<'state> {
+    fn lower(
+        parent_action: PhyParamTrackingAction,
+        parameters: PhyParamTrackingParameters,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<Self, PhyParamTrackingChildError> {
+        let request = match parent_action {
+            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { power_control, .. } => {
+                crate::phy_power_tracking::PhyTxPowerTrackingRequest {
+                    class: PhyCalibrationTrackClass::BluetoothIeee802154,
+                    enabled: power_control != 0,
+                    wifi_channel: state.current_wifi_channel(),
+                }
+            }
+            PhyParamTrackingAction::WifiTxPowerTrack { enabled, .. } => {
+                crate::phy_power_tracking::PhyTxPowerTrackingRequest {
+                    class: PhyCalibrationTrackClass::Wifi,
+                    enabled,
+                    wifi_channel: state.current_wifi_channel(),
+                }
+            }
+            _ => return Err(PhyParamTrackingChildError::UnsupportedAction),
+        };
+        Ok(Self {
+            parent_action,
+            child: crate::phy_power_tracking::PhyTxPowerTrackingTransition::new(
+                request,
+                state.tx_power_tracking_parameters(parameters.relaxed_power_tracking_threshold),
+            ),
+            state,
+        })
+    }
+
+    pub const fn parent_action(&self) -> PhyParamTrackingAction {
+        self.parent_action
+    }
+
+    pub const fn action(&self) -> crate::phy_power_tracking::PhyTxPowerTrackingAction {
+        self.child.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: crate::phy_power_tracking::PhyTxPowerTrackingCompletion,
+    ) -> Result<(), crate::phy_power_tracking::PhyTxPowerTrackingTransitionError> {
+        self.child.advance(completion)
+    }
+
+    /// Bind the current child action to the existing target HAL/PAC edge while
+    /// the exact live state remains exclusively borrowed by this transaction.
+    pub fn lower_external(
+        &self,
+    ) -> Result<
+        crate::phy_power_tracking::PhyTxPowerTrackingExternalBinding,
+        crate::phy_power_tracking::PhyTxPowerTrackingBindingError,
+    > {
+        crate::phy_power_tracking::PhyTxPowerTrackingExternalBinding::lower(
+            self.action(),
+            self.state,
+        )
+    }
+
+    pub const fn state(&self) -> &crate::phy_state::PhyState {
+        self.state
+    }
+
+    /// Commit the terminal child result and mint its identity-bound parent
+    /// completion. An incomplete child is returned unchanged.
+    pub fn commit(self) -> Result<PhyParamTrackingCompletion, Self> {
+        let crate::phy_power_tracking::PhyTxPowerTrackingAction::Complete(outcome) =
+            self.child.action()
+        else {
+            return Err(self);
+        };
+        self.state.apply_tx_power_tracking_outcome(outcome);
+        Ok(match self.parent_action {
+            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
+                power_control,
+                shared_tracking_control,
+            } => PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
+                power_control,
+                shared_tracking_control,
+            },
+            PhyParamTrackingAction::WifiTxPowerTrack {
+                enabled,
+                shared_tracking_control,
+            } => PhyParamTrackingCompletion::WifiTxPowerTracked {
+                enabled,
+                shared_tracking_control,
+            },
+            _ => unreachable!(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +476,7 @@ mod tests {
         shared_tracking_control: 0x29,
         bluetooth_ieee802154_power_control: 0x51,
         calibration_tracking_enabled: true,
+        relaxed_power_tracking_threshold: false,
     };
 
     fn completion(action: PhyParamTrackingAction) -> PhyParamTrackingCompletion {

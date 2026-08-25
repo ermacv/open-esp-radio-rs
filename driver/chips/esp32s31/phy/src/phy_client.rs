@@ -6,7 +6,8 @@
 //! those software decisions. It performs no MMIO and does not arm a real
 //! timer. A due request retains the unique owner while the exact outer
 //! [`crate::phy_param_tracking::PhyParamTrackingTransition`] is executed.
-//! Its child hardware effects remain explicit unresolved actions.
+//! Its recovered TX-power children compose into live-state HAL/PAC bindings;
+//! the remaining child effects stay explicit unresolved actions.
 //!
 //! Timer arm/stop and the PHY lock are represented only as atomic model facts.
 //! There is no fallible timer executor, rollback protocol, or target lock in
@@ -24,8 +25,9 @@
 use core::fmt;
 
 use crate::phy_param_tracking::{
-    PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingCompletion,
-    PhyParamTrackingParameters, PhyParamTrackingTransition, PhyParamTrackingTransitionError,
+    PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingChildError,
+    PhyParamTrackingCompletion, PhyParamTrackingParameters, PhyParamTrackingTransition,
+    PhyParamTrackingTransitionError, PhyParamTrackingTxPowerTransition,
 };
 
 const WIFI_BIT: u8 = 1;
@@ -547,6 +549,15 @@ impl PhyPendingTracking {
 
     pub const fn snapshot(&self) -> PhyClientSnapshot {
         self.owner.snapshot()
+    }
+
+    /// Lower the current outer TX-power action into its complete typed child.
+    /// Every other outer action fails closed instead of becoming a no-op.
+    pub fn begin_tx_power_tracking<'state>(
+        &self,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<PhyParamTrackingTxPowerTransition<'state>, PhyParamTrackingChildError> {
+        self.transition.begin_tx_power_tracking(state)
     }
 
     /// Recover the ordinary owner only after every outer action was confirmed.
@@ -1226,6 +1237,7 @@ mod tests {
             shared_tracking_control: 0x29,
             bluetooth_ieee802154_power_control: 0x51,
             calibration_tracking_enabled: true,
+            relaxed_power_tracking_threshold: false,
         });
 
         assert_eq!(tracking.action(), PhyParamTrackingAction::EnterCritical);
@@ -1247,6 +1259,118 @@ mod tests {
             .unwrap();
         let owner = tracking.into_owner().unwrap();
         assert!(owner.snapshot().contains(PhyModemClient::Ieee802154));
+    }
+
+    #[test]
+    fn periodic_outer_tracking_commits_bluetooth_then_wifi_gain_children() {
+        let pending = match state_for_mask(WIFI_BIT | IEEE802154_BIT, 0)
+            .evaluate_periodic_at(2_000_000)
+            .unwrap()
+            .into_owner()
+        {
+            Ok(_) => panic!("periodic shared tracking must retain the owner"),
+            Err(pending) => pending,
+        };
+        let parameters = PhyParamTrackingParameters {
+            tracking_inhibited: false,
+            rfpll_cap_tracking_enabled: false,
+            shared_tracking_control: 0x29,
+            bluetooth_ieee802154_power_control: 0x51,
+            calibration_tracking_enabled: false,
+            relaxed_power_tracking_threshold: false,
+        };
+        let mut tracking = pending.begin_tracking(parameters);
+        let mut state = crate::phy_state::PhyState::new(crate::phy_state::PhyConfig::production());
+        state.apply_temperature_outcome(crate::phy_temperature::PhyTemperatureOutcome {
+            temperature: 25,
+            sensor_index: 3,
+            next_dac: 4,
+        });
+        state.apply_channel_outcome(crate::phy_channel::PhyChipChannelOutcome {
+            channel: 11,
+            frequency_mhz: 2_462,
+            cbw: 1,
+            init_complete: true,
+            temperature: crate::phy_temperature::PhyTemperatureOutcome {
+                temperature: 25,
+                sensor_index: 3,
+                next_dac: 4,
+            },
+        });
+
+        assert_eq!(
+            tracking.begin_tx_power_tracking(&mut state).unwrap_err(),
+            PhyParamTrackingChildError::UnsupportedAction
+        );
+        tracking
+            .advance(PhyParamTrackingCompletion::EnteredCritical)
+            .unwrap();
+        let before = state.tx_power_tracking_parameters(false);
+        let bluetooth = tracking.begin_tx_power_tracking(&mut state).unwrap();
+        let bluetooth = match bluetooth.commit() {
+            Ok(_) => panic!("incomplete TX-power child minted a parent completion"),
+            Err(bluetooth) => bluetooth,
+        };
+        assert_eq!(
+            bluetooth.state().tx_power_tracking_parameters(false),
+            before
+        );
+        let completion = complete_power_child(bluetooth);
+        tracking.advance(completion).unwrap();
+        assert_eq!(state.bluetooth_tx_gain_parameters().base, 5);
+        assert_eq!(tracking.action(), PhyParamTrackingAction::WifiI2cTrack);
+
+        tracking
+            .advance(PhyParamTrackingCompletion::WifiI2cTracked)
+            .unwrap();
+        let wifi = tracking.begin_tx_power_tracking(&mut state).unwrap();
+        assert_eq!(
+            wifi.action(),
+            crate::phy_power_tracking::PhyTxPowerTrackingAction::SetBbpllCalibration {
+                enabled: true,
+            }
+        );
+        let completion = complete_power_child(wifi);
+        tracking.advance(completion).unwrap();
+        assert_eq!(state.channel_parameters().tx_gain_base, 5);
+        assert_eq!(tracking.action(), PhyParamTrackingAction::TemperatureRead);
+    }
+
+    fn complete_power_child(
+        mut child: PhyParamTrackingTxPowerTransition<'_>,
+    ) -> PhyParamTrackingCompletion {
+        loop {
+            if !matches!(
+                child.action(),
+                crate::phy_power_tracking::PhyTxPowerTrackingAction::Complete(_)
+            ) {
+                let binding = child.lower_external().unwrap();
+                assert_eq!(binding.action(), child.action());
+            }
+            let completion = match child.action() {
+                crate::phy_power_tracking::PhyTxPowerTrackingAction::SetBbpllCalibration {
+                    enabled,
+                } => crate::phy_power_tracking::PhyTxPowerTrackingCompletion::BbpllCalibrationSet {
+                    enabled,
+                },
+                crate::phy_power_tracking::PhyTxPowerTrackingAction::RegenerateWifiGain {
+                    channel,
+                    gain_base,
+                } => crate::phy_power_tracking::PhyTxPowerTrackingCompletion::WifiGainRegenerated {
+                    channel,
+                    gain_base,
+                },
+                crate::phy_power_tracking::PhyTxPowerTrackingAction::RegenerateBluetoothIeee802154Gain {
+                    gain_base,
+                } => crate::phy_power_tracking::PhyTxPowerTrackingCompletion::BluetoothIeee802154GainRegenerated {
+                    gain_base,
+                },
+                crate::phy_power_tracking::PhyTxPowerTrackingAction::Complete(_) => {
+                    return child.commit().unwrap();
+                }
+            };
+            child.advance(completion).unwrap();
+        }
     }
 
     #[test]

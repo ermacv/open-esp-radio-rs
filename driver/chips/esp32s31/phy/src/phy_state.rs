@@ -987,6 +987,11 @@ impl PhyState {
         }
     }
 
+    /// Channel selected by the completed typed channel transition.
+    pub const fn current_wifi_channel(&self) -> u16 {
+        self.wifi.current_channel
+    }
+
     /// Regenerate the Wi-Fi gain bank from live calibration state.
     ///
     /// `None` preserves the vendor's explicit skip-publication configuration;

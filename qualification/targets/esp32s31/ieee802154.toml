@@ -1,0 +1,157 @@
+# Qualification v3 declares claims and blockers; every proof status is derived.
+schema = 3
+target = "esp32s31-ieee802154"
+required-capabilities = [
+  "clock-reset-foundation",
+  "static-mac-policy",
+  "polled-ed-cca",
+  "rf-channel-readiness",
+  "active-interrupt-runtime",
+  "rx-tx-dataplane",
+]
+
+[verification]
+project = "verification/vendor/targets/esp32s31/vendor-project.toml"
+evidence-index = "verification/vendor/targets/esp32s31/evidence/vendor-evidence.json"
+
+[hil]
+target = "esp32s31"
+catalog = "hil/scenarios"
+runs = "target/hil/esp32s31/runs"
+
+[[capabilities]]
+id = "clock-reset-foundation"
+title = "IEEE 802.15.4 clock reset and masked MAC foundation"
+scope = "Whole-radio transition through reviewed clocks private reset exact event and abort masking and semantic readback"
+owners = [
+  { path = "driver/chips/esp32s31/hal/src/ieee802154_role.rs", token = "Ieee802154FoundationConfigured" },
+]
+tests = [
+  { path = "driver/chips/esp32s31/hal/src/ieee802154_lifecycle.rs", token = "exact_sequence_reaches_only_foundation_configured" },
+]
+vendor-anchors = [
+  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md", token = "ClockDependenciesAcquired" },
+]
+hil-requirements = [
+  { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
+]
+async-not-applicable = "finite-synchronous-foundation-transition"
+gaps = [
+  { axis = "vendor", id = "composed-clock-reset-production-trace-not-executable" },
+]
+
+[[capabilities]]
+id = "static-mac-policy"
+title = "Interrupt-masked static MAC policy"
+scope = "Checked channel CCA ACK control and primary PAN identity writes followed by one fail-closed semantic readback"
+depends-on = ["clock-reset-foundation"]
+owners = [
+  { path = "driver/chips/esp32s31/hal/src/ieee802154_policy.rs", token = "Ieee802154MacPolicy" },
+  { path = "driver/chips/esp32s31/hal/src/ieee802154_role.rs", token = "Ieee802154MacPolicyConfigured" },
+]
+tests = [
+  { path = "driver/chips/esp32s31/hal/src/ieee802154_policy.rs", token = "static_policy_uses_exact_deterministic_order_then_one_snapshot" },
+]
+vendor-anchors = [
+  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-dataplane.md", token = "static policy" },
+]
+hil-requirements = [
+  { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
+]
+async-not-applicable = "finite-synchronous-policy-transition"
+gaps = [
+  { axis = "vendor", id = "static-policy-composed-trace-not-executable" },
+]
+
+[[capabilities]]
+id = "polled-ed-cca"
+title = "Serialized route-detached polled ED and CCA"
+scope = "Finite raw ED or CCA command with exact event window abort evidence selected ED_DONE recovery and fail-stop owner disposition"
+depends-on = ["static-mac-policy"]
+owners = [
+  { path = "driver/chips/esp32s31/hal/src/ieee802154_operation.rs", token = "Ieee802154PolledOperation" },
+  { path = "driver/chips/esp32s31/hal/src/ieee802154_role.rs", token = "energy_detection_raw" },
+  { path = "driver/chips/esp32s31/pac/src/ieee802154.rs", token = "acknowledge_pending_events" },
+]
+tests = [
+  { path = "driver/chips/esp32s31/hal/src/ieee802154_operation.rs", token = "recovered_owner_supports_back_to_back_serialized_ed" },
+  { path = "driver/chips/esp32s31/hal/src/ieee802154_operation.rs", token = "cca_completion_samples_busy_without_reading_rss" },
+]
+vendor-anchors = [
+  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-control.md", token = "ED_DONE" },
+]
+hil-requirements = [
+  { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
+]
+gaps = [
+  { axis = "vendor", id = "complete-polled-ed-cca-production-trace-not-executable" },
+  { axis = "hil", id = "cca-busy-operation-cell-missing" },
+  { axis = "async", id = "public-operation-runs-the-finite-poll-budget-synchronously" },
+]
+
+[[capabilities]]
+id = "rf-channel-readiness"
+title = "IEEE 802.15.4 RF and channel readiness"
+scope = "Registered common PHY RFPLL BTBB and protocol-specific channel transition required for calibrated ED or on-air operation"
+depends-on = ["clock-reset-foundation"]
+owners = [
+  { path = "driver/chips/esp32s31/phy/src/registered_ieee802154.rs", token = "RegisteredIeee802154TimingReady" },
+]
+tests = [
+  { path = "driver/chips/esp32s31/phy/src/registered_ieee802154.rs", token = "registered_full_chain_and_typed_recovery_surface_connects" },
+]
+vendor-anchors = [
+  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md", token = "BTBB" },
+]
+gaps = [
+  { axis = "implementation", id = "protocol-specific-rf-btbb-channel-transition-missing" },
+  { axis = "host", id = "rf-readiness-model-and-composition-tests-missing" },
+  { axis = "vendor", id = "rf-client-btbb-and-channel-composed-trace-missing" },
+  { axis = "hil", id = "calibrated-ed-and-channel-retune-cell-missing" },
+  { axis = "async", id = "rf-transition-executor-contract-missing" },
+]
+
+[[capabilities]]
+id = "active-interrupt-runtime"
+title = "Active source-132 interrupt runtime"
+scope = "Affine CPU route event acknowledgement bounded ISR classification task wake and route teardown"
+depends-on = ["clock-reset-foundation"]
+owners = [
+  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "Ieee802154RouteReadback" },
+  { path = "driver/chips/esp32s31/pac-raw/src/ieee802154_route_observation.rs", token = "read_route_words" },
+]
+tests = [
+  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "route_readback_distinguishes_unassigned_map_from_full_reset" },
+]
+vendor-anchors = [
+  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-control.md", token = "source 132" },
+]
+gaps = [
+  { axis = "implementation", id = "route-write-isr-and-teardown-owners-missing" },
+  { axis = "vendor", id = "active-route-and-concurrent-acknowledgement-proof-missing" },
+  { axis = "hil", id = "level-triggered-route-and-same-bit-arrival-cell-missing" },
+  { axis = "async", id = "interrupt-to-task-wake-contract-missing" },
+]
+
+[[capabilities]]
+id = "rx-tx-dataplane"
+title = "Operational IEEE 802.15.4 RX and TX dataplane"
+scope = "PHY-ready frame RX TX DMA ownership state machine ACK timing filtering and public MAC integration"
+depends-on = ["rf-channel-readiness", "active-interrupt-runtime"]
+owners = [
+  { path = "driver/ieee802154/src/contract.rs", token = "RadioStateMachine" },
+  { path = "driver/chips/esp32s31/ieee802154/dma/src/rx.rs", token = "RxPoolStorage" },
+]
+tests = [
+  { path = "driver/ieee802154/src/contract.rs", token = "finite_enable_receive_sleep_disable_path_is_exact" },
+  { path = "driver/chips/esp32s31/ieee802154/dma/src/rx.rs", token = "free_armed_delivered_free_transition_preserves_layout" },
+]
+vendor-anchors = [
+  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-dataplane.md", token = "DMA" },
+]
+gaps = [
+  { axis = "implementation", id = "production-hal-dma-irq-and-generic-mac-composition-missing" },
+  { axis = "vendor", id = "complete-rx-tx-state-machine-and-tx-power-trace-missing" },
+  { axis = "hil", id = "on-air-rx-tx-ack-and-filtering-cells-missing" },
+  { axis = "async", id = "operational-mac-runner-and-deadlines-missing" },
+]

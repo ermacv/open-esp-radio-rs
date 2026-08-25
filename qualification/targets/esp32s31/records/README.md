@@ -7,6 +7,8 @@ record are therefore evidence, not current usage instructions.
 
 Current records:
 
+- [ESP32-S31 production back-to-back IEEE 802.15.4 ED recovery](2026-08-25-esp32s31-ieee802154-back-to-back-ed.md);
+- [ESP32-S31 generated IEEE 802.15.4 ED-DONE selected write](2026-08-25-esp32s31-ieee802154-generated-ed-done.md);
 - [ESP32-S31 IEEE 802.15.4 ED completion and selected status write](2026-08-25-esp32s31-ieee802154-ed-event.md);
 - [ESP32-S31 IEEE 802.15.4 EVENT_STATUS selective acknowledgement](2026-08-25-esp32s31-ieee802154-event-status.md);
 - [ESP32-S31 FTM requester source frontier](2026-08-24-esp32s31-ftm-requester-frontier.md);
@@ -30,8 +32,9 @@ Current records:
 - [connected HE20 LDPC DCM](2026-07-31-he20-dcm-ldpc-connected.md);
 - [vendor-oracle transfer](2026-07-31-vendor-oracle-transfer.md).
 
-The canonical claim graph and open gaps live in the
-[machine-checked qualification specification](../wifi-sta.toml). These
+The canonical claim graphs and open gaps live in the machine-checked
+[Wi-Fi STA](../wifi-sta.toml), [Bluetooth LE](../bluetooth-le.toml), and
+[IEEE 802.15.4](../ieee802154.toml) qualification specifications. These
 narratives are historical context, not machine-readable proof. Current HIL
 qualification is derived only from a sealed runner bundle whose clean commit
 matches the evaluated repository. Add a dated narrative when it helps future

@@ -98,7 +98,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
         ("RadioPhyPeripherals", "radio_phy", 18),
         ("CoexistencePeripherals", "coexistence", 4),
         ("BluetoothControllerPeripherals", "bluetooth", 19),
-        ("BluetoothInterruptPeripherals", "bluetooth_interrupts", 1),
+        ("BluetoothInterruptPeripherals", "bluetooth_interrupts", 2),
         ("SharedRadioPeripherals", "shared_radio", 4),
         ("Ieee802154Peripherals", "ieee802154", 1),
     ];

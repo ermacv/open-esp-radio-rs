@@ -3352,30 +3352,37 @@ access = "read-write"
 address = 537924120
 width = 32
 access = "read-write"
-identity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LOCK_MODIFY_REQUEST"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "operational_value_0218"
+register-method = "scheduler_lock_modify_request"
 
 [[registers.fields]]
-svd-name = "DYNAMIC_LOW_20"
-method = "dynamic_low_20"
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "ZERO_IMAGE_20_30"
-method = "zero_image_20_30"
+svd-name = "ZERO_IMAGE_20_26"
+method = "zero_image_20_26"
 bit-offset = 20
-bit-width = 11
+bit-width = 7
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "ONE_IMAGE_31"
-method = "one_image_31"
+svd-name = "RESULT"
+method = "result"
+bit-offset = 27
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "START"
+method = "start"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
@@ -3601,16 +3608,16 @@ access = "read-write"
 address = 537924188
 width = 32
 access = "read-only"
-identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_SOURCE"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_FINISHED_LIST_STATUS"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "scheduler_diagnostic_source"
+register-method = "scheduler_finished_list_status"
 
 [[registers.fields]]
-svd-name = "VALUE_LOW_16"
-method = "value_low_16"
+svd-name = "FINISHED_LIST_MASK"
+method = "finished_list_mask"
 bit-offset = 0
 bit-width = 16
 access = "read-only"
@@ -3619,16 +3626,16 @@ access = "read-only"
 address = 537924192
 width = 32
 access = "read-write"
-identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_LATCH"
+identity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_FINISHED_LIST_REPORT"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
-register-method = "scheduler_diagnostic_latch"
+register-method = "scheduler_finished_list_report"
 
 [[registers.fields]]
-svd-name = "VALUE_LOW_16"
-method = "value_low_16"
+svd-name = "FINISHED_LIST_MASK"
+method = "finished_list_mask"
 bit-offset = 0
 bit-width = 16
 access = "read-write"

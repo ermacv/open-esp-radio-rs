@@ -13,6 +13,7 @@ mod bluetooth_interrupt;
 mod bluetooth_memory_lists;
 mod bluetooth_phy_init;
 mod bluetooth_scheduler;
+mod bluetooth_scheduler_lock_modify;
 mod bluetooth_scheduler_runtime;
 mod cfr;
 pub mod clock;
@@ -64,7 +65,8 @@ pub mod validation;
 mod validation_transactions;
 pub use agc_runtime::ForcedRxGain;
 pub use bluetooth_controller_hal_init::{
-    BluetoothControllerHalInitConfig, BluetoothHalInitPeriod, BluetoothHalInitScale,
+    BluetoothControllerHalInitConfig, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
+    BluetoothHalInitScale, BluetoothRawTimeDeltaProjection,
 };
 pub use bluetooth_interrupt::{
     BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
@@ -75,10 +77,15 @@ pub use bluetooth_interrupt::{
 };
 pub use bluetooth_memory_lists::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+    BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
 };
+pub use bluetooth_scheduler_lock_modify::{
+    BluetoothSchedulerLockModifyObservation, BluetoothSchedulerLockModifyRequest,
+    BluetoothSchedulerLockModifyRequestError,
+};
 pub use bluetooth_scheduler_runtime::{
-    BluetoothSchedulerDiagnosticObservation, BluetoothSchedulerReferenceGateObservation,
+    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerReferenceGateObservation,
     BluetoothSchedulerWorkObservation,
 };
 pub use cfr::CfrValue;

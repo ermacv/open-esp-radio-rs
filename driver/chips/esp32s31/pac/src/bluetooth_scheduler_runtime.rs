@@ -39,19 +39,34 @@ impl BluetoothSchedulerWorkObservation {
     }
 }
 
-/// Low halfword transferred by one scheduler-worker pop attempt.
-///
-/// The positional name deliberately assigns no Link-Layer meaning. The
-/// complete reference worker performs this transfer before inspecting whether
-/// its software completion list contains an item.
+/// Finished hardware-list mask transferred by one scheduler-worker pop attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "the scheduler diagnostic observation must be retained or explicitly discarded"]
-pub struct BluetoothSchedulerDiagnosticObservation(u16);
+#[must_use = "the scheduler finished-list observation must be drained or explicitly discarded"]
+pub struct BluetoothSchedulerFinishedListObservation(u16);
 
-impl BluetoothSchedulerDiagnosticObservation {
-    /// Return the low halfword read from `SCHEDULER_DIAGNOSTIC_SOURCE`.
-    pub const fn low_16(self) -> u16 {
+impl BluetoothSchedulerFinishedListObservation {
+    /// Retain one complete reviewed field image.
+    ///
+    /// Every `u16` is a representable subset of the sixteen hardware lists.
+    /// Live code obtains this value through the task-owned MMIO transfer;
+    /// virtual-time tests may construct it directly.
+    pub const fn from_bits(bits: u16) -> Self {
+        Self(bits)
+    }
+
+    /// Return the complete sixteen-list mask.
+    pub const fn bits(self) -> u16 {
         self.0
+    }
+
+    /// Whether no hardware list was reported finished.
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Whether one representable hardware-list index was reported finished.
+    pub const fn contains(self, list_index: u8) -> bool {
+        list_index < 16 && self.0 & (1u16 << list_index) != 0
     }
 }
 
@@ -74,26 +89,26 @@ impl BluetoothSchedulerInterruptControl for HardwareSchedulerInterruptControl<'_
     }
 }
 
-trait BluetoothSchedulerDiagnosticControl {
-    fn read_diagnostic_source_low_16(&mut self) -> u16;
-    fn write_diagnostic_latch_low_16(&mut self, value: u16);
+trait BluetoothSchedulerFinishedListControl {
+    fn read_finished_list_status(&mut self) -> u16;
+    fn write_finished_list_report(&mut self, value: u16);
 }
 
-struct HardwareSchedulerDiagnosticControl<'a> {
+struct HardwareSchedulerFinishedListControl<'a> {
     registers: &'a super::svd::BluetoothControllerCore,
 }
 
-impl BluetoothSchedulerDiagnosticControl for HardwareSchedulerDiagnosticControl<'_> {
-    fn read_diagnostic_source_low_16(&mut self) -> u16 {
+impl BluetoothSchedulerFinishedListControl for HardwareSchedulerFinishedListControl<'_> {
+    fn read_finished_list_status(&mut self) -> u16 {
         self.registers
-            .scheduler_diagnostic_source()
+            .scheduler_finished_list_status()
             .read()
-            .value_low_16()
+            .finished_list_mask()
             .bits()
     }
 
-    fn write_diagnostic_latch_low_16(&mut self, value: u16) {
-        zero_based_field_write::bluetooth_scheduler_diagnostic_latch(self.registers, value);
+    fn write_finished_list_report(&mut self, value: u16) {
+        zero_based_field_write::bluetooth_scheduler_finished_list_report(self.registers, value);
     }
 }
 
@@ -113,12 +128,12 @@ fn execute_work_observation(
     BluetoothSchedulerWorkObservation::from_bits(control.read_scheduler_state())
 }
 
-fn execute_diagnostic_transfer(
-    control: &mut impl BluetoothSchedulerDiagnosticControl,
-) -> BluetoothSchedulerDiagnosticObservation {
-    let value = control.read_diagnostic_source_low_16();
-    control.write_diagnostic_latch_low_16(value);
-    BluetoothSchedulerDiagnosticObservation(value)
+fn execute_finished_list_transfer(
+    control: &mut impl BluetoothSchedulerFinishedListControl,
+) -> BluetoothSchedulerFinishedListObservation {
+    let value = control.read_finished_list_status();
+    control.write_finished_list_report(value);
+    BluetoothSchedulerFinishedListObservation(value)
 }
 
 impl BluetoothInterruptRegisters {
@@ -160,20 +175,21 @@ impl BluetoothInterruptRegisters {
 }
 
 impl BluetoothTaskRegisters {
-    /// Execute the exact diagnostic transfer preceding one worker pop attempt.
+    /// Transfer the exact finished-list mask preceding one worker pop attempt.
     ///
     /// This reads `0x2010_125c`, truncates to its low halfword, then writes
     /// that value as a complete zero-high image to `0x2010_1260`. The method
-    /// does not claim that a software completion item exists; the complete
-    /// reference worker performs the transfer before every empty/non-empty
-    /// list decision.
-    pub fn sample_and_latch_scheduler_diagnostic(
+    /// deliberately calls the second operation a report: its hardware clear
+    /// or acknowledgement semantics are not independently established. The
+    /// complete reference worker dispatches the returned mask through its
+    /// finished-item selector before every software completed-list pop.
+    pub fn transfer_scheduler_finished_lists(
         &mut self,
-    ) -> BluetoothSchedulerDiagnosticObservation {
-        let mut control = HardwareSchedulerDiagnosticControl {
+    ) -> BluetoothSchedulerFinishedListObservation {
+        let mut control = HardwareSchedulerFinishedListControl {
             registers: &self.bluetooth.bluetooth_controller_core,
         };
-        let observation = execute_diagnostic_transfer(&mut control);
+        let observation = execute_finished_list_transfer(&mut control);
         device_fence();
         observation
     }
@@ -184,8 +200,8 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        BluetoothSchedulerDiagnosticControl, BluetoothSchedulerInterruptControl,
-        execute_clear_scheduler_reference, execute_diagnostic_transfer,
+        BluetoothSchedulerFinishedListControl, BluetoothSchedulerInterruptControl,
+        execute_clear_scheduler_reference, execute_finished_list_transfer,
         execute_reference_gate_observation, execute_work_observation,
     };
     use crate::RadioHardware;
@@ -216,24 +232,25 @@ mod tests {
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum DiagnosticOperation {
-        ReadSource,
-        WriteLatch(u16),
+    enum FinishedListOperation {
+        ReadStatus,
+        WriteReport(u16),
     }
 
-    struct DiagnosticRecorder {
-        source: u16,
-        operations: Vec<DiagnosticOperation>,
+    struct FinishedListRecorder {
+        status: u16,
+        operations: Vec<FinishedListOperation>,
     }
 
-    impl BluetoothSchedulerDiagnosticControl for DiagnosticRecorder {
-        fn read_diagnostic_source_low_16(&mut self) -> u16 {
-            self.operations.push(DiagnosticOperation::ReadSource);
-            self.source
+    impl BluetoothSchedulerFinishedListControl for FinishedListRecorder {
+        fn read_finished_list_status(&mut self) -> u16 {
+            self.operations.push(FinishedListOperation::ReadStatus);
+            self.status
         }
 
-        fn write_diagnostic_latch_low_16(&mut self, value: u16) {
-            self.operations.push(DiagnosticOperation::WriteLatch(value));
+        fn write_finished_list_report(&mut self, value: u16) {
+            self.operations
+                .push(FinishedListOperation::WriteReport(value));
         }
     }
 
@@ -262,20 +279,24 @@ mod tests {
     }
 
     #[test]
-    fn worker_diagnostic_transfer_reads_before_complete_low_halfword_write() {
-        let mut recorder = DiagnosticRecorder {
-            source: 0xa55a,
+    fn worker_finished_list_transfer_reads_before_complete_low_halfword_report() {
+        let mut recorder = FinishedListRecorder {
+            status: 0xa55a,
             operations: Vec::new(),
         };
 
-        let observation = execute_diagnostic_transfer(&mut recorder);
+        let observation = execute_finished_list_transfer(&mut recorder);
 
-        assert_eq!(observation.low_16(), 0xa55a);
+        assert_eq!(observation.bits(), 0xa55a);
+        assert!(!observation.is_empty());
+        assert!(observation.contains(1));
+        assert!(!observation.contains(0));
+        assert!(!observation.contains(16));
         assert_eq!(
             recorder.operations,
             [
-                DiagnosticOperation::ReadSource,
-                DiagnosticOperation::WriteLatch(0xa55a),
+                FinishedListOperation::ReadStatus,
+                FinishedListOperation::WriteReport(0xa55a),
             ]
         );
     }
@@ -296,11 +317,11 @@ mod tests {
             0x2010_107c
         );
         assert_eq!(
-            controller.scheduler_diagnostic_source().as_ptr() as usize,
+            controller.scheduler_finished_list_status().as_ptr() as usize,
             0x2010_125c
         );
         assert_eq!(
-            controller.scheduler_diagnostic_latch().as_ptr() as usize,
+            controller.scheduler_finished_list_report().as_ptr() as usize,
             0x2010_1260
         );
     }

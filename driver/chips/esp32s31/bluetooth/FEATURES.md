@@ -47,9 +47,9 @@ are recorded in
 | --- | --- | --- |
 | Controller interrupt output | PARTIAL | The restricted PAC consumes inactive IRQ ownership, clears and enables the exact primary baseline groups (`0x00008000`, `0x00001300`), publishes the setup strobe at `0x2010_100c`, and reverses the two release strobes before masking those groups. The owner can be staged once for shared primary/NRT ISR storage, but no CPU route is live. |
 | Interrupt observation | PARTIAL | Separate restricted transactions preserve the vendor distinction: primary samples the two masked status banks, NRT samples the two raw banks, and both acknowledge through the shared W1C clear banks. One primary epoch conditionally captures all diagnostic words for the exact baseline fault lanes before dynamic classification. The ISR partition also owns the two scheduler words needed for distinct reference-gate/work reads and the authorized zero write, without a task-side MMIO alias. NRT remains an opaque acknowledge-only observation in the pinned default lifecycle. |
-| Interrupt masks and CPU route | PARTIAL | Primary source 124 and NRT source 133 are typed policies on the configured Controller core at level 3; primary requests IRAM residency and NRT does not. The pinned PAC exposes `BT_MAC`/`BT_MAC_INT1`, and the ESP-HAL adapter compile-checks their numbers and binds/disables the pair on one core without raw casts. Baseline fault and dynamic scheduler masks are exact. The exact producer/consumer review proves that deferred completions use a software intrusive list and that selector 4/6 effects are mandatory BLE scheduling actions. A typed replacement, lost-wake-safe waker, feature-specific NRT policy and the public live-route lifecycle remain absent. |
-| Controller timer/scheduler | FAIL-CLOSED | The sixteen-entry scheduler-table prefix is live, the later HAL-init register body is implemented but disconnected, and the task-side diagnostic low-halfword transfer plus ISR reference/state MMIO order are typed. The open scheduler item lifecycle, selector-4 retry, selector-6 consistency action, radio epochs, deadlines and command/status semantics are absent. |
-| Controller memory lists | FAIL-CLOSED | Three selectors, two pointer slots and the compressed SRAM address format are reviewed. RX, TX, free and ready meanings, element layouts and lifetimes are unassigned. |
+| Interrupt masks and CPU route | PARTIAL | Primary source 124 and NRT source 133 are typed policies on the configured Controller core at level 3; primary requests IRAM residency and NRT does not. The pinned PAC exposes `BT_MAC`/`BT_MAC_INT1`, and the ESP-HAL adapter compile-checks their numbers and binds/disables the pair on one core without raw casts. Baseline fault and dynamic scheduler masks are exact. The finished-list to software-completed-queue to role-callback chain is mapped, its 16-bit hardware mask is typed and its pure drain consumes one list per bounded step; selector 4 is scanner-role resume and selector 6 is active-scheduler consistency. The item mapping, raw interrupt source/fence, a lost-wake-safe waker, feature-specific NRT policy and the public live-route lifecycle remain absent. |
+| Controller timer/scheduler | FAIL-CLOSED | The sixteen-entry scheduler-table prefix is live, the later HAL-init register body is implemented but disconnected, and the task-side finished-list mask transfer plus ISR reference/state MMIO order are typed. The lock/modify head request has validated images and affine `await publication`/`in flight` event phases with no polling loop; its terminal nibble is correctly modeled as a diagnostic publication result, not radio completion. Selector 4 is scanner-role resume and stays outside a DTM-only graph; selector 6 becomes an internal scheduler-consistency invariant. The open queue, live cross-owner coordinator, radio epochs, deadlines and remaining command/status semantics are absent. |
+| Controller memory lists | FAIL-CLOSED | Three selectors, two pointer slots, the compressed SRAM address format and the DTM RX low-24/high-byte result projection are reviewed. RX, TX, free and ready meanings, element layouts, lifetimes and reclamation are unassigned. |
 | In-process HCI handoff | LIVE | An affine split provides a `bt-hci::ExternalController` Host transport and one Controller-worker endpoint. Both bounded directions validate complete packets, apply async backpressure, wake on capacity/data, retain packets across short buffers and leave queues unchanged when waits are cancelled. Packet kinds remain typed; no UART/H4 framing or allocator is used. |
 | Packet TX/RX | ABSENT | No BLE buffer publication, radio command, completion owner, RSSI result or on-air packet path exists. |
 
@@ -57,7 +57,7 @@ are recorded in
 
 | Capability | Status | Current production boundary |
 | --- | --- | --- |
-| Direct Test Mode | ABSENT | No transmitter/receiver test command reaches radio hardware. |
+| Direct Test Mode | ABSENT | The exact S31 TX/RX/Test-End command bodies, allocator roles, initial controller-SRAM link-state image, common scheduler path and DTM recycle callback are mapped. The lock/modify head request now has a finite event-driven pure model, and the later finished-item callback is separated from its diagnostic result. Complete descriptor fields, packet-list roles, raw IRQ-to-finished-mask mapping, fences and owned RX recovery remain missing, so no command reaches production radio hardware. |
 | Legacy advertising | ABSENT | No advertising PDU owner, channel scheduler or HCI advertising commands exist. |
 | Scanning | ABSENT | No observer, filter, duplicate list or advertising-report event path exists. |
 | Peripheral connection | ABSENT | Connection acceptance, anchors, channel selection, SN/NESN, retransmission, supervision and LL control are absent. |
@@ -73,7 +73,7 @@ are recorded in
 
 | Capability | Status | Current production boundary |
 | --- | --- | --- |
-| Executor-neutral controller core | PARTIAL | The affine bootstrap worker has ordered async stop, retains accepted responses across backpressure/cancellation and rejects Host data before LL readiness. A lock-free pending/marked cell preserves the reference scheduler event's coalescing contract without an RTOS. The completion source is now proven to be a replaceable software list, but no typed scheduler queue, selector-4/6 action, registered waker, timer, Link Layer or radio event input exists. |
+| Executor-neutral controller core | PARTIAL | The affine bootstrap worker has ordered async stop, retains accepted responses across backpressure/cancellation and rejects Host data before LL readiness. A lock-free pending/marked cell preserves the reference scheduler event's coalescing contract without an RTOS, the first lock/modify request phase returns control on every BUSY/START wait and the finished-mask drain handles one list per event step. The item-recycle source is a replaceable software lifecycle, but no typed scheduler queue, selector-6 invariant, registered waker, timer, Link Layer or live radio event input exists. |
 | Executor-neutral HCI transport | LIVE | Packet arrival and capacity are wake edges; cancelled reads, writes and publications cannot consume or publish a packet. The mutex domain is selected by the platform and requires no RTOS. |
 | Embassy controller owner | ABSENT | No composed sole hardware task, ISR wake queue, timer adapter or powered shutdown exists. The portable bootstrap worker deliberately owns none of these platform concerns. |
 | Standalone coexistence hooks | PARTIAL | The source-owned coexistence core and Embassy mailbox accept Bluetooth requests, but are not attached to Bluetooth lifecycle. |
@@ -108,8 +108,8 @@ The next on-air transition is blocked by synchronous evidence for:
    without lost work;
 3. RX/TX/free/ready memory-list roles and element ownership;
 4. radio scheduler command, timer, doorbell and completion ordering, including
-   typed equivalents of the mandatory selector-4 retry and selector-6
-   post-clear consistency actions;
+   the selector-6 consistency invariant; scanner-role resume is deliberately
+   outside the DTM-only event graph;
 5. 1M PHY channel, whitening, CRC, access-address and TX/RX result setup;
 6. powered rollback and last-owner PHY shutdown.
 

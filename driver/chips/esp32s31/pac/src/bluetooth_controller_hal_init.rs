@@ -81,6 +81,59 @@ pub struct BluetoothControllerHalInitConfig {
     scheduler_sram: BluetoothControllerSramAddress,
 }
 
+/// Exact integer scale between a raw latched controller-time delta and the
+/// BLE scheduler's internal delta domain.
+///
+/// The type intentionally assigns no physical unit to either side. Complete
+/// ESP32-S31 bodies prove only the integer transform selected by the same
+/// low-three-bit image written during HAL initialization. Counter width, wrap
+/// and physical frequency remain separate evidence obligations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothControllerTimeScale {
+    shift_image: u8,
+}
+
+/// Projection of one scheduler delta into the raw controller-time domain.
+///
+/// `remainder` retains the scheduler-domain low bits discarded by the exact
+/// inverse shift. Callers must choose a rounding policy explicitly rather than
+/// silently treating the projection as exact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothRawTimeDeltaProjection {
+    /// Whole raw-time delta produced by the reviewed inverse transform.
+    pub whole: u32,
+    /// Scheduler-domain remainder discarded by that transform.
+    pub remainder: u8,
+}
+
+impl BluetoothControllerTimeScale {
+    /// Low-three-bit scale image written by the HAL initialization body.
+    pub const fn shift_image(self) -> u8 {
+        self.shift_image
+    }
+
+    /// Convert one raw latched-time delta into the scheduler delta domain.
+    ///
+    /// This uses wrapping 32-bit arithmetic, matching the complete RISC-V
+    /// shift helper. It does not decide whether a particular wrapped delta is
+    /// temporally before or after an anchor.
+    pub const fn scheduler_delta_from_raw(self, raw_delta: u32) -> u32 {
+        raw_delta.wrapping_shl((self.shift_image - 1) as u32)
+    }
+
+    /// Apply the exact inverse transform while retaining discarded low bits.
+    pub const fn raw_delta_from_scheduler(
+        self,
+        scheduler_delta: u32,
+    ) -> BluetoothRawTimeDeltaProjection {
+        let shift = (self.shift_image - 1) as u32;
+        BluetoothRawTimeDeltaProjection {
+            whole: scheduler_delta >> shift,
+            remainder: (scheduler_delta & ((1_u32 << shift) - 1)) as u8,
+        }
+    }
+}
+
 impl BluetoothControllerHalInitConfig {
     /// Construct one configuration from the complete setter's accepted input
     /// domains and a validated controller-SRAM address.
@@ -125,6 +178,14 @@ impl BluetoothControllerHalInitConfig {
             (BluetoothHalInitScale::Sixteen, BluetoothHalInitPeriod::Image500) => 5,
             (BluetoothHalInitScale::Sixteen, BluetoothHalInitPeriod::Image1000) => 4,
             (BluetoothHalInitScale::Sixteen, BluetoothHalInitPeriod::Image2000) => 3,
+        }
+    }
+
+    /// Exact raw-controller-time to BLE-scheduler scale selected by this
+    /// initialization profile.
+    pub const fn controller_time_scale(self) -> BluetoothControllerTimeScale {
+        BluetoothControllerTimeScale {
+            shift_image: self.sleep_timer_shift(),
         }
     }
 
@@ -436,6 +497,65 @@ mod tests {
         for (scale, period, expected) in cases {
             let config = BluetoothControllerHalInitConfig::new(scale, 11, 33, period, address);
             assert_eq!(config.sleep_timer_shift(), expected);
+        }
+    }
+
+    #[test]
+    fn standalone_time_scale_matches_complete_shift_helpers() {
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+
+        assert_eq!(scale.shift_image(), 3);
+        assert_eq!(scale.scheduler_delta_from_raw(0), 0);
+        assert_eq!(scale.scheduler_delta_from_raw(625), 2_500);
+        assert_eq!(scale.scheduler_delta_from_raw(0x4000_0000), 0);
+        assert_eq!(
+            scale.raw_delta_from_scheduler(2_503),
+            super::BluetoothRawTimeDeltaProjection {
+                whole: 625,
+                remainder: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn every_accepted_time_scale_retains_inverse_remainder() {
+        let address = BluetoothControllerHalInitConfig::reviewed_standalone().scheduler_sram;
+        let cases = [
+            (
+                BluetoothHalInitScale::Eight,
+                BluetoothHalInitPeriod::Image2000,
+                2,
+            ),
+            (
+                BluetoothHalInitScale::Eight,
+                BluetoothHalInitPeriod::Image1000,
+                3,
+            ),
+            (
+                BluetoothHalInitScale::Eight,
+                BluetoothHalInitPeriod::Image500,
+                4,
+            ),
+            (
+                BluetoothHalInitScale::Sixteen,
+                BluetoothHalInitPeriod::Image500,
+                5,
+            ),
+        ];
+
+        for (scale, period, shift_image) in cases {
+            let time_scale = BluetoothControllerHalInitConfig::new(scale, 11, 33, period, address)
+                .controller_time_scale();
+            let scheduler_delta = 0x1234_567b;
+            let projection = time_scale.raw_delta_from_scheduler(scheduler_delta);
+            let shift = u32::from(shift_image - 1);
+
+            assert_eq!(time_scale.shift_image(), shift_image);
+            assert_eq!(projection.whole, scheduler_delta >> shift);
+            assert_eq!(
+                u32::from(projection.remainder),
+                scheduler_delta & ((1_u32 << shift) - 1)
+            );
         }
     }
 

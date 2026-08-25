@@ -545,24 +545,24 @@ bitOffset = 31
 bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SCHEDULER_DIAGNOSTIC_SOURCE"
-description = "Complete scheduler diagnostic path reads this word and copies its low halfword to SCHEDULER_DIAGNOSTIC_LATCH."
+name = "SCHEDULER_FINISHED_LIST_STATUS"
+description = "The scheduler worker reads the low 16 bits as the finished hardware-list mask, copies that image to SCHEDULER_FINISHED_LIST_REPORT and dispatches the mask to the BLE finished-item selector."
 addressOffset = 0x25C
 size = 32
 access = "read-only"
 [[peripherals.registers.register.fields]]
-name = "VALUE_LOW_16"
+name = "FINISHED_LIST_MASK"
 bitOffset = 0
 bitWidth = 16
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "SCHEDULER_DIAGNOSTIC_LATCH"
-description = "Complete scheduler diagnostic path writes the low 16 bits from SCHEDULER_DIAGNOSTIC_SOURCE; other paths can clear the complete word."
+name = "SCHEDULER_FINISHED_LIST_REPORT"
+description = "Before software finished-item dispatch, the scheduler worker writes the observed 16-bit SCHEDULER_FINISHED_LIST_STATUS mask as a complete zero-high image. The hardware effect of this report remains positional; other reviewed paths can clear the complete word."
 addressOffset = 0x260
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "VALUE_LOW_16"
+name = "FINISHED_LIST_MASK"
 bitOffset = 0
 bitWidth = 16
 [peripherals.registers.register.fields.writeConstraint.range]
@@ -761,21 +761,25 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "OPERATIONAL_VALUE_0218"
-description = "Operational functions read the complete word. A complete writer publishes bit 31 set, bits 30:20 clear and a dynamic low-20-bit image."
+name = "SCHEDULER_LOCK_MODIFY_REQUEST"
+description = "The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or SCHEDULER_STATE.BUSY is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion."
 addressOffset = 0x218
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "DYNAMIC_LOW_20"
+name = "COMPRESSED_SRAM_POINTER"
 bitOffset = 0
 bitWidth = 20
 [[peripherals.registers.register.fields]]
-name = "ZERO_IMAGE_20_30"
+name = "ZERO_IMAGE_20_26"
 bitOffset = 20
-bitWidth = 11
+bitWidth = 7
 [[peripherals.registers.register.fields]]
-name = "ONE_IMAGE_31"
+name = "RESULT"
+bitOffset = 27
+bitWidth = 4
+[[peripherals.registers.register.fields]]
+name = "START"
 bitOffset = 31
 bitWidth = 1
 
@@ -794,7 +798,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "OPERATIONAL_WORD_036C"
-description = "Complete operational functions read and publish dynamic complete images. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."
+description = "Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."
 addressOffset = 0x36C
 size = 32
 access = "read-write"
@@ -813,6 +817,7 @@ sources = [
     "BLOB_LIBBLE_SCAN_HW_SNAPSHOT",
     "BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS",
     "BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS",
+    "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
     "BLOB_LIBBTDM_SCHEDULER_WAIT_TAIL",
     "BLOB_LIBBLE_PHY_INIT_REGISTERS",
 ]
@@ -1286,29 +1291,29 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_SOURCE"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_FINISHED_LIST_STATUS"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_SOURCE.VALUE_LOW_16"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_FINISHED_LIST_STATUS.FINISHED_LIST_MASK"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_LATCH"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_FINISHED_LIST_REPORT"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_DIAGNOSTIC_LATCH.VALUE_LOW_16"
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_FINISHED_LIST_REPORT.FINISHED_LIST_MASK"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -1709,26 +1714,32 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218"
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LOCK_MODIFY_REQUEST"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LOCK_MODIFY_REQUEST.COMPRESSED_SRAM_POINTER"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LOCK_MODIFY_REQUEST.ZERO_IMAGE_20_26"
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218.DYNAMIC_LOW_20"
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LOCK_MODIFY_REQUEST.RESULT"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218.ZERO_IMAGE_20_30"
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-[[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_VALUE_0218.ONE_IMAGE_31"
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_LOCK_MODIFY_REQUEST.START"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -1748,7 +1759,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C"
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

@@ -48,6 +48,41 @@ pub enum BluetoothControllerSramAddressError {
     OutsideEncodableWindow,
 }
 
+/// Validated positional result word consumed by the reviewed S31 DTM RX
+/// callback.
+///
+/// This type intentionally does not name the returned byte as a packet count,
+/// status, RSSI, or CRC result. The complete callback proves only that the
+/// low 24 bits must be zero and that the high byte is copied into the DTM
+/// link-state image. Its higher-level meaning and the ownership edge that
+/// makes the containing buffer CPU-readable are not yet established.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothDtmRxResultProjection(u32);
+
+/// Why a positional DTM RX result word is rejected by the reviewed callback.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmRxResultProjectionError {
+    /// At least one of the low 24 bits is nonzero.
+    NonzeroLowTwentyFourBits,
+}
+
+impl BluetoothDtmRxResultProjection {
+    /// Apply the exact validation performed on the word at returned-buffer
+    /// offset `+0x0c` by complete S31 body
+    /// `r_sym_ble_PptSRbXfefQwMVyO5jxP`.
+    pub const fn from_word(word: u32) -> Result<Self, BluetoothDtmRxResultProjectionError> {
+        if word & 0x00ff_ffff != 0 {
+            return Err(BluetoothDtmRxResultProjectionError::NonzeroLowTwentyFourBits);
+        }
+        Ok(Self(word))
+    }
+
+    /// Return the positional byte at returned-buffer offset `+0x0f`.
+    pub const fn returned_byte(self) -> u8 {
+        (self.0 >> 24) as u8
+    }
+}
+
 impl BluetoothControllerSramAddress {
     /// Validate one raw address against the exact compressed-pointer domain.
     pub const fn new(address: u32) -> Result<Self, BluetoothControllerSramAddressError> {
@@ -65,7 +100,7 @@ impl BluetoothControllerSramAddress {
         self.0
     }
 
-    const fn compressed(self) -> u32 {
+    pub(super) const fn compressed(self) -> u32 {
         (self.0 >> 2) & 0x000f_ffff
     }
 }
@@ -166,8 +201,33 @@ mod tests {
     use super::super::RadioHardware;
     use super::{
         BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+        BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
         BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
     };
+
+    #[test]
+    fn dtm_rx_result_projection_preserves_only_the_reviewed_high_byte() {
+        assert_eq!(
+            BluetoothDtmRxResultProjection::from_word(0)
+                .expect("an all-zero result word is accepted")
+                .returned_byte(),
+            0
+        );
+        assert_eq!(
+            BluetoothDtmRxResultProjection::from_word(0xab00_0000)
+                .expect("the high byte is positional payload")
+                .returned_byte(),
+            0xab
+        );
+        assert_eq!(
+            BluetoothDtmRxResultProjection::from_word(0x0000_0001),
+            Err(BluetoothDtmRxResultProjectionError::NonzeroLowTwentyFourBits)
+        );
+        assert_eq!(
+            BluetoothDtmRxResultProjection::from_word(0x00ff_ffff),
+            Err(BluetoothDtmRxResultProjectionError::NonzeroLowTwentyFourBits)
+        );
+    }
 
     #[test]
     fn compressed_controller_address_rejects_unrepresentable_values() {

@@ -15036,28 +15036,28 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>SCHEDULER_DIAGNOSTIC_SOURCE</name>
-          <description>Complete scheduler diagnostic path reads this word and copies its low halfword to SCHEDULER_DIAGNOSTIC_LATCH.</description>
+          <name>SCHEDULER_FINISHED_LIST_STATUS</name>
+          <description>The scheduler worker reads the low 16 bits as the finished hardware-list mask, copies that image to SCHEDULER_FINISHED_LIST_REPORT and dispatches the mask to the BLE finished-item selector.</description>
           <addressOffset>0x25C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
-              <name>VALUE_LOW_16</name>
+              <name>FINISHED_LIST_MASK</name>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>SCHEDULER_DIAGNOSTIC_LATCH</name>
-          <description>Complete scheduler diagnostic path writes the low 16 bits from SCHEDULER_DIAGNOSTIC_SOURCE; other paths can clear the complete word.</description>
+          <name>SCHEDULER_FINISHED_LIST_REPORT</name>
+          <description>Before software finished-item dispatch, the scheduler worker writes the observed 16-bit SCHEDULER_FINISHED_LIST_STATUS mask as a complete zero-high image. The hardware effect of this report remains positional; other reviewed paths can clear the complete word.</description>
           <addressOffset>0x260</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>VALUE_LOW_16</name>
+              <name>FINISHED_LIST_MASK</name>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
               <writeConstraint>
@@ -15305,24 +15305,29 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           </fields>
         </register>
         <register>
-          <name>OPERATIONAL_VALUE_0218</name>
-          <description>Operational functions read the complete word. A complete writer publishes bit 31 set, bits 30:20 clear and a dynamic low-20-bit image.</description>
+          <name>SCHEDULER_LOCK_MODIFY_REQUEST</name>
+          <description>The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or SCHEDULER_STATE.BUSY is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion.</description>
           <addressOffset>0x218</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>DYNAMIC_LOW_20</name>
+              <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
             </field>
             <field>
-              <name>ZERO_IMAGE_20_30</name>
+              <name>ZERO_IMAGE_20_26</name>
               <bitOffset>20</bitOffset>
-              <bitWidth>11</bitWidth>
+              <bitWidth>7</bitWidth>
             </field>
             <field>
-              <name>ONE_IMAGE_31</name>
+              <name>RESULT</name>
+              <bitOffset>27</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>START</name>
               <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -15344,7 +15349,7 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>OPERATIONAL_WORD_036C</name>
-          <description>Complete operational functions read and publish dynamic complete images. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields.</description>
+          <description>Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields.</description>
           <addressOffset>0x36C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>

@@ -11,6 +11,8 @@ require-capability controller-initialization
 require-capability common-phy-baseband
 require-capability interrupt-runtime
 require-capability controller-memory-lists
+require-capability scheduler-head-transaction
+require-capability scheduler-finished-list-drain
 require-capability hci-handoff-storage
 require-capability hci-bootstrap
 require-capability hci-bootstrap-worker
@@ -57,9 +59,12 @@ hil-proof missing
 async-proof partial
 owner driver/chips/esp32s31/bluetooth/src/scheduler.rs BluetoothSchedulerTableLowBitsCleared
 owner driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs BluetoothControllerHalInitConfig
+owner driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs BluetoothControllerTimeScale
 test driver/chips/esp32s31/bluetooth/src/scheduler.rs scheduler_prefix_consumes_reversible_clocks_and_arms_fail_stop
 test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs reviewed_profile_derives_all_runtime_images
 test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs complete_transaction_has_exact_prefix_and_thirty_two_lane_edges
+test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs standalone_time_scale_matches_complete_shift_helpers
+test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs every_accepted_time_scale_retains_inverse_remainder
 vendor-anchor verification/vendor/targets/esp32s31/README.md event/list
 depends-on clock-reset-prerequisite
 gap implementation hal-init-component-disconnected-by-event-list-low-power-ble-and-task-stages
@@ -98,7 +103,7 @@ owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothPrimaryFault
 owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothInterruptOutputPrepared
 owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs BluetoothSchedulerReferenceGateObservation
 owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs BluetoothSchedulerWorkObservation
-owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs BluetoothSchedulerDiagnosticObservation
+owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs BluetoothSchedulerFinishedListObservation
 owner driver/chips/esp32s31/bluetooth/src/interrupt.rs BluetoothCpuInterruptRoutePolicy
 owner driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs BluetoothPrimaryInterruptClassification
 owner driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs BluetoothPrimaryControllerFault
@@ -114,7 +119,7 @@ test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_prepare_preser
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_release_preserves_strobe_then_mask_order
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs interrupt_control_geometry_matches_the_three_reviewed_strobes
 test driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs temporal_state_reads_remain_distinct_across_reference_clear
-test driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs worker_diagnostic_transfer_reads_before_complete_low_halfword_write
+test driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs worker_finished_list_transfer_reads_before_complete_low_halfword_report
 test driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs scheduler_runtime_words_have_exact_disjoint_owner_geometry
 test driver/chips/esp32s31/bluetooth/src/interrupt.rs primary_route_is_source_124_level_three_and_iram
 test driver/chips/esp32s31/bluetooth/src/interrupt.rs nrt_route_is_distinct_source_133_without_iram_request
@@ -131,7 +136,8 @@ test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.
 test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs quiesce_is_affine_to_the_binding_core
 vendor-anchor verification/vendor/targets/esp32s31/README.md 0x00008000
 depends-on controller-initialization
-gap implementation typed-selector-4-and-selector-6-scheduler-actions-missing
+gap implementation selector-6-scheduler-invariant-missing
+gap implementation scanner-resume-action-deferred-until-scan-ull
 gap implementation live-isr-composition-and-nrt-dispatch-missing
 gap vendor complete-interrupt-production-trace-missing
 gap hil bluetooth-interrupt-epoch-cell-missing
@@ -146,7 +152,9 @@ hil-proof missing
 async-proof partial
 owner driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs BluetoothMemoryListSelector
 owner driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs BluetoothControllerSramAddress
+owner driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs BluetoothDtmRxResultProjection
 test driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs compressed_controller_address_rejects_unrepresentable_values
+test driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs dtm_rx_result_projection_preserves_only_the_reviewed_high_byte
 test driver/chips/esp32s31/pac/src/bluetooth_memory_lists.rs memory_list_pairs_follow_the_reviewed_selector_geometry
 vendor-anchor verification/vendor/targets/esp32s31/README.md memory-list
 depends-on controller-initialization
@@ -215,6 +223,50 @@ depends-on hci-handoff-storage
 depends-on hci-bootstrap
 gap hil hci-bootstrap-worker-hardware-cell-missing
 
+capability scheduler-head-transaction
+title Event-driven scheduler lock-modify head transaction
+scope Validated task-side images and affine pre-publication and in-flight phases advanced by fresh scheduler observations without polling
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof partial
+owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs BluetoothSchedulerLockModifyRequest
+owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs BluetoothSchedulerLockModifyObservation
+owner driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs BluetoothSchedulerLockModifyAwaitingPublication
+owner driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs BluetoothSchedulerLockModifyInFlight
+test driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs request_images_match_the_reviewed_transaction
+test driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs wait_requires_busy_and_start_simultaneously
+test driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs result_projection_uses_idle_zero_or_busy_result_nibble
+test driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs each_busy_edge_returns_control_to_the_executor
+test driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs scheduler_idle_forces_zero_publication_result_code
+vendor-anchor verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md SCHEDULER_LOCK_MODIFY_REQUEST
+depends-on controller-initialization
+depends-on interrupt-runtime
+gap implementation live-task-isr-coordinator-and-mmio-publication-missing
+gap vendor publication-result-meaning-and-live-radio-descriptor-recycle-proof-missing
+gap hil scheduler-lock-modify-transaction-cell-missing
+gap async registered-waker-and-fresh-cross-owner-observation-missing
+
+capability scheduler-finished-list-drain
+title Bounded scheduler finished-list event drain
+scope Typed sixteen-list hardware mask transfer and one-list-per-step event drain without polling allocation or RTOS state
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof partial
+owner driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs BluetoothSchedulerFinishedListObservation
+owner driver/chips/esp32s31/bluetooth/src/scheduler_finished_lists.rs BluetoothSchedulerFinishedListDrain
+owner driver/chips/esp32s31/bluetooth/src/scheduler_finished_lists.rs BluetoothSchedulerFinishedListDrainStep
+test driver/chips/esp32s31/pac/src/bluetooth_scheduler_runtime.rs worker_finished_list_transfer_reads_before_complete_low_halfword_report
+test driver/chips/esp32s31/bluetooth/src/scheduler_finished_lists.rs one_step_consumes_only_the_lowest_finished_list
+test driver/chips/esp32s31/bluetooth/src/scheduler_finished_lists.rs empty_observation_completes_without_synthetic_work
+vendor-anchor verification/vendor/targets/esp32s31/analysis/bluetooth-interrupt-runtime.md SCHEDULER_FINISHED_LIST_STATUS
+depends-on interrupt-runtime
+gap implementation hardware-list-to-affine-item-and-completed-queue-mapping-missing
+gap vendor raw-interrupt-to-finished-list-mask-and-device-fence-missing
+gap hil scheduler-finished-list-drain-cell-missing
+gap async registered-waker-and-bounded-role-callback-dispatch-missing
+
 capability packet-dataplane
 title BLE packet TX and RX dataplane
 scope One bounded 1M PHY packet from owned storage through radio publication completion and receive recovery
@@ -226,9 +278,11 @@ vendor-anchor verification/vendor/targets/esp32s31/README.md memory-list
 depends-on common-phy-baseband
 depends-on interrupt-runtime
 depends-on controller-memory-lists
-gap implementation tx-rx-scheduler-doorbell-and-completion-missing
+depends-on scheduler-head-transaction
+depends-on scheduler-finished-list-drain
+gap implementation tx-rx-descriptor-publication-finished-mask-and-recycle-owner-missing
 gap host packet-dataplane-host-model-missing
-gap vendor packet-dataplane-production-trace-missing
+gap vendor dtm-raw-status-finished-list-fence-and-buffer-recycle-trace-missing
 gap hil direct-test-mode-rf-cell-missing
 gap async hard-deadline-to-bottom-half-contract-missing
 

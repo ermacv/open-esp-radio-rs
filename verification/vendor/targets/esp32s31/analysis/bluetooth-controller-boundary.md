@@ -118,7 +118,7 @@ minimum dependency graph and publication gate for each unit are:
 | Unit | Responsibility | Current S31 state | Exit criterion |
 | --- | --- | --- | --- |
 | Register evidence and SVD | Address, field, access and transaction provenance | Partial but substantial; generated model is fail-closed | Every register used by the first vertical slice is reviewed and generated with no raw-address escape in upper layers. |
-| Restricted PAC | Affine peripheral ownership and finite MMIO operations | Cold ownership, scheduler prefix, full 50-operation HAL body, memory-pointer geometry, IRQ prefixes and the ISR scheduler read/clear plus worker diagnostic transfer exist | DTM trace uses only typed operations and has exact rollback/quiescence edges. |
+| Restricted PAC | Affine peripheral ownership and finite MMIO operations | Cold ownership, scheduler prefix, full 50-operation HAL body, memory-pointer geometry, IRQ prefixes and the ISR scheduler read/clear plus worker finished-list mask transfer exist | DTM trace uses only typed operations and has exact rollback/quiescence edges. |
 | Platform/HAL lifecycle | Clocks, reset, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset is live; PHY/BTBB are disconnected; typed IRQ pair primitives exist but the live epoch remains closed | One owner can power, route both IRQs, run and return cold without owner duplication. |
 | Controller timer and scheduler | Radio timebase, prepare/abort/doorbell/completion and collision policy | Command/status semantics absent | Virtual-time model plus register trace proves one scheduled event, cancellation and late/error handling. |
 | Packet memory dataplane | Static RX/TX/free/ready storage, DMA visibility and backpressure | Pointer encoding exists; list roles/layouts do not | Every buffer has an affine CPU/hardware state and is reclaimed on success, error, abort and shutdown. |
@@ -245,16 +245,23 @@ The existing software bootstrap proves transport/API compatibility only.
 
 Direct Test Mode is the first physical vertical slice because it exercises the
 radio without advertising state, connection timing, ACL flow control or LLCP.
+The exact S31 command-to-scheduler path, the initial link-state image and the
+separation between scanner resume and scheduler consistency are recorded in
+[`bluetooth-direct-test-mode.md`](bluetooth-direct-test-mode.md). In
+particular, selector 4 is now known to be scanner-role software and is not a
+DTM prerequisite; selector 6 becomes an invariant of the open scheduler.
 The implementation order is:
 
-1. finish restricted PAC access for scheduler command/status words, controller
-   timer and memory-list pointer geometry; both interrupt snapshot modes,
+1. finish restricted PAC access for the remaining scheduler command/status
+   words, controller timer and memory-list pointer geometry; the lock/modify
+   head request already has exact images, predicate, diagnostic publication-
+   result projection and affine event phases, while both interrupt snapshot modes,
    baseline setup/teardown masks, route identities, policies and typed ESP-HAL
    pair binding, dynamic scheduler classification, affine ISR scheduler MMIO
-   and sticky coalesced wake state are finite components, but live ISR
-   composition, feature-specific NRT policy, typed selector-4/6 actions and the
-   open scheduler queue are still absent, so this is not a live interrupt
-   epoch;
+   and sticky coalesced wake state are finite components. Live cross-owner
+   request/ISR composition, feature-specific NRT policy, the selector-6
+   invariant and the open scheduler queue are still absent, so this is not a
+   live interrupt epoch;
 2. recover a hardware-only init transition from the composite task/BLE init
    functions, with read-back or bounded postconditions and exact rollback up
    to every fallible edge;
@@ -291,10 +298,12 @@ The decisive gaps are not HCI packet syntax. They are:
   identities, level-3 policy, exact masks, coalesced marker contract, affine
   ISR scheduler MMIO and shared clear-bank prefix are no longer unknown, but
   live route composition and a lost-wake-safe waker remain absent;
-- typed open scheduler equivalents for selector-4 conditional retry,
-  selector-6 post-clear consistency and the recovered software completion-list
-  lifecycle;
-- scheduler command opcodes, completion/error status and timebase semantics;
+- an affine open scheduler and bounded completion lifecycle, including the
+  selector-6 consistency invariant; selector-4 is now classified as scanner
+  resume and is deferred with the scanning ULL role rather than DTM;
+- remaining scheduler command opcodes, any operational meaning of the
+  lock/modify diagnostic result, the raw-status-to-finished-list mapping,
+  completion fence and timebase semantics;
 - the roles and element layouts of the three compressed-pointer memory-list
   pairs, including alignment and ownership barriers;
 - BLE packet-engine configuration for channel, whitening, CRC, access address,

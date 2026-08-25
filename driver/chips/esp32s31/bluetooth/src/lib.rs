@@ -7,12 +7,14 @@
 //! BTDM HAL-init body are implemented as later enable-stage components. The
 //! two Controller interrupt sources, level/residency policies, baseline masks,
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
-//! state and affine ISR scheduler-register staging are also represented. They
-//! are deliberately not connected across the missing typed selector-4/6
-//! scheduler actions, completion-list owner, lost-wake-safe async bridge, LP,
-//! BLE, NRT feature classification and live-route prerequisites. No current
-//! finite state claims that the complete controller lifecycle, HCI transport,
-//! task or live interrupt epoch has completed.
+//! state, affine ISR scheduler-register staging and the event-driven pure
+//! phases of one scheduler lock/modify request are also represented. A sampled
+//! sixteen-list finished mask can be drained one bit per bounded event step.
+//! These components are deliberately not connected across the missing
+//! selector-6 invariant, affine item/completion-list owner, lost-wake-safe
+//! cross-owner bridge, LP, BLE, NRT feature classification and live-route
+//! prerequisites. No current finite state claims that the complete controller
+//! lifecycle, HCI transport, task or live interrupt epoch has completed.
 
 #![no_std]
 #![deny(unsafe_code)]
@@ -33,6 +35,8 @@ mod phy;
 mod resources;
 #[cfg(any(target_arch = "riscv32", test))]
 mod scheduler;
+mod scheduler_finished_lists;
+mod scheduler_lock_modify;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 pub mod validation;
@@ -68,3 +72,12 @@ pub use phy::{
 pub use resources::BluetoothPhysicalResources;
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::BluetoothSchedulerTableLowBitsCleared;
+pub use scheduler_finished_lists::{
+    BluetoothSchedulerFinishedListDrain, BluetoothSchedulerFinishedListDrainStep,
+    BluetoothSchedulerFinishedListIndex,
+};
+pub use scheduler_lock_modify::{
+    BluetoothSchedulerLockModifyAwaitingPublication, BluetoothSchedulerLockModifyInFlight,
+    BluetoothSchedulerLockModifyProgress, BluetoothSchedulerLockModifyPublication,
+    BluetoothSchedulerLockModifyPublicationResult,
+};

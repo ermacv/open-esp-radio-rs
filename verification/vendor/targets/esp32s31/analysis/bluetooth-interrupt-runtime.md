@@ -22,6 +22,12 @@ the vendor callback registry or FreeRTOS event queue.
   `fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099`;
 - public BLE archive at the same revision, `libble_app.a` SHA-256
   `62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195`;
+- same-chip role-name reference only:
+  [`espressif/esp32s31-bt-lib@31c30949541a5d3abd4043a1cb66d55aa55577dd`](https://github.com/espressif/esp32s31-bt-lib/tree/31c30949541a5d3abd4043a1cb66d55aa55577dd),
+  initial `libble_app.a` SHA-256
+  `ec10a20eaf869f7cd2300100fe54826980525911f8417206af5a0745a9f85f63`
+  and initial `libbtdm_common.a` SHA-256
+  `bd9007072c6ab94df5f29d8b96dc65a69cb4406568c75a64022c8121e242b96c`;
 - public OSAL source:
   [`btdm_osal_freertos.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_osal_freertos.c#L139-L211),
   SHA-256
@@ -40,9 +46,11 @@ inputs. The table below records only the distilled control and MMIO facts.
 | `r_sym_bt_6lAYUFKOuBLyOZ6Kvsv5` / `r_sym_bt_Ak3CRkSbyZRhUlneqclG` / `r_sym_bt_DOVkQWJHjeuid8jcS9Bq` | 24 / 24 / 16 bytes | Enable, disable and W1C the exact dynamic images `0x1820_0000` and `0x0000_0008`. |
 | `r_sym_bt_37HcX0qW6j1XVtKakUIG` / `r_sym_bt_zczKhmPr5kLPCXpBc7GE` | 80 / 92 bytes | Decode `SCHEDULER_STATE`; the boolean consumed by deferred-work construction is exactly bit 31 AND bit 29. |
 | `r_sym_bt_iEsFo1nbR5S71P2lMKhY` / `r_sym_bt_gs5GeSH15pdzrMDbb7oK` | 90 / 78 bytes | Build one static deferred event, optionally set its one-bit argument, and optionally publish the decoded state through selector 4. |
-| `r_sym_bt_uNi9OHmE7XdXfGqTelU5` | 112 bytes | Consume and clear the marker, drain scheduler work, then publish selector `0x8000_0001`; this is a drain event, not one callback per hardware edge. |
+| `r_sym_bt_uNi9OHmE7XdXfGqTelU5` | 112 bytes | Same-chip named `r_btdm_recycle_in_task`: consume and clear the marker, drain scheduler work, then publish selector `0x8000_0001`; this is a drain event, not one callback per hardware edge. |
 | `r_sym_bt_E8c5Eimm0z6kYe9v4wHr` / `r_sym_bt_YRnBzKlWCjsIbotqvNyS` | 360 / 574 bytes | Insert a scheduler item through its `+0x54` intrusive link into the manager-root completion queue; task-side removal/reordering calls the insertion path. This proves a software producer, not a hardware completion FIFO. |
-| `r_sym_bt_WHYoiw8ufY0AEM2KSRK1` | 120 bytes | On every worker pop attempt, copy the low halfword from `0x2010_125c` to a zero-high image at `0x2010_1260`, then combine task state with the software list head and attempt a pop. |
+| `r_sym_bt_WHYoiw8ufY0AEM2KSRK1` | 120 bytes | Same-chip named `r_btdm_sched_pop_executed_sch`: on every worker pop attempt, copy the low halfword from `0x2010_125c` to a zero-high image at `0x2010_1260`, merge the pending finished-list mask, synchronously publish broker event `0x8000_0004` when nonzero and then attempt a software completed-list pop. |
+| `r_sym_ble_rmNuzAO8kQQQXQIpTzGZ` / `r_sym_bt_M9nG353V0svWrv1l1zGw` | 462 / 322 bytes | Same-chip named `r_sched_txn_onSchedHwListDone` and `r_btdm_sched_pick_finished_items`: walk set finished-list bits, unlink matching scheduler items from the hardware-linked list and append them to the software completed queue through `item+0x54`. |
+| `r_sym_bt_QsLKLOCC2pct4rL8uFBN` | 130 bytes | Same-chip named `r_btdm_recycle_process_dequeued_sch`: clear the dequeued link image, recover its link-state pointer and invoke the item-specific recycle callback stored at `item+0x58`. |
 | `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` / `r_sym_ble_T40PqM3CeultOGiVkAp0` | 136 / 186 bytes | Default manager-0 selector-6 consumer and its scheduler action. Selector 6 walks active BLE scheduler transactions/list entries and asserts on an inconsistent `item+0x38` state. |
 | `r_sym_ble_zrorswmoCrQoX5oTeECu` / `r_sym_ble_3wftOXafF5ZkxLriL8L3` / `r_sym_ble_q4hMJ7XLGGCzxwmAKSge` | 62 / 188 / 102 bytes | Default manager-0 selector-4 consumer. It checks BLE scheduler/current-item state and, for a false publication when the predicate holds, retries a scheduler operation while it returns `-2`, increasing the delay in steps of 100. |
 | `r_sym_ble_ywjh0f9yjTBeI7XgS5da` | 74 bytes | NRT ISR: raw sample at `0x2010_1340/1348`, shared W1C acknowledgement and selector `0x8000_0000`. |
@@ -121,22 +129,43 @@ real scheduler list before considering the epoch complete.
 
 The drained list is not a hidden hardware FIFO. Complete producer review shows
 that task-side scheduler item removal/reordering inserts items into a
-manager-root intrusive completion list through the link at `item+0x54`. The
-worker attempts to pop that software list after an unconditional diagnostic
-halfword transfer from `0x2010_125c` to `0x2010_1260`. An open Controller must
-therefore define its own typed scheduler item lifecycle and bounded completion
-queue; reproducing the vendor list nodes or OSAL event object is neither
-required nor desirable.
+manager-root intrusive completion list through the link at `item+0x54`. On
+every worker pop attempt, `r_sym_bt_WHY...` performs the low-halfword transfer
+from `0x2010_125c` to `0x2010_1260`, merges the pending finished-list mask and
+synchronously publishes broker event `0x8000_0004`. The base scheduler broker
+routes that event to `r_sym_ble_rmN...`, which walks set list bits and calls
+`r_sym_bt_M9n...` to move finished hardware-linked items onto that same
+software queue. The worker then pops an item, and `r_sym_bt_QsLK...` invokes
+its role-specific callback at `item+0x58`. For DTM this is the mapped
+`r_ble_lll_dtm_recycle_sch_item` body. Thus the lock/modify request result is
+not a completion signal; finished-mask selection plus item recycle is the
+reference software ownership-return path.
+
+An open Controller must therefore define its own typed scheduler item
+lifecycle and bounded completion queue, with an explicit hardware-finished to
+CPU-readable fence. Reproducing the vendor list nodes or OSAL event object is
+neither required nor desirable. The restricted PAC now names and transfers
+the exact 16-bit `SCHEDULER_FINISHED_LIST_STATUS` mask while keeping the
+destination word positional as `SCHEDULER_FINISHED_LIST_REPORT`. The Bluetooth
+core can drain one list bit per bounded event step; it does not yet map a bit
+to an affine item or callback.
 
 Complete default BLE registration review found exactly three manager-0
 consumers. `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` owns selector 6,
 `r_sym_ble_zrorswmoCrQoX5oTeECu` owns selector 4, and
 `r_sym_ble_xwc69LJVHnjhZA8uSJnQ` handles selectors 0 and `0x8000_0000` while
 ignoring 4 and 6. Thus selectors 4 and 6 are replaceable software ABI, but
-their effects are not optional. The open replacement needs typed operations
-for post-clear consistency and reference-state-driven scheduler retry. The
-current wake cell retains only the proven pending/marked coalescing contract;
-it intentionally does not pretend to retain or execute the selector-4 action.
+their applicable effects are not optional. Exact role comparison with the
+named C61 body `r_ble_lll_scan_chk_resume` classifies the 102-byte S31
+`r_sym_ble_q4hMJ7XLGGCzxwmAKSge` retry body as scanner-role resume. An open
+DTM-only scheduler therefore has no selector-4 successor at all; a later scan
+ULL owner must provide the typed collision/resume policy. Selector 6 remains
+the active-transaction consistency action and becomes an internal affine
+scheduler invariant plus fail-stop disposition. The current wake cell retains
+only the proven pending/marked coalescing contract; it intentionally does not
+pretend to implement either higher-level action. The DTM-specific consequence
+and evidence chain are recorded in
+[`bluetooth-direct-test-mode.md`](bluetooth-direct-test-mode.md).
 
 The linked callback selectors are boundaries between closed vendor software
 components, not ESP32-S31 hardware ABI. An open Link Layer may use its own
@@ -167,7 +196,8 @@ them.
 - typed open equivalents for the selector-6 post-clear consistency action and
   selector-4 reference-state-driven scheduler retry;
 - an affine scheduler item lifecycle and bounded completion queue that replace
-  the recovered software intrusive list, including abort and shutdown drain;
+  the recovered software intrusive list, including the raw-status-to-finished
+  mask edge, memory fence, abort and shutdown drain;
 - executor-neutral waker registration with a register-then-recheck poll
   protocol and a quiescent teardown barrier;
 - composition of the staged interrupt-bank plus scheduler-runtime owner into

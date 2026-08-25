@@ -34735,7 +34735,7 @@ pub mod bluetooth_controller_core {
         iso_coex_state_0: IsoCoexState0,
         iso_coex_state_1: IsoCoexState1,
         iso_coex_timing_0: IsoCoexTiming0,
-        operational_value_0218: OperationalValue0218,
+        scheduler_lock_modify_request: SchedulerLockModifyRequest,
         _reserved34: [u8; 0x18],
         iso_coex_timing_1: IsoCoexTiming1,
         _reserved35: [u8; 0x0c],
@@ -34745,8 +34745,8 @@ pub mod bluetooth_controller_core {
         hal_init_scheduler_control: HalInitSchedulerControl,
         scheduler_command_0: SchedulerCommand0,
         scheduler_command_1: SchedulerCommand1,
-        scheduler_diagnostic_source: SchedulerDiagnosticSource,
-        scheduler_diagnostic_latch: SchedulerDiagnosticLatch,
+        scheduler_finished_list_status: SchedulerFinishedListStatus,
+        scheduler_finished_list_report: SchedulerFinishedListReport,
         _reserved43: [u8; 0x18],
         hal_init_low_half: HalInitLowHalf,
         mmgmt_list_1_pointer_a: MmgmtList1PointerA,
@@ -34930,10 +34930,10 @@ pub mod bluetooth_controller_core {
         pub const fn iso_coex_timing_0(&self) -> &IsoCoexTiming0 {
             &self.iso_coex_timing_0
         }
-        #[doc = "0x218 - Operational functions read the complete word. A complete writer publishes bit 31 set, bits 30:20 clear and a dynamic low-20-bit image."]
+        #[doc = "0x218 - The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or SCHEDULER_STATE.BUSY is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion."]
         #[inline(always)]
-        pub const fn operational_value_0218(&self) -> &OperationalValue0218 {
-            &self.operational_value_0218
+        pub const fn scheduler_lock_modify_request(&self) -> &SchedulerLockModifyRequest {
+            &self.scheduler_lock_modify_request
         }
         #[doc = "0x234 - ISO coexistence initialization publishes a runtime-derived low 20-bit value and then sets bit 31."]
         #[inline(always)]
@@ -34970,15 +34970,15 @@ pub mod bluetooth_controller_core {
         pub const fn scheduler_command_1(&self) -> &SchedulerCommand1 {
             &self.scheduler_command_1
         }
-        #[doc = "0x25c - Complete scheduler diagnostic path reads this word and copies its low halfword to SCHEDULER_DIAGNOSTIC_LATCH."]
+        #[doc = "0x25c - The scheduler worker reads the low 16 bits as the finished hardware-list mask, copies that image to SCHEDULER_FINISHED_LIST_REPORT and dispatches the mask to the BLE finished-item selector."]
         #[inline(always)]
-        pub const fn scheduler_diagnostic_source(&self) -> &SchedulerDiagnosticSource {
-            &self.scheduler_diagnostic_source
+        pub const fn scheduler_finished_list_status(&self) -> &SchedulerFinishedListStatus {
+            &self.scheduler_finished_list_status
         }
-        #[doc = "0x260 - Complete scheduler diagnostic path writes the low 16 bits from SCHEDULER_DIAGNOSTIC_SOURCE; other paths can clear the complete word."]
+        #[doc = "0x260 - Before software finished-item dispatch, the scheduler worker writes the observed 16-bit SCHEDULER_FINISHED_LIST_STATUS mask as a complete zero-high image. The hardware effect of this report remains positional; other reviewed paths can clear the complete word."]
         #[inline(always)]
-        pub const fn scheduler_diagnostic_latch(&self) -> &SchedulerDiagnosticLatch {
-            &self.scheduler_diagnostic_latch
+        pub const fn scheduler_finished_list_report(&self) -> &SchedulerFinishedListReport {
+            &self.scheduler_finished_list_report
         }
         #[doc = "0x27c - BTDM HAL initialization first clears and then sets all bits in the low halfword through two fresh-read RMW operations. Inner semantics remain unknown."]
         #[inline(always)]
@@ -35036,7 +35036,7 @@ pub mod bluetooth_controller_core {
         pub fn hal_init_slot_map_iter(&self) -> impl Iterator<Item = &HalInitSlotMap> {
             self.hal_init_slot_map.iter()
         }
-        #[doc = "0x36c - Complete operational functions read and publish dynamic complete images. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."]
+        #[doc = "0x36c - Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."]
         #[inline(always)]
         pub const fn operational_word_036c(&self) -> &OperationalWord036c {
             &self.operational_word_036c
@@ -36762,68 +36762,70 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_DIAGNOSTIC_SOURCE (r) register accessor: Complete scheduler diagnostic path reads this word and copies its low halfword to SCHEDULER_DIAGNOSTIC_LATCH.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_diagnostic_source::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_diagnostic_source`] module"]
-    #[doc(alias = "SCHEDULER_DIAGNOSTIC_SOURCE")]
-    pub type SchedulerDiagnosticSource =
-        crate::Reg<scheduler_diagnostic_source::SchedulerDiagnosticSourceSpec>;
-    #[doc = "Complete scheduler diagnostic path reads this word and copies its low halfword to SCHEDULER_DIAGNOSTIC_LATCH."]
-    pub mod scheduler_diagnostic_source {
-        #[doc = "Register `SCHEDULER_DIAGNOSTIC_SOURCE` reader"]
-        pub type R = crate::R<SchedulerDiagnosticSourceSpec>;
-        #[doc = "Field `VALUE_LOW_16` reader - "]
-        pub type ValueLow16R = crate::FieldReader<u16>;
+    #[doc = "SCHEDULER_FINISHED_LIST_STATUS (r) register accessor: The scheduler worker reads the low 16 bits as the finished hardware-list mask, copies that image to SCHEDULER_FINISHED_LIST_REPORT and dispatches the mask to the BLE finished-item selector.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_finished_list_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_finished_list_status`] module"]
+    #[doc(alias = "SCHEDULER_FINISHED_LIST_STATUS")]
+    pub type SchedulerFinishedListStatus =
+        crate::Reg<scheduler_finished_list_status::SchedulerFinishedListStatusSpec>;
+    #[doc = "The scheduler worker reads the low 16 bits as the finished hardware-list mask, copies that image to SCHEDULER_FINISHED_LIST_REPORT and dispatches the mask to the BLE finished-item selector."]
+    pub mod scheduler_finished_list_status {
+        #[doc = "Register `SCHEDULER_FINISHED_LIST_STATUS` reader"]
+        pub type R = crate::R<SchedulerFinishedListStatusSpec>;
+        #[doc = "Field `FINISHED_LIST_MASK` reader - "]
+        pub type FinishedListMaskR = crate::FieldReader<u16>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
-            pub fn value_low_16(&self) -> ValueLow16R {
-                ValueLow16R::new((self.bits & 0xffff) as u16)
+            pub fn finished_list_mask(&self) -> FinishedListMaskR {
+                FinishedListMaskR::new((self.bits & 0xffff) as u16)
             }
         }
-        #[doc = "Complete scheduler diagnostic path reads this word and copies its low halfword to SCHEDULER_DIAGNOSTIC_LATCH.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_diagnostic_source::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SchedulerDiagnosticSourceSpec;
-        impl crate::RegisterSpec for SchedulerDiagnosticSourceSpec {
+        #[doc = "The scheduler worker reads the low 16 bits as the finished hardware-list mask, copies that image to SCHEDULER_FINISHED_LIST_REPORT and dispatches the mask to the BLE finished-item selector.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_finished_list_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SchedulerFinishedListStatusSpec;
+        impl crate::RegisterSpec for SchedulerFinishedListStatusSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`scheduler_diagnostic_source::R`](R) reader structure"]
-        impl crate::Readable for SchedulerDiagnosticSourceSpec {}
+        #[doc = "`read()` method returns [`scheduler_finished_list_status::R`](R) reader structure"]
+        impl crate::Readable for SchedulerFinishedListStatusSpec {}
     }
-    #[doc = "SCHEDULER_DIAGNOSTIC_LATCH (rw) register accessor: Complete scheduler diagnostic path writes the low 16 bits from SCHEDULER_DIAGNOSTIC_SOURCE; other paths can clear the complete word.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_diagnostic_latch::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_diagnostic_latch::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_diagnostic_latch`] module"]
-    #[doc(alias = "SCHEDULER_DIAGNOSTIC_LATCH")]
-    pub type SchedulerDiagnosticLatch =
-        crate::Reg<scheduler_diagnostic_latch::SchedulerDiagnosticLatchSpec>;
-    #[doc = "Complete scheduler diagnostic path writes the low 16 bits from SCHEDULER_DIAGNOSTIC_SOURCE; other paths can clear the complete word."]
-    pub mod scheduler_diagnostic_latch {
-        #[doc = "Register `SCHEDULER_DIAGNOSTIC_LATCH` reader"]
-        pub type R = crate::R<SchedulerDiagnosticLatchSpec>;
-        #[doc = "Register `SCHEDULER_DIAGNOSTIC_LATCH` writer"]
-        pub type W = crate::W<SchedulerDiagnosticLatchSpec>;
-        #[doc = "Field `VALUE_LOW_16` reader - "]
-        pub type ValueLow16R = crate::FieldReader<u16>;
-        #[doc = "Field `VALUE_LOW_16` writer - "]
-        pub type ValueLow16W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+    #[doc = "SCHEDULER_FINISHED_LIST_REPORT (rw) register accessor: Before software finished-item dispatch, the scheduler worker writes the observed 16-bit SCHEDULER_FINISHED_LIST_STATUS mask as a complete zero-high image. The hardware effect of this report remains positional; other reviewed paths can clear the complete word.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_finished_list_report::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_finished_list_report::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_finished_list_report`] module"]
+    #[doc(alias = "SCHEDULER_FINISHED_LIST_REPORT")]
+    pub type SchedulerFinishedListReport =
+        crate::Reg<scheduler_finished_list_report::SchedulerFinishedListReportSpec>;
+    #[doc = "Before software finished-item dispatch, the scheduler worker writes the observed 16-bit SCHEDULER_FINISHED_LIST_STATUS mask as a complete zero-high image. The hardware effect of this report remains positional; other reviewed paths can clear the complete word."]
+    pub mod scheduler_finished_list_report {
+        #[doc = "Register `SCHEDULER_FINISHED_LIST_REPORT` reader"]
+        pub type R = crate::R<SchedulerFinishedListReportSpec>;
+        #[doc = "Register `SCHEDULER_FINISHED_LIST_REPORT` writer"]
+        pub type W = crate::W<SchedulerFinishedListReportSpec>;
+        #[doc = "Field `FINISHED_LIST_MASK` reader - "]
+        pub type FinishedListMaskR = crate::FieldReader<u16>;
+        #[doc = "Field `FINISHED_LIST_MASK` writer - "]
+        pub type FinishedListMaskW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
-            pub fn value_low_16(&self) -> ValueLow16R {
-                ValueLow16R::new((self.bits & 0xffff) as u16)
+            pub fn finished_list_mask(&self) -> FinishedListMaskR {
+                FinishedListMaskR::new((self.bits & 0xffff) as u16)
             }
         }
         impl W {
             #[doc = "Bits 0:15"]
             #[inline(always)]
-            pub fn value_low_16(&mut self) -> ValueLow16W<'_, SchedulerDiagnosticLatchSpec> {
-                ValueLow16W::new(self, 0)
+            pub fn finished_list_mask(
+                &mut self,
+            ) -> FinishedListMaskW<'_, SchedulerFinishedListReportSpec> {
+                FinishedListMaskW::new(self, 0)
             }
         }
-        #[doc = "Complete scheduler diagnostic path writes the low 16 bits from SCHEDULER_DIAGNOSTIC_SOURCE; other paths can clear the complete word.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_diagnostic_latch::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_diagnostic_latch::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct SchedulerDiagnosticLatchSpec;
-        impl crate::RegisterSpec for SchedulerDiagnosticLatchSpec {
+        #[doc = "Before software finished-item dispatch, the scheduler worker writes the observed 16-bit SCHEDULER_FINISHED_LIST_STATUS mask as a complete zero-high image. The hardware effect of this report remains positional; other reviewed paths can clear the complete word.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_finished_list_report::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_finished_list_report::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SchedulerFinishedListReportSpec;
+        impl crate::RegisterSpec for SchedulerFinishedListReportSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`scheduler_diagnostic_latch::R`](R) reader structure"]
-        impl crate::Readable for SchedulerDiagnosticLatchSpec {}
-        #[doc = "`write(|w| ..)` method takes [`scheduler_diagnostic_latch::W`](W) writer structure"]
-        impl crate::Writable for SchedulerDiagnosticLatchSpec {
+        #[doc = "`read()` method returns [`scheduler_finished_list_report::R`](R) reader structure"]
+        impl crate::Readable for SchedulerFinishedListReportSpec {}
+        #[doc = "`write(|w| ..)` method takes [`scheduler_finished_list_report::W`](W) writer structure"]
+        impl crate::Writable for SchedulerFinishedListReportSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -37431,70 +37433,89 @@ pub mod bluetooth_controller_core {
         #[doc = "`read()` method returns [`operational_status_0208::R`](R) reader structure"]
         impl crate::Readable for OperationalStatus0208Spec {}
     }
-    #[doc = "OPERATIONAL_VALUE_0218 (rw) register accessor: Operational functions read the complete word. A complete writer publishes bit 31 set, bits 30:20 clear and a dynamic low-20-bit image.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_value_0218::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_value_0218::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_value_0218`] module"]
-    #[doc(alias = "OPERATIONAL_VALUE_0218")]
-    pub type OperationalValue0218 = crate::Reg<operational_value_0218::OperationalValue0218Spec>;
-    #[doc = "Operational functions read the complete word. A complete writer publishes bit 31 set, bits 30:20 clear and a dynamic low-20-bit image."]
-    pub mod operational_value_0218 {
-        #[doc = "Register `OPERATIONAL_VALUE_0218` reader"]
-        pub type R = crate::R<OperationalValue0218Spec>;
-        #[doc = "Register `OPERATIONAL_VALUE_0218` writer"]
-        pub type W = crate::W<OperationalValue0218Spec>;
-        #[doc = "Field `DYNAMIC_LOW_20` reader - "]
-        pub type DynamicLow20R = crate::FieldReader<u32>;
-        #[doc = "Field `DYNAMIC_LOW_20` writer - "]
-        pub type DynamicLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
-        #[doc = "Field `ZERO_IMAGE_20_30` reader - "]
-        pub type ZeroImage20_30R = crate::FieldReader<u16>;
-        #[doc = "Field `ZERO_IMAGE_20_30` writer - "]
-        pub type ZeroImage20_30W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
-        #[doc = "Field `ONE_IMAGE_31` reader - "]
-        pub type OneImage31R = crate::BitReader;
-        #[doc = "Field `ONE_IMAGE_31` writer - "]
-        pub type OneImage31W<'a, REG> = crate::BitWriter<'a, REG>;
+    #[doc = "SCHEDULER_LOCK_MODIFY_REQUEST (rw) register accessor: The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or SCHEDULER_STATE.BUSY is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_lock_modify_request::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lock_modify_request::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_lock_modify_request`] module"]
+    #[doc(alias = "SCHEDULER_LOCK_MODIFY_REQUEST")]
+    pub type SchedulerLockModifyRequest =
+        crate::Reg<scheduler_lock_modify_request::SchedulerLockModifyRequestSpec>;
+    #[doc = "The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or SCHEDULER_STATE.BUSY is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion."]
+    pub mod scheduler_lock_modify_request {
+        #[doc = "Register `SCHEDULER_LOCK_MODIFY_REQUEST` reader"]
+        pub type R = crate::R<SchedulerLockModifyRequestSpec>;
+        #[doc = "Register `SCHEDULER_LOCK_MODIFY_REQUEST` writer"]
+        pub type W = crate::W<SchedulerLockModifyRequestSpec>;
+        #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
+        pub type CompressedSramPointerR = crate::FieldReader<u32>;
+        #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
+        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        #[doc = "Field `ZERO_IMAGE_20_26` reader - "]
+        pub type ZeroImage20_26R = crate::FieldReader;
+        #[doc = "Field `ZERO_IMAGE_20_26` writer - "]
+        pub type ZeroImage20_26W<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `RESULT` reader - "]
+        pub type ResultR = crate::FieldReader;
+        #[doc = "Field `RESULT` writer - "]
+        pub type ResultW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `START` reader - "]
+        pub type StartR = crate::BitReader;
+        #[doc = "Field `START` writer - "]
+        pub type StartW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
-            pub fn dynamic_low_20(&self) -> DynamicLow20R {
-                DynamicLow20R::new(self.bits & 0x000f_ffff)
+            pub fn compressed_sram_pointer(&self) -> CompressedSramPointerR {
+                CompressedSramPointerR::new(self.bits & 0x000f_ffff)
             }
-            #[doc = "Bits 20:30"]
+            #[doc = "Bits 20:26"]
             #[inline(always)]
-            pub fn zero_image_20_30(&self) -> ZeroImage20_30R {
-                ZeroImage20_30R::new(((self.bits >> 20) & 0x07ff) as u16)
+            pub fn zero_image_20_26(&self) -> ZeroImage20_26R {
+                ZeroImage20_26R::new(((self.bits >> 20) & 0x7f) as u8)
+            }
+            #[doc = "Bits 27:30"]
+            #[inline(always)]
+            pub fn result(&self) -> ResultR {
+                ResultR::new(((self.bits >> 27) & 0x0f) as u8)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
-            pub fn one_image_31(&self) -> OneImage31R {
-                OneImage31R::new(((self.bits >> 31) & 1) != 0)
+            pub fn start(&self) -> StartR {
+                StartR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bits 0:19"]
             #[inline(always)]
-            pub fn dynamic_low_20(&mut self) -> DynamicLow20W<'_, OperationalValue0218Spec> {
-                DynamicLow20W::new(self, 0)
+            pub fn compressed_sram_pointer(
+                &mut self,
+            ) -> CompressedSramPointerW<'_, SchedulerLockModifyRequestSpec> {
+                CompressedSramPointerW::new(self, 0)
             }
-            #[doc = "Bits 20:30"]
+            #[doc = "Bits 20:26"]
             #[inline(always)]
-            pub fn zero_image_20_30(&mut self) -> ZeroImage20_30W<'_, OperationalValue0218Spec> {
-                ZeroImage20_30W::new(self, 20)
+            pub fn zero_image_20_26(
+                &mut self,
+            ) -> ZeroImage20_26W<'_, SchedulerLockModifyRequestSpec> {
+                ZeroImage20_26W::new(self, 20)
+            }
+            #[doc = "Bits 27:30"]
+            #[inline(always)]
+            pub fn result(&mut self) -> ResultW<'_, SchedulerLockModifyRequestSpec> {
+                ResultW::new(self, 27)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
-            pub fn one_image_31(&mut self) -> OneImage31W<'_, OperationalValue0218Spec> {
-                OneImage31W::new(self, 31)
+            pub fn start(&mut self) -> StartW<'_, SchedulerLockModifyRequestSpec> {
+                StartW::new(self, 31)
             }
         }
-        #[doc = "Operational functions read the complete word. A complete writer publishes bit 31 set, bits 30:20 clear and a dynamic low-20-bit image.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_value_0218::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_value_0218::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct OperationalValue0218Spec;
-        impl crate::RegisterSpec for OperationalValue0218Spec {
+        #[doc = "The scheduler insert-with-lock-modify path publishes START with a compressed SRAM pointer. Before and after publication it may progress whenever either START or SCHEDULER_STATE.BUSY is clear. When that publication wait ends it reports zero when BUSY is clear, otherwise the positional four-bit RESULT image returned in bits 30:27; this is not radio-item completion.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_lock_modify_request::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_lock_modify_request::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SchedulerLockModifyRequestSpec;
+        impl crate::RegisterSpec for SchedulerLockModifyRequestSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`operational_value_0218::R`](R) reader structure"]
-        impl crate::Readable for OperationalValue0218Spec {}
-        #[doc = "`write(|w| ..)` method takes [`operational_value_0218::W`](W) writer structure"]
-        impl crate::Writable for OperationalValue0218Spec {
+        #[doc = "`read()` method returns [`scheduler_lock_modify_request::R`](R) reader structure"]
+        impl crate::Readable for SchedulerLockModifyRequestSpec {}
+        #[doc = "`write(|w| ..)` method takes [`scheduler_lock_modify_request::W`](W) writer structure"]
+        impl crate::Writable for SchedulerLockModifyRequestSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -37522,10 +37543,10 @@ pub mod bluetooth_controller_core {
         #[doc = "`read()` method returns [`operational_status_0324::R`](R) reader structure"]
         impl crate::Readable for OperationalStatus0324Spec {}
     }
-    #[doc = "OPERATIONAL_WORD_036C (rw) register accessor: Complete operational functions read and publish dynamic complete images. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_word_036c`] module"]
+    #[doc = "OPERATIONAL_WORD_036C (rw) register accessor: Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_word_036c`] module"]
     #[doc(alias = "OPERATIONAL_WORD_036C")]
     pub type OperationalWord036c = crate::Reg<operational_word_036c::OperationalWord036cSpec>;
-    #[doc = "Complete operational functions read and publish dynamic complete images. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."]
+    #[doc = "Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."]
     pub mod operational_word_036c {
         #[doc = "Register `OPERATIONAL_WORD_036C` reader"]
         pub type R = crate::R<OperationalWord036cSpec>;
@@ -37537,7 +37558,7 @@ pub mod bluetooth_controller_core {
             }
         }
         impl W {}
-        #[doc = "Complete operational functions read and publish dynamic complete images. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct OperationalWord036cSpec;
         impl crate::RegisterSpec for OperationalWord036cSpec {
             type Ux = u32;
@@ -50786,9 +50807,9 @@ pub mod zero_based_field_write {
         }
     }
 
-    /// Write `VALUE_LOW_16` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_DIAGNOSTIC_LATCH` while publishing zero to every other register bit.
+    /// Write `FINISHED_LIST_MASK` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_FINISHED_LIST_REPORT` while publishing zero to every other register bit.
     #[inline]
-    pub fn bluetooth_scheduler_diagnostic_latch(
+    pub fn bluetooth_scheduler_finished_list_report(
         registers: &crate::BluetoothControllerCore,
         value: u16,
     ) {
@@ -50797,8 +50818,8 @@ pub mod zero_based_field_write {
         // accepts every value representable by its public argument type.
         unsafe {
             registers
-                .scheduler_diagnostic_latch()
-                .write_with_zero(|writer| writer.value_low_16().set(value));
+                .scheduler_finished_list_report()
+                .write_with_zero(|writer| writer.finished_list_mask().set(value));
         }
     }
 

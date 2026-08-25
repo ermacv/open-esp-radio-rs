@@ -567,11 +567,11 @@ fields = ["SECONDARY_TICK_IMAGE"]
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
 
 [[zero-based-field-writes]]
-name = "bluetooth_scheduler_diagnostic_latch"
+name = "bluetooth_scheduler_finished_list_report"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SCHEDULER_DIAGNOSTIC_LATCH"
-fields = ["VALUE_LOW_16"]
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+register = "SCHEDULER_FINISHED_LIST_REPORT"
+fields = ["FINISHED_LIST_MASK"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_ROLES"]
 
 [[interrupt-snapshots]]
 name = "mac_interrupt"

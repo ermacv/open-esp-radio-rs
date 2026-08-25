@@ -16,11 +16,13 @@ use critical_section::Mutex;
 use esp_hal::{
     interrupt::{self, InterruptHandler, Priority},
     system::Cpu,
+    time::Instant,
 };
 use open_esp_radio_esp32s31_ieee802154_irq::{
     IEEE802154_MAC_INTERRUPT_SOURCE, Ieee802154AcknowledgedInterruptSink,
     Ieee802154InterruptDisposition, handle_ieee802154_interrupt,
 };
+use open_esp_radio_esp32s31_ieee802154_runtime::Ieee802154MonotonicMicrosecondClock;
 use open_esp_radio_esp32s31_pac::{
     Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154TaskRegisters,
 };
@@ -30,6 +32,19 @@ const ROUTE_PRIORITY: Priority = Priority::Priority1;
 
 const _: () = assert!(SOURCE == 132);
 const _: () = assert!(ROUTE_PRIORITY as u8 == 1);
+
+/// Bind the ACK watchdog to ESP-HAL's one-microsecond monotonic clock.
+///
+/// The low 32 bits intentionally reproduce the wrapping time domain used by
+/// the reviewed ESP-IDF IEEE 802.15.4 driver. [`esp_hal::init`] must have run
+/// before the returned capability is sampled.
+pub const fn monotonic_microsecond_clock() -> Ieee802154MonotonicMicrosecondClock {
+    Ieee802154MonotonicMicrosecondClock::new(sample_monotonic_microseconds)
+}
+
+fn sample_monotonic_microseconds() -> u32 {
+    Instant::now().duration_since_epoch().as_micros() as u32
+}
 
 static ROUTE_CLAIMED: Mutex<Cell<bool>> = Mutex::new(Cell::new(false));
 static INTERRUPT_REGISTERS: Mutex<RefCell<Option<Ieee802154InterruptRegisters>>> =

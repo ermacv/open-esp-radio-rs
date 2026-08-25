@@ -2350,6 +2350,7 @@ dependencies = [
  "critical-section",
  "esp-hal",
  "open-esp-radio-esp32s31-ieee802154-irq",
+ "open-esp-radio-esp32s31-ieee802154-runtime",
  "open-esp-radio-esp32s31-pac",
 ]
 

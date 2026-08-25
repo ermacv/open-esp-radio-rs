@@ -35,7 +35,11 @@ use open_esp_radio_esp32s31_ieee802154_mac::{
 
 mod pac_command_executor;
 
-pub use pac_command_executor::{Esp32s31Ieee802154CommandError, Esp32s31Ieee802154CommandExecutor};
+pub use pac_command_executor::{
+    Esp32s31Ieee802154CommandError, Esp32s31Ieee802154CommandExecutor,
+    IEEE802154_ACK_WATCHDOG_MICROSECONDS, Ieee802154MonotonicMicrosecondClock,
+    ieee802154_ack_watchdog_threshold,
+};
 
 mod sealed {
     pub trait CommandExecutor {}
@@ -76,6 +80,13 @@ pub trait MacCommandExecutor: sealed::CommandExecutor {
 
     /// Request the final typed MAC command carried by the plan.
     fn request_command(&mut self, command: MacCommandIntent) -> Result<(), Self::Error>;
+
+    /// Arm the source-defined TIMER0 watchdog after an ACK-requesting transmit
+    /// crosses from `TX_DONE` into acknowledgement reception.
+    fn arm_acknowledgement_watchdog(&mut self);
+
+    /// Stop TIMER0 and remove its event from the active interrupt baseline.
+    fn disarm_acknowledgement_watchdog(&mut self);
 
     /// Close the internal active-command epoch after the pure actor accepted
     /// one terminal, already-acknowledged IRQ batch.
@@ -155,6 +166,10 @@ impl MacCommandExecutor for ValidationMacCommandExecutor {
     fn request_command(&mut self, _command: MacCommandIntent) -> Result<(), Self::Error> {
         Ok(())
     }
+
+    fn arm_acknowledgement_watchdog(&mut self) {}
+
+    fn disarm_acknowledgement_watchdog(&mut self) {}
 
     fn finish_terminal_operation(&mut self) {}
 }
@@ -451,6 +466,26 @@ pub struct MacRuntimeActive<R, E: MacCommandExecutor> {
     active: MacActive<R>,
 }
 
+/// Permanently contained runtime after an acknowledged IRQ handoff was lost
+/// or could not be decoded.
+///
+/// The value intentionally exposes no recovery or processing API. If the
+/// operation was waiting for an acknowledgement, construction first stops
+/// TIMER0 and removes its interrupt from the runtime baseline.
+#[must_use = "a contained runtime permanently retains its command and DMA owners"]
+pub struct MacRuntimeQuarantined<R, E: MacCommandExecutor> {
+    #[allow(
+        dead_code,
+        reason = "contained hardware ownership is deliberately unrecoverable"
+    )]
+    hardware: MacCommandCapability<E>,
+    #[allow(
+        dead_code,
+        reason = "contained actor and DMA ownership are deliberately unrecoverable"
+    )]
+    active: MacActive<R>,
+}
+
 impl<R, E: MacCommandExecutor> fmt::Debug for MacRuntimeActive<R, E> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -466,6 +501,22 @@ impl<R, E: MacCommandExecutor> MacRuntimeActive<R, E> {
         self.active.phase()
     }
 
+    /// Fail closed after an acknowledged value was lost or undecodable.
+    #[doc(hidden)]
+    pub fn quarantine_after_handoff_failure(self) -> MacRuntimeQuarantined<R, E> {
+        let mut hardware = self.hardware;
+        if matches!(
+            self.active.phase(),
+            MacActivePhase::AwaitingAcknowledgement { .. }
+        ) {
+            hardware.executor.disarm_acknowledgement_watchdog();
+        }
+        MacRuntimeQuarantined {
+            hardware,
+            active: self.active,
+        }
+    }
+
     /// Accept one sampled-and-acknowledged batch and advance transactionally.
     ///
     /// A pending result retains the same resources. A terminal result returns
@@ -475,15 +526,23 @@ impl<R, E: MacCommandExecutor> MacRuntimeActive<R, E> {
         self,
         batch: AcknowledgedMacEventBatch,
     ) -> Result<MacRuntimeBatchOutcome<R, E>, MacRuntimeBatchRejected<R, E>> {
+        let prior_phase = self.active.phase();
         match self.active.process_batch(batch.batch) {
             Ok(MacBatchOutcome::Pending(active)) => {
+                let mut hardware = self.hardware;
+                if enters_acknowledgement_wait(prior_phase, active.phase()) {
+                    hardware.executor.arm_acknowledgement_watchdog();
+                }
                 Ok(MacRuntimeBatchOutcome::Pending(MacRuntimeActive {
-                    hardware: self.hardware,
+                    hardware,
                     active,
                 }))
             }
             Ok(MacBatchOutcome::Deferred(deferred)) => {
                 let mut hardware = self.hardware;
+                if matches!(prior_phase, MacActivePhase::AwaitingAcknowledgement { .. }) {
+                    hardware.executor.disarm_acknowledgement_watchdog();
+                }
                 hardware.executor.finish_terminal_operation();
                 // SAFETY: `batch` can only be constructed from the affine
                 // acknowledged hard-IRQ value. The actor consumed that batch
@@ -503,14 +562,29 @@ impl<R, E: MacCommandExecutor> MacRuntimeActive<R, E> {
             }
             Err(rejected) => {
                 let reason = rejected.reason();
+                let mut hardware = self.hardware;
+                if matches!(prior_phase, MacActivePhase::AwaitingAcknowledgement { .. }) {
+                    hardware.executor.disarm_acknowledgement_watchdog();
+                }
                 Err(MacRuntimeBatchRejected {
-                    _hardware: self.hardware,
+                    _hardware: hardware,
                     _rejected: rejected,
                     reason,
                 })
             }
         }
     }
+}
+
+const fn enters_acknowledgement_wait(prior: MacActivePhase, next: MacActivePhase) -> bool {
+    matches!(
+        prior,
+        MacActivePhase::Transmit {
+            acknowledgement:
+                open_esp_radio_esp32s31_ieee802154_mac::MacTransmitAcknowledgement::Expected,
+            ..
+        }
+    ) && matches!(next, MacActivePhase::AwaitingAcknowledgement { .. })
 }
 
 /// Accepted result of one non-empty sampled-and-acknowledged batch.
@@ -810,6 +884,8 @@ mod tests {
         PublishRx(u32),
         ConfigureDuration(u16),
         Command(MacCommandIntent),
+        ArmAcknowledgementWatchdog,
+        DisarmAcknowledgementWatchdog,
         FinishTerminal,
     }
 
@@ -881,6 +957,14 @@ mod tests {
 
         fn request_command(&mut self, command: MacCommandIntent) -> Result<(), Self::Error> {
             self.record(LogEntry::Command(command))
+        }
+
+        fn arm_acknowledgement_watchdog(&mut self) {
+            self.log.push(LogEntry::ArmAcknowledgementWatchdog);
+        }
+
+        fn disarm_acknowledgement_watchdog(&mut self) {
+            self.log.push(LogEntry::DisarmAcknowledgementWatchdog);
         }
 
         fn finish_terminal_operation(&mut self) {
@@ -1102,6 +1186,10 @@ mod tests {
             }
         );
         assert_eq!(pending.hardware.executor.calls, start_calls);
+        assert_eq!(
+            pending.hardware.executor.log.last(),
+            Some(&LogEntry::ArmAcknowledgementWatchdog)
+        );
 
         let sampled = acknowledged(second);
         let completed = match pending.process_batch(sampled).unwrap() {
@@ -1121,6 +1209,8 @@ mod tests {
                 LogEntry::PublishTx(DMA_LOW),
                 LogEntry::PublishRx(DMA_LOW + 128),
                 LogEntry::Command(MacCommandIntent::Transmit),
+                LogEntry::ArmAcknowledgementWatchdog,
+                LogEntry::DisarmAcknowledgementWatchdog,
                 LogEntry::FinishTerminal,
             ]
         );
@@ -1299,6 +1389,66 @@ mod tests {
             rejected.reason(),
             MacBatchRejectReason::UnexpectedEventBits { .. }
         ));
+    }
+
+    #[test]
+    fn rejected_acknowledgement_batch_disarms_the_watchdog_before_quarantine() {
+        let mut tx = tx_owner(DMA_LOW);
+        let armed_tx = arm_with_ack(&mut tx, &[0x21]);
+        let rx = rx_pool::<1>(DMA_LOW + 128);
+        let armed_rx = rx.arm_next().unwrap();
+        let actor = MacReady::new().request_transmit_with_ack(
+            armed_tx,
+            armed_rx,
+            MacTransmitAccess::Direct,
+        );
+        let active = runtime(FakeExecutor::new()).start(actor).unwrap();
+        let pending = match active
+            .process_batch(acknowledged(batch(Ieee802154Event::TxDone.mask())))
+            .unwrap()
+        {
+            MacRuntimeBatchOutcome::Pending(active) => active,
+            MacRuntimeBatchOutcome::Completed(_) => panic!("TX_DONE must await ACK"),
+        };
+
+        let rejected = pending
+            .process_batch(acknowledged(batch(Ieee802154Event::RxDone.mask())))
+            .unwrap_err();
+        assert!(matches!(
+            rejected.reason(),
+            MacBatchRejectReason::UnexpectedEventBits { .. }
+        ));
+        assert_eq!(
+            rejected._hardware.executor.log.last(),
+            Some(&LogEntry::DisarmAcknowledgementWatchdog)
+        );
+    }
+
+    #[test]
+    fn lost_acknowledgement_handoff_disarms_the_watchdog_before_containment() {
+        let mut tx = tx_owner(DMA_LOW);
+        let armed_tx = arm_with_ack(&mut tx, &[0x21]);
+        let rx = rx_pool::<1>(DMA_LOW + 128);
+        let armed_rx = rx.arm_next().unwrap();
+        let actor = MacReady::new().request_transmit_with_ack(
+            armed_tx,
+            armed_rx,
+            MacTransmitAccess::Direct,
+        );
+        let active = runtime(FakeExecutor::new()).start(actor).unwrap();
+        let pending = match active
+            .process_batch(acknowledged(batch(Ieee802154Event::TxDone.mask())))
+            .unwrap()
+        {
+            MacRuntimeBatchOutcome::Pending(active) => active,
+            MacRuntimeBatchOutcome::Completed(_) => panic!("TX_DONE must await ACK"),
+        };
+
+        let quarantined = pending.quarantine_after_handoff_failure();
+        assert_eq!(
+            quarantined.hardware.executor.log.last(),
+            Some(&LogEntry::DisarmAcknowledgementWatchdog)
+        );
     }
 
     #[test]

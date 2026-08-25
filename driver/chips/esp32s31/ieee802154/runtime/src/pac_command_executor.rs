@@ -18,9 +18,53 @@ use open_esp_radio_esp32s31_pac::{
     Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdDurationUnits,
     Ieee802154FrequencyCode, Ieee802154MacCommand, Ieee802154MacControl,
     Ieee802154MacPolicySnapshot, Ieee802154PanIdentity, Ieee802154TaskRegisters,
+    Ieee802154Timer0ThresholdWord,
 };
 
 use crate::{MacCommandCapability, MacCommandExecutor, MacRuntime, MacRuntimePolicyError, sealed};
+
+/// Vendor watchdog interval started when an ACK-requesting transmit reaches
+/// `TX_DONE` and enters automatic acknowledgement reception.
+pub const IEEE802154_ACK_WATCHDOG_MICROSECONDS: u32 = 200_000;
+
+/// Derive the TIMER0 threshold from the two truncated monotonic-clock samples
+/// used by the public vendor driver.
+///
+/// A deadline behind `programmed_at` by less than half the wrapping range
+/// becomes zero; otherwise the exact remaining microseconds are retained. The
+/// half-range boundary itself remains live, matching the source's sign-bit
+/// test exactly. This reproduces its `fire_time - current_time` rule without
+/// assigning meaning to a TIMER0 counter readback.
+pub const fn ieee802154_ack_watchdog_threshold(started_at: u32, programmed_at: u32) -> u32 {
+    let deadline = started_at.wrapping_add(IEEE802154_ACK_WATCHDOG_MICROSECONDS);
+    let remaining = deadline.wrapping_sub(programmed_at);
+    if remaining > 1_u32 << 31 {
+        0
+    } else {
+        remaining
+    }
+}
+
+/// Platform-provided monotonic microsecond sampler used by the ACK watchdog.
+///
+/// The returned value is deliberately truncated to the vendor driver's
+/// wrapping 32-bit time domain. Supplying the actual platform clock remains a
+/// whole-radio integration obligation.
+#[derive(Clone, Copy)]
+pub struct Ieee802154MonotonicMicrosecondClock {
+    sample: fn() -> u32,
+}
+
+impl Ieee802154MonotonicMicrosecondClock {
+    /// Bind one no-allocation monotonic sampler.
+    pub const fn new(sample: fn() -> u32) -> Self {
+        Self { sample }
+    }
+
+    fn sample(&self) -> u32 {
+        (self.sample)()
+    }
+}
 
 /// Failure of one finite ESP32-S31 task-side command step.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -65,7 +109,10 @@ enum ExecutorState {
         policy_refreshed: bool,
         duration: Option<u16>,
     },
-    Active(MacCommandIntent),
+    Active {
+        command: MacCommandIntent,
+        acknowledgement_watchdog_armed: bool,
+    },
 }
 
 trait TaskCommandBackend {
@@ -80,11 +127,16 @@ trait TaskCommandBackend {
     fn publish_receive_address(&mut self, address: u32);
     fn set_ed_duration(&mut self, duration: Ieee802154EdDurationUnits);
     fn request_command(&mut self, command: MacCommandIntent);
+    fn enable_acknowledgement_watchdog_event(&mut self);
+    fn sample_monotonic_microseconds(&mut self) -> u32;
+    fn start_acknowledgement_watchdog(&mut self, threshold: u32);
+    fn disarm_acknowledgement_watchdog(&mut self);
     fn order_device_accesses(&mut self);
 }
 
 struct PacTaskCommandBackend {
     task: Ieee802154TaskRegisters,
+    clock: Ieee802154MonotonicMicrosecondClock,
 }
 
 impl TaskCommandBackend for PacTaskCommandBackend {
@@ -159,6 +211,31 @@ impl TaskCommandBackend for PacTaskCommandBackend {
             .request_mac_command(command);
     }
 
+    fn enable_acknowledgement_watchdog_event(&mut self) {
+        self.task
+            .ieee802154_register_lease()
+            .timer_lease()
+            .enable_acknowledgement_watchdog_event();
+    }
+
+    fn sample_monotonic_microseconds(&mut self) -> u32 {
+        self.clock.sample()
+    }
+
+    fn start_acknowledgement_watchdog(&mut self, threshold: u32) {
+        self.task
+            .ieee802154_register_lease()
+            .timer_lease()
+            .start_acknowledgement_watchdog(Ieee802154Timer0ThresholdWord::new(threshold));
+    }
+
+    fn disarm_acknowledgement_watchdog(&mut self) {
+        self.task
+            .ieee802154_register_lease()
+            .timer_lease()
+            .disarm_acknowledgement_watchdog();
+    }
+
     fn order_device_accesses(&mut self) {
         self.task.order_device_accesses();
     }
@@ -230,7 +307,7 @@ impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
             ExecutorState::Preparing { .. } => {
                 Err(Esp32s31Ieee802154CommandError::PreparationAlreadyOpen)
             }
-            ExecutorState::Active(command) => {
+            ExecutorState::Active { command, .. } => {
                 Err(Esp32s31Ieee802154CommandError::OperationStillActive { command })
             }
         }
@@ -321,8 +398,56 @@ impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
         self.backend.order_device_accesses();
         self.backend.request_command(command);
         self.backend.order_device_accesses();
-        self.state = ExecutorState::Active(command);
+        self.state = ExecutorState::Active {
+            command,
+            acknowledgement_watchdog_armed: false,
+        };
         Ok(())
+    }
+
+    fn arm_acknowledgement_watchdog(&mut self) {
+        let ExecutorState::Active {
+            command,
+            acknowledgement_watchdog_armed: false,
+        } = self.state
+        else {
+            unreachable!("only one active ACK-requesting transmit can arm TIMER0")
+        };
+        assert!(
+            matches!(
+                command,
+                MacCommandIntent::Transmit | MacCommandIntent::TransmitWithClearChannelAssessment
+            ),
+            "only a transmit command can enter acknowledgement reception"
+        );
+
+        self.backend.enable_acknowledgement_watchdog_event();
+        let started_at = self.backend.sample_monotonic_microseconds();
+        let programmed_at = self.backend.sample_monotonic_microseconds();
+        self.backend
+            .start_acknowledgement_watchdog(ieee802154_ack_watchdog_threshold(
+                started_at,
+                programmed_at,
+            ));
+        self.state = ExecutorState::Active {
+            command,
+            acknowledgement_watchdog_armed: true,
+        };
+    }
+
+    fn disarm_acknowledgement_watchdog(&mut self) {
+        let ExecutorState::Active {
+            command,
+            acknowledgement_watchdog_armed: true,
+        } = self.state
+        else {
+            unreachable!("only an armed acknowledgement wait can disarm TIMER0")
+        };
+        self.backend.disarm_acknowledgement_watchdog();
+        self.state = ExecutorState::Active {
+            command,
+            acknowledgement_watchdog_armed: false,
+        };
     }
 
     fn require_refreshed_preparation(&self) -> Result<Option<u16>, Esp32s31Ieee802154CommandError> {
@@ -335,7 +460,7 @@ impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
                 policy_refreshed: false,
                 ..
             } => Err(Esp32s31Ieee802154CommandError::PolicyNotRefreshed),
-            ExecutorState::Quiescent | ExecutorState::Active(_) => {
+            ExecutorState::Quiescent | ExecutorState::Active { .. } => {
                 Err(Esp32s31Ieee802154CommandError::PreparationNotOpen)
             }
         }
@@ -343,9 +468,16 @@ impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
 
     fn complete_active_operation(&mut self) {
         match self.state {
-            ExecutorState::Active(_) => {
+            ExecutorState::Active {
+                acknowledgement_watchdog_armed: false,
+                ..
+            } => {
                 self.state = ExecutorState::Quiescent;
             }
+            ExecutorState::Active {
+                acknowledgement_watchdog_armed: true,
+                ..
+            } => unreachable!("terminal completion must disarm TIMER0 first"),
             ExecutorState::Quiescent | ExecutorState::Preparing { .. } => {
                 unreachable!("only an active command can accept a terminal IRQ")
             }
@@ -367,9 +499,13 @@ impl Esp32s31Ieee802154CommandExecutor {
     const fn from_task_registers(
         task: Ieee802154TaskRegisters,
         expected_policy: Ieee802154MacPolicySnapshot,
+        clock: Ieee802154MonotonicMicrosecondClock,
     ) -> Self {
         Self {
-            core: TaskCommandExecutorCore::new(PacTaskCommandBackend { task }, expected_policy),
+            core: TaskCommandExecutorCore::new(
+                PacTaskCommandBackend { task, clock },
+                expected_policy,
+            ),
         }
     }
 
@@ -419,6 +555,14 @@ impl MacCommandExecutor for Esp32s31Ieee802154CommandExecutor {
         self.core.request_command(command)
     }
 
+    fn arm_acknowledgement_watchdog(&mut self) {
+        self.core.arm_acknowledgement_watchdog();
+    }
+
+    fn disarm_acknowledgement_watchdog(&mut self) {
+        self.core.disarm_acknowledgement_watchdog();
+    }
+
     fn finish_terminal_operation(&mut self) {
         self.complete_active_operation();
     }
@@ -434,9 +578,14 @@ impl MacRuntime<Esp32s31Ieee802154CommandExecutor> {
     pub const fn from_esp32s31_task(
         task: Ieee802154TaskRegisters,
         expected_policy: Ieee802154MacPolicySnapshot,
+        clock: Ieee802154MonotonicMicrosecondClock,
     ) -> Self {
         Self::from_commands(MacCommandCapability {
-            executor: Esp32s31Ieee802154CommandExecutor::from_task_registers(task, expected_policy),
+            executor: Esp32s31Ieee802154CommandExecutor::from_task_registers(
+                task,
+                expected_policy,
+                clock,
+            ),
         })
     }
 
@@ -469,11 +618,17 @@ mod tests {
         RxAddress(u32),
         EdDuration(u32),
         Command(MacCommandIntent),
+        WatchdogEventEnabled,
+        ClockSample(u32),
+        WatchdogStarted(u32),
+        WatchdogDisarmed,
     }
 
     struct FakeBackend {
         observed_policy: Ieee802154MacPolicySnapshot,
         operations: Vec<Operation>,
+        clock_samples: [u32; 2],
+        next_clock_sample: usize,
     }
 
     impl FakeBackend {
@@ -481,7 +636,14 @@ mod tests {
             Self {
                 observed_policy,
                 operations: Vec::new(),
+                clock_samples: [0; 2],
+                next_clock_sample: 0,
             }
+        }
+
+        fn with_clock_samples(mut self, samples: [u32; 2]) -> Self {
+            self.clock_samples = samples;
+            self
         }
     }
 
@@ -529,6 +691,28 @@ mod tests {
 
         fn request_command(&mut self, command: MacCommandIntent) {
             self.operations.push(Operation::Command(command));
+        }
+
+        fn enable_acknowledgement_watchdog_event(&mut self) {
+            self.operations.push(Operation::WatchdogEventEnabled);
+        }
+
+        fn sample_monotonic_microseconds(&mut self) -> u32 {
+            let sample = *self
+                .clock_samples
+                .get(self.next_clock_sample)
+                .expect("the watchdog consumes exactly two clock samples");
+            self.next_clock_sample += 1;
+            self.operations.push(Operation::ClockSample(sample));
+            sample
+        }
+
+        fn start_acknowledgement_watchdog(&mut self, threshold: u32) {
+            self.operations.push(Operation::WatchdogStarted(threshold));
+        }
+
+        fn disarm_acknowledgement_watchdog(&mut self) {
+            self.operations.push(Operation::WatchdogDisarmed);
         }
 
         fn order_device_accesses(&mut self) {
@@ -639,6 +823,60 @@ mod tests {
     }
 
     #[test]
+    fn acknowledgement_watchdog_uses_two_wrapping_clock_samples_in_source_order() {
+        let policy = policy();
+        let started_at = u32::MAX - 99_999;
+        let programmed_at = 50_000;
+        let backend = FakeBackend::new(policy).with_clock_samples([started_at, programmed_at]);
+        let mut core = TaskCommandExecutorCore::new(backend, policy);
+        core.require_state_specific_quiescence().unwrap();
+        core.refresh_static_policy().unwrap();
+        core.request_command(MacCommandIntent::Transmit).unwrap();
+
+        core.arm_acknowledgement_watchdog();
+        assert_eq!(
+            &core.backend.operations[core.backend.operations.len() - 4..],
+            [
+                Operation::WatchdogEventEnabled,
+                Operation::ClockSample(started_at),
+                Operation::ClockSample(programmed_at),
+                Operation::WatchdogStarted(50_000),
+            ]
+        );
+        assert_eq!(
+            core.state,
+            ExecutorState::Active {
+                command: MacCommandIntent::Transmit,
+                acknowledgement_watchdog_armed: true,
+            }
+        );
+
+        core.disarm_acknowledgement_watchdog();
+        assert_eq!(
+            core.backend.operations.last(),
+            Some(&Operation::WatchdogDisarmed)
+        );
+        core.complete_active_operation();
+        assert_eq!(core.state, ExecutorState::Quiescent);
+    }
+
+    #[test]
+    fn acknowledgement_watchdog_threshold_fails_closed_across_half_range() {
+        assert_eq!(ieee802154_ack_watchdog_threshold(0, 0), 200_000);
+        assert_eq!(ieee802154_ack_watchdog_threshold(0, 199_999), 1);
+        assert_eq!(ieee802154_ack_watchdog_threshold(0, 200_000), 0);
+        assert_eq!(ieee802154_ack_watchdog_threshold(0, 200_001), 0);
+        assert_eq!(
+            ieee802154_ack_watchdog_threshold(0, 200_000_u32.wrapping_add(1_u32 << 31)),
+            1_u32 << 31
+        );
+        assert_eq!(
+            ieee802154_ack_watchdog_threshold(0, 200_000_u32.wrapping_add((1_u32 << 31) + 1),),
+            i32::MAX as u32
+        );
+    }
+
+    #[test]
     fn policy_mismatch_fails_closed_before_any_command() {
         let expected = policy();
         let observed = Ieee802154MacPolicySnapshot::new(
@@ -689,7 +927,13 @@ mod tests {
                     Operation::Fence,
                 ]
             );
-            assert_eq!(core.state, ExecutorState::Active(command));
+            assert_eq!(
+                core.state,
+                ExecutorState::Active {
+                    command,
+                    acknowledgement_watchdog_armed: false,
+                }
+            );
         }
     }
 

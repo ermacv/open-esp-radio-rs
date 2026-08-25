@@ -38,6 +38,10 @@ id = "esp-idf-7b9cc1ac-ieee802154-common-ll"
 description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/esp_hal_ieee802154/include/hal/ieee802154_common_ll.h, sha256 ba4ce294b402df311f25c4d0ce9cb33449e3eb41993aff94a25df5a66142d471. Public inline accessors prove the selected software read/write directions, command/event values and field use; they do not establish reset values or semantics for untouched fields."
 
 [[sources]]
+id = "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_TIMERS"
+description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe: components/ieee802154/driver/esp_ieee802154_dev.c sha256 9aaccfa2832cb89bfdfd98086a984269e621400a272b02926c4e088d16222830, components/ieee802154/driver/esp_ieee802154_timer.c sha256 66a2b68bb718d8fa878cbf28488af810ecb902288fde26dc7a0e5b32dcbd1326, and components/ieee802154/private_include/esp_ieee802154_timer.h sha256 e5ab8062c0c4b9195bd597a79a6aabb692fdb686a9599a034db36a46d8f89bd6. After TX_DONE of an ACK-requesting frame, the driver enables TIMER0 overflow and starts a 200000-microsecond watchdog from two truncated esp_timer_get_time samples; the timer helper clamps wrapping-expired deadlines to zero with the header's exact sign-bit test, writes the remaining threshold, and starts TIMER0. ACK completion stops TIMER0 and removes its event. Generic event teardown stops TIMER0 and TIMER1. This is behavioral evidence over already reviewed register leaves, not a new register geometry claim."
+
+[[sources]]
 id = "ESP_IDF_7B9CC1AC_S31_IEEE802154_LL"
 description = "Official ESP-IDF commit 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe, https://raw.githubusercontent.com/espressif/esp-idf/7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe/components/esp_hal_ieee802154/esp32s31/include/hal/ieee802154_ll.h, sha256 a66a3562ff6ef62ffa6dda90bc08e97f0d4509bcf3817cdc57795fd97daeaa30. The ESP32-S31 extension independently reads the two high-half diagnostic counters declared by the public struct."
 

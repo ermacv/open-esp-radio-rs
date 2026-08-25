@@ -13,6 +13,7 @@ esp32s31 = [
     "dep:critical-section",
     "dep:esp-hal",
     "dep:open-esp-radio-esp32s31-ieee802154-irq",
+    "dep:open-esp-radio-esp32s31-ieee802154-runtime",
     "dep:open-esp-radio-esp32s31-pac",
 ]
 
@@ -20,6 +21,7 @@ esp32s31 = [
 critical-section = { version = "1.2.0", optional = true }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "unstable"], optional = true }
 open-esp-radio-esp32s31-ieee802154-irq = { path = "../../../chips/esp32s31/ieee802154/irq", optional = true }
+open-esp-radio-esp32s31-ieee802154-runtime = { path = "../../../chips/esp32s31/ieee802154/runtime", optional = true }
 open-esp-radio-esp32s31-pac = { path = "../../../chips/esp32s31/pac", optional = true }
 
 [lints]

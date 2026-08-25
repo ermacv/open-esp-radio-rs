@@ -24,7 +24,7 @@ use open_esp_radio_esp32s31_ieee802154_irq::{
 };
 use open_esp_radio_esp32s31_ieee802154_runtime::{
     AcknowledgedMacEventBatch, MacCommandExecutor, MacInterruptBatchError, MacRuntimeActive,
-    MacRuntimeBatchOutcome, MacRuntimeBatchRejected, MacRuntimeCompletion,
+    MacRuntimeBatchOutcome, MacRuntimeBatchRejected, MacRuntimeCompletion, MacRuntimeQuarantined,
 };
 
 mod owner;
@@ -168,7 +168,7 @@ pub struct EmbassyIeee802154Operation<R, E: MacCommandExecutor> {
     reason = "quarantined affine owners are deliberately retained without a recovery API"
 )]
 enum EmbassyIeee802154OperationQuarantine<R, E: MacCommandExecutor> {
-    LostOrUndecodable(MacRuntimeActive<R, E>),
+    LostOrUndecodable(MacRuntimeQuarantined<R, E>),
     Rejected(MacRuntimeBatchRejected<R, E>),
 }
 
@@ -222,7 +222,7 @@ impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
             Ok(interrupt) => interrupt,
             Err(_) => {
                 self.quarantine = Some(EmbassyIeee802154OperationQuarantine::LostOrUndecodable(
-                    active,
+                    active.quarantine_after_handoff_failure(),
                 ));
                 return Err(EmbassyIeee802154OperationError::IrqOverflow);
             }
@@ -232,7 +232,7 @@ impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
             Ok(batch) => batch,
             Err(error) => {
                 self.quarantine = Some(EmbassyIeee802154OperationQuarantine::LostOrUndecodable(
-                    active,
+                    active.quarantine_after_handoff_failure(),
                 ));
                 return Err(EmbassyIeee802154OperationError::Interrupt(error));
             }

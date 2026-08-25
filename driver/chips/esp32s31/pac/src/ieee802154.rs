@@ -346,6 +346,9 @@ impl Ieee802154EventEnableMask {
             | Self::TX_SFD_DONE.0
             | Self::RX_SFD_DONE.0,
     );
+    /// The reviewed runtime baseline while TIMER0 owns the ACK watchdog.
+    pub const HANDLED_BASELINE_WITH_TIMER0: Self =
+        Self(Self::HANDLED_BASELINE_WITHOUT_TIMER0.0 | Self::TIMER0_OVERFLOW.0);
 
     /// Validate a complete caller-supplied event field image.
     pub const fn from_named_bits(bits: u16) -> Option<Self> {
@@ -1202,6 +1205,36 @@ pub struct Ieee802154TimerLease<'registers> {
 }
 
 impl Ieee802154TimerLease<'_> {
+    /// Add TIMER0 to the closed runtime interrupt baseline before deadline
+    /// sampling begins.
+    #[doc(hidden)]
+    pub fn enable_acknowledgement_watchdog_event(&mut self) {
+        self.registers
+            .replace_event_enable(Ieee802154EventEnableMask::HANDLED_BASELINE_WITH_TIMER0.bits());
+    }
+
+    /// Publish the already-derived TIMER0 threshold and fixed start image.
+    ///
+    /// This PAC layer assigns no unit to `threshold`; the runtime owns the
+    /// source-defined monotonic-clock conversion.
+    #[doc(hidden)]
+    pub fn start_acknowledgement_watchdog(&mut self, threshold: Ieee802154Timer0ThresholdWord) {
+        self.set_timer0_threshold(threshold);
+        crate::device_fence();
+        self.start_timer0();
+        crate::device_fence();
+    }
+
+    /// Stop TIMER0 and restore the reviewed runtime baseline without TIMER0.
+    #[doc(hidden)]
+    pub fn disarm_acknowledgement_watchdog(&mut self) {
+        self.stop_timer0();
+        self.registers.replace_event_enable(
+            Ieee802154EventEnableMask::HANDLED_BASELINE_WITHOUT_TIMER0.bits(),
+        );
+        crate::device_fence();
+    }
+
     /// Publish one complete TIMER0 threshold without assigning clock units.
     pub fn set_timer0_threshold(&mut self, threshold: Ieee802154Timer0ThresholdWord) {
         self.registers.publish_timer0_threshold(threshold.get());
@@ -2343,6 +2376,14 @@ mod tests {
         assert!(
             !Ieee802154EventEnableMask::HANDLED_BASELINE_WITHOUT_TIMER0
                 .contains(Ieee802154EventEnableMask::CLOCK_COUNT_MATCH)
+        );
+        assert_eq!(
+            Ieee802154EventEnableMask::HANDLED_BASELINE_WITH_TIMER0.bits(),
+            0x1b7f
+        );
+        assert!(
+            Ieee802154EventEnableMask::HANDLED_BASELINE_WITH_TIMER0
+                .contains(Ieee802154EventEnableMask::TIMER0_OVERFLOW)
         );
     }
 

@@ -37,6 +37,51 @@ pub(crate) fn write_or_check(path: &Path, contents: &str, check: bool, kind: &st
     Ok(())
 }
 
+/// Atomically publish or byte-check a deterministic binary representation.
+///
+/// This is used for compressed generated containers whose encoded bytes are
+/// themselves part of an immutable identity. Callers remain responsible for
+/// using a deterministic encoder.
+pub(crate) fn write_or_check_bytes(
+    path: &Path,
+    contents: &[u8],
+    check: bool,
+    kind: &str,
+) -> Result<()> {
+    if check {
+        let existing = fs::read(path).map_err(|error| {
+            crate::Error::invalid(format!(
+                "cannot check generated {kind} {}: {error}",
+                path.display()
+            ))
+        })?;
+        if existing != contents {
+            return Err(crate::Error::invalid(format!(
+                "generated {kind} differs from {}; rerun without --check",
+                path.display()
+            )));
+        }
+        return Ok(());
+    }
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let stage = stage_path(path);
+    let result = (|| -> Result<()> {
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stage)?;
+        output.write_all(contents)?;
+        output.flush()?;
+        fs::rename(&stage, path)?;
+        Ok(())
+    })();
+    if stage.exists() {
+        let _ = fs::remove_file(stage);
+    }
+    result
+}
+
 /// Serialize a generated JSON document without buffering a second full copy.
 ///
 /// Write mode hashes into a sibling staged file and publishes it atomically.
@@ -244,6 +289,20 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "original\n");
 
         write_or_check(&path, "original\n", true, "fixture").unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn binary_check_is_atomic_and_exact() {
+        let directory =
+            std::env::temp_dir().join(format!("blobray-generated-binary-{}", std::process::id()));
+        let path = directory.join("nested/report.bin");
+        write_or_check_bytes(&path, b"\x00expected\xff", false, "fixture binary").unwrap();
+        write_or_check_bytes(&path, b"\x00expected\xff", true, "fixture binary").unwrap();
+        let error =
+            write_or_check_bytes(&path, b"\x00changed\xff", true, "fixture binary").unwrap_err();
+        assert!(error.to_string().contains("rerun without --check"));
+        assert_eq!(fs::read(&path).unwrap(), b"\x00expected\xff");
         std::fs::remove_dir_all(directory).unwrap();
     }
 

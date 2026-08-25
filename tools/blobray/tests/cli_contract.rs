@@ -2661,7 +2661,27 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
         String::from_utf8_lossy(&analyzed.stderr)
     );
 
-    let output = run_project_command(&manifest, &["project", "revision", "snapshot", "vendor-1"]);
+    // Exercise the normal repository workflow where --project is relative to
+    // the current directory. The implicit snapshot destination must not add
+    // the manifest parent twice.
+    let output = blobray()
+        .current_dir(&directory)
+        .args([
+            "project",
+            "revision",
+            "snapshot",
+            "vendor-1",
+            "--project",
+            "vendor-project.toml",
+            "--format",
+            "json",
+            "--color",
+            "never",
+            "--progress",
+            "never",
+        ])
+        .output()
+        .expect("snapshot temporary project through a relative manifest");
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -2674,7 +2694,7 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
     assert!(directory.join("revisions/ledger.toml").is_file());
     assert!(
         directory
-            .join("revisions/snapshots/vendor-1.json")
+            .join("revisions/snapshots/vendor-1.json.gz")
             .is_file()
     );
     let ledger = std::fs::read_to_string(directory.join("revisions/ledger.toml")).unwrap();

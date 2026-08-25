@@ -1,5 +1,7 @@
 //! User-facing immutable revision snapshot, diff and review-rebase workflow.
 
+use std::path::PathBuf;
+
 use serde::Serialize;
 
 use crate::{
@@ -43,9 +45,13 @@ fn snapshot(
     arguments: RevisionSnapshotArgs,
     session: &crate::application::ProjectSession,
 ) -> Result<bool> {
-    let path = arguments
-        .output
-        .unwrap_or(revision::default_path(&session.manifest, &arguments.name)?);
+    // `persist_snapshot` resolves caller-supplied relative paths against the
+    // project manifest. Keep the implicit path project-relative as well: a
+    // manifest itself may be relative to the process cwd, and passing an
+    // already manifest-prefixed relative path would apply that prefix twice.
+    let path = arguments.output.unwrap_or_else(|| {
+        PathBuf::from("revisions/snapshots").join(format!("{}.json.gz", arguments.name))
+    });
     let snapshot = revision::snapshot(session, &arguments.name)?;
     let artifact_bindings_verified = revision::verify_snapshot_bindings(session, &snapshot)?;
     revision::persist_snapshot(&session.manifest, &snapshot, &path, arguments.check)?;

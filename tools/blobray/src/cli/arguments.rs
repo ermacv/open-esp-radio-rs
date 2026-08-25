@@ -144,7 +144,7 @@ pub(crate) struct RevisionSnapshotArgs {
     /// Stable revision name used by the durable snapshot ledger.
     #[arg(value_name = "NAME")]
     pub(crate) name: String,
-    /// Snapshot path below revisions/; defaults to revisions/snapshots/NAME.json.
+    /// Snapshot path below revisions/; defaults to revisions/snapshots/NAME.json.gz.
     #[arg(long, value_name = "PATH")]
     pub(crate) output: Option<PathBuf>,
     /// Verify the existing snapshot without changing it.

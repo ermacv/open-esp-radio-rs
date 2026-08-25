@@ -154,9 +154,16 @@ pub(crate) fn next(
     add_interfaces(session, &scopes, &graphs, &mut candidates)?;
     attach_candidate_co_blockers(&mut candidates);
     let (surfaces, verification_diagnostic) = verification_surfaces(&session.project);
+    let context = session.context();
     let ranked = candidates
         .into_values()
-        .map(|candidate| finalize(candidate, &surfaces))
+        .map(|candidate| {
+            let command = context.follow_up_command(
+                &next_command(&candidate),
+                super::FollowUpRequirements::ANALYSIS,
+            );
+            finalize(candidate, &surfaces, command)
+        })
         .collect::<Vec<_>>();
     let total_candidates = ranked.len();
     let mut ranked = coalesce_actions(ranked);
@@ -658,6 +665,7 @@ fn verification_surfaces(
 fn finalize(
     candidate: Accumulator,
     surfaces_by_scope: &BTreeMap<String, BTreeSet<String>>,
+    next_command: String,
 ) -> ResearchCandidate {
     let surfaces = candidate
         .scopes
@@ -665,7 +673,6 @@ fn finalize(
         .flat_map(|scope| surfaces_by_scope.get(scope).into_iter().flatten())
         .cloned()
         .collect::<BTreeSet<_>>();
-    let next_command = next_command(&candidate);
     let kind = candidate.kind.clone();
     let mut result = ResearchCandidate {
         rank: 0,
@@ -930,7 +937,7 @@ fn completion_condition(kind: &str) -> &'static str {
 fn next_command(candidate: &Accumulator) -> String {
     if let Some(address) = candidate.id.strip_prefix("register-") {
         return format!(
-            "blobray inspect register {} --project <project>",
+            "inspect register {}",
             address.split('-').next().unwrap_or(address)
         );
     }
@@ -941,7 +948,7 @@ fn next_command(candidate: &Accumulator) -> String {
             .find(|word| word.starts_with("0x"))
     {
         return format!(
-            "blobray inspect register {} --project <project>",
+            "inspect register {}",
             address.split('/').next().unwrap_or(address)
         );
     }
@@ -950,11 +957,17 @@ fn next_command(candidate: &Accumulator) -> String {
             || function.clone(),
             |(source, symbol)| format!("{source}:{symbol}"),
         );
-        format!("blobray inspect function {selector} --project <project>")
+        format!(
+            "inspect function {}",
+            crate::shell::arg(std::ffi::OsStr::new(&selector))
+        )
     } else if let Some(scope) = candidate.scopes.first() {
-        format!("blobray inspect scope {scope} --project <project>")
+        format!(
+            "inspect scope {}",
+            crate::shell::arg(std::ffi::OsStr::new(scope))
+        )
     } else {
-        "blobray project status --project <project>".to_owned()
+        "project status".to_owned()
     }
 }
 
@@ -1010,6 +1023,7 @@ mod tests {
         let result = finalize(
             candidate,
             &BTreeMap::from([("radio".to_owned(), ["surface".to_owned()].into())]),
+            "blobray inspect function leaf --project project.toml".to_owned(),
         );
         assert_eq!(result.guaranteed_unlock, 1);
         assert_eq!(result.optimistic_unlock, 2);
@@ -1019,7 +1033,7 @@ mod tests {
         assert!(result.score > 100);
         assert_eq!(
             result.next_command,
-            "blobray inspect function leaf --project <project>"
+            "blobray inspect function leaf --project project.toml"
         );
     }
 
@@ -1045,10 +1059,15 @@ mod tests {
         }
 
         let actions = coalesce_actions(vec![
-            finalize(candidate("slot-a", "review slot A", None), &BTreeMap::new()),
+            finalize(
+                candidate("slot-a", "review slot A", None),
+                &BTreeMap::new(),
+                "blobray inspect function ble-controller:logger --project project.toml".to_owned(),
+            ),
             finalize(
                 candidate("slot-b", "review slot B", Some("ble-controller::worker")),
                 &BTreeMap::new(),
+                "blobray inspect function ble-controller:logger --project project.toml".to_owned(),
             ),
         ]);
 
@@ -1082,7 +1101,7 @@ mod tests {
         };
         assert_eq!(
             next_command(&candidate),
-            "blobray inspect function archive:function --project <project>"
+            "inspect function archive:function"
         );
     }
 

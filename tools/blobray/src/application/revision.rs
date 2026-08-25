@@ -9,6 +9,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use flate2::{Compression, GzBuilder, read::GzDecoder};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -268,7 +269,7 @@ pub(crate) fn default_path(manifest: &Path, name: &str) -> Result<PathBuf> {
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .join("revisions/snapshots")
-        .join(format!("{name}.json")))
+        .join(format!("{name}.json.gz")))
 }
 
 pub(crate) fn ledger_path(manifest: &Path) -> PathBuf {
@@ -299,21 +300,49 @@ pub(crate) fn resolve_path(manifest: &Path, value: &str) -> Result<PathBuf> {
         return snapshot_path(manifest, &entry.snapshot);
     }
     let durable = default_path(manifest, value)?;
+    let durable_json = manifest
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("revisions/snapshots")
+        .join(format!("{value}.json"));
     let legacy = manifest
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .join("generated/revisions")
         .join(format!("{value}.json"));
-    Ok(if durable.is_file() || !legacy.is_file() {
-        durable
-    } else {
-        legacy
-    })
+    Ok(
+        if durable.is_file() || (!durable_json.is_file() && !legacy.is_file()) {
+            durable
+        } else if durable_json.is_file() {
+            durable_json
+        } else {
+            legacy
+        },
+    )
 }
 
 pub(crate) fn load(path: &Path) -> Result<RevisionSnapshot> {
-    let input = fs::read_to_string(path)
-        .map_err(|error| crate::Error::read("revision snapshot", path, error))?;
+    let encoded =
+        fs::read(path).map_err(|error| crate::Error::read("revision snapshot", path, error))?;
+    let bytes = if snapshot_is_gzip(path) {
+        let mut decoder = GzDecoder::new(encoded.as_slice());
+        let mut decoded = Vec::new();
+        decoder.read_to_end(&mut decoded).map_err(|error| {
+            crate::Error::invalid(format!(
+                "cannot decompress revision snapshot {}: {error}",
+                path.display()
+            ))
+        })?;
+        decoded
+    } else {
+        encoded
+    };
+    let input = String::from_utf8(bytes).map_err(|error| {
+        crate::Error::invalid(format!(
+            "revision snapshot {} is not UTF-8 JSON: {error}",
+            path.display()
+        ))
+    })?;
     let snapshot: RevisionSnapshot = serde_json::from_str(&input).map_err(|error| {
         crate::Error::manifest_source("revision snapshot", path, &input, error, None)
     })?;
@@ -337,7 +366,10 @@ pub(crate) fn persist_snapshot(
     validate_snapshot(snapshot)?;
     let path = project_relative_output(manifest, path);
     let location = durable_snapshot_location(manifest, &path)?;
-    let snapshot_sha256 = encoded_snapshot_sha256(snapshot)?;
+    // The durable identity belongs to normalized snapshot content, not to its
+    // storage codec. A compressor upgrade may legally change gzip bytes while
+    // leaving every reviewed fact unchanged.
+    let snapshot_sha256 = logical_snapshot_sha256(snapshot)?;
     let artifacts_sha256 = artifacts_sha256(&snapshot.artifacts)?;
     let entry = RevisionLedgerEntry {
         name: snapshot.name.clone(),
@@ -705,20 +737,15 @@ fn verify_ledger_entry(
     entry: &RevisionLedgerEntry,
 ) -> Result<()> {
     let path = snapshot_path(manifest, &entry.snapshot)?;
-    let actual = sha256_file(&path).map_err(|error| {
-        crate::Error::invalid(format!(
-            "cannot verify immutable revision snapshot {}: {error}",
-            path.display()
-        ))
-    })?;
+    let snapshot = load(&path)?;
+    let actual = logical_snapshot_sha256(&snapshot)?;
     if actual != entry.snapshot_sha256 {
         return Err(crate::Error::invalid(format!(
-            "immutable revision snapshot {} digest differs from ledger entry {:?}",
+            "immutable revision snapshot {} logical digest differs from ledger entry {:?}",
             path.display(),
             entry.name
         )));
     }
-    let snapshot = load(&path)?;
     if snapshot.name != entry.name || snapshot.project != ledger.project {
         return Err(crate::Error::invalid(format!(
             "immutable revision snapshot {} identity does not match its ledger entry",
@@ -893,11 +920,28 @@ fn validate_sha256(label: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-fn encoded_snapshot_sha256(snapshot: &RevisionSnapshot) -> Result<String> {
-    let mut writer = Sha256Writer(Sha256::new());
-    serde_json::to_writer_pretty(&mut writer, snapshot)?;
-    writer.write_all(b"\n")?;
-    Ok(format!("{:x}", writer.0.finalize()))
+fn snapshot_is_gzip(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| extension == "gz")
+}
+
+fn encode_snapshot(snapshot: &RevisionSnapshot, path: &Path) -> Result<Vec<u8>> {
+    let mut json = serde_json::to_vec_pretty(snapshot)?;
+    json.push(b'\n');
+    if !snapshot_is_gzip(path) {
+        return Ok(json);
+    }
+    let mut encoder = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::default());
+    encoder.write_all(&json)?;
+    Ok(encoder.finish()?)
+}
+
+fn logical_snapshot_sha256(snapshot: &RevisionSnapshot) -> Result<String> {
+    let encoded = serde_json::to_vec(snapshot)?;
+    let mut digest = Sha256::new();
+    digest.update(encoded);
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 fn artifacts_sha256(artifacts: &[RevisionArtifact]) -> Result<String> {
@@ -920,19 +964,6 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
         digest.update(&buffer[..read]);
     }
     Ok(format!("{:x}", digest.finalize()))
-}
-
-struct Sha256Writer(Sha256);
-
-impl Write for Sha256Writer {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        self.0.update(buffer);
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
 }
 
 fn write_ledger_atomic(manifest: &Path, ledger: &RevisionLedger) -> Result<()> {
@@ -967,21 +998,29 @@ fn write_ledger_atomic(manifest: &Path, ledger: &RevisionLedger) -> Result<()> {
 }
 
 fn write_snapshot_or_check(path: &Path, snapshot: &RevisionSnapshot, check: bool) -> Result<()> {
-    crate::application::generated_file::write_or_check_json(
-        path,
-        snapshot,
-        check,
-        "revision snapshot",
-        true,
-    )?;
-    if !check {
-        // The shared JSON writer publishes by atomic rename. Sync the renamed
-        // file and then its directory before publishing the ledger pointer.
-        // That ordering permits an orphan snapshot after a crash, never a
-        // durable ledger entry whose snapshot was not durably published first.
-        fs::File::open(path)?.sync_all()?;
-        sync_parent_directory(path.parent().unwrap_or_else(|| Path::new(".")))?;
+    if check {
+        let existing = load(path)?;
+        if existing != *snapshot {
+            return Err(crate::Error::invalid(format!(
+                "generated revision snapshot differs from {}; rerun without --check",
+                path.display()
+            )));
+        }
+        return Ok(());
     }
+    let encoded = encode_snapshot(snapshot, path)?;
+    crate::application::generated_file::write_or_check_bytes(
+        path,
+        &encoded,
+        false,
+        "revision snapshot",
+    )?;
+    // The shared binary writer publishes by atomic rename. Sync the renamed
+    // file and then its directory before publishing the ledger pointer. That
+    // ordering permits an orphan snapshot after a crash, never a durable
+    // ledger entry whose snapshot was not durably published first.
+    fs::File::open(path)?.sync_all()?;
+    sync_parent_directory(path.parent().unwrap_or_else(|| Path::new(".")))?;
     Ok(())
 }
 
@@ -1935,7 +1974,7 @@ mod tests {
         assert_eq!(ledger.baseline.as_deref(), Some("vendor-1"));
         assert_eq!(ledger.current.as_deref(), Some("vendor-1"));
         assert_eq!(ledger.entries.len(), 1);
-        assert_eq!(ledger.entries[0].snapshot, "snapshots/vendor-1.json");
+        assert_eq!(ledger.entries[0].snapshot, "snapshots/vendor-1.json.gz");
         assert_eq!(ledger.entries[0].snapshot_sha256.len(), 64);
         assert_eq!(ledger.entries[0].artifacts_sha256.len(), 64);
         for path in [
@@ -1954,6 +1993,49 @@ mod tests {
             inspect_ledger(&manifest, "fixture", true).health,
             RevisionLedgerHealth::Ready
         );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn gzip_snapshots_are_deterministic_and_loadable() {
+        let (directory, manifest) = temporary_manifest("gzip-roundtrip");
+        let snapshot = snapshot("vendor-1", vec![function("stable", "a")]);
+        let path = default_path(&manifest, &snapshot.name).unwrap();
+
+        let first = encode_snapshot(&snapshot, &path).unwrap();
+        let second = encode_snapshot(&snapshot, &path).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(&first[..2], &[0x1f, 0x8b]);
+        assert_eq!(&first[4..8], &[0, 0, 0, 0]);
+
+        persist_snapshot(&manifest, &snapshot, &path, false).unwrap();
+        assert_eq!(load(&path).unwrap(), snapshot);
+
+        // A different legal gzip representation must not change the durable
+        // identity or make `--check` fail: the ledger owns logical content,
+        // while gzip is only its replaceable storage codec.
+        let mut json = serde_json::to_vec_pretty(&snapshot).unwrap();
+        json.push(b'\n');
+        let mut alternate = GzBuilder::new()
+            .mtime(1)
+            .write(Vec::new(), Compression::fast());
+        alternate.write_all(&json).unwrap();
+        let alternate = alternate.finish().unwrap();
+        assert_ne!(alternate, first);
+        std::fs::write(&path, alternate).unwrap();
+        persist_snapshot(&manifest, &snapshot, &path, true).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn corrupt_gzip_snapshot_fails_closed() {
+        let (directory, manifest) = temporary_manifest("gzip-corrupt");
+        let path = default_path(&manifest, "vendor-1").unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"not gzip").unwrap();
+
+        let error = load(&path).unwrap_err();
+        assert!(error.to_string().contains("cannot decompress"));
         std::fs::remove_dir_all(directory).unwrap();
     }
 

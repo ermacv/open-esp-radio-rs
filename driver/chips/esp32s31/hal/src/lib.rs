@@ -13,6 +13,7 @@ use open_esp_radio_esp32s31_pac::{
     WifiColdRegisters, WifiRadioRegisters,
 };
 pub mod analog_i2c;
+pub mod bluetooth;
 pub mod channel;
 pub mod coex;
 pub(crate) mod ieee802154;
@@ -46,6 +47,7 @@ pub mod types;
 pub mod validation;
 pub mod wifi_bb;
 pub mod wifi_mac;
+pub use bluetooth::{BluetoothControllerHal, BluetoothControllerHalBorrow};
 #[cfg(feature = "validation-probes")]
 pub use ieee802154_ed_event_probe::{
     Ieee802154EdEventProbeConfig, Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeIsolation,
@@ -77,9 +79,10 @@ pub use ieee802154_role::{
 #[doc(hidden)]
 pub use ieee802154_role::{Ieee802154EdEventProbeFinished, Ieee802154EventStatusProbeFinished};
 pub use open_esp_radio_esp32s31_pac::{
-    MacPowerWakeCause, MacTsfTimerIndex, StaBeaconMissLimit, StaBeaconMissTimeoutRaw,
-    StaModemSleepLimit, StaModemWakeConfig, StaModemWakePrepareError, StaModemWakeRestore,
-    StaModemWakeRestoreError, StaModemWakeRestoreFailure, StaTbttAutoPeriod,
+    BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+    BluetoothMemoryListSelector, MacPowerWakeCause, MacTsfTimerIndex, StaBeaconMissLimit,
+    StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig, StaModemWakePrepareError,
+    StaModemWakeRestore, StaModemWakeRestoreError, StaModemWakeRestoreFailure, StaTbttAutoPeriod,
     StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError,
     StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw,
 };

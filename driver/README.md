@@ -28,14 +28,24 @@ than embedding Host protocols in the chip crate:
 
 ```text
 application -> Trouble Host -> bt-hci -> portable LE Controller
-                                      -> ESP32-S31 BLE scheduler/PHY/PAC
+                                      -> ESP32-S31 LLL
+                                      -> controller memory -> HAL -> PAC
 ```
 
 Only the bounded bidirectional HCI transport, conservative Host-bootstrap
 dispatcher, its executor-neutral bootstrap worker and hardware-foundation
 pieces exist today. A real Trouble Runner crosses that production software
 worker in host tests, but no ESP32-S31 Controller worker or on-air operation
-exists. The
+exists. The first Wi-Fi-style split is now physical in the workspace:
+positional MMIO stays in the restricted PAC, while
+`chips/esp32s31/bluetooth/memory` owns the no-heap DTM controller-memory
+geometry, physical-SRAM binding, allocation-time private links and result
+parsing. A sealed `BluetoothControllerHal<'_>` now carries the first task-side
+scheduler transaction without exposing its PAC owner.
+Bluetooth lifecycle and S31 LLL code are still co-located in the parent chip
+crate; the next structural boundary is extending that HAL borrow across the
+proved controller-time/memory/IRQ operations, followed by an independent LLL
+backend and portable Controller. The
 exact live, partial, fail-closed and absent scopes are recorded in the
 [ESP32-S31 Bluetooth LE feature frontier](chips/esp32s31/bluetooth/FEATURES.md).
 
@@ -49,6 +59,9 @@ module for the former vendor-derived `wdev` naming.
   capabilities and finite command/event state transitions.
 - `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.
 - `chips/esp32s31/{pac,registers,hal,phy}`: chip RF/register implementation.
+- `chips/esp32s31/bluetooth/memory`: statically bound CPU-owned controller-SRAM
+  layout and the future packet/list ownership boundary below the S31 LLL and
+  above positional PAC transactions.
 - `chips/esp32s31/ieee802154/{dma,irq,mac,runtime}`: non-operational
   fixed-frame ownership, quiesced interrupt semantics, pure control
   transitions and an affine executor-neutral composition boundary for the

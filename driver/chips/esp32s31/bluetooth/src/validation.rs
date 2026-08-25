@@ -45,7 +45,7 @@ pub fn clear_scheduler_table_low_bits() {
         open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = resources.separate_interrupt_owner();
-    task.clear_scheduler_table_low_bits();
+    task.controller_hal().clear_scheduler_table_low_bits();
     // The comparison image deliberately retains the mutated partitions; it
     // must not reconstruct cold ownership without the missing rollback.
     let _powered_owners = (task, interrupts);

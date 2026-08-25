@@ -119,10 +119,10 @@ minimum dependency graph and publication gate for each unit are:
 | --- | --- | --- | --- |
 | Register evidence and SVD | Address, field, access and transaction provenance | Partial but substantial; generated model is fail-closed | Every register used by the first vertical slice is reviewed and generated with no raw-address escape in upper layers. |
 | Restricted PAC | Affine peripheral ownership and finite MMIO operations | Cold ownership, scheduler prefix, full 50-operation HAL body, memory-pointer geometry, IRQ prefixes and the ISR scheduler read/clear plus worker finished-list mask transfer exist | DTM trace uses only typed operations and has exact rollback/quiescence edges. |
-| Platform/HAL lifecycle | Clocks, reset, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset is live; PHY/BTBB are disconnected; typed IRQ pair primitives exist but the live epoch remains closed | One owner can power, route both IRQs, run and return cold without owner duplication. |
+| Platform/HAL lifecycle | Clocks, reset, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset is live; a sealed task-side `BluetoothControllerHal<'_>` borrow now carries the scheduler-table prefix without exposing the PAC owner; PHY/BTBB are disconnected; typed IRQ pair primitives exist but the live epoch remains closed | One owner can power, route both IRQs, run and return cold without owner duplication. |
 | Controller timer and scheduler | Radio timebase, prepare/abort/doorbell/completion and collision policy | The always-awake latch request/self-clear/read order, bidirectional wrapping scheduler epoch and nine-word DTM item update have pure models; no live owner, physical counter contract or complete command/status semantics exist | Virtual-time model plus register trace proves one scheduled event, cancellation and late/error handling. |
-| Packet memory dataplane | Static RX/TX/free/ready storage, DMA visibility and backpressure | Pointer encoding, the exact eight-word DTM link-state reset and nine-word scheduler-item event regions exist; list roles, complete descriptors and publication/reclaim edges do not | Every buffer has an affine CPU/hardware state and is reclaimed on success, error, abort and shutdown. |
-| Lower Link Layer (LLL) | Channel/whitening/CRC/access address, hard ISR turnaround and one radio-event state machine | Absent | DTM TX/RX works first; then one advertising event executes without executor-latency dependence. |
+| Packet memory dataplane | Static RX/TX/free/ready storage, DMA visibility and backpressure | A dedicated controller-memory crate now owns the complete no-heap per-event DTM allocation footprint, the sole TX backing slot, RX/TX extent/header geometry, paired ordinary RX re-arm/result parsing and normal scan/non-scan global-list routing. Target binding derives real field addresses, validates the complete physical-SRAM extent before mutation and gives a movable CPU owner one non-movable static allocation with exact private links. The separate DTM environment remains LLL state. The DTM private TX-head/RX-tail descriptor path and unconditional entry into the append decision are mapped; the swap-reserve branch remains quarantined. Production placement ownership, remaining hardware-consumed fields, internal pointer latch, cache/fences and affine publication/reclaim states do not exist | Every buffer has an affine CPU/hardware state and is reclaimed on success, error, abort and shutdown. |
+| Lower Link Layer (LLL) | Channel/whitening/CRC/access address, hard ISR turnaround and one radio-event state machine | Pure DTM channel/PHY/payload/timing lowering, scheduler-item/link-state transforms and returned-buffer accounting exist; no live radio-event owner, complete descriptor consumer or ISR turnaround exists | DTM TX/RX works first; then one advertising event executes without executor-latency dependence. |
 | Upper Link Layer (ULL) | Advertising/scanning/connection scheduling, SN/NESN/retry, supervision and LLCP | Absent | Legacy advertising, scanning and one peripheral connection pass deterministic virtual-clock tests and HIL. |
 | HCI Controller | Command/event table, capability reporting, ACL flow control and completed-packet credits | Bounded transport/bootstrap exists; operational Controller is absent | Only implemented LL features are advertised; all supported commands and ACL paths reach owned ULL state with bounded cancellation-safe queues. |
 | Host and application | L2CAP, ATT/GATT, GAP/SMP and application policy | Trouble bootstrap works in host tests only | Trouble Runner and a bounded GATT peripheral run through the same production Controller worker. |
@@ -254,7 +254,11 @@ The implementation order is:
 
 1. finish restricted PAC access for the remaining scheduler command/status
    words and memory-list lifecycle; the three positional selector pairs now
-   have exact current/next RX slot roles and compressed-pointer geometry. The
+   have exact current/next RX slot roles and compressed-pointer geometry,
+   while the controller-memory layer assigns selector one to normal scan
+   insertion and selector two to admitted non-scan insertion. DTM deliberately
+   bypasses both and publishes its private TX head/RX tail through its link
+   state. The
    lock/modify head request already has exact images, predicate, diagnostic
    publication-result projection and affine event phases, while the
    controller-time latch has exact always-awake request/self-clear/read phases
@@ -268,7 +272,8 @@ The implementation order is:
 2. recover a hardware-only init transition from the composite task/BLE init
    functions, with read-back or bounded postconditions and exact rollback up
    to every fallible edge;
-3. define static packet storage and prove CPU/hardware ownership transitions;
+3. advance the now-sized static DTM memory graph from CPU-only storage into
+   pinned controller-SRAM binding and prove CPU/hardware ownership transitions;
 4. route both real Controller interrupts into the shared staged owner, define
    the synchronous hard-handler versus async-bottom-half boundary, and prove no
    lost or duplicated work across mask, acknowledge, wake and re-arm;
@@ -279,11 +284,12 @@ The implementation order is:
 7. qualify register traces first, then HIL frequency/channel/PDU/count results,
    and keep the ledger fail-closed until dated evidence exists.
 
-The current sixteen-entry scheduler-table low-bit clear is only an observed
-initialization prefix. It neither proves the meaning of those entries nor
-establishes that the vendor event/list objects are hardware requirements. It
-must not be promoted to `ControllerInitialized` until the subsequent hardware
-command, IRQ and storage contracts are known.
+The current sixteen-entry scheduler-table low-bit clear crosses a sealed finite
+controller HAL borrow, but remains only an observed initialization prefix. It
+neither proves the meaning of those entries nor establishes that the vendor
+event/list objects are hardware requirements. It must not be promoted to
+`ControllerInitialized` until the subsequent hardware command, IRQ and storage
+contracts are known.
 
 After DTM, the next growth order is legacy non-connectable advertising,
 scanning, connectable advertising plus one peripheral connection, bounded ACL

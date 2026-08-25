@@ -19,6 +19,7 @@ members = [
     "driver/wifi/wpa2",
     "driver/chips/esp32s31/hal",
     "driver/chips/esp32s31/bluetooth",
+    "driver/chips/esp32s31/bluetooth/memory",
     "driver/chips/esp32s31/coex",
     "driver/chips/esp32s31/wifi",
     "driver/chips/esp32s31/wifi/dma",

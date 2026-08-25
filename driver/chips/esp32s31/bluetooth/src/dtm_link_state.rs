@@ -2,13 +2,15 @@
 //!
 //! Current `r_sym_ble_VikJlxpO0kioDchKDFeI` and its named same-chip predecessor
 //! `r_ble_lll_dtm_reset_link_state` perform the same positional transforms
-//! below. This module deliberately models only the eight observed words. It is
-//! not a complete hardware descriptor, exposes no publication operation and
-//! cannot claim an on-air DTM path.
+//! below. The complete body copies the private TX head from link-state
+//! `+0x6c` into word `+0x00` and the private RX tail from `+0x70` into word
+//! `+0x08` before each scheduler insertion. This module deliberately models
+//! only the eight observed words. It is not a complete hardware descriptor,
+//! exposes no publication operation and cannot claim an on-air DTM path.
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_pac::BluetoothControllerSramAddress;
+use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmBoundSramLinkAddress;
 
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 const WORD_04_POWER_MASK: u32 = 0x0f80_0000;
@@ -35,8 +37,8 @@ pub enum BluetoothDtmLinkStateResetError {
 /// Validated dynamic inputs to one DTM link-state reset.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmLinkStateReset {
-    next_link: Option<BluetoothControllerSramAddress>,
-    buffer_header: Option<BluetoothControllerSramAddress>,
+    tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
+    rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
     rounded_power: u8,
     config: u8,
     role: BluetoothDtmRole,
@@ -45,8 +47,8 @@ pub struct BluetoothDtmLinkStateReset {
 impl BluetoothDtmLinkStateReset {
     /// Validate every bounded image before modifying the reviewed region.
     pub const fn new(
-        next_link: Option<BluetoothControllerSramAddress>,
-        buffer_header: Option<BluetoothControllerSramAddress>,
+        tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
+        rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
         rounded_power: u8,
         config: u8,
         role: BluetoothDtmRole,
@@ -58,8 +60,8 @@ impl BluetoothDtmLinkStateReset {
             return Err(BluetoothDtmLinkStateResetError::ConfigOutsideSixBits);
         }
         Ok(Self {
-            next_link,
-            buffer_header,
+            tx_head,
+            rx_tail,
             rounded_power,
             config,
             role,
@@ -69,22 +71,23 @@ impl BluetoothDtmLinkStateReset {
     /// Apply the complete reviewed reset transforms to the positional words.
     ///
     /// `WORD_00` retains the exact overlap from the reference body: software
-    /// first replaces its low-twenty-bit link, then transforms the halfword at
-    /// byte offset `+0x02`. `WORD_34` is overwritten only for the RX role.
+    /// first replaces its low-twenty-bit TX-head link, then transforms the
+    /// halfword at byte offset `+0x02`. `WORD_08` receives the private RX tail.
+    /// `WORD_34` is overwritten only for the RX role.
     pub const fn apply(
         self,
         current: BluetoothDtmLinkStateReviewedWords,
     ) -> BluetoothDtmLinkStateReviewedWords {
-        let next_link = compressed_or_zero(self.next_link);
-        let buffer_header = compressed_or_zero(self.buffer_header);
+        let tx_head = compressed_or_zero(self.tx_head);
+        let rx_tail = compressed_or_zero(self.rx_tail);
 
-        let word_00_with_link = (current.word_00 & !LOW_TWENTY_MASK) | next_link;
+        let word_00_with_link = (current.word_00 & !LOW_TWENTY_MASK) | tx_head;
         let transformed_high_half = (((word_00_with_link >> 16) as u16 & 0x600f) | 0x8ff0) as u32;
 
         BluetoothDtmLinkStateReviewedWords {
             word_00: (word_00_with_link & 0x0000_ffff) | (transformed_high_half << 16),
             word_04: (current.word_04 & !WORD_04_POWER_MASK) | ((self.rounded_power as u32) << 23),
-            word_08: (current.word_08 & 0xf000_0000) | 0x0ff0_0000 | buffer_header,
+            word_08: (current.word_08 & 0xf000_0000) | 0x0ff0_0000 | rx_tail,
             word_14: current.word_14 | 0xc000_0000,
             word_2c: (current.word_2c & 0xff00_0000) | 0x0055_5555,
             word_34: match self.role {
@@ -97,7 +100,7 @@ impl BluetoothDtmLinkStateReset {
     }
 }
 
-const fn compressed_or_zero(address: Option<BluetoothControllerSramAddress>) -> u32 {
+const fn compressed_or_zero(address: Option<BluetoothDtmBoundSramLinkAddress>) -> u32 {
     match address {
         Some(address) => address.compressed_image(),
         None => 0,
@@ -111,11 +114,11 @@ const fn compressed_or_zero(address: Option<BluetoothControllerSramAddress>) -> 
 /// that yields a controller address or transfers hardware ownership.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmLinkStateReviewedWords {
-    /// Complete word at byte offset `+0x00`.
+    /// Complete word at byte offset `+0x00`; low 20 bits carry the TX head.
     pub word_00: u32,
     /// Complete word at byte offset `+0x04`.
     pub word_04: u32,
-    /// Complete word at byte offset `+0x08`.
+    /// Complete word at byte offset `+0x08`; low 20 bits carry the RX tail.
     pub word_08: u32,
     /// Complete word at byte offset `+0x14`.
     pub word_14: u32,
@@ -131,7 +134,7 @@ pub struct BluetoothDtmLinkStateReviewedWords {
 
 #[cfg(test)]
 mod tests {
-    use open_esp_radio_esp32s31_pac::BluetoothControllerSramAddress;
+    use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmBoundSramLinkAddress;
 
     use super::{
         BluetoothDtmLinkStateReset, BluetoothDtmLinkStateResetError,
@@ -149,8 +152,9 @@ mod tests {
         word_50: 0x9123_4567,
     };
 
-    fn address(bits: u32) -> BluetoothControllerSramAddress {
-        BluetoothControllerSramAddress::new(bits).expect("test address is representable")
+    fn address(bits: u32) -> BluetoothDtmBoundSramLinkAddress {
+        BluetoothDtmBoundSramLinkAddress::new(bits)
+            .expect("test address is a nonzero compressed link")
     }
 
     #[test]

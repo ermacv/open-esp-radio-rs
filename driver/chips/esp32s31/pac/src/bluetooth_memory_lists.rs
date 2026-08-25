@@ -10,7 +10,9 @@ const CONTROLLER_SRAM_ADDRESS_PREFIX: u32 = 0x2f00_0000;
 /// One of the three positional hardware list selectors proven by the
 /// selector leaves in the ESP32-S31 controller archive.
 ///
-/// No RX, TX, free-list, or ready-list meaning is assigned yet.
+/// The PAC keeps these names positional. The controller-memory layer owns the
+/// separately proven scan/non-scan global-insertion routing, while selector
+/// three and the private DTM publication path remain semantically unassigned.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothMemoryListSelector {
     /// Vendor selector value one.
@@ -50,41 +52,6 @@ pub enum BluetoothControllerSramAddressError {
     Unaligned,
     /// The fixed address positions do not match the observed SRAM window.
     OutsideEncodableWindow,
-}
-
-/// Validated positional result word consumed by the reviewed S31 DTM RX
-/// callback.
-///
-/// This type intentionally does not name the returned byte as a packet count,
-/// status, RSSI, or CRC result. The complete callback proves only that the
-/// low 24 bits must be zero and that the high byte is copied into the DTM
-/// link-state image. Its higher-level meaning and the ownership edge that
-/// makes the containing buffer CPU-readable are not yet established.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmRxResultProjection(u32);
-
-/// Why a positional DTM RX result word is rejected by the reviewed callback.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmRxResultProjectionError {
-    /// At least one of the low 24 bits is nonzero.
-    NonzeroLowTwentyFourBits,
-}
-
-impl BluetoothDtmRxResultProjection {
-    /// Apply the exact validation performed on the word at returned-buffer
-    /// offset `+0x0c` by complete S31 body
-    /// `r_sym_ble_PptSRbXfefQwMVyO5jxP`.
-    pub const fn from_word(word: u32) -> Result<Self, BluetoothDtmRxResultProjectionError> {
-        if word & 0x00ff_ffff != 0 {
-            return Err(BluetoothDtmRxResultProjectionError::NonzeroLowTwentyFourBits);
-        }
-        Ok(Self(word))
-    }
-
-    /// Return the positional byte at returned-buffer offset `+0x0f`.
-    pub const fn returned_byte(self) -> u8 {
-        (self.0 >> 24) as u8
-    }
 }
 
 impl BluetoothControllerSramAddress {
@@ -150,8 +117,10 @@ impl BluetoothTaskRegisters {
     /// complete second read. The latter detail intentionally preserves any
     /// bits that hardware may publish between the two RMW operations.
     ///
-    /// Selector meanings and the element layout remain positional; only the
-    /// current/next RX role of each pair is established.
+    /// This operation intentionally accepts only positional selectors. The
+    /// memory layer must choose an active semantic class or retain explicit
+    /// evidence for a private path; element layout and lifecycle are not PAC
+    /// policy.
     ///
     /// # Safety
     ///
@@ -211,33 +180,8 @@ mod tests {
     use super::super::RadioHardware;
     use super::{
         BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
-        BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
         BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
     };
-
-    #[test]
-    fn dtm_rx_result_projection_preserves_only_the_reviewed_high_byte() {
-        assert_eq!(
-            BluetoothDtmRxResultProjection::from_word(0)
-                .expect("an all-zero result word is accepted")
-                .returned_byte(),
-            0
-        );
-        assert_eq!(
-            BluetoothDtmRxResultProjection::from_word(0xab00_0000)
-                .expect("the high byte is positional payload")
-                .returned_byte(),
-            0xab
-        );
-        assert_eq!(
-            BluetoothDtmRxResultProjection::from_word(0x0000_0001),
-            Err(BluetoothDtmRxResultProjectionError::NonzeroLowTwentyFourBits)
-        );
-        assert_eq!(
-            BluetoothDtmRxResultProjection::from_word(0x00ff_ffff),
-            Err(BluetoothDtmRxResultProjectionError::NonzeroLowTwentyFourBits)
-        );
-    }
 
     #[test]
     fn compressed_controller_address_rejects_unrepresentable_values() {

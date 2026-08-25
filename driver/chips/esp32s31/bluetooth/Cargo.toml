@@ -12,6 +12,7 @@ validation-probes = ["open-esp-radio-esp32s31-pac/validation-probes"]
 
 [dependencies]
 open-esp-radio-esp32s31-hal = { path = "../hal" }
+open-esp-radio-esp32s31-bluetooth-memory = { path = "memory" }
 open-esp-radio-esp32s31-pac = { path = "../pac" }
 open-esp-radio-esp32s31-phy = { path = "../phy" }
 

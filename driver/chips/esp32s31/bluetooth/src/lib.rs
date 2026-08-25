@@ -10,6 +10,10 @@
 //! state, affine ISR scheduler-register staging and the event-driven pure
 //! phases of one scheduler lock/modify request are also represented. A sampled
 //! sixteen-list finished mask can be drained one bit per bounded event step.
+//! Controller-SRAM allocation geometry and result parsing live in the separate
+//! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
+//! one bounded DTM RX transition accounts a result word without claiming its
+//! still-missing completed-header ownership or visibility fence.
 //! These components are deliberately not connected across the missing
 //! selector-6 invariant, affine item/completion-list owner, lost-wake-safe
 //! cross-owner bridge, LP, BLE, NRT feature classification and live-route
@@ -32,6 +36,7 @@ mod dtm_event_timing;
 mod dtm_link_state;
 mod dtm_parameters;
 mod dtm_payload;
+mod dtm_rx_completion;
 mod dtm_scheduler_item;
 mod dtm_timing;
 mod dtm_tx_packet;
@@ -78,6 +83,10 @@ pub use dtm_payload::{
     BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern, BluetoothDtmPayloadPatternError,
     BluetoothDtmPayloadPreparationError, BluetoothDtmPreparedPayload,
 };
+pub use dtm_rx_completion::{
+    BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmRxAccountingOutcome,
+    BluetoothDtmRxCompletionState,
+};
 pub use dtm_scheduler_item::{
     BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
     BluetoothDtmSchedulerItemReviewedWords,
@@ -87,7 +96,7 @@ pub use dtm_tx_packet::{
     BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES, BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES,
     BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES, BluetoothDtmPreparedTxPacket,
     BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError,
-    BluetoothDtmTxPacketStorage,
+    BluetoothDtmTxPacketPrepare, BluetoothDtmTxPacketStorage,
 };
 pub use interrupt::{
     BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,
@@ -103,6 +112,11 @@ pub use interrupt_classifier::{
 };
 pub use interrupt_wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
+};
+pub use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError,
+    BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
+    BluetoothRxMemoryListClass,
 };
 #[cfg(target_arch = "riscv32")]
 pub use phy::{

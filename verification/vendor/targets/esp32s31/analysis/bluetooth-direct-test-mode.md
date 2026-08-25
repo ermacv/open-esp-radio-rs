@@ -4,14 +4,16 @@ Verdict: **INCOMPLETE**. The complete ESP32-S31 DTM command bodies, their path
 into the common scheduler, the finite lock/modify head-publication transaction
 and the later scheduler-item recycle callback are now identified. The exact
 eight-word reset region of its link-state image and the nine-word event update
-of its scheduler item are also modeled without the vendor allocator. The exact
-forty-channel permutation/frequency composition and role-dependent PHY-rate
-images are now typed inputs to that event. Together these prove that DTM is a
-small Lower Link Layer role built from
-controller-SRAM descriptors, a common radio wake operation and an event-driven
-scheduler lifecycle. They do not yet prove the complete descriptor layout, the
-hardware status-to-finished-mask boundary, memory fences or RX buffer
-reclamation needed for an on-air open implementation.
+of its scheduler item are also modeled without the vendor allocator. The
+bounded allocation footprints, private RX/TX chain anchors, returned-buffer
+accounting and append-decision entry are now recovered as well. The exact forty-channel
+permutation/frequency composition and role-dependent PHY-rate images are typed
+inputs to that event. Together these prove that DTM is a small Lower Link Layer
+role built from controller-SRAM descriptors, a common radio wake operation and
+an event-driven scheduler lifecycle. They do not yet prove the internal
+packet-engine latch/consumer of the private DTM graph, the hardware
+status-to-finished-mask boundary, memory visibility fences or an affine RX
+buffer owner needed for an on-air open implementation.
 
 This review narrows the first physical vertical slice. It does not make DTM a
 production capability and does not import the vendor scheduler, callback
@@ -56,15 +58,15 @@ following useful map:
 | --- | ---: | --- |
 | `r_sym_ble_bWydXXPAXzjyon1EdAMg` | 122 | DTM interval calculation. Its size and body agree with the named `r_ble_lll_dtm_calculate_itvl` reference. |
 | `r_sym_ble_7F349oHpjOqsP8rHzlIj` | 558 | Allocate and connect the DTM memory graph. Its callers and complete control/data flow agree with the named `r_ble_lll_dtm_alloc_memory` reference. The S31 body requests link-state kind 6, creates a scheduler item with kind byte 5, installs `r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` as its recycle callback, attaches bounded RX/header storage and rolls every partial allocation back before returning its finite error code. |
-| `r_sym_ble_VikJlxpO0kioDchKDFeI` | 278 | Reset one DTM controller-SRAM link-state image. It installs compressed links, a complete `0x71764129` access-address word, low 24-bit `0x555555` state and a rounded-power field. |
+| `r_sym_ble_VikJlxpO0kioDchKDFeI` | 278 | Reset one DTM controller-SRAM link-state image. It installs the compressed private TX head at `+0x00`, private RX tail at `+0x08`, a complete `0x71764129` access-address word, low 24-bit `0x555555` state and a rounded-power field. |
 | `r_sym_ble_G4zC4UNjJYmyjOsZ3vNq` | 618 | Construct and schedule one DTM event. It accepts only role values one and two, wakes the common RF owner, writes the reviewed frequency/rate/role/timing scheduler-item images, begins a scheduler transaction and completes that transaction. |
 | `r_sym_ble_XaQTq1AjtothrIFLgEeJ` | 362 | Construct TX context and payload. It accepts the reviewed payload-pattern selector domain, stores channel, length and PHY inputs, calculates the interval and repeatedly schedules TX role one until accepted. |
 | `r_sym_ble_odiPxxFv9QenApESv5qy` | 166 | Validate and start a transmitter test, including channel `0..=39`, payload selector `0..=7` and PHY-dependent parameter checks before creating the TX context. |
 | `r_sym_ble_x4t8591NiUiinayCMpjZ` | 116 | Construct RX context, store the channel/PHY inputs and repeatedly schedule RX role two until accepted. |
 | `r_sym_ble_ssKOV2juzhIVJk3r8x6R` | 112 | Validate and start a receiver test, including channel `0..=39` and the accepted PHY selector domain. |
 | `r_sym_ble_PptSRbXfefQwMVyO5jxP` | 52 | Process one received DTM buffer. From third argument offset `+0x04` it reconstructs a `0x2f00_0000 | (low20 << 2)` address. A zero compressed pointer takes the vendor fail-stop edge. The body returns `-1` when any low-24 bit of the word at returned-buffer offset `+0x0c` is nonzero; otherwise it copies the high byte at `+0x0f` into DTM link-state byte `+0x24` and returns zero. The byte meaning remains positional. |
-| `r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` | 336 | Recycle one completed DTM scheduler item. Complete control flow agrees with same-chip named `r_ble_lll_dtm_recycle_sch_item` (324 bytes). TX role one increments the DTM result count and reschedules only after zero item status; RX role two drains returned buffers, applies the RX-result callback, returns buffers to the bounded chain and reschedules while active. An unexpected role takes the vendor fail-stop edge. |
-| `r_sym_ble_9DFKLYZzjaztWMiPU4NR` | 168 | End the test, serialize the 16-bit receive count, stop the common scheduler when a test is active, clear DTM active/count state and restore the default length state. |
+| `r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` | 336 | Recycle one completed DTM scheduler item. Complete control flow agrees with same-chip named `r_ble_lll_dtm_recycle_sch_item` (324 bytes). TX role one increments the DTM result count and reschedules only after zero item status. RX role two drains only when item status is zero; every completed returned header enters the append routine, while a result word with zero low 24 bits additionally updates the positional high byte and increments the wrapping 16-bit receive count. The ordinary append path reuses that header; positional bit `+0x10.0` instead substitutes a swap-reserve copy, and ownership of the detached original remains unresolved. An unexpected role takes the vendor fail-stop edge. |
+| `r_sym_ble_9DFKLYZzjaztWMiPU4NR` | 168 | End the test, serialize the same 16-bit receive count as the two-byte Test End result, synchronously stop the common scheduler when a test is active, clear DTM active/count state, free the private graph and restore the default length state. |
 
 The fixed `0x71764129` word agrees with the standardized DTM access address,
 but its descriptor offset is still recorded positionally. Likewise, the
@@ -73,8 +75,8 @@ until an independent packet-engine consumer proves that field boundary.
 
 The reset transaction itself is now reproduced as a non-publishable reviewed
 region in the Bluetooth crate. It retains the exact low-twenty-bit compressed
-links at `+0x00` and `+0x08`, including the overlapping `+0x02` halfword
-transform; five-bit rounded-power image at `+0x04`; high control bits at
+TX head at `+0x00` and RX tail at `+0x08`, including the overlapping `+0x02`
+halfword transform; five-bit rounded-power image at `+0x04`; high control bits at
 `+0x14`; high-byte-preserving `0x555555` image at `+0x2c`; RX-only zero at
 `+0x34`; complete `0x71764129` word at `+0x38`; and six-bit configuration image
 at `+0x50`. Bounded inputs are rejected before any transform. The type exposes
@@ -213,9 +215,57 @@ C61 role comparison, establish that the callback's third argument is a buffer
 header carrying a compressed returned-buffer pointer. The callback consumes
 only the result word at `+0x0c`: low 24 bits form a fail-closed condition and
 the byte at `+0x0f` is the only value copied into DTM state. This exact split is
-published as `BluetoothDtmRxResultProjection`; no semantic name is assigned to
-the high byte. Packet validity, length, RSSI and the buffer-reclamation edge
-remain separate unknowns.
+published above the PAC boundary as `BluetoothDtmRxResultProjection`; no
+semantic name is assigned to the high byte. The complete recycle body proves
+the next layer: an accepted word updates that byte and increments the DTM
+environment's 16-bit counter with wrapping arithmetic, while a rejected word
+changes neither value. Test End serializes that same counter. Every result
+branch enters the append routine; its ordinary branch reuses the returned
+header, while bit `+0x10.0` substitutes a swap-reserve copy and detaches the
+original. The open LLL transition reproduces that accounting and requires an
+unconditional handoff to the separate append decision, but cannot yet
+manufacture the affine completed-header owner, decide ownership after the
+swap-reserve branch or establish the device-to-CPU visibility edge.
+
+The allocation footprint is finite and does not require a heap ABI. One DTM
+graph requests a `0x84`-byte link state, `0x60`-byte scheduler item,
+`0x48`-byte scheduler context, three separately allocated `0x18`-byte headers,
+a `0x111`-byte TX packet and a `0x11d`-byte RX packet. Four-byte compressed
+addressing makes the respective packet allocation footprints `0x114` and
+`0x120`; it does not by itself prove cache or DMA alignment. The three headers
+are the bound RX head/tail, a software swap reserve and the bound TX head/tail,
+not three interchangeable RX descriptors. Link-state offsets `+0x68/+0x70`
+hold RX head/tail, `+0x6c/+0x74` hold TX head/tail and `+0x78` holds the swap
+reserve. The separate DTM environment grows to `0x28` bytes in the current
+revision and initializes its positional byte `+0x24` to `0x7f`.
+
+The complete allocation order is link state, scheduler context, scheduler
+item, bound RX packet/header, unbound swap header and bound TX packet/header.
+The finite failure results are `-1` for link-state allocation, zero for the
+separate context and `2`, `3`, `4`, `5` for scheduler, RX, swap-header and TX
+stages. Every partial failure walks the same graph-free path before releasing
+the separate context. The open memory crate reserves the resulting 936-byte
+aligned graph as one non-movable static allocation retained by a movable CPU
+owner; it deliberately does not preserve these allocator result integers as
+its API. Target binding derives
+every real field address, validates the complete extent against physical
+internal SRAM rather than the wider compressed-pointer syntax, and only then
+installs the exact allocation headers and private-chain anchors. Native tests
+use a separate synthetic typed base, while a failed binding returns the
+unchanged static allocation.
+
+The RX allocator requests `capacity + 0x1e`, writes the two-byte
+`capacity + 2` image at packet offsets `+0x05/+0x06`, and starts its zeroed
+header as `[0, packet, 0x80800000, 0, 0, 0]`. Before reuse, the append path ORs
+`0x00ffffff` into packet word `+0x0c`, preserving the high byte, writes
+`0xffff` at packet halfword `+0x18` and clears the header completion bit. For
+capacity `0xff`, the packet bytes are therefore `1, 1`. These exact CPU-owned
+transforms still do not reveal the hardware producer of the result word.
+If a returned header has positional bit `+0x10.0` set, append copies its full
+24-byte image into the swap reserve, detaches the original packet pointer and
+uses the copy as the append candidate. The source of that bit and the final
+ownership of the original header are not proven for DTM, so the open live path
+must quarantine that observation until the special case is closed.
 
 The generic S31 memory-management path further proves why the vendor heap and
 callback registry must not become the open ABI. Its exact item-kind predicate
@@ -235,11 +285,29 @@ over all three selector branches to named same-chip
 `r_ble_phy_global_next_rxptr_set`. Complete current
 `r_sym_ble_HL6xpyhopnPTnSDqTURd`, mapped to the named memory-manager RX-link
 reset, passes its selected chain to the current pointer setter and literal zero
-to the next pointer setter. The restricted PAC therefore exposes current/next
-RX slot roles while retaining selectors one through three and their element
-contents as positional. This does not yet prove which selector DTM uses at a
-given event, when hardware rotates the pair or when either chain is safe to
-reclaim.
+to the next pointer setter for selectors one and two, then clears current
+pointer flag bit 20 while preserving the published low-twenty-bit head.
+Selector three deliberately skips both setters. No other same-chip caller of
+either setter exists in the reviewed archive.
+
+The normal `update_global_rxlink` insertion classifier reads scheduler-item
+kind byte `+0x4d`:
+kind two selects selector one, and every other admitted kind selects selector
+two. The scan allocator writes kind two and explicitly calls the direct global
+insertion path, proving selector one as the scanner RX chain. Connection,
+sync and other admitted non-scan kinds classify to selector two. DTM writes
+kind five, but its allocator also enables `direct_allocate` and
+`skip_rxbuf_alloc`; the generic precheck then bypasses global insertion, and
+the DTM object has no direct-insertion call. Thus DTM owns a private RX graph,
+not a selector-two binding. Its software publication path is exact: before
+each event, DTM reset copies the private TX head from link-state `+0x6c` into
+compressed word `+0x00` and the private RX tail from `+0x70` into compressed
+word `+0x08`, while scheduler-item `+0x08` already points at that link state.
+The restricted PAC retains positional
+selector names, while the new controller-memory layer exposes only the exact
+scan/non-scan global routing. Hardware current/next rotation, the internal
+engine and latch that consume the DTM link-state pointer, and the point at
+which either chain becomes CPU-owned remain unproven.
 
 ## Bottom-to-top execution path
 
@@ -280,6 +348,18 @@ sequence and register transaction. The current complete body directly uses:
   low-four-bit argument with a value derived from the selected scheduler
   item;
 - a second independent publication/wait when the selected list head changes.
+
+The later common insertion edge supplies the missing source-program order but
+not yet its memory-model contract. It clears item byte `+0x4e`, writes
+`0xffff_ffff` to item status `+0x38`, links the item, publishes its compressed
+head at `0x2010_b000 + 0x10 * list` and only then conditionally writes one to
+`SCHEDULER_CONTROL` at `0x2010_1000` as the kick. No explicit RISC-V fence
+appears in the complete DTM, memory-manager or common-scheduler bodies.
+Consequently an open owner must prove whether the SRAM window is coherent or
+insert a release/cache-clean edge before head/kick and a matching
+acquire/cache-invalidate edge after completion before reading item status or
+RX data. Absence of a vendor fence instruction is not evidence that ordinary
+Rust memory accesses are sufficient.
 
 Before and after request publication the current body waits only while both
 BUSY and START are set. Once that conjunction is false, it publishes result
@@ -340,13 +420,31 @@ low-twenty-bit link image, reconstructs the associated controller-SRAM state
 and invokes the callback stored at `item+0x58`. DTM allocation installs the
 mapped DTM recycle body there.
 
+The scheduler-item status word also has a finite ownership meaning. Before
+hardware insertion, the common transaction clears the software completed-link
+at item `+0x54` and writes `0xffff_ffff` to status `+0x38` as its in-flight
+sentinel. The finished-item picker skips exactly that sentinel and queues any
+other observed status. DTM treats only status zero as successful role work.
+Its callback first returns the scheduler item to the private chain at
+link-state `+0x64`, then performs TX/RX accounting and optional rescheduling.
+
+Normal Test End deletes queued kind-five items, frees the deleted chain,
+synchronously stops the common scheduler, clears active/count state and only
+then frees TX packet/header, RX packet/header, the swap reserve, the private
+scheduler chain, link state and context. Scheduler stop requests shutdown and
+waits for `SCHEDULER_STATE.BUSY` to clear, but that predicate alone does not
+prove an empty software completed queue, absence of an already-entered
+callback or return of the sole item token. The open shutdown therefore needs a
+`Stopping` state, callback reschedule gate, async busy-clear observation and a
+bottom-half join before graph reclamation.
+
 This is the reference software edge at which a finished DTM item is handed
 back to its role. It is the correct boundary for an affine
 `HardwareOwned -> Completed -> CpuOwned` open lifecycle. It still does not by
 itself prove which raw interrupt/status bits produce each hardware-list bit,
-the memory fence required before callback reads or every buffer-return rule.
-The open driver must establish those facts before making the Rust ownership
-transition live.
+or the memory fence required before callback reads. The per-buffer drain,
+append-entry and ordinary re-arm rules are now exact; the swap ownership,
+visibility and real ownership transition remain prerequisites for a live path.
 
 The reviewed register model consequently promotes `0x2010_125c` to
 `SCHEDULER_FINISHED_LIST_STATUS.FINISHED_LIST_MASK` and retains `0x2010_1260`
@@ -386,8 +484,8 @@ time source.
 | SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify and always-awake time-latch fields, exact images and wait predicates are finite. Live cross-owner MMIO and the remaining scheduler commands are absent. |
 | HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | Clock/PHY/BTBB components exist separately; the time-scale transform and pure affine latch phases exist, but no reachable composed epoch, live latch owner or powered rollback exists. |
 | Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; nine DTM scheduler-item words and their typed channel/role/PHY inputs have exact pre-insert transforms. The finished-item/recycle call chain and DTM callback edge are mapped; the open queue, raw status source, fences and abort path are absent. |
-| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A statically sized DTM TX packet slot, its complete allocation-time 24-byte header image, caller-owned bounded payload preparation, compressed extent validation, positional list pairs, the exact eight-word link-state reset and nine-word scheduler-item event regions, software object kinds and the narrow RX result-word projection exist. Packet-engine header consumption, the publication edge and RX reclamation are incomplete. |
-| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns and packet-duration/minimum-interval arithmetic are typed. Exact command roles, allocation rollback, substantial descriptor writes and the positional RX result split are mapped, but tick/remainder conversion, remaining field boundaries and result meaning are incomplete. |
+| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A separate no-heap controller-memory crate reserves every reviewed per-event DTM link-graph allocation with four-byte alignment: link state, scheduler item/context, three role-specific headers and complete TX/RX packet slots. The separate `0x28`-byte DTM environment remains LLL state. Target binding gives a movable CPU owner one non-movable static allocation, validates the complete physical SRAM extent before mutation and installs the bound headers, five private-chain anchors and scheduler-item link. TX/RX re-arm sentinels, list routing and positional result parsing are also exact CPU-owned components. Production placement ownership, the packet-engine latch/consumer, cacheability/fences and affine hardware completion/reclaim states are absent. |
+| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and one-word RX accounting transition are typed. Exact command roles, allocation rollback, descriptor chain anchors, wrapping received-packet count and unconditional handoff to the append decision are mapped. The ordinary re-arm is fail-closed on the swap bit; remaining field meanings, swap ownership, live item/buffer ownership, abort and quiescence are incomplete. |
 | HCI | LE Receiver Test, LE Transmitter Test and LE Test End command/event semantics for only the implemented variants | Bootstrap transport exists; operational DTM opcodes must remain unsupported until the physical owner is live. |
 
 No ULL advertising, scanning, connection, ACL or LLCP implementation is
@@ -431,19 +529,22 @@ The remaining work should proceed in narrow, testable increments:
    before scheduler deadlines become live. Compose the now-exact DTM
    microsecond interval with the recovered environment remainder only after
    that value has a source-owned initialization path.
-3. **Freeze the minimum descriptor.** Eight link-state reset words and nine
-   scheduler-item event words, including their preservation masks, typed
-   channel/PHY images and epoch projection, are now exact. Trace every
+3. **Close the hardware-consumed descriptor.** Eight link-state reset words,
+   nine scheduler-item event words, every allocation footprint, chain anchor,
+   TX/RX header image and RX re-arm transform are now exact. Trace every
    additional word read by hardware for one TX-role event and prove the
    complete field masks for access address, CRC, whitening, power and next
-   link; connect the now-exact TX packet/header image to its packet-engine
-   consumer and publication fence. For RX, connect the now-exact
-   low-24/high-byte result projection to validity, receive-count and
-   reclamation semantics.
-4. **Implement affine static slots.** Introduce no-heap aligned storage whose
-   typestates prevent CPU mutation after publication and prevent reuse before
-   the mapped recycle callback, abort or quiesce. Include device fences and
-   negative address tests.
+   link. Bind the private `item -> link state -> RX tail` path to its internal
+   packet-engine latch and the required publication fence.
+4. **Advance the bound graph into hardware ownership.** The no-heap aligned
+   capacity, non-forgeable physical-SRAM binding, exact allocation-time links
+   and negative extent tests now exist. Add only the remaining
+   `Prepared/HardwareOwned/Completed/Recycled` transitions after the private
+   packet-engine latch and release/acquire rules are proven; prevent mutation
+   after publication and reuse before callback, abort or quiescence. The exact
+   wrapping receive count and append-decision outcome may be consumed only by
+   the completed owner; the swap-reserve observation must remain quarantined
+   until its detached-header ownership is proven.
 5. **Implement the open scheduler model.** Use a fixed-capacity ordered queue,
    explicit `Prepared/Scheduled/Running/Completed/Recycled/Aborted` states and
    a single hardware-head owner. Feed the bounded finished-list mask into the
@@ -475,12 +576,16 @@ now-classified scan-resume path.
   acknowledge/re-arm order and the fence that makes completed descriptors
   CPU-readable;
 - exact controller-time raw width, wrap and physical unit;
-- complete S31 descriptor field boundaries and all hardware-read words;
-- which positional memory-list pair owns DTM TX, RX and returned buffers;
+- complete S31 descriptor field boundaries, all hardware-read words and the
+  internal latch that consumes DTM's private link-state RX pointer;
+- exact hardware current/next rotation for the normal scan/non-scan global
+  lists; DTM deliberately bypasses those selector pairs;
 - exact primary/NRT bits for TX done, RX done, timeout and abort in the DTM
   feature configuration, including their mapping to finished-list indices;
 - meaning of the validated RX result high byte, plus length/CRC/RSSI extraction
-  and buffer return ordering;
+  and the acquire fence preceding the now-mapped buffer-return order;
+- source and ownership semantics of the rare returned-header swap bit
+  `+0x10.0`;
 - bounded abort plus powered quiescence when an event is scheduled or running.
 
 These are the next blockers. HCI packet syntax, Trouble integration and an

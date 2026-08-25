@@ -82,7 +82,6 @@ pub use bluetooth_interrupt::{
 };
 pub use bluetooth_memory_lists::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
-    BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
 };
 pub use bluetooth_scheduler_lock_modify::{

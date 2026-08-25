@@ -5,7 +5,8 @@ use core::mem::ManuallyDrop;
 
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::{
-    BluetoothSharedPhyBorrow, SharedPhyHal, WifiBasebandEnableObservation,
+    BluetoothControllerHal, BluetoothControllerHalBorrow, BluetoothSharedPhyBorrow, SharedPhyHal,
+    WifiBasebandEnableObservation,
 };
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
@@ -101,13 +102,9 @@ pub(crate) struct BluetoothTaskResources {
 
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 impl BluetoothTaskResources {
-    /// Execute only the reviewed sixteen-entry scheduler-table transaction.
-    ///
-    /// The software event/list suffix and every task-readiness claim remain
-    /// outside this bridge.
-    #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
-    pub(crate) fn clear_scheduler_table_low_bits(&mut self) {
-        self.registers.clear_scheduler_table_low_bits();
+    /// Borrow the task-side controller MMIO through its narrow HAL boundary.
+    pub(crate) fn controller_hal(&mut self) -> BluetoothControllerHal<'_> {
+        self.registers.borrow_bluetooth_controller()
     }
 
     /// Execute the complete reviewed controller HAL-init component.
@@ -221,7 +218,10 @@ mod tests {
     fn task_and_interrupt_owners_reunite_into_the_same_radio_root() {
         let resources =
             BluetoothPhysicalResources::from_radio_hardware(RadioHardware::for_validation());
-        let (task, setup) = resources.separate_interrupt_owner();
+        let (mut task, setup) = resources.separate_interrupt_owner();
+        {
+            let _controller = task.controller_hal();
+        }
         let hardware = task.reunite(setup).release();
 
         // Re-entering Wi-Fi proves that every inactive protocol and shared

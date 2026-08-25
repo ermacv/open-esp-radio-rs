@@ -124,8 +124,10 @@ prepare/release ordering, level-3 policies and shared owner staging are typed.
 The pinned external ESP32-S31 PAC now exposes typed `BT_MAC` and
 `BT_MAC_INT1` variants, and the ESP-HAL platform adapter compile-checks them
 against the reviewed policies before binding or disabling the pair on one
-core. Dynamic bit meanings, shared ISR storage, the public live-route
-lifecycle, task wake and HCI readiness are still absent.
+core. The dynamic scheduler groups now have a positional classifier with two
+distinct scheduler-state observations and an RTOS-free sticky coalesced wake
+cell. Baseline/NRT meanings, shared ISR storage, the public live-route
+lifecycle, scheduler-list drain and HCI readiness are still absent.
 
 The powered lifecycle is not ready yet, but its top-level S31 provenance is no
 longer missing. The authenticated local `libble_app.a` and

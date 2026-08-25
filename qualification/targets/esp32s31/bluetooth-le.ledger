@@ -95,25 +95,34 @@ owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothInterruptObs
 owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothPrimaryInterruptObservation
 owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothInterruptOutputPrepared
 owner driver/chips/esp32s31/bluetooth/src/interrupt.rs BluetoothCpuInterruptRoutePolicy
+owner driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs BluetoothPrimaryInterruptClassification
+owner driver/chips/esp32s31/bluetooth/src/interrupt_wake.rs BluetoothSchedulerWakeCell
 owner driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs BoundBluetoothInterruptRoutes
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs observation_preserves_both_opaque_banks
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_observation_preserves_both_masked_banks
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_baseline_masks_are_exact_complete_helper_images
+test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_dynamic_masks_are_exact_complete_helper_images
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_prepare_preserves_clear_enable_strobe_order
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_release_preserves_strobe_then_mask_order
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs interrupt_control_geometry_matches_the_three_reviewed_strobes
 test driver/chips/esp32s31/bluetooth/src/interrupt.rs primary_route_is_source_124_level_three_and_iram
 test driver/chips/esp32s31/bluetooth/src/interrupt.rs nrt_route_is_distinct_source_133_without_iram_request
+test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs bank_zero_trigger_table_preserves_source_precedence_and_pairing
+test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs bank_one_source_three_has_precedence_and_retains_mark_candidate
+test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs reference_gate_clears_only_when_the_first_observation_is_not_busy
+test driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs combined_bank_zero_trigger_marks_and_publishes_the_same_second_read
+test driver/chips/esp32s31/bluetooth/src/interrupt_wake.rs marker_is_sticky_for_both_publication_orders
+test driver/chips/esp32s31/bluetooth/src/interrupt_wake.rs dequeue_closes_the_epoch_and_the_next_publication_wakes_again
 test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs complete_level_three_pair_is_accepted
 test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs either_invalid_priority_rejects_the_pair_before_binding
 test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs quiesce_is_affine_to_the_binding_core
 vendor-anchor verification/vendor/targets/esp32s31/README.md 0x00008000
 depends-on controller-initialization
 gap implementation shared-isr-storage-and-live-route-lifecycle-missing
-gap implementation dynamic-bit-classification-and-shared-clear-bank-dispatch-missing
+gap implementation baseline-nrt-classification-and-shared-clear-bank-dispatch-missing
 gap vendor complete-interrupt-production-trace-missing
 gap hil bluetooth-interrupt-epoch-cell-missing
-gap async callback-multiplicity-rearm-and-controller-wake-contract-missing
+gap async registered-waker-scheduler-drain-and-rearm-contract-missing
 
 capability controller-memory-lists
 title Controller packet-list ownership

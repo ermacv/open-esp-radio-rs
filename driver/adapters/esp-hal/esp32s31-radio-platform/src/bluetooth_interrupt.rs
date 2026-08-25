@@ -2,15 +2,15 @@
 //!
 //! This module deliberately stops below a live interrupt epoch. The caller
 //! must first publish the unique Bluetooth interrupt-register owner in stable
-//! ISR storage, and both handlers still need reviewed event classification
-//! before that caller can exist. Keeping these primitives crate-private makes
-//! the PAC-to-ESP-HAL mapping compile checked without exposing a safe API that
+//! ISR storage; baseline primary and raw NRT handling plus the scheduler-list
+//! drain remain incomplete. Keeping these primitives crate-private makes the
+//! PAC-to-ESP-HAL mapping compile checked without exposing a safe API that
 //! could enable either route prematurely.
 
 #![forbid(unsafe_code)]
 #![allow(
     dead_code,
-    reason = "typed route primitives await the reviewed Bluetooth ISR event classifier"
+    reason = "typed route primitives await shared ISR storage and complete primary/NRT dispatch"
 )]
 
 use esp_hal::{

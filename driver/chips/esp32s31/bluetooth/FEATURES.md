@@ -46,8 +46,8 @@ are recorded in
 | Capability | Status | Current production boundary |
 | --- | --- | --- |
 | Controller interrupt output | PARTIAL | The restricted PAC consumes inactive IRQ ownership, clears and enables the exact primary baseline groups (`0x00008000`, `0x00001300`), publishes the setup strobe at `0x2010_100c`, and reverses the two release strobes before masking those groups. The owner can be staged once for shared primary/NRT ISR storage, but no CPU route is live. |
-| Interrupt observation | PARTIAL | Separate restricted transactions preserve the vendor distinction: primary samples the two masked status banks, NRT samples the two raw banks, and both acknowledge through the shared W1C clear banks. Bits remain opaque, so neither snapshot is an async work item yet. |
-| Interrupt masks and CPU route | PARTIAL | Primary source 124 and NRT source 133 are typed policies on the configured Controller core at level 3; primary requests IRAM residency and NRT does not. The pinned PAC now exposes `BT_MAC`/`BT_MAC_INT1`, and the ESP-HAL adapter compile-checks their numbers and binds/disables the pair on one core without raw casts. Baseline masks are exact. Shared ISR storage, dynamic group meanings and the public live-route lifecycle remain absent. |
+| Interrupt observation | PARTIAL | Separate restricted transactions preserve the vendor distinction: primary samples the two masked status banks, NRT samples the two raw banks, and both acknowledge through the shared W1C clear banks. The primary dynamic scheduler groups are positionally classified without assigning LL names; baseline and NRT bits remain opaque. |
+| Interrupt masks and CPU route | PARTIAL | Primary source 124 and NRT source 133 are typed policies on the configured Controller core at level 3; primary requests IRAM residency and NRT does not. The pinned PAC exposes `BT_MAC`/`BT_MAC_INT1`, and the ESP-HAL adapter compile-checks their numbers and binds/disables the pair on one core without raw casts. Baseline and dynamic masks are exact. Shared ISR storage, baseline/NRT meanings and the public live-route lifecycle remain absent. |
 | Controller timer/scheduler | FAIL-CLOSED | The sixteen-entry scheduler-table prefix is live and the later HAL-init register body is implemented but disconnected. Radio epochs, deadlines, command/status semantics and completion handling are absent. |
 | Controller memory lists | FAIL-CLOSED | Three selectors, two pointer slots and the compressed SRAM address format are reviewed. RX, TX, free and ready meanings, element layouts and lifetimes are unassigned. |
 | In-process HCI handoff | LIVE | An affine split provides a `bt-hci::ExternalController` Host transport and one Controller-worker endpoint. Both bounded directions validate complete packets, apply async backpressure, wake on capacity/data, retain packets across short buffers and leave queues unchanged when waits are cancelled. Packet kinds remain typed; no UART/H4 framing or allocator is used. |
@@ -73,7 +73,7 @@ are recorded in
 
 | Capability | Status | Current production boundary |
 | --- | --- | --- |
-| Executor-neutral controller core | PARTIAL | The affine bootstrap worker has ordered async stop, retains accepted responses across backpressure/cancellation and rejects Host data before LL readiness. No timer, interrupt, Link Layer or radio event input exists. |
+| Executor-neutral controller core | PARTIAL | The affine bootstrap worker has ordered async stop, retains accepted responses across backpressure/cancellation and rejects Host data before LL readiness. A lock-free pending/marked cell now preserves the reference scheduler event's coalescing contract without an RTOS, but no registered waker, scheduler-list drain, timer, Link Layer or radio event input exists. |
 | Executor-neutral HCI transport | LIVE | Packet arrival and capacity are wake edges; cancelled reads, writes and publications cannot consume or publish a packet. The mutex domain is selected by the platform and requires no RTOS. |
 | Embassy controller owner | ABSENT | No composed sole hardware task, ISR wake queue, timer adapter or powered shutdown exists. The portable bootstrap worker deliberately owns none of these platform concerns. |
 | Standalone coexistence hooks | PARTIAL | The source-owned coexistence core and Embassy mailbox accept Bluetooth requests, but are not attached to Bluetooth lifecycle. |
@@ -102,8 +102,9 @@ phone or Trouble is interoperability evidence, not Bluetooth qualification.
 The next on-air transition is blocked by synchronous evidence for:
 
 1. software event/list initialization and the exact static storage layout;
-2. dynamic interrupt meanings, callback multiplicity, typed primary/NRT CPU
-   routing and bounded acknowledgement/re-arm without lost work;
+2. baseline/NRT interrupt meanings, shared same-core ISR ownership, typed
+   primary/NRT routing and bounded acknowledgement/wake/re-arm without lost
+   work;
 3. RX/TX/free/ready memory-list roles and element ownership;
 4. radio scheduler command, timer, doorbell and completion ordering;
 5. 1M PHY channel, whitening, CRC, access-address and TX/RX result setup;

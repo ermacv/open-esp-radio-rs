@@ -13,6 +13,15 @@ pub const BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK: u32 = 0x0000_8000;
 /// Second-bank sources enabled by the complete primary BTDM IRQ setup helper.
 pub const BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK: u32 = 0x0000_1300;
 
+/// First-bank sources controlled by the complete dynamic scheduler helper.
+///
+/// The restricted PAC does not expose an enable transition yet: live shared
+/// ISR storage and the scheduler-list consumer remain lifecycle prerequisites.
+pub const BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK: u32 = 0x1820_0000;
+
+/// Second-bank source controlled by the complete dynamic scheduler helper.
+pub const BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK: u32 = 0x0000_0008;
+
 trait BluetoothInterruptControl {
     fn clear_primary_baseline_bank_0(&mut self);
     fn clear_primary_baseline_bank_1(&mut self);
@@ -306,6 +315,7 @@ mod tests {
 
     use super::{
         BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
+        BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
         BluetoothInterruptControl, BluetoothInterruptObservation, BluetoothInterruptSetup,
         BluetoothPrimaryInterruptObservation, execute_primary_prepare, execute_primary_release,
     };
@@ -396,6 +406,15 @@ mod tests {
             BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
             (1 << 8) | (1 << 9) | (1 << 12)
         );
+    }
+
+    #[test]
+    fn primary_dynamic_masks_are_exact_complete_helper_images() {
+        assert_eq!(
+            BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK,
+            (1 << 21) | (1 << 27) | (1 << 28)
+        );
+        assert_eq!(BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK, 1 << 3);
     }
 
     #[test]

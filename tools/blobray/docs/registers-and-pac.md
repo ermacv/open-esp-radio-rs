@@ -17,11 +17,46 @@ exposure.
 
 New human conclusions belong in sparse `[reviewed-knowledge]` packs. A stable
 physical subject such as `mmio:cpu:0x20103064/32` can independently acquire a
-`register-name` or `hardware-write-semantics` assertion. Observed software
-reads/writes remain generated evidence; W1C, self-clear and trigger behavior
-remain absent or explicitly unknown until reviewed hardware evidence proves
-them. Suspected incorrect vendor access is a separate vendor-bug record and
-must not redefine the hardware semantic.
+`register-name` or `hardware-write-semantics` assertion. If that physical
+register is absent from the reusable model, exactly one explicit
+`register-declaration` assertion may authorize creating it. Its string value
+names an existing, concrete, non-array peripheral/region; a separate
+`register-name` for the same subject and effective applicability supplies the
+SVD identity:
+
+```toml
+[[assertions]]
+id = "radio.event-status.declaration"
+subject = "mmio:cpu:0x20103064/32"
+kind = "register-declaration"
+value = "RADIO"
+[[assertions.evidence]]
+source = "REVIEWED_REGISTER_HEADER"
+locator = "RADIO event-status offset"
+
+[[assertions]]
+id = "radio.event-status.name"
+subject = "mmio:cpu:0x20103064/32"
+kind = "register-name"
+value = "EVENT_STATUS"
+[[assertions.evidence]]
+source = "REVIEWED_REGISTER_HEADER"
+locator = "RADIO event-status name"
+```
+
+The declaration fails closed when its address space differs, the width or
+alignment is invalid, the extent falls outside a published register address
+block, the region is absent/array/derived, or the new extent aliases existing
+geometry. Its effective assertion (pack, classification, applicability and
+evidence) remains attached to the in-memory effective model. If a region has
+no address blocks, the explicit reviewed region assertion is the ownership
+boundary and the offset must still fit the SVD representation.
+
+Observed software reads/writes remain generated evidence; they neither create
+model geometry nor infer read/write access. W1C, self-clear and trigger
+behavior remain absent or explicitly unknown until a separate reviewed
+hardware-semantic assertion proves them. Suspected incorrect vendor access is
+a separate vendor-bug record and must not redefine the hardware semantic.
 
 Sparse packs are validated, inventoried and applied over the reusable base
 model before inspection, validation, SVD/PAC publication and cache-key

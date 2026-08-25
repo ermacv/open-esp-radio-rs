@@ -376,4 +376,146 @@ mod tests {
                 .contains("absent from MMIO discovery facts")
         );
     }
+
+    #[test]
+    fn generated_observations_and_sparse_declaration_merge_without_inferred_hardware_semantics() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-register-declaration-integration-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let model = directory.join("device.toml");
+        let fragment = directory.join("radio.toml");
+        let facts = directory.join("mmio.json");
+        let reviewed = directory.join("reviewed.toml");
+        std::fs::write(
+            &model,
+            r#"schema = 2
+address-space = "cpu"
+fragments = ["radio.toml"]
+
+[device]
+name = "fixture"
+version = "1"
+description = "fixture"
+address-unit-bits = 8
+width = 32
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &fragment,
+            r#"schema = 2
+
+[[peripherals]]
+name = "RADIO"
+baseAddress = 0x1000
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &facts,
+            r#"{
+  "schema_version": 5,
+  "command": "mmio discover",
+  "analysis_mode": "best-effort",
+  "access_count_mode": "maximum-per-path",
+  "completeness_claim": false,
+  "code_selection": {"symbols":"all","symbol_prefix":""},
+  "ranges": [{"name":"radio","start":"0x1000","end_exclusive":"0x2000"}],
+  "artifacts": [],
+  "registers": [{
+    "address":"0x1010",
+    "width":32,
+    "name":"UNMAPPED",
+    "reads":1,
+    "writes":2,
+    "read_functions":["vendor:read_status"],
+    "write_functions":["vendor:ack_status"],
+    "read_sites":[{"function":"vendor:read_status","pc":"0x00000100"}],
+    "write_sites":[{"function":"vendor:ack_status","pc":"0x00000104"}],
+    "write_patterns":[{
+      "occurrences":2,
+      "modified_mask":"0x1",
+      "candidate_bit_ranges":"0",
+      "preserved_mask":"0xfffffffe",
+      "inverted_mask":"0x0",
+      "forced_zero_mask":"0x0",
+      "forced_one_mask":"0x1",
+      "read_derived_mask":"0x0",
+      "dynamic_mask":"0x0",
+      "functions":["vendor:ack_status"]
+    }]
+  }],
+  "diagnostics": []
+}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &reviewed,
+            r#"schema = 1
+id = "fixture.register-review"
+
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+
+[applies-to]
+chips = ["fixture-chip"]
+
+[[assertions]]
+id = "fixture.status.declaration"
+subject = "mmio:cpu:0x1010/32"
+kind = "register-declaration"
+value = "RADIO"
+[[assertions.evidence]]
+source = "FIXTURE"
+locator = "region-and-address"
+
+[[assertions]]
+id = "fixture.status.name"
+subject = "mmio:cpu:0x1010/32"
+kind = "register-name"
+value = "EVENT_STATUS"
+[[assertions.evidence]]
+source = "FIXTURE"
+locator = "name"
+"#,
+        )
+        .unwrap();
+        let paths = RegisterWorkspacePaths {
+            facts,
+            model,
+            owned_ranges: vec!["radio".to_owned()],
+            non_operational_functions: Vec::new(),
+            review_output: None,
+            review_ir_reports: Vec::new(),
+            svd_output: None,
+            pac_raw: None,
+            bindings: None,
+            api_pack: None,
+            api_output: None,
+            lint_pack: None,
+            evidence_catalogs: Vec::new(),
+            reviewed_knowledge: vec![reviewed],
+        };
+
+        let workspace = ProjectRegisterWorkspace::load(&paths).unwrap();
+        let summary = workspace.summary().unwrap();
+        let (svd, export) = workspace.render_svd().unwrap();
+        let declaration = &workspace.model.reviewed_register_declarations()[0];
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(summary.observed, 1);
+        assert_eq!(summary.reviewed, 1);
+        assert_eq!(summary.unreviewed, 0);
+        assert_eq!(summary.manual, 0);
+        assert_eq!(export.registers, 1);
+        assert!(svd.contains("<name>EVENT_STATUS</name>"));
+        assert!(!svd.contains("<access>"));
+        assert!(!svd.contains("modifiedWriteValues"));
+        assert_eq!(declaration.declaration.id, "fixture.status.declaration");
+        assert_eq!(declaration.declaration.applies_to.chips, ["fixture-chip"]);
+    }
 }

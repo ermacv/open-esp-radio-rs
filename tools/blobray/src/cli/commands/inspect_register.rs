@@ -82,6 +82,7 @@ fn recording_guide(
             .map(|path| path.display().to_string())
             .collect(),
         supported_register_facts: vec![
+            "register-declaration",
             "register-name",
             "register-description",
             "register-access",

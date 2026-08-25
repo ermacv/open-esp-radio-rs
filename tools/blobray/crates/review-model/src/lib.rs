@@ -689,6 +689,51 @@ locator = "ieee802154_ll_clear_events"
     }
 
     #[test]
+    fn register_declaration_keeps_authorization_provenance_and_applicability() {
+        let pack = ReviewPack::from_toml(
+            r#"
+schema = 1
+id = "esp32s31-register-declaration"
+
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+
+[applies-to]
+chips = ["esp32s31"]
+
+[[assertions]]
+id = "ieee802154.new-status.declaration"
+subject = "mmio:cpu:0x2010312c/32"
+kind = "register-declaration"
+value = "IEEE802154_MAC"
+[assertions.applies-to]
+chip-revisions = ["rev0"]
+[[assertions.evidence]]
+source = "ESP_IDF_IEEE802154_REG"
+locator = "status register offset"
+"#,
+        )
+        .unwrap();
+
+        let effective = ReviewKnowledge::merge([pack]).unwrap();
+        let declaration = &effective.assertions()["ieee802154.new-status.declaration"];
+        assert_eq!(declaration.kind, "register-declaration");
+        assert_eq!(
+            declaration.value,
+            AssertionValue::String("IEEE802154_MAC".to_owned())
+        );
+        assert_eq!(declaration.applies_to.chips, ["esp32s31"]);
+        assert_eq!(declaration.applies_to.chip_revisions, ["rev0"]);
+        assert_eq!(
+            declaration.classification.provenance,
+            FactProvenance::Reviewed
+        );
+        assert_eq!(declaration.evidence[0].source, "ESP_IDF_IEEE802154_REG");
+    }
+
+    #[test]
     fn overlapping_semantic_assertions_fail_closed() {
         let first = ReviewPack::from_toml(BASE).unwrap();
         let second = ReviewPack::from_toml(

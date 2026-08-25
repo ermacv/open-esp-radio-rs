@@ -92,6 +92,14 @@ preserves cross-archive call identity; its lazy profiles expose controller
 lifecycle, HCI transport and NPL-layout slices without treating linked IR as
 hardware truth.
 
+Research protocol tags now preserve that ownership boundary. BLE controller,
+HCI, base-stack and standalone-runtime scopes are `ble`-only; the
+`r_btdm_task_*` lifecycle is a separate shared Bluetooth/BLE scope, and the
+BTBB coexistence client is named neutrally. The authenticated inputs contain
+no linked `libbredr_app` controller, so Blobray records
+`bredr-public-controller` as a required missing Bluetooth Classic surface
+instead of presenting BLE evidence as BR/EDR coverage.
+
 The cold ownership slice is lossless: one neutral radio root can enter either
 the exclusive Wi-Fi or Bluetooth route and return before power-up. The public
 Bluetooth init path now consumes that cold owner through clock/reset and the

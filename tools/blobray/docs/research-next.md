@@ -31,11 +31,11 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 10. It separates the complete backlog from the
+The machine report uses schema 13. It separates the complete backlog from the
 bounded recommendation:
 
 - `inventory.findings` contains every typed finding exactly once;
-- `inventory.actions` contains every coalesced inspection action and refers to
+- `inventory.actions` contains every coalesced next action and refers to
   its findings only through `finding_ids`;
 - `inventory.prerequisites` contains every deduplicated destination or anchor
   action without a selection-specific rank;
@@ -64,7 +64,7 @@ For an exact register lookup, interpret the states in this order:
 - `not-present`: no typed attribution supports a stronger conclusion. A
   base-model identity or an unknown arbitrary ID is not resolution proof.
 
-An action is one typed `inspect_action` and may coalesce several findings
+An action is one typed `next_action` and may coalesce several findings
 without duplicating them. A finding retains its typed `subject`, typed
 executable `consumers`, exact evidence sites/channels, causal inspection
 functions, impacted functions, context links, required knowledge,
@@ -100,11 +100,13 @@ available findings remain usable. There is deliberately no live evaluation
 fallback: rerun `project analyze` to regenerate the context before comparing a
 complete cross-domain ranking.
 
-Selection uses explicit lanes: prerequisites first, then ready actions, then
-inspection-only actions, with blocked actions last for machine/detail audit.
-The requested ranking strategy is applied inside each lane. Prerequisites
-aggregate downstream function/root sets without summing duplicate action
-scores.
+Selection uses explicit prerequisite and action lanes. Each lane retains
+its requested ranking; the bounded result interleaves them as
+`prerequisite, action` so setup work cannot hide concrete inspection targets.
+Ready actions lead inspection-only actions, with blocked actions last for
+machine/detail audit. Missing required public symbol families lead the
+prerequisite lane as typed coverage-blocked findings. Prerequisites aggregate
+downstream function/root sets without summing duplicate action scores.
 
 Each action has a compact
 `score_explanation`:
@@ -127,17 +129,21 @@ Scores are stable prioritization signals, not elapsed-time estimates.
 selects scopes by their mandatory, explicit `protocols` membership in
 `vendor-project.toml`; scope IDs and symbols are never interpreted as protocol
 names. Canonical names are `wifi`, `bluetooth`, `ble`, `ieee802154`, `coex`,
-and `shared`. The CLI also accepts `bt` for `bluetooth`, plus `802.15.4` and
+and `shared`. `bluetooth` denotes BR/EDR or an explicitly shared BTDM scope;
+BLE-only evidence uses `ble` and is never promoted to Classic coverage. The
+CLI also accepts `bt` for `bluetooth`, plus `802.15.4` and
 `802154` for `ieee802154`, and emits the canonical name in JSON. A shared PHY
 or coexistence scope can carry several protocol tags. Unknown names and an
 empty exact scope/protocol intersection fail with the configured alternatives.
 
 `--limit N` bounds prerequisites and research actions together. `--budget
-UNITS` likewise uses one cumulative cost across both. Selection exhausts the
-ranked prerequisite lane before ready and inspection lanes, skips steps that do
-not fit the remaining budget, and never silently reorders them. A budget too
-small for every eligible step produces an empty report with the minimum
-required cost in `selection.diagnostic`. Complete inventory lengths,
+UNITS` likewise uses one cumulative cost across both. Selection alternates the
+ranked prerequisite and action lanes, skips steps that do not fit the
+remaining budget, and never reorders either lane internally. `--limit 1`
+retains the highest-priority prerequisite; a limit of at least two exposes an
+next action whenever both lanes are non-empty and budget permits. A
+budget too small for every eligible step produces an empty report with the
+minimum required cost in `selection.diagnostic`. Complete inventory lengths,
 strategy-eligible counts and ordered typed step references make the bounded
 selection auditable without dropping hidden findings.
 
@@ -162,7 +168,7 @@ inventory is unchanged. `not-present` means only that the exact ID is absent
 from the current analyzed inputs selected by `--scope`/`--protocol`; it is not
 proof that a review was correct or that research is complete.
 
-Every returned `inspect_action` includes the resolved `--project` path, exact
+Every returned `next_action` includes the resolved `--project` path, exact
 argument vector, absolute working directory and required project context.
 Finding-level `revalidation_actions` describe what to rerun after human review;
 `requery_action` addresses the exact finding without parsing another command.
@@ -176,30 +182,29 @@ table so it remains readable in an ordinary terminal. The top action then
 lists up to eight coalesced findings separately, including kind, summary,
 knowledge gap, typed consumer resolution, causal inspection functions, linked
 evidence sites/channels and required evidence. The compact view states exactly
-how many findings remain; `--details` expands them. When prerequisites consume
-the entire shared limit, the default view still discloses complete and eligible
-action counts and points to `--strategy frontier` or a larger limit. JSON and
-`--output` always retain the complete inventory, even when no action is
-selected.
+how many findings remain; `--details` expands them. When one lane has no
+budget-fitting step, the default view still discloses complete and eligible
+counts for both lanes. JSON and `--output` always retain the complete inventory,
+even when no action is selected. Required surface findings remain addressable
+through `--finding`, including their current source/profile state and exact
+re-query action.
 
 ## ESP32-S31 measurement
 
 Measured on 2026-08-25 against the repository's current ESP32-S31 generated
-review inputs. All 29 configured scopes produced 1,918 findings, coalesced into
-485 distinct inspection actions and 161 deduplicated prerequisite actions:
+review inputs. All 30 configured scopes produced 1,923 findings, coalesced into
+490 distinct next actions and 163 deduplicated prerequisite actions.
+Two findings are required missing public surfaces: BR/EDR and IEEE 802.15.4.
 
 | Strategy | Eligible prerequisites/actions | Returned prerequisites/actions at limit 20 | Cost units | Leading step |
 | --- | ---: | ---: | ---: | --- |
-| `impact` | 161 / 485 | 20 / 0 | 60 | create interface anchor, downstream benefit 375 |
-| `quick-wins` | 161 / 485 | 20 / 0 | 60 | same cost-3 interface-anchor lane |
-| `frontier` | 1 / 13 | 1 / 13 | 60 | interface anchor, then the nondominated action frontier |
+| `impact` | 163 / 490 | 10 / 10 | 66 | acquire required BR/EDR surface |
+| `quick-wins` | 163 / 490 | 10 / 10 | 66 | acquire required BR/EDR surface |
+| `frontier` | 3 / 16 | 3 / 16 | 72 | acquire required BR/EDR surface |
 
-The measured all-scope baseline report is 6,213,213 bytes as pretty generated JSON and
-4,318,279 bytes in compact form. The compact catalogs account for 3,829,455
-bytes of findings, 341,630 bytes of actions and 144,935 bytes of prerequisites.
-An impact run with `--limit 20` measured 10.68 seconds and 223,100 KiB peak RSS;
-a streaming `--check` measured 11.45 seconds and 223,712 KiB. Measurements
-include loading and ranking the real project, not only JSON serialization.
+The measured all-scope baseline report is 7,616,660 bytes as pretty JSON and
+5,052,483 bytes in compact form. The compact catalogs account for 4,511,170
+bytes of findings, 392,612 bytes of actions and 146,255 bytes of prerequisites.
 
 Reproduce the measurements with `--format json` and inspect
 `inventory.sha256`, the three inventory catalog lengths,

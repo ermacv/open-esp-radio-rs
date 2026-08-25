@@ -22,7 +22,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 12;
+pub(crate) const RESEARCH_SCHEMA: u32 = 13;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -185,6 +185,26 @@ pub(crate) enum ResearchSubject {
         selector: Option<String>,
         call_sites: Vec<u32>,
     },
+    PublicSymbolFamily {
+        surface: String,
+        protocols: Vec<String>,
+        source: String,
+        symbol_prefix: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        profile: Option<String>,
+        state: ResearchAnalysisSurfaceState,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ResearchAnalysisSurfaceState {
+    MissingVendorArtifact,
+    MissingSymbolInventory,
+    StaleSymbolFamily,
+    MissingProfileDefinition,
+    MissingProfileOutput,
+    InvalidProfileOutput,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -226,6 +246,7 @@ pub(crate) struct ResearchActionabilitySummary {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ResearchPrerequisiteKind {
+    AcquireRequiredAnalysisSurface,
     ConfigureInterfaceDestination,
     CreateInterfaceAnchor,
     SelectReviewedKnowledgeDestination,
@@ -276,6 +297,24 @@ pub(crate) enum ResearchConsumer {
         width: u8,
         #[serde(skip_serializing_if = "Option::is_none")]
         diagnostic: Option<String>,
+    },
+    RequiredAnalysisSurface {
+        state: ResearchAnalysisSurfaceState,
+        source: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        profile: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        output: Option<PathBuf>,
+        project_manifest: PathBuf,
+        working_directory: PathBuf,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target_spec_override: Option<PathBuf>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        run_spec_override: Option<PathBuf>,
+        svd_overrides: Vec<PathBuf>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        run_spec: Option<PathBuf>,
+        diagnostic: String,
     },
 }
 
@@ -362,7 +401,7 @@ pub(crate) struct ResearchAction {
     pub(crate) publication_scopes: Vec<String>,
     pub(crate) estimated_cost: String,
     pub(crate) confidence: String,
-    pub(crate) inspect_action: ExecutableAction,
+    pub(crate) next_action: ExecutableAction,
     pub(crate) actionability: ResearchActionabilitySummary,
     pub(crate) prerequisite_ids: Vec<String>,
     pub(crate) findings: Vec<ResearchFinding>,
@@ -375,7 +414,7 @@ pub(crate) struct ResearchActionCatalogEntry {
     pub(crate) id: String,
     pub(crate) kinds: Vec<String>,
     pub(crate) score: u64,
-    pub(crate) inspect_action: ExecutableAction,
+    pub(crate) next_action: ExecutableAction,
     pub(crate) estimated_cost: String,
     pub(crate) confidence: String,
     pub(crate) score_breakdown: ResearchScoreBreakdown,
@@ -556,6 +595,9 @@ pub(crate) fn next(
             &mut candidates,
         )?;
     }
+    if options.scope.is_none() {
+        add_required_analysis_surface_findings(session, selected_protocol, &mut candidates)?;
+    }
     let exact_resolution = if let Some(paths) = session.project.registers.as_ref() {
         // These adjacent producers share the heavyweight MMIO facts, but the
         // workspace must be dropped before interface ranking and rendering.
@@ -625,7 +667,7 @@ pub(crate) fn next(
                 ],
                 ProjectContextRequirement::Analysis,
             )?;
-            let inspect_action = context.follow_up_action(
+            let next_action = context.follow_up_action(
                 next_action_tokens(&candidate),
                 ProjectContextRequirement::Analysis,
             )?;
@@ -635,7 +677,7 @@ pub(crate) fn next(
                 candidate,
                 &capabilities,
                 &surfaces,
-                inspect_action,
+                next_action,
                 revalidation_action,
                 requery_action,
             ))
@@ -727,7 +769,7 @@ fn build_inventory(
             id: action.id,
             kinds: action.kinds,
             score: action.score,
-            inspect_action: action.inspect_action,
+            next_action: action.next_action,
             estimated_cost: action.estimated_cost,
             confidence: action.confidence,
             score_breakdown: action.score_breakdown,
@@ -823,6 +865,13 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
             report.schema_version
         )));
     }
+    if report.protocol.as_deref().is_some_and(|protocol| {
+        crate::project::canonical_review_protocol(protocol) != Some(protocol)
+    }) {
+        return Err(crate::Error::invalid(
+            "research report protocol must be a canonical supported protocol",
+        ));
+    }
     if report.completion_claim
         || report.finding_query.completion_claim
         || report.finding_query.historical_finding_claim
@@ -898,12 +947,87 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
         .iter()
         .map(|prerequisite| prerequisite.id.as_str())
         .collect::<BTreeSet<_>>();
+    let prerequisites_by_id = inventory
+        .prerequisites
+        .iter()
+        .map(|prerequisite| (prerequisite.id.as_str(), prerequisite))
+        .collect::<BTreeMap<_, _>>();
+    for prerequisite in &inventory.prerequisites {
+        validate_sorted_unique_ids(
+            "prerequisite finding reference",
+            prerequisite
+                .satisfies_finding_ids
+                .iter()
+                .map(String::as_str),
+        )?;
+        validate_sorted_unique_ids(
+            "prerequisite action reference",
+            prerequisite.blocked_action_ids.iter().map(String::as_str),
+        )?;
+    }
+    for finding in &inventory.findings {
+        validate_executable_action("finding requery", &finding.requery_action)?;
+        for action in &finding.revalidation_actions {
+            validate_executable_action("finding revalidation", action)?;
+        }
+        validate_finding_follow_up_actions(finding)?;
+        validate_sorted_unique_ids(
+            "finding prerequisite reference",
+            finding.prerequisite_ids.iter().map(String::as_str),
+        )?;
+        let expected_seeds =
+            finding_prerequisites(&finding.id, &finding.subject, &finding.consumers);
+        let expected_ids = expected_seeds
+            .iter()
+            .map(|seed| seed.id.clone())
+            .collect::<Vec<_>>();
+        if finding.prerequisite_ids != expected_ids {
+            return Err(crate::Error::invalid(format!(
+                "research finding {:?} prerequisite set does not match its typed consumers",
+                finding.id
+            )));
+        }
+        for seed in &expected_seeds {
+            let Some(prerequisite) = prerequisites_by_id.get(seed.id.as_str()) else {
+                return Err(crate::Error::invalid(format!(
+                    "research finding {:?} references missing prerequisite {:?}",
+                    finding.id, seed.id
+                )));
+            };
+            validate_prerequisite_seed(finding, prerequisite, seed)?;
+            if prerequisite
+                .satisfies_finding_ids
+                .binary_search(&finding.id)
+                .is_err()
+            {
+                return Err(crate::Error::invalid(format!(
+                    "research finding {:?} and prerequisite {:?} are not reciprocal",
+                    finding.id, seed.id
+                )));
+            }
+        }
+        validate_analysis_surface_finding(finding, report.protocol.as_deref())?;
+    }
     let mut referenced_findings = BTreeSet::new();
+    let mut action_by_finding = BTreeMap::new();
     for action in &inventory.actions {
+        validate_executable_action("catalog next", &action.next_action)?;
+        if action.id != stable_id("action", &action.next_action.canonical_execution_key()) {
+            return Err(crate::Error::invalid(format!(
+                "research action {:?} does not match its canonical executable identity",
+                action.id
+            )));
+        }
         validate_sorted_unique_ids(
             "action finding reference",
             action.finding_ids.iter().map(String::as_str),
         )?;
+        if action.finding_ids.is_empty() {
+            return Err(crate::Error::invalid(format!(
+                "research action {:?} is not owned by any finding",
+                action.id
+            )));
+        }
         for finding in &action.finding_ids {
             if !finding_ids.contains(finding.as_str()) {
                 return Err(crate::Error::invalid(format!(
@@ -916,6 +1040,14 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
                     "research finding {finding:?} belongs to more than one action"
                 )));
             }
+            let finding_entry = inventory
+                .findings
+                .binary_search_by(|entry| entry.id.cmp(finding))
+                .ok()
+                .map(|index| &inventory.findings[index])
+                .expect("finding membership checked above");
+            validate_analysis_surface_next_action(finding_entry, &action.next_action)?;
+            action_by_finding.insert(finding.as_str(), action.id.as_str());
         }
     }
     if referenced_findings != finding_ids {
@@ -924,6 +1056,12 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
         ));
     }
     for prerequisite in &inventory.prerequisites {
+        if prerequisite.satisfies_finding_ids.is_empty() {
+            return Err(crate::Error::invalid(format!(
+                "research prerequisite {:?} is not owned by any finding",
+                prerequisite.id
+            )));
+        }
         for finding in &prerequisite.satisfies_finding_ids {
             if !finding_ids.contains(finding.as_str()) {
                 return Err(crate::Error::invalid(format!(
@@ -931,14 +1069,40 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
                     prerequisite.id
                 )));
             }
-        }
-        for action in &prerequisite.blocked_action_ids {
-            if !action_ids.contains(action.as_str()) {
+            let finding_entry = inventory
+                .findings
+                .binary_search_by(|entry| entry.id.cmp(finding))
+                .ok()
+                .map(|index| &inventory.findings[index])
+                .expect("finding membership checked above");
+            if finding_entry
+                .prerequisite_ids
+                .binary_search(&prerequisite.id)
+                .is_err()
+            {
                 return Err(crate::Error::invalid(format!(
-                    "research prerequisite {:?} references missing action {action:?}",
+                    "research prerequisite {:?} and finding {finding:?} are not reciprocal",
                     prerequisite.id
                 )));
             }
+        }
+        let expected_blocked_actions = prerequisite
+            .satisfies_finding_ids
+            .iter()
+            .map(|finding| {
+                action_by_finding
+                    .get(finding.as_str())
+                    .expect("every finding has one action owner")
+                    .to_string()
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if prerequisite.blocked_action_ids != expected_blocked_actions {
+            return Err(crate::Error::invalid(format!(
+                "research prerequisite {:?} blocked action set does not match its finding owners",
+                prerequisite.id
+            )));
         }
     }
     if report.selection.steps.len() > report.selection.limit {
@@ -976,6 +1140,355 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
         return Err(crate::Error::invalid(format!(
             "research inventory digest mismatch: stored {}, computed {expected_sha256}",
             inventory.sha256
+        )));
+    }
+    Ok(())
+}
+
+fn validate_prerequisite_seed(
+    finding: &ResearchFinding,
+    prerequisite: &ResearchPrerequisiteCatalogEntry,
+    seed: &PrerequisiteSeed,
+) -> Result<()> {
+    if prerequisite.id != seed.id
+        || prerequisite.kind != seed.kind
+        || prerequisite.path != seed.path
+        || prerequisite.subject != seed.subject
+        || prerequisite.manual_action != seed.manual_action
+        || prerequisite.estimated_cost_units != seed.estimated_cost_units
+        || (seed.kind == ResearchPrerequisiteKind::AcquireRequiredAnalysisSurface
+            && prerequisite.reason != seed.reason)
+    {
+        return Err(crate::Error::invalid(format!(
+            "research prerequisite {:?} does not match the typed consumer of finding {:?}",
+            prerequisite.id, finding.id
+        )));
+    }
+    Ok(())
+}
+
+fn validate_executable_action(label: &str, action: &ExecutableAction) -> Result<()> {
+    ExecutableAction::new(
+        action.argv.clone(),
+        action.working_directory.clone(),
+        action.context,
+    )
+    .map(|_| ())
+    .map_err(|error| crate::Error::invalid(format!("invalid {label} action: {error}")))
+}
+
+fn valid_analysis_context_suffix(argv: &[String]) -> bool {
+    fn consume(argv: &[String], index: &mut usize, option: &str) -> bool {
+        if argv.get(*index).map(String::as_str) != Some(option) {
+            return false;
+        }
+        let Some(value) = argv.get(*index + 1) else {
+            return false;
+        };
+        if value.starts_with('-') {
+            return false;
+        }
+        *index += 2;
+        true
+    }
+
+    let mut index = 0;
+    if !consume(argv, &mut index, "--project") {
+        return false;
+    }
+    if argv.get(index).map(String::as_str) == Some("--target-spec")
+        && !consume(argv, &mut index, "--target-spec")
+    {
+        return false;
+    }
+    if argv.get(index).map(String::as_str) == Some("--run-spec")
+        && !consume(argv, &mut index, "--run-spec")
+    {
+        return false;
+    }
+    while argv.get(index).map(String::as_str) == Some("--svd") {
+        if !consume(argv, &mut index, "--svd") {
+            return false;
+        }
+    }
+    index == argv.len()
+}
+
+fn validate_finding_follow_up_actions(finding: &ResearchFinding) -> Result<()> {
+    if finding.revalidation_actions.len() != 1 {
+        return Err(crate::Error::invalid(format!(
+            "research finding {:?} must have exactly one revalidation action",
+            finding.id
+        )));
+    }
+    let requery = &finding.requery_action;
+    let revalidation = &finding.revalidation_actions[0];
+    let requery_prefix = [
+        "blobray",
+        "project",
+        "research",
+        "next",
+        "--finding",
+        finding.id.as_str(),
+    ];
+    let revalidation_prefix = ["blobray", "project", "analyze"];
+    let Some(requery_suffix) = requery.argv.get(requery_prefix.len()..) else {
+        return Err(crate::Error::invalid(format!(
+            "research finding {:?} has an invalid exact requery action",
+            finding.id
+        )));
+    };
+    let Some(revalidation_suffix) = revalidation.argv.get(revalidation_prefix.len()..) else {
+        return Err(crate::Error::invalid(format!(
+            "research finding {:?} has an invalid revalidation action",
+            finding.id
+        )));
+    };
+    if requery.argv[..requery_prefix.len()] != requery_prefix
+        || revalidation.argv[..revalidation_prefix.len()] != revalidation_prefix
+        || requery_suffix != revalidation_suffix
+        || !valid_analysis_context_suffix(requery_suffix)
+        || requery.context != ProjectContextRequirement::Analysis
+        || revalidation.context != ProjectContextRequirement::Analysis
+        || requery.working_directory != revalidation.working_directory
+    {
+        return Err(crate::Error::invalid(format!(
+            "research finding {:?} follow-up actions do not share one exact analysis context",
+            finding.id
+        )));
+    }
+    Ok(())
+}
+
+fn validate_analysis_surface_finding(
+    finding: &ResearchFinding,
+    selected_protocol: Option<&str>,
+) -> Result<()> {
+    let subject = match &finding.subject {
+        ResearchSubject::PublicSymbolFamily {
+            surface,
+            protocols,
+            source,
+            symbol_prefix,
+            profile,
+            state,
+        } => Some((surface, protocols, source, symbol_prefix, profile, state)),
+        _ => None,
+    };
+    let required_consumers = finding
+        .consumers
+        .iter()
+        .filter_map(|consumer| match consumer {
+            ResearchConsumer::RequiredAnalysisSurface {
+                source,
+                profile,
+                state,
+                output,
+                project_manifest,
+                working_directory,
+                diagnostic,
+                ..
+            } => Some((
+                source,
+                profile,
+                state,
+                output,
+                project_manifest,
+                working_directory,
+                diagnostic,
+            )),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let is_surface =
+        finding.kind == "analysis-surface" || subject.is_some() || !required_consumers.is_empty();
+    if !is_surface {
+        return Ok(());
+    }
+    let Some((surface, protocols, subject_source, symbol_prefix, subject_profile, subject_state)) =
+        subject
+    else {
+        return Err(crate::Error::invalid(format!(
+            "research analysis-surface finding {:?} has no public-symbol-family subject",
+            finding.id
+        )));
+    };
+    if finding.kind != "analysis-surface"
+        || finding.consumers.len() != 1
+        || required_consumers.len() != 1
+    {
+        return Err(crate::Error::invalid(format!(
+            "research analysis-surface finding {:?} has an inconsistent kind, actionability, or consumer set",
+            finding.id
+        )));
+    }
+    let (
+        consumer_source,
+        consumer_profile,
+        consumer_state,
+        output,
+        project_manifest,
+        working_directory,
+        diagnostic,
+    ) = required_consumers[0];
+    if subject_source != consumer_source
+        || subject_profile != consumer_profile
+        || subject_state != consumer_state
+    {
+        return Err(crate::Error::invalid(format!(
+            "research analysis-surface finding {:?} has inconsistent subject and consumer state",
+            finding.id
+        )));
+    }
+    let profile = subject_profile.as_deref();
+    let protocols_are_valid = !protocols.is_empty()
+        && protocols.iter().collect::<BTreeSet<_>>().len() == protocols.len()
+        && protocols.iter().all(|protocol| {
+            crate::project::canonical_review_protocol(protocol)
+                .is_some_and(|canonical| canonical == protocol)
+        });
+    if surface.is_empty()
+        || subject_source.is_empty()
+        || symbol_prefix.is_empty()
+        || profile.is_none_or(str::is_empty)
+        || project_manifest.as_os_str().is_empty()
+        || !working_directory.is_absolute()
+        || working_directory.to_str().is_none()
+        || diagnostic.is_empty()
+        || !protocols_are_valid
+        || selected_protocol.is_some_and(|protocol| !protocols.iter().any(|item| item == protocol))
+    {
+        return Err(crate::Error::invalid(format!(
+            "research analysis-surface finding {:?} has an invalid typed subject or consumer payload",
+            finding.id
+        )));
+    }
+    if finding.id != stable_id("analysis-surface", surface) {
+        return Err(crate::Error::invalid(format!(
+            "research analysis-surface finding {:?} does not match its canonical surface identity",
+            finding.id
+        )));
+    }
+    let automatic = matches!(
+        subject_state,
+        ResearchAnalysisSurfaceState::MissingSymbolInventory
+            | ResearchAnalysisSurfaceState::MissingProfileOutput
+            | ResearchAnalysisSurfaceState::InvalidProfileOutput
+    );
+    let expected_actionability = if automatic {
+        ResearchActionability::Ready
+    } else {
+        ResearchActionability::CoverageBlocked
+    };
+    let expected_prerequisites = usize::from(!automatic);
+    if finding.actionability != expected_actionability
+        || finding.prerequisite_ids.len() != expected_prerequisites
+    {
+        return Err(crate::Error::invalid(format!(
+            "research analysis-surface finding {:?} actionability or prerequisite count does not match its state",
+            finding.id
+        )));
+    }
+    let output_is_valid = match subject_state {
+        ResearchAnalysisSurfaceState::MissingProfileDefinition => output.is_none(),
+        ResearchAnalysisSurfaceState::MissingProfileOutput
+        | ResearchAnalysisSurfaceState::InvalidProfileOutput => output
+            .as_ref()
+            .is_some_and(|path| !path.as_os_str().is_empty()),
+        ResearchAnalysisSurfaceState::MissingVendorArtifact
+        | ResearchAnalysisSurfaceState::MissingSymbolInventory
+        | ResearchAnalysisSurfaceState::StaleSymbolFamily => true,
+    };
+    if !output_is_valid {
+        return Err(crate::Error::invalid(format!(
+            "research analysis-surface finding {:?} profile output does not match its state",
+            finding.id
+        )));
+    }
+    Ok(())
+}
+
+fn validate_analysis_surface_next_action(
+    finding: &ResearchFinding,
+    action: &ExecutableAction,
+) -> Result<()> {
+    let ResearchSubject::PublicSymbolFamily { profile, state, .. } = &finding.subject else {
+        return Ok(());
+    };
+    let Some(ResearchConsumer::RequiredAnalysisSurface {
+        project_manifest,
+        working_directory,
+        target_spec_override,
+        run_spec_override,
+        svd_overrides,
+        ..
+    }) = finding.consumers.first()
+    else {
+        return Err(crate::Error::invalid(format!(
+            "research analysis-surface finding {:?} has no action context consumer",
+            finding.id
+        )));
+    };
+    fn push_path(argv: &mut Vec<String>, option: &str, path: &Path) -> Result<()> {
+        let value = path.to_str().ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "research analysis-surface action path is not valid UTF-8: {}",
+                path.display()
+            ))
+        })?;
+        if value.is_empty() {
+            return Err(crate::Error::invalid(
+                "research analysis-surface action path must not be empty",
+            ));
+        }
+        argv.push(option.to_owned());
+        argv.push(value.to_owned());
+        Ok(())
+    }
+    let mut context_suffix = Vec::new();
+    push_path(&mut context_suffix, "--project", project_manifest)?;
+    if let Some(path) = target_spec_override {
+        push_path(&mut context_suffix, "--target-spec", path)?;
+    }
+    if let Some(path) = run_spec_override {
+        push_path(&mut context_suffix, "--run-spec", path)?;
+    }
+    for path in svd_overrides {
+        push_path(&mut context_suffix, "--svd", path)?;
+    }
+    let mut expected = vec!["blobray".to_owned()];
+    expected.extend(analysis_surface_next_action_tokens(
+        *state,
+        profile.as_deref(),
+    ));
+    expected.extend(context_suffix.iter().cloned());
+    let mut expected_requery = vec![
+        "blobray".to_owned(),
+        "project".to_owned(),
+        "research".to_owned(),
+        "next".to_owned(),
+        "--finding".to_owned(),
+        finding.id.clone(),
+    ];
+    expected_requery.extend(context_suffix.iter().cloned());
+    let mut expected_revalidation = vec![
+        "blobray".to_owned(),
+        "project".to_owned(),
+        "analyze".to_owned(),
+    ];
+    expected_revalidation.extend(context_suffix);
+    let revalidation = &finding.revalidation_actions[0];
+    if action.context != ProjectContextRequirement::Analysis
+        || action.argv != expected
+        || action.working_directory != *working_directory
+        || finding.requery_action.argv != expected_requery
+        || finding.requery_action.working_directory != *working_directory
+        || revalidation.argv != expected_revalidation
+        || revalidation.working_directory != *working_directory
+    {
+        return Err(crate::Error::invalid(format!(
+            "research analysis-surface finding {:?} has a next action that does not match its state",
+            finding.id
         )));
     }
     Ok(())
@@ -1359,12 +1872,16 @@ fn ranked_action_indices(
 }
 
 fn actionability_lane(action: &ResearchAction) -> u8 {
-    if action.actionability.ready.count != 0 {
+    if action.kinds.iter().any(|kind| kind == "analysis-surface")
+        && action.actionability.ready.count != 0
+    {
         0
-    } else if action.actionability.inspection_only.count != 0 {
+    } else if action.actionability.ready.count != 0 {
         1
-    } else {
+    } else if action.actionability.inspection_only.count != 0 {
         2
+    } else {
+        3
     }
 }
 
@@ -1396,37 +1913,88 @@ fn select_ranked_steps(
 ) -> (Vec<ResearchStepRef>, u64) {
     let mut selected = Vec::new();
     let mut consumed_budget = 0_u64;
-    for index in prerequisite_indices {
-        if selected.len() == limit {
+    let mut prerequisite_lane = prerequisite_indices
+        .iter()
+        .map(|index| {
+            let prerequisite = &prerequisites[*index];
+            (
+                ResearchStepRef {
+                    kind: ResearchStepKind::Prerequisite,
+                    id: prerequisite.id.clone(),
+                },
+                prerequisite.estimated_cost_units,
+            )
+        })
+        .collect::<VecDeque<_>>();
+    let mut action_lane = action_indices
+        .iter()
+        .map(|index| {
+            let action = &actions[*index];
+            (
+                ResearchStepRef {
+                    kind: ResearchStepKind::Action,
+                    id: action.id.clone(),
+                },
+                action.score_explanation.estimated_cost_units,
+            )
+        })
+        .collect::<VecDeque<_>>();
+    let mut prerequisite_turn = true;
+    while selected.len() < limit && (!prerequisite_lane.is_empty() || !action_lane.is_empty()) {
+        let selected_preferred = if prerequisite_turn {
+            take_fitting_step(
+                &mut prerequisite_lane,
+                &mut selected,
+                &mut consumed_budget,
+                budget,
+            )
+        } else {
+            take_fitting_step(
+                &mut action_lane,
+                &mut selected,
+                &mut consumed_budget,
+                budget,
+            )
+        };
+        let selected_alternate = selected_preferred
+            || if prerequisite_turn {
+                take_fitting_step(
+                    &mut action_lane,
+                    &mut selected,
+                    &mut consumed_budget,
+                    budget,
+                )
+            } else {
+                take_fitting_step(
+                    &mut prerequisite_lane,
+                    &mut selected,
+                    &mut consumed_budget,
+                    budget,
+                )
+            };
+        if !selected_alternate {
             break;
         }
-        let prerequisite = &prerequisites[*index];
-        let cost = prerequisite.estimated_cost_units;
-        if budget.is_some_and(|budget| consumed_budget.saturating_add(cost) > budget) {
-            continue;
-        }
-        consumed_budget = consumed_budget.saturating_add(cost);
-        selected.push(ResearchStepRef {
-            kind: ResearchStepKind::Prerequisite,
-            id: prerequisite.id.clone(),
-        });
-    }
-    for index in action_indices {
-        if selected.len() == limit {
-            break;
-        }
-        let action = &actions[*index];
-        let cost = action.score_explanation.estimated_cost_units;
-        if budget.is_some_and(|budget| consumed_budget.saturating_add(cost) > budget) {
-            continue;
-        }
-        consumed_budget = consumed_budget.saturating_add(cost);
-        selected.push(ResearchStepRef {
-            kind: ResearchStepKind::Action,
-            id: action.id.clone(),
-        });
+        prerequisite_turn = !prerequisite_turn;
     }
     (selected, consumed_budget)
+}
+
+fn take_fitting_step(
+    lane: &mut VecDeque<(ResearchStepRef, u64)>,
+    selected: &mut Vec<ResearchStepRef>,
+    consumed_budget: &mut u64,
+    budget: Option<u64>,
+) -> bool {
+    while let Some((step, cost)) = lane.pop_front() {
+        if budget.is_some_and(|budget| consumed_budget.saturating_add(cost) > budget) {
+            continue;
+        }
+        *consumed_budget = consumed_budget.saturating_add(cost);
+        selected.push(step);
+        return true;
+    }
+    false
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1750,6 +2318,215 @@ fn add_blockers(
     Ok(())
 }
 
+fn required_analysis_surface_state(
+    source_available: bool,
+    inventory_available: bool,
+    family_matched: bool,
+    profile_configured: bool,
+    profile_output_present: bool,
+    profile_output_valid: bool,
+) -> Option<ResearchAnalysisSurfaceState> {
+    if !source_available {
+        Some(ResearchAnalysisSurfaceState::MissingVendorArtifact)
+    } else if !inventory_available {
+        Some(ResearchAnalysisSurfaceState::MissingSymbolInventory)
+    } else if !family_matched {
+        Some(ResearchAnalysisSurfaceState::StaleSymbolFamily)
+    } else if !profile_configured {
+        Some(ResearchAnalysisSurfaceState::MissingProfileDefinition)
+    } else if !profile_output_present {
+        Some(ResearchAnalysisSurfaceState::MissingProfileOutput)
+    } else if !profile_output_valid {
+        Some(ResearchAnalysisSurfaceState::InvalidProfileOutput)
+    } else {
+        None
+    }
+}
+
+fn add_required_analysis_surface_findings(
+    session: &ProjectSession,
+    selected_protocol: Option<&str>,
+    candidates: &mut BTreeMap<String, Accumulator>,
+) -> Result<()> {
+    let available_sources = session
+        .run_spec
+        .iter()
+        .flat_map(crate::run_spec::RunSpec::inputs)
+        .filter(|input| input.path.is_file())
+        .filter_map(|input| match &input.role {
+            crate::run_spec::InputRole::SourceArtifact(source) => Some(source.as_str()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let inventory = session
+        .project
+        .symbol_inventory
+        .as_ref()
+        .filter(|spec| spec.output.is_file())
+        .map(|spec| {
+            std::fs::read_to_string(&spec.output)
+                .map_err(|error| error.to_string())
+                .and_then(|input| {
+                    crate::artifacts::parse_symbol_inventory(&input)
+                        .map_err(|error| error.to_string())
+                })
+        })
+        .transpose();
+    let inventory_error = inventory.as_ref().err().cloned();
+    let inventory = inventory.ok().flatten();
+    for family in &session.project.analysis_symbol_families {
+        if family.disposition != crate::project::AnalysisSymbolFamilyDisposition::Required
+            || selected_protocol
+                .is_some_and(|protocol| !family.protocols.iter().any(|item| item == protocol))
+        {
+            continue;
+        }
+        let source_available = available_sources.contains(family.source.as_str());
+        let profile = family.profile.as_ref().and_then(|expected| {
+            session
+                .project
+                .ir_profiles
+                .iter()
+                .find(|profile| &profile.id == expected)
+        });
+        let matched = inventory.as_ref().map(|inventory| {
+            let artifact_sources = inventory
+                .artifacts
+                .iter()
+                .map(|artifact| {
+                    (
+                        artifact.index,
+                        artifact.sources.iter().cloned().collect::<BTreeSet<_>>(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let symbols = inventory
+                .symbols
+                .iter()
+                .map(|symbol| (symbol.artifact, symbol.name.clone()))
+                .collect::<Vec<_>>();
+            super::status::matching_symbol_identities(
+                &family.source,
+                &family.symbol_prefix,
+                &artifact_sources,
+                &symbols,
+            )
+        });
+        let profile_output_present = profile.is_some_and(|profile| profile.output.is_dir());
+        let profile_inspection = profile
+            .filter(|_| profile_output_present)
+            .map(|profile| crate::artifacts::inspect_linked_ir(&profile.output));
+        let profile_output_valid = matches!(
+            profile_inspection.as_ref(),
+            Some(Ok(summary)) if summary.functions != 0
+        );
+        let Some(state) = required_analysis_surface_state(
+            source_available,
+            inventory.is_some(),
+            matched.as_ref().is_some_and(|matched| !matched.is_empty()),
+            profile.is_some(),
+            profile_output_present,
+            profile_output_valid,
+        ) else {
+            continue;
+        };
+        let diagnostic = match state {
+            ResearchAnalysisSurfaceState::MissingVendorArtifact => format!(
+                "required public symbol family {:?} is blocked: source-artifact:{} is not bound to an existing file",
+                family.id, family.source
+            ),
+            ResearchAnalysisSurfaceState::MissingSymbolInventory => inventory_error
+                .clone()
+                .unwrap_or_else(|| {
+                    format!(
+                        "required public symbol family {:?} cannot be checked because the generated symbol inventory is absent",
+                        family.id
+                    )
+                }),
+            ResearchAnalysisSurfaceState::StaleSymbolFamily => format!(
+                "required public symbol family {:?} prefix {:?} matched no symbols from source {:?}",
+                family.id, family.symbol_prefix, family.source
+            ),
+            ResearchAnalysisSurfaceState::MissingProfileDefinition => format!(
+                "required public symbol family {:?} has no configured linked-IR profile {:?}",
+                family.id,
+                family.profile.as_deref().unwrap_or("<not-configured>")
+            ),
+            ResearchAnalysisSurfaceState::MissingProfileOutput => format!(
+                "required public symbol family {:?} linked-IR profile {:?} has no generated output",
+                family.id,
+                profile.expect("state requires a configured profile").id
+            ),
+            ResearchAnalysisSurfaceState::InvalidProfileOutput => match profile_inspection.as_ref() {
+                Some(Ok(_)) => format!(
+                    "required public symbol family {:?} linked-IR profile {:?} contains zero functions",
+                    family.id,
+                    profile.expect("state requires a configured profile").id
+                ),
+                Some(Err(error)) => format!(
+                    "required public symbol family {:?} linked-IR profile {:?} is invalid: {error}",
+                    family.id,
+                    profile.expect("state requires a configured profile").id
+                ),
+                None => unreachable!("invalid profile state requires inspected output"),
+            },
+        };
+        let id = stable_id("analysis-surface", &family.id);
+        let subject = ResearchSubject::PublicSymbolFamily {
+            surface: family.id.clone(),
+            protocols: family.protocols.clone(),
+            source: family.source.clone(),
+            symbol_prefix: family.symbol_prefix.clone(),
+            profile: family.profile.clone(),
+            state,
+        };
+        let consumer = ResearchConsumer::RequiredAnalysisSurface {
+            state,
+            source: family.source.clone(),
+            profile: family.profile.clone(),
+            output: profile.map(|profile| profile.output.clone()),
+            project_manifest: session.manifest.clone(),
+            working_directory: session.invocation_directory.clone(),
+            target_spec_override: session.explicit_context.target_spec.clone(),
+            run_spec_override: session.explicit_context.run_spec.clone(),
+            svd_overrides: session.explicit_context.svd_paths.clone(),
+            run_spec: session.run_spec_path.clone(),
+            diagnostic: diagnostic.clone(),
+        };
+        if candidates
+            .insert(
+                id.clone(),
+                Accumulator {
+                    id,
+                    kind: "analysis-surface".to_owned(),
+                    severity: "error".to_owned(),
+                    message: diagnostic,
+                    subject,
+                    consumers: vec![consumer],
+                    evidence_sites: BTreeSet::new(),
+                    evidence_channels: ["project-analysis-surface".to_owned()].into(),
+                    inspection: BTreeSet::new(),
+                    direct: BTreeSet::new(),
+                    guaranteed: BTreeSet::new(),
+                    optimistic: BTreeSet::new(),
+                    marginal: BTreeSet::new(),
+                    co_blockers: BTreeSet::new(),
+                    roots: BTreeSet::new(),
+                    scopes: BTreeSet::new(),
+                    publication_scopes: BTreeSet::new(),
+                },
+            )
+            .is_some()
+        {
+            return Err(crate::Error::invalid(format!(
+                "required analysis surface {:?} collides with another research finding identity",
+                family.id
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn merge(
     candidates: &mut BTreeMap<String, Accumulator>,
     seed: Seed,
@@ -1758,7 +2535,6 @@ fn merge(
     if let Some(existing) = candidates.get(&seed.id)
         && (existing.kind != seed.kind
             || existing.severity != seed.severity
-            || existing.message != seed.message
             || existing.subject != seed.subject
             || existing.consumers != seed.consumers)
     {
@@ -1767,6 +2543,7 @@ fn merge(
             seed.id
         )));
     }
+    let message = seed.message.clone();
     let item = candidates
         .entry(seed.id.clone())
         .or_insert_with(|| Accumulator {
@@ -1788,6 +2565,9 @@ fn merge(
             scopes: BTreeSet::new(),
             publication_scopes: BTreeSet::new(),
         });
+    if message < item.message {
+        item.message = message;
+    }
     item.evidence_sites.extend(seed.evidence_sites);
     item.evidence_channels.extend(seed.evidence_channels);
     item.inspection.extend(seed.inspection);
@@ -2878,6 +3658,19 @@ fn finding_actionability(consumers: &[ResearchConsumer]) -> ResearchActionabilit
         return ResearchActionability::InspectionOnly;
     }
     if consumers.iter().any(|consumer| {
+        matches!(
+            consumer,
+            ResearchConsumer::RequiredAnalysisSurface {
+                state: ResearchAnalysisSurfaceState::MissingVendorArtifact
+                    | ResearchAnalysisSurfaceState::StaleSymbolFamily
+                    | ResearchAnalysisSurfaceState::MissingProfileDefinition,
+                ..
+            }
+        )
+    }) {
+        return ResearchActionability::CoverageBlocked;
+    }
+    if consumers.iter().any(|consumer| {
         consumer_resolution(consumer) == ResearchConsumerResolution::NeedsDestination
     }) {
         return ResearchActionability::NeedsDestination;
@@ -2895,6 +3688,7 @@ fn consumer_resolution(consumer: &ResearchConsumer) -> ResearchConsumerResolutio
     match consumer {
         ResearchConsumer::ReviewedKnowledgeAssertions { resolution, .. }
         | ResearchConsumer::InterfacePackSlot { resolution, .. } => *resolution,
+        ResearchConsumer::RequiredAnalysisSurface { .. } => ResearchConsumerResolution::Ready,
     }
 }
 
@@ -3005,6 +3799,89 @@ fn prerequisite_for_consumer(
                 estimated_cost_units: 3,
             })
         }
+        ResearchConsumer::RequiredAnalysisSurface {
+            state,
+            source,
+            profile,
+            project_manifest,
+            run_spec,
+            ..
+        } => {
+            let (id, path, prerequisite_subject, manual_action, estimated_cost_units) = match state
+            {
+                ResearchAnalysisSurfaceState::MissingVendorArtifact => (
+                    stable_id("prerequisite-source-artifact", source),
+                    run_spec.clone(),
+                    format!("source-artifact:{source}"),
+                    format!(
+                        "Bind source-artifact:{source} to the exact vendor input and rerun project analyze"
+                    ),
+                    1,
+                ),
+                ResearchAnalysisSurfaceState::StaleSymbolFamily => {
+                    let surface = match subject {
+                        ResearchSubject::PublicSymbolFamily { surface, .. } => surface,
+                        _ => finding_id,
+                    };
+                    (
+                        stable_id("prerequisite-symbol-family", surface),
+                        Some(project_manifest.clone()),
+                        format!("public-symbol-family:{surface}"),
+                        format!(
+                            "Correct the source binding or reviewed symbol prefix for public family {surface}"
+                        ),
+                        3,
+                    )
+                }
+                ResearchAnalysisSurfaceState::MissingProfileDefinition => {
+                    let profile = profile.as_deref().unwrap_or("<not-configured>");
+                    let surface = match subject {
+                        ResearchSubject::PublicSymbolFamily { surface, .. } => surface,
+                        _ => finding_id,
+                    };
+                    (
+                        stable_id("prerequisite-analysis-profile-definition", surface),
+                        Some(project_manifest.clone()),
+                        format!("analysis-profile:{profile}"),
+                        format!(
+                            "Define a linked-IR profile {profile} for required source {source}"
+                        ),
+                        3,
+                    )
+                }
+                ResearchAnalysisSurfaceState::MissingSymbolInventory
+                | ResearchAnalysisSurfaceState::MissingProfileOutput
+                | ResearchAnalysisSurfaceState::InvalidProfileOutput => return None,
+            };
+            Some(PrerequisiteSeed {
+                id,
+                kind: ResearchPrerequisiteKind::AcquireRequiredAnalysisSurface,
+                reason: match state {
+                    ResearchAnalysisSurfaceState::MissingVendorArtifact => {
+                        format!(
+                            "required source-artifact:{source} is not bound to an existing file"
+                        )
+                    }
+                    ResearchAnalysisSurfaceState::StaleSymbolFamily => {
+                        "the reviewed public symbol family matches no source-qualified symbol"
+                            .to_owned()
+                    }
+                    ResearchAnalysisSurfaceState::MissingProfileDefinition => {
+                        "the required public symbol family has no configured linked-IR profile"
+                            .to_owned()
+                    }
+                    ResearchAnalysisSurfaceState::MissingSymbolInventory
+                    | ResearchAnalysisSurfaceState::MissingProfileOutput
+                    | ResearchAnalysisSurfaceState::InvalidProfileOutput => {
+                        unreachable!("automatic analysis-surface states return above")
+                    }
+                },
+                path,
+                subject: prerequisite_subject,
+                manual_action,
+                estimated_cost_units,
+            })
+        }
         _ => None,
     }
 }
@@ -3098,6 +3975,7 @@ fn ranked_prerequisite_indices(
                     .enumerate()
                     .any(|(other_index, other)| {
                         other_index != *index
+                            && required_surface_lane(other) == required_surface_lane(prerequisite)
                             && other.benefit_points >= prerequisite.benefit_points
                             && other.estimated_cost_units <= prerequisite.estimated_cost_units
                             && (other.benefit_points > prerequisite.benefit_points
@@ -3108,20 +3986,26 @@ fn ranked_prerequisite_indices(
     indices.sort_by(|left, right| {
         let left = &prerequisites[*left];
         let right = &prerequisites[*right];
-        match strategy {
-            ResearchRankingStrategy::Impact | ResearchRankingStrategy::Frontier => right
-                .benefit_points
-                .cmp(&left.benefit_points)
-                .then_with(|| left.estimated_cost_units.cmp(&right.estimated_cost_units))
-                .then_with(|| left.id.cmp(&right.id)),
-            ResearchRankingStrategy::QuickWins => left
-                .estimated_cost_units
-                .cmp(&right.estimated_cost_units)
-                .then_with(|| right.benefit_points.cmp(&left.benefit_points))
-                .then_with(|| left.id.cmp(&right.id)),
-        }
+        required_surface_lane(left)
+            .cmp(&required_surface_lane(right))
+            .then_with(|| match strategy {
+                ResearchRankingStrategy::Impact | ResearchRankingStrategy::Frontier => right
+                    .benefit_points
+                    .cmp(&left.benefit_points)
+                    .then_with(|| left.estimated_cost_units.cmp(&right.estimated_cost_units))
+                    .then_with(|| left.id.cmp(&right.id)),
+                ResearchRankingStrategy::QuickWins => left
+                    .estimated_cost_units
+                    .cmp(&right.estimated_cost_units)
+                    .then_with(|| right.benefit_points.cmp(&left.benefit_points))
+                    .then_with(|| left.id.cmp(&right.id)),
+            })
     });
     indices
+}
+
+fn required_surface_lane(prerequisite: &ResearchPrerequisiteAction) -> u8 {
+    u8::from(prerequisite.kind != ResearchPrerequisiteKind::AcquireRequiredAnalysisSurface)
 }
 
 fn summarize_actionability(findings: &[ResearchFinding]) -> ResearchActionabilitySummary {
@@ -3164,7 +4048,7 @@ fn finalize(
     candidate: Accumulator,
     capabilities_by_function: &CapabilityContexts,
     surfaces_by_scope: &VerificationContexts,
-    inspect_action: ExecutableAction,
+    next_action: ExecutableAction,
     revalidation_action: ExecutableAction,
     requery_action: ExecutableAction,
 ) -> ResearchAction {
@@ -3220,7 +4104,7 @@ fn finalize(
     };
     let mut result = ResearchAction {
         rank: 0,
-        id: stable_id("action", &inspect_action.canonical_execution_key()),
+        id: stable_id("action", &next_action.canonical_execution_key()),
         kinds: vec![kind],
         score: 0,
         inspection_function_ids: finding.inspection_function_ids.clone(),
@@ -3241,7 +4125,7 @@ fn finalize(
         publication_scopes: finding.publication_scopes.clone(),
         estimated_cost: String::new(),
         confidence: String::new(),
-        inspect_action,
+        next_action,
         actionability: summarize_actionability(std::slice::from_ref(&finding)),
         prerequisite_ids: finding.prerequisite_ids.clone(),
         findings: vec![finding],
@@ -3270,7 +4154,7 @@ fn coalesce_actions(candidates: Vec<ResearchAction>) -> Vec<ResearchAction> {
     let mut actions = Vec::<ResearchAction>::new();
     let mut by_action = BTreeMap::<ExecutableAction, usize>::new();
     for candidate in candidates {
-        if let Some(index) = by_action.get(&candidate.inspect_action).copied() {
+        if let Some(index) = by_action.get(&candidate.next_action).copied() {
             let action = &mut actions[index];
             action.findings.extend(candidate.findings);
             action
@@ -3318,7 +4202,7 @@ fn coalesce_actions(candidates: Vec<ResearchAction>) -> Vec<ResearchAction> {
             action.prerequisite_ids = collect_prerequisite_ids(&action.findings);
             refresh_action_score(action);
         } else {
-            by_action.insert(candidate.inspect_action.clone(), actions.len());
+            by_action.insert(candidate.next_action.clone(), actions.len());
             actions.push(candidate);
         }
     }
@@ -3386,6 +4270,7 @@ fn merge_ordered<T: Ord>(target: &mut Vec<T>, source: Vec<T>) {
 
 fn cost_units(kind: &str, functions: usize) -> u64 {
     let base = match kind {
+        "analysis-surface" => 3,
         "unresolved-call" => 2,
         "call-result-model" | "call-shape" => 3,
         "interface-layout" | "register-model" => 4,
@@ -3409,6 +4294,7 @@ fn confidence(kinds: &[String], co_blockers: usize) -> &'static str {
 
 fn knowledge_required(kind: &str) -> &'static str {
     match kind {
+        "analysis-surface" => "authenticated vendor source and public symbol-family coverage",
         "decode" => "ISA/backend decode support",
         "unresolved-call" => "symbol/linkage identity",
         "call-result-model" => "function return/effect contract",
@@ -3427,6 +4313,11 @@ fn knowledge_required(kind: &str) -> &'static str {
 
 fn evidence_required(kind: &str) -> Vec<String> {
     let values: &[&str] = match kind {
+        "analysis-surface" => &[
+            "exact authenticated source-artifact binding",
+            "source-qualified public symbol prefix match",
+            "valid non-empty linked-IR profile",
+        ],
         "decode" => &[
             "exact undecoded instruction bytes and artifact provenance",
             "architecture or toolchain evidence for the missing ISA behavior",
@@ -3469,7 +4360,43 @@ fn evidence_required(kind: &str) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
+fn analysis_surface_next_action_tokens(
+    state: ResearchAnalysisSurfaceState,
+    profile: Option<&str>,
+) -> Vec<String> {
+    match (state, profile) {
+        (ResearchAnalysisSurfaceState::MissingSymbolInventory, _) => {
+            vec!["project".to_owned(), "analyze".to_owned()]
+        }
+        (
+            ResearchAnalysisSurfaceState::MissingProfileOutput
+            | ResearchAnalysisSurfaceState::InvalidProfileOutput,
+            Some(profile),
+        ) => vec![
+            "advanced".to_owned(),
+            "ir".to_owned(),
+            "build".to_owned(),
+            "--profile".to_owned(),
+            profile.to_owned(),
+        ],
+        (
+            ResearchAnalysisSurfaceState::MissingVendorArtifact
+            | ResearchAnalysisSurfaceState::StaleSymbolFamily
+            | ResearchAnalysisSurfaceState::MissingProfileDefinition,
+            _,
+        )
+        | (
+            ResearchAnalysisSurfaceState::MissingProfileOutput
+            | ResearchAnalysisSurfaceState::InvalidProfileOutput,
+            None,
+        ) => vec!["project".to_owned(), "status".to_owned()],
+    }
+}
+
 fn next_action_tokens(candidate: &Accumulator) -> Vec<String> {
+    if let ResearchSubject::PublicSymbolFamily { profile, state, .. } = &candidate.subject {
+        return analysis_surface_next_action_tokens(*state, profile.as_deref());
+    }
     if let ResearchSubject::MmioRegister { address, .. } = &candidate.subject {
         return vec![
             "inspect".to_owned(),
@@ -3573,6 +4500,47 @@ mod tests {
         }
     }
 
+    fn analysis_surface_accumulator(
+        state: ResearchAnalysisSurfaceState,
+        profile: Option<&str>,
+    ) -> Accumulator {
+        let surface = "fixture-public-controller";
+        let mut candidate =
+            accumulator(&stable_id("analysis-surface", surface), "analysis-surface");
+        candidate.subject = ResearchSubject::PublicSymbolFamily {
+            surface: surface.to_owned(),
+            protocols: vec!["ble".to_owned()],
+            source: "fixture-controller".to_owned(),
+            symbol_prefix: "fixture_controller_".to_owned(),
+            profile: profile.map(str::to_owned),
+            state,
+        };
+        let output = match state {
+            ResearchAnalysisSurfaceState::MissingProfileDefinition => None,
+            ResearchAnalysisSurfaceState::MissingProfileOutput
+            | ResearchAnalysisSurfaceState::InvalidProfileOutput => {
+                profile.map(|profile| PathBuf::from(format!("artifacts/{profile}")))
+            }
+            ResearchAnalysisSurfaceState::MissingVendorArtifact
+            | ResearchAnalysisSurfaceState::MissingSymbolInventory
+            | ResearchAnalysisSurfaceState::StaleSymbolFamily => None,
+        };
+        candidate.consumers = vec![ResearchConsumer::RequiredAnalysisSurface {
+            state,
+            source: "fixture-controller".to_owned(),
+            profile: profile.map(str::to_owned),
+            output,
+            project_manifest: PathBuf::from("project.toml"),
+            working_directory: std::env::current_dir().unwrap(),
+            target_spec_override: None,
+            run_spec_override: None,
+            svd_overrides: Vec::new(),
+            run_spec: Some(PathBuf::from("run.toml")),
+            diagnostic: "fixture surface is incomplete".to_owned(),
+        }];
+        candidate
+    }
+
     #[test]
     fn persisted_capability_links_project_without_live_evaluation() {
         use crate::application::capability_context::{
@@ -3651,7 +4619,6 @@ mod tests {
             &BTreeMap::new(),
             &format!("blobray inspect function {id} --project project.toml"),
         );
-        candidate.id = id.to_owned();
         candidate.score = benefit.saturating_mul(100) / effort;
         candidate.score_explanation = ResearchScoreExplanation {
             benefit_points: benefit,
@@ -3713,6 +4680,42 @@ mod tests {
         };
         validate_report(&report).unwrap();
         report
+    }
+
+    fn refresh_inventory_digest(report: &mut ResearchNextReport) {
+        report.inventory.sha256 = inventory_sha256(
+            &report.project,
+            &report.analyzed_scopes,
+            &report.inventory.findings,
+            &report.inventory.actions,
+            &report.inventory.prerequisites,
+        )
+        .unwrap();
+    }
+
+    fn refresh_first_action_identity(report: &mut ResearchNextReport) {
+        let old = report.inventory.actions[0].id.clone();
+        let new = stable_id(
+            "action",
+            &report.inventory.actions[0]
+                .next_action
+                .canonical_execution_key(),
+        );
+        report.inventory.actions[0].id = new.clone();
+        for prerequisite in &mut report.inventory.prerequisites {
+            for action in &mut prerequisite.blocked_action_ids {
+                if *action == old {
+                    *action = new.clone();
+                }
+            }
+            prerequisite.blocked_action_ids.sort();
+        }
+        for step in &mut report.selection.steps {
+            if step.kind == ResearchStepKind::Action && step.id == old {
+                step.id = new.clone();
+            }
+        }
+        refresh_inventory_digest(report);
     }
 
     fn graph_function(
@@ -4166,7 +5169,7 @@ mod tests {
         assert_eq!(result.score, 234);
         assert!(result.score > 100);
         assert_eq!(
-            result.inspect_action.render_posix(),
+            result.next_action.render_posix(),
             "blobray inspect function leaf --project project.toml"
         );
     }
@@ -4184,7 +5187,7 @@ mod tests {
         assert_eq!(
             impact
                 .iter()
-                .map(|index| candidates[*index].id.as_str())
+                .map(|index| candidates[*index].findings[0].id.as_str())
                 .collect::<Vec<_>>(),
             ["high-ratio", "high-benefit", "quick", "dominated"]
         );
@@ -4193,7 +5196,7 @@ mod tests {
         assert_eq!(
             quick_wins
                 .iter()
-                .map(|index| candidates[*index].id.as_str())
+                .map(|index| candidates[*index].findings[0].id.as_str())
                 .collect::<Vec<_>>(),
             ["quick", "dominated", "high-ratio", "high-benefit"]
         );
@@ -4202,7 +5205,7 @@ mod tests {
         assert_eq!(
             frontier
                 .iter()
-                .map(|index| candidates[*index].id.as_str())
+                .map(|index| candidates[*index].findings[0].id.as_str())
                 .collect::<Vec<_>>(),
             ["high-ratio", "high-benefit", "quick"]
         );
@@ -4221,7 +5224,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 12);
+        assert_eq!(report.schema_version, 13);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -4286,8 +5289,18 @@ mod tests {
 
         assert_eq!(impact.inventory.sha256, quick.inventory.sha256);
         assert_ne!(impact.selection.steps, quick.selection.steps);
-        assert_eq!(impact.selection.steps[0].id, "impact");
-        assert_eq!(quick.selection.steps[0].id, "quick");
+        let selected_finding = |report: &ResearchNextReport| {
+            report
+                .inventory
+                .actions
+                .iter()
+                .find(|action| action.id == report.selection.steps[0].id)
+                .unwrap()
+                .finding_ids[0]
+                .clone()
+        };
+        assert_eq!(selected_finding(&impact), "impact");
+        assert_eq!(selected_finding(&quick), "quick");
     }
 
     #[test]
@@ -4308,7 +5321,7 @@ mod tests {
         assert_eq!(original.selection.steps, changed.selection.steps);
         assert_ne!(original.inventory.sha256, changed.inventory.sha256);
         let path = std::env::temp_dir().join(format!(
-            "blobray-research-schema10-check-{}.json",
+            "blobray-research-schema13-check-{}.json",
             std::process::id()
         ));
         if path.exists() {
@@ -4361,6 +5374,453 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("selection references missing")
+        );
+    }
+
+    #[test]
+    fn report_validation_rejects_nonreciprocal_prerequisite_links() {
+        let action = finalize_test(
+            analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingVendorArtifact,
+                Some("fixture-ir"),
+            ),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray project status --project project.toml",
+        );
+        let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 2, None);
+
+        let mut missing = report.clone();
+        missing.inventory.findings[0].prerequisite_ids[0] = "missing-prerequisite".to_owned();
+        assert!(
+            validate_report(&missing)
+                .unwrap_err()
+                .to_string()
+                .contains("prerequisite set does not match its typed consumers")
+        );
+
+        let mut nonreciprocal = report;
+        nonreciprocal.inventory.prerequisites[0]
+            .satisfies_finding_ids
+            .clear();
+        assert!(
+            validate_report(&nonreciprocal)
+                .unwrap_err()
+                .to_string()
+                .contains("are not reciprocal")
+        );
+    }
+
+    #[test]
+    fn report_validation_rejects_inconsistent_analysis_surface_types() {
+        let action = finalize_test(
+            analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingProfileOutput,
+                Some("fixture-ir"),
+            ),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray advanced ir build --profile fixture-ir --project project.toml",
+        );
+        let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 2, None);
+
+        let mut mismatched_state = report.clone();
+        let ResearchConsumer::RequiredAnalysisSurface { state, .. } =
+            &mut mismatched_state.inventory.findings[0].consumers[0]
+        else {
+            panic!("fixture must contain a required analysis surface consumer");
+        };
+        *state = ResearchAnalysisSurfaceState::InvalidProfileOutput;
+        assert!(
+            validate_report(&mismatched_state)
+                .unwrap_err()
+                .to_string()
+                .contains("inconsistent subject and consumer state")
+        );
+
+        let manual_action = finalize_test(
+            analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingVendorArtifact,
+                Some("fixture-ir"),
+            ),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray project status --project project.toml",
+        );
+        let mut wrong_prerequisite = report_from_actions(
+            vec![manual_action],
+            ResearchRankingStrategy::Impact,
+            2,
+            None,
+        );
+        wrong_prerequisite.inventory.prerequisites[0].kind =
+            ResearchPrerequisiteKind::CreateInterfaceAnchor;
+        assert!(
+            validate_report(&wrong_prerequisite)
+                .unwrap_err()
+                .to_string()
+                .contains("does not match the typed consumer")
+        );
+
+        let mut extra_consumer = report;
+        extra_consumer.inventory.findings[0].consumers.push(
+            ResearchConsumer::RequiredAnalysisSurface {
+                state: ResearchAnalysisSurfaceState::MissingProfileOutput,
+                source: "fixture-controller".to_owned(),
+                profile: Some("fixture-ir".to_owned()),
+                output: Some(PathBuf::from("artifacts/fixture-ir")),
+                project_manifest: PathBuf::from("project.toml"),
+                working_directory: std::env::current_dir().unwrap(),
+                target_spec_override: None,
+                run_spec_override: None,
+                svd_overrides: Vec::new(),
+                run_spec: Some(PathBuf::from("run.toml")),
+                diagnostic: "duplicate".to_owned(),
+            },
+        );
+        assert!(
+            validate_report(&extra_consumer)
+                .unwrap_err()
+                .to_string()
+                .contains("inconsistent kind, actionability, or consumer set")
+        );
+    }
+
+    #[test]
+    fn report_validation_rejects_resigned_surface_graph_bypasses() {
+        let action = finalize_test(
+            analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingVendorArtifact,
+                Some("fixture-ir"),
+            ),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray project status --project project.toml",
+        );
+        let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 2, None);
+
+        let mut unblocked = report.clone();
+        unblocked.inventory.prerequisites[0]
+            .blocked_action_ids
+            .clear();
+        refresh_inventory_digest(&mut unblocked);
+        assert!(
+            validate_report(&unblocked)
+                .unwrap_err()
+                .to_string()
+                .contains("blocked action set does not match")
+        );
+
+        let mut orphan = report.clone();
+        let mut orphan_entry = orphan.inventory.prerequisites[0].clone();
+        orphan_entry.id = "zz-orphan-prerequisite".to_owned();
+        orphan_entry.satisfies_finding_ids.clear();
+        orphan_entry.blocked_action_ids.clear();
+        orphan.inventory.prerequisites.push(orphan_entry);
+        refresh_inventory_digest(&mut orphan);
+        assert!(
+            validate_report(&orphan)
+                .unwrap_err()
+                .to_string()
+                .contains("is not owned by any finding")
+        );
+
+        let mut forged_seed = report.clone();
+        forged_seed.inventory.prerequisites[0].subject = "source-artifact:other".to_owned();
+        refresh_inventory_digest(&mut forged_seed);
+        assert!(
+            validate_report(&forged_seed)
+                .unwrap_err()
+                .to_string()
+                .contains("does not match the typed consumer")
+        );
+
+        let mut empty_subject = report;
+        let ResearchSubject::PublicSymbolFamily { surface, .. } =
+            &mut empty_subject.inventory.findings[0].subject
+        else {
+            panic!("fixture must contain a public symbol family subject");
+        };
+        surface.clear();
+        refresh_inventory_digest(&mut empty_subject);
+        assert!(
+            validate_report(&empty_subject)
+                .unwrap_err()
+                .to_string()
+                .contains("invalid typed subject or consumer payload")
+        );
+    }
+
+    #[test]
+    fn report_validation_rejects_a_resigned_surface_action_for_the_wrong_state() {
+        let action = finalize_test(
+            analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingSymbolInventory,
+                Some("fixture-ir"),
+            ),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray project analyze --project project.toml",
+        );
+        let mut report =
+            report_from_actions(vec![action], ResearchRankingStrategy::Impact, 1, None);
+        report.inventory.actions[0].next_action.argv[2] = "status".to_owned();
+        refresh_first_action_identity(&mut report);
+        assert!(
+            validate_report(&report)
+                .unwrap_err()
+                .to_string()
+                .contains("next action that does not match its state")
+        );
+    }
+
+    #[test]
+    fn report_validation_rejects_resigned_surface_action_flags_and_foreign_project() {
+        let action = finalize_test(
+            analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingSymbolInventory,
+                Some("fixture-ir"),
+            ),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray project analyze --project project.toml",
+        );
+        let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 1, None);
+
+        let mut check_only = report.clone();
+        check_only.inventory.actions[0]
+            .next_action
+            .argv
+            .push("--check".to_owned());
+        refresh_first_action_identity(&mut check_only);
+        assert!(
+            validate_report(&check_only)
+                .unwrap_err()
+                .to_string()
+                .contains("next action that does not match its state")
+        );
+
+        let mut foreign_project = report.clone();
+        let project_value = foreign_project.inventory.actions[0]
+            .next_action
+            .argv
+            .iter()
+            .position(|argument| argument == "--project")
+            .unwrap()
+            + 1;
+        foreign_project.inventory.actions[0].next_action.argv[project_value] =
+            "other.toml".to_owned();
+        refresh_first_action_identity(&mut foreign_project);
+        assert!(
+            validate_report(&foreign_project)
+                .unwrap_err()
+                .to_string()
+                .contains("next action that does not match its state")
+        );
+
+        let mut foreign_directory = report;
+        foreign_directory.inventory.actions[0]
+            .next_action
+            .working_directory = PathBuf::from("/tmp/blobray-foreign-working-directory");
+        refresh_first_action_identity(&mut foreign_directory);
+        assert!(
+            validate_report(&foreign_directory)
+                .unwrap_err()
+                .to_string()
+                .contains("next action that does not match its state")
+        );
+    }
+
+    #[test]
+    fn report_validation_rejects_resigned_surface_follow_up_actions() {
+        let action = finalize_test(
+            analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingSymbolInventory,
+                Some("fixture-ir"),
+            ),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray project analyze --project project.toml",
+        );
+        let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 1, None);
+
+        let mut forged_requery = report.clone();
+        forged_requery.inventory.findings[0].requery_action =
+            test_action("blobray project status --project project.toml");
+        refresh_inventory_digest(&mut forged_requery);
+        assert!(
+            validate_report(&forged_requery)
+                .unwrap_err()
+                .to_string()
+                .contains("requery action")
+        );
+
+        let mut absent_revalidation = report.clone();
+        absent_revalidation.inventory.findings[0]
+            .revalidation_actions
+            .clear();
+        refresh_inventory_digest(&mut absent_revalidation);
+        assert!(
+            validate_report(&absent_revalidation)
+                .unwrap_err()
+                .to_string()
+                .contains("exactly one revalidation action")
+        );
+
+        let mut foreign_directory = report;
+        foreign_directory.inventory.findings[0]
+            .requery_action
+            .working_directory = PathBuf::from("/tmp/blobray-foreign-working-directory");
+        foreign_directory.inventory.findings[0].revalidation_actions[0].working_directory =
+            PathBuf::from("/tmp/blobray-foreign-working-directory");
+        refresh_inventory_digest(&mut foreign_directory);
+        assert!(
+            validate_report(&foreign_directory)
+                .unwrap_err()
+                .to_string()
+                .contains("next action that does not match its state")
+        );
+    }
+
+    #[test]
+    fn report_validation_rejects_context_options_used_as_path_values() {
+        let mut report = report_from_actions(
+            vec![ranked_candidate("generic-finding", 10, 10, 1)],
+            ResearchRankingStrategy::Impact,
+            1,
+            None,
+        );
+        let finding = &mut report.inventory.findings[0];
+        for action in std::iter::once(&mut finding.requery_action)
+            .chain(finding.revalidation_actions.iter_mut())
+        {
+            let project_value = action
+                .argv
+                .iter()
+                .position(|argument| argument == "--project")
+                .unwrap()
+                + 1;
+            action.argv[project_value] = "--evil".to_owned();
+        }
+        refresh_inventory_digest(&mut report);
+        assert!(
+            validate_report(&report)
+                .unwrap_err()
+                .to_string()
+                .contains("follow-up actions do not share one exact analysis context")
+        );
+    }
+
+    #[test]
+    fn report_validation_rejects_resigned_identity_and_orphan_action_bypasses() {
+        let action = finalize_test(
+            analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingSymbolInventory,
+                Some("fixture-ir"),
+            ),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray project analyze --project project.toml",
+        );
+        let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 1, None);
+
+        let mut stale_action_id = report.clone();
+        stale_action_id.inventory.actions[0]
+            .next_action
+            .argv
+            .push("--check".to_owned());
+        refresh_inventory_digest(&mut stale_action_id);
+        assert!(
+            validate_report(&stale_action_id)
+                .unwrap_err()
+                .to_string()
+                .contains("canonical executable identity")
+        );
+
+        let mut stale_finding_id = report.clone();
+        let ResearchSubject::PublicSymbolFamily { surface, .. } =
+            &mut stale_finding_id.inventory.findings[0].subject
+        else {
+            panic!("fixture must contain a public symbol family subject");
+        };
+        *surface = "forged-public-controller".to_owned();
+        refresh_inventory_digest(&mut stale_finding_id);
+        assert!(
+            validate_report(&stale_finding_id)
+                .unwrap_err()
+                .to_string()
+                .contains("canonical surface identity")
+        );
+
+        let mut orphan_action = report;
+        let next_action = test_action("blobray project status --project project.toml");
+        orphan_action
+            .inventory
+            .actions
+            .push(ResearchActionCatalogEntry {
+                id: stable_id("action", &next_action.canonical_execution_key()),
+                kinds: vec!["analysis-surface".to_owned()],
+                score: 0,
+                next_action,
+                estimated_cost: "low".to_owned(),
+                confidence: "high".to_owned(),
+                score_breakdown: ResearchScoreBreakdown {
+                    guaranteed_weight: 0,
+                    optimistic_weight: 0,
+                    marginal_weight: 0,
+                    root_weight: 0,
+                    capability_weight: 0,
+                    verification_weight: 0,
+                    publication_weight: 0,
+                    cost_penalty: 0,
+                    co_blocker_penalty: 0,
+                },
+                score_explanation: ResearchScoreExplanation {
+                    benefit_points: 0,
+                    effort_points: 1,
+                    estimated_cost_units: 1,
+                },
+                finding_ids: Vec::new(),
+            });
+        orphan_action
+            .inventory
+            .actions
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        refresh_inventory_digest(&mut orphan_action);
+        assert!(
+            validate_report(&orphan_action)
+                .unwrap_err()
+                .to_string()
+                .contains("is not owned by any finding")
+        );
+    }
+
+    #[test]
+    fn report_validation_rejects_a_protocol_header_outside_the_surface() {
+        let action = finalize_test(
+            analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingVendorArtifact,
+                Some("fixture-ir"),
+            ),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray project status --project project.toml",
+        );
+        let mut report =
+            report_from_actions(vec![action], ResearchRankingStrategy::Impact, 2, None);
+        report.protocol = Some("bluetooth".to_owned());
+        assert!(
+            validate_report(&report)
+                .unwrap_err()
+                .to_string()
+                .contains("invalid typed subject or consumer payload")
+        );
+        report.protocol = Some("Bluetooth".to_owned());
+        assert!(
+            validate_report(&report)
+                .unwrap_err()
+                .to_string()
+                .contains("canonical supported protocol")
         );
     }
 
@@ -4604,12 +6064,12 @@ locator = "RADIO.STATUS"
                 .iter()
                 .map(|step| step.id.as_str())
                 .collect::<Vec<_>>(),
-            ["first", "fills-budget"]
+            [candidates[0].id.as_str(), candidates[2].id.as_str()]
         );
     }
 
     #[test]
-    fn prerequisite_lane_consumes_the_shared_limit_before_research_actions() {
+    fn prerequisite_and_inspection_lanes_share_the_visible_selection() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -4640,18 +6100,62 @@ locator = "RADIO.STATUS"
 
         let actions = vec![action, second];
         let (selected, cost) =
-            select_ranked_steps(&prerequisites, &[0], &actions, &[0, 1], 1, None);
+            select_ranked_steps(&prerequisites, &[0], &actions, &[0, 1], 2, None);
 
-        assert_eq!(selected.len(), 1);
+        assert_eq!(selected.len(), 2);
         assert_eq!(selected[0].kind, ResearchStepKind::Prerequisite);
-        assert_eq!(cost, 1);
+        assert_eq!(selected[1].kind, ResearchStepKind::Action);
+        assert_eq!(cost, 5);
+    }
+
+    #[test]
+    fn saturated_selection_stably_interleaves_prerequisites_and_actions() {
+        let mut prerequisite = ResearchPrerequisiteAction {
+            rank: 0,
+            id: String::new(),
+            kind: ResearchPrerequisiteKind::CreateInterfaceAnchor,
+            reason: "fixture".to_owned(),
+            path: None,
+            subject: "fixture".to_owned(),
+            manual_action: "configure fixture".to_owned(),
+            satisfies_finding_ids: Vec::new(),
+            blocked_action_ids: Vec::new(),
+            guaranteed_unlock: 0,
+            optimistic_unlock: 0,
+            affected_scope_roots: Vec::new(),
+            scopes: Vec::new(),
+            benefit_points: 1,
+            estimated_cost_units: 1,
+        };
+        let prerequisites = (0..25)
+            .map(|index| {
+                prerequisite.id = format!("prerequisite-{index:02}");
+                prerequisite.clone()
+            })
+            .collect::<Vec<_>>();
+        let actions = (0..25)
+            .map(|index| ranked_candidate(&format!("action-{index:02}"), 10, 10, 1))
+            .collect::<Vec<_>>();
+        let indices = (0..25).collect::<Vec<_>>();
+
+        let (selected, consumed) =
+            select_ranked_steps(&prerequisites, &indices, &actions, &indices, 20, None);
+
+        assert_eq!(consumed, 20);
+        assert_eq!(selected.len(), 20);
+        assert!(selected.chunks_exact(2).all(|pair| {
+            pair[0].kind == ResearchStepKind::Prerequisite
+                && pair[1].kind == ResearchStepKind::Action
+        }));
     }
 
     #[test]
     fn scope_and_protocol_filters_are_exact_and_fail_closed() {
         let scopes = BTreeMap::from([
+            ("ble-runtime".to_owned(), vec!["ble".to_owned()]),
+            ("bredr-runtime".to_owned(), vec!["bluetooth".to_owned()]),
             (
-                "ble-runtime".to_owned(),
+                "btdm-runtime".to_owned(),
                 vec!["bluetooth".to_owned(), "ble".to_owned()],
             ),
             (
@@ -4678,6 +6182,24 @@ locator = "RADIO.STATUS"
         assert_eq!(
             select_scope_ids(&scopes, Some("ble-runtime"), Some("ble")).unwrap(),
             ["ble-runtime".to_owned()].into()
+        );
+        assert_eq!(
+            select_scope_ids(&scopes, None, Some("ble")).unwrap(),
+            [
+                "ble-runtime".to_owned(),
+                "btdm-runtime".to_owned(),
+                "shared-phy".to_owned(),
+            ]
+            .into()
+        );
+        assert_eq!(
+            select_scope_ids(&scopes, None, Some("bluetooth")).unwrap(),
+            [
+                "bredr-runtime".to_owned(),
+                "btdm-runtime".to_owned(),
+                "shared-phy".to_owned(),
+            ]
+            .into()
         );
         let unknown = select_scope_ids(&scopes, None, Some("radio")).unwrap_err();
         assert!(unknown.to_string().contains("configured protocols"));
@@ -4760,6 +6282,146 @@ locator = "RADIO.STATUS"
             next_action_tokens(&candidate),
             ["inspect", "function", "archive:function"]
         );
+    }
+
+    #[test]
+    fn analysis_surface_next_actions_only_offer_executable_state_transitions() {
+        for state in [
+            ResearchAnalysisSurfaceState::MissingVendorArtifact,
+            ResearchAnalysisSurfaceState::StaleSymbolFamily,
+            ResearchAnalysisSurfaceState::MissingProfileDefinition,
+        ] {
+            assert_eq!(
+                next_action_tokens(&analysis_surface_accumulator(state, Some("fixture-ir"))),
+                ["project", "status"],
+                "manual state {state:?} must not offer a non-runnable IR build"
+            );
+        }
+        assert_eq!(
+            next_action_tokens(&analysis_surface_accumulator(
+                ResearchAnalysisSurfaceState::MissingSymbolInventory,
+                Some("fixture-ir")
+            )),
+            ["project", "analyze"]
+        );
+        for state in [
+            ResearchAnalysisSurfaceState::MissingProfileOutput,
+            ResearchAnalysisSurfaceState::InvalidProfileOutput,
+        ] {
+            assert_eq!(
+                next_action_tokens(&analysis_surface_accumulator(state, Some("fixture-ir"))),
+                ["advanced", "ir", "build", "--profile", "fixture-ir"]
+            );
+            assert_eq!(
+                next_action_tokens(&analysis_surface_accumulator(state, None)),
+                ["project", "status"],
+                "an output state without a configured profile must fail closed"
+            );
+        }
+    }
+
+    #[test]
+    fn required_analysis_surface_classifier_covers_every_transition_and_analyzed_omission() {
+        let cases = [
+            (
+                [false, false, false, false, false, false],
+                Some(ResearchAnalysisSurfaceState::MissingVendorArtifact),
+            ),
+            (
+                [true, false, false, false, false, false],
+                Some(ResearchAnalysisSurfaceState::MissingSymbolInventory),
+            ),
+            (
+                [true, true, false, false, false, false],
+                Some(ResearchAnalysisSurfaceState::StaleSymbolFamily),
+            ),
+            (
+                [true, true, true, false, false, false],
+                Some(ResearchAnalysisSurfaceState::MissingProfileDefinition),
+            ),
+            (
+                [true, true, true, true, false, false],
+                Some(ResearchAnalysisSurfaceState::MissingProfileOutput),
+            ),
+            (
+                [true, true, true, true, true, false],
+                Some(ResearchAnalysisSurfaceState::InvalidProfileOutput),
+            ),
+            ([true, true, true, true, true, true], None),
+        ];
+        for (inputs, expected) in cases {
+            assert_eq!(
+                required_analysis_surface_state(
+                    inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], inputs[5]
+                ),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn analysis_surface_states_separate_manual_prerequisites_from_ready_actions() {
+        for state in [
+            ResearchAnalysisSurfaceState::MissingVendorArtifact,
+            ResearchAnalysisSurfaceState::StaleSymbolFamily,
+            ResearchAnalysisSurfaceState::MissingProfileDefinition,
+            ResearchAnalysisSurfaceState::MissingSymbolInventory,
+            ResearchAnalysisSurfaceState::MissingProfileOutput,
+            ResearchAnalysisSurfaceState::InvalidProfileOutput,
+        ] {
+            let candidate = analysis_surface_accumulator(state, Some("fixture-ir"));
+            let next = format!(
+                "blobray {} --project project.toml",
+                next_action_tokens(&candidate).join(" ")
+            );
+            let action = finalize_test(candidate, &BTreeMap::new(), &BTreeMap::new(), &next);
+            let report =
+                report_from_actions(vec![action], ResearchRankingStrategy::Impact, 2, None);
+            let finding = &report.inventory.findings[0];
+            let automatic = matches!(
+                state,
+                ResearchAnalysisSurfaceState::MissingSymbolInventory
+                    | ResearchAnalysisSurfaceState::MissingProfileOutput
+                    | ResearchAnalysisSurfaceState::InvalidProfileOutput
+            );
+            assert_eq!(
+                finding.actionability,
+                if automatic {
+                    ResearchActionability::Ready
+                } else {
+                    ResearchActionability::CoverageBlocked
+                }
+            );
+            assert_eq!(finding.prerequisite_ids.len(), usize::from(!automatic));
+            assert_eq!(
+                report.inventory.prerequisites.len(),
+                usize::from(!automatic)
+            );
+            if state == ResearchAnalysisSurfaceState::MissingProfileDefinition {
+                assert_eq!(
+                    report.inventory.prerequisites[0].path.as_deref(),
+                    Some(Path::new("project.toml"))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ready_analysis_surface_actions_have_the_first_action_lane() {
+        let surface_candidate = analysis_surface_accumulator(
+            ResearchAnalysisSurfaceState::MissingSymbolInventory,
+            Some("fixture-ir"),
+        );
+        let surface = finalize_test(
+            surface_candidate,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray project analyze --project project.toml",
+        );
+        let ordinary = ranked_candidate("ordinary-ready", 1_000, 1, 1);
+        let actions = vec![ordinary, surface];
+        let ranked = ranked_action_indices(&actions, ResearchRankingStrategy::Impact);
+        assert_eq!(actions[ranked[0]].kinds, ["analysis-surface"]);
     }
 
     #[test]
@@ -4896,7 +6558,7 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn schema_twelve_serializes_query_and_executable_actions() {
+    fn schema_thirteen_serializes_query_and_executable_actions() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -4920,7 +6582,7 @@ locator = "RADIO.STATUS"
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 12);
+        assert_eq!(value["schema_version"], 13);
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);
         assert_eq!(
@@ -4948,11 +6610,11 @@ locator = "RADIO.STATUS"
         );
         assert!(value["inventory"]["actions"][0].get("findings").is_none());
         assert_eq!(
-            value["inventory"]["actions"][0]["inspect_action"]["argv"][0],
+            value["inventory"]["actions"][0]["next_action"]["argv"][0],
             "blobray"
         );
         assert_eq!(
-            value["inventory"]["actions"][0]["inspect_action"]["context"],
+            value["inventory"]["actions"][0]["next_action"]["context"],
             "analysis"
         );
         assert!(

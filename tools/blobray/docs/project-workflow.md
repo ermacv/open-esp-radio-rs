@@ -183,14 +183,26 @@ profile = "ieee802154-controller"
 ```
 
 Status reports this family as `missing-vendor-artifact` until the exact source
-binding exists, then as `missing-profile` until the declared linked-IR profile
-is generated and non-empty. A deliberately omitted family uses
-`disposition = "excluded"`, omits `profile`, and requires a one-line `reason`.
+binding exists, then as `missing-profile-definition` until a linked-IR profile
+is declared, as `missing-profile-output` until it is built, and as
+`invalid-profile-output` if the generated profile is empty or unreadable. A
+profile build is offered only for the latter two states; manual configuration
+states remain explicit prerequisites rather than non-runnable commands. The
+symbol family becomes analyzed only when that profile is generated and
+non-empty. A deliberately omitted family uses `disposition = "excluded"`,
+omits `profile`, and requires a one-line `reason`.
 Exclusion is not analyzed coverage: Blobray checks the prefix against the
 generated symbol inventory, reports every matched identity, and marks a
 zero-match declaration `stale-exclusion`. Missing inventory leaves the
 exclusion unverified and the analysis phase incomplete. Undeclared public
 families are never inferred to be covered or excluded.
+
+Surface states distinguish work ownership. Missing source bindings, stale
+reviewed prefixes and missing profile definitions are `coverage-blocked` and
+carry one manual prerequisite pointing at the owning run spec or project
+manifest. Missing symbol inventory and missing/invalid generated profile
+outputs are `ready`, carry no duplicate prerequisite, and expose the exact
+`project analyze` or `advanced ir build --profile ...` `next_action`.
 
 ```console
 cargo blobray project research next --scope ieee802154-baseband-leaves \
@@ -199,7 +211,8 @@ cargo blobray project research next --scope ieee802154-baseband-leaves \
 
 The command is read-only unless `--output` is supplied. Each candidate names
 the missing knowledge, confidence, affected scopes, expected impact and a
-typed next inspection action. Report schema 12 ranks unique user actions:
+typed next action. Report schema 13 ranks unique user actions and
+required public analysis-surface coverage gates:
 independent findings that lead to the same inspection command remain listed as
 `related_findings` instead of consuming duplicate top-N slots. Impact is
 aggregated across the complete action before ranking, not inherited from the

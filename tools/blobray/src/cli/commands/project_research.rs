@@ -125,7 +125,7 @@ fn render(report: &research::ResearchNextReport) {
             outputln!(
                 "\n{}",
                 output::warning(format!(
-                    "NO ACTION SELECTED — {} eligible action(s) remain after the prerequisite lane; increase --limit or use --strategy frontier",
+                    "NO ACTION SELECTED — {} eligible action(s) remain but none fit the shared limit/budget; increase --limit or --budget",
                     report.selection.eligible_actions
                 ))
             );
@@ -144,7 +144,7 @@ fn render(report: &research::ResearchNextReport) {
             ],
             actions.iter().map(|candidate| [
                 candidate.rank.to_string(),
-                compact_middle(&candidate.action.inspect_action.inspect_label(), 34),
+                compact_middle(&candidate.action.next_action.inspect_label(), 34),
                 format!(
                     "{} · {} ({})",
                     action_lane_label(&candidate.findings),
@@ -211,10 +211,7 @@ fn render(report: &research::ResearchNextReport) {
         outputln!("Blocked by prerequisites: {}", prerequisite_ids.join(", "));
     }
     render_findings(&first.findings);
-    outputln!(
-        "Next inspection: {}",
-        first.action.inspect_action.render_posix()
-    );
+    outputln!("Next action: {}", first.action.next_action.render_posix());
     for action in revalidation_actions(&first.findings) {
         outputln!("Revalidate after human review: {}", action.render_posix());
     }
@@ -225,13 +222,13 @@ fn render(report: &research::ResearchNextReport) {
                 union_finding_ids(&candidate.findings, |finding| &finding.direct_function_ids);
             let co_blockers = co_blocker_ids(candidate);
             outputln!(
-                "\n#{} {}\n  Kinds: {}\n  Direct functions: {}\n  Co-blockers: {}\n  Next inspection: {}",
+                "\n#{} {}\n  Kinds: {}\n  Direct functions: {}\n  Co-blockers: {}\n  Next action: {}",
                 candidate.rank,
                 candidate.action.id,
                 candidate.action.kinds.join(", "),
                 direct.join(", "),
                 co_blockers.join(", "),
-                candidate.action.inspect_action.render_posix()
+                candidate.action.next_action.render_posix()
             );
             render_findings(&candidate.findings);
         }
@@ -395,17 +392,26 @@ fn prerequisite_lines(prerequisite: &SelectedPrerequisite<'_>, details: bool) ->
         lines.push(format!("Reason: {}", entry.reason));
     }
     lines.push(format!("Required action: {}", entry.manual_action));
-    lines.push(format!(
-        "Why high-profit: {} benefit points = {} guaranteed functions × 20 + {} optimistic functions × 3 + {} scope roots × 10 + {} publication scopes × 20; {} cost units. Completing this setup may unblock {} findings across {} research actions.",
-        entry.benefit_points,
-        entry.guaranteed_unlock,
-        entry.optimistic_unlock,
-        entry.affected_scope_roots.len(),
-        publication_scopes.len(),
-        entry.estimated_cost_units,
-        entry.satisfies_finding_ids.len(),
-        entry.blocked_action_ids.len(),
-    ));
+    if entry.kind == research::ResearchPrerequisiteKind::AcquireRequiredAnalysisSurface {
+        lines.push(format!(
+            "Why first: a required declared analysis surface is absent or invalid; this coverage gate blocks {} finding(s) and {} typed analysis action(s), cost {} units.",
+            entry.satisfies_finding_ids.len(),
+            entry.blocked_action_ids.len(),
+            entry.estimated_cost_units,
+        ));
+    } else {
+        lines.push(format!(
+            "Why high-profit: {} benefit points = {} guaranteed functions × 20 + {} optimistic functions × 3 + {} scope roots × 10 + {} publication scopes × 20; {} cost units. Completing this setup may unblock {} findings across {} research actions.",
+            entry.benefit_points,
+            entry.guaranteed_unlock,
+            entry.optimistic_unlock,
+            entry.affected_scope_roots.len(),
+            publication_scopes.len(),
+            entry.estimated_cost_units,
+            entry.satisfies_finding_ids.len(),
+            entry.blocked_action_ids.len(),
+        ));
+    }
     if details {
         lines.push(format!(
             "Satisfied finding IDs: {}",
@@ -444,18 +450,18 @@ fn prerequisite_lines(prerequisite: &SelectedPrerequisite<'_>, details: bool) ->
         ));
     }
     if prerequisite.actions.is_empty() {
-        lines.push("Inspection path: no blocked inspection action is linked; use --format json to audit the complete prerequisite record".to_owned());
+        lines.push("Action path: no blocked next action is linked; use --format json to audit the complete prerequisite record".to_owned());
     } else if details {
         lines.extend(
             prerequisite
                 .actions
                 .iter()
-                .map(|action| format!("Inspection path: {}", action.inspect_action.render_posix())),
+                .map(|action| format!("Action path: {}", action.next_action.render_posix())),
         );
     } else {
         lines.push(format!(
-            "Next inspection: {}",
-            prerequisite.actions[0].inspect_action.render_posix()
+            "Next action: {}",
+            prerequisite.actions[0].next_action.render_posix()
         ));
     }
     if let Some(finding) = prerequisite.findings.first() {
@@ -527,6 +533,7 @@ fn list_or_none(values: &[String]) -> String {
 
 fn prerequisite_kind_label(kind: research::ResearchPrerequisiteKind) -> &'static str {
     match kind {
+        research::ResearchPrerequisiteKind::AcquireRequiredAnalysisSurface => "analysis-surface",
         research::ResearchPrerequisiteKind::ConfigureInterfaceDestination => {
             "interface-destination"
         }
@@ -830,6 +837,21 @@ fn resolution_label(resolution: research::ResearchConsumerResolution) -> &'stati
     }
 }
 
+fn analysis_surface_state_label(state: research::ResearchAnalysisSurfaceState) -> &'static str {
+    match state {
+        research::ResearchAnalysisSurfaceState::MissingVendorArtifact => "missing-vendor-artifact",
+        research::ResearchAnalysisSurfaceState::MissingSymbolInventory => {
+            "missing-symbol-inventory"
+        }
+        research::ResearchAnalysisSurfaceState::StaleSymbolFamily => "stale-symbol-family",
+        research::ResearchAnalysisSurfaceState::MissingProfileDefinition => {
+            "missing-profile-definition"
+        }
+        research::ResearchAnalysisSurfaceState::MissingProfileOutput => "missing-profile-output",
+        research::ResearchAnalysisSurfaceState::InvalidProfileOutput => "invalid-profile-output",
+    }
+}
+
 fn consumer_label(consumer: &research::ResearchConsumer) -> String {
     match consumer {
         research::ResearchConsumer::ReviewedKnowledgeAssertions {
@@ -867,6 +889,17 @@ fn consumer_label(consumer: &research::ResearchConsumer) -> String {
             diagnostic
                 .as_deref()
                 .map_or_else(String::new, |value| format!(" ({value})"))
+        ),
+        research::ResearchConsumer::RequiredAnalysisSurface {
+            state,
+            source,
+            profile,
+            diagnostic,
+            ..
+        } => format!(
+            "required analysis surface [{}], source {source}, profile {} ({diagnostic})",
+            analysis_surface_state_label(*state),
+            profile.as_deref().unwrap_or("not configured")
         ),
     }
 }
@@ -1079,7 +1112,7 @@ mod tests {
             id: "action-a".to_owned(),
             kinds: vec!["interface-layout".to_owned()],
             score: 10,
-            inspect_action: action(&[
+            next_action: action(&[
                 "blobray",
                 "inspect",
                 "function",
@@ -1149,7 +1182,7 @@ mod tests {
         );
         assert!(
             rendered.contains(
-                "Next inspection: blobray inspect function btbb:worker --project project.toml --run-spec local.toml"
+                "Next action: blobray inspect function btbb:worker --project project.toml --run-spec local.toml"
             ),
             "{rendered}"
         );
@@ -1176,7 +1209,7 @@ mod tests {
             id: "action-a".to_owned(),
             kinds: vec!["interface-layout".to_owned()],
             score: 1,
-            inspect_action: action(&[
+            next_action: action(&[
                 "blobray",
                 "inspect",
                 "function",
@@ -1243,7 +1276,7 @@ mod tests {
             "Publication scopes: ieee-publication",
             "Evidence sites: 0x10000010, 0x10000020",
             "Evidence channels: interface, linked-ir",
-            "Inspection path: blobray inspect function btbb:consumer --project projects/radio.toml",
+            "Action path: blobray inspect function btbb:consumer --project projects/radio.toml",
         ] {
             assert!(
                 rendered.contains(expected),

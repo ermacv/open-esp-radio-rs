@@ -12,6 +12,8 @@ mod review;
 mod revision;
 mod verification;
 
+pub(crate) use analysis::matching_symbol_identities;
+
 pub(super) fn executable_step<I, S>(
     context: &ProjectContext<'_>,
     instruction: impl Into<String>,

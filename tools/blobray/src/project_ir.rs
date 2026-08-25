@@ -621,7 +621,7 @@ output = "generated/ble.ir"
 
 [[analysis.public-symbol-families]]
 id = "ble-public"
-protocols = ["bluetooth", "ble"]
+protocols = ["ble"]
 source = "ble-controller"
 symbol-prefix = "r_ble_"
 disposition = "excluded"

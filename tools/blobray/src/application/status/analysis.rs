@@ -367,7 +367,7 @@ fn radio_surfaces(context: &ProjectContext<'_>) -> Component {
     component
 }
 
-fn matching_symbol_identities(
+pub(crate) fn matching_symbol_identities(
     source: &str,
     prefix: &str,
     artifact_sources: &std::collections::BTreeMap<usize, BTreeSet<String>>,

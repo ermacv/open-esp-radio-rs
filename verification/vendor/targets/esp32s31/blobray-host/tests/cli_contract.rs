@@ -216,7 +216,7 @@ fn inspect_register_schema_seven_exposes_typed_validation_actions() {
 }
 
 #[test]
-fn research_schema_twelve_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
+fn research_schema_thirteen_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
     let lookup = |scope: &str, finding: &str| {
         let output = blobray()
             .args([
@@ -249,7 +249,7 @@ fn research_schema_twelve_exact_finding_resolution_is_current_and_not_a_completi
     };
 
     let open = lookup("ieee802154-baseband-leaves", "register-0x20103100-32");
-    assert_eq!(open["schema_version"], 12);
+    assert_eq!(open["schema_version"], 13);
     assert_eq!(open["completion_claim"], false);
     assert_eq!(open["finding_query"]["state"], "open");
     assert_eq!(open["finding_query"]["completion_claim"], false);
@@ -264,7 +264,7 @@ fn research_schema_twelve_exact_finding_resolution_is_current_and_not_a_completi
         serde_json::json!(["register-identity"])
     );
     assert_eq!(
-        open["inventory"]["actions"][0]["inspect_action"]["argv"][0],
+        open["inventory"]["actions"][0]["next_action"]["argv"][0],
         "blobray"
     );
     assert!(
@@ -303,7 +303,7 @@ fn research_schema_twelve_exact_finding_resolution_is_current_and_not_a_completi
     );
 
     let missing = lookup("ieee802154-baseband-leaves", "register-not-current");
-    assert_eq!(missing["schema_version"], 12);
+    assert_eq!(missing["schema_version"], 13);
     assert_eq!(missing["completion_claim"], false);
     assert_eq!(missing["finding_query"]["state"], "not-present");
     assert_eq!(missing["finding_query"]["completion_claim"], false);
@@ -324,6 +324,101 @@ fn research_schema_twelve_exact_finding_resolution_is_current_and_not_a_completi
             .as_array()
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn research_surfaces_are_protocol_exact_and_keep_inspection_visible() {
+    let query = |arguments: &[&str]| {
+        let output = blobray()
+            .args(["project", "research", "next"])
+            .args(arguments)
+            .arg("--project")
+            .arg(project())
+            .args([
+                "--limit",
+                "4",
+                "--format",
+                "json",
+                "--color",
+                "never",
+                "--progress",
+                "never",
+            ])
+            .output()
+            .expect("query protocol research surface");
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+
+    let ieee = query(&["--protocol", "ieee802154"]);
+    let ieee_surface = ieee["inventory"]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|finding| finding["kind"] == "analysis-surface")
+        .expect("missing IEEE 802.15.4 surface is a typed finding");
+    assert_eq!(
+        ieee_surface["subject"]["surface"],
+        "ieee802154-public-controller"
+    );
+    assert_eq!(ieee_surface["subject"]["state"], "missing-vendor-artifact");
+    let ieee_finding_id = ieee_surface["id"].as_str().unwrap();
+    assert_eq!(ieee["selection"]["steps"][0]["kind"], "prerequisite");
+    assert!(
+        ieee["selection"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|step| step["kind"] == "action")
+    );
+    let exact_ieee = query(&["--protocol", "ieee802154", "--finding", ieee_finding_id]);
+    assert_eq!(exact_ieee["finding_query"]["state"], "open");
+    assert_eq!(
+        exact_ieee["inventory"]["findings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        exact_ieee["inventory"]["findings"][0]["requery_action"]["context"],
+        "analysis"
+    );
+
+    let ble = query(&["--protocol", "ble"]);
+    assert!(
+        ble["inventory"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|finding| finding["kind"] != "analysis-surface")
+    );
+
+    let bluetooth = query(&["--protocol", "bluetooth"]);
+    let classic_surfaces = bluetooth["inventory"]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["kind"] == "analysis-surface")
+        .collect::<Vec<_>>();
+    assert_eq!(classic_surfaces.len(), 1);
+    assert_eq!(
+        classic_surfaces[0]["subject"]["surface"],
+        "bredr-public-controller"
+    );
+
+    let exact_scope = query(&["--scope", "ieee802154-baseband-leaves"]);
+    assert!(
+        exact_scope["inventory"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|finding| finding["kind"] != "analysis-surface")
     );
 }
 

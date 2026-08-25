@@ -184,7 +184,7 @@ a fresh schema-4 baseline from the live typed vendor bindings.
   reviewed-record IDs. `@live` is a read-only operand for validating and
   comparing current analyzed bindings before publishing a new immutable
   snapshot;
-- research-next reports (`schema_version = 12`) contain one deterministic,
+- research-next reports (`schema_version = 13`) contain one deterministic,
   SHA-256-identified full inventory of findings, actions and prerequisites.
   Actions refer to the single typed finding catalog by ID and prerequisites
   carry no rank; the bounded `selection.steps` list contains only ordered typed
@@ -195,7 +195,10 @@ a fresh schema-4 baseline from the live typed vendor bindings.
   or historical occurrence. Findings retain subjects,
   executable-consumer resolution, actionability,
   evidence, impact sets, a typed exact-finding requery action and typed
-  revalidation actions. Every executable action stores exact argument
+  revalidation actions. Required public symbol-family gaps distinguish manual
+  `coverage-blocked` states with one prerequisite from automatic `ready`
+  states with no duplicate prerequisite. Every catalog entry exposes one
+  state-consistent `next_action`. Every executable action stores exact argument
   boundaries, the absolute invocation working directory and its project-context
   level; rendered shell text is never part of the machine schema. Capability matches and
   verification surfaces are context-only links with zero ranking weight, and

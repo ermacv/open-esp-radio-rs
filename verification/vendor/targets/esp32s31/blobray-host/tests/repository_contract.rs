@@ -962,6 +962,27 @@ fn ieee802154_vendor_scaffold_is_fail_closed_and_source_scoped() {
     let public_families = project["analysis"]["public-symbol-families"]
         .as_array_of_tables()
         .expect("explicit public symbol family coverage");
+    let ble_controller = public_families
+        .iter()
+        .find(|family| family["id"].as_str() == Some("ble-public-controller"))
+        .expect("BLE public controller coverage declaration");
+    assert_eq!(ble_controller["source"].as_str(), Some("ble-controller"));
+    assert_eq!(
+        ble_controller["profile"].as_str(),
+        Some("ble-controller-all")
+    );
+    let bredr_controller = public_families
+        .iter()
+        .find(|family| family["id"].as_str() == Some("bredr-public-controller"))
+        .expect("BR/EDR public controller coverage declaration");
+    assert_eq!(
+        bredr_controller["source"].as_str(),
+        Some("bredr-controller")
+    );
+    assert_eq!(
+        bredr_controller["profile"].as_str(),
+        Some("bredr-controller-lifecycle")
+    );
     let controller = public_families
         .iter()
         .find(|family| family["id"].as_str() == Some("ieee802154-public-controller"))
@@ -1024,7 +1045,7 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
     let scopes = project["review"]["scopes"]
         .as_array_of_tables()
         .expect("project review scopes");
-    assert_eq!(scopes.len(), 29);
+    assert_eq!(scopes.len(), 30);
 
     let allowed = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
         .into_iter()
@@ -1058,8 +1079,22 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
     assert_eq!(by_id["station-state"], BTreeSet::from(["wifi".to_owned()]));
     assert_eq!(
         by_id["ble-controller-lifecycle"],
+        BTreeSet::from(["ble".to_owned()])
+    );
+    assert_eq!(
+        by_id["ble-stack-lifecycle"],
+        BTreeSet::from(["ble".to_owned()])
+    );
+    assert_eq!(
+        by_id["btdm-task-lifecycle"],
         BTreeSet::from(["ble".to_owned(), "bluetooth".to_owned()])
     );
+    assert_eq!(
+        by_id["btbb-coex-client"],
+        BTreeSet::from(["ble".to_owned(), "bluetooth".to_owned(), "coex".to_owned()])
+    );
+    assert!(!by_id.contains_key("ble-runtime-lifecycle"));
+    assert!(!by_id.contains_key("ble-coex-client"));
     assert_eq!(
         by_id["ieee802154-coex-client"],
         BTreeSet::from(["coex".to_owned(), "ieee802154".to_owned()])
@@ -1090,8 +1125,8 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
         })
         .collect::<BTreeMap<_, _>>();
     assert_eq!(counts["wifi"], 22);
-    assert_eq!(counts["bluetooth"], 11);
-    assert_eq!(counts["ble"], 11);
+    assert_eq!(counts["bluetooth"], 8);
+    assert_eq!(counts["ble"], 12);
     assert_eq!(counts["ieee802154"], 8);
     assert_eq!(counts["coex"], 9);
     assert_eq!(counts["shared"], 6);

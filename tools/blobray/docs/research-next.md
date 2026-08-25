@@ -23,13 +23,13 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 5. It separates two levels:
+The machine report uses schema 6. It separates two levels:
 
 - an `action` is one copyable `inspect_command` and may coalesce several
   findings without losing any finding fields;
 - a `finding` retains its typed `subject`, typed executable `consumers`, exact
-  evidence sites/channels, impact sets, context links, required knowledge and
-  post-review revalidation commands.
+  evidence sites/channels, causal inspection functions, impacted functions,
+  context links, required knowledge and post-review revalidation commands.
 
 Reviewed-knowledge consumers resolve to one configured pack only when the
 destination is unique. Interface consumers resolve only to a project-local,
@@ -84,6 +84,14 @@ remains directly actionable. Finding-level `revalidation_commands` describe
 what to rerun after human review; they do not assert that the work is done.
 `--output PATH --check` retains the normal generated-file contract for
 reproducible machine plans.
+
+The human summary keeps the inspect target near the left edge of the ranking
+table so it remains readable in an ordinary terminal. The top action then
+lists up to eight coalesced findings separately, including kind, summary,
+knowledge gap, typed consumer resolution, causal inspection functions, linked
+evidence sites/channels and required evidence. The compact view states exactly
+how many findings remain; `--details` expands them. JSON output is unchanged
+and always retains every finding and evidence field.
 
 ## ESP32-S31 measurement
 

@@ -143,7 +143,7 @@ a fresh schema-2 baseline from the live typed vendor bindings.
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output;
 - revision diff and rebase plans;
-- research-next reports (`schema_version = 5`), including explicit benefit,
+- research-next reports (`schema_version = 6`), including explicit benefit,
   cost and co-blocker score terms; one action per copyable inspection command;
   and full typed findings with subjects, executable-consumer resolution,
   evidence, impact sets and revalidation commands. Capability matches and

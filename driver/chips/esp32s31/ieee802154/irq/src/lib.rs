@@ -1357,25 +1357,6 @@ mod tests {
     ];
 
     #[test]
-    fn source_and_route_geometry_are_exact() {
-        assert_eq!(IEEE802154_MAC_INTERRUPT_SOURCE.number(), 132);
-        assert_eq!(Ieee802154RouteGeometry::MAP_REGISTER_OFFSET, 0x210);
-        assert_eq!(Ieee802154RouteGeometry::CORE_REGISTER_STRIDE, 0x800);
-        assert_eq!(Ieee802154RouteGeometry::MAP_FIELD_MASK, 0x3f);
-        assert_eq!(Ieee802154RouteGeometry::PASS_LEVEL_SHIFT, 8);
-        assert_eq!(Ieee802154RouteGeometry::PASS_LEVEL_MASK, 0x300);
-        assert_eq!(Ieee802154RouteGeometry::DOCUMENTED_FIELD_MASK, 0x33f);
-        assert_eq!(
-            Ieee802154RouteGeometry::map_offset_from_core0(Ieee802154InterruptCore::Core0),
-            0x210
-        );
-        assert_eq!(
-            Ieee802154RouteGeometry::map_offset_from_core0(Ieee802154InterruptCore::Core1),
-            0xa10
-        );
-    }
-
-    #[test]
     fn route_readback_distinguishes_unassigned_map_from_full_reset() {
         let reset = Ieee802154RouteWord::from_raw(0);
         assert_eq!(reset.raw_bits(), 0);

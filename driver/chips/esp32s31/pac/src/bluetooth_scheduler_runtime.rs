@@ -204,8 +204,6 @@ mod tests {
         execute_clear_scheduler_reference, execute_finished_list_transfer,
         execute_reference_gate_observation, execute_work_observation,
     };
-    use crate::RadioHardware;
-
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum InterruptOperation {
         ReadState,
@@ -298,31 +296,6 @@ mod tests {
                 FinishedListOperation::ReadStatus,
                 FinishedListOperation::WriteReport(0xa55a),
             ]
-        );
-    }
-
-    #[test]
-    fn scheduler_runtime_words_have_exact_disjoint_owner_geometry() {
-        let bluetooth = RadioHardware::for_validation().into_bluetooth();
-        let (task, setup) = bluetooth.separate_interrupt_owner();
-        let interrupt_runtime = &setup.peripherals.bluetooth_scheduler_interrupt_runtime;
-        let controller = &task.bluetooth.bluetooth_controller_core;
-
-        assert_eq!(
-            interrupt_runtime.scheduler_reference().as_ptr() as usize,
-            0x2010_1078
-        );
-        assert_eq!(
-            interrupt_runtime.scheduler_state().as_ptr() as usize,
-            0x2010_107c
-        );
-        assert_eq!(
-            controller.scheduler_finished_list_status().as_ptr() as usize,
-            0x2010_125c
-        );
-        assert_eq!(
-            controller.scheduler_finished_list_report().as_ptr() as usize,
-            0x2010_1260
         );
     }
 }

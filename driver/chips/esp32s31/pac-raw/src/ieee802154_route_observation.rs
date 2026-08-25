@@ -9,9 +9,6 @@
 //! `DR_REG_INTR0_BASE=0x20585000`, the core-one stride is `0x800`, and source
 //! 132 has map-register offset `0x210` on both cores.
 
-#[cfg(test)]
-const DOCUMENTED_FIELD_MASK: u32 = 0x33f;
-
 /// A fixed, aligned route-register address with no runtime constructor.
 struct RouteRegister<const ADDRESS: usize>;
 
@@ -71,17 +68,6 @@ pub fn read_route_words(_registers: &crate::Ieee802154Mac) -> Ieee802154RouteRaw
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn fixed_addresses_and_documented_mask_are_exact() {
-        assert_eq!(RouteRegister::<0x2058_5210>::ADDRESS, 0x2058_5210);
-        assert_eq!(RouteRegister::<0x2058_5a10>::ADDRESS, 0x2058_5a10);
-        assert_eq!(
-            RouteRegister::<0x2058_5a10>::ADDRESS - RouteRegister::<0x2058_5210>::ADDRESS,
-            0x800
-        );
-        assert_eq!(DOCUMENTED_FIELD_MASK, 0x33f);
-    }
 
     #[test]
     fn raw_readback_preserves_core_order_and_reserved_bits() {

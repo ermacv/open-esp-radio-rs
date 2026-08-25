@@ -30,11 +30,23 @@ pub fn capture_primary_and_acknowledge_interrupts() -> [u32; 2] {
 }
 
 /// Execute the reviewed primary baseline clear/enable/output preparation.
+///
+/// # Safety
+///
+/// The caller must be an isolated compiled-production probe modeling enabled
+/// clocks, completed controller HAL-init and quiescent dynamic sources.
+#[allow(
+    unsafe_code,
+    reason = "the validation-only API preserves the post-controller-init IRQ prerequisite"
+)]
 #[inline(always)]
-pub fn prepare_primary_interrupt_output() {
+pub unsafe fn prepare_primary_interrupt_output() {
     let bluetooth = open_esp_radio_esp32s31_pac::RadioHardware::for_validation().into_bluetooth();
     let (task, interrupts) = bluetooth.separate_interrupt_owner();
-    let prepared = interrupts.prepare_controller_output();
+    let prerequisite = unsafe {
+        open_esp_radio_esp32s31_pac::BluetoothInterruptOutputPreparationPrerequisite::assume_satisfied()
+    };
+    let prepared = interrupts.prepare_controller_output(prerequisite);
     let _powered_owners = (task, prepared);
 }
 
@@ -45,7 +57,7 @@ pub fn clear_scheduler_table_low_bits() {
         open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = resources.separate_interrupt_owner();
-    task.controller_hal().clear_scheduler_table_low_bits();
+    task.clear_scheduler_table_low_bits();
     // The comparison image deliberately retains the mutated partitions; it
     // must not reconstruct cold ownership without the missing rollback.
     let _powered_owners = (task, interrupts);
@@ -99,6 +111,52 @@ pub unsafe fn initialize_controller_hal_reviewed_standalone() {
         task.initialize_controller_hal(BluetoothControllerHalInitConfig::reviewed_standalone());
     }
     let _powered_owners = (task, interrupts);
+}
+
+/// Apply the exact modem low-power timer register prefix before source 127.
+///
+/// This isolated path compiles the shipping opaque HAL transition while
+/// retaining both terminal owners. It does not publish ISR storage, allocate
+/// the CPU route, or claim that the controller software environment exists.
+///
+/// # Safety
+///
+/// The caller must model enabled controller/timer clocks and completed task,
+/// HAL, scheduler/event-list and HCI software initialization. No later radio
+/// operation may execute in the comparison image.
+#[allow(
+    unsafe_code,
+    reason = "the isolated validation image assumes the missing software-stage prerequisite"
+)]
+#[inline(always)]
+pub unsafe fn prepare_modem_lp_timer_registers() {
+    let cold = open_esp_radio_esp32s31_hal::BluetoothColdOwner::from_radio_hardware(
+        open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
+    );
+    let (task, interrupts) = cold.separate_interrupt_owner();
+    let prerequisite = unsafe {
+        open_esp_radio_esp32s31_hal::BluetoothModemLpTimerInitializationPrerequisite::assume_satisfied()
+    };
+    let prepared = task.prepare_modem_lp_timer_registers(prerequisite);
+    let _terminal_owners = (prepared, interrupts);
+}
+
+/// Publish the scheduler-disable command and perform one bounded BUSY sample
+/// through the exact production PAC transaction.
+///
+/// # Safety
+///
+/// The caller must be an isolated compiled-production probe modeling a
+/// powered task-stopping controller and a post-route observation point.
+#[allow(
+    unsafe_code,
+    reason = "the validation-only API preserves the powered scheduler prerequisite"
+)]
+#[inline(always)]
+pub unsafe fn disable_scheduler_and_sample_once() -> bool {
+    unsafe {
+        open_esp_radio_esp32s31_pac::validation::disable_bluetooth_scheduler_and_sample_once()
+    }
 }
 
 /// Execute one exact production memory-list pointer publication in an

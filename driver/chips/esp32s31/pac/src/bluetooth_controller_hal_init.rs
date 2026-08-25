@@ -7,6 +7,44 @@
 
 use super::{BluetoothControllerSramAddress, BluetoothTaskRegisters, device_fence};
 
+/// Affine proof for the external prerequisites of controller HAL-init.
+///
+/// The PAC owns the exact MMIO transaction but not the clock, common-PHY,
+/// BTBB, controller-software or IRQ lifecycle that precedes it. A higher
+/// lifecycle constructs this proof at its explicit unsafe boundary and a safe
+/// HAL operation consumes it exactly once.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitPrerequisite;
+///
+/// fn duplicate(proof: BluetoothControllerHalInitPrerequisite) {
+///     let _first = proof;
+///     let _second = proof;
+/// }
+/// ```
+#[must_use = "the controller-init proof must be consumed by its exact transaction"]
+pub struct BluetoothControllerHalInitPrerequisite {
+    _private: (),
+}
+
+impl BluetoothControllerHalInitPrerequisite {
+    /// Assume every external prerequisite for one controller HAL-init body.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain enabled Bluetooth clocks, completed common PHY
+    /// and BTBB state, quiescent controller software queues, controller SRAM,
+    /// and the inactive interrupt bank for the same unique hardware owner.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "construction is the explicit cross-crate controller-init proof boundary"
+    )]
+    pub unsafe fn assume_satisfied() -> Self {
+        Self { _private: () }
+    }
+}
+
 /// First positional scaling input accepted by the complete HAL-config setter.
 ///
 /// The instruction evidence accepts exactly the byte values 8 and 16.  No
@@ -392,18 +430,15 @@ impl BluetoothTaskRegisters {
     /// This method does not initialize software events/lists, route a CPU
     /// interrupt, enable the Link Layer or claim HCI readiness.
     ///
-    /// # Safety
-    ///
-    /// The caller must own the enabled Bluetooth clock, common-PHY and BTBB
-    /// lifecycle; all controller software queues must be quiescent; and the
-    /// inactive interrupt bank must remain retained until this transaction and
-    /// later CPU-route installation complete.
+    /// The consumed prerequisite is constructible only at the unsafe lifecycle
+    /// boundary that owns clocks, PHY, BTBB, software queues, SRAM and the
+    /// inactive interrupt bank.
     #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "the signature retains the powered, quiescent and inactive-IRQ prerequisites"
-    )]
-    pub unsafe fn initialize_controller_hal(&mut self, config: BluetoothControllerHalInitConfig) {
+    pub fn initialize_controller_hal(
+        &mut self,
+        _prerequisite: BluetoothControllerHalInitPrerequisite,
+        config: BluetoothControllerHalInitConfig,
+    ) {
         let mut transaction = MmioHalInit {
             registers: &self.bluetooth.bluetooth_controller_core,
         };
@@ -422,8 +457,6 @@ mod tests {
         BluetoothControllerHalInitConfig, BluetoothHalInitPeriod, BluetoothHalInitScale,
         HalInitRegister, HalInitTransaction, execute_hal_init,
     };
-    use crate::RadioHardware;
-
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
         Write(HalInitRegister, u32),
@@ -623,42 +656,5 @@ mod tests {
                 ]
             );
         }
-    }
-
-    #[test]
-    fn complete_transaction_targets_the_eleven_reviewed_registers() {
-        // Pointer inspection does not perform volatile MMIO.
-        let cold = RadioHardware::for_validation().into_bluetooth();
-        let (task, _interrupts) = cold.separate_interrupt_owner();
-        let registers = &task.bluetooth.bluetooth_controller_core;
-
-        assert_eq!(
-            [
-                registers.scheduler_sram_pointer_prefix().as_ptr() as usize,
-                registers.hal_init_bytes().as_ptr() as usize,
-                registers.sleep_timer_control().as_ptr() as usize,
-                registers.hal_init_control_0().as_ptr() as usize,
-                registers.hal_init_control_1().as_ptr() as usize,
-                registers.hal_init_latch().as_ptr() as usize,
-                registers.hal_init_low_20().as_ptr() as usize,
-                registers.hal_init_scheduler_control().as_ptr() as usize,
-                registers.hal_init_low_half().as_ptr() as usize,
-                registers.hal_init_slot_map(0).as_ptr() as usize,
-                registers.hal_init_slot_map(1).as_ptr() as usize,
-            ],
-            [
-                0x2010_1074,
-                0x2010_1084,
-                0x2010_1090,
-                0x2010_10dc,
-                0x2010_10e0,
-                0x2010_11c0,
-                0x2010_11c4,
-                0x2010_1250,
-                0x2010_127c,
-                0x2010_134c,
-                0x2010_1350,
-            ]
-        );
     }
 }

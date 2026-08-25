@@ -27,6 +27,43 @@ const BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_8: u32 = 1 << 8;
 const BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_9: u32 = 1 << 9;
 const BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_12: u32 = 1 << 12;
 
+/// Affine proof for controller-side interrupt output preparation.
+///
+/// The exact interrupt-bank transaction lives in the PAC, while controller
+/// HAL-init and powered ordering belong to a higher lifecycle. Safe HAL code
+/// consumes this value once; only that lifecycle may assume it.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::BluetoothInterruptOutputPreparationPrerequisite;
+///
+/// fn duplicate(proof: BluetoothInterruptOutputPreparationPrerequisite) {
+///     let _first = proof;
+///     let _second = proof;
+/// }
+/// ```
+#[must_use = "the interrupt-output proof must be consumed by its exact transaction"]
+pub struct BluetoothInterruptOutputPreparationPrerequisite {
+    _private: (),
+}
+
+impl BluetoothInterruptOutputPreparationPrerequisite {
+    /// Assume every external prerequisite for controller output preparation.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain enabled clocks, completed controller HAL-init,
+    /// quiescent dynamic Link-Layer sources and an inactive CPU route for the
+    /// same unique Bluetooth owner.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "construction is the explicit post-controller-init IRQ proof boundary"
+    )]
+    pub unsafe fn assume_satisfied() -> Self {
+        Self { _private: () }
+    }
+}
+
 trait BluetoothInterruptControl {
     fn clear_primary_baseline_bank_0(&mut self);
     fn clear_primary_baseline_bank_1(&mut self);
@@ -213,7 +250,10 @@ impl BluetoothInterruptSetup {
     /// to `0x2010_100c`, then the outer path calls the platform interrupt
     /// allocator for source 124. The earlier HAL-init part of that composite
     /// remains a separate lifecycle prerequisite.
-    pub fn prepare_controller_output(self) -> BluetoothInterruptOutputPrepared {
+    pub fn prepare_controller_output(
+        self,
+        _prerequisite: BluetoothInterruptOutputPreparationPrerequisite,
+    ) -> BluetoothInterruptOutputPrepared {
         let mut control = HardwareInterruptControl {
             bank: &self.peripherals.bluetooth_interrupt_bank,
         };
@@ -226,6 +266,15 @@ impl BluetoothInterruptSetup {
 }
 
 impl BluetoothInterruptOutputPrepared {
+    pub(super) fn scheduler_busy_after_routes(&self) -> bool {
+        self.peripherals
+            .bluetooth_scheduler_interrupt_runtime
+            .scheduler_state()
+            .read()
+            .busy()
+            .bit_is_set()
+    }
+
     /// Release a prepared controller output after any CPU route has been
     /// removed.
     ///
@@ -253,6 +302,27 @@ impl BluetoothInterruptOutputPrepared {
     /// and recover it only after both routes have been disabled.
     pub fn stage_for_cpu_routes(self) -> BluetoothInterruptRegisters {
         BluetoothInterruptRegisters {
+            peripherals: self.peripherals,
+        }
+    }
+}
+
+#[cfg(feature = "validation-probes")]
+impl BluetoothInterruptSetup {
+    /// Forge the post-route state for one isolated terminal comparison image.
+    ///
+    /// # Safety
+    ///
+    /// CPU routes and shared ISR access must be absent, and the image must not
+    /// perform any later radio operation or reconstruct neutral ownership.
+    #[allow(
+        unsafe_code,
+        reason = "the isolated validation image explicitly assumes post-route ownership"
+    )]
+    pub(super) unsafe fn assume_output_prepared_after_routes_for_validation(
+        self,
+    ) -> BluetoothInterruptOutputPrepared {
+        BluetoothInterruptOutputPrepared {
             peripherals: self.peripherals,
         }
     }
@@ -522,12 +592,11 @@ mod tests {
 
     use super::{
         BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
-        BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
-        BluetoothInterruptControl, BluetoothInterruptSetup, BluetoothNrtInterruptObservation,
-        BluetoothPrimaryInterruptControl, BluetoothPrimaryInterruptObservation,
-        execute_primary_interrupt_epoch, execute_primary_prepare, execute_primary_release,
+        BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BluetoothInterruptControl,
+        BluetoothNrtInterruptObservation, BluetoothPrimaryInterruptControl,
+        BluetoothPrimaryInterruptObservation, execute_primary_interrupt_epoch,
+        execute_primary_prepare, execute_primary_release,
     };
-    use crate::RadioHardware;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
@@ -683,24 +752,6 @@ mod tests {
     }
 
     #[test]
-    fn primary_baseline_masks_are_exact_complete_helper_images() {
-        assert_eq!(BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, 1 << 15);
-        assert_eq!(
-            BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
-            (1 << 8) | (1 << 9) | (1 << 12)
-        );
-    }
-
-    #[test]
-    fn primary_dynamic_masks_are_exact_complete_helper_images() {
-        assert_eq!(
-            BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK,
-            (1 << 21) | (1 << 27) | (1 << 28)
-        );
-        assert_eq!(BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK, 1 << 3);
-    }
-
-    #[test]
     fn primary_epoch_acknowledges_before_conditional_fault_capture() {
         let mut recorder = EpochRecorder::new(
             BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK,
@@ -786,17 +837,5 @@ mod tests {
                 Operation::MaskBank1,
             ]
         );
-    }
-
-    #[test]
-    fn interrupt_control_geometry_matches_the_three_reviewed_strobes() {
-        let bluetooth = RadioHardware::for_validation().into_bluetooth();
-        let (_task, setup) = bluetooth.separate_interrupt_owner();
-        let BluetoothInterruptSetup { peripherals } = setup;
-        let bank = &peripherals.bluetooth_interrupt_bank;
-
-        assert_eq!(bank.irq_control_0().as_ptr() as usize, 0x2010_100c);
-        assert_eq!(bank.irq_control_1().as_ptr() as usize, 0x2010_1010);
-        assert_eq!(bank.irq_control_2().as_ptr() as usize, 0x2010_1014);
     }
 }

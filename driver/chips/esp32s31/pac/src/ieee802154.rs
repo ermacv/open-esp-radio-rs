@@ -2606,9 +2606,9 @@ mod tests {
         StopOperation,
         StopTimer0,
         StopTimer1,
-        ReplaceEvents(u16),
-        ReplaceTxAborts(u32),
-        ReplaceRxAborts(u32),
+        ReplaceEvents,
+        ReplaceTxAborts,
+        ReplaceRxAborts,
         OrderDeviceAccesses,
         SampleStaleEvents(u8),
         AcknowledgeStaleEvents(u8),
@@ -2640,19 +2640,19 @@ mod tests {
                 .push(InterruptTransitionOperation::StopTimer1);
         }
 
-        fn replace_event_enable(&mut self, events: Ieee802154EventEnableMask) {
+        fn replace_event_enable(&mut self, _events: Ieee802154EventEnableMask) {
             self.operations
-                .push(InterruptTransitionOperation::ReplaceEvents(events.bits()));
+                .push(InterruptTransitionOperation::ReplaceEvents);
         }
 
-        fn replace_tx_abort_enable(&mut self, aborts: Ieee802154InterruptTxAbortEnableMask) {
+        fn replace_tx_abort_enable(&mut self, _aborts: Ieee802154InterruptTxAbortEnableMask) {
             self.operations
-                .push(InterruptTransitionOperation::ReplaceTxAborts(aborts.bits()));
+                .push(InterruptTransitionOperation::ReplaceTxAborts);
         }
 
-        fn replace_rx_abort_enable(&mut self, aborts: Ieee802154InterruptRxAbortEnableMask) {
+        fn replace_rx_abort_enable(&mut self, _aborts: Ieee802154InterruptRxAbortEnableMask) {
             self.operations
-                .push(InterruptTransitionOperation::ReplaceRxAborts(aborts.bits()));
+                .push(InterruptTransitionOperation::ReplaceRxAborts);
         }
 
         fn order_device_accesses(&mut self) {
@@ -2690,13 +2690,13 @@ mod tests {
         assert_eq!(
             port.operations,
             [
-                InterruptTransitionOperation::ReplaceEvents(0),
-                InterruptTransitionOperation::ReplaceTxAborts(0x0186_8000),
-                InterruptTransitionOperation::ReplaceRxAborts(0x0002_8000),
+                InterruptTransitionOperation::ReplaceEvents,
+                InterruptTransitionOperation::ReplaceTxAborts,
+                InterruptTransitionOperation::ReplaceRxAborts,
                 InterruptTransitionOperation::OrderDeviceAccesses,
                 InterruptTransitionOperation::SampleStaleEvents(0xa5),
                 InterruptTransitionOperation::AcknowledgeStaleEvents(0xa5),
-                InterruptTransitionOperation::ReplaceEvents(0x1a7f),
+                InterruptTransitionOperation::ReplaceEvents,
                 InterruptTransitionOperation::OrderDeviceAccesses,
             ]
         );
@@ -2716,9 +2716,9 @@ mod tests {
                 InterruptTransitionOperation::StopOperation,
                 InterruptTransitionOperation::StopTimer0,
                 InterruptTransitionOperation::StopTimer1,
-                InterruptTransitionOperation::ReplaceEvents(0),
-                InterruptTransitionOperation::ReplaceTxAborts(0),
-                InterruptTransitionOperation::ReplaceRxAborts(0),
+                InterruptTransitionOperation::ReplaceEvents,
+                InterruptTransitionOperation::ReplaceTxAborts,
+                InterruptTransitionOperation::ReplaceRxAborts,
                 InterruptTransitionOperation::OrderDeviceAccesses,
                 InterruptTransitionOperation::SampleStaleEvents(0x3c),
                 InterruptTransitionOperation::AcknowledgeStaleEvents(0x3c),

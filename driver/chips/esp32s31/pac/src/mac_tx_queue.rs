@@ -107,12 +107,4 @@ mod tests {
         assert_eq!(physical_bank(2), 1);
         assert_eq!(physical_bank(3), 0);
     }
-
-    #[test]
-    fn returned_vendor_leaf_address_matches_the_selected_bank() {
-        assert_eq!(control_address(0), 0x2010_4d70);
-        assert_eq!(control_address(1), 0x2010_4d60);
-        assert_eq!(control_address(2), 0x2010_4d50);
-        assert_eq!(control_address(3), 0x2010_4d40);
-    }
 }

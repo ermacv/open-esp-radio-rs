@@ -32,6 +32,7 @@ mod clock;
 #[cfg(any(target_arch = "riscv32", test))]
 mod common_phy_state;
 mod controller_time;
+mod dtm_event_prepare;
 mod dtm_event_timing;
 mod dtm_link_state;
 mod dtm_parameters;
@@ -62,10 +63,10 @@ pub use clock::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use common_phy_state::{BluetoothPhyInitializationReport, BluetoothPhyInitialized};
-pub use controller_time::{
-    BluetoothControllerSchedulerEpoch, BluetoothControllerTimeLatchInFlight,
-    BluetoothControllerTimeLatchProgress, BluetoothControllerTimeLatchPublication,
-    BluetoothControllerTimeLatchReadReady, BluetoothControllerTimeSample,
+pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
+pub use dtm_event_prepare::{
+    BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
+    BluetoothDtmReviewedEventWordsPrepared,
 };
 pub use dtm_event_timing::{
     BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin, BluetoothDtmTxEventAdvance,
@@ -115,6 +116,8 @@ pub use interrupt_wake::{
 };
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError,
+    BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPrepareError,
+    BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmPositionalEventWords,
     BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
     BluetoothRxMemoryListClass,
 };

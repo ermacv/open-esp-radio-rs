@@ -7,8 +7,8 @@ extern crate std;
 use core::future::Future;
 
 use open_esp_radio_esp32s31_pac::{
-    BluetoothTaskRegisters, Ieee802154TaskRegisters,
-    MacInterruptRegisters as PacMacInterruptRegisters, MacInterruptSetup as PacMacInterruptSetup,
+    Ieee802154TaskRegisters, MacInterruptRegisters as PacMacInterruptRegisters,
+    MacInterruptSetup as PacMacInterruptSetup,
     MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioHardware, RadioPhyRegisters,
     WifiColdRegisters, WifiRadioRegisters,
 };
@@ -48,7 +48,24 @@ pub mod types;
 pub mod validation;
 pub mod wifi_bb;
 pub mod wifi_mac;
-pub use bluetooth::{BluetoothControllerHal, BluetoothControllerHalBorrow};
+pub use bluetooth::{
+    BluetoothBasebandInitializationPrerequisite, BluetoothColdOwner, BluetoothControllerHal,
+    BluetoothControllerHalBorrow, BluetoothControllerHalInitConfig,
+    BluetoothControllerHalInitPrerequisite, BluetoothControllerLatchedTime,
+    BluetoothControllerSchedulerDisableBeginError, BluetoothControllerSchedulerDisableBeginFailure,
+    BluetoothControllerSchedulerDisableBusyObserved,
+    BluetoothControllerSchedulerDisableIdleObserved,
+    BluetoothControllerSchedulerDisablePrerequisite, BluetoothControllerSchedulerDisableStep,
+    BluetoothControllerSchedulerDisabling, BluetoothControllerTimeLatchBeginError,
+    BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
+    BluetoothInterruptOutputAfterRoutesOwner, BluetoothInterruptOutputPreparationPrerequisite,
+    BluetoothInterruptOutputPreparedOwner, BluetoothInterruptRegistersOwner,
+    BluetoothInterruptSetupOwner, BluetoothModemLpTimerHandlerPendingOwner,
+    BluetoothModemLpTimerInitializationPrerequisite, BluetoothModemLpTimerInterruptEvent,
+    BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerInterruptReadyOwner,
+    BluetoothModemLpTimerInterruptStep, BluetoothModemLpTimerRegistersPreparedOwner,
+    BluetoothTaskOwner, BluetoothTaskOwnerReuniteError, BluetoothTaskOwnerReuniteFailure,
+};
 #[cfg(feature = "validation-probes")]
 pub use ieee802154_ed_event_probe::{
     Ieee802154EdEventProbeConfig, Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeIsolation,
@@ -147,7 +164,7 @@ pub struct SharedPhyHal<'owner> {
 
 mod sealed {
     use super::{
-        BluetoothTaskRegisters, Ieee802154TaskRegisters, RadioPhyRegisters,
+        BluetoothTaskOwner, Ieee802154TaskRegisters, RadioPhyRegisters,
         WifiBasebandEnableObservation,
     };
 
@@ -155,7 +172,7 @@ mod sealed {
         fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters;
     }
 
-    impl BluetoothSharedPhyBorrow for BluetoothTaskRegisters {
+    impl BluetoothSharedPhyBorrow for BluetoothTaskOwner {
         fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
             self.radio_phy_mut()
         }
@@ -208,7 +225,7 @@ pub trait BluetoothSharedPhyBorrow: sealed::BluetoothSharedPhyBorrow {
     }
 }
 
-impl BluetoothSharedPhyBorrow for BluetoothTaskRegisters {}
+impl BluetoothSharedPhyBorrow for BluetoothTaskOwner {}
 
 /// Sealed conversion from the exclusive IEEE 802.15.4 task owner to one
 /// narrow shared-PHY borrow.

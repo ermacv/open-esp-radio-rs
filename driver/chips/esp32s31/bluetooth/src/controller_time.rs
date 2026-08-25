@@ -7,87 +7,7 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_pac::{
-    BluetoothControllerLatchedTime, BluetoothControllerTimeLatchObservation,
-    BluetoothControllerTimeLatchRequest, BluetoothControllerTimeScale,
-};
-
-/// Result of evaluating one fresh controller-time event.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "waiting state or ready transition must remain owned"]
-pub enum BluetoothControllerTimeLatchProgress<W, R> {
-    /// Hardware still owns the request; yield until another event.
-    Waiting(W),
-    /// The current phase can advance without polling.
-    Ready(R),
-}
-
-/// Permission and exact image for publishing one latch request.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "the controller-time latch request must be published or abandoned"]
-pub struct BluetoothControllerTimeLatchPublication {
-    request: BluetoothControllerTimeLatchRequest,
-}
-
-impl BluetoothControllerTimeLatchPublication {
-    /// Begin one pure request without touching MMIO.
-    pub const fn new(request: BluetoothControllerTimeLatchRequest) -> Self {
-        Self { request }
-    }
-
-    /// Exact fresh-read OR image for `SLEEP_TIMER_CONTROL`.
-    pub const fn control_image(self, fresh_control_read: u32) -> u32 {
-        self.request.publication_image(fresh_control_read)
-    }
-
-    /// Record that the request write completed.
-    ///
-    /// A future live owner will perform the RMW and consume this token
-    /// internally before exposing the in-flight phase.
-    pub const fn published(self) -> BluetoothControllerTimeLatchInFlight {
-        BluetoothControllerTimeLatchInFlight { _private: () }
-    }
-}
-
-/// One published latch request awaiting hardware's self-clear edge.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "the in-flight controller-time request must be observed again"]
-pub struct BluetoothControllerTimeLatchInFlight {
-    _private: (),
-}
-
-impl BluetoothControllerTimeLatchInFlight {
-    /// Evaluate exactly one fresh control-register observation.
-    pub const fn observe(
-        self,
-        observation: BluetoothControllerTimeLatchObservation,
-    ) -> BluetoothControllerTimeLatchProgress<Self, BluetoothControllerTimeLatchReadReady> {
-        if observation.pending() {
-            BluetoothControllerTimeLatchProgress::Waiting(self)
-        } else {
-            BluetoothControllerTimeLatchProgress::Ready(BluetoothControllerTimeLatchReadReady {
-                _private: (),
-            })
-        }
-    }
-}
-
-/// Proof that hardware cleared the request and the latched word may be read.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "the ready latched-time word must be read or explicitly abandoned"]
-pub struct BluetoothControllerTimeLatchReadReady {
-    _private: (),
-}
-
-impl BluetoothControllerTimeLatchReadReady {
-    /// Complete the ordered read with one positional latched-time image.
-    pub const fn complete(
-        self,
-        latched_time: BluetoothControllerLatchedTime,
-    ) -> BluetoothControllerTimeSample {
-        BluetoothControllerTimeSample { latched_time }
-    }
-}
+use open_esp_radio_esp32s31_pac::{BluetoothControllerLatchedTime, BluetoothControllerTimeScale};
 
 /// One ordered controller-time sample from the always-awake latch path.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -96,11 +16,298 @@ pub struct BluetoothControllerTimeSample {
 }
 
 impl BluetoothControllerTimeSample {
+    #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+    const fn from_live_latch(latched_time: BluetoothControllerLatchedTime) -> Self {
+        Self { latched_time }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn for_validation(raw_time: u32) -> Self {
+        Self::from_live_latch(BluetoothControllerLatchedTime::from_bits(raw_time))
+    }
+
     /// Return the complete wrapping raw-time image.
     pub const fn raw_time(self) -> u32 {
         self.latched_time.bits()
     }
 }
+
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+mod worker {
+    use open_esp_radio_esp32s31_hal::{
+        BluetoothControllerHal, BluetoothControllerTimeLatchBeginError,
+        BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
+    };
+
+    use super::BluetoothControllerTimeSample;
+
+    /// Crate-private hardware seam required by the controller-time worker.
+    ///
+    /// Keeping this boundary private prevents downstream code from manufacturing
+    /// a supposedly live sample. Production has exactly one implementation: the
+    /// finite borrow of the unique controller HAL owner.
+    pub(crate) trait BluetoothControllerTimeHardware {
+        /// Publish one fresh request without waiting for hardware.
+        fn begin_controller_time_latch(
+            &mut self,
+        ) -> Result<(), BluetoothControllerTimeLatchBeginError>;
+
+        /// Perform exactly one hardware observation and return immediately.
+        fn step_controller_time_latch(
+            &mut self,
+        ) -> Result<BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError>;
+    }
+
+    impl BluetoothControllerTimeHardware for BluetoothControllerHal<'_> {
+        fn begin_controller_time_latch(
+            &mut self,
+        ) -> Result<(), BluetoothControllerTimeLatchBeginError> {
+            BluetoothControllerHal::begin_controller_time_latch(self)
+        }
+
+        fn step_controller_time_latch(
+            &mut self,
+        ) -> Result<BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError>
+        {
+            BluetoothControllerHal::step_controller_time_latch(self)
+        }
+    }
+
+    /// Opaque identity of one logical controller-time request.
+    ///
+    /// A cancellation path must return the identity it received from `request`.
+    /// This prevents a late cancellation from abandoning a newer request.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    #[must_use = "the request identity must be completed or abandoned"]
+    pub(crate) struct BluetoothControllerTimeRequest(u64);
+
+    /// Durable logical phase retained between executor events.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(crate) enum BluetoothControllerTimeWorkerPhase {
+        /// No logical or hardware request belongs to this worker.
+        Idle,
+        /// This worker published the request and may return its completed sample.
+        Requested,
+        /// An abandoned request must be drained without becoming a sample for a
+        /// later logical caller.
+        DrainingOrphan,
+        /// Hardware and logical ownership disagreed; no further MMIO is allowed.
+        Faulted,
+    }
+
+    /// Why a fresh logical controller-time request was not published.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(crate) enum BluetoothControllerTimeRequestError {
+        /// Another logical request or orphan drain is active; no MMIO occurred.
+        Busy,
+        /// The lower owner already held a request although the durable worker was
+        /// idle. The worker entered fail-stop instead of stealing that request.
+        OwnershipCollision,
+        /// The non-repeating request generation space was exhausted before MMIO.
+        GenerationExhausted,
+        /// A prior ownership mismatch put the worker into fail-stop.
+        Faulted,
+    }
+
+    /// Result of exactly one controller-time recheck event.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    #[must_use = "the worker event outcome must drive the next controller action"]
+    pub(crate) enum BluetoothControllerTimeEventStep {
+        /// No transaction was active; no MMIO occurred.
+        Idle,
+        /// Hardware still owns the request; arrange one later recheck event.
+        Waiting,
+        /// The request owned by this worker produced one ordered live sample.
+        Sample {
+            /// Identity of the logical request which owns this result.
+            request: BluetoothControllerTimeRequest,
+            /// Ordered sample read by the live HAL path.
+            sample: BluetoothControllerTimeSample,
+        },
+        /// An abandoned request was drained without relabelling its latched word
+        /// as a new logical sample.
+        OrphanDrained,
+    }
+
+    /// Fail-stop result of a controller-time recheck event.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(crate) enum BluetoothControllerTimeEventError {
+        /// The lower sticky owner disappeared while the worker was active.
+        OwnershipLost,
+        /// A previous ownership mismatch already stopped this worker.
+        Faulted,
+    }
+
+    /// Executor-neutral logical owner of controller-time sampling.
+    ///
+    /// The sole controller runner must retain this state beside its task resources,
+    /// while every method receives only a short HAL borrow. `on_recheck_event` performs at
+    /// most one hardware observation and contains no loop, await, waker, timer,
+    /// allocator or RTOS binding.
+    pub(crate) struct BluetoothControllerTimeWorker {
+        state: BluetoothControllerTimeWorkerState,
+        last_generation: u64,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum BluetoothControllerTimeWorkerState {
+        Idle,
+        Requested(BluetoothControllerTimeRequest),
+        DrainingOrphan(BluetoothControllerTimeRequest),
+        Faulted,
+    }
+
+    impl BluetoothControllerTimeWorker {
+        /// Construct the sole worker while splitting a proven-cold task owner.
+        ///
+        /// This constructor is intentionally private to the crate ownership
+        /// transition. Moving later lifecycle typestates carries this value; they
+        /// never reconstruct it from a borrowed HAL or clear a fault by dropping
+        /// the worker.
+        pub(crate) const fn new_idle() -> Self {
+            Self {
+                state: BluetoothControllerTimeWorkerState::Idle,
+                last_generation: 0,
+            }
+        }
+
+        /// Current durable logical phase.
+        pub(crate) const fn phase(&self) -> BluetoothControllerTimeWorkerPhase {
+            match self.state {
+                BluetoothControllerTimeWorkerState::Idle => {
+                    BluetoothControllerTimeWorkerPhase::Idle
+                }
+                BluetoothControllerTimeWorkerState::Requested(_) => {
+                    BluetoothControllerTimeWorkerPhase::Requested
+                }
+                BluetoothControllerTimeWorkerState::DrainingOrphan(_) => {
+                    BluetoothControllerTimeWorkerPhase::DrainingOrphan
+                }
+                BluetoothControllerTimeWorkerState::Faulted => {
+                    BluetoothControllerTimeWorkerPhase::Faulted
+                }
+            }
+        }
+
+        /// Whether an external durable wake or bounded timer must recheck hardware.
+        pub(crate) const fn needs_recheck(&self) -> bool {
+            matches!(
+                self.state,
+                BluetoothControllerTimeWorkerState::Requested(_)
+                    | BluetoothControllerTimeWorkerState::DrainingOrphan(_)
+            )
+        }
+
+        /// Whether the complete task owner may return to the cold ownership state.
+        #[cfg(test)]
+        pub(crate) const fn is_reunitable(&self) -> bool {
+            matches!(self.state, BluetoothControllerTimeWorkerState::Idle)
+        }
+
+        #[cfg(test)]
+        pub(crate) fn exhaust_generation_for_validation(&mut self) {
+            self.last_generation = u64::MAX;
+        }
+
+        /// Publish one fresh logical sample request.
+        ///
+        /// Non-idle phases return without MMIO. A lower-layer collision proves
+        /// desynchronized ownership and permanently faults this worker.
+        pub(crate) fn request(
+            &mut self,
+            hardware: &mut impl BluetoothControllerTimeHardware,
+        ) -> Result<BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError> {
+            match self.state {
+                BluetoothControllerTimeWorkerState::Idle => {}
+                BluetoothControllerTimeWorkerState::Requested(_)
+                | BluetoothControllerTimeWorkerState::DrainingOrphan(_) => {
+                    return Err(BluetoothControllerTimeRequestError::Busy);
+                }
+                BluetoothControllerTimeWorkerState::Faulted => {
+                    return Err(BluetoothControllerTimeRequestError::Faulted);
+                }
+            }
+
+            let Some(generation) = self.last_generation.checked_add(1) else {
+                self.state = BluetoothControllerTimeWorkerState::Faulted;
+                return Err(BluetoothControllerTimeRequestError::GenerationExhausted);
+            };
+            let request = BluetoothControllerTimeRequest(generation);
+
+            match hardware.begin_controller_time_latch() {
+                Ok(()) => {
+                    self.last_generation = generation;
+                    self.state = BluetoothControllerTimeWorkerState::Requested(request);
+                    Ok(request)
+                }
+                Err(BluetoothControllerTimeLatchBeginError::AlreadyInFlight) => {
+                    self.state = BluetoothControllerTimeWorkerState::Faulted;
+                    Err(BluetoothControllerTimeRequestError::OwnershipCollision)
+                }
+            }
+        }
+
+        /// Abandon the current logical caller without clearing hardware ownership.
+        ///
+        /// A later event must still drain the request, but its latched value is no
+        /// longer allowed to satisfy any logical sample request.
+        pub(crate) fn abandon(&mut self, request: BluetoothControllerTimeRequest) -> bool {
+            if self.state == BluetoothControllerTimeWorkerState::Requested(request) {
+                self.state = BluetoothControllerTimeWorkerState::DrainingOrphan(request);
+                true
+            } else {
+                false
+            }
+        }
+
+        /// Handle exactly one durable controller event or bounded timer recheck.
+        pub(crate) fn on_recheck_event(
+            &mut self,
+            hardware: &mut impl BluetoothControllerTimeHardware,
+        ) -> Result<BluetoothControllerTimeEventStep, BluetoothControllerTimeEventError> {
+            let request = match self.state {
+                BluetoothControllerTimeWorkerState::Idle => {
+                    return Ok(BluetoothControllerTimeEventStep::Idle);
+                }
+                BluetoothControllerTimeWorkerState::Requested(request) => Some(request),
+                BluetoothControllerTimeWorkerState::DrainingOrphan(_) => None,
+                BluetoothControllerTimeWorkerState::Faulted => {
+                    return Err(BluetoothControllerTimeEventError::Faulted);
+                }
+            };
+
+            match hardware.step_controller_time_latch() {
+                Ok(BluetoothControllerTimeLatchStep::Waiting) => {
+                    Ok(BluetoothControllerTimeEventStep::Waiting)
+                }
+                Ok(BluetoothControllerTimeLatchStep::Ready(latched_time)) => {
+                    self.state = BluetoothControllerTimeWorkerState::Idle;
+                    if let Some(request) = request {
+                        Ok(BluetoothControllerTimeEventStep::Sample {
+                            request,
+                            sample: BluetoothControllerTimeSample::from_live_latch(latched_time),
+                        })
+                    } else {
+                        Ok(BluetoothControllerTimeEventStep::OrphanDrained)
+                    }
+                }
+                Err(BluetoothControllerTimeLatchStepError::NotInFlight) => {
+                    self.state = BluetoothControllerTimeWorkerState::Faulted;
+                    Err(BluetoothControllerTimeEventError::OwnershipLost)
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) use worker::BluetoothControllerTimeHardware;
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+pub(crate) use worker::{
+    BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
+    BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
+    BluetoothControllerTimeWorker, BluetoothControllerTimeWorkerPhase,
+};
 
 /// Raw-time anchor paired with the BLE scheduler's positional epoch.
 ///
@@ -162,57 +369,283 @@ impl BluetoothControllerSchedulerEpoch {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::VecDeque, vec::Vec};
+
+    use open_esp_radio_esp32s31_hal::{
+        BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchStep,
+        BluetoothControllerTimeLatchStepError,
+    };
     use open_esp_radio_esp32s31_pac::{
         BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
-        BluetoothControllerTimeLatchObservation, BluetoothControllerTimeLatchRequest,
     };
 
     use super::{
-        BluetoothControllerSchedulerEpoch, BluetoothControllerTimeLatchProgress,
-        BluetoothControllerTimeLatchPublication,
+        BluetoothControllerSchedulerEpoch, BluetoothControllerTimeEventError,
+        BluetoothControllerTimeEventStep, BluetoothControllerTimeHardware,
+        BluetoothControllerTimeRequestError, BluetoothControllerTimeSample,
+        BluetoothControllerTimeWorker, BluetoothControllerTimeWorkerPhase,
     };
 
-    fn sample(raw_time: u32) -> super::BluetoothControllerTimeSample {
-        let ready = match BluetoothControllerTimeLatchPublication::new(
-            BluetoothControllerTimeLatchRequest::new(),
-        )
-        .published()
-        .observe(BluetoothControllerTimeLatchObservation::from_control_bits(
-            0,
-        )) {
-            BluetoothControllerTimeLatchProgress::Ready(ready) => ready,
-            BluetoothControllerTimeLatchProgress::Waiting(_) => panic!("clear request stalled"),
-        };
-        ready.complete(BluetoothControllerLatchedTime::from_bits(raw_time))
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Operation {
+        Begin,
+        Step,
+    }
+
+    struct ModelHardware {
+        in_flight: bool,
+        operations: Vec<Operation>,
+        steps: VecDeque<BluetoothControllerTimeLatchStep>,
+    }
+
+    impl ModelHardware {
+        fn new(steps: impl IntoIterator<Item = BluetoothControllerTimeLatchStep>) -> Self {
+            Self {
+                in_flight: false,
+                operations: Vec::new(),
+                steps: steps.into_iter().collect(),
+            }
+        }
+    }
+
+    impl BluetoothControllerTimeHardware for ModelHardware {
+        fn begin_controller_time_latch(
+            &mut self,
+        ) -> Result<(), BluetoothControllerTimeLatchBeginError> {
+            if self.in_flight {
+                return Err(BluetoothControllerTimeLatchBeginError::AlreadyInFlight);
+            }
+            self.in_flight = true;
+            self.operations.push(Operation::Begin);
+            Ok(())
+        }
+
+        fn step_controller_time_latch(
+            &mut self,
+        ) -> Result<BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError>
+        {
+            if !self.in_flight {
+                return Err(BluetoothControllerTimeLatchStepError::NotInFlight);
+            }
+            let step = self
+                .steps
+                .pop_front()
+                .expect("test hardware needs one scripted event step");
+            self.operations.push(Operation::Step);
+            if matches!(step, BluetoothControllerTimeLatchStep::Ready(_)) {
+                self.in_flight = false;
+            }
+            Ok(step)
+        }
+    }
+
+    const fn sample(raw_time: u32) -> BluetoothControllerTimeSample {
+        BluetoothControllerTimeSample::for_validation(raw_time)
     }
 
     #[test]
-    fn pending_observation_returns_control_without_reading_time() {
-        let publication = BluetoothControllerTimeLatchPublication::new(
-            BluetoothControllerTimeLatchRequest::new(),
-        );
-        assert_eq!(publication.control_image(0x8000_0007), 0x8400_0007);
+    fn request_and_each_recheck_are_separate_bounded_hardware_steps() {
+        let mut hardware = ModelHardware::new([
+            BluetoothControllerTimeLatchStep::Waiting,
+            BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(
+                0x1234_5678,
+            )),
+        ]);
+        let mut worker = BluetoothControllerTimeWorker::new_idle();
 
-        let in_flight = publication.published();
-        let in_flight = match in_flight.observe(
-            BluetoothControllerTimeLatchObservation::from_control_bits(1 << 26),
-        ) {
-            BluetoothControllerTimeLatchProgress::Waiting(in_flight) => in_flight,
-            BluetoothControllerTimeLatchProgress::Ready(_) => panic!("pending latch advanced"),
-        };
-        let ready = match in_flight.observe(
-            BluetoothControllerTimeLatchObservation::from_control_bits(0x8000_0007),
-        ) {
-            BluetoothControllerTimeLatchProgress::Ready(ready) => ready,
-            BluetoothControllerTimeLatchProgress::Waiting(_) => panic!("cleared latch stalled"),
-        };
+        assert_eq!(worker.phase(), BluetoothControllerTimeWorkerPhase::Idle);
+        let request = worker.request(&mut hardware).expect("request is published");
+        assert_eq!(hardware.operations, [Operation::Begin]);
+        assert!(worker.needs_recheck());
 
         assert_eq!(
-            ready
-                .complete(BluetoothControllerLatchedTime::from_bits(0x1234_5678))
-                .raw_time(),
-            0x1234_5678
+            worker.on_recheck_event(&mut hardware),
+            Ok(BluetoothControllerTimeEventStep::Waiting)
         );
+        assert_eq!(hardware.operations, [Operation::Begin, Operation::Step]);
+        assert_eq!(
+            worker.phase(),
+            BluetoothControllerTimeWorkerPhase::Requested
+        );
+
+        let sample = match worker
+            .on_recheck_event(&mut hardware)
+            .expect("second event completes")
+        {
+            BluetoothControllerTimeEventStep::Sample {
+                request: completed,
+                sample,
+            } => {
+                assert_eq!(completed, request);
+                sample
+            }
+            other => panic!("unexpected event step: {other:?}"),
+        };
+        assert_eq!(sample.raw_time(), 0x1234_5678);
+        assert_eq!(
+            hardware.operations,
+            [Operation::Begin, Operation::Step, Operation::Step]
+        );
+        assert_eq!(worker.phase(), BluetoothControllerTimeWorkerPhase::Idle);
+        assert!(!worker.needs_recheck());
+    }
+
+    #[test]
+    fn abandoned_request_is_drained_without_becoming_a_new_sample() {
+        let mut hardware = ModelHardware::new([
+            BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(
+                0x1111_1111,
+            )),
+            BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(
+                0x2222_2222,
+            )),
+        ]);
+        let mut worker = BluetoothControllerTimeWorker::new_idle();
+
+        let abandoned = worker.request(&mut hardware).expect("request is published");
+        assert!(worker.abandon(abandoned));
+        assert_eq!(
+            worker.phase(),
+            BluetoothControllerTimeWorkerPhase::DrainingOrphan
+        );
+        assert_eq!(
+            worker.on_recheck_event(&mut hardware),
+            Ok(BluetoothControllerTimeEventStep::OrphanDrained)
+        );
+        assert_eq!(worker.phase(), BluetoothControllerTimeWorkerPhase::Idle);
+
+        let fresh = worker
+            .request(&mut hardware)
+            .expect("fresh request is published");
+        let sample = match worker
+            .on_recheck_event(&mut hardware)
+            .expect("fresh request completes")
+        {
+            BluetoothControllerTimeEventStep::Sample { request, sample } => {
+                assert_eq!(request, fresh);
+                sample
+            }
+            other => panic!("unexpected event step: {other:?}"),
+        };
+        assert_eq!(sample.raw_time(), 0x2222_2222);
+        assert_eq!(
+            hardware.operations,
+            [
+                Operation::Begin,
+                Operation::Step,
+                Operation::Begin,
+                Operation::Step
+            ]
+        );
+    }
+
+    #[test]
+    fn late_cancellation_cannot_abandon_a_newer_request() {
+        let mut hardware = ModelHardware::new([
+            BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(1)),
+            BluetoothControllerTimeLatchStep::Ready(BluetoothControllerLatchedTime::from_bits(2)),
+        ]);
+        let mut worker = BluetoothControllerTimeWorker::new_idle();
+
+        let first = worker.request(&mut hardware).expect("first request");
+        assert!(matches!(
+            worker.on_recheck_event(&mut hardware),
+            Ok(BluetoothControllerTimeEventStep::Sample {
+                request,
+                sample: _
+            }) if request == first
+        ));
+
+        let second = worker.request(&mut hardware).expect("second request");
+        assert_ne!(first, second);
+        assert!(!worker.abandon(first));
+        assert_eq!(
+            worker.phase(),
+            BluetoothControllerTimeWorkerPhase::Requested
+        );
+        assert!(matches!(
+            worker.on_recheck_event(&mut hardware),
+            Ok(BluetoothControllerTimeEventStep::Sample { request, sample })
+                if request == second && sample.raw_time() == 2
+        ));
+    }
+
+    #[test]
+    fn lower_ownership_collision_is_sticky_fail_stop() {
+        let mut hardware = ModelHardware::new([BluetoothControllerTimeLatchStep::Waiting]);
+        let mut worker = BluetoothControllerTimeWorker::new_idle();
+        hardware.in_flight = true;
+
+        assert_eq!(
+            worker.request(&mut hardware),
+            Err(BluetoothControllerTimeRequestError::OwnershipCollision)
+        );
+        assert!(hardware.operations.is_empty());
+        assert_eq!(worker.phase(), BluetoothControllerTimeWorkerPhase::Faulted);
+        assert!(!worker.needs_recheck());
+        assert_eq!(
+            worker.request(&mut hardware),
+            Err(BluetoothControllerTimeRequestError::Faulted)
+        );
+    }
+
+    #[test]
+    fn idle_event_and_duplicate_request_do_not_touch_hardware() {
+        let mut hardware = ModelHardware::new([BluetoothControllerTimeLatchStep::Waiting]);
+        let mut worker = BluetoothControllerTimeWorker::new_idle();
+
+        assert_eq!(
+            worker.on_recheck_event(&mut hardware),
+            Ok(BluetoothControllerTimeEventStep::Idle)
+        );
+        assert!(hardware.operations.is_empty());
+
+        let _request = worker.request(&mut hardware).expect("request is published");
+        assert_eq!(
+            worker.request(&mut hardware),
+            Err(BluetoothControllerTimeRequestError::Busy)
+        );
+        assert_eq!(hardware.operations, [Operation::Begin]);
+    }
+
+    #[test]
+    fn ownership_loss_is_sticky_fail_stop_without_more_hardware_access() {
+        let mut hardware = ModelHardware::new([]);
+        let mut worker = BluetoothControllerTimeWorker::new_idle();
+
+        let _request = worker.request(&mut hardware).expect("request is published");
+        hardware.in_flight = false;
+        assert_eq!(
+            worker.on_recheck_event(&mut hardware),
+            Err(BluetoothControllerTimeEventError::OwnershipLost)
+        );
+        assert_eq!(worker.phase(), BluetoothControllerTimeWorkerPhase::Faulted);
+        assert_eq!(hardware.operations, [Operation::Begin]);
+
+        assert_eq!(
+            worker.on_recheck_event(&mut hardware),
+            Err(BluetoothControllerTimeEventError::Faulted)
+        );
+        assert_eq!(
+            worker.request(&mut hardware),
+            Err(BluetoothControllerTimeRequestError::Faulted)
+        );
+        assert_eq!(hardware.operations, [Operation::Begin]);
+    }
+
+    #[test]
+    fn exhausted_generation_faults_before_hardware_publication() {
+        let mut hardware = ModelHardware::new([]);
+        let mut worker = BluetoothControllerTimeWorker::new_idle();
+        worker.exhaust_generation_for_validation();
+
+        assert_eq!(
+            worker.request(&mut hardware),
+            Err(BluetoothControllerTimeRequestError::GenerationExhausted)
+        );
+        assert!(hardware.operations.is_empty());
+        assert_eq!(worker.phase(), BluetoothControllerTimeWorkerPhase::Faulted);
+        assert!(!worker.is_reunitable());
     }
 
     #[test]

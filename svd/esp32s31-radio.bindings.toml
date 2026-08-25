@@ -37005,6 +37005,13 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_2"
+method = "control_2"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
 svd-name = "CONTROL_4"
 method = "control_4"
 bit-offset = 4

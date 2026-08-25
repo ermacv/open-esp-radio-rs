@@ -2283,6 +2283,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-bluetooth-embassy"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "open-esp-radio-esp32s31-bluetooth",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-bluetooth-integration"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-bluetooth-memory",
+ "static_cell",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-bluetooth-memory"
 version = "0.1.0"
 dependencies = [

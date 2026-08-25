@@ -15880,7 +15880,7 @@ and complete images without inventing clock, calibration or RTC semantics.
       <name>BTDM_RUNTIME_CONTROL</name>
       <description>Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31
 functions prove only the recorded access directions, finite images, low-24-bit
-publications and three isolated RMW controls. Positional names deliberately
+publications and four isolated RMW controls. Positional names deliberately
 avoid assigning undocumented peripheral semantics.
 </description>
       <baseAddress>0x2010D000</baseAddress>
@@ -16097,7 +16097,7 @@ avoid assigning undocumented peripheral semantics.
         </register>
         <register>
           <name>CONTROL_0058</name>
-          <description>Shared runtime control word with independently observed RMW operations over bits 0, 1 and 4. Other bits are preserved.</description>
+          <description>Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved.</description>
           <addressOffset>0x58</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -16111,6 +16111,12 @@ avoid assigning undocumented peripheral semantics.
               <name>CONTROL_1</name>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CONTROL_2</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
             </field>
             <field>
               <name>CONTROL_4</name>

@@ -38846,14 +38846,14 @@ pub mod btdm_low_power_config {
         }
     }
 }
-#[doc = "Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31 functions prove only the recorded access directions, finite images, low-24-bit publications and three isolated RMW controls. Positional names deliberately avoid assigning undocumented peripheral semantics."]
+#[doc = "Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31 functions prove only the recorded access directions, finite images, low-24-bit publications and four isolated RMW controls. Positional names deliberately avoid assigning undocumented peripheral semantics."]
 pub type BtdmRuntimeControl = crate::Periph<btdm_runtime_control::RegisterBlock, 0x2010_d000>;
 impl core::fmt::Debug for BtdmRuntimeControl {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("BtdmRuntimeControl").finish()
     }
 }
-#[doc = "Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31 functions prove only the recorded access directions, finite images, low-24-bit publications and three isolated RMW controls. Positional names deliberately avoid assigning undocumented peripheral semantics."]
+#[doc = "Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31 functions prove only the recorded access directions, finite images, low-24-bit publications and four isolated RMW controls. Positional names deliberately avoid assigning undocumented peripheral semantics."]
 pub mod btdm_runtime_control {
     #[repr(C)]
     #[doc = "Register block"]
@@ -38963,7 +38963,7 @@ pub mod btdm_runtime_control {
         pub const fn command_004c(&self) -> &Command004c {
             &self.command_004c
         }
-        #[doc = "0x58 - Shared runtime control word with independently observed RMW operations over bits 0, 1 and 4. Other bits are preserved."]
+        #[doc = "0x58 - Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved."]
         #[inline(always)]
         pub const fn control_0058(&self) -> &Control0058 {
             &self.control_0058
@@ -39427,10 +39427,10 @@ pub mod btdm_runtime_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CONTROL_0058 (rw) register accessor: Shared runtime control word with independently observed RMW operations over bits 0, 1 and 4. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_0058::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_0058::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control_0058`] module"]
+    #[doc = "CONTROL_0058 (rw) register accessor: Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_0058::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_0058::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control_0058`] module"]
     #[doc(alias = "CONTROL_0058")]
     pub type Control0058 = crate::Reg<control_0058::Control0058Spec>;
-    #[doc = "Shared runtime control word with independently observed RMW operations over bits 0, 1 and 4. Other bits are preserved."]
+    #[doc = "Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved."]
     pub mod control_0058 {
         #[doc = "Register `CONTROL_0058` reader"]
         pub type R = crate::R<Control0058Spec>;
@@ -39444,6 +39444,8 @@ pub mod btdm_runtime_control {
         pub type Control1R = crate::BitReader;
         #[doc = "Field `CONTROL_1` writer - "]
         pub type Control1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONTROL_2` reader - "]
+        pub type Control2R = crate::BitReader;
         #[doc = "Field `CONTROL_4` reader - "]
         pub type Control4R = crate::BitReader;
         #[doc = "Field `CONTROL_4` writer - "]
@@ -39458,6 +39460,11 @@ pub mod btdm_runtime_control {
             #[inline(always)]
             pub fn control_1(&self) -> Control1R {
                 Control1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn control_2(&self) -> Control2R {
+                Control2R::new(((self.bits >> 2) & 1) != 0)
             }
             #[doc = "Bit 4"]
             #[inline(always)]
@@ -39482,7 +39489,7 @@ pub mod btdm_runtime_control {
                 Control4W::new(self, 4)
             }
         }
-        #[doc = "Shared runtime control word with independently observed RMW operations over bits 0, 1 and 4. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_0058::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_0058::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Shared runtime control word with independently observed RMW operations over bits 0, 1, 2 and 4. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_0058::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_0058::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Control0058Spec;
         impl crate::RegisterSpec for Control0058Spec {
             type Ux = u32;

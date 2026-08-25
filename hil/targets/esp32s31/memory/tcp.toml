@@ -124,6 +124,16 @@ placement = "required-psram"
 region = "external-psram"
 
 [[rules]]
+symbol = "*::PRODUCTION_DTM_MEMORY"
+owner = "bluetooth.dtm-controller-graph"
+scope = "integration"
+reason = "hardware-controller-memory"
+placement = "required-sram"
+region = "internal-sram"
+count = 1
+element_capacity = 936
+
+[[rules]]
 symbol = "*::monitor::CAPTURE_POOL"
 owner = "wifi.monitor.capture"
 scope = "adapter"

@@ -13,11 +13,16 @@
 #[cfg(test)]
 extern crate std;
 
+mod dtm_event_image;
 mod dtm_rx_result;
 mod dtm_storage;
 mod rx_memory_list;
 mod sram_link;
 
+pub use dtm_event_image::{
+    BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
+    BluetoothDtmSchedulerItemReviewedWords,
+};
 pub use dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError};
 #[cfg(not(target_arch = "riscv32"))]
 pub use dtm_storage::BluetoothDtmMemoryGraphModelAddress;
@@ -30,7 +35,9 @@ pub use dtm_storage::{
     BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES, BluetoothDtmBufferHeaderStorage,
     BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
     BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphBinding,
-    BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphStorage,
+    BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
+    BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
+    BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
     BluetoothDtmPreparedTxPacketStorage, BluetoothDtmRxBufferHeaderImage,
     BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError,
     BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError, BluetoothDtmSchedulerContextStorage,

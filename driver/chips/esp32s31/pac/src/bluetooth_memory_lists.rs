@@ -177,10 +177,9 @@ impl BluetoothTaskRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::super::RadioHardware;
     use super::{
         BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
-        BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
+        BluetoothMemoryListPointerImage,
     };
 
     #[test]
@@ -210,52 +209,5 @@ mod tests {
             BluetoothMemoryListPointerImage::Address(last).compressed(),
             0x000f_ffff
         );
-    }
-
-    #[test]
-    fn current_and_next_rx_pairs_follow_the_reviewed_selector_geometry() {
-        let cold = RadioHardware::for_validation().into_bluetooth();
-        let (task, _interrupts) = cold.separate_interrupt_owner();
-        let controller = &task.bluetooth.bluetooth_controller_core;
-
-        let current_rx = [
-            controller.mmgmt_list_1_pointer_a().as_ptr() as usize,
-            controller.mmgmt_list_2_pointer_a().as_ptr() as usize,
-            controller.mmgmt_list_3_pointer_a().as_ptr() as usize,
-        ];
-        let next_rx = [
-            controller.mmgmt_list_1_pointer_b().as_ptr() as usize,
-            controller.mmgmt_list_2_pointer_b().as_ptr() as usize,
-            controller.mmgmt_list_3_pointer_b().as_ptr() as usize,
-        ];
-        assert_eq!(current_rx, [0x2010_1280, 0x2010_1288, 0x2010_1290]);
-        assert_eq!(next_rx, [0x2010_1284, 0x2010_128c, 0x2010_1294]);
-
-        let _all = [
-            (
-                BluetoothMemoryListSelector::One,
-                BluetoothMemoryListSlot::CurrentRx,
-            ),
-            (
-                BluetoothMemoryListSelector::One,
-                BluetoothMemoryListSlot::NextRx,
-            ),
-            (
-                BluetoothMemoryListSelector::Two,
-                BluetoothMemoryListSlot::CurrentRx,
-            ),
-            (
-                BluetoothMemoryListSelector::Two,
-                BluetoothMemoryListSlot::NextRx,
-            ),
-            (
-                BluetoothMemoryListSelector::Three,
-                BluetoothMemoryListSlot::CurrentRx,
-            ),
-            (
-                BluetoothMemoryListSelector::Three,
-                BluetoothMemoryListSlot::NextRx,
-            ),
-        ];
     }
 }

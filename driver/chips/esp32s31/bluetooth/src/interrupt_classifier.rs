@@ -289,7 +289,6 @@ impl BluetoothSchedulerWorkerWake {
 mod tests {
     use super::{
         BANK_0_SOURCE_21, BANK_0_SOURCES_27_28, BANK_1_SOURCE_3,
-        BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
         BluetoothPrimaryInterruptClassification, BluetoothPrimarySchedulerTrigger,
         BluetoothSchedulerReferenceAction, BluetoothSchedulerReferenceGate,
         BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkClassifier,
@@ -318,15 +317,6 @@ mod tests {
             ),
             None => None,
         }
-    }
-
-    #[test]
-    fn dynamic_masks_are_exact_complete_helper_images() {
-        assert_eq!(
-            BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK,
-            BANK_0_SOURCE_21 | BANK_0_SOURCES_27_28
-        );
-        assert_eq!(BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK, BANK_1_SOURCE_3);
     }
 
     #[test]

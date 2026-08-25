@@ -6,7 +6,6 @@ use crate::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
     },
 };
-use open_esp_radio_esp32s31_hal::BluetoothControllerHal;
 
 /// Bluetooth hardware after only the sixteen scheduler-table low fields were
 /// cleared.
@@ -33,20 +32,20 @@ impl<P> BluetoothClockedResources<P> {
     /// of controller init has independent evidence and production owners.
     #[cfg(target_arch = "riscv32")]
     pub fn clear_scheduler_table_low_bits(self) -> BluetoothSchedulerTableLowBitsCleared<P> {
-        self.clear_scheduler_table_low_bits_with(|controller| {
-            controller.clear_scheduler_table_low_bits();
+        self.clear_scheduler_table_low_bits_with(|task| {
+            task.clear_scheduler_table_low_bits();
         })
     }
 
     fn clear_scheduler_table_low_bits_with(
         self,
-        clear: impl FnOnce(&mut BluetoothControllerHal<'_>),
+        clear: impl FnOnce(&mut BluetoothTaskResources),
     ) -> BluetoothSchedulerTableLowBitsCleared<P> {
         let (resources, platform) = self.into_parts();
         // Arm fail-stop ownership before the first scheduler MMIO mutation.
         let platform = BluetoothTeardownPendingPlatform::new(platform);
         let (mut task, interrupts) = resources.separate_interrupt_owner();
-        clear(&mut task.controller_hal());
+        clear(&mut task);
         BluetoothSchedulerTableLowBitsCleared {
             _task: task,
             _interrupts: interrupts,

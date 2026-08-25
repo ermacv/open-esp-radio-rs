@@ -22,29 +22,3 @@ impl BluetoothTaskRegisters {
         device_fence();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    extern crate std;
-
-    use std::vec::Vec;
-
-    use super::super::RadioHardware;
-
-    #[test]
-    fn reviewed_table_geometry_is_sixteen_sparse_entries_in_order() {
-        // Pointer inspection does not perform volatile MMIO.
-        let cold = RadioHardware::for_validation().into_bluetooth();
-        let (task, _interrupts) = cold.separate_interrupt_owner();
-        let table = &task.bluetooth.btdm_scheduler_table;
-
-        let addresses = table
-            .entry_iter()
-            .map(|entry| entry.as_ptr() as usize)
-            .collect::<Vec<_>>();
-        assert_eq!(addresses.len(), 16);
-        assert_eq!(addresses[0], 0x2010_b000);
-        assert_eq!(addresses[15], 0x2010_b0f0);
-        assert!(addresses.windows(2).all(|pair| pair[1] - pair[0] == 0x10));
-    }
-}

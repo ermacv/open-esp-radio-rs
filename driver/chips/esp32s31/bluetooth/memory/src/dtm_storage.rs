@@ -11,14 +11,20 @@
 
 #![forbid(unsafe_code)]
 
-use core::{marker::PhantomPinned, pin::Pin};
+use core::{convert::Infallible, marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
 };
 use pin_project::pin_project;
 
-use crate::sram_link::BluetoothDtmBoundSramLinkAddress;
+use crate::{
+    dtm_event_image::{
+        BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
+        BluetoothDtmSchedulerItemReviewedWords,
+    },
+    sram_link::BluetoothDtmBoundSramLinkAddress,
+};
 
 /// Bytes allocated for one DTM link-state object.
 pub const BLUETOOTH_DTM_LINK_STATE_BYTES: usize = 0x84;
@@ -60,6 +66,7 @@ const LINK_STATE_RX_TAIL_OFFSET: usize = 0x70 / 4;
 const LINK_STATE_TX_TAIL_OFFSET: usize = 0x74 / 4;
 const LINK_STATE_RX_SWAP_RESERVE_OFFSET: usize = 0x78 / 4;
 const SCHEDULER_ITEM_LINK_STATE_OFFSET: usize = 0x08 / 4;
+const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 
 /// Why a complete DTM TX packet extent cannot inhabit controller SRAM.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -232,10 +239,64 @@ pub struct BluetoothDtmLinkStateStorage {
     words: [u32; BLUETOOTH_DTM_LINK_STATE_BYTES / 4],
 }
 
+impl BluetoothDtmLinkStateStorage {
+    fn reviewed_words(&self) -> BluetoothDtmLinkStateReviewedWords {
+        BluetoothDtmLinkStateReviewedWords {
+            word_00: self.words[0],
+            word_04: self.words[1],
+            word_08: self.words[2],
+            word_14: self.words[5],
+            word_2c: self.words[11],
+            word_34: self.words[13],
+            word_38: self.words[14],
+            word_50: self.words[20],
+        }
+    }
+
+    fn write_reviewed_words(&mut self, words: BluetoothDtmLinkStateReviewedWords) {
+        self.words[0] = words.word_00;
+        self.words[1] = words.word_04;
+        self.words[2] = words.word_08;
+        self.words[5] = words.word_14;
+        self.words[11] = words.word_2c;
+        self.words[13] = words.word_34;
+        self.words[14] = words.word_38;
+        self.words[20] = words.word_50;
+    }
+}
+
 /// Opaque CPU-owned scheduler-item allocation.
 #[repr(C, align(4))]
 pub struct BluetoothDtmSchedulerItemStorage {
     words: [u32; BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4],
+}
+
+impl BluetoothDtmSchedulerItemStorage {
+    fn reviewed_words(&self) -> BluetoothDtmSchedulerItemReviewedWords {
+        BluetoothDtmSchedulerItemReviewedWords {
+            word_00: self.words[0],
+            word_04: self.words[1],
+            word_08: self.words[2],
+            word_14: self.words[5],
+            word_18: self.words[6],
+            word_2c: self.words[11],
+            word_44: self.words[17],
+            word_48: self.words[18],
+            word_4c: self.words[19],
+        }
+    }
+
+    fn write_reviewed_words(&mut self, words: BluetoothDtmSchedulerItemReviewedWords) {
+        self.words[0] = words.word_00;
+        self.words[1] = words.word_04;
+        self.words[2] = words.word_08;
+        self.words[5] = words.word_14;
+        self.words[6] = words.word_18;
+        self.words[11] = words.word_2c;
+        self.words[17] = words.word_44;
+        self.words[18] = words.word_48;
+        self.words[19] = words.word_4c;
+    }
 }
 
 /// Opaque CPU-owned scheduler-context allocation.
@@ -669,6 +730,157 @@ impl BluetoothDtmMemoryGraphBinding {
     }
 }
 
+/// Snapshot supplied to one in-place positional event-word builder.
+///
+/// Both private links are sampled from this graph's current link-state words,
+/// not reconstructed from an earlier binding or another graph. The builder is
+/// invoked while the unique graph owner is consumed, so its output cannot be
+/// applied later to a different owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothDtmPositionalEventSeed {
+    words: BluetoothDtmPositionalEventWords,
+    tx_head: BluetoothDtmBoundSramLinkAddress,
+    rx_tail: BluetoothDtmBoundSramLinkAddress,
+}
+
+impl BluetoothDtmPositionalEventSeed {
+    /// Return the current values of exactly the seventeen writable words.
+    pub const fn words(self) -> BluetoothDtmPositionalEventWords {
+        self.words
+    }
+
+    /// Return the current private TX-head link sampled from link-state `+0x6c`.
+    pub const fn tx_head(self) -> BluetoothDtmBoundSramLinkAddress {
+        self.tx_head
+    }
+
+    /// Return the current private RX-tail link sampled from link-state `+0x70`.
+    pub const fn rx_tail(self) -> BluetoothDtmBoundSramLinkAddress {
+        self.rx_tail
+    }
+}
+
+/// Why CPU-owned positional event words were not committed to the graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmMemoryGraphPrepareError<BuildError = Infallible> {
+    /// The upper builder rejected its semantic inputs before any graph write.
+    Build(BuildError),
+    /// The current private TX-head word contains the unbound zero link.
+    CurrentTxHeadUnbound,
+    /// The current private RX-tail word contains the unbound zero link.
+    CurrentRxTailUnbound,
+    /// Link-state `+0x00` does not retain this graph's freshly sampled TX head.
+    LinkStateTxHeadMismatch {
+        /// Current private-chain image required by this graph.
+        expected: u32,
+        /// Candidate low-twenty-bit image returned by the builder.
+        observed: u32,
+    },
+    /// Link-state `+0x08` does not retain this graph's freshly sampled RX tail.
+    LinkStateRxTailMismatch {
+        /// Current private-chain image required by this graph.
+        expected: u32,
+        /// Candidate low-twenty-bit image returned by the builder.
+        observed: u32,
+    },
+    /// Scheduler-item `+0x08` no longer points to this graph's link-state.
+    SchedulerItemLinkStateMismatch {
+        /// Statically bound link-state image required by this graph.
+        expected: u32,
+        /// Candidate low-twenty-bit image returned by the builder.
+        observed: u32,
+    },
+}
+
+/// Failed positional preparation retaining the exact CPU-owned graph.
+///
+/// Current anchors, builder execution and all three candidate anchors are
+/// checked before the first backing-storage write. `into_parts` therefore
+/// returns the byte-unchanged owner for retry or explicit shutdown.
+pub struct BluetoothDtmMemoryGraphPrepareFailure<BuildError = Infallible> {
+    owner: BluetoothDtmMemoryGraphCpuOwned,
+    error: BluetoothDtmMemoryGraphPrepareError<BuildError>,
+}
+
+impl<BuildError> BluetoothDtmMemoryGraphPrepareFailure<BuildError> {
+    /// Borrow the finite failure reason without releasing the owner.
+    pub const fn error(&self) -> &BluetoothDtmMemoryGraphPrepareError<BuildError> {
+        &self.error
+    }
+
+    /// Recover the unchanged owner and the exact builder or anchor error.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmMemoryGraphCpuOwned,
+        BluetoothDtmMemoryGraphPrepareError<BuildError>,
+    ) {
+        (self.owner, self.error)
+    }
+}
+
+impl<BuildError: core::fmt::Debug> core::fmt::Debug
+    for BluetoothDtmMemoryGraphPrepareFailure<BuildError>
+{
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmMemoryGraphPrepareFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// CPU-owned graph after exactly seventeen positional event words were stored.
+///
+/// The public input images remain forgeable, so this state proves only that
+/// the candidate retained this graph's three current links and that no omitted
+/// offset was written. It has no packet-ready, list insertion, fence,
+/// publication or hardware-ownership authority.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphPositionalEventPrepared;
+///
+/// fn cannot_mutate_packet(prepared: &mut BluetoothDtmMemoryGraphPositionalEventPrepared) {
+///     let _packet = prepared.tx_packet_mut();
+/// }
+/// ```
+pub struct BluetoothDtmMemoryGraphPositionalEventPrepared {
+    storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
+    binding: BluetoothDtmMemoryGraphBinding,
+    previous: BluetoothDtmPositionalEventWords,
+}
+
+impl BluetoothDtmMemoryGraphPositionalEventPrepared {
+    /// Read back exactly the positional subset while it remains CPU-owned.
+    pub fn words(&self) -> BluetoothDtmPositionalEventWords {
+        let storage = self.storage.as_ref().get_ref();
+        BluetoothDtmPositionalEventWords::new(
+            storage.link_state.reviewed_words(),
+            storage.scheduler_item.reviewed_words(),
+        )
+    }
+
+    /// Cancel before publication and restore all seventeen prior words.
+    ///
+    /// This restoration is complete because this state never exposed mutable
+    /// storage and the preparing transition wrote no other graph offset.
+    pub fn cancel(mut self) -> BluetoothDtmMemoryGraphCpuOwned {
+        let previous = self.previous;
+        let storage = self.storage.as_mut().project();
+        storage
+            .link_state
+            .write_reviewed_words(previous.link_state());
+        storage
+            .scheduler_item
+            .write_reviewed_words(previous.scheduler_item());
+
+        BluetoothDtmMemoryGraphCpuOwned {
+            storage: self.storage,
+            binding: self.binding,
+        }
+    }
+}
+
 /// Unique CPU owner of one statically located and allocation-initialized graph.
 ///
 /// This state is still unreachable by hardware. It contains no `arm`,
@@ -712,6 +924,110 @@ impl BluetoothDtmMemoryGraphCpuOwned {
             packet: storage.rx_packet,
             header: storage.rx_header,
         }
+    }
+
+    /// Build and commit one role-neutral positional event-word image.
+    ///
+    /// The consuming closure receives current words and current private links
+    /// from this exact owner. Builder failure and every anchor mismatch return
+    /// the byte-unchanged owner. Once validation succeeds, committing all
+    /// seventeen offsets is infallible and remains entirely CPU-owned.
+    pub fn try_prepare_positional_event<BuildError>(
+        mut self,
+        build: impl FnOnce(
+            BluetoothDtmPositionalEventSeed,
+        ) -> Result<BluetoothDtmPositionalEventWords, BuildError>,
+    ) -> Result<
+        BluetoothDtmMemoryGraphPositionalEventPrepared,
+        BluetoothDtmMemoryGraphPrepareFailure<BuildError>,
+    > {
+        let (previous, tx_head_image, rx_tail_image) = {
+            let storage = self.storage.as_ref().get_ref();
+            (
+                BluetoothDtmPositionalEventWords::new(
+                    storage.link_state.reviewed_words(),
+                    storage.scheduler_item.reviewed_words(),
+                ),
+                storage.link_state.words[LINK_STATE_TX_HEAD_OFFSET] & LOW_TWENTY_MASK,
+                storage.link_state.words[LINK_STATE_RX_TAIL_OFFSET] & LOW_TWENTY_MASK,
+            )
+        };
+        let Some(tx_head) =
+            BluetoothDtmBoundSramLinkAddress::from_nonzero_compressed_image(tx_head_image)
+        else {
+            return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                owner: self,
+                error: BluetoothDtmMemoryGraphPrepareError::CurrentTxHeadUnbound,
+            });
+        };
+        let Some(rx_tail) =
+            BluetoothDtmBoundSramLinkAddress::from_nonzero_compressed_image(rx_tail_image)
+        else {
+            return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                owner: self,
+                error: BluetoothDtmMemoryGraphPrepareError::CurrentRxTailUnbound,
+            });
+        };
+        let seed = BluetoothDtmPositionalEventSeed {
+            words: previous,
+            tx_head,
+            rx_tail,
+        };
+        let candidate = match build(seed) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                    owner: self,
+                    error: BluetoothDtmMemoryGraphPrepareError::Build(error),
+                });
+            }
+        };
+
+        let observed_tx_head = candidate.link_state().word_00 & LOW_TWENTY_MASK;
+        if observed_tx_head != tx_head_image {
+            return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                owner: self,
+                error: BluetoothDtmMemoryGraphPrepareError::LinkStateTxHeadMismatch {
+                    expected: tx_head_image,
+                    observed: observed_tx_head,
+                },
+            });
+        }
+        let observed_rx_tail = candidate.link_state().word_08 & LOW_TWENTY_MASK;
+        if observed_rx_tail != rx_tail_image {
+            return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                owner: self,
+                error: BluetoothDtmMemoryGraphPrepareError::LinkStateRxTailMismatch {
+                    expected: rx_tail_image,
+                    observed: observed_rx_tail,
+                },
+            });
+        }
+        let expected_link_state = self.binding.link_state.compressed_image();
+        let observed_link_state = candidate.scheduler_item().word_08 & LOW_TWENTY_MASK;
+        if observed_link_state != expected_link_state {
+            return Err(BluetoothDtmMemoryGraphPrepareFailure {
+                owner: self,
+                error: BluetoothDtmMemoryGraphPrepareError::SchedulerItemLinkStateMismatch {
+                    expected: expected_link_state,
+                    observed: observed_link_state,
+                },
+            });
+        }
+
+        let storage = self.storage.as_mut().project();
+        storage
+            .link_state
+            .write_reviewed_words(candidate.link_state());
+        storage
+            .scheduler_item
+            .write_reviewed_words(candidate.scheduler_item());
+
+        Ok(BluetoothDtmMemoryGraphPositionalEventPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            previous,
+        })
     }
 
     fn initialize_reviewed_allocation(&mut self) {
@@ -851,7 +1167,11 @@ impl Default for BluetoothDtmMemoryGraphStorage {
 
 #[cfg(test)]
 mod tests {
-    use core::mem::{align_of, offset_of, size_of};
+    use core::{
+        convert::Infallible,
+        fmt::Debug,
+        mem::{align_of, offset_of, size_of},
+    };
 
     use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddressError;
 
@@ -860,14 +1180,102 @@ mod tests {
         BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_RX_PACKET_BYTES,
         BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES, BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES,
         BLUETOOTH_DTM_TX_PACKET_BYTES, BluetoothDtmBufferHeaderStorage,
-        BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
-        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphStorage,
-        BluetoothDtmRxBufferHeaderImage, BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress,
-        BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
-        BluetoothDtmSchedulerContextStorage, BluetoothDtmSchedulerItemStorage,
+        BluetoothDtmLinkStateReviewedWords, BluetoothDtmLinkStateStorage,
+        BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphCpuOwned,
+        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphPrepareError,
+        BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
+        BluetoothDtmPositionalEventWords, BluetoothDtmRxBufferHeaderImage,
+        BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError,
+        BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError, BluetoothDtmSchedulerContextStorage,
+        BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerItemStorage,
         BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
-        BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage,
+        BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage, LINK_STATE_RX_TAIL_OFFSET,
+        LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK,
     };
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    struct GraphSnapshot {
+        link_state: [u32; BLUETOOTH_DTM_LINK_STATE_BYTES / 4],
+        scheduler_context: [u32; BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES / 4],
+        scheduler_item: [u32; BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4],
+        rx_header: [u32; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
+        rx_swap_reserve: [u32; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
+        tx_header: [u32; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
+        tx_packet: [u8; BLUETOOTH_DTM_TX_PACKET_BYTES],
+        rx_packet: [u8; BLUETOOTH_DTM_RX_PACKET_BYTES],
+    }
+
+    fn snapshot(storage: &BluetoothDtmMemoryGraphStorage) -> GraphSnapshot {
+        GraphSnapshot {
+            link_state: storage.link_state.words,
+            scheduler_context: storage.scheduler_context.words,
+            scheduler_item: storage.scheduler_item.words,
+            rx_header: storage.rx_header.words,
+            rx_swap_reserve: storage.rx_swap_reserve.words,
+            tx_header: storage.tx_header.words,
+            tx_packet: storage.tx_packet.bytes,
+            rx_packet: storage.rx_packet.bytes,
+        }
+    }
+
+    fn model_owner(base: u32) -> BluetoothDtmMemoryGraphCpuOwned {
+        let storage =
+            std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
+        let base = BluetoothDtmMemoryGraphModelAddress::new(base)
+            .expect("test base has valid compressed-pointer syntax");
+        BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base)
+            .expect("test graph fits physical controller SRAM")
+    }
+
+    fn candidate_words(seed: BluetoothDtmPositionalEventSeed) -> BluetoothDtmPositionalEventWords {
+        let current = seed.words();
+        let tx_head = seed.tx_head().compressed_image();
+        let rx_tail = seed.rx_tail().compressed_image();
+        let link_state = current.scheduler_item().word_08 & LOW_TWENTY_MASK;
+
+        BluetoothDtmPositionalEventWords::new(
+            BluetoothDtmLinkStateReviewedWords {
+                word_00: 0xabc0_0000 | tx_head,
+                word_04: 0x1111_1111,
+                word_08: 0xdef0_0000 | rx_tail,
+                word_14: 0x2222_2222,
+                word_2c: 0x3333_3333,
+                word_34: 0x4444_4444,
+                word_38: 0x5555_5555,
+                word_50: 0x6666_6666,
+            },
+            BluetoothDtmSchedulerItemReviewedWords {
+                word_00: 0x7777_7777,
+                word_04: 0x8888_8888,
+                word_08: 0x9990_0000 | link_state,
+                word_14: 0xaaaa_aaaa,
+                word_18: 0xbbbb_bbbb,
+                word_2c: 0xcccc_cccc,
+                word_44: 0xdddd_dddd,
+                word_48: 0xeeee_eeee,
+                word_4c: 0xffff_ffff,
+            },
+        )
+    }
+
+    fn assert_prepare_failure_unchanged<BuildError: Debug + Eq + PartialEq>(
+        owner: BluetoothDtmMemoryGraphCpuOwned,
+        build: impl FnOnce(
+            BluetoothDtmPositionalEventSeed,
+        ) -> Result<BluetoothDtmPositionalEventWords, BuildError>,
+        expected: BluetoothDtmMemoryGraphPrepareError<BuildError>,
+    ) -> BluetoothDtmMemoryGraphCpuOwned {
+        let before = snapshot(owner.storage.as_ref().get_ref());
+        let failure = match owner.try_prepare_positional_event(build) {
+            Ok(_) => panic!("invalid positional event words must be rejected"),
+            Err(failure) => failure,
+        };
+        assert_eq!(failure.error(), &expected);
+        let (owner, error) = failure.into_parts();
+        assert_eq!(error, expected);
+        assert_eq!(snapshot(owner.storage.as_ref().get_ref()), before);
+        owner
+    }
 
     #[test]
     fn static_link_graph_has_every_reviewed_graph_allocation_footprint() {
@@ -949,6 +1357,168 @@ mod tests {
         assert_eq!(graph.rx_packet.bytes[0x06], 1);
         assert_eq!(graph.rx_packet.result_word(), 0x00ff_ffff);
         assert_eq!(&graph.rx_packet.bytes[0x18..0x1a], &[0xff, 0xff]);
+    }
+
+    #[test]
+    fn positional_commit_writes_only_the_seventeen_reviewed_offsets() {
+        let owner = model_owner(0x2f00_0100);
+        let before = snapshot(owner.storage.as_ref().get_ref());
+        let mut expected = None;
+        let prepared = owner
+            .try_prepare_positional_event(|seed| {
+                let candidate = candidate_words(seed);
+                expected = Some(candidate);
+                Ok::<_, Infallible>(candidate)
+            })
+            .expect("fresh graph links accept their matching positional image");
+        let expected = expected.expect("the consuming builder ran exactly once");
+        assert_eq!(prepared.words(), expected);
+
+        let after = snapshot(prepared.storage.as_ref().get_ref());
+        let link_state_offsets = [0, 1, 2, 5, 11, 13, 14, 20];
+        let scheduler_item_offsets = [0, 1, 2, 5, 6, 11, 17, 18, 19];
+        for index in 0..before.link_state.len() {
+            if !link_state_offsets.contains(&index) {
+                assert_eq!(after.link_state[index], before.link_state[index]);
+            }
+        }
+        for index in 0..before.scheduler_item.len() {
+            if !scheduler_item_offsets.contains(&index) {
+                assert_eq!(after.scheduler_item[index], before.scheduler_item[index]);
+            }
+        }
+        assert_eq!(after.scheduler_context, before.scheduler_context);
+        assert_eq!(after.rx_header, before.rx_header);
+        assert_eq!(after.rx_swap_reserve, before.rx_swap_reserve);
+        assert_eq!(after.tx_header, before.tx_header);
+        assert_eq!(after.tx_packet, before.tx_packet);
+        assert_eq!(after.rx_packet, before.rx_packet);
+        assert_eq!(after.link_state[0x6c / 4], before.link_state[0x6c / 4]);
+        assert_eq!(after.link_state[0x70 / 4], before.link_state[0x70 / 4]);
+    }
+
+    #[test]
+    fn cancel_restores_the_complete_logical_graph_image() {
+        let mut owner = model_owner(0x2f00_0500);
+        let mut packet = owner.tx_packet_mut().begin_prepare(7, 3);
+        packet.payload_mut().copy_from_slice(&[0xaa, 0xbb, 0xcc]);
+        packet.finish().release();
+        let before = snapshot(owner.storage.as_ref().get_ref());
+
+        let prepared = owner
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
+            .expect("matching anchors prepare a CPU-owned image");
+        assert_ne!(snapshot(prepared.storage.as_ref().get_ref()), before);
+        let owner = prepared.cancel();
+
+        assert_eq!(snapshot(owner.storage.as_ref().get_ref()), before);
+    }
+
+    #[test]
+    fn consuming_seed_uses_current_private_links_instead_of_initial_binding_links() {
+        let mut owner = model_owner(0x2f00_1500);
+        let storage = owner.storage.as_mut().project();
+        storage.link_state.words[LINK_STATE_TX_HEAD_OFFSET] = 0x701;
+        storage.link_state.words[LINK_STATE_RX_TAIL_OFFSET] = 0x702;
+        let before = snapshot(owner.storage.as_ref().get_ref());
+
+        let prepared = owner
+            .try_prepare_positional_event(|seed| {
+                assert_eq!(seed.tx_head().compressed_image(), 0x701);
+                assert_eq!(seed.rx_tail().compressed_image(), 0x702);
+                Ok::<_, Infallible>(candidate_words(seed))
+            })
+            .expect("freshly sampled nonzero links bind the same transaction");
+        let words = prepared.words();
+        assert_eq!(words.link_state().word_00 & LOW_TWENTY_MASK, 0x701);
+        assert_eq!(words.link_state().word_08 & LOW_TWENTY_MASK, 0x702);
+        let after = snapshot(prepared.storage.as_ref().get_ref());
+        assert_eq!(after.link_state[LINK_STATE_TX_HEAD_OFFSET], 0x701);
+        assert_eq!(after.link_state[LINK_STATE_RX_TAIL_OFFSET], 0x702);
+
+        let owner = prepared.cancel();
+        assert_eq!(snapshot(owner.storage.as_ref().get_ref()), before);
+    }
+
+    #[test]
+    fn every_builder_and_anchor_failure_returns_the_byte_unchanged_owner() {
+        let owner = model_owner(0x2f00_0900);
+        let owner = assert_prepare_failure_unchanged(
+            owner,
+            |_| Err::<BluetoothDtmPositionalEventWords, _>("builder rejected inputs"),
+            BluetoothDtmMemoryGraphPrepareError::Build("builder rejected inputs"),
+        );
+
+        let owner = assert_prepare_failure_unchanged(
+            owner,
+            |seed| {
+                let candidate = candidate_words(seed);
+                let mut link_state = candidate.link_state();
+                link_state.word_00 ^= 1;
+                Ok::<_, Infallible>(BluetoothDtmPositionalEventWords::new(
+                    link_state,
+                    candidate.scheduler_item(),
+                ))
+            },
+            BluetoothDtmMemoryGraphPrepareError::LinkStateTxHeadMismatch {
+                expected: 0x297,
+                observed: 0x296,
+            },
+        );
+
+        let owner = assert_prepare_failure_unchanged(
+            owner,
+            |seed| {
+                let candidate = candidate_words(seed);
+                let mut link_state = candidate.link_state();
+                link_state.word_08 ^= 1;
+                Ok::<_, Infallible>(BluetoothDtmPositionalEventWords::new(
+                    link_state,
+                    candidate.scheduler_item(),
+                ))
+            },
+            BluetoothDtmMemoryGraphPrepareError::LinkStateRxTailMismatch {
+                expected: 0x28b,
+                observed: 0x28a,
+            },
+        );
+
+        let _owner = assert_prepare_failure_unchanged(
+            owner,
+            |seed| {
+                let candidate = candidate_words(seed);
+                let mut scheduler_item = candidate.scheduler_item();
+                scheduler_item.word_08 ^= 1;
+                Ok::<_, Infallible>(BluetoothDtmPositionalEventWords::new(
+                    candidate.link_state(),
+                    scheduler_item,
+                ))
+            },
+            BluetoothDtmMemoryGraphPrepareError::SchedulerItemLinkStateMismatch {
+                expected: 0x240,
+                observed: 0x241,
+            },
+        );
+
+        let mut owner = model_owner(0x2f00_0d00);
+        owner.storage.as_mut().project().link_state.words[LINK_STATE_TX_HEAD_OFFSET] = 0;
+        let _owner = assert_prepare_failure_unchanged(
+            owner,
+            |_| -> Result<BluetoothDtmPositionalEventWords, Infallible> {
+                panic!("an unbound current TX head must preempt the builder")
+            },
+            BluetoothDtmMemoryGraphPrepareError::CurrentTxHeadUnbound,
+        );
+
+        let mut owner = model_owner(0x2f00_1100);
+        owner.storage.as_mut().project().link_state.words[LINK_STATE_RX_TAIL_OFFSET] = 0;
+        let _owner = assert_prepare_failure_unchanged(
+            owner,
+            |_| -> Result<BluetoothDtmPositionalEventWords, Infallible> {
+                panic!("an unbound current RX tail must preempt the builder")
+            },
+            BluetoothDtmMemoryGraphPrepareError::CurrentRxTailUnbound,
+        );
     }
 
     #[test]

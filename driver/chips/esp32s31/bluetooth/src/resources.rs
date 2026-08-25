@@ -3,20 +3,28 @@
 #[cfg(any(target_arch = "riscv32", test))]
 use core::mem::ManuallyDrop;
 
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::BluetoothBasebandInitializationPrerequisite;
+use open_esp_radio_esp32s31_hal::BluetoothColdOwner as HalBluetoothColdOwner;
+#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+use open_esp_radio_esp32s31_hal::BluetoothControllerHalInitPrerequisite;
+#[cfg(test)]
+use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::{
-    BluetoothControllerHal, BluetoothControllerHalBorrow, BluetoothSharedPhyBorrow, SharedPhyHal,
+    BluetoothControllerHalBorrow, BluetoothInterruptSetupOwner as HalBluetoothInterruptSetupOwner,
+    BluetoothSharedPhyBorrow, BluetoothTaskOwner as HalBluetoothTaskOwner, SharedPhyHal,
     WifiBasebandEnableObservation,
 };
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
-use open_esp_radio_esp32s31_pac::{
-    BluetoothColdRegisters as PacBluetoothColdRegisters, RadioHardware,
-};
+use open_esp_radio_esp32s31_pac::RadioHardware;
+
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
-use open_esp_radio_esp32s31_pac::{
-    BluetoothInterruptSetup as PacBluetoothInterruptSetup,
-    BluetoothTaskRegisters as PacBluetoothTaskRegisters,
+use crate::controller_time::{
+    BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
+    BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
+    BluetoothControllerTimeWorker, BluetoothControllerTimeWorkerPhase,
 };
 
 /// Exclusive standalone Bluetooth ownership before any lifecycle transaction.
@@ -26,7 +34,7 @@ use open_esp_radio_esp32s31_pac::{
 /// does not need to steal or manufacture another MMIO owner.
 #[must_use = "Bluetooth physical resources retain the unique radio owner"]
 pub struct BluetoothPhysicalResources {
-    registers: PacBluetoothColdRegisters,
+    registers: HalBluetoothColdOwner,
 }
 
 /// Platform owner retained after the first non-reversible powered mutation.
@@ -60,7 +68,7 @@ impl BluetoothPhysicalResources {
     /// Enter the exclusive Bluetooth ownership route without touching MMIO.
     pub fn from_radio_hardware(hardware: RadioHardware) -> Self {
         Self {
-            registers: hardware.into_bluetooth(),
+            registers: HalBluetoothColdOwner::from_radio_hardware(hardware),
         }
     }
 
@@ -82,7 +90,10 @@ impl BluetoothPhysicalResources {
     ) -> (BluetoothTaskResources, BluetoothInterruptBankOwner) {
         let (task, interrupts) = self.registers.separate_interrupt_owner();
         (
-            BluetoothTaskResources { registers: task },
+            BluetoothTaskResources {
+                registers: task,
+                controller_time: BluetoothControllerTimeWorker::new_idle(),
+            },
             BluetoothInterruptBankOwner {
                 _registers: interrupts,
             },
@@ -97,14 +108,80 @@ impl BluetoothPhysicalResources {
 #[must_use = "the Bluetooth task owner must be reunited before release"]
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 pub(crate) struct BluetoothTaskResources {
-    registers: PacBluetoothTaskRegisters,
+    registers: HalBluetoothTaskOwner,
+    controller_time: BluetoothControllerTimeWorker,
 }
 
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 impl BluetoothTaskResources {
-    /// Borrow the task-side controller MMIO through its narrow HAL boundary.
-    pub(crate) fn controller_hal(&mut self) -> BluetoothControllerHal<'_> {
-        self.registers.borrow_bluetooth_controller()
+    /// Clear the reviewed scheduler-table prefix through one finite HAL borrow.
+    #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+    pub(crate) fn clear_scheduler_table_low_bits(&mut self) {
+        self.registers
+            .borrow_bluetooth_controller()
+            .clear_scheduler_table_low_bits();
+    }
+
+    /// Durable logical phase paired with this unique task owner.
+    #[allow(
+        dead_code,
+        reason = "the time worker awaits the powered controller runner composition"
+    )]
+    pub(crate) const fn controller_time_phase(&self) -> BluetoothControllerTimeWorkerPhase {
+        self.controller_time.phase()
+    }
+
+    /// Whether the runner must retain a durable recheck event or deadline.
+    #[allow(
+        dead_code,
+        reason = "the time worker awaits the powered controller runner composition"
+    )]
+    pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
+        self.controller_time.needs_recheck()
+    }
+
+    /// Publish one request while retaining worker and PAC ownership together.
+    #[allow(
+        dead_code,
+        reason = "the time worker awaits the powered controller runner composition"
+    )]
+    pub(crate) fn request_controller_time(
+        &mut self,
+    ) -> Result<BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError> {
+        let Self {
+            registers,
+            controller_time,
+        } = self;
+        let mut controller = registers.borrow_bluetooth_controller();
+        controller_time.request(&mut controller)
+    }
+
+    /// Abandon only the matching logical request; late cancellation is inert.
+    #[allow(
+        dead_code,
+        reason = "the time worker awaits the powered controller runner composition"
+    )]
+    pub(crate) fn abandon_controller_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> bool {
+        self.controller_time.abandon(request)
+    }
+
+    /// Perform one bounded hardware recheck with a short HAL borrow.
+    #[allow(
+        dead_code,
+        reason = "the time worker awaits the powered controller runner composition"
+    )]
+    pub(crate) fn recheck_controller_time(
+        &mut self,
+    ) -> Result<BluetoothControllerTimeEventStep, BluetoothControllerTimeEventError> {
+        let Self {
+            registers,
+            controller_time,
+        } = self;
+        let mut controller = registers.borrow_bluetooth_controller();
+        controller_time.on_recheck_event(&mut controller)
     }
 
     /// Execute the complete reviewed controller HAL-init component.
@@ -130,9 +207,9 @@ impl BluetoothTaskResources {
         &mut self,
         config: BluetoothControllerHalInitConfig,
     ) {
-        unsafe {
-            self.registers.initialize_controller_hal(config);
-        }
+        let prerequisite = unsafe { BluetoothControllerHalInitPrerequisite::assume_satisfied() };
+        self.registers
+            .initialize_controller_hal_transaction(prerequisite, config);
     }
 
     /// Borrow the protocol-neutral radio PHY for one finite lower-layer scope.
@@ -163,10 +240,10 @@ impl BluetoothTaskResources {
         reason = "the unsafe signature retains the PAC common-PHY prerequisite across the crate boundary"
     )]
     pub(crate) unsafe fn initialize_baseband_v2(&mut self, gain_parameter: u8) {
-        unsafe {
-            self.registers
-                .initialize_baseband_v2_arg_one(gain_parameter);
-        }
+        let prerequisite =
+            unsafe { BluetoothBasebandInitializationPrerequisite::assume_satisfied() };
+        self.registers
+            .initialize_baseband_v2_arg_one(prerequisite, gain_parameter);
     }
 
     /// Reunite a quiescent task owner with its inactive interrupt owner.
@@ -174,10 +251,14 @@ impl BluetoothTaskResources {
     pub(crate) fn reunite(
         self,
         interrupts: BluetoothInterruptBankOwner,
-    ) -> BluetoothPhysicalResources {
-        BluetoothPhysicalResources {
-            registers: self.registers.into_cold(interrupts._registers),
-        }
+    ) -> Result<BluetoothPhysicalResources, BluetoothTaskOwnerReuniteFailure> {
+        assert!(
+            self.controller_time.is_reunitable(),
+            "controller-time fault or transaction prevents cold reunion"
+        );
+        self.registers
+            .into_cold(interrupts._registers)
+            .map(|registers| BluetoothPhysicalResources { registers })
     }
 }
 
@@ -185,7 +266,7 @@ impl BluetoothTaskResources {
 #[must_use = "the interrupt owner must be installed or reunited"]
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 pub(crate) struct BluetoothInterruptBankOwner {
-    _registers: PacBluetoothInterruptSetup,
+    _registers: HalBluetoothInterruptSetupOwner,
 }
 
 #[cfg(test)]
@@ -194,6 +275,8 @@ mod tests {
 
     use open_esp_radio_esp32s31_hal::{SharedPhyAccess, WifiBasebandEnableObservation};
     use open_esp_radio_esp32s31_pac::RadioHardware;
+
+    use crate::controller_time::BluetoothControllerTimeWorkerPhase;
 
     use super::{BluetoothPhysicalResources, BluetoothTeardownPendingPlatform};
 
@@ -218,11 +301,15 @@ mod tests {
     fn task_and_interrupt_owners_reunite_into_the_same_radio_root() {
         let resources =
             BluetoothPhysicalResources::from_radio_hardware(RadioHardware::for_validation());
-        let (mut task, setup) = resources.separate_interrupt_owner();
-        {
-            let _controller = task.controller_hal();
-        }
-        let hardware = task.reunite(setup).release();
+        let (task, setup) = resources.separate_interrupt_owner();
+        assert_eq!(
+            task.controller_time_phase(),
+            BluetoothControllerTimeWorkerPhase::Idle
+        );
+        let hardware = task
+            .reunite(setup)
+            .expect("untouched owners remain cold-reunitable")
+            .release();
 
         // Re-entering Wi-Fi proves that every inactive protocol and shared
         // owner survived the complete Bluetooth ownership roundtrip.
@@ -230,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_phy_is_a_borrow_not_an_independent_owner() {
+    fn mutable_shared_phy_borrow_arms_fail_stop_reunion() {
         fn accepts_shared_phy(_: &mut impl SharedPhyAccess) {}
 
         let resources =
@@ -242,8 +329,13 @@ mod tests {
             accepts_shared_phy(&mut phy);
         }
 
-        // Reuniting after the borrow ends proves that the PHY partition never
-        // became an independently releasable capability.
-        let _hardware = task.reunite(setup).release();
+        let failure = match task.reunite(setup) {
+            Ok(_) => panic!("a mutable shared-PHY borrow requires verified rollback"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteError::HardwareLifecycleNotRestored
+        );
     }
 }

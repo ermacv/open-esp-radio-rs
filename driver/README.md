@@ -41,11 +41,14 @@ positional MMIO stays in the restricted PAC, while
 `chips/esp32s31/bluetooth/memory` owns the no-heap DTM controller-memory
 geometry, physical-SRAM binding, allocation-time private links and result
 parsing. A sealed `BluetoothControllerHal<'_>` now carries the first task-side
-scheduler transaction without exposing its PAC owner.
+scheduler transaction and the bounded cancellation-safe controller-time latch;
+its generation-scoped worker is retained beside the unique task owner without
+exposing the PAC partition.
 Bluetooth lifecycle and S31 LLL code are still co-located in the parent chip
-crate; the next structural boundary is extending that HAL borrow across the
-proved controller-time/memory/IRQ operations, followed by an independent LLL
-backend and portable Controller. The
+crate. A separate Embassy adapter now preserves classified scheduler wakes and
+accepts a caller-owned bounded recheck future; the next structural boundary is
+composing it with the powered task/IRQ owner, then extending HAL ownership
+across memory before an independent LLL backend and portable Controller. The
 exact live, partial, fail-closed and absent scopes are recorded in the
 [ESP32-S31 Bluetooth LE feature frontier](chips/esp32s31/bluetooth/FEATURES.md).
 
@@ -68,6 +71,8 @@ module for the former vendor-derived `wdev` naming.
   source-reviewed S31 MAC.
 - `chips/esp32s31/wifi/{dma,mac,sta,ap}`: ESP32-S31 Wi-Fi backend.
 - `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
+- `integration/esp32s31/bluetooth`: one-time production placement and claim of
+  the statically bound ESP32-S31 controller-memory graph.
 - `integration/esp32s31/embassy-wifi`: production composition and the only
   place applications enter the current ESP32-S31 station/AP/monitor service
   or its explicit ESP-NOW composition hooks.

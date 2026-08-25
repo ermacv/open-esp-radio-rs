@@ -1,4 +1,4 @@
-//! Source-confirmed CPU-route policy for the two Bluetooth interrupt lines.
+//! Source-confirmed CPU-route policy for the three Bluetooth interrupt lines.
 //!
 //! The numeric identities come from the official ESP32-S31 interrupt table:
 //! <https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/soc/esp32s31/include/soc/interrupts.h#L139-L153>.
@@ -15,6 +15,8 @@
 pub enum BluetoothCpuInterruptSource {
     /// `ETS_MODEM_BT_MAC_INTR_SOURCE`, allocated by the primary BTDM HAL.
     PrimaryBtMac = 124,
+    /// `ETS_MODEM_LP_TIMER_INTR_SOURCE`, allocated during controller task init.
+    ModemLpTimer = 127,
     /// `ETS_MODEM_BT_MAC_INT1_INTR_SOURCE`, allocated by the BLE NRT stack.
     NrtBtMacInt1 = 133,
 }
@@ -51,6 +53,14 @@ impl BluetoothCpuInterruptRoutePolicy {
     /// Primary source-124 route used by the BTDM HAL ISR.
     pub const PRIMARY: Self = Self {
         source: BluetoothCpuInterruptSource::PrimaryBtMac,
+        priority_level: 3,
+        residency: BluetoothInterruptHandlerResidency::IramRequired,
+        pinned_to_controller_core: true,
+    };
+
+    /// Modem low-power timer source-127 route used by the controller RTC ISR.
+    pub const MODEM_LP_TIMER: Self = Self {
+        source: BluetoothCpuInterruptSource::ModemLpTimer,
         priority_level: 3,
         residency: BluetoothInterruptHandlerResidency::IramRequired,
         pinned_to_controller_core: true,
@@ -114,6 +124,19 @@ mod tests {
         assert_eq!(
             policy.residency(),
             BluetoothInterruptHandlerResidency::IramNotRequested
+        );
+        assert!(policy.pinned_to_controller_core());
+    }
+
+    #[test]
+    fn modem_lp_timer_route_is_source_127_level_three_and_iram() {
+        let policy = BluetoothCpuInterruptRoutePolicy::MODEM_LP_TIMER;
+        assert_eq!(policy.source(), BluetoothCpuInterruptSource::ModemLpTimer);
+        assert_eq!(policy.source().number(), 127);
+        assert_eq!(policy.priority_level(), 3);
+        assert_eq!(
+            policy.residency(),
+            BluetoothInterruptHandlerResidency::IramRequired
         );
         assert!(policy.pinned_to_controller_core());
     }

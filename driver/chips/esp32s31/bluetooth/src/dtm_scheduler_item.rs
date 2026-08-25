@@ -7,6 +7,8 @@
 
 #![forbid(unsafe_code)]
 
+pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemReviewedWords;
+
 use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
     BluetoothDtmTxEventWindow,
@@ -102,49 +104,24 @@ impl BluetoothDtmSchedulerItemEvent {
             word_4c: current.word_4c & 0xffff_ff00,
         }
     }
-}
 
-/// The nine scheduler-item words whose DTM event transform is complete.
-///
-/// Names are byte offsets. This is not the complete scheduler object and has
-/// no API for list linkage, controller publication or ownership transfer.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmSchedulerItemReviewedWords {
-    /// Complete word at byte offset `+0x00`; only byte `+0x02` is transformed.
-    pub word_00: u32,
-    /// Complete word at byte offset `+0x04`.
-    pub word_04: u32,
-    /// Complete word at byte offset `+0x08`.
-    pub word_08: u32,
-    /// Complete word at byte offset `+0x14`.
-    pub word_14: u32,
-    /// Complete word at byte offset `+0x18`.
-    pub word_18: u32,
-    /// Complete word at byte offset `+0x2c`.
-    pub word_2c: u32,
-    /// Complete raw-time word at byte offset `+0x44`.
-    pub word_44: u32,
-    /// Complete raw-time word at byte offset `+0x48`.
-    pub word_48: u32,
-    /// Complete word at byte offset `+0x4c`; only its low byte is cleared.
-    pub word_4c: u32,
+    /// Return the DTM role encoded by this validated scheduler item event.
+    pub const fn role(self) -> BluetoothDtmRole {
+        self.role
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use open_esp_radio_esp32s31_pac::{
-        BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
-        BluetoothControllerTimeLatchObservation, BluetoothControllerTimeLatchRequest,
-    };
+    use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::{
         BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
         BluetoothDtmSchedulerItemReviewedWords,
     };
     use crate::{
-        BluetoothControllerSchedulerEpoch, BluetoothControllerTimeLatchProgress,
-        BluetoothControllerTimeLatchPublication, BluetoothDtmChannel, BluetoothDtmPhy,
-        BluetoothDtmRole,
+        BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
+        BluetoothDtmPhy, BluetoothDtmRole,
     };
 
     const CURRENT: BluetoothDtmSchedulerItemReviewedWords =
@@ -161,18 +138,8 @@ mod tests {
         };
 
     fn epoch() -> BluetoothControllerSchedulerEpoch {
-        let ready = match BluetoothControllerTimeLatchPublication::new(
-            BluetoothControllerTimeLatchRequest::new(),
-        )
-        .published()
-        .observe(BluetoothControllerTimeLatchObservation::from_control_bits(
-            0,
-        )) {
-            BluetoothControllerTimeLatchProgress::Ready(ready) => ready,
-            BluetoothControllerTimeLatchProgress::Waiting(_) => panic!("clear latch stalled"),
-        };
         BluetoothControllerSchedulerEpoch::new(
-            ready.complete(BluetoothControllerLatchedTime::from_bits(100)),
+            BluetoothControllerTimeSample::for_validation(100),
             1_000,
             BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
         )

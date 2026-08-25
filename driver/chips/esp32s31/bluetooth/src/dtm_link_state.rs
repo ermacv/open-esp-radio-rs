@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmBoundSramLinkAddress;
+pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
 
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 const WORD_04_POWER_MASK: u32 = 0x0f80_0000;
@@ -98,6 +99,28 @@ impl BluetoothDtmLinkStateReset {
             word_50: (current.word_50 & !WORD_50_CONFIG_MASK) | ((self.config as u32) << 24),
         }
     }
+
+    /// Return the DTM role encoded by this validated reset.
+    pub const fn role(self) -> BluetoothDtmRole {
+        self.role
+    }
+
+    /// Replace both list links with one freshly sampled private-chain pair.
+    ///
+    /// The consuming memory-graph transaction calls this with links sampled
+    /// after taking ownership, so a plan cannot retain stale links from an
+    /// earlier event or another graph.
+    pub const fn with_private_links(
+        self,
+        tx_head: BluetoothDtmBoundSramLinkAddress,
+        rx_tail: BluetoothDtmBoundSramLinkAddress,
+    ) -> Self {
+        Self {
+            tx_head: Some(tx_head),
+            rx_tail: Some(rx_tail),
+            ..self
+        }
+    }
 }
 
 const fn compressed_or_zero(address: Option<BluetoothDtmBoundSramLinkAddress>) -> u32 {
@@ -105,31 +128,6 @@ const fn compressed_or_zero(address: Option<BluetoothDtmBoundSramLinkAddress>) -
         Some(address) => address.compressed_image(),
         None => 0,
     }
-}
-
-/// The eight link-state words whose reset behavior is complete.
-///
-/// Names are byte offsets, not semantic descriptor fields. The omitted bytes
-/// and the hardware consumer remain unresolved, so this value has no method
-/// that yields a controller address or transfers hardware ownership.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmLinkStateReviewedWords {
-    /// Complete word at byte offset `+0x00`; low 20 bits carry the TX head.
-    pub word_00: u32,
-    /// Complete word at byte offset `+0x04`.
-    pub word_04: u32,
-    /// Complete word at byte offset `+0x08`; low 20 bits carry the RX tail.
-    pub word_08: u32,
-    /// Complete word at byte offset `+0x14`.
-    pub word_14: u32,
-    /// Complete word at byte offset `+0x2c`.
-    pub word_2c: u32,
-    /// Complete word at byte offset `+0x34`.
-    pub word_34: u32,
-    /// Complete word at byte offset `+0x38`.
-    pub word_38: u32,
-    /// Complete word at byte offset `+0x50`.
-    pub word_50: u32,
 }
 
 #[cfg(test)]

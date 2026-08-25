@@ -41,7 +41,11 @@ pub extern "C" fn open_btdm_primary_interrupt_trace_r_sym_bt_r9_gzfn_ubtn7k6m_ht
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_btdm_primary_interrupt_prepare_trace() {
-    open_esp_radio_esp32s31_bluetooth::validation::prepare_primary_interrupt_output();
+    // SAFETY: this isolated comparison image models completed controller
+    // HAL-init and performs no later Link-Layer or radio operation.
+    unsafe {
+        open_esp_radio_esp32s31_bluetooth::validation::prepare_primary_interrupt_output();
+    }
 }
 
 /// Production-path probe for the finite scheduler-table MMIO transaction.
@@ -64,6 +68,28 @@ pub extern "C" fn open_btdm_hal_init_trace_r_sym_bt_a_gdrujd2_mu_az_wyh75ba_r() 
     unsafe {
         open_esp_radio_esp32s31_bluetooth::validation::initialize_controller_hal_reviewed_standalone();
     }
+}
+
+/// Compiled production entry for the source-127 controller-register prefix.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_btdm_modem_lp_timer_register_prefix() {
+    // SAFETY: this terminal comparison image models all earlier controller
+    // software stages and never installs a CPU route or resumes radio work.
+    unsafe {
+        open_esp_radio_esp32s31_bluetooth::validation::prepare_modem_lp_timer_registers();
+    }
+}
+
+/// Compiled production entry for one bounded scheduler-disable observation.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_btdm_scheduler_disable_sample_once() -> u32 {
+    // SAFETY: the comparison image models a powered task-stopping controller;
+    // the sample is placed after CPU routes and shared ISR access end.
+    u32::from(unsafe {
+        open_esp_radio_esp32s31_bluetooth::validation::disable_scheduler_and_sample_once()
+    })
 }
 
 /// Production-path probe for the exact finite MMIO behavior of
@@ -232,6 +258,8 @@ pub fn retain_all_probes() {
     core::hint::black_box(
         open_btdm_hal_init_trace_r_sym_bt_a_gdrujd2_mu_az_wyh75ba_r as *const (),
     );
+    core::hint::black_box(open_btdm_modem_lp_timer_register_prefix as *const ());
+    core::hint::black_box(open_btdm_scheduler_disable_sample_once as *const ());
     core::hint::black_box(open_btbb_v2_init_trace_r_sym_bt_bb_v2_init_cmplx_x1 as *const ());
     core::hint::black_box(open_phy_i2c_host_trace_phy_get_i2c_hostid_new as *const ());
     core::hint::black_box(

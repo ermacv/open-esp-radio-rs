@@ -813,9 +813,18 @@ dependencies = [
 name = "open-esp-radio-esp32s31-bluetooth"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-esp32s31-bluetooth-memory",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-bluetooth-memory"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-hal",
+ "pin-project",
 ]
 
 [[package]]

@@ -149,10 +149,11 @@ fn reviewed_interface_links(
     let Some(pack) = paths.pack.as_deref().filter(|pack| pack.is_file()) else {
         return Ok(None);
     };
-    let interfaces = InterfaceWorkspace::load(
+    let interfaces = InterfaceWorkspace::load_with_templates(
         &paths.facts,
         pack,
         &paths.semantic_catalogs,
+        &paths.interface_template_packs,
         target.calling_convention.label(),
         target
             .knowledge_provider

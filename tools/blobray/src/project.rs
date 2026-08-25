@@ -142,6 +142,8 @@ pub(crate) struct InterfaceWorkspacePaths {
     pub(crate) facts: PathBuf,
     pub(crate) pack: Option<PathBuf>,
     pub(crate) semantic_catalogs: Vec<PathBuf>,
+    pub(crate) capability_packs: Vec<PathBuf>,
+    pub(crate) interface_template_packs: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

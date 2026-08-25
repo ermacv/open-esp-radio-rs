@@ -45,6 +45,14 @@ pub(super) struct InterfaceWorkspaceDocument<'a> {
     pub(super) runtime_guards: usize,
     pub(super) execution_contracts: usize,
     pub(super) execution_models: usize,
+    pub(super) capability_packs: usize,
+    pub(super) interface_template_packs: usize,
+    pub(super) interface_templates: usize,
+    pub(super) templated_anchors: usize,
+    pub(super) template_pack_ids: &'a [String],
+    pub(super) templates: Vec<InterfaceTemplateDocument<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) capabilities: Option<crate::interfaces::CapabilityEvaluationReport>,
     pub(super) facts: &'a Path,
     pub(super) pack: &'a Path,
     pub(super) contracts: Vec<InterfaceContractDocument<'a>>,
@@ -70,6 +78,9 @@ pub(super) struct InterfaceContractDocument<'a> {
     pub(super) id: &'a str,
     pub(super) pack: &'a str,
     pub(super) anchor: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) template: Option<&'a str>,
+    pub(super) template_overrides: Vec<InterfaceTemplateOverrideDocument<'a>>,
     pub(super) source: &'a str,
     pub(super) root_kind: &'static str,
     pub(super) container_depth: usize,
@@ -81,6 +92,21 @@ pub(super) struct InterfaceContractDocument<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) execution_contract: Option<&'a str>,
     pub(super) slots: usize,
+}
+
+#[derive(Serialize)]
+pub(super) struct InterfaceTemplateDocument<'a> {
+    pub(super) id: &'a str,
+    pub(super) repository: &'a str,
+    pub(super) revision: &'a str,
+    pub(super) path: &'a str,
+}
+
+#[derive(Serialize)]
+pub(super) struct InterfaceTemplateOverrideDocument<'a> {
+    pub(super) offset: i32,
+    pub(super) reason: &'a str,
+    pub(super) fields: &'a [String],
 }
 
 #[derive(Serialize)]
@@ -229,8 +255,12 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                     contract.source.to_owned(),
                     format!("{} depth={}", contract.root_kind, contract.container_depth),
                     format!(
-                        "{} ptr={} stride={}",
-                        contract.layout_version, contract.pointer_width, contract.slot_stride
+                        "{} ptr={} stride={} template={} overrides={}",
+                        contract.layout_version,
+                        contract.pointer_width,
+                        contract.slot_stride,
+                        contract.template.unwrap_or("-"),
+                        contract.template_overrides.len(),
                     ),
                     format!("{:#x}", contract.layout_size),
                     contract.slots.to_string(),
@@ -360,16 +390,40 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
         }
     }
     outputln!(
-        "Summary: observed-calls={} resolved-calls={} semantic-links={} operations={} execution-contracts={} execution-models={} artifact-guards={} runtime-guards={}",
+        "Summary: observed-calls={} resolved-calls={} semantic-links={} operations={} execution-contracts={} execution-models={} capability-packs={} interface-template-packs={} templates={} templated-anchors={} artifact-guards={} runtime-guards={}",
         report.observed_calls,
         report.resolved_calls,
         report.semantic_links,
         report.semantic_operations,
         report.execution_contracts,
         report.execution_models,
+        report.capability_packs,
+        report.interface_template_packs,
+        report.interface_templates,
+        report.templated_anchors,
         report.artifact_guards,
         report.runtime_guards,
     );
+    if let Some(capabilities) = &report.capabilities {
+        outputln!(
+            "Reusable capability rules: {}\n{}",
+            capabilities.status.label(),
+            crate::cli::table::render(
+                ["Rule", "Protocol", "Scope", "Status", "Matches"],
+                capabilities.rules.iter().map(|rule| [
+                    rule.id.clone(),
+                    rule.protocol.clone(),
+                    rule.scope.clone(),
+                    rule.status.label().to_owned(),
+                    rule.requirements
+                        .iter()
+                        .map(|requirement| requirement.matches.len())
+                        .sum::<usize>()
+                        .to_string(),
+                ]),
+            )
+        );
+    }
     if !report.unreviewed.is_empty() {
         outputln!(
             "Unreviewed observations: {} (use `--format json` for exact selectors, functions, and call sites)",

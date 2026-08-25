@@ -641,3 +641,24 @@ argument-roles = ["buffer"]
 return-role = "none"
 effects = ["memory.reference-release"]
 replacement = "network-buffer.release"
+
+# Public protocol-boundary vocabulary. These operations describe stable
+# ESP-IDF interface roles only; a capability rule remains incomplete until a
+# reviewed project interface binds the operation to current artifact evidence.
+[[operations]]
+id = "bluetooth.controller.hci.send"
+domain = "bluetooth"
+summary = "Send one host-controller-interface packet to the Bluetooth controller"
+argument-roles = ["packet-type", "packet"]
+return-role = "status"
+effects = ["bluetooth.hci-send"]
+replacement = "bluetooth.controller-transport-send"
+
+[[operations]]
+id = "ieee802154.radio.receive"
+domain = "ieee802154"
+summary = "Deliver one IEEE 802.15.4 receive frame to the public radio boundary"
+argument-roles = ["frame", "metadata"]
+return-role = "none"
+effects = ["ieee802154.receive-delivery"]
+replacement = "ieee802154.receive-callback"

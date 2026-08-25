@@ -106,6 +106,16 @@ slot. For RTOS or callback boundaries it records the concrete callsite plus
 the reviewed semantic action. A friendly label alone is insufficient: the
 slot address, guard and provenance remain available for inspection.
 
+Reusable capability rules consume this resolved interface view without
+acquiring target-specific matching logic. They may require reviewed operation
+bindings, reviewed effects, and concrete resolved calls, then compose those
+requirements through an acyclic dependency graph. The interface validation
+JSON embeds a deterministic rule report with source, layout, slot, operation,
+function and call-site evidence. Rule `protocol` and `scope` values classify
+the report only; they do not filter evidence or imply whole-protocol coverage.
+Missing evidence stays `incomplete`, and unknown semantic vocabulary stays
+`unknown`.
+
 The generated navigation index also joins calls across separately generated IR
 profiles by exact project symbol and source-qualified function identity. One
 candidate is reported as `unique`, multiple candidates as `ambiguous`, and no

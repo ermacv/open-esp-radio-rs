@@ -1,0 +1,84 @@
+# Reusable capability evidence rules for public Espressif radio boundaries.
+# Rules match only reviewed semantic vocabulary and resolved calls. They never
+# treat a target symbol name, address, table offset, or mere catalog entry as
+# proof that a project implements a capability.
+schema = 1
+id = "espressif.radio.capabilities"
+
+[[rules]]
+id = "espressif.radio.wifi-rx-boundary"
+protocol = "wifi"
+scope = "application.receive"
+summary = "A reviewed Wi-Fi receive callback is bound and reached by current artifact evidence"
+
+[[rules.requirements]]
+kind = "operation"
+value = "wifi.rx.deliver-to-application"
+
+[[rules.requirements]]
+kind = "effect"
+value = "network.receive-delivery"
+
+[[rules.requirements]]
+kind = "call"
+value = "wifi.rx.deliver-to-application"
+
+[[rules]]
+id = "espressif.radio.coexistence-grant"
+protocol = "coexistence"
+scope = "scheduler.grant"
+summary = "Reviewed coexistence request and release operations have current resolved callers"
+
+[[rules.requirements]]
+kind = "operation"
+value = "coexistence.wifi.request"
+
+[[rules.requirements]]
+kind = "operation"
+value = "coexistence.wifi.release"
+
+[[rules.requirements]]
+kind = "call"
+value = "coexistence.wifi.request"
+
+[[rules]]
+id = "espressif.radio.bluetooth-hci-transport"
+protocol = "bluetooth"
+scope = "controller.transport"
+summary = "A reviewed Bluetooth HCI send boundary is bound to current interface evidence"
+
+[[rules.requirements]]
+kind = "operation"
+value = "bluetooth.controller.hci.send"
+
+[[rules.requirements]]
+kind = "call"
+value = "bluetooth.controller.hci.send"
+
+[[rules]]
+id = "espressif.radio.ieee802154-rx-boundary"
+protocol = "ieee802154"
+scope = "application.receive"
+summary = "A reviewed IEEE 802.15.4 receive boundary is bound and reached"
+
+[[rules.requirements]]
+kind = "operation"
+value = "ieee802154.radio.receive"
+
+[[rules.requirements]]
+kind = "call"
+value = "ieee802154.radio.receive"
+
+[[rules]]
+id = "espressif.radio.wifi-coexistence"
+protocol = "radio"
+scope = "scheduler.coexistence"
+summary = "Reviewed Wi-Fi receive and coexistence grant boundaries are both available"
+depends = [
+    "espressif.radio.wifi-rx-boundary",
+    "espressif.radio.coexistence-grant",
+]
+
+[[rules.requirements]]
+kind = "effect"
+value = "coexistence.request"

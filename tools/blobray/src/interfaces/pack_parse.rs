@@ -5,10 +5,15 @@ use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Val
 use super::{
     InterfaceAnchor, InterfaceFactStep, InterfaceGuard, InterfaceIndexDomain, InterfacePack,
     InterfaceRootSelector, InterfaceSlot, PackOrigin, ReviewStatus,
+    templates::InterfaceTemplateCatalog,
 };
 use crate::Result;
 
-pub(super) fn parse(document: &DocumentMut) -> Result<InterfacePack> {
+pub(super) fn parse(
+    document: &DocumentMut,
+    schema_3: bool,
+    templates: &InterfaceTemplateCatalog,
+) -> Result<InterfacePack> {
     Ok(InterfacePack {
         id: required_string(document.as_item(), "id", "interface pack")?,
         calling_convention: required_string(
@@ -19,22 +24,79 @@ pub(super) fn parse(document: &DocumentMut) -> Result<InterfacePack> {
         anchors: document
             .get("anchors")
             .and_then(Item::as_array_of_tables)
-            .map(parse_anchors)
+            .map(|tables| parse_anchors(tables, schema_3, templates))
             .transpose()?
             .unwrap_or_default(),
     })
 }
 
-fn parse_anchors(tables: &ArrayOfTables) -> Result<Vec<InterfaceAnchor>> {
+fn parse_anchors(
+    tables: &ArrayOfTables,
+    schema_3: bool,
+    templates: &InterfaceTemplateCatalog,
+) -> Result<Vec<InterfaceAnchor>> {
     tables
         .iter()
         .enumerate()
         .map(|(index, table)| {
             let context = format!("anchors[{index}]");
+            let template_id = optional_table_string(table, "template");
+            if template_id.is_some() && !schema_3 {
+                return Err(crate::Error::invalid(format!(
+                    "{context}.template requires interface pack schema = 3"
+                )));
+            }
+            if template_id.is_none() && table.get("overrides").is_some() {
+                return Err(crate::Error::invalid(format!(
+                    "{context}.overrides requires a reusable template"
+                )));
+            }
+            let origin = parse_origin(table, &context)?;
+            let mut slots = if let Some(template_id) = &template_id {
+                for key in [
+                    "layout-version",
+                    "pointer-width",
+                    "layout-size",
+                    "slot-stride",
+                    "slots",
+                ] {
+                    if table.get(key).is_some() {
+                        return Err(crate::Error::invalid(format!(
+                            "{context}.{key} conflicts with reusable template {template_id:?}"
+                        )));
+                    }
+                }
+                let template = templates.get(template_id).ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "{context}.template refers to unknown interface template {template_id:?}"
+                    ))
+                })?;
+                template
+                    .slots
+                    .iter()
+                    .map(|slot| slot.materialize())
+                    .collect::<Vec<_>>()
+            } else {
+                table
+                    .get("slots")
+                    .and_then(Item::as_array_of_tables)
+                    .map(|tables| parse_slots(tables, &context))
+                    .transpose()?
+                    .unwrap_or_default()
+            };
+            let template_overrides = table
+                .get("overrides")
+                .and_then(Item::as_array_of_tables)
+                .map(|overrides| apply_overrides(&mut slots, overrides, &context))
+                .transpose()?
+                .unwrap_or_default();
+            let template = template_id.as_deref().and_then(|id| templates.get(id));
             Ok(InterfaceAnchor {
                 id: required_table_string(table, "id", &context)?,
+                template: template_id,
+                template_overrides,
                 status: parse_status(table, &context)?,
-                origin: parse_origin(table, &context)?,
+                origin,
                 source: required_table_string(table, "source", &context)?,
                 root: parse_root(table, &context)?,
                 container_path: table
@@ -43,10 +105,18 @@ fn parse_anchors(tables: &ArrayOfTables) -> Result<Vec<InterfaceAnchor>> {
                     .map(|array| parse_steps(array, &format!("{context}.container-path")))
                     .transpose()?
                     .unwrap_or_default(),
-                layout_version: optional_table_string(table, "layout-version"),
-                pointer_width: optional_u8(table, "pointer-width", &context)?,
-                layout_size: optional_u32(table, "layout-size", &context)?,
-                slot_stride: optional_u8(table, "slot-stride", &context)?,
+                layout_version: template
+                    .map(|template| template.layout_version.clone())
+                    .or_else(|| optional_table_string(table, "layout-version")),
+                pointer_width: template
+                    .map(|template| template.pointer_width)
+                    .or(optional_u8(table, "pointer-width", &context)?),
+                layout_size: template
+                    .map(|template| template.layout_size)
+                    .or(optional_u32(table, "layout-size", &context)?),
+                slot_stride: template
+                    .map(|template| template.slot_stride)
+                    .or(optional_u8(table, "slot-stride", &context)?),
                 execution_contract: optional_table_string(table, "execution-contract"),
                 index_domains: table
                     .get("index-domains")
@@ -60,15 +130,112 @@ fn parse_anchors(tables: &ArrayOfTables) -> Result<Vec<InterfaceAnchor>> {
                     .map(|tables| parse_guards(tables, &context))
                     .transpose()?
                     .unwrap_or_default(),
-                slots: table
-                    .get("slots")
-                    .and_then(Item::as_array_of_tables)
-                    .map(|tables| parse_slots(tables, &context))
-                    .transpose()?
-                    .unwrap_or_default(),
+                slots,
             })
         })
         .collect()
+}
+
+fn apply_overrides(
+    slots: &mut [InterfaceSlot],
+    tables: &ArrayOfTables,
+    anchor: &str,
+) -> Result<Vec<super::InterfaceTemplateOverride>> {
+    let mut offsets = std::collections::BTreeSet::new();
+    let mut records = Vec::new();
+    for (index, table) in tables.iter().enumerate() {
+        let context = format!("{anchor}.overrides[{index}]");
+        for (key, item) in table.iter() {
+            if !matches!(
+                key,
+                "offset"
+                    | "reason"
+                    | "origin"
+                    | "name"
+                    | "arguments"
+                    | "return"
+                    | "variadic"
+                    | "semantic"
+                    | "execution-model"
+            ) {
+                return Err(crate::Error::invalid(format!(
+                    "unknown {context} key {key:?} at {:?}",
+                    item.span()
+                )));
+            }
+        }
+        let offset = required_i32(table, "offset", &context)?;
+        if !offsets.insert(offset) {
+            return Err(crate::Error::invalid(format!(
+                "{anchor} has duplicate override for template offset {offset:+#x}"
+            )));
+        }
+        let reason = required_table_string(table, "reason", &context)?;
+        if reason.trim().is_empty() || reason.contains(['\r', '\n']) {
+            return Err(crate::Error::invalid(format!(
+                "{context}.reason must be one non-empty line"
+            )));
+        }
+        let slot = slots
+            .iter_mut()
+            .find(|slot| slot.offset == offset)
+            .ok_or_else(|| {
+                crate::Error::invalid(format!(
+                    "{context} targets unknown template slot offset {offset:+#x}"
+                ))
+            })?;
+        let mut changed = false;
+        let mut fields = Vec::new();
+        if table.get("origin").is_some() {
+            slot.origin = parse_origin(table, &context)?;
+            changed = true;
+            fields.push("origin".to_owned());
+        }
+        if let Some(name) = optional_table_string(table, "name") {
+            slot.name = Some(name);
+            changed = true;
+            fields.push("name".to_owned());
+        }
+        if let Some(arguments) = table.get("arguments").and_then(Item::as_array) {
+            slot.arguments = Some(parse_string_array(arguments, "arguments", &context)?);
+            changed = true;
+            fields.push("arguments".to_owned());
+        }
+        if let Some(return_type) = optional_table_string(table, "return") {
+            slot.return_type = Some(return_type);
+            changed = true;
+            fields.push("return".to_owned());
+        }
+        if let Some(variadic) = table.get("variadic") {
+            slot.variadic = variadic.as_bool().ok_or_else(|| {
+                crate::Error::invalid(format!("{context}.variadic must be a boolean"))
+            })?;
+            changed = true;
+            fields.push("variadic".to_owned());
+        }
+        if let Some(semantic) = optional_table_string(table, "semantic") {
+            slot.semantic = Some(semantic);
+            changed = true;
+            fields.push("semantic".to_owned());
+        }
+        if let Some(model) = optional_table_string(table, "execution-model") {
+            slot.execution_model = Some(model);
+            changed = true;
+            fields.push("execution-model".to_owned());
+        }
+        if !changed {
+            return Err(crate::Error::invalid(format!(
+                "{context} must override origin, ABI, semantic, or execution-model"
+            )));
+        }
+        records.push(super::InterfaceTemplateOverride {
+            offset,
+            reason,
+            fields,
+        });
+    }
+    records.sort_by_key(|record| record.offset);
+    Ok(records)
 }
 
 fn parse_index_domains(tables: &ArrayOfTables, anchor: &str) -> Result<Vec<InterfaceIndexDomain>> {

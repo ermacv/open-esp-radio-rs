@@ -54,10 +54,11 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
         );
         return;
     }
-    match InterfaceWorkspace::load(
+    match InterfaceWorkspace::load_with_templates(
         &paths.facts,
         pack,
         &paths.semantic_catalogs,
+        &paths.interface_template_packs,
         context.target.calling_convention.label(),
         context
             .target
@@ -83,9 +84,48 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                     .field("semantic-operations", summary.semantic_operations)
                     .field("execution-contracts", summary.execution_contracts)
                     .field("execution-models", summary.execution_models)
+                    .field(
+                        "interface-template-packs",
+                        paths.interface_template_packs.len(),
+                    )
+                    .field("interface-templates", summary.interface_templates)
+                    .field("templated-anchors", summary.templated_anchors)
                     .field("facts", paths.facts.display().to_string())
                     .field("pack", pack.display().to_string()),
             );
+            if paths.capability_packs.is_empty() {
+                report.capability(CapabilityReport::new(
+                    "reusable-capabilities",
+                    "not-configured",
+                ));
+            } else {
+                match workspace.evaluate_capabilities(&paths.capability_packs) {
+                    Ok(capabilities) => {
+                        if capabilities.status != crate::interfaces::CapabilityMatchStatus::Matched
+                        {
+                            report.absorb(0, 1);
+                        }
+                        report.capability(
+                            CapabilityReport::new(
+                                "reusable-capabilities",
+                                capabilities.status.label(),
+                            )
+                            .field("packs", capabilities.packs)
+                            .field("rules", capabilities.rules.len())
+                            .field("matched", capabilities.matched)
+                            .field("incomplete", capabilities.incomplete)
+                            .field("unknown", capabilities.unknown),
+                        );
+                    }
+                    Err(error) => {
+                        report.error();
+                        report.capability(
+                            CapabilityReport::new("reusable-capabilities", "invalid")
+                                .field("error", error.to_string()),
+                        );
+                    }
+                }
+            }
         }
         Err(error) => {
             report.error();

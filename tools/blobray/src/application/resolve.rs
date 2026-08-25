@@ -330,10 +330,11 @@ fn cached_interface_workspace<'a>(
             .knowledge_provider
             .as_deref()
             .and_then(|harness| crate::harnesses::contracts(harness).ok());
-        crate::interfaces::InterfaceWorkspace::load(
+        crate::interfaces::InterfaceWorkspace::load_with_templates(
             &paths.facts,
             pack,
             &paths.semantic_catalogs,
+            &paths.interface_template_packs,
             target.calling_convention.label(),
             contracts,
         )

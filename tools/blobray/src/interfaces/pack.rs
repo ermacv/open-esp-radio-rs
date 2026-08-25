@@ -753,6 +753,8 @@ fn build_contracts(
             id: format!("{}::{}", pack.id, anchor.id),
             pack: pack.id.clone(),
             anchor: anchor.id.clone(),
+            template: anchor.template.clone(),
+            template_overrides: anchor.template_overrides.clone(),
             source: anchor.source.clone(),
             root: anchor.root.clone(),
             container_path: anchor.container_path.clone(),

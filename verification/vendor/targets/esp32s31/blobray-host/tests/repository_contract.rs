@@ -1006,9 +1006,15 @@ fn ecosystem_pack_composes_the_shared_espressif_family_knowledge() {
     let shared = vendor.join("knowledge/espressif/radio.toml");
     let ecosystem = fs::read_to_string(&shared).expect("read shared ecosystem pack");
     assert!(ecosystem.contains("knowledge-packs"));
+    assert!(ecosystem.contains("capability-packs"));
     assert!(ecosystem.contains("neutral-embedded.toml"));
     assert!(ecosystem.contains("esp-idf.toml"));
     assert!(vendor.join("knowledge/espressif/esp-idf.toml").is_file());
+    assert!(
+        vendor
+            .join("knowledge/espressif/capabilities.toml")
+            .is_file()
+    );
     assert!(!target.join("ecosystem.toml").exists());
     assert!(!target.join("semantics/embedded-platform.toml").exists());
 }
@@ -1390,4 +1396,108 @@ fn esp32c5_fixture_composes_only_neutral_and_family_knowledge() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn public_interface_templates_keep_exact_s31_bindings_in_the_project_overlay() {
+    let repository = repository_root();
+    let template_path =
+        repository.join("verification/vendor/knowledge/espressif/interface-templates.toml");
+    let template_source = fs::read_to_string(&template_path).unwrap();
+    let templates = toml_document(&template_path);
+    assert_eq!(templates["schema"].as_integer(), Some(1));
+    for forbidden in [
+        "source =",
+        "root-kind =",
+        "container-path =",
+        "artifact-sha256",
+        "runtime-value",
+        "execution-contract =",
+        "execution-model =",
+    ] {
+        assert!(
+            !template_source.contains(forbidden),
+            "reusable public layout must not own project binding {forbidden:?}"
+        );
+    }
+    let public = templates["templates"]
+        .as_array_of_tables()
+        .expect("public interface templates");
+    let public_by_id = public
+        .iter()
+        .map(|template| {
+            let id = template["id"].as_str().unwrap();
+            let provenance = template["provenance"].as_inline_table().unwrap();
+            assert!(
+                provenance["repository"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("https://")
+            );
+            assert_eq!(provenance["revision"].as_str().unwrap().len(), 40);
+            assert!(!provenance["path"].as_str().unwrap().is_empty());
+            (id, template["slots"].as_array().unwrap().len())
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        public_by_id,
+        BTreeMap::from([("esp-idf.coex-adapter-v2", 18), ("esp-idf.wifi-osi-v9", 61),])
+    );
+
+    let overlay_path =
+        repository.join("verification/vendor/targets/esp32s31/interfaces/reviewed.toml");
+    let overlay = toml_document(&overlay_path);
+    assert_eq!(overlay["schema"].as_integer(), Some(3));
+    let anchors = overlay["anchors"].as_array_of_tables().unwrap();
+    let templated = anchors
+        .iter()
+        .filter(|anchor| anchor.get("template").is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(templated.len(), 2);
+    for anchor in templated {
+        assert!(
+            anchor
+                .get("source")
+                .and_then(toml_edit::Item::as_str)
+                .is_some()
+        );
+        assert!(
+            anchor
+                .get("root-kind")
+                .and_then(toml_edit::Item::as_str)
+                .is_some()
+        );
+        assert!(anchor.get("slots").is_none());
+        for key in [
+            "layout-version",
+            "pointer-width",
+            "layout-size",
+            "slot-stride",
+        ] {
+            assert!(anchor.get(key).is_none(), "template owns {key}");
+        }
+        let guards = anchor["guards"].as_array_of_tables().unwrap();
+        assert_eq!(
+            guards
+                .iter()
+                .filter(|guard| guard["kind"].as_str() == Some("artifact-sha256"))
+                .count(),
+            1
+        );
+        assert!(
+            guards
+                .iter()
+                .any(|guard| guard["kind"].as_str() == Some("runtime-value"))
+        );
+        assert!(anchor["execution-contract"].as_str().is_some());
+        let overrides = anchor["overrides"].as_array_of_tables().unwrap();
+        let offsets = overrides
+            .iter()
+            .map(|overridden| {
+                assert!(!overridden["reason"].as_str().unwrap().is_empty());
+                overridden["offset"].as_integer().unwrap()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(offsets.len(), overrides.len());
+    }
 }

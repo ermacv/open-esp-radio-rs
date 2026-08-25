@@ -32,6 +32,24 @@ fn collect_knowledge_packs(context: &ProjectContext<'_>, report: &mut DoctorRepo
                 .iter()
                 .map(|pack| pack.id.clone())
                 .collect::<Vec<_>>(),
+        )
+        .field(
+            "capability-packs",
+            context
+                .project
+                .ecosystem_packs
+                .iter()
+                .map(|pack| pack.capability_packs.len())
+                .sum::<usize>(),
+        )
+        .field(
+            "capability-rules",
+            context
+                .project
+                .ecosystem_packs
+                .iter()
+                .map(|pack| pack.capability_rules)
+                .sum::<usize>(),
         ),
     );
     let chip = match &context.project.chip_pack {
@@ -43,6 +61,8 @@ fn collect_knowledge_packs(context: &ProjectContext<'_>, report: &mut DoctorRepo
             )
             .field("knowledge-packs", pack.knowledge_packs.len())
             .field("knowledge-operations", pack.knowledge_operations)
+            .field("capability-packs", pack.capability_packs.len())
+            .field("capability-rules", pack.capability_rules)
             .field("path", pack.path.display().to_string()),
         None => CapabilityReport::new("chip-pack", "not-configured")
             .field("reason", "architecture-and-ecosystem-only"),

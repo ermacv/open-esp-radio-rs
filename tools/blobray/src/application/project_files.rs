@@ -451,6 +451,30 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
                 None,
             );
         }
+        for (index, path) in pack.capability_packs.iter().enumerate() {
+            push(
+                &mut files,
+                format!("ecosystem-pack[{pack_index}].capability[{index}]"),
+                ProjectFileOwnership::Reviewed,
+                path,
+                None,
+                &["interface capability report", "linked IR"],
+                false,
+                None,
+            );
+        }
+        for (index, path) in pack.interface_template_packs.iter().enumerate() {
+            push(
+                &mut files,
+                format!("ecosystem-pack[{pack_index}].interface-template[{index}]"),
+                ProjectFileOwnership::Reviewed,
+                path,
+                None,
+                &["interface layout composition", "linked IR"],
+                false,
+                None,
+            );
+        }
     }
     if let Some(pack) = &project.chip_pack {
         push(
@@ -475,6 +499,30 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
                 path,
                 None,
                 &["linked IR", "chip semantics"],
+                false,
+                None,
+            );
+        }
+        for (index, path) in pack.capability_packs.iter().enumerate() {
+            push(
+                &mut files,
+                format!("chip-pack.capability[{index}]"),
+                ProjectFileOwnership::Reviewed,
+                path,
+                None,
+                &["interface capability report", "linked IR"],
+                false,
+                None,
+            );
+        }
+        for (index, path) in pack.interface_template_packs.iter().enumerate() {
+            push(
+                &mut files,
+                format!("chip-pack.interface-template[{index}]"),
+                ProjectFileOwnership::Reviewed,
+                path,
+                None,
+                &["interface layout composition", "linked IR"],
                 false,
                 None,
             );
@@ -757,7 +805,12 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
     let ecosystem_resources = project
         .ecosystem_packs
         .iter()
-        .flat_map(|pack| pack.knowledge_packs.iter())
+        .flat_map(|pack| {
+            pack.knowledge_packs
+                .iter()
+                .chain(&pack.capability_packs)
+                .chain(&pack.interface_template_packs)
+        })
         .collect::<BTreeSet<_>>();
     let chip_resources = project
         .chip_pack
@@ -768,6 +821,8 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> Result<ProjectFilesReport
                 .chain(&pack.svd_paths)
                 .chain(pack.register_model.iter())
                 .chain(&pack.knowledge_packs)
+                .chain(&pack.capability_packs)
+                .chain(&pack.interface_template_packs)
         })
         .collect::<BTreeSet<_>>();
     for file in &mut files {
@@ -993,7 +1048,18 @@ mod tests {
             ProjectFileLayer::Ecosystem
         );
         assert_eq!(
+            default_layer(
+                "ecosystem-pack[0].capability[0]",
+                ProjectFileOwnership::Reviewed
+            ),
+            ProjectFileLayer::Ecosystem
+        );
+        assert_eq!(
             default_layer("chip-pack", ProjectFileOwnership::Reviewed),
+            ProjectFileLayer::Chip
+        );
+        assert_eq!(
+            default_layer("chip-pack.capability[0]", ProjectFileOwnership::Reviewed),
             ProjectFileLayer::Chip
         );
         assert_eq!(

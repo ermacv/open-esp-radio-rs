@@ -76,6 +76,8 @@ pub(crate) struct InterfaceIndexDomain {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct InterfaceAnchor {
     pub(crate) id: String,
+    pub(crate) template: Option<String>,
+    pub(crate) template_overrides: Vec<InterfaceTemplateOverride>,
     pub(crate) status: ReviewStatus,
     pub(crate) origin: PackOrigin,
     pub(crate) source: String,
@@ -89,6 +91,13 @@ pub(crate) struct InterfaceAnchor {
     pub(crate) index_domains: Vec<InterfaceIndexDomain>,
     pub(crate) guards: Vec<InterfaceGuard>,
     pub(crate) slots: Vec<InterfaceSlot>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct InterfaceTemplateOverride {
+    pub(crate) offset: i32,
+    pub(crate) reason: String,
+    pub(crate) fields: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -124,6 +133,8 @@ pub(crate) struct InterfaceWorkspaceSummary {
     pub(crate) artifact_guards: usize,
     pub(crate) runtime_guards: usize,
     pub(crate) resolved_calls: usize,
+    pub(crate) interface_templates: usize,
+    pub(crate) templated_anchors: usize,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -240,6 +251,8 @@ pub(crate) struct ResolvedInterfaceContract {
     pub(crate) id: String,
     pub(crate) pack: String,
     pub(crate) anchor: String,
+    pub(crate) template: Option<String>,
+    pub(crate) template_overrides: Vec<InterfaceTemplateOverride>,
     pub(crate) source: String,
     pub(crate) root: InterfaceRootSelector,
     pub(crate) container_path: Vec<InterfaceFactStep>,
@@ -259,9 +272,13 @@ pub(crate) struct InterfaceWorkspace {
     bindings: Vec<ResolvedInterfaceSlot>,
     unreviewed_observations: Vec<UnreviewedInterfaceObservation>,
     facts: InterfaceFacts,
+    pub(super) semantic_catalogs: SemanticCatalogs,
+    template_pack_ids: Vec<String>,
+    template_summaries: Vec<super::templates::InterfaceTemplateSummary>,
 }
 
 impl InterfaceWorkspace {
+    #[cfg(test)]
     pub(crate) fn load(
         facts_path: &Path,
         pack_path: &Path,
@@ -269,9 +286,31 @@ impl InterfaceWorkspace {
         calling_convention: &str,
         execution_contracts: Option<&KnowledgeContractSpec>,
     ) -> Result<Self> {
+        Self::load_with_templates(
+            facts_path,
+            pack_path,
+            semantic_paths,
+            &[] as &[&Path],
+            calling_convention,
+            execution_contracts,
+        )
+    }
+
+    pub(crate) fn load_with_templates(
+        facts_path: &Path,
+        pack_path: &Path,
+        semantic_paths: &[impl AsRef<Path>],
+        template_paths: &[impl AsRef<Path>],
+        calling_convention: &str,
+        execution_contracts: Option<&KnowledgeContractSpec>,
+    ) -> Result<Self> {
         let facts = InterfaceFacts::load(facts_path)?;
         let catalogs = SemanticCatalogs::load(semantic_paths)?;
-        let pack = InterfacePack::load(pack_path)?;
+        let templates =
+            super::templates::InterfaceTemplateCatalog::load(template_paths, &catalogs)?;
+        let template_pack_ids = templates.pack_ids().to_vec();
+        let template_summaries = templates.summaries();
+        let pack = InterfacePack::load(pack_path, &templates)?;
         let (summary, contracts, bindings, unreviewed_observations) = pack
             .value
             .validate(&facts, &catalogs, calling_convention, execution_contracts)
@@ -284,12 +323,23 @@ impl InterfaceWorkspace {
                     error.span(&pack.document),
                 )
             })?;
+        let mut summary = summary;
+        summary.interface_templates = templates.len();
+        summary.templated_anchors = pack
+            .value
+            .anchors
+            .iter()
+            .filter(|anchor| anchor.template.is_some())
+            .count();
         Ok(Self {
             summary,
             contracts,
             bindings,
             unreviewed_observations,
             facts,
+            semantic_catalogs: catalogs,
+            template_pack_ids,
+            template_summaries,
         })
     }
 
@@ -311,6 +361,21 @@ impl InterfaceWorkspace {
 
     pub(crate) fn contracts(&self) -> &[ResolvedInterfaceContract] {
         &self.contracts
+    }
+
+    pub(crate) fn template_pack_ids(&self) -> &[String] {
+        &self.template_pack_ids
+    }
+
+    pub(crate) fn template_summaries(&self) -> &[super::templates::InterfaceTemplateSummary] {
+        &self.template_summaries
+    }
+
+    pub(crate) fn evaluate_capabilities(
+        &self,
+        paths: &[impl AsRef<Path>],
+    ) -> Result<super::CapabilityEvaluationReport> {
+        super::CapabilityRuleSet::load(paths).map(|rules| rules.evaluate(self))
     }
 
     pub(crate) fn validate_table_instance(
@@ -363,7 +428,10 @@ impl InterfaceWorkspace {
 
 impl InterfacePack {
     #[tracing::instrument(name = "load_interface_pack", fields(path = %path.display()))]
-    fn load(path: &Path) -> Result<LoadedInterfacePack> {
+    fn load(
+        path: &Path,
+        templates: &super::templates::InterfaceTemplateCatalog,
+    ) -> Result<LoadedInterfacePack> {
         let input = fs::read_to_string(path)
             .map_err(|error| crate::Error::read("interface pack", path, error))?;
         let source_document = Document::parse(input.clone()).map_err(|error| {
@@ -376,16 +444,17 @@ impl InterfacePack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(2) {
+        let schema = document.get("schema").and_then(Item::as_integer);
+        if !matches!(schema, Some(2 | 3)) {
             return Err(crate::error::BlobrayError::manifest_source(
                 "interface pack",
                 path,
                 &input,
-                "requires schema = 2",
+                "requires schema = 2 or schema = 3",
                 source_document.get("schema").and_then(Item::span),
             ));
         }
-        let value = super::pack_parse::parse(&document)
+        let value = super::pack_parse::parse(&document, schema == Some(3), templates)
             .map_err(|error| crate::error::BlobrayError::manifest("interface pack", path, error))?;
         Ok(LoadedInterfacePack {
             value,

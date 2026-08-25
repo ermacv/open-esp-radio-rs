@@ -46,6 +46,33 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
             .iter()
             .map(|pack| pack.knowledge_operations)
             .sum::<usize>(),
+    )
+    .detail(
+        "capability_packs",
+        context
+            .project
+            .ecosystem_packs
+            .iter()
+            .map(|pack| pack.capability_packs.len())
+            .sum::<usize>(),
+    )
+    .detail(
+        "capability_rules",
+        context
+            .project
+            .ecosystem_packs
+            .iter()
+            .map(|pack| pack.capability_rules)
+            .sum::<usize>(),
+    )
+    .detail(
+        "interface_template_packs",
+        context
+            .project
+            .ecosystem_packs
+            .iter()
+            .map(|pack| pack.interface_template_packs.len())
+            .sum::<usize>(),
     );
     let chip = context.project.chip_pack.as_ref().map_or_else(
         || Component::new("chip_pack", Readiness::NotConfigured),
@@ -55,6 +82,12 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
                 .detail("path", pack.path.display().to_string())
                 .detail("knowledge_packs", pack.knowledge_packs.len())
                 .detail("knowledge_operations", pack.knowledge_operations)
+                .detail("capability_packs", pack.capability_packs.len())
+                .detail("capability_rules", pack.capability_rules)
+                .detail(
+                    "interface_template_packs",
+                    pack.interface_template_packs.len(),
+                )
         },
     );
     let knowledge_provider = match &context.target.knowledge_provider {

@@ -8,8 +8,9 @@ unknown fields.
 
 - `target.toml`: architecture, calling convention, endianness, pointer width,
   and Rust target only;
-- `ecosystem.toml`: reusable ordered semantic catalogs for a vendor/RTOS
-  ecosystem, with no chip addresses or executable provider;
+- `ecosystem.toml`: reusable ordered semantic catalogs, capability-rule packs,
+  and public interface-template packs for a vendor/RTOS ecosystem, with no
+  chip addresses or executable provider;
 - `chip.toml`: reusable memory map, base register model, SVD inputs, chip
   semantic catalogs, and an optional compiled knowledge-provider ID;
 - `vendor-project.toml`: composition, reviewed workspaces, and generated
@@ -48,15 +49,64 @@ closed instead of using manifest order as executable precedence.
 - verification policy: required comparisons and bounded properties;
 - evidence catalogs: provenance links for reviewed claims.
 
+### Reusable capability packs
+
+A schema-1 capability pack contains `[[rules]]` with a stable dotted `id`, a
+`protocol`, a classification `scope`, a human summary, optional `depends`, and
+nested `[[rules.requirements]]`. Requirement `kind` is `operation`, `effect`,
+or `call`; `value` is reviewed semantic vocabulary and `min-matches` defaults
+to one. Rule IDs may be shared across ecosystem and chip packs only when their
+complete definitions are identical. Missing dependencies, cycles, duplicate
+matchers, zero match counts and conflicting definitions fail during loading.
+
+`protocol` and `scope` are report labels, not evidence filters or coverage
+claims. A rule searches all validated interface bindings. `operation` matches
+a reviewed semantic binding, `effect` matches one of that binding's reviewed
+effects, and `call` additionally requires at least one concrete resolved call
+site. Machine reports contain the exact binding/call evidence and sort packs,
+rules and matches deterministically.
+
+A `matched` result means only that the declared rule matched current reviewed
+interface evidence. It does not establish hardware support, runtime ordering,
+semantic completeness, or qualification. Known vocabulary without enough
+current evidence is `incomplete`; vocabulary absent from the configured
+semantic catalogs is `unknown`. Either state propagates through dependent
+rules and never becomes a positive capability claim.
+
+### Reusable interface templates
+
+A schema-1 interface-template pack contains public, versioned callback-table
+layouts. Each template owns only its stable ID, public header provenance
+(`repository`, exact 40-hex `revision`, and relative `path`), layout version,
+pointer width, size, stride, and slot offsets/ABI/semantic IDs. It cannot name
+an artifact source, symbol/address root, container path, digest/runtime guard,
+execution contract, or compiled execution model. Duplicate pack IDs and
+same-ID template conflicts fail closed; identical template definitions from
+distinct pack IDs may be deduplicated.
+
+An interface pack schema-3 anchor opts in with `template = "..."`. That
+project anchor still owns the exact source/root/container binding, exactly one
+artifact SHA-256 guard, any runtime guards, and its execution contract.
+`[[anchors.overrides]]` entries are keyed by a template slot `offset`, require
+a one-line `reason`, and may explicitly change provenance, ABI/semantic fields,
+or attach a project provider execution model. Template slots start as reviewed
+public-header assertions: only an explicit `origin = "observed"` override may
+classify matching generated artifact evidence. Unknown/duplicate offsets,
+unexplained overrides, local layout duplication, and missing digest bindings
+fail closed. Validation JSON preserves sorted template pack IDs, source
+provenance, and every overridden offset/reason/field; reasons are diagnostic
+provenance, never executable semantics.
+
 ## Durable revision state
 
-- immutable revision snapshots (`revisions/snapshots/NAME.json`) contain only
+- immutable revision snapshots (`revisions/snapshots/NAME.json.gz`) contain only
   artifact digests and normalized derived features, never vendor payloads or
   disassembly;
 - `revisions/ledger.toml` is the tracked schema-1 index for those snapshots.
   It stores only project/revision names, relative snapshot locations, SHA-256
   identities, `baseline`/`current` pointers and an optional update-preflight
-  marker.
+  marker. `snapshot-sha256` identifies normalized logical snapshot content,
+  not the encoded `.json.gz` bytes; gzip is a replaceable storage codec.
 
 Snapshots are tool-written correspondence maps rather than manually reviewed
 facts. Unlike ordinary generated output, they and their ledger must survive a

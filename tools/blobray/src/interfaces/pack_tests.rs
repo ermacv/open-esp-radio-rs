@@ -246,7 +246,7 @@ fn bounded_assignment_error(mutate: impl FnOnce(&mut serde_json::Value)) -> Stri
     let mut document = bounded_assignment_document(&directory);
     mutate(&mut document);
     let error = load_bounded_assignment_document(&directory, &document).unwrap_err();
-    std::fs::remove_dir_all(directory).unwrap();
+    std::fs::remove_dir_all(&directory).unwrap();
     error.to_string()
 }
 
@@ -457,6 +457,228 @@ fn executable_reviewed_pack(digest: &str) -> String {
             "semantic = \"rtos.queue.send-from-isr\"\n",
             "semantic = \"rtos.queue.send-from-isr\"\nexecution-model = \"queue-send-from-isr\"\n",
         )
+}
+
+fn reusable_template(name: &str) -> String {
+    let revision = ["0123456789abcdef", "0123456789abcdef", "01234567"].concat();
+    format!(
+        r#"schema = 1
+id = "fixture.templates"
+
+[[templates]]
+id = "vendor.services-v9"
+provenance = {{ repository = "https://example.com/vendor/sdk", revision = "{revision}", path = "include/services.h" }}
+layout-version = "vendor-v9"
+pointer-width = 32
+layout-size = 32
+slot-stride = 4
+
+[[templates.slots]]
+offset = 16
+width = 32
+name = "{name}"
+arguments = ["opaque-handle", "const-ptr", "out-ptr"]
+return = "bool"
+semantic = "rtos.queue.send-from-isr"
+"#
+    )
+}
+
+fn templated_reviewed_pack(digest: &str, override_offset: i32) -> String {
+    format!(
+        r#"schema = 3
+id = "fixture"
+calling-convention = "riscv-ilp32"
+
+[[anchors]]
+id = "wifi-osi"
+template = "vendor.services-v9"
+status = "reviewed"
+origin = "observed"
+source = "libpp"
+root-kind = "relocated-symbol"
+member = "event.o"
+symbol = "g_services"
+addend = 0
+addressing = "absolute"
+container-path = [{{ offset = 0, width = 32 }}]
+execution-contract = "fixture.services-v1"
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "{digest}"
+
+[[anchors.overrides]]
+offset = {override_offset}
+reason = "Bind the exact project provider model."
+origin = "observed"
+execution-model = "queue-send-from-isr"
+"#
+    )
+}
+
+#[test]
+fn reusable_template_materializes_public_layout_under_exact_project_binding() {
+    let directory = fixture_directory();
+    let facts = directory.join("facts.json");
+    let pack = directory.join("pack.toml");
+    let catalog = directory.join("semantics.toml");
+    let template = directory.join("templates.toml");
+    let digest = fake_digest('e');
+    write_facts(&facts, &digest);
+    write_catalog(&catalog);
+    std::fs::write(&template, reusable_template("queue_send_from_isr")).unwrap();
+    std::fs::write(&pack, templated_reviewed_pack(&digest, 16)).unwrap();
+
+    let workspace = InterfaceWorkspace::load_with_templates(
+        &facts,
+        &pack,
+        std::slice::from_ref(&catalog),
+        std::slice::from_ref(&template),
+        "riscv-ilp32",
+        Some(&EXECUTION_CONTRACTS),
+    )
+    .unwrap();
+    std::fs::remove_dir_all(&directory).unwrap();
+
+    assert_eq!(workspace.summary().interface_templates, 1);
+    assert_eq!(workspace.summary().templated_anchors, 1);
+    assert_eq!(workspace.bindings()[0].name, "queue_send_from_isr");
+    assert_eq!(workspace.bindings()[0].layout_version, "vendor-v9");
+    assert_eq!(
+        workspace.bindings()[0]
+            .execution_model
+            .as_ref()
+            .map(|model| model.model.as_str()),
+        Some("queue-send-from-isr")
+    );
+
+    std::fs::create_dir_all(&directory).unwrap();
+    write_facts(&facts, &digest);
+    write_catalog(&catalog);
+    std::fs::write(&template, reusable_template("queue_send_from_isr")).unwrap();
+    std::fs::write(
+        &pack,
+        templated_reviewed_pack(&digest, 16).replace("origin = \"observed\"\n", ""),
+    )
+    .unwrap();
+    let error = InterfaceWorkspace::load_with_templates(
+        &facts,
+        &pack,
+        std::slice::from_ref(&catalog),
+        std::slice::from_ref(&template),
+        "riscv-ilp32",
+        Some(&EXECUTION_CONTRACTS),
+    )
+    .unwrap_err();
+    std::fs::remove_dir_all(directory).unwrap();
+    assert!(error.to_string().contains("manual slot"));
+    assert!(error.to_string().contains("now observed"));
+}
+
+#[test]
+fn reusable_template_composition_rejects_conflicts_and_unknown_overrides() {
+    let directory = fixture_directory();
+    let facts = directory.join("facts.json");
+    let pack = directory.join("pack.toml");
+    let catalog = directory.join("semantics.toml");
+    let template_a = directory.join("templates-a.toml");
+    let template_b = directory.join("templates-b.toml");
+    let digest = fake_digest('e');
+    write_facts(&facts, &digest);
+    write_catalog(&catalog);
+    std::fs::write(&template_a, reusable_template("queue_send_from_isr")).unwrap();
+    std::fs::write(
+        &template_b,
+        reusable_template("renamed_slot").replace(
+            "id = \"vendor.services-v9\"",
+            "id = \"vendor.other-services-v9\"",
+        ),
+    )
+    .unwrap();
+    std::fs::write(&pack, templated_reviewed_pack(&digest, 16)).unwrap();
+
+    let duplicate_pack = InterfaceWorkspace::load_with_templates(
+        &facts,
+        &pack,
+        std::slice::from_ref(&catalog),
+        &[&template_a, &template_b],
+        "riscv-ilp32",
+        Some(&EXECUTION_CONTRACTS),
+    )
+    .unwrap_err();
+    assert!(
+        duplicate_pack
+            .to_string()
+            .contains("duplicate interface template pack id")
+    );
+
+    std::fs::write(
+        &template_b,
+        reusable_template("renamed_slot").replace(
+            "id = \"fixture.templates\"",
+            "id = \"fixture.more-templates\"",
+        ),
+    )
+    .unwrap();
+    let conflict = InterfaceWorkspace::load_with_templates(
+        &facts,
+        &pack,
+        std::slice::from_ref(&catalog),
+        &[&template_a, &template_b],
+        "riscv-ilp32",
+        Some(&EXECUTION_CONTRACTS),
+    )
+    .unwrap_err();
+    assert!(
+        conflict
+            .to_string()
+            .contains("conflicts with an earlier pack")
+    );
+
+    std::fs::write(&pack, templated_reviewed_pack(&digest, 20)).unwrap();
+    let unknown = InterfaceWorkspace::load_with_templates(
+        &facts,
+        &pack,
+        std::slice::from_ref(&catalog),
+        std::slice::from_ref(&template_a),
+        "riscv-ilp32",
+        Some(&EXECUTION_CONTRACTS),
+    )
+    .unwrap_err();
+    std::fs::remove_dir_all(directory).unwrap();
+    assert!(unknown.to_string().contains("unknown template slot offset"));
+}
+
+#[test]
+fn reusable_template_requires_an_artifact_digest_binding() {
+    let directory = fixture_directory();
+    let facts = directory.join("facts.json");
+    let pack = directory.join("pack.toml");
+    let catalog = directory.join("semantics.toml");
+    let template = directory.join("templates.toml");
+    let digest = fake_digest('e');
+    write_facts(&facts, &digest);
+    write_catalog(&catalog);
+    std::fs::write(&template, reusable_template("queue_send_from_isr")).unwrap();
+    let input = templated_reviewed_pack(&digest, 16).replace(
+        &format!(
+            "[[anchors.guards]]\nkind = \"artifact-sha256\"\nsha256 = \"{digest}\"\n"
+        ),
+        "[[anchors.guards]]\nkind = \"runtime-value\"\npurpose = \"version\"\noffset = 0\nwidth = 32\nmask = 0xffffffff\nvalue = 9\n",
+    );
+    std::fs::write(&pack, input).unwrap();
+    let error = InterfaceWorkspace::load_with_templates(
+        &facts,
+        &pack,
+        std::slice::from_ref(&catalog),
+        std::slice::from_ref(&template),
+        "riscv-ilp32",
+        Some(&EXECUTION_CONTRACTS),
+    )
+    .unwrap_err();
+    std::fs::remove_dir_all(directory).unwrap();
+    assert!(error.to_string().contains("pinned by exactly one artifact"));
 }
 
 #[test]

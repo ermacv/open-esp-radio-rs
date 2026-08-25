@@ -637,6 +637,8 @@ mod tests {
             facts: "interfaces.json".into(),
             pack: Some("interfaces.toml".into()),
             semantic_catalogs: Vec::new(),
+            capability_packs: Vec::new(),
+            interface_template_packs: Vec::new(),
         });
         project
             .ir_profiles
@@ -699,6 +701,8 @@ mod tests {
             facts: "interfaces.json".into(),
             pack: Some("interfaces.toml".into()),
             semantic_catalogs: Vec::new(),
+            capability_packs: Vec::new(),
+            interface_template_packs: Vec::new(),
         });
         project
             .ir_profiles
@@ -761,6 +765,8 @@ mod tests {
             facts: "interfaces.json".into(),
             pack: Some("interfaces.toml".into()),
             semantic_catalogs: Vec::new(),
+            capability_packs: Vec::new(),
+            interface_template_packs: Vec::new(),
         });
         project
             .ir_profiles

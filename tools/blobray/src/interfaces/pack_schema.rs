@@ -42,6 +42,18 @@ pub(super) fn validate_anchor_shape(
         .iter()
         .filter(|guard| matches!(guard, InterfaceGuard::ArtifactSha256 { .. }))
         .count();
+    if anchor.template.is_some()
+        && (anchor.status != ReviewStatus::Reviewed || artifact_guards != 1)
+    {
+        return Err(ValidationError::anchor(
+            anchor,
+            "template",
+            format!(
+                "templated anchor {:?} must be reviewed and pinned by exactly one artifact-sha256 guard",
+                anchor.id
+            ),
+        ));
+    }
     if artifact_guards > 1 {
         return Err(ValidationError::anchor(
             anchor,

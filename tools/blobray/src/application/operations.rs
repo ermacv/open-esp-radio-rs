@@ -133,10 +133,11 @@ pub(super) fn validate_table_instances(
         .knowledge_provider
         .as_deref()
         .and_then(|harness| crate::harnesses::contracts(harness).ok());
-    let workspace = InterfaceWorkspace::load(
+    let workspace = InterfaceWorkspace::load_with_templates(
         &paths.facts,
         pack,
         &paths.semantic_catalogs,
+        &paths.interface_template_packs,
         resolved.target.calling_convention.label(),
         harness,
     )?;

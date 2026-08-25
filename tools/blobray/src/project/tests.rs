@@ -295,6 +295,8 @@ locator = "review"
             facts: directory.join("generated/interfaces.json"),
             pack: Some(directory.join("interfaces/reviewed.toml")),
             semantic_catalogs: vec![],
+            capability_packs: vec![],
+            interface_template_packs: vec![],
         })
     );
     assert_eq!(

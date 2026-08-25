@@ -1,5 +1,6 @@
 //! Generated interface facts, reviewed layout packs, and semantic knowledge packs.
 
+mod capabilities;
 mod execution_models;
 mod facts;
 mod origin_projection;
@@ -11,10 +12,13 @@ mod pack_template;
 #[cfg(test)]
 mod pack_tests;
 mod semantics;
+mod templates;
 mod validation;
 
+pub(crate) use capabilities::*;
 pub(crate) use facts::*;
 pub(crate) use pack_model::*;
 pub(crate) use pack_schema::validate_abi_type;
 pub(crate) use pack_template::*;
 pub(crate) use semantics::*;
+pub(crate) use templates::validate_interface_template_packs;

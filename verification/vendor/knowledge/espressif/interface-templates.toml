@@ -1,0 +1,104 @@
+# Reusable public ESP-IDF callback-table layouts. This file intentionally owns
+# no binary source, symbol/address root, artifact digest, runtime value, or
+# executable provider binding; those remain in each project's interface pack.
+schema = 1
+id = "espressif.esp-idf.interface-templates"
+
+[[templates]]
+id = "esp-idf.wifi-osi-v9"
+provenance = { repository = "https://github.com/espressif/esp-idf", revision = "08e0d30a74ad0bfd5a34933142b80f45619ee410", path = "components/esp_wifi/include/esp_private/wifi_os_adapter.h" }
+layout-version = "esp-idf-wifi-osi-v9"
+pointer-width = 32
+layout-size = 0x200
+slot-stride = 4
+slots = [
+  { offset = 0x004, width = 32, name = "env_is_chip", arguments = [], return = "bool", semantic = "target.is-real-chip" },
+  { offset = 0x028, width = 32, name = "wifi_int_disable", arguments = ["mut-ptr"], return = "u32", semantic = "critical-section.enter" },
+  { offset = 0x02c, width = 32, name = "wifi_int_restore", arguments = ["mut-ptr", "u32"], return = "void", semantic = "critical-section.exit" },
+  { offset = 0x030, width = 32, name = "task_yield_from_isr", arguments = [], return = "void", semantic = "rtos.task.yield-from-isr" },
+  { offset = 0x034, width = 32, name = "semphr_create", arguments = ["u32", "u32"], return = "opaque-handle", semantic = "rtos.semaphore.create" },
+  { offset = 0x038, width = 32, name = "semphr_delete", arguments = ["opaque-handle"], return = "void", semantic = "rtos.semaphore.delete" },
+  { offset = 0x040, width = 32, name = "semphr_give", arguments = ["opaque-handle"], return = "i32", semantic = "rtos.semaphore.give" },
+  { offset = 0x054, width = 32, name = "mutex_lock", arguments = ["opaque-handle"], return = "i32", semantic = "rtos.mutex.lock" },
+  { offset = 0x058, width = 32, name = "mutex_unlock", arguments = ["opaque-handle"], return = "i32", semantic = "rtos.mutex.unlock" },
+  { offset = 0x064, width = 32, name = "queue_send", arguments = ["opaque-handle", "mut-ptr", "u32"], return = "i32", semantic = "rtos.queue.send" },
+  { offset = 0x068, width = 32, name = "queue_send_from_isr", arguments = ["opaque-handle", "mut-ptr", "out-ptr"], return = "i32", semantic = "rtos.queue.send-from-isr" },
+  { offset = 0x074, width = 32, name = "queue_recv", arguments = ["opaque-handle", "mut-ptr", "u32"], return = "i32", semantic = "rtos.queue.receive" },
+  { offset = 0x078, width = 32, name = "queue_msg_waiting", arguments = ["opaque-handle"], return = "u32", semantic = "rtos.queue.pending-count" },
+  { offset = 0x090, width = 32, name = "task_create_pinned_to_core", arguments = ["fn-ptr", "const-ptr", "u32", "mut-ptr", "u32", "out-ptr", "u32"], return = "i32", semantic = "rtos.task.create-pinned" },
+  { offset = 0x094, width = 32, name = "task_create", arguments = ["fn-ptr", "const-ptr", "u32", "mut-ptr", "u32", "out-ptr"], return = "i32", semantic = "rtos.task.create" },
+  { offset = 0x098, width = 32, name = "task_delete", arguments = ["opaque-handle"], return = "void", semantic = "rtos.task.delete" },
+  { offset = 0x09c, width = 32, name = "task_delay", arguments = ["u32"], return = "void", semantic = "time.blocking-delay" },
+  { offset = 0x0a0, width = 32, name = "task_ms_to_tick", arguments = ["u32"], return = "i32", semantic = "time.milliseconds.to-ticks" },
+  { offset = 0x0a4, width = 32, name = "task_get_current_task", arguments = [], return = "opaque-handle", semantic = "rtos.task.current" },
+  { offset = 0x0a8, width = 32, name = "task_get_max_priority", arguments = [], return = "i32", semantic = "rtos.task.max-priority" },
+  { offset = 0x0b0, width = 32, name = "free", arguments = ["mut-ptr"], return = "void", semantic = "memory.deallocate" },
+  { offset = 0x0b4, width = 32, name = "event_post", arguments = ["const-ptr", "i32", "const-ptr", "usize", "u32"], return = "i32", semantic = "rtos.event.post" },
+  { offset = 0x0bc, width = 32, name = "rand", arguments = [], return = "u32", semantic = "random.next-u32" },
+  { offset = 0x0c8, width = 32, name = "wifi_pm_sleep_lock_acquire", arguments = [], return = "void", semantic = "power.sleep-lock.acquire" },
+  { offset = 0x0cc, width = 32, name = "wifi_pm_sleep_lock_release", arguments = [], return = "void", semantic = "power.sleep-lock.release" },
+  { offset = 0x0d0, width = 32, name = "phy_disable", arguments = [], return = "void", semantic = "radio.phy.disable" },
+  { offset = 0x0d4, width = 32, name = "phy_enable", arguments = [], return = "void", semantic = "radio.phy.enable" },
+  { offset = 0x0e0, width = 32, name = "timer_arm", arguments = ["mut-ptr", "u32", "bool"], return = "void", semantic = "timer.arm" },
+  { offset = 0x0e4, width = 32, name = "timer_disarm", arguments = ["mut-ptr"], return = "void", semantic = "timer.disarm" },
+  { offset = 0x0e8, width = 32, name = "timer_done", arguments = ["mut-ptr"], return = "void", semantic = "timer.complete" },
+  { offset = 0x0f0, width = 32, name = "timer_arm_us", arguments = ["mut-ptr", "u32", "bool"], return = "void", semantic = "timer.arm-micros" },
+  { offset = 0x0f8, width = 32, name = "wifi_clock_enable", arguments = [], return = "void", semantic = "clock.wifi.enable" },
+  { offset = 0x0fc, width = 32, name = "wifi_clock_disable", arguments = [], return = "void", semantic = "clock.wifi.disable" },
+  { offset = 0x108, width = 32, name = "esp_timer_get_time", arguments = [], return = "i64", semantic = "time.monotonic-micros.get" },
+  { offset = 0x124, width = 32, name = "nvs_open", arguments = ["const-ptr", "u32", "out-ptr"], return = "i32", semantic = "storage.nvs.open" },
+  { offset = 0x128, width = 32, name = "nvs_close", arguments = ["u32"], return = "void", semantic = "storage.nvs.close" },
+  { offset = 0x12c, width = 32, name = "nvs_commit", arguments = ["u32"], return = "i32", semantic = "storage.nvs.commit" },
+  { offset = 0x130, width = 32, name = "nvs_set_blob", arguments = ["u32", "const-ptr", "const-ptr", "usize"], return = "i32", semantic = "storage.nvs.blob.write" },
+  { offset = 0x134, width = 32, name = "nvs_get_blob", arguments = ["u32", "const-ptr", "out-ptr", "mut-ptr"], return = "i32", semantic = "storage.nvs.blob.read" },
+  { offset = 0x138, width = 32, name = "nvs_erase_key", arguments = ["u32", "const-ptr"], return = "i32", semantic = "storage.nvs.key.erase" },
+  { offset = 0x144, width = 32, name = "random", arguments = [], return = "u32", semantic = "random.next-u32" },
+  { offset = 0x148, width = 32, name = "slowclk_cal_get", arguments = [], return = "u32", semantic = "clock.slow-calibration.get" },
+  { offset = 0x150, width = 32, name = "log_writev", arguments = ["u32", "const-ptr", "const-ptr", "ptr"], return = "void", semantic = "logging.write-format" },
+  { offset = 0x158, width = 32, name = "malloc_internal", arguments = ["usize"], return = "mut-ptr", semantic = "memory.internal.allocate" },
+  { offset = 0x164, width = 32, name = "zalloc_internal", arguments = ["usize"], return = "mut-ptr", semantic = "memory.allocate-zeroed" },
+  { offset = 0x168, width = 32, name = "wifi_malloc", arguments = ["usize"], return = "mut-ptr", semantic = "memory.allocate" },
+  { offset = 0x174, width = 32, name = "wifi_zalloc", arguments = ["usize"], return = "mut-ptr", semantic = "memory.allocate-zeroed" },
+  { offset = 0x178, width = 32, name = "wifi_create_queue", arguments = ["u32", "u32"], return = "opaque-handle", semantic = "rtos.queue.create" },
+  { offset = 0x17c, width = 32, name = "wifi_delete_queue", arguments = ["opaque-handle"], return = "void", semantic = "rtos.queue.delete" },
+  { offset = 0x190, width = 32, name = "coex_status_get", arguments = [], return = "u32", semantic = "coexistence.status.query" },
+  { offset = 0x198, width = 32, name = "coex_wifi_request", arguments = ["u32", "u32", "u32"], return = "i32", semantic = "coexistence.wifi.request" },
+  { offset = 0x19c, width = 32, name = "coex_wifi_release", arguments = ["u32"], return = "i32", semantic = "coexistence.wifi.release" },
+  { offset = 0x1a4, width = 32, name = "coex_event_duration_get", arguments = ["u32", "out-ptr"], return = "i32", semantic = "coexistence.event-duration.query" },
+  { offset = 0x1a8, width = 32, name = "coex_pti_get", arguments = ["u32", "out-ptr"], return = "i32", semantic = "coexistence.pti.query" },
+  { offset = 0x1b4, width = 32, name = "coex_schm_interval_set", arguments = ["u32"], return = "i32", semantic = "coexistence.schedule.interval.set" },
+  { offset = 0x1b8, width = 32, name = "coex_schm_interval_get", arguments = [], return = "u32", semantic = "coexistence.schedule.interval.get" },
+  { offset = 0x1bc, width = 32, name = "coex_schm_curr_period_get", arguments = [], return = "u8", semantic = "coexistence.schedule.period.get" },
+  { offset = 0x1d0, width = 32, name = "regdma_link_set_write_wait_content", arguments = ["mut-ptr", "u32", "u32"], return = "void", semantic = "regdma.write-wait.configure" },
+  { offset = 0x1d8, width = 32, name = "coex_schm_flexible_period_set", arguments = ["u8"], return = "i32", semantic = "coexistence.schedule.flexible-period.set" },
+  { offset = 0x1dc, width = 32, name = "coex_schm_flexible_period_get", arguments = [], return = "u8", semantic = "coexistence.schedule.flexible-period.get" },
+  { offset = 0x1e0, width = 32, name = "coex_schm_get_phase_by_idx", arguments = ["i32"], return = "mut-ptr", semantic = "coexistence.schedule.phase.get" },
+]
+
+[[templates]]
+id = "esp-idf.coex-adapter-v2"
+provenance = { repository = "https://github.com/esp-rs/esp-wifi-sys", revision = "ff57fc7a50ef56a631e81ceed36b66ff8e2a21c4", path = "c/headers/esp32s31/esp_coexist_adapter.h" }
+layout-version = "esp-idf-coex-adapter-v2"
+pointer-width = 32
+layout-size = 0x50
+slot-stride = 4
+slots = [
+  { offset = 0x04, width = 32, name = "task_yield_from_isr", arguments = [], return = "void", semantic = "rtos.task.yield-from-isr" },
+  { offset = 0x08, width = 32, name = "semphr_create", arguments = ["u32", "u32"], return = "mut-ptr", semantic = "rtos.semaphore.create" },
+  { offset = 0x0c, width = 32, name = "semphr_delete", arguments = ["opaque-handle"], return = "void", semantic = "rtos.semaphore.delete" },
+  { offset = 0x10, width = 32, name = "semphr_take_from_isr", arguments = ["opaque-handle", "out-ptr"], return = "i32", semantic = "rtos.semaphore.take-from-isr" },
+  { offset = 0x14, width = 32, name = "semphr_give_from_isr", arguments = ["opaque-handle", "out-ptr"], return = "i32", semantic = "rtos.semaphore.give-from-isr" },
+  { offset = 0x18, width = 32, name = "semphr_take", arguments = ["opaque-handle", "u32"], return = "i32", semantic = "rtos.semaphore.take" },
+  { offset = 0x1c, width = 32, name = "semphr_give", arguments = ["opaque-handle"], return = "i32", semantic = "rtos.semaphore.give" },
+  { offset = 0x20, width = 32, name = "is_in_isr", arguments = [], return = "i32", semantic = "rtos.context.is-in-isr" },
+  { offset = 0x24, width = 32, name = "malloc_internal", arguments = ["usize"], return = "mut-ptr", semantic = "memory.internal.allocate" },
+  { offset = 0x28, width = 32, name = "free", arguments = ["mut-ptr"], return = "void", semantic = "memory.deallocate" },
+  { offset = 0x2c, width = 32, name = "esp_timer_get_time", arguments = [], return = "i64", semantic = "time.monotonic-micros.get" },
+  { offset = 0x30, width = 32, name = "env_is_chip", arguments = [], return = "bool", semantic = "target.is-real-chip" },
+  { offset = 0x34, width = 32, name = "timer_disarm", arguments = ["mut-ptr"], return = "void", semantic = "timer.disarm" },
+  { offset = 0x38, width = 32, name = "timer_done", arguments = ["mut-ptr"], return = "void", semantic = "timer.complete" },
+  { offset = 0x3c, width = 32, name = "timer_setfn", arguments = ["mut-ptr", "ptr", "ptr"], return = "void", semantic = "timer.callback.configure" },
+  { offset = 0x40, width = 32, name = "timer_arm_us", arguments = ["mut-ptr", "u32", "bool"], return = "void", semantic = "timer.arm-micros" },
+  { offset = 0x44, width = 32, name = "debug_matrix_init", arguments = ["i32", "i32", "bool"], return = "i32", semantic = "diagnostic.matrix.configure" },
+  { offset = 0x48, width = 32, name = "xtal_freq_get", arguments = [], return = "i32", semantic = "clock.xtal-frequency.get" },
+]

@@ -52,9 +52,9 @@ knowledge:
 | Finding | Durable owner | Hand-edit? |
 |---|---|---|
 | Generic lifting/query algorithm | Blobray source | yes, with tests |
-| ESP-IDF/NimBLE symbol or platform ABI independent of one chip/blob | ecosystem add-on | yes, reviewed reusable fact |
+| Public ESP-IDF/NimBLE interface layout/ABI independent of one chip/blob | ecosystem interface-template pack | yes, reviewed reusable fact with header revision/path |
 | Chip/revision MMIO geometry, ROM address, base SVD | chip pack | yes, reviewed reusable fact |
-| Exact blob ABI layout, body-identity summary, scope/profile, disposition | investigation project | yes, reviewed and applicability-bounded |
+| Exact blob source/root/digest/runtime binding, body-identity summary, scope/profile, disposition | investigation project | yes, reviewed and applicability-bounded |
 | Register name, W1C/self-clear semantics, vendor access bug | sparse `[reviewed-knowledge]` pack | yes, one record per accepted fact |
 | Symbols, MMIO candidates, linked IR, review pages, SVD/PAC/reference code | `generated/` | no; reproduce it |
 | Vendor binaries and paths | ignored local run spec / `_oracles` | no publication |
@@ -69,6 +69,24 @@ both are selected, the installed project descriptor must explicitly extend the
 exact chip provider and publish a checked contract superset through a
 precomposed harness. Arbitrary pairs and implicit manifest layering fail
 closed.
+
+Reusable ecosystem/chip capability packs can summarize reviewed interface
+evidence without copying project addresses or symbol spellings into generic
+code. Inspect them with `advanced interfaces validate --format json`: every
+positive rule lists its operation/effect/call matches, while missing bindings
+remain `incomplete` and unknown vocabulary remains `unknown`. `protocol` and
+`scope` are classification labels rather than matching filters or
+qualification claims. Capability packs are tracked project inputs, so editing
+one invalidates interface-dependent analysis/cache generations.
+
+Public interface templates use the same composition boundary. The ecosystem
+template owns the versioned layout, slot ABI and semantic IDs; the project
+anchor owns the exact artifact/source/root/container, digest/runtime guards,
+execution contract and keyed overrides. A template slot is a reviewed header
+assertion until the project explicitly marks that offset `origin = "observed"`.
+Private pointer cells and runtime callbacks never move into the reusable pack.
+Template packs are exact tracked inputs for interface-dependent stages, so a
+template edit invalidates freshness and cache signatures.
 
 `research next` combines root-cause blockers, the reverse call graph,
 unreviewed MMIO and interface observations, sparse unknown hardware semantics,

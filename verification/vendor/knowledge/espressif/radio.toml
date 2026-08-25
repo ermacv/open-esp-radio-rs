@@ -7,3 +7,5 @@ knowledge-packs = [
     "../../../../tools/blobray/catalogs/neutral-embedded.toml",
     "esp-idf.toml",
 ]
+capability-packs = ["capabilities.toml"]
+interface-template-packs = ["interface-templates.toml"]

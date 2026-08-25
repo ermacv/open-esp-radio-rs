@@ -71,10 +71,11 @@ fn validate(
         .as_deref()
         .ok_or("interfaces validate requires [interfaces].pack")
         .map_err(crate::Error::invalid)?;
-    let workspace = InterfaceWorkspace::load(
+    let workspace = InterfaceWorkspace::load_with_templates(
         &paths.facts,
         pack,
         &paths.semantic_catalogs,
+        &paths.interface_template_packs,
         target.calling_convention.label(),
         target
             .knowledge_provider
@@ -83,12 +84,24 @@ fn validate(
             .transpose()?,
     )?;
     let summary = workspace.summary();
+    let capabilities = (!paths.capability_packs.is_empty())
+        .then(|| workspace.evaluate_capabilities(&paths.capability_packs))
+        .transpose()?;
     let passed = !arguments.deny_unreviewed
         || (summary.unreviewed_anchors == 0 && summary.unreviewed_slots == 0);
+    let status = if !passed {
+        "unreviewed"
+    } else if capabilities.as_ref().is_some_and(|capabilities| {
+        capabilities.status != crate::interfaces::CapabilityMatchStatus::Matched
+    }) {
+        "valid-with-capability-gaps"
+    } else {
+        "valid"
+    };
     let report = InterfaceWorkspaceDocument {
         schema: 1,
         command: "interfaces validate",
-        status: if passed { "valid" } else { "unreviewed" },
+        status,
         deny_unreviewed: arguments.deny_unreviewed,
         calling_convention: target.calling_convention.label(),
         fact_tables: summary.fact_tables,
@@ -109,6 +122,22 @@ fn validate(
         runtime_guards: summary.runtime_guards,
         execution_contracts: summary.execution_contracts,
         execution_models: summary.execution_models,
+        capability_packs: paths.capability_packs.len(),
+        interface_template_packs: paths.interface_template_packs.len(),
+        interface_templates: summary.interface_templates,
+        templated_anchors: summary.templated_anchors,
+        template_pack_ids: workspace.template_pack_ids(),
+        templates: workspace
+            .template_summaries()
+            .iter()
+            .map(|template| InterfaceTemplateDocument {
+                id: &template.id,
+                repository: &template.repository,
+                revision: &template.revision,
+                path: &template.path,
+            })
+            .collect(),
+        capabilities,
         facts: &paths.facts,
         pack,
         contracts: workspace
@@ -118,6 +147,16 @@ fn validate(
                 id: &contract.id,
                 pack: &contract.pack,
                 anchor: &contract.anchor,
+                template: contract.template.as_deref(),
+                template_overrides: contract
+                    .template_overrides
+                    .iter()
+                    .map(|overridden| InterfaceTemplateOverrideDocument {
+                        offset: overridden.offset,
+                        reason: &overridden.reason,
+                        fields: &overridden.fields,
+                    })
+                    .collect(),
                 source: &contract.source,
                 root_kind: interface_root_kind(&contract.root),
                 container_depth: contract.container_path.len(),

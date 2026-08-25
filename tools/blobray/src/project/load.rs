@@ -138,6 +138,29 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         )
         .collect::<Vec<_>>();
     crate::interfaces::SemanticCatalogs::load(&semantic_catalogs)?;
+    let capability_packs = ecosystem_packs
+        .iter()
+        .flat_map(|pack| pack.capability_packs.iter().cloned())
+        .chain(
+            chip_pack
+                .iter()
+                .flat_map(|pack| pack.capability_packs.iter().cloned()),
+        )
+        .collect::<Vec<_>>();
+    crate::interfaces::CapabilityRuleSet::load(&capability_packs)?;
+    let interface_template_packs = ecosystem_packs
+        .iter()
+        .flat_map(|pack| pack.interface_template_packs.iter().cloned())
+        .chain(
+            chip_pack
+                .iter()
+                .flat_map(|pack| pack.interface_template_packs.iter().cloned()),
+        )
+        .collect::<Vec<_>>();
+    crate::interfaces::validate_interface_template_packs(
+        &interface_template_packs,
+        &semantic_catalogs,
+    )?;
     let reviewed_knowledge = load_reviewed_knowledge(&document, base, source)?;
     open_radio_vendor_review::ReviewKnowledge::load_all(&reviewed_knowledge)
         .map_err(|error| source.item(document.get("reviewed-knowledge"), error.to_string()))?;
@@ -358,6 +381,8 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 pack: optional_table_string(table, "pack", "project interfaces", source)?
                     .map(|path| resolve_path(base, &path)),
                 semantic_catalogs: semantic_catalogs.clone(),
+                capability_packs: capability_packs.clone(),
+                interface_template_packs: interface_template_packs.clone(),
             })
         })
         .transpose()?;

@@ -468,10 +468,11 @@ pub(crate) fn load_project_interfaces(
     let Some(pack) = paths.pack.as_deref() else {
         return Ok(None);
     };
-    Ok(Some(InterfaceWorkspace::load(
+    Ok(Some(InterfaceWorkspace::load_with_templates(
         &paths.facts,
         pack,
         &paths.semantic_catalogs,
+        &paths.interface_template_packs,
         target.calling_convention.label(),
         target
             .knowledge_provider

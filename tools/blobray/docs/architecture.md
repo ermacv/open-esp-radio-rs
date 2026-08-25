@@ -67,11 +67,13 @@ Pack order is not an override mechanism. Conflicting definitions fail closed.
 Two projects may reference the same chip pack without copying its address map.
 Likewise, projects for different chips may reference one ecosystem pack. A
 generic algorithm or schema belongs in Blobray source; generic is not a dump
-for reusable vendor data. ESP-IDF vocabulary, for example, is a data-only
-ecosystem add-on, while ESP32-S31 addresses and compiled summary hooks remain
-chip knowledge only when they are revision-stable. Exact ABI layouts,
-body-identity guards, and Wi-Fi/BLE/802.15.4 artifact profiles remain
-investigation-local because they describe the supplied blob lineage. A project
+for reusable vendor data. ESP-IDF vocabulary and public header-versioned
+interface layouts, for example, are data-only ecosystem add-ons, while
+ESP32-S31 addresses and compiled summary hooks remain chip knowledge only when
+they are revision-stable. Exact artifact roots/digests/runtime guards,
+body-identity guards, private callback cells, and Wi-Fi/BLE/802.15.4 artifact
+profiles remain investigation-local because they describe the supplied blob
+lineage. A project
 provider may compose with a chip provider only when its compiled descriptor
 explicitly extends that exact reusable root, exposes a contract superset and a
 distinct precomposed harness/cache domain. Unrelated providers, transitive

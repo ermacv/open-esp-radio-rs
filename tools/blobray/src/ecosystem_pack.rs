@@ -11,7 +11,7 @@ use toml_edit::{Item, Table};
 use crate::{
     Result,
     error::{BlobrayError, ManifestContext},
-    interfaces::SemanticCatalogs,
+    interfaces::{CapabilityRuleSet, SemanticCatalogs},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20,6 +20,9 @@ pub(crate) struct EcosystemPack {
     pub(crate) id: String,
     pub(crate) knowledge_packs: Vec<PathBuf>,
     pub(crate) knowledge_operations: usize,
+    pub(crate) capability_packs: Vec<PathBuf>,
+    pub(crate) capability_rules: usize,
+    pub(crate) interface_template_packs: Vec<PathBuf>,
 }
 
 impl EcosystemPack {
@@ -77,22 +80,106 @@ impl EcosystemPack {
             knowledge_packs.push(resolved);
         }
         let knowledge_operations = SemanticCatalogs::load(&knowledge_packs)?.len();
+        let capability_values = string_array(document, "capability-packs", source)?;
+        let capability_items = document.get("capability-packs").and_then(Item::as_array);
+        let mut unique_capabilities = BTreeSet::new();
+        let capability_packs = capability_values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let relative = Path::new(&value);
+                let span = capability_items
+                    .and_then(|values| values.get(index))
+                    .and_then(toml_edit::Value::span);
+                if relative.is_absolute() {
+                    return Err(source.error(
+                        span,
+                        "capability pack paths must be relative to the ecosystem pack",
+                    ));
+                }
+                let resolved = base.join(relative).canonicalize().map_err(|error| {
+                    source.error(
+                        span.clone(),
+                        format!(
+                            "cannot resolve capability pack {}: {error}",
+                            relative.display()
+                        ),
+                    )
+                })?;
+                if !unique_capabilities.insert(resolved.clone()) {
+                    return Err(source.error(span, "duplicate capability pack path"));
+                }
+                Ok(resolved)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let capability_rules = CapabilityRuleSet::load(&capability_packs)?.len();
+        let interface_template_packs = resolve_pack_paths(
+            document,
+            base,
+            "interface-template-packs",
+            "interface template pack",
+            source,
+        )?;
         Ok(Self {
             path: path.to_owned(),
             id,
             knowledge_packs,
             knowledge_operations,
+            capability_packs,
+            capability_rules,
+            interface_template_packs,
         })
     }
 }
 
 fn reject_unknown_keys(document: &Table, source: ManifestContext<'_>) -> Result<()> {
     for (key, item) in document.iter() {
-        if !matches!(key, "schema" | "id" | "knowledge-packs") {
+        if !matches!(
+            key,
+            "schema" | "id" | "knowledge-packs" | "capability-packs" | "interface-template-packs"
+        ) {
             return Err(source.item(Some(item), format!("unknown ecosystem pack key {key:?}")));
         }
     }
     Ok(())
+}
+
+fn resolve_pack_paths(
+    document: &Table,
+    base: &Path,
+    key: &str,
+    kind: &str,
+    source: ManifestContext<'_>,
+) -> Result<Vec<PathBuf>> {
+    let values = string_array(document, key, source)?;
+    let items = document.get(key).and_then(Item::as_array);
+    let mut unique = BTreeSet::new();
+    values
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let relative = Path::new(&value);
+            let span = items
+                .and_then(|items| items.get(index))
+                .and_then(toml_edit::Value::span);
+            if value.is_empty() || relative.is_absolute() {
+                return Err(source.error(
+                    span,
+                    format!("{kind} paths must be non-empty and relative to the ecosystem pack"),
+                ));
+            }
+            let resolved = base.join(relative).canonicalize().map_err(|error| {
+                source.error(
+                    span.clone(),
+                    format!("cannot resolve {kind} {}: {error}", relative.display()),
+                )
+            })?;
+            if !unique.insert(resolved.clone()) {
+                return Err(source.error(span, format!("duplicate {kind} path")));
+            }
+            Ok(resolved)
+        })
+        .collect()
 }
 
 fn required_string(document: &Table, key: &str, source: ManifestContext<'_>) -> Result<String> {
@@ -199,11 +286,17 @@ mod tests {
         .unwrap();
         fs::write(
             root.join("ecosystem.toml"),
-            "schema = 3\nid = \"fixture-ecosystem\"\nknowledge-packs = [\"semantics.toml\"]\n",
+            "schema = 3\nid = \"fixture-ecosystem\"\nknowledge-packs = [\"semantics.toml\"]\ncapability-packs = [\"capabilities.toml\"]\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("capabilities.toml"),
+            "schema = 1\nid = \"fixture.capabilities\"\n[[rules]]\nid = \"fixture.time.wait\"\nprotocol = \"runtime\"\nscope = \"time\"\nsummary = \"Reviewed wait boundary\"\n[[rules.requirements]]\nkind = \"operation\"\nvalue = \"time.wait\"\n",
         )
         .unwrap();
         let pack = EcosystemPack::load(&root.join("ecosystem.toml")).unwrap();
         assert_eq!(pack.knowledge_operations, 1);
+        assert_eq!(pack.capability_rules, 1);
 
         fs::remove_dir_all(root).unwrap();
     }

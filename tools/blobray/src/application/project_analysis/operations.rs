@@ -181,6 +181,17 @@ fn register_catalog_input_paths(
     Ok(paths)
 }
 
+fn append_interface_workspace_inputs(
+    paths: &mut Vec<std::path::PathBuf>,
+    interfaces: &crate::project::InterfaceWorkspacePaths,
+) {
+    paths.push(interfaces.facts.clone());
+    paths.extend(interfaces.pack.iter().cloned());
+    paths.extend(interfaces.semantic_catalogs.iter().cloned());
+    paths.extend(interfaces.capability_packs.iter().cloned());
+    paths.extend(interfaces.interface_template_packs.iter().cloned());
+}
+
 impl ResolvedProjectAnalysisOperations<'_> {
     fn plan_stage(
         &mut self,
@@ -352,9 +363,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
             .as_ref()
             .filter(|_| super::linked_ir_uses_reviewed_interfaces(project))
         {
-            paths.push(interfaces.facts.clone());
-            paths.extend(interfaces.pack.iter().cloned());
-            paths.extend(interfaces.semantic_catalogs.iter().cloned());
+            append_interface_workspace_inputs(&mut paths, interfaces);
         }
         if let Some(symbols) = project.symbol_inventory.as_ref() {
             paths.push(symbols.output.clone());
@@ -423,9 +432,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
     fn interface_workspace_inputs(&self) -> Vec<std::path::PathBuf> {
         let mut paths = self.target_inputs();
         if let Some(interfaces) = self.session.project.interfaces.as_ref() {
-            paths.push(interfaces.facts.clone());
-            paths.extend(interfaces.pack.iter().cloned());
-            paths.extend(interfaces.semantic_catalogs.iter().cloned());
+            append_interface_workspace_inputs(&mut paths, interfaces);
         }
         paths
     }
@@ -507,10 +514,11 @@ impl ResolvedProjectAnalysisOperations<'_> {
                 .pack
                 .as_deref()
                 .ok_or_else(|| crate::Error::invalid("[interfaces].pack is absent"))?;
-            self.interfaces = Some(InterfaceWorkspace::load(
+            self.interfaces = Some(InterfaceWorkspace::load_with_templates(
                 &paths.facts,
                 pack,
                 &paths.semantic_catalogs,
+                &paths.interface_template_packs,
                 self.session.target.calling_convention.label(),
                 self.session
                     .target
@@ -1098,9 +1106,7 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
                     "runtime table replay requires a reviewed interface pack",
                 ));
             }
-            inputs.push(interfaces.facts.clone());
-            inputs.extend(interfaces.pack.iter().cloned());
-            inputs.extend(interfaces.semantic_catalogs.iter().cloned());
+            append_interface_workspace_inputs(&mut inputs, interfaces);
         }
         let outputs = requests
             .iter()
@@ -1715,8 +1721,8 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
 #[cfg(test)]
 mod cache_domain_tests {
     use super::{
-        ensure_unique_replay_outputs, linked_ir_stage_cacheable, register_catalog_input_paths,
-        stage_configuration,
+        append_interface_workspace_inputs, ensure_unique_replay_outputs, linked_ir_stage_cacheable,
+        register_catalog_input_paths, stage_configuration,
     };
     use crate::{
         function_workspace::{ReviewedEventReplay, ReviewedEventStateModel},
@@ -1943,5 +1949,58 @@ mod cache_domain_tests {
         std::fs::remove_dir_all(&directory).unwrap();
 
         assert_eq!(inputs, vec![svd, model, fragment, reviewed]);
+    }
+
+    #[test]
+    fn reusable_interface_packs_are_exact_guarded_stage_inputs() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-capability-stage-input-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            std::fs::remove_dir_all(&directory).unwrap();
+        }
+        std::fs::create_dir_all(&directory).unwrap();
+        let facts = directory.join("interfaces.json");
+        let pack = directory.join("interfaces.toml");
+        let semantics = directory.join("semantics.toml");
+        let capabilities = directory.join("capabilities.toml");
+        let templates = directory.join("interface-templates.toml");
+        for path in [&facts, &pack, &semantics, &capabilities, &templates] {
+            std::fs::write(path, "generation-a").unwrap();
+        }
+        let interfaces = crate::project::InterfaceWorkspacePaths {
+            facts: facts.clone(),
+            pack: Some(pack.clone()),
+            semantic_catalogs: vec![semantics.clone()],
+            capability_packs: vec![capabilities.clone()],
+            interface_template_packs: vec![templates.clone()],
+        };
+        let mut inputs = Vec::new();
+        append_interface_workspace_inputs(&mut inputs, &interfaces);
+        assert_eq!(
+            inputs,
+            [
+                facts,
+                pack,
+                semantics,
+                capabilities.clone(),
+                templates.clone()
+            ]
+        );
+
+        let mut observation = super::PipelineInputObservation::capture(inputs.clone()).unwrap();
+        std::fs::write(&capabilities, "generation-b").unwrap();
+        let error = observation.validate().unwrap_err();
+        assert!(error.to_string().contains("project inputs changed"));
+        drop(observation);
+
+        std::fs::write(&capabilities, "generation-a").unwrap();
+        let mut observation = super::PipelineInputObservation::capture(inputs).unwrap();
+        std::fs::write(&templates, "generation-b").unwrap();
+        let error = observation.validate().unwrap_err();
+        assert!(error.to_string().contains("project inputs changed"));
+        drop(observation);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

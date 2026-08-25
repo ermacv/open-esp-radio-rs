@@ -92,6 +92,15 @@ impl SemanticCatalogs {
     pub(crate) fn len(&self) -> usize {
         self.operations.len()
     }
+
+    pub(crate) fn contains_effect(&self, effect: &str) -> bool {
+        self.operations.values().any(|operation| {
+            operation
+                .effects
+                .iter()
+                .any(|candidate| candidate == effect)
+        })
+    }
 }
 
 pub(super) fn validate_dotted_id(value: &str, context: &str) -> Result<()> {

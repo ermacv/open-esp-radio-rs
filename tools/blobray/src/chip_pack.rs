@@ -8,7 +8,12 @@ use std::{
 
 use serde::Deserialize;
 
-use crate::{Result, error::BlobrayError, interfaces::SemanticCatalogs, target::TargetSpec};
+use crate::{
+    Result,
+    error::BlobrayError,
+    interfaces::{CapabilityRuleSet, SemanticCatalogs},
+    target::TargetSpec,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ChipPack {
@@ -20,6 +25,9 @@ pub(crate) struct ChipPack {
     pub(crate) knowledge_provider: Option<String>,
     pub(crate) knowledge_packs: Vec<PathBuf>,
     pub(crate) knowledge_operations: usize,
+    pub(crate) capability_packs: Vec<PathBuf>,
+    pub(crate) capability_rules: usize,
+    pub(crate) interface_template_packs: Vec<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -37,6 +45,10 @@ struct ChipDocument {
     knowledge_provider: Option<String>,
     #[serde(default)]
     knowledge_packs: Vec<String>,
+    #[serde(default)]
+    capability_packs: Vec<String>,
+    #[serde(default)]
+    interface_template_packs: Vec<String>,
 }
 
 impl ChipPack {
@@ -84,6 +96,14 @@ impl ChipPack {
         let knowledge_packs =
             resolve_unique_paths(base, &document.knowledge_packs, "knowledge-packs")?;
         let knowledge_operations = SemanticCatalogs::load(&knowledge_packs)?.len();
+        let capability_packs =
+            resolve_unique_paths(base, &document.capability_packs, "capability-packs")?;
+        let capability_rules = CapabilityRuleSet::load(&capability_packs)?.len();
+        let interface_template_packs = resolve_unique_paths(
+            base,
+            &document.interface_template_packs,
+            "interface-template-packs",
+        )?;
 
         Ok(Self {
             path,
@@ -94,6 +114,9 @@ impl ChipPack {
             knowledge_provider: document.knowledge_provider,
             knowledge_packs,
             knowledge_operations,
+            capability_packs,
+            capability_rules,
+            interface_template_packs,
         })
     }
 
@@ -167,8 +190,13 @@ mod tests {
         fs::write(root.join("chip.svd"), "<device/>").unwrap();
         fs::write(root.join("registers.toml"), "schema = 2\n").unwrap();
         fs::write(
+            root.join("capabilities.toml"),
+            "schema = 1\nid = \"fixture.capabilities\"\n[[rules]]\nid = \"fixture.radio.ready\"\nprotocol = \"radio\"\nscope = \"runtime\"\nsummary = \"Reviewed radio boundary\"\n[[rules.requirements]]\nkind = \"operation\"\nvalue = \"radio.ready\"\n",
+        )
+        .unwrap();
+        fs::write(
             root.join("chip.toml"),
-            "schema = 3\nid = \"chip\"\nmemory-map = \"memory.toml\"\nsvd = [\"chip.svd\"]\nregister-model = \"registers.toml\"\nknowledge-provider = \"chip-knowledge-v1\"\n",
+            "schema = 3\nid = \"chip\"\nmemory-map = \"memory.toml\"\nsvd = [\"chip.svd\"]\nregister-model = \"registers.toml\"\nknowledge-provider = \"chip-knowledge-v1\"\ncapability-packs = [\"capabilities.toml\"]\n",
         )
         .unwrap();
 
@@ -180,6 +208,7 @@ mod tests {
             pack.knowledge_provider.as_deref(),
             Some("chip-knowledge-v1")
         );
+        assert_eq!(pack.capability_rules, 1);
 
         fs::write(
             root.join("invalid.toml"),

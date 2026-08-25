@@ -428,6 +428,8 @@ mod tests {
             id: "pack::services".to_owned(),
             pack: "pack".to_owned(),
             anchor: "services".to_owned(),
+            template: None,
+            template_overrides: Vec::new(),
             source: "rom".to_owned(),
             root: InterfaceRootSelector::AbsoluteAddress { address: 0x2000 },
             container_path: vec![InterfaceFactStep {

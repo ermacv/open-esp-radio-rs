@@ -23,20 +23,34 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 6. It separates two levels:
+The machine report uses schema 7. It separates three levels:
+
+- a `prerequisite` is a deduplicated destination or anchor action that must be
+  completed before its blocked findings can land;
 
 - an `action` is one copyable `inspect_command` and may coalesce several
-  findings without losing any finding fields;
+  findings without losing any finding fields; its `actionability` groups keep
+  counts and exact finding IDs for mixed actions;
 - a `finding` retains its typed `subject`, typed executable `consumers`, exact
   evidence sites/channels, causal inspection functions, impacted functions,
-  context links, required knowledge and post-review revalidation commands.
+  context links, required knowledge, finding-level `actionability`, prerequisite
+  IDs and post-review revalidation commands.
 
-Reviewed-knowledge consumers resolve to one configured pack only when the
-destination is unique. Interface consumers resolve only to a project-local,
-non-templated anchor that can safely accept the observed slot. Missing,
-ambiguous and unsupported destinations remain explicit machine states. The
-report never turns a suggested consumer or a revalidation command into a
-completion claim; `completion_claim` is always `false`.
+Reviewed-knowledge consumers are `ready` only through the explicit
+`[reviewed-knowledge].default-pack`; the number of configured packs is never a
+routing rule. Interface consumers distinguish `needs-destination` from
+`needs-anchor`, and become `ready` only for a project-local, non-templated
+anchor that can safely accept the observed slot. Findings without a supported
+durable consumer remain honestly `inspection-only`. `coverage-blocked` is
+reserved for a typed producer cause and is never inferred from diagnostic
+text. The report never turns a suggested consumer or a revalidation command
+into a completion claim; `completion_claim` is always `false`.
+
+Selection uses explicit lanes: prerequisites first, then ready actions, then
+inspection-only actions, with blocked actions last for machine/detail audit.
+The requested ranking strategy is applied inside each lane. Prerequisites
+aggregate downstream function/root sets without summing duplicate action
+scores.
 
 Each action has a compact
 `score_explanation`:
@@ -64,11 +78,13 @@ and `shared`. The CLI also accepts `bt` for `bluetooth`, plus `802.15.4` and
 or coexistence scope can carry several protocol tags. Unknown names and an
 empty exact scope/protocol intersection fail with the configured alternatives.
 
-`--limit N` bounds the number of actions. `--budget UNITS` bounds their
-cumulative `estimated_cost_units`. Selection walks the chosen deterministic
-ranking, skips actions that do not fit the remaining budget, and never silently
-reorders them. A budget too small for every eligible action produces an empty
-report with the minimum required cost in `selection_diagnostic`.
+`--limit N` bounds prerequisites and research actions together. `--budget
+UNITS` likewise uses one cumulative cost across both. Selection exhausts the
+ranked prerequisite lane before ready and inspection lanes, skips steps that do
+not fit the remaining budget, and never silently reorders them. A budget too
+small for every eligible step produces an empty report with the minimum
+required cost in `selection_diagnostic`. Separate total/strategy/returned
+prerequisite counts make the bounded selection auditable.
 
 ```console
 cargo blobray project research next \
@@ -99,21 +115,22 @@ and always retains every finding and evidence field.
 
 Measured on 2026-08-25 against the repository's current ESP32-S31 generated
 review inputs. All 29 configured scopes produced 1,918 findings, coalesced into
-523 distinct actions:
+476 distinct inspection actions and 161 deduplicated prerequisite actions:
 
-| Strategy | Eligible actions | Returned at limit 20 | Cost units | Leading action |
+| Strategy | Eligible prerequisites/actions | Returned prerequisites/actions at limit 20 | Cost units | Leading step |
 | --- | ---: | ---: | ---: | --- |
-| `impact` | 523 | 20 | 86 | call boundary, score 1369, benefit/effort 972/71 |
-| `quick-wins` | 523 | 20 | 69 | unresolved call, cost 2, no co-blockers |
-| `frontier` | 6 | 6 | 23 | same highest-impact call boundary |
+| `impact` | 161 / 476 | 20 / 0 | 60 | create interface anchor, downstream benefit 375 |
+| `quick-wins` | 161 / 476 | 20 / 0 | 60 | same cost-3 interface-anchor lane |
+| `frontier` | 1 / 12 | 1 / 12 | 57 | interface anchor, then ready register-model action |
 
-The filtered command `--protocol ieee802154 --strategy frontier --budget 10`
-analyzed the two configured IEEE 802.15.4 scopes, reduced 39 findings to 26
-actions and four non-dominated actions, returned the two that fit the budget,
-and consumed 8 cost units. Its suggested commands retained the explicit
-ESP32-S31 project manifest.
+With `--limit 200`, the explicit protocol filters measured 136 prerequisites
+and 327 actions for Wi-Fi, 37 and 206 for BLE, and 16 and 104 for IEEE 802.15.4.
+Shared/coexistence scopes intentionally participate in every protocol listed
+by their manifest `protocols` membership, so these sets overlap rather than
+partitioning the all-scope total.
 
 Reproduce the measurements with `--format json` and inspect
-`total_findings`, `total_actions`, `strategy_actions`, `consumed_budget` and
-the action `score_explanation` objects. Results intentionally change when
-the project's generated analysis or reviewed facts change.
+`total_findings`, `total_prerequisites`, `total_actions`, the corresponding
+`strategy_*` and `returned_*` counts, `consumed_budget`, prerequisite benefit
+objects and action `score_explanation` objects. Results intentionally change
+when the project's generated analysis or reviewed facts change.

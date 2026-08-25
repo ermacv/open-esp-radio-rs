@@ -16,7 +16,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 6;
+pub(crate) const RESEARCH_SCHEMA: u32 = 7;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -95,9 +95,64 @@ pub(crate) enum ResearchSubject {
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ResearchConsumerResolution {
     Ready,
+    NeedsAnchor,
     NeedsDestination,
-    Unavailable,
-    UnsupportedTarget,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ResearchActionability {
+    Ready,
+    NeedsAnchor,
+    NeedsDestination,
+    /// Reserved for a producer-supplied typed coverage cause. Current
+    /// diagnostics must not manufacture this state from message text.
+    #[allow(dead_code)]
+    CoverageBlocked,
+    InspectionOnly,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub(crate) struct ResearchActionabilityGroup {
+    pub(crate) count: usize,
+    pub(crate) finding_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub(crate) struct ResearchActionabilitySummary {
+    pub(crate) ready: ResearchActionabilityGroup,
+    pub(crate) needs_anchor: ResearchActionabilityGroup,
+    pub(crate) needs_destination: ResearchActionabilityGroup,
+    pub(crate) coverage_blocked: ResearchActionabilityGroup,
+    pub(crate) inspection_only: ResearchActionabilityGroup,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ResearchPrerequisiteKind {
+    ConfigureInterfaceDestination,
+    CreateInterfaceAnchor,
+    SelectReviewedKnowledgeDestination,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ResearchPrerequisiteAction {
+    pub(crate) rank: usize,
+    pub(crate) id: String,
+    pub(crate) kind: ResearchPrerequisiteKind,
+    pub(crate) reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) path: Option<PathBuf>,
+    pub(crate) subject: String,
+    pub(crate) manual_action: String,
+    pub(crate) satisfies_finding_ids: Vec<String>,
+    pub(crate) blocked_action_ids: Vec<String>,
+    pub(crate) guaranteed_unlock: usize,
+    pub(crate) optimistic_unlock: usize,
+    pub(crate) affected_scope_roots: Vec<String>,
+    pub(crate) scopes: Vec<String>,
+    pub(crate) benefit_points: u64,
+    pub(crate) estimated_cost_units: u64,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -163,6 +218,8 @@ pub(crate) struct ResearchFinding {
     pub(crate) severity: String,
     pub(crate) subject: ResearchSubject,
     pub(crate) consumers: Vec<ResearchConsumer>,
+    pub(crate) actionability: ResearchActionability,
+    pub(crate) prerequisite_ids: Vec<String>,
     pub(crate) evidence_sites: Vec<u32>,
     pub(crate) evidence_channels: Vec<String>,
     /// Functions that contain the causal evidence and should be inspected.
@@ -209,6 +266,8 @@ pub(crate) struct ResearchAction {
     pub(crate) estimated_cost: String,
     pub(crate) confidence: String,
     pub(crate) inspect_command: String,
+    pub(crate) actionability: ResearchActionabilitySummary,
+    pub(crate) prerequisite_ids: Vec<String>,
     pub(crate) findings: Vec<ResearchFinding>,
     pub(crate) score_breakdown: ResearchScoreBreakdown,
     pub(crate) score_explanation: ResearchScoreExplanation,
@@ -225,8 +284,11 @@ pub(crate) struct ResearchNextReport {
     pub(crate) analyzed_scopes: Vec<String>,
     /// Count before grouping findings that lead to the same inspection action.
     pub(crate) total_findings: usize,
+    pub(crate) total_prerequisites: usize,
     pub(crate) total_actions: usize,
+    pub(crate) strategy_prerequisites: usize,
     pub(crate) strategy_actions: usize,
+    pub(crate) returned_prerequisites: usize,
     pub(crate) returned_actions: usize,
     pub(crate) budget: Option<u64>,
     pub(crate) consumed_budget: u64,
@@ -235,6 +297,7 @@ pub(crate) struct ResearchNextReport {
     pub(crate) selection_diagnostic: Option<String>,
     pub(crate) capability_diagnostic: Option<String>,
     pub(crate) verification_diagnostic: Option<String>,
+    pub(crate) prerequisites: Vec<ResearchPrerequisiteAction>,
     pub(crate) actions: Vec<ResearchAction>,
 }
 
@@ -354,23 +417,36 @@ pub(crate) fn next(
     let total_findings = ranked.len();
     let mut ranked = coalesce_actions(ranked);
     let total_actions = ranked.len();
+    let mut prerequisites = build_prerequisites(&ranked);
+    let total_prerequisites = prerequisites.len();
+    apply_prerequisite_strategy(&mut prerequisites, options.strategy);
     apply_ranking_strategy(&mut ranked, options.strategy);
+    let strategy_prerequisites = prerequisites.len();
     let strategy_actions = ranked.len();
-    let minimum_cost = ranked
+    let minimum_cost = prerequisites
         .iter()
-        .map(|candidate| candidate.score_explanation.estimated_cost_units)
+        .map(|prerequisite| prerequisite.estimated_cost_units)
+        .chain(
+            ranked
+                .iter()
+                .map(|candidate| candidate.score_explanation.estimated_cost_units),
+        )
         .min();
-    let (mut ranked, consumed_budget) =
-        select_ranked_actions(ranked, options.limit, options.budget);
+    let (mut prerequisites, mut ranked, consumed_budget) =
+        select_ranked_steps(prerequisites, ranked, options.limit, options.budget);
     for (index, candidate) in ranked.iter_mut().enumerate() {
         candidate.rank = index + 1;
     }
-    let selection_diagnostic = if ranked.is_empty()
-        && strategy_actions != 0
+    for (index, prerequisite) in prerequisites.iter_mut().enumerate() {
+        prerequisite.rank = index + 1;
+    }
+    let selection_diagnostic = if prerequisites.is_empty()
+        && ranked.is_empty()
+        && (strategy_prerequisites != 0 || strategy_actions != 0)
         && let (Some(budget), Some(minimum_cost)) = (options.budget, minimum_cost)
     {
         Some(format!(
-            "no {} action fits budget {budget}; the minimum estimated action cost is {minimum_cost}",
+            "no {} research step fits budget {budget}; the minimum estimated step cost is {minimum_cost}",
             options.strategy.label()
         ))
     } else {
@@ -385,8 +461,11 @@ pub(crate) fn next(
         scope: options.scope.map(str::to_owned),
         analyzed_scopes,
         total_findings,
+        total_prerequisites,
         total_actions,
+        strategy_prerequisites,
         strategy_actions,
+        returned_prerequisites: prerequisites.len(),
         returned_actions: ranked.len(),
         budget: options.budget,
         consumed_budget,
@@ -394,6 +473,7 @@ pub(crate) fn next(
         selection_diagnostic,
         capability_diagnostic,
         verification_diagnostic,
+        prerequisites,
         actions: ranked,
     })
 }
@@ -480,24 +560,40 @@ fn apply_ranking_strategy(candidates: &mut Vec<ResearchAction>, strategy: Resear
             .enumerate()
             .filter(|(index, candidate)| {
                 !candidates.iter().enumerate().any(|(other_index, other)| {
-                    other_index != *index && dominates(other, candidate)
+                    other_index != *index
+                        && actionability_lane(other) == actionability_lane(candidate)
+                        && dominates(other, candidate)
                 })
             })
             .map(|(_, candidate)| candidate.clone())
             .collect();
         *candidates = frontier;
     }
-    candidates.sort_by(|left, right| match strategy {
-        ResearchRankingStrategy::Impact | ResearchRankingStrategy::Frontier => {
-            impact_order(left, right)
-        }
-        ResearchRankingStrategy::QuickWins => left
-            .score_explanation
-            .estimated_cost_units
-            .cmp(&right.score_explanation.estimated_cost_units)
-            .then_with(|| left.co_blockers.cmp(&right.co_blockers))
-            .then_with(|| impact_order(left, right)),
+    candidates.sort_by(|left, right| {
+        actionability_lane(left)
+            .cmp(&actionability_lane(right))
+            .then_with(|| match strategy {
+                ResearchRankingStrategy::Impact | ResearchRankingStrategy::Frontier => {
+                    impact_order(left, right)
+                }
+                ResearchRankingStrategy::QuickWins => left
+                    .score_explanation
+                    .estimated_cost_units
+                    .cmp(&right.score_explanation.estimated_cost_units)
+                    .then_with(|| left.co_blockers.cmp(&right.co_blockers))
+                    .then_with(|| impact_order(left, right)),
+            })
     });
+}
+
+fn actionability_lane(action: &ResearchAction) -> u8 {
+    if action.actionability.ready.count != 0 {
+        0
+    } else if action.actionability.inspection_only.count != 0 {
+        1
+    } else {
+        2
+    }
 }
 
 fn impact_order(left: &ResearchAction, right: &ResearchAction) -> Ordering {
@@ -537,6 +633,36 @@ fn select_ranked_actions(
         selected.push(candidate);
     }
     (selected, consumed_budget)
+}
+
+fn select_ranked_steps(
+    prerequisites: Vec<ResearchPrerequisiteAction>,
+    actions: Vec<ResearchAction>,
+    limit: usize,
+    budget: Option<u64>,
+) -> (Vec<ResearchPrerequisiteAction>, Vec<ResearchAction>, u64) {
+    let mut selected_prerequisites = Vec::new();
+    let mut consumed_budget = 0_u64;
+    for prerequisite in prerequisites {
+        if selected_prerequisites.len() == limit {
+            break;
+        }
+        let cost = prerequisite.estimated_cost_units;
+        if budget.is_some_and(|budget| consumed_budget.saturating_add(cost) > budget) {
+            continue;
+        }
+        consumed_budget = consumed_budget.saturating_add(cost);
+        selected_prerequisites.push(prerequisite);
+    }
+    let remaining_limit = limit - selected_prerequisites.len();
+    let remaining_budget = budget.map(|budget| budget - consumed_budget);
+    let (selected_actions, action_cost) =
+        select_ranked_actions(actions, remaining_limit, remaining_budget);
+    (
+        selected_prerequisites,
+        selected_actions,
+        consumed_budget.saturating_add(action_cost),
+    )
 }
 
 fn load_graph(session: &ProjectSession, scope: &ReviewScopeReport) -> Result<ScopeGraph> {
@@ -881,18 +1007,21 @@ fn reviewed_knowledge_consumer(
 ) -> ResearchConsumer {
     let mut configured_paths = session.project.reviewed_knowledge.clone();
     configured_paths.sort();
-    let (resolution, selected_path, diagnostic) = match configured_paths.as_slice() {
-        [] => (
-            ResearchConsumerResolution::Unavailable,
-            None,
-            Some("project has no [reviewed-knowledge] pack".to_owned()),
-        ),
-        [path] => (ResearchConsumerResolution::Ready, Some(path.clone()), None),
-        _ => (
+    let (resolution, selected_path, diagnostic) = if let Some(path) =
+        session.project.reviewed_knowledge_default.as_ref()
+    {
+        (ResearchConsumerResolution::Ready, Some(path.clone()), None)
+    } else {
+        (
             ResearchConsumerResolution::NeedsDestination,
             None,
-            Some("select one configured project-local reviewed-knowledge pack".to_owned()),
-        ),
+            Some(if configured_paths.is_empty() {
+                "project has no project-local reviewed-knowledge destination".to_owned()
+            } else {
+                "select [reviewed-knowledge].default-pack explicitly; pack count is never a routing rule"
+                        .to_owned()
+            }),
+        )
     };
     ResearchConsumer::ReviewedKnowledgeAssertions {
         resolution,
@@ -1114,19 +1243,19 @@ fn interface_consumer(
         .find(|contract| contract.id == observation.contract);
     let (resolution, anchor, template, diagnostic) = match (path.as_ref(), contract) {
         (None, _) => (
-            ResearchConsumerResolution::Unavailable,
+            ResearchConsumerResolution::NeedsDestination,
             None,
             None,
             Some("project has no reviewed interface pack".to_owned()),
         ),
         (Some(_), None) => (
-            ResearchConsumerResolution::UnsupportedTarget,
+            ResearchConsumerResolution::NeedsAnchor,
             None,
             None,
             Some("observation is not bound to a reviewed interface anchor".to_owned()),
         ),
         (Some(_), Some(contract)) if contract.template.is_some() => (
-            ResearchConsumerResolution::UnsupportedTarget,
+            ResearchConsumerResolution::NeedsAnchor,
             Some(contract.anchor.clone()),
             contract.template.clone(),
             Some("templated anchors cannot accept an unreviewed additive project slot".to_owned()),
@@ -1267,6 +1396,305 @@ fn verification_contexts(project: &crate::ProjectSpec) -> (VerificationContexts,
     }
 }
 
+#[derive(Clone, Debug)]
+struct PrerequisiteSeed {
+    id: String,
+    kind: ResearchPrerequisiteKind,
+    reason: String,
+    path: Option<PathBuf>,
+    subject: String,
+    manual_action: String,
+    estimated_cost_units: u64,
+}
+
+fn finding_actionability(consumers: &[ResearchConsumer]) -> ResearchActionability {
+    if consumers.is_empty() {
+        return ResearchActionability::InspectionOnly;
+    }
+    if consumers.iter().any(|consumer| {
+        consumer_resolution(consumer) == ResearchConsumerResolution::NeedsDestination
+    }) {
+        return ResearchActionability::NeedsDestination;
+    }
+    if consumers
+        .iter()
+        .any(|consumer| consumer_resolution(consumer) == ResearchConsumerResolution::NeedsAnchor)
+    {
+        return ResearchActionability::NeedsAnchor;
+    }
+    ResearchActionability::Ready
+}
+
+fn consumer_resolution(consumer: &ResearchConsumer) -> ResearchConsumerResolution {
+    match consumer {
+        ResearchConsumer::ReviewedKnowledgeAssertions { resolution, .. }
+        | ResearchConsumer::InterfacePackSlot { resolution, .. } => *resolution,
+    }
+}
+
+fn finding_prerequisites(
+    finding_id: &str,
+    subject: &ResearchSubject,
+    consumers: &[ResearchConsumer],
+) -> Vec<PrerequisiteSeed> {
+    let mut prerequisites = consumers
+        .iter()
+        .filter_map(|consumer| prerequisite_for_consumer(finding_id, subject, consumer))
+        .collect::<Vec<_>>();
+    prerequisites.sort_by(|left, right| left.id.cmp(&right.id));
+    prerequisites.dedup_by(|left, right| left.id == right.id);
+    prerequisites
+}
+
+fn prerequisite_for_consumer(
+    finding_id: &str,
+    subject: &ResearchSubject,
+    consumer: &ResearchConsumer,
+) -> Option<PrerequisiteSeed> {
+    match consumer {
+        ResearchConsumer::ReviewedKnowledgeAssertions {
+            resolution: ResearchConsumerResolution::NeedsDestination,
+            configured_paths,
+            diagnostic,
+            ..
+        } => {
+            let subject = "project-reviewed-knowledge-default".to_owned();
+            let id = stable_id("prerequisite-destination", &subject);
+            Some(PrerequisiteSeed {
+                id,
+                kind: ResearchPrerequisiteKind::SelectReviewedKnowledgeDestination,
+                reason: diagnostic.clone().unwrap_or_else(|| {
+                    "reviewed knowledge has no explicit writable destination".to_owned()
+                }),
+                path: None,
+                subject,
+                manual_action: if configured_paths.is_empty() {
+                    "Configure a project-local reviewed-knowledge pack and select it as default-pack"
+                        .to_owned()
+                } else {
+                    format!(
+                        "Select one owning [reviewed-knowledge].default-pack from: {}",
+                        configured_paths
+                            .iter()
+                            .map(|path| path.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                },
+                estimated_cost_units: 1,
+            })
+        }
+        ResearchConsumer::InterfacePackSlot {
+            resolution: ResearchConsumerResolution::NeedsDestination,
+            diagnostic,
+            ..
+        } => {
+            let subject = "project-interface-pack".to_owned();
+            Some(PrerequisiteSeed {
+                id: stable_id("prerequisite-interface-pack", &subject),
+                kind: ResearchPrerequisiteKind::ConfigureInterfaceDestination,
+                reason: diagnostic
+                    .clone()
+                    .unwrap_or_else(|| "project has no reviewed interface pack".to_owned()),
+                path: None,
+                subject,
+                manual_action: "Configure a project-local reviewed interface pack".to_owned(),
+                estimated_cost_units: 1,
+            })
+        }
+        ResearchConsumer::InterfacePackSlot {
+            resolution: ResearchConsumerResolution::NeedsAnchor,
+            path,
+            contract,
+            anchor,
+            diagnostic,
+            ..
+        } => {
+            let anchor_candidate = match subject {
+                ResearchSubject::InterfaceObservation { observation, .. } => observation
+                    .split_once('@')
+                    .map_or(observation.as_str(), |(identity, _)| identity),
+                _ => finding_id,
+            };
+            let subject = anchor.as_ref().map_or_else(
+                || anchor_candidate.to_owned(),
+                |anchor| format!("{contract}::{anchor}"),
+            );
+            let path = path.clone();
+            Some(PrerequisiteSeed {
+                id: stable_id("prerequisite-interface-anchor", &subject),
+                kind: ResearchPrerequisiteKind::CreateInterfaceAnchor,
+                reason: diagnostic.clone().unwrap_or_else(|| {
+                    "interface observation has no writable project anchor".to_owned()
+                }),
+                path: path.clone(),
+                subject: subject.clone(),
+                manual_action: format!(
+                    "Create a project-local non-templated anchor for {subject} in {}",
+                    path.as_ref().map_or_else(
+                        || "the reviewed interface pack".to_owned(),
+                        |path| path.display().to_string()
+                    )
+                ),
+                estimated_cost_units: 3,
+            })
+        }
+        _ => None,
+    }
+}
+
+#[derive(Debug)]
+struct PrerequisiteAccumulator {
+    seed: PrerequisiteSeed,
+    finding_ids: BTreeSet<String>,
+    action_ids: BTreeSet<String>,
+    guaranteed: BTreeSet<String>,
+    optimistic: BTreeSet<String>,
+    roots: BTreeSet<String>,
+    scopes: BTreeSet<String>,
+    publication_scopes: BTreeSet<String>,
+}
+
+fn build_prerequisites(actions: &[ResearchAction]) -> Vec<ResearchPrerequisiteAction> {
+    let mut grouped = BTreeMap::<String, PrerequisiteAccumulator>::new();
+    for action in actions {
+        for finding in &action.findings {
+            for seed in finding_prerequisites(&finding.id, &finding.subject, &finding.consumers) {
+                let prerequisite =
+                    grouped
+                        .entry(seed.id.clone())
+                        .or_insert_with(|| PrerequisiteAccumulator {
+                            seed,
+                            finding_ids: BTreeSet::new(),
+                            action_ids: BTreeSet::new(),
+                            guaranteed: BTreeSet::new(),
+                            optimistic: BTreeSet::new(),
+                            roots: BTreeSet::new(),
+                            scopes: BTreeSet::new(),
+                            publication_scopes: BTreeSet::new(),
+                        });
+                prerequisite.finding_ids.insert(finding.id.clone());
+                prerequisite.action_ids.insert(action.id.clone());
+                prerequisite
+                    .guaranteed
+                    .extend(finding.guaranteed_function_ids.iter().cloned());
+                prerequisite
+                    .optimistic
+                    .extend(finding.optimistic_function_ids.iter().cloned());
+                prerequisite
+                    .roots
+                    .extend(finding.affected_scope_roots.iter().cloned());
+                prerequisite.scopes.extend(finding.scopes.iter().cloned());
+                prerequisite
+                    .publication_scopes
+                    .extend(finding.publication_scopes.iter().cloned());
+            }
+        }
+    }
+    grouped
+        .into_values()
+        .map(|value| {
+            let benefit_points = value.guaranteed.len() as u64 * 20
+                + value.optimistic.len() as u64 * 3
+                + value.roots.len() as u64 * 10
+                + value.publication_scopes.len() as u64 * 20;
+            ResearchPrerequisiteAction {
+                rank: 0,
+                id: value.seed.id,
+                kind: value.seed.kind,
+                reason: value.seed.reason,
+                path: value.seed.path,
+                subject: value.seed.subject,
+                manual_action: value.seed.manual_action,
+                satisfies_finding_ids: value.finding_ids.into_iter().collect(),
+                blocked_action_ids: value.action_ids.into_iter().collect(),
+                guaranteed_unlock: value.guaranteed.len(),
+                optimistic_unlock: value.optimistic.len(),
+                affected_scope_roots: value.roots.into_iter().collect(),
+                scopes: value.scopes.into_iter().collect(),
+                benefit_points,
+                estimated_cost_units: value.seed.estimated_cost_units,
+            }
+        })
+        .collect()
+}
+
+fn apply_prerequisite_strategy(
+    prerequisites: &mut Vec<ResearchPrerequisiteAction>,
+    strategy: ResearchRankingStrategy,
+) {
+    if strategy == ResearchRankingStrategy::Frontier {
+        *prerequisites = prerequisites
+            .iter()
+            .enumerate()
+            .filter(|(index, prerequisite)| {
+                !prerequisites
+                    .iter()
+                    .enumerate()
+                    .any(|(other_index, other)| {
+                        other_index != *index
+                            && other.benefit_points >= prerequisite.benefit_points
+                            && other.estimated_cost_units <= prerequisite.estimated_cost_units
+                            && (other.benefit_points > prerequisite.benefit_points
+                                || other.estimated_cost_units < prerequisite.estimated_cost_units)
+                    })
+            })
+            .map(|(_, prerequisite)| prerequisite.clone())
+            .collect();
+    }
+    prerequisites.sort_by(|left, right| match strategy {
+        ResearchRankingStrategy::Impact | ResearchRankingStrategy::Frontier => right
+            .benefit_points
+            .cmp(&left.benefit_points)
+            .then_with(|| left.estimated_cost_units.cmp(&right.estimated_cost_units))
+            .then_with(|| left.id.cmp(&right.id)),
+        ResearchRankingStrategy::QuickWins => left
+            .estimated_cost_units
+            .cmp(&right.estimated_cost_units)
+            .then_with(|| right.benefit_points.cmp(&left.benefit_points))
+            .then_with(|| left.id.cmp(&right.id)),
+    });
+    for (index, prerequisite) in prerequisites.iter_mut().enumerate() {
+        prerequisite.rank = index + 1;
+    }
+}
+
+fn summarize_actionability(findings: &[ResearchFinding]) -> ResearchActionabilitySummary {
+    let mut summary = ResearchActionabilitySummary::default();
+    for finding in findings {
+        let group = match finding.actionability {
+            ResearchActionability::Ready => &mut summary.ready,
+            ResearchActionability::NeedsAnchor => &mut summary.needs_anchor,
+            ResearchActionability::NeedsDestination => &mut summary.needs_destination,
+            ResearchActionability::CoverageBlocked => &mut summary.coverage_blocked,
+            ResearchActionability::InspectionOnly => &mut summary.inspection_only,
+        };
+        group.finding_ids.push(finding.id.clone());
+    }
+    for group in [
+        &mut summary.ready,
+        &mut summary.needs_anchor,
+        &mut summary.needs_destination,
+        &mut summary.coverage_blocked,
+        &mut summary.inspection_only,
+    ] {
+        group.finding_ids.sort();
+        group.finding_ids.dedup();
+        group.count = group.finding_ids.len();
+    }
+    summary
+}
+
+fn collect_prerequisite_ids(findings: &[ResearchFinding]) -> Vec<String> {
+    let mut prerequisite_ids = findings
+        .iter()
+        .flat_map(|finding| finding.prerequisite_ids.iter().cloned())
+        .collect::<Vec<_>>();
+    prerequisite_ids.sort();
+    prerequisite_ids.dedup();
+    prerequisite_ids
+}
+
 fn finalize(
     candidate: Accumulator,
     capabilities_by_function: &CapabilityContexts,
@@ -1291,12 +1719,20 @@ fn finalize(
         .into_iter()
         .collect::<Vec<_>>();
     let kind = candidate.kind.clone();
+    let actionability = finding_actionability(&candidate.consumers);
+    let prerequisite_ids =
+        finding_prerequisites(&candidate.id, &candidate.subject, &candidate.consumers)
+            .into_iter()
+            .map(|prerequisite| prerequisite.id)
+            .collect();
     let finding = ResearchFinding {
         id: candidate.id,
         kind: kind.clone(),
         severity: candidate.severity,
         subject: candidate.subject,
         consumers: candidate.consumers,
+        actionability,
+        prerequisite_ids,
         evidence_sites: candidate.evidence_sites.into_iter().collect(),
         evidence_channels: candidate.evidence_channels.into_iter().collect(),
         inspection_function_ids: candidate.inspection.into_iter().collect(),
@@ -1339,6 +1775,8 @@ fn finalize(
         estimated_cost: String::new(),
         confidence: String::new(),
         inspect_command,
+        actionability: summarize_actionability(std::slice::from_ref(&finding)),
+        prerequisite_ids: finding.prerequisite_ids.clone(),
         findings: vec![finding],
         score_breakdown: ResearchScoreBreakdown {
             guaranteed_weight: 0,
@@ -1409,6 +1847,8 @@ fn coalesce_actions(candidates: Vec<ResearchAction>) -> Vec<ResearchAction> {
             action
                 .co_blocker_ids
                 .retain(|id| !internal_findings.contains(id.as_str()));
+            action.actionability = summarize_actionability(&action.findings);
+            action.prerequisite_ids = collect_prerequisite_ids(&action.findings);
             refresh_action_score(action);
         } else {
             by_command.insert(candidate.inspect_command.clone(), actions.len());
@@ -1884,6 +2324,45 @@ mod tests {
     }
 
     #[test]
+    fn prerequisite_lane_consumes_the_shared_limit_before_research_actions() {
+        let mut candidate = accumulator("register", "register-model");
+        candidate.subject = ResearchSubject::MmioRegister {
+            address_space: "radio".to_owned(),
+            address: 0x6000_1000,
+            width: 32,
+            assertion: None,
+        };
+        candidate.consumers = vec![ResearchConsumer::ReviewedKnowledgeAssertions {
+            resolution: ResearchConsumerResolution::NeedsDestination,
+            configured_paths: vec![PathBuf::from("facts.toml")],
+            selected_path: None,
+            assertion_kinds: vec!["register-name".to_owned()],
+            diagnostic: Some("select default-pack".to_owned()),
+        }];
+        let action = finalize(
+            candidate,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            "blobray inspect register 0x60001000 --project project.toml".to_owned(),
+            "blobray project analyze --project project.toml".to_owned(),
+        );
+        let mut second = action.clone();
+        second.id = "second-action".to_owned();
+        second.findings[0].id = "second-register".to_owned();
+        let prerequisites = build_prerequisites(&[action.clone(), second.clone()]);
+
+        assert_eq!(prerequisites.len(), 1);
+        assert_eq!(prerequisites[0].satisfies_finding_ids.len(), 2);
+
+        let (selected_prerequisites, selected_actions, cost) =
+            select_ranked_steps(prerequisites, vec![action, second], 1, None);
+
+        assert_eq!(selected_prerequisites.len(), 1);
+        assert!(selected_actions.is_empty());
+        assert_eq!(cost, 1);
+    }
+
+    #[test]
     fn scope_and_protocol_filters_are_exact_and_fail_closed() {
         let scopes = BTreeMap::from([
             (
@@ -2083,7 +2562,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_six_serializes_full_typed_finding_under_action() {
+    fn schema_seven_serializes_actionability_and_typed_prerequisites() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -2116,6 +2595,9 @@ mod tests {
             value["findings"][0]["consumers"][0]["resolution"],
             "needs-destination"
         );
+        assert_eq!(value["findings"][0]["actionability"], "needs-destination");
+        assert_eq!(value["actionability"]["needs_destination"]["count"], 1);
+        assert_eq!(value["prerequisite_ids"].as_array().unwrap().len(), 1);
         assert!(value.get("completion_conditions").is_none());
     }
 

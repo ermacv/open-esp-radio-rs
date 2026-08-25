@@ -35,11 +35,12 @@ pub(super) fn run(
 fn render(report: &research::ResearchNextReport) {
     outputln!("{}", output::heading("Research next"));
     outputln!(
-        "\nReturned {} of {} {} actions ({} total actions from {} findings) across {} review scopes.",
+        "\nReturned {} prerequisites and {} actions within the shared limit ({} prerequisites, {} {} actions from {} findings before selection) across {} review scopes.",
+        report.returned_prerequisites,
         report.returned_actions,
+        report.strategy_prerequisites,
         report.strategy_actions,
         report.strategy.label(),
-        report.total_actions,
         report.total_findings,
         report.analyzed_scopes.len()
     );
@@ -67,8 +68,9 @@ fn render(report: &research::ResearchNextReport) {
         );
     }
     if let Some(diagnostic) = &report.selection_diagnostic {
-        outputln!("\n{}: {diagnostic}", output::warning("NO ACTION FITS"));
+        outputln!("\n{}: {diagnostic}", output::warning("NO STEP FITS"));
     }
+    render_prerequisites(&report.prerequisites);
     if report.actions.is_empty() {
         if report.total_actions == 0 {
             outputln!(
@@ -84,7 +86,7 @@ fn render(report: &research::ResearchNextReport) {
             [
                 "#",
                 "Inspect target",
-                "Kinds (N)",
+                "State / kinds (N)",
                 "Score B/E",
                 "G/O/M · Co · Cost",
             ],
@@ -92,8 +94,9 @@ fn render(report: &research::ResearchNextReport) {
                 candidate.rank.to_string(),
                 compact_middle(&action_label(&candidate.inspect_command), 34),
                 format!(
-                    "{} ({})",
-                    compact_middle(&candidate.kinds.join(","), 14),
+                    "{} · {} ({})",
+                    action_lane_label(candidate),
+                    compact_middle(&candidate.kinds.join(","), 12),
                     candidate.findings.len()
                 ),
                 format!(
@@ -136,6 +139,13 @@ fn render(report: &research::ResearchNextReport) {
     if !first.co_blocker_ids.is_empty() {
         outputln!("Co-blockers: {}", first.co_blocker_ids.join(", "));
     }
+    outputln!("Actionability: {}", actionability_summary_label(first));
+    if !first.prerequisite_ids.is_empty() {
+        outputln!(
+            "Blocked by prerequisites: {}",
+            first.prerequisite_ids.join(", ")
+        );
+    }
     render_findings(&first.findings);
     outputln!("Next inspection: {}", first.inspect_command);
     for command in revalidation_commands(first) {
@@ -156,6 +166,90 @@ fn render(report: &research::ResearchNextReport) {
             render_findings(&candidate.findings);
         }
     }
+}
+
+fn render_prerequisites(prerequisites: &[research::ResearchPrerequisiteAction]) {
+    if prerequisites.is_empty() {
+        return;
+    }
+    let visible = if output::details() {
+        prerequisites
+    } else {
+        &prerequisites[..prerequisites.len().min(12)]
+    };
+    outputln!(
+        "\n{}",
+        output::heading(format!("Prerequisite actions ({})", prerequisites.len()))
+    );
+    outputln!(
+        "{}",
+        table::render(
+            ["#", "Kind", "Benefit/cost", "Findings", "Required action"],
+            visible.iter().map(|prerequisite| [
+                prerequisite.rank.to_string(),
+                prerequisite_kind_label(prerequisite.kind).to_owned(),
+                format!(
+                    "{}/{}",
+                    prerequisite.benefit_points, prerequisite.estimated_cost_units
+                ),
+                prerequisite.satisfies_finding_ids.len().to_string(),
+                table::compact(&prerequisite.manual_action, 72),
+            ]),
+        )
+    );
+    if visible.len() != prerequisites.len() {
+        outputln!(
+            "Showing {} of {}; use --details for every prerequisite.",
+            visible.len(),
+            prerequisites.len()
+        );
+    }
+}
+
+fn prerequisite_kind_label(kind: research::ResearchPrerequisiteKind) -> &'static str {
+    match kind {
+        research::ResearchPrerequisiteKind::ConfigureInterfaceDestination => {
+            "interface-destination"
+        }
+        research::ResearchPrerequisiteKind::CreateInterfaceAnchor => "interface-anchor",
+        research::ResearchPrerequisiteKind::SelectReviewedKnowledgeDestination => {
+            "knowledge-destination"
+        }
+    }
+}
+
+fn action_lane_label(action: &research::ResearchAction) -> &'static str {
+    if action.actionability.ready.count != 0 {
+        "ready"
+    } else if action.actionability.inspection_only.count != 0 {
+        "inspect"
+    } else {
+        "blocked"
+    }
+}
+
+fn actionability_summary_label(action: &research::ResearchAction) -> String {
+    [
+        ("ready", action.actionability.ready.count),
+        ("needs-anchor", action.actionability.needs_anchor.count),
+        (
+            "needs-destination",
+            action.actionability.needs_destination.count,
+        ),
+        (
+            "coverage-blocked",
+            action.actionability.coverage_blocked.count,
+        ),
+        (
+            "inspection-only",
+            action.actionability.inspection_only.count,
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, count)| *count != 0)
+    .map(|(label, count)| format!("{label}={count}"))
+    .collect::<Vec<_>>()
+    .join(", ")
 }
 
 fn render_findings(findings: &[research::ResearchFinding]) {
@@ -193,6 +287,16 @@ fn finding_lines(finding: &research::ResearchFinding, number: usize, details: bo
         table::compact(&finding.summary, 280)
     };
     let mut lines = vec![format!("  {number}. [{}] {summary}", finding.kind)];
+    lines.push(format!(
+        "     Actionability: {}",
+        finding_actionability_label(finding.actionability)
+    ));
+    if !finding.prerequisite_ids.is_empty() {
+        lines.push(format!(
+            "     Prerequisites: {}",
+            finding.prerequisite_ids.join(", ")
+        ));
+    }
     lines.push(format!("     Knowledge: {}", finding.knowledge_required));
     if finding.consumers.is_empty() {
         lines.push(
@@ -227,6 +331,16 @@ fn finding_lines(finding: &research::ResearchFinding, number: usize, details: bo
     lines
 }
 
+fn finding_actionability_label(actionability: research::ResearchActionability) -> &'static str {
+    match actionability {
+        research::ResearchActionability::Ready => "ready",
+        research::ResearchActionability::NeedsAnchor => "needs-anchor",
+        research::ResearchActionability::NeedsDestination => "needs-destination",
+        research::ResearchActionability::CoverageBlocked => "coverage-blocked",
+        research::ResearchActionability::InspectionOnly => "inspection-only",
+    }
+}
+
 fn evidence_sites_label(sites: &[u32], details: bool) -> String {
     let sites = sites
         .iter()
@@ -253,9 +367,8 @@ fn highlight_list(values: &[String], details: bool) -> String {
 fn resolution_label(resolution: research::ResearchConsumerResolution) -> &'static str {
     match resolution {
         research::ResearchConsumerResolution::Ready => "ready",
+        research::ResearchConsumerResolution::NeedsAnchor => "needs-anchor",
         research::ResearchConsumerResolution::NeedsDestination => "needs-destination",
-        research::ResearchConsumerResolution::Unavailable => "unavailable",
-        research::ResearchConsumerResolution::UnsupportedTarget => "unsupported-target",
     }
 }
 
@@ -354,6 +467,8 @@ mod tests {
                 root_id: id.to_owned(),
             },
             consumers: Vec::new(),
+            actionability: research::ResearchActionability::InspectionOnly,
+            prerequisite_ids: Vec::new(),
             evidence_sites: Vec::new(),
             evidence_channels: Vec::new(),
             inspection_function_ids: Vec::new(),
@@ -409,6 +524,7 @@ mod tests {
             width: 32,
             diagnostic: None,
         }];
+        first.actionability = research::ResearchActionability::Ready;
         first.evidence_sites = vec![0x4000_1000];
         first.evidence_channels = vec!["linked-ir".to_owned()];
         first.inspection_function_ids =
@@ -466,14 +582,17 @@ mod tests {
             [
                 "#",
                 "Inspect target",
-                "Kinds (N)",
+                "State / kinds (N)",
                 "Score B/E",
                 "G/O/M · Co · Cost",
             ],
             [[
                 "1".to_owned(),
                 compact_middle("function ble-controller:r_ble_hci_trans_env_deinit", 34),
-                format!("{} (2)", compact_middle("control-flow,memory-store", 14)),
+                format!(
+                    "inspect · {} (2)",
+                    compact_middle("control-flow,memory-store", 12)
+                ),
                 "1369 972/71".to_owned(),
                 "33/34/34 · 2 · high".to_owned(),
             ]],
@@ -483,7 +602,11 @@ mod tests {
             rendered.contains("function ble-cont…trans_env_deinit"),
             "inspect target was wrapped:\n{rendered}"
         );
-        assert!(rendered.contains("control…-store (2)"), "{rendered}");
-        assert!(rendered.contains("33/34/34 · 2 · high"), "{rendered}");
+        assert!(
+            rendered.contains("inspect · contro…store (2)"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("33/34/34"), "{rendered}");
+        assert!(rendered.contains("high"), "{rendered}");
     }
 }

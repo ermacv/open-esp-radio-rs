@@ -212,13 +212,19 @@ and RX/TX/CCA/ED commands. A bounded cancellation-safe Embassy owner carries
 acknowledged values without moving PAC handles or raw addresses across the
 async boundary.
 
-The remaining IEEE 802.15.4 work is composition and qualification: bind and
-tear down platform source 132, join the existing task/IRQ/runtime owners with
-proved PHY, BTBB and coexistence readiness, complete terminal DMA reclamation
-and state-specific `STOP` policy, and establish TX-power/timing behavior. HIL is
-the qualification gate for route delivery/retrigger, repeated operations,
-maximum-length frames, ACK/abort/CCA/ED behavior and on-air service; it is not
-an architectural prerequisite for porting the source-derived logic.
+Platform source 132 now has an affine ESP-HAL bind/disable owner around the PAC
+setup, exact hard-IRQ acknowledgement and bounded Embassy handoff. Terminal
+DMA reclamation is tied to accepted acknowledged batches, and ACK-requesting
+TX arms the generated TIMER0 capability from the source-defined two-sample
+200000-microsecond deadline before fail-closed disarm or quarantine.
+
+The remaining IEEE 802.15.4 work is composition and qualification: join those
+task/IRQ/runtime owners with proved shared-PHY client, RF/BTBB, channel and
+coexistence readiness; establish the source-legal TX-power contract; and expose
+one public whole-radio async service. HIL is the qualification gate for route
+delivery/retrigger, repeated operations, maximum-length frames,
+ACK/abort/CCA/ED behavior and on-air service; it is not an architectural
+prerequisite for porting the remaining source-derived logic.
 
 The `rx-done-to-pp-task`, `rx-success-to-pp-task` and
 `tx-complete-to-pp-task` routes execute the concrete queue and counted-latch

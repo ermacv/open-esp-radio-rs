@@ -117,41 +117,51 @@ title = "Active source-132 interrupt runtime"
 scope = "Affine CPU route event acknowledgement bounded ISR classification task wake and route teardown"
 depends-on = ["clock-reset-foundation"]
 owners = [
-  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "Ieee802154RouteReadback" },
-  { path = "driver/chips/esp32s31/pac-raw/src/ieee802154_route_observation.rs", token = "read_route_words" },
+  { path = "driver/chips/esp32s31/pac/src/lib.rs", token = "Ieee802154InterruptSetup" },
+  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "Ieee802154AcknowledgedInterrupt" },
+  { path = "driver/adapters/esp-hal/esp32s31-ieee802154/src/lib.rs", token = "BoundEspHalIeee802154InterruptRoute" },
+  { path = "driver/adapters/embassy/esp32s31-ieee802154/src/lib.rs", token = "EmbassyIeee802154IrqRuntime" },
 ]
 tests = [
-  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "route_readback_distinguishes_unassigned_map_from_full_reset" },
+  { path = "driver/chips/esp32s31/pac/src/ieee802154.rs", token = "production_deactivation_stops_every_engine_before_final_affine_ack" },
+  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "hard_irq_acknowledges_the_exact_snapshot_before_posting" },
+  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "hard_irq_returns_the_exact_acknowledged_token_rejected_by_the_sink" },
+  { path = "driver/adapters/embassy/esp32s31-ieee802154/src/lib.rs", token = "acknowledged_values_cross_the_async_handoff_in_order" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-control.md", token = "source 132" },
 ]
 gaps = [
-  { axis = "implementation", id = "route-write-isr-and-teardown-owners-missing" },
+  { axis = "implementation", id = "whole-radio-route-runtime-composition-missing" },
   { axis = "vendor", id = "active-route-and-concurrent-acknowledgement-proof-missing" },
   { axis = "hil", id = "level-triggered-route-and-same-bit-arrival-cell-missing" },
-  { axis = "async", id = "interrupt-to-task-wake-contract-missing" },
 ]
 
 [[capabilities]]
 id = "rx-tx-dataplane"
-title = "Operational IEEE 802.15.4 RX and TX dataplane"
-scope = "PHY-ready frame RX TX DMA ownership state machine ACK timing filtering and public MAC integration"
+title = "Affine IEEE 802.15.4 RX and TX dataplane"
+scope = "Frame RX TX DMA ownership state machine acknowledged IRQ batches ACK watchdog filtering and executor-neutral MAC runtime"
 depends-on = ["rf-channel-readiness", "active-interrupt-runtime"]
 owners = [
   { path = "driver/ieee802154/src/contract.rs", token = "RadioStateMachine" },
   { path = "driver/chips/esp32s31/ieee802154/dma/src/rx.rs", token = "RxPoolStorage" },
+  { path = "driver/chips/esp32s31/ieee802154/runtime/src/lib.rs", token = "MacRuntimeActive" },
+  { path = "driver/chips/esp32s31/ieee802154/runtime/src/pac_command_executor.rs", token = "IEEE802154_ACK_WATCHDOG_MICROSECONDS" },
+  { path = "driver/adapters/embassy/esp32s31-ieee802154/src/owner.rs", token = "EmbassyIeee802154Active" },
 ]
 tests = [
   { path = "driver/ieee802154/src/contract.rs", token = "finite_enable_receive_sleep_disable_path_is_exact" },
   { path = "driver/chips/esp32s31/ieee802154/dma/src/rx.rs", token = "free_armed_delivered_free_transition_preserves_layout" },
+  { path = "driver/chips/esp32s31/ieee802154/runtime/src/lib.rs", token = "transmit_with_ack_executes_the_complete_plan_in_exact_order" },
+  { path = "driver/chips/esp32s31/ieee802154/runtime/src/lib.rs", token = "lost_acknowledgement_handoff_disarms_the_watchdog_before_containment" },
+  { path = "driver/chips/esp32s31/ieee802154/runtime/src/pac_command_executor.rs", token = "acknowledgement_watchdog_uses_two_wrapping_clock_samples_in_source_order" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-dataplane.md", token = "DMA" },
 ]
 gaps = [
-  { axis = "implementation", id = "production-hal-dma-irq-and-generic-mac-composition-missing" },
+  { axis = "implementation", id = "phy-ready-whole-radio-mac-composition-missing" },
+  { axis = "implementation", id = "public-operational-mac-service-missing" },
   { axis = "vendor", id = "complete-rx-tx-state-machine-and-tx-power-trace-missing" },
   { axis = "hil", id = "on-air-rx-tx-ack-and-filtering-cells-missing" },
-  { axis = "async", id = "operational-mac-runner-and-deadlines-missing" },
 ]

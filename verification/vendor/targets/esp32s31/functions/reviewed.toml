@@ -185,6 +185,30 @@ abi = "u32"
 role = "channel-bandwidth"
 
 [[functions]]
+profile = "archive-all"
+source = "archive"
+identity = "archive::phy_param_track_tot"
+status = "reviewed"
+name = "track_shared_phy_parameters"
+role = "phy.periodic-tracking"
+summary = "Within one PHY-I2C critical section, applies the two guard bytes, optional RFPLL-cap tracking, Bluetooth/IEEE then Wi-Fi power and calibration children, one temperature read, and the unconditional exit."
+accept-incomplete = true
+
+[functions.signature]
+
+[[functions.signature.arguments]]
+index = 0
+name = "enable_wifi"
+abi = "u32"
+role = "wifi-enabled"
+
+[[functions.signature.arguments]]
+index = 1
+name = "enable_bluetooth_ieee802154"
+abi = "u32"
+role = "bluetooth-ieee802154-enabled"
+
+[[functions]]
 profile = "libpp-all"
 source = "libpp"
 identity = "libpp::wdev_record_rx_linked_list"

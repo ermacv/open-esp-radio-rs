@@ -371,6 +371,13 @@ roots = ["archive:phy_bb_init", "archive:register_chipv7_phy"]
 include-reachable = true
 
 [[review.scopes]]
+id = "phy-pll-tracking"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "shared"]
+profiles = ["archive-all"]
+roots = ["archive:phy_param_track_tot"]
+include-reachable = true
+
+[[review.scopes]]
 id = "wifi-rx"
 protocols = ["wifi"]
 profiles = ["libpp-all"]

@@ -153,6 +153,13 @@ hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he
 
 [[functions]]
 source = "archive"
+symbol = "phy_param_track_tot"
+disposition = "replaced-by-composition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_param_tracking::PhyParamTrackingTransition"
+
+[[functions]]
+source = "archive"
 symbol = "phy_bt_txdc_cal_new"
 disposition = "state-transition"
 protocol = "bluetooth"

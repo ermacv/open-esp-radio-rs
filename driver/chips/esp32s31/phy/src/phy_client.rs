@@ -3,13 +3,14 @@
 //! The reviewed ESP-IDF software protocol stores Wi-Fi, Bluetooth, and IEEE
 //! 802.15.4 as independent bits. It gives Wi-Fi one tracking timestamp and
 //! Bluetooth plus IEEE 802.15.4 a shared timestamp. This module reproduces only
-//! those software decisions. It performs no MMIO, does not arm a real timer,
-//! and emits an opaque [`PhyParamTrackRequest`] instead of claiming that the
-//! vendor-opaque PLL adjustment completed.
+//! those software decisions. It performs no MMIO and does not arm a real
+//! timer. A due request retains the unique owner while the exact outer
+//! [`crate::phy_param_tracking::PhyParamTrackingTransition`] is executed.
+//! Its child hardware effects remain explicit unresolved actions.
 //!
 //! Timer arm/stop and the PHY lock are represented only as atomic model facts.
 //! There is no fallible timer executor, rollback protocol, or target lock in
-//! this module, so the model is deliberately not connectable to hardware yet.
+//! this module, so the resulting transition is not an RF-readiness proof.
 //! Clock sampling is nevertheless exact: immediate evaluation preserves the
 //! public source's short-circuit due checks and then samples each active class
 //! again while refreshing timestamps; the periodic callback performs only the
@@ -17,10 +18,15 @@
 
 #![allow(
     dead_code,
-    reason = "the closed model awaits a fallible target executor and PHY-lock binding"
+    reason = "the model awaits fallible timer, PHY-lock, and tracking-child executors"
 )]
 
 use core::fmt;
+
+use crate::phy_param_tracking::{
+    PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingCompletion,
+    PhyParamTrackingParameters, PhyParamTrackingTransition, PhyParamTrackingTransitionError,
+};
 
 const WIFI_BIT: u8 = 1;
 const BLUETOOTH_BIT: u8 = 2;
@@ -401,10 +407,10 @@ struct TrackEvaluation {
 impl TrackEvaluation {
     fn request(self) -> Option<PhyParamTrackRequest> {
         (self.wifi_refresh_micros.is_some() || self.bluetooth_ieee802154_refresh_micros.is_some())
-            .then_some(PhyParamTrackRequest {
-                wifi: self.wifi_active,
-                bluetooth_ieee802154: self.bluetooth_ieee802154_active,
-            })
+            .then_some(PhyParamTrackRequest::new(
+                self.wifi_active,
+                self.bluetooth_ieee802154_active,
+            ))
     }
 }
 
@@ -453,24 +459,12 @@ pub enum PhyClientAcquireOrdering {
     SetThenEvaluate,
 }
 
-/// Opaque request to the still-unreviewed PLL hardware leaf.
-///
-/// Possessing this value proves only that the software scheduler found work
-/// due. It is not a completion token or a PLL/RF readiness proof.
-#[must_use = "the opaque hardware request must be handled by a later target transition"]
-pub struct PhyParamTrackRequest {
-    wifi: bool,
-    bluetooth_ieee802154: bool,
-}
-
-/// Owner held while the opaque PLL hardware request remains unresolved.
+/// Owner held while the source-reviewed tracking request remains unresolved.
 ///
 /// Safe code can inspect the request but cannot recover or operate on the
-/// client owner. Dropping this value destroys access to that software epoch.
-/// The only production exit currently poisons the state explicitly; a future
-/// target executor must add an identity-bound successful completion.
-///
-#[must_use = "the PLL hardware request retains the unique PHY client owner"]
+/// client owner. It can begin the exact outer tracking transition or poison
+/// the epoch explicitly.
+#[must_use = "the tracking request retains the unique PHY client owner"]
 pub struct PhyPendingTrack {
     owner: PhyClientState,
     request: PhyParamTrackRequest,
@@ -480,8 +474,8 @@ impl fmt::Debug for PhyPendingTrack {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("PhyPendingTrack")
-            .field("wifi", &self.request.wifi)
-            .field("bluetooth_ieee802154", &self.request.bluetooth_ieee802154)
+            .field("wifi", &self.request.wifi())
+            .field("bluetooth_ieee802154", &self.request.bluetooth_ieee802154())
             .finish_non_exhaustive()
     }
 }
@@ -493,6 +487,15 @@ impl PhyPendingTrack {
 
     pub const fn snapshot(&self) -> PhyClientSnapshot {
         self.owner.snapshot()
+    }
+
+    /// Bind the scheduler request to the exact outer tracking transition.
+    pub fn begin_tracking(self, parameters: PhyParamTrackingParameters) -> PhyPendingTracking {
+        PhyPendingTracking {
+            owner: self.owner,
+            request: self.request,
+            transition: PhyParamTrackingTransition::new(self.request, parameters),
+        }
     }
 
     /// Explicitly poison a model request that target hardware did not complete.
@@ -509,11 +512,69 @@ impl PhyPendingTrack {
     }
 }
 
-/// Terminal model owner after an opaque PLL request failed or was cancelled.
+/// Unique client owner retained through one exact outer tracking transition.
+///
+/// Wrong completions preserve both this owner and the current action. Ordinary
+/// access is restored only after the terminal action is visible.
+#[must_use = "the in-flight tracking transition retains the unique PHY client owner"]
+pub struct PhyPendingTracking {
+    owner: PhyClientState,
+    request: PhyParamTrackRequest,
+    transition: PhyParamTrackingTransition,
+}
+
+impl fmt::Debug for PhyPendingTracking {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PhyPendingTracking")
+            .field("request", &self.request)
+            .field("action", &self.transition.action())
+            .finish_non_exhaustive()
+    }
+}
+
+impl PhyPendingTracking {
+    pub const fn action(&self) -> PhyParamTrackingAction {
+        self.transition.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: PhyParamTrackingCompletion,
+    ) -> Result<(), PhyParamTrackingTransitionError> {
+        self.transition.advance(completion)
+    }
+
+    pub const fn snapshot(&self) -> PhyClientSnapshot {
+        self.owner.snapshot()
+    }
+
+    /// Recover the ordinary owner only after every outer action was confirmed.
+    pub fn into_owner(self) -> Result<PhyClientState, Self> {
+        if matches!(
+            self.transition.action(),
+            PhyParamTrackingAction::Complete(_)
+        ) {
+            Ok(self.owner)
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Poison an interrupted or failed hardware tracking operation.
+    pub fn fail(self) -> PhyTrackPoisoned {
+        PhyTrackPoisoned {
+            owner: self.owner,
+            request: self.request,
+        }
+    }
+}
+
+/// Terminal model owner after tracking hardware failed or was cancelled.
 ///
 /// No ordinary-owner extractor is provided because the model has no reviewed
 /// rollback for partially executed hardware work.
-#[must_use = "failed opaque PLL work poisons the PHY client model"]
+#[must_use = "failed tracking hardware work poisons the PHY client model"]
 pub struct PhyTrackPoisoned {
     owner: PhyClientState,
     request: PhyParamTrackRequest,
@@ -526,16 +587,6 @@ impl PhyTrackPoisoned {
 
     pub const fn snapshot(&self) -> PhyClientSnapshot {
         self.owner.snapshot()
-    }
-}
-
-impl PhyParamTrackRequest {
-    pub const fn wifi(&self) -> bool {
-        self.wifi
-    }
-
-    pub const fn bluetooth_ieee802154(&self) -> bool {
-        self.bluetooth_ieee802154
     }
 }
 
@@ -627,7 +678,7 @@ impl PhyClientAcquireOutcome {
         self.continuation.owner()
     }
 
-    /// Recover the ordinary owner only when no opaque request is pending.
+    /// Recover the ordinary owner only when no tracking request is pending.
     pub fn into_owner(self) -> Result<PhyClientState, PhyPendingTrack> {
         self.continuation.into_owner()
     }
@@ -758,7 +809,7 @@ impl PhyTrackEvaluation {
         self.continuation.owner()
     }
 
-    /// Recover the ordinary owner only when no opaque request is pending.
+    /// Recover the ordinary owner only when no tracking request is pending.
     pub fn into_owner(self) -> Result<PhyClientState, PhyPendingTrack> {
         self.continuation.into_owner()
     }
@@ -1157,6 +1208,45 @@ mod tests {
             IEEE802154_BIT,
             "the pending request must retain the exact client state"
         );
+    }
+
+    #[test]
+    fn pending_request_runs_outer_tracking_before_owner_recovery() {
+        let pending = match state_for_mask(IEEE802154_BIT, 0)
+            .evaluate_periodic_at(2_000_000)
+            .unwrap()
+            .into_owner()
+        {
+            Ok(_) => panic!("periodic IEEE tracking must retain the owner"),
+            Err(pending) => pending,
+        };
+        let mut tracking = pending.begin_tracking(PhyParamTrackingParameters {
+            tracking_inhibited: true,
+            rfpll_cap_tracking_enabled: true,
+            shared_tracking_control: 0x29,
+            bluetooth_ieee802154_power_control: 0x51,
+            calibration_tracking_enabled: true,
+        });
+
+        assert_eq!(tracking.action(), PhyParamTrackingAction::EnterCritical);
+        assert_eq!(
+            tracking.advance(PhyParamTrackingCompletion::TemperatureRead),
+            Err(PhyParamTrackingTransitionError::WrongCompletion)
+        );
+        assert_eq!(tracking.action(), PhyParamTrackingAction::EnterCritical);
+        tracking
+            .advance(PhyParamTrackingCompletion::EnteredCritical)
+            .unwrap();
+        assert_eq!(tracking.action(), PhyParamTrackingAction::ExitCritical);
+        let mut tracking = match tracking.into_owner() {
+            Ok(_) => panic!("owner escaped before the terminal action"),
+            Err(tracking) => tracking,
+        };
+        tracking
+            .advance(PhyParamTrackingCompletion::ExitedCritical)
+            .unwrap();
+        let owner = tracking.into_owner().unwrap();
+        assert!(owner.snapshot().contains(PhyModemClient::Ieee802154));
     }
 
     #[test]

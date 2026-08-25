@@ -371,10 +371,12 @@ effects:
   public PHY client manager determines when to call them, but their RF
   calibration, wakeup, and shutdown register effects are outside the reviewed
   public implementation.
-- `phy_param_track_tot(bool, bool)`: the reviewed `phy_track_pll()` scheduler
-  determines when to call this leaf and whether Wi-Fi and/or the shared
-  Bluetooth/IEEE 802.15.4 class is active, but the leaf's PLL hardware effects
-  are outside the reviewed public implementation.
+- `phy_param_track_tot(bool, bool)`: Blobray now resolves its complete outer
+  body. The source-owned `PhyParamTrackingTransition` preserves the critical
+  section, guard branches, exact BT/IEEE-before-Wi-Fi child order, child
+  arguments, temperature read, and exit. Its RFPLL-cap, TX-power, calibration,
+  Wi-Fi-I2C, and temperature children remain separate hardware obligations;
+  the outer transition alone is not an RF-readiness proof.
 - `ieee802154_txon_delay_set()`: called during every MAC initialization after
   ED/PTI configuration and before the driver enters idle.
 - `bt_bb_get_tx_pwr_table(&length)`: needed both to initialize each channel's
@@ -400,23 +402,25 @@ The reviewed PLL scheduler keeps separate previous timestamps for Wi-Fi and for
 the shared Bluetooth/IEEE 802.15.4 class. Its immediate-on-enable path requests
 tracking only when an active class has elapsed strictly more than the configured
 period (1,000 ms by default), then passes the complete set of active classes to
-opaque `phy_param_track_tot`. The periodic timer callback instead invokes the
+`phy_param_track_tot`. The periodic timer callback instead invokes the
 internal tracker unconditionally and requests every active class without a due
 check. With tracking enabled (the S31 default), first aggregate acquisition
 creates and starts that timer before setting the caller bit; every acquisition
 sets its bit before the immediate due check. Last-user release stops and deletes
 the timer. The public source uses `ESP_ERROR_CHECK` for timer
 create/start/stop/delete, so it supplies no recoverable failure owner or rollback
-contract for a Rust implementation. Neither scheduler equivalence nor a set
-client bit establishes that the opaque PLL adjustment, RF wakeup, or shutdown
-effects completed.
+contract for a Rust implementation. Neither scheduler/outer-transition
+equivalence nor a set client bit establishes that the unresolved tracking
+children, RF wakeup, or shutdown effects completed.
 
 The source obtains time separately for each enabled-class due check and again
 for each timestamp refresh. The host model now accepts a monotonic clock port,
 preserves the short-circuit that skips the Bluetooth/IEEE due sample after an
 already-due Wi-Fi check, and samples each active class again in refresh order.
-Host tests cover both immediate branches and the periodic callback. A target
-timer/lock executor and the opaque tracking leaf remain separate obligations.
+Host tests cover both immediate branches and the periodic callback. The exact
+outer tracking transition is also covered for IEEE-only, combined-client,
+guarded, optional-branch, and wrong-completion paths. A target timer/lock
+executor and the unresolved tracking children remain separate obligations.
 
 Until the opaque effects above are replaced with reviewed source logic or
 bounded hardware contracts, the strongest honest RF-lifecycle endpoint is:
@@ -450,11 +454,11 @@ does not mint a physical ready state.
    is not a prerequisite for implementing the source-derived ownership shape.
 2. Establish a reviewed BTBB initialization contract for
    `bt_bb_v2_init_cmplx(1)`, including ownership and required postconditions.
-3. Recover or replace the RF calibration/wakeup and `phy_param_track_tot`
-   hardware effects behind the public PHY client manager. Reproduce the
-   reviewed client-mask and tracking-scheduler protocol with explicit timer
-   failure ownership, and test cold-start, warm-start, and already-owned paths
-   separately.
+3. Recover or replace the RF calibration/wakeup and the remaining
+   `phy_param_track_tot` child hardware effects behind the public PHY client
+   manager. Bind the reviewed client-mask, scheduler, and outer tracking
+   transition through explicit timer/lock failure ownership, and test
+   cold-start, warm-start, and already-owned paths separately.
 4. Determine the exact registers and timing rule set by
    `ieee802154_txon_delay_set()`.
 5. Establish a source-legal TX-power capability contract without copying an

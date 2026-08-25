@@ -22,6 +22,7 @@ pub(super) fn run(
         research::ResearchNextOptions {
             scope: arguments.scope.as_deref(),
             protocol: arguments.protocol.as_deref(),
+            finding: arguments.finding.as_deref(),
             strategy,
             budget: arguments.budget,
             limit: usize::from(arguments.limit),
@@ -53,6 +54,20 @@ fn render(report: &research::ResearchNextReport) {
     );
     outputln!("Inventory: {}", report.inventory.sha256);
     outputln!(
+        "Finding query: {}{} (completion claim: false)",
+        match report.finding_query.state {
+            research::ResearchFindingQueryState::All => "all",
+            research::ResearchFindingQueryState::Open => "open",
+            research::ResearchFindingQueryState::NotPresent => "not-present",
+        },
+        report
+            .finding_query
+            .finding_id
+            .as_deref()
+            .map_or_else(String::new, |id| format!(" — {id}"))
+    );
+    outputln!("Meaning: {}", report.finding_query.interpretation);
+    outputln!(
         "Filter: protocol {}; scope {}; budget {}.",
         report.protocol.as_deref().unwrap_or("all"),
         report.scope.as_deref().unwrap_or("all"),
@@ -80,6 +95,15 @@ fn render(report: &research::ResearchNextReport) {
     }
     render_prerequisites(&prerequisites);
     if actions.is_empty() {
+        if report.finding_query.state == research::ResearchFindingQueryState::NotPresent {
+            outputln!(
+                "\n{}",
+                output::warning(
+                    "FINDING ID NOT PRESENT — this is not proof of correctness or completion"
+                )
+            );
+            return;
+        }
         if report.inventory.actions.is_empty() {
             outputln!(
                 "\n{}",
@@ -427,7 +451,10 @@ fn finding_lines(finding: &research::ResearchFinding, number: usize, details: bo
     } else {
         table::compact(&finding.summary, 280)
     };
-    let mut lines = vec![format!("  {number}. [{}] {summary}", finding.kind)];
+    let mut lines = vec![format!(
+        "  {number}. [{}] {} — {summary}",
+        finding.kind, finding.id
+    )];
     lines.push(format!(
         "     Actionability: {}",
         finding_actionability_label(finding.actionability)
@@ -679,12 +706,12 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(lines.contains("1. [interface-layout] review producer slot"));
+        assert!(lines.contains("1. [interface-layout] slot-a — review producer slot"));
         assert!(lines.contains("interface pack [ready]"));
         assert!(lines.contains("Inspect in: btbb::producer, btbb::consumer"));
         assert!(lines.contains("sites 0x40001000; channels linked-ir"));
         assert!(lines.contains("Needed: producer and consumer access sites"));
-        assert!(lines.contains("2. [register-model] name the observed register"));
+        assert!(lines.contains("2. [register-model] register-a — name the observed register"));
         assert!(lines.contains("Consumer: none [unavailable]"));
     }
 

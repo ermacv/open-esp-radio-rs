@@ -51,6 +51,10 @@ pub(in crate::cli) enum ResolvedInvocation {
         arguments: ResearchNextArgs,
         session: Box<ProjectSession>,
     },
+    InspectRegister {
+        arguments: InspectRegisterArgs,
+        session: Box<ProjectSession>,
+    },
     ProjectAuditBindings(Box<ProjectSession>),
     ProjectStatus {
         arguments: ProjectStatusArgs,
@@ -166,7 +170,6 @@ pub(in crate::cli) enum TargetCommand {
     InspectFunction(InspectFunctionArgs),
     InspectFlow(InspectFlowArgs),
     InspectObject(InspectObjectArgs),
-    InspectRegister(InspectRegisterArgs),
     InspectScope(InspectScopeArgs),
     VerifyInventory(VerifyInventoryArgs),
     VerifySource(VerifySourceArgs),

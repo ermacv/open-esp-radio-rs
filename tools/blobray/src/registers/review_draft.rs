@@ -8,11 +8,21 @@ pub(super) fn write_draft(output: &mut String, fact: &RegisterFact, address_spac
     output.push_str(
         "\nSparse reviewed-knowledge template. Copy only facts proven by manual review; replace every `REVIEW_REQUIRED` value and keep exact applicability/evidence:\n\n```toml\n",
     );
+    output.push_str(&render_sparse_review_draft(fact, address_space));
+    output.push_str("```\n");
+}
+
+/// Render a copyable assertion fragment without Markdown framing. Every
+/// semantic value remains explicitly unresolved until a human supplies exact
+/// applicability and durable evidence.
+pub(crate) fn render_sparse_review_draft(fact: &RegisterFact, address_space: &str) -> String {
+    let mut output = String::new();
     if fact.catalog_name != "UNMAPPED" {
+        let catalog_name = fact.catalog_name.replace(['\r', '\n'], " ");
         writeln!(
             output,
             "# Generated catalog candidate (not accepted knowledge): {}",
-            fact.catalog_name
+            catalog_name
         )
         .expect("writing to String cannot fail");
     }
@@ -40,7 +50,7 @@ pub(super) fn write_draft(output: &mut String, fact: &RegisterFact, address_spac
     output.push_str(
         "[assertions.applies-to]\nchips = [\"REVIEW_REQUIRED_CHIP\"]\nchip-revisions = [\"REVIEW_REQUIRED_REVISION\"]\n\n[[assertions.evidence]]\nsource = \"REVIEW_REQUIRED_EVIDENCE_ID\"\nlocator = \"REVIEW_REQUIRED_NAME_LOCATOR\"\n",
     );
-    output.push_str("```\n");
+    output
 }
 
 pub(super) fn candidate_fields(
@@ -103,6 +113,42 @@ mod tests {
 
     use super::*;
     use crate::registers::review_ir::ReviewFieldEvidence;
+
+    #[test]
+    fn sparse_draft_is_raw_parseable_and_does_not_infer_hardware_semantics() {
+        let fact = RegisterFact {
+            address: 0x2010_3100,
+            width: 32,
+            catalog_name: "RADIO.REG_20103100\n[[assertions]]".to_owned(),
+            reads: 3,
+            writes: 0,
+            read_functions: BTreeSet::new(),
+            write_functions: BTreeSet::new(),
+            read_sites: BTreeSet::new(),
+            write_sites: BTreeSet::new(),
+            write_patterns: Vec::new(),
+            candidate_masks: Vec::new(),
+        };
+
+        let draft = render_sparse_review_draft(&fact, "cpu");
+        let parsed = draft.parse::<toml_edit::DocumentMut>().unwrap();
+
+        assert_eq!(parsed["assertions"].as_array_of_tables().unwrap().len(), 2);
+        assert!(draft.contains("subject = \"mmio:cpu:0x20103100/32\""));
+        assert!(draft.contains("REVIEW_REQUIRED.register-declaration"));
+        assert!(draft.contains("REVIEW_REQUIRED.register-name"));
+        assert!(draft.contains("RADIO.REG_20103100 [[assertions]]"));
+        assert_eq!(
+            draft
+                .lines()
+                .filter(|line| *line == "[[assertions]]")
+                .count(),
+            2
+        );
+        assert!(!draft.contains("kind = \"register-access\""));
+        assert!(!draft.contains("hardware-write-semantics"));
+        assert!(!draft.contains("```"));
+    }
 
     #[test]
     fn field_drafts_partition_partial_masks_and_ignore_whole_register_writes() {

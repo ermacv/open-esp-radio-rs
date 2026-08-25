@@ -212,6 +212,9 @@ pub(crate) struct ResearchNextArgs {
     /// Restrict prioritization to one configured review scope.
     #[arg(long)]
     pub(crate) scope: Option<String>,
+    /// Look up one exact current finding ID after deriving the complete scoped inventory.
+    #[arg(long, value_name = "ID")]
+    pub(crate) finding: Option<String>,
     /// Maximum cumulative estimated research-cost units returned.
     #[arg(long, value_name = "UNITS", value_parser = clap::value_parser!(u64).range(1..))]
     pub(crate) budget: Option<u64>,

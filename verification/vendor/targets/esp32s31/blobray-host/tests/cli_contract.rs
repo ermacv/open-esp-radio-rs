@@ -77,6 +77,142 @@ fn checked_register_publications_are_typed_reports() {
 }
 
 #[test]
+fn inspect_register_schema_four_drafts_only_owned_unreviewed_facts() {
+    let inspect = |address: &str| {
+        let output = blobray()
+            .args(["inspect", "register", address, "--project"])
+            .arg(project())
+            .args(["--format", "json", "--color", "never"])
+            .output()
+            .expect("inspect register");
+        assert!(
+            output.status.success(),
+            "{address} stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+
+    let owned = inspect("0x20103100");
+    assert_eq!(owned["schema_version"], 4);
+    assert_eq!(owned["register"]["review_status"], "unreviewed");
+    assert_eq!(owned["review_draft"]["state"], "review-required");
+    assert_eq!(owned["review_draft"]["completion_claim"], false);
+    assert_eq!(
+        owned["review_draft"]["finding_id"],
+        "register-0x20103100-32"
+    );
+    assert!(
+        owned["review_draft"]["destination"]
+            .as_str()
+            .unwrap()
+            .ends_with("reviewed/project-facts.toml")
+    );
+    let raw = owned["review_draft"]["raw_toml"].as_str().unwrap();
+    assert!(raw.parse::<toml_edit::DocumentMut>().is_ok());
+    assert!(raw.contains("REVIEW_REQUIRED.register-declaration"));
+    assert!(!raw.contains("hardware-write-semantics"));
+    let commands = owned["review_draft"]["validation_commands"]
+        .as_array()
+        .unwrap();
+    assert_eq!(commands.len(), 3);
+    assert!(commands[0].as_str().unwrap().contains("registers validate"));
+    assert!(commands[1].as_str().unwrap().contains("project analyze"));
+    assert!(
+        commands[2]
+            .as_str()
+            .unwrap()
+            .contains("project research next --finding register-0x20103100-32")
+    );
+    assert!(
+        commands
+            .iter()
+            .all(|command| command.as_str().unwrap().contains("vendor-project.toml"))
+    );
+
+    for (address, expected_state) in [
+        ("0x2010f4a0", "ignored"),
+        ("0x20100010", "reviewed"),
+        ("0x20100000", "non-operational"),
+        ("0x2010fcb0", "manual"),
+    ] {
+        let report = inspect(address);
+        assert_eq!(report["schema_version"], 4);
+        assert_eq!(report["register"]["review_status"], expected_state);
+        assert!(report["review_draft"].is_null());
+    }
+}
+
+#[test]
+fn research_schema_nine_exact_finding_lookup_is_not_a_completion_verdict() {
+    let lookup = |finding: &str| {
+        let output = blobray()
+            .args([
+                "project",
+                "research",
+                "next",
+                "--scope",
+                "ieee802154-baseband-leaves",
+                "--finding",
+                finding,
+                "--project",
+            ])
+            .arg(project())
+            .args([
+                "--format",
+                "json",
+                "--color",
+                "never",
+                "--progress",
+                "never",
+            ])
+            .output()
+            .expect("look up exact research finding");
+        assert!(
+            output.status.success(),
+            "{finding} stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+
+    let open = lookup("register-0x20103100-32");
+    assert_eq!(open["schema_version"], 9);
+    assert_eq!(open["completion_claim"], false);
+    assert_eq!(open["finding_query"]["state"], "open");
+    assert_eq!(open["finding_query"]["completion_claim"], false);
+    assert_eq!(open["inventory"]["findings"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        open["inventory"]["findings"][0]["id"],
+        "register-0x20103100-32"
+    );
+
+    let missing = lookup("register-not-current");
+    assert_eq!(missing["schema_version"], 9);
+    assert_eq!(missing["completion_claim"], false);
+    assert_eq!(missing["finding_query"]["state"], "not-present");
+    assert_eq!(missing["finding_query"]["completion_claim"], false);
+    assert!(
+        missing["finding_query"]["interpretation"]
+            .as_str()
+            .unwrap()
+            .contains("not proof")
+    );
+    assert!(
+        missing["inventory"]["findings"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        missing["inventory"]["actions"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn checked_in_project_and_target_owned_review_packs_pass_doctor() {
     let output = blobray()
         .args(["project", "doctor", "--project"])

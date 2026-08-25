@@ -158,7 +158,12 @@ cargo blobray project browse \
 `project research next` ranks the current blockers and unreviewed register or
 interface facts by guaranteed, optimistic and co-blocked downstream impact;
 use `--scope ID` to focus Wi-Fi, BLE or 802.15.4. `inspect` is the detailed
-console view. With `--replacement`, a matching
+console view. Use `project research next --finding ID` after reanalysis to
+distinguish a currently open finding from an ID that is merely not present;
+neither state is a completion claim. Owned unreviewed registers expose a
+`review-required` raw TOML draft through `inspect register`, while external or
+already reviewed addresses never receive a publication draft. With
+`--replacement`, a matching
 concrete case shows one canonical ordered effect trace with separate vendor
 and Rust instruction provenance; use `--case ID` to select a case and
 `--details` to show all matching cases. `project browse` is the supplementary

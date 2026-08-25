@@ -846,6 +846,19 @@ mod tests {
             panic!("unexpected argument type")
         };
         assert_eq!(arguments.strategy, ResearchRankingArg::Frontier);
+
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "research".to_owned(),
+            "next".to_owned(),
+            "--finding".to_owned(),
+            "register-0x20103100-32".to_owned(),
+        ])
+        .unwrap();
+        let Command::ResearchNext(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.finding.as_deref(), Some("register-0x20103100-32"));
     }
 
     #[test]

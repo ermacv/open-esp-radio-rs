@@ -40,6 +40,9 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
         ResolvedInvocation::ResearchNext { arguments, session } => {
             commands::run_research_next(arguments, &session)
         }
+        ResolvedInvocation::InspectRegister { arguments, session } => {
+            commands::run_inspect_register(arguments, &session)
+        }
         ResolvedInvocation::ProjectAuditBindings(session) => {
             commands::run_project_audit_bindings(&session)
         }

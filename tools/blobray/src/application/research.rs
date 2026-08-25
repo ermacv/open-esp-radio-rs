@@ -21,7 +21,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 8;
+pub(crate) const RESEARCH_SCHEMA: u32 = 9;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -46,9 +46,27 @@ impl ResearchRankingStrategy {
 pub(crate) struct ResearchNextOptions<'a> {
     pub(crate) scope: Option<&'a str>,
     pub(crate) protocol: Option<&'a str>,
+    pub(crate) finding: Option<&'a str>,
     pub(crate) strategy: ResearchRankingStrategy,
     pub(crate) budget: Option<u64>,
     pub(crate) limit: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ResearchFindingQueryState {
+    All,
+    Open,
+    NotPresent,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ResearchFindingQuery {
+    pub(crate) state: ResearchFindingQueryState,
+    pub(crate) finding_id: Option<String>,
+    /// Looking up a queue identity never proves the underlying research done.
+    pub(crate) completion_claim: bool,
+    pub(crate) interpretation: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -352,6 +370,7 @@ pub(crate) struct ResearchNextReport {
     pub(crate) protocol: Option<String>,
     pub(crate) scope: Option<String>,
     pub(crate) analyzed_scopes: Vec<String>,
+    pub(crate) finding_query: ResearchFindingQuery,
     /// Research prioritization never proves that the investigation is complete.
     pub(crate) completion_claim: bool,
     pub(crate) capability_diagnostic: Option<String>,
@@ -464,6 +483,7 @@ pub(crate) fn next(
     add_unknown_semantics(session, &scopes, &graphs, &mut candidates)?;
     add_interfaces(session, &scopes, &graphs, &mut candidates)?;
     attach_candidate_co_blockers(&mut candidates);
+    let finding_query = apply_finding_query(&mut candidates, options.finding)?;
     let (capabilities, capability_diagnostic) = capability_contexts(session);
     let (surfaces, verification_diagnostic) = verification_contexts(&session.project);
     let context = session.context();
@@ -530,6 +550,7 @@ pub(crate) fn next(
         protocol: selected_protocol.map(str::to_owned),
         scope: options.scope.map(str::to_owned),
         analyzed_scopes,
+        finding_query,
         completion_claim: false,
         capability_diagnostic,
         verification_diagnostic,
@@ -666,6 +687,11 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
             report.schema_version
         )));
     }
+    if report.completion_claim || report.finding_query.completion_claim {
+        return Err(crate::Error::invalid(
+            "research finding lookup cannot claim completion",
+        ));
+    }
     let inventory = &report.inventory;
     validate_sorted_unique_ids(
         "finding",
@@ -687,6 +713,19 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
         .iter()
         .map(|finding| finding.id.as_str())
         .collect::<BTreeSet<_>>();
+    match (
+        report.finding_query.state,
+        report.finding_query.finding_id.as_deref(),
+    ) {
+        (ResearchFindingQueryState::All, None) => {}
+        (ResearchFindingQueryState::Open, Some(id)) if finding_ids == [id].into() => {}
+        (ResearchFindingQueryState::NotPresent, Some(_)) if finding_ids.is_empty() => {}
+        _ => {
+            return Err(crate::Error::invalid(
+                "research finding query state does not match the exact inventory",
+            ));
+        }
+    }
     let action_ids = inventory
         .actions
         .iter()
@@ -1662,6 +1701,43 @@ fn attach_candidate_co_blockers(candidates: &mut BTreeMap<String, Accumulator>) 
     }
 }
 
+fn apply_finding_query(
+    candidates: &mut BTreeMap<String, Accumulator>,
+    requested: Option<&str>,
+) -> Result<ResearchFindingQuery> {
+    let Some(requested) = requested else {
+        return Ok(ResearchFindingQuery {
+            state: ResearchFindingQueryState::All,
+            finding_id: None,
+            completion_claim: false,
+            interpretation: "no exact finding was requested; the inventory contains every finding in the selected current scopes"
+                .to_owned(),
+        });
+    };
+    if requested.is_empty() {
+        return Err(crate::Error::invalid(
+            "research finding ID must not be empty",
+        ));
+    }
+    let present = candidates.contains_key(requested);
+    candidates.retain(|id, _| id == requested);
+    Ok(ResearchFindingQuery {
+        state: if present {
+            ResearchFindingQueryState::Open
+        } else {
+            ResearchFindingQueryState::NotPresent
+        },
+        finding_id: Some(requested.to_owned()),
+        completion_claim: false,
+        interpretation: if present {
+            "the exact finding is open in the selected current analyzed inputs; this is not a completion claim"
+        } else {
+            "the exact finding ID is absent from the selected current analyzed inputs; absence is not proof of correctness or completion"
+        }
+        .to_owned(),
+    })
+}
+
 fn candidate_domain(kind: &str) -> &'static str {
     match kind {
         "register-model" | "register-write-semantics" => "register",
@@ -2453,6 +2529,12 @@ mod tests {
             protocol: None,
             scope: None,
             analyzed_scopes,
+            finding_query: ResearchFindingQuery {
+                state: ResearchFindingQueryState::All,
+                finding_id: None,
+                completion_claim: false,
+                interpretation: "fixture all-findings query".to_owned(),
+            },
             completion_claim: false,
             capability_diagnostic: None,
             verification_diagnostic: None,
@@ -2751,7 +2833,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 8);
+        assert_eq!(report.schema_version, 9);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -2765,6 +2847,41 @@ mod tests {
                 .len(),
             3
         );
+    }
+
+    #[test]
+    fn exact_finding_query_reports_open_or_not_present_without_completion() {
+        let candidates = || {
+            BTreeMap::from([
+                (
+                    "register-0x20103100-32".to_owned(),
+                    accumulator("register-0x20103100-32", "register-model"),
+                ),
+                ("other".to_owned(), accumulator("other", "unresolved-call")),
+            ])
+        };
+
+        let mut all = candidates();
+        let all_query = apply_finding_query(&mut all, None).unwrap();
+        assert_eq!(all_query.state, ResearchFindingQueryState::All);
+        assert_eq!(all.len(), 2);
+        assert!(!all_query.completion_claim);
+
+        let mut open = candidates();
+        let open_query = apply_finding_query(&mut open, Some("register-0x20103100-32")).unwrap();
+        assert_eq!(open_query.state, ResearchFindingQueryState::Open);
+        assert_eq!(
+            open.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["register-0x20103100-32"]
+        );
+        assert!(!open_query.completion_claim);
+
+        let mut missing = candidates();
+        let missing_query = apply_finding_query(&mut missing, Some("register-missing")).unwrap();
+        assert_eq!(missing_query.state, ResearchFindingQueryState::NotPresent);
+        assert!(missing.is_empty());
+        assert!(!missing_query.completion_claim);
+        assert!(missing_query.interpretation.contains("not proof"));
     }
 
     #[test]
@@ -2801,7 +2918,7 @@ mod tests {
         assert_eq!(original.selection.steps, changed.selection.steps);
         assert_ne!(original.inventory.sha256, changed.inventory.sha256);
         let path = std::env::temp_dir().join(format!(
-            "blobray-research-schema8-check-{}.json",
+            "blobray-research-schema9-check-{}.json",
             std::process::id()
         ));
         if path.exists() {
@@ -3196,7 +3313,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_eight_serializes_one_finding_catalog_and_typed_references() {
+    fn schema_nine_serializes_query_and_one_typed_finding_catalog() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -3221,7 +3338,9 @@ mod tests {
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 8);
+        assert_eq!(value["schema_version"], 9);
+        assert_eq!(value["finding_query"]["state"], "all");
+        assert_eq!(value["finding_query"]["completion_claim"], false);
         assert_eq!(
             value["inventory"]["findings"][0]["subject"]["kind"],
             "mmio-register"

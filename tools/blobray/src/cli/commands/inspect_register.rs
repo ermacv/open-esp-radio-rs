@@ -5,6 +5,10 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use super::super::*;
+use crate::registers::{
+    RegisterFacts, RegisterPublicationOwnership, classify_register_publication,
+    load_effective_register_model, render_sparse_review_draft,
+};
 
 #[derive(Serialize)]
 struct RegisterInvestigationReport {
@@ -13,7 +17,18 @@ struct RegisterInvestigationReport {
     register: crate::RegisterDetailSummary,
     neighbors: Vec<RegisterNeighbor>,
     recording: Option<RegisterRecordingGuide>,
+    review_draft: Option<RegisterReviewDraft>,
     conclusion: String,
+}
+
+#[derive(Serialize)]
+struct RegisterReviewDraft {
+    state: &'static str,
+    completion_claim: bool,
+    finding_id: String,
+    destination: String,
+    raw_toml: String,
+    validation_commands: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -37,26 +52,90 @@ struct RegisterRecordingGuide {
 
 pub(super) fn run(
     arguments: InspectRegisterArgs,
-    project: &ProjectSpec,
-    catalog: &MmioMap,
+    session: &crate::application::ProjectSession,
 ) -> Result<bool> {
     let address = parse_address(&arguments.address)?;
-    let detail = crate::application::register_detail_for_project(project, catalog, address)?
-        .ok_or_else(|| {
+    let detail = crate::application::register_detail_for_project(
+        &session.project,
+        &session.mmio,
+        address,
+    )?
+    .ok_or_else(|| {
             crate::Error::invalid(format!(
                 "MMIO address {address:#010x} is absent from discovery facts, the reviewed model and loaded SVD catalogs"
             ))
         })?;
     let report = RegisterInvestigationReport {
-        neighbors: neighbors(project, &detail)?,
-        recording: recording_guide(project, &detail)?,
+        neighbors: neighbors(&session.project, &detail)?,
+        recording: recording_guide(&session.project, &detail)?,
+        review_draft: review_draft(session, &detail)?,
         conclusion: conclusion(&detail),
-        schema_version: 3,
+        schema_version: 4,
         command: "inspect register",
         register: detail,
     };
     crate::cli::output::render_report(&report, || render_human(&report));
     Ok(true)
+}
+
+fn review_draft(
+    session: &crate::application::ProjectSession,
+    detail: &crate::RegisterDetailSummary,
+) -> Result<Option<RegisterReviewDraft>> {
+    let Some(paths) = session.project.registers.as_ref() else {
+        return Ok(None);
+    };
+    let Some(destination) = session.project.reviewed_knowledge_default.as_ref() else {
+        return Ok(None);
+    };
+    let Some(width) = detail.width else {
+        return Ok(None);
+    };
+    let facts = RegisterFacts::load(&paths.facts)?;
+    let Some(fact) = facts
+        .registers
+        .iter()
+        .find(|fact| fact.address == detail.address && fact.width == width)
+    else {
+        return Ok(None);
+    };
+    let ownership =
+        classify_register_publication(&facts, &paths.owned_ranges, fact.address, fact.width)?;
+    if !may_render_review_draft(detail.review_status, Some(ownership)) {
+        return Ok(None);
+    }
+    let model = load_effective_register_model(paths)?;
+    let finding_id = format!("register-{:#010x}-{}", fact.address, fact.width);
+    let context = session.context();
+    Ok(Some(RegisterReviewDraft {
+        state: "review-required",
+        completion_claim: false,
+        finding_id: finding_id.clone(),
+        destination: destination.display().to_string(),
+        raw_toml: render_sparse_review_draft(fact, model.address_space()),
+        validation_commands: vec![
+            context.follow_up_command(
+                "registers validate",
+                crate::application::FollowUpRequirements::TARGET,
+            ),
+            context.follow_up_command(
+                "project analyze",
+                crate::application::FollowUpRequirements::ANALYSIS,
+            ),
+            context.follow_up_command(
+                &format!("project research next --finding {finding_id}"),
+                crate::application::FollowUpRequirements::ANALYSIS,
+            ),
+        ],
+    }))
+}
+
+fn may_render_review_draft(
+    status: crate::RegisterReviewState,
+    ownership: Option<RegisterPublicationOwnership<'_>>,
+) -> bool {
+    status == crate::RegisterReviewState::Unreviewed
+        && matches!(ownership, Some(RegisterPublicationOwnership::Owned(_)))
 }
 
 fn recording_guide(
@@ -247,6 +326,25 @@ fn render_human(report: &RegisterInvestigationReport) {
         outputln!("Reuse:        {}", recording.reuse_rule);
     }
 
+    if let Some(draft) = &report.review_draft {
+        outputln!(
+            "\n{}",
+            crate::cli::output::heading("Unaccepted review draft — manual evidence required")
+        );
+        outputln!("State:        {}", draft.state);
+        outputln!("Completion:   false — this template does not prove or complete the finding");
+        outputln!("Finding:      {}", draft.finding_id);
+        outputln!("Destination:  {}", draft.destination);
+        outputln!("\n```toml\n{}```", draft.raw_toml);
+        outputln!("After editing and manually reviewing every placeholder:");
+        for command in &draft.validation_commands {
+            outputln!("  {command}");
+        }
+        outputln!(
+            "A not-present finding after reanalysis means only that the ID is absent from current analyzed inputs; it is not proof of correctness or completion."
+        );
+    }
+
     if !detail.operational_functions.is_empty()
         || !detail.non_operational_functions.is_empty()
         || !detail.related_functions.is_empty()
@@ -319,5 +417,45 @@ fn render_human(report: &RegisterInvestigationReport) {
     }
     if crate::cli::output::details() && !detail.review_sources.is_empty() {
         outputln!("\nEvidence: {}", detail.review_sources.join(", "));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn range(name: &str) -> crate::registers::FactRange {
+        crate::registers::FactRange {
+            name: name.to_owned(),
+            start: 0x2010_0000,
+            end: 0x2011_0000,
+        }
+    }
+
+    #[test]
+    fn draft_eligibility_requires_an_owned_unreviewed_observation() {
+        let owned = range("radio");
+        let external = range("platform");
+
+        assert!(may_render_review_draft(
+            crate::RegisterReviewState::Unreviewed,
+            Some(RegisterPublicationOwnership::Owned(&owned))
+        ));
+        assert!(!may_render_review_draft(
+            crate::RegisterReviewState::Unreviewed,
+            Some(RegisterPublicationOwnership::External(&external))
+        ));
+        assert!(!may_render_review_draft(
+            crate::RegisterReviewState::Reviewed,
+            Some(RegisterPublicationOwnership::Owned(&owned))
+        ));
+        assert!(!may_render_review_draft(
+            crate::RegisterReviewState::NonOperational,
+            Some(RegisterPublicationOwnership::Owned(&owned))
+        ));
+        assert!(!may_render_review_draft(
+            crate::RegisterReviewState::Unreviewed,
+            None
+        ));
     }
 }

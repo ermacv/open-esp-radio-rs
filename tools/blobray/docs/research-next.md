@@ -23,7 +23,7 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 8. It separates the complete backlog from the
+The machine report uses schema 9. It separates the complete backlog from the
 bounded recommendation:
 
 - `inventory.findings` contains every typed finding exactly once;
@@ -33,6 +33,9 @@ bounded recommendation:
   action without a selection-specific rank;
 - `selection.steps` is the only ranked list. Its typed prerequisite/action
   references are bounded by `--limit` and `--budget`.
+- `finding_query` is always present. It is `all` without an exact lookup,
+  `open` when `--finding ID` matches the current selected inputs, and
+  `not-present` otherwise. Every state has `completion_claim = false`.
 
 An action is one copyable `inspect_command` and may coalesce several findings
 without duplicating them. A finding retains its typed `subject`, typed
@@ -110,7 +113,17 @@ cargo blobray project research next \
   --strategy frontier --scope ieee802154-coex-client --limit 20 \
   --format json \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+cargo blobray project research next \
+  --finding register-0x20103100-32 --format json \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
+
+Exact finding lookup derives the complete selected candidate set and its
+co-blockers before retaining the requested ID. With no `--finding`, the full
+inventory is unchanged. `not-present` means only that the exact ID is absent
+from the current analyzed inputs selected by `--scope`/`--protocol`; it is not
+proof that a review was correct or that research is complete.
 
 Every returned `inspect_command` includes the resolved `--project` path and
 remains directly actionable. Finding-level `revalidation_commands` describe
@@ -142,7 +155,7 @@ review inputs. All 29 configured scopes produced 1,918 findings, coalesced into
 | `quick-wins` | 161 / 485 | 20 / 0 | 60 | same cost-3 interface-anchor lane |
 | `frontier` | 1 / 13 | 1 / 13 | 60 | interface anchor, then the nondominated action frontier |
 
-The schema-8 all-scope report is 6,213,213 bytes as pretty generated JSON and
+The measured all-scope baseline report is 6,213,213 bytes as pretty generated JSON and
 4,318,279 bytes in compact form. The compact catalogs account for 3,829,455
 bytes of findings, 341,630 bytes of actions and 144,935 bytes of prerequisites.
 An impact run with `--limit 20` measured 10.68 seconds and 223,100 KiB peak RSS;

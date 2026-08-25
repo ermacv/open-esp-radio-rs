@@ -136,6 +136,10 @@ pub(super) fn resolve_command(
             arguments,
             session: Box::new(environment.into_project_session()?),
         },
+        Command::InspectRegister(arguments) => ResolvedInvocation::InspectRegister {
+            arguments,
+            session: Box::new(environment.into_project_session()?),
+        },
         Command::FunctionInitPack(arguments) => {
             let (project, target) = environment.into_project_target()?;
             ResolvedInvocation::FunctionWorkspace {
@@ -367,12 +371,6 @@ pub(super) fn resolve_command(
         },
         Command::InspectObject(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::InspectObject(arguments),
-            target: environment.target,
-            svd: environment.svd,
-            project: environment.project.map(Box::new),
-        },
-        Command::InspectRegister(arguments) => ResolvedInvocation::Target {
-            command: TargetCommand::InspectRegister(arguments),
             target: environment.target,
             svd: environment.svd,
             project: environment.project.map(Box::new),

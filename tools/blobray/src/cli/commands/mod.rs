@@ -122,6 +122,13 @@ pub(super) fn run_research_next(
     project_research::run(arguments, session)
 }
 
+pub(super) fn run_inspect_register(
+    arguments: super::InspectRegisterArgs,
+    session: &crate::application::ProjectSession,
+) -> Result<bool> {
+    inspect_register::run(arguments, session)
+}
+
 pub(super) fn run_project_audit_bindings(
     session: &crate::application::ProjectSession,
 ) -> Result<bool> {
@@ -263,11 +270,6 @@ pub(super) fn run_target(
         TargetCommand::InspectObject(arguments) => inspect_object::run(
             arguments,
             project.ok_or_else(|| crate::Error::invalid("inspect object requires --project"))?,
-        ),
-        TargetCommand::InspectRegister(arguments) => inspect_register::run(
-            arguments,
-            project.ok_or_else(|| crate::Error::invalid("inspect register requires --project"))?,
-            svd,
         ),
         TargetCommand::InspectScope(arguments) => inspect_scope::run(
             arguments,

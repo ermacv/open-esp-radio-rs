@@ -19,7 +19,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 9;
+pub(crate) const RESEARCH_SCHEMA: u32 = 10;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -55,7 +55,74 @@ pub(crate) struct ResearchNextOptions<'a> {
 pub(crate) enum ResearchFindingQueryState {
     All,
     Open,
+    ConditionSatisfied,
+    InputNotObserved,
+    FilteredOut,
     NotPresent,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ResearchRegisterResolutionSubject {
+    pub(crate) address_space: String,
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct ResearchRegisterObservationArtifact {
+    pub(crate) source: String,
+    pub(crate) sha256: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ResearchRegisterPublicationOwnership {
+    Owned,
+    External,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct ResearchRegisterObservationSite {
+    pub(crate) function: String,
+    pub(crate) pc: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ResearchRegisterObservationEvidence {
+    pub(crate) analysis_artifacts: Vec<ResearchRegisterObservationArtifact>,
+    pub(crate) range: String,
+    pub(crate) publication_ownership: ResearchRegisterPublicationOwnership,
+    pub(crate) read_functions: Vec<String>,
+    pub(crate) write_functions: Vec<String>,
+    pub(crate) read_sites: Vec<ResearchRegisterObservationSite>,
+    pub(crate) write_sites: Vec<ResearchRegisterObservationSite>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub(crate) enum ResearchFindingResolutionEvidence {
+    RegisterWorkspaceAbsent {
+        address: u32,
+        width: u8,
+    },
+    AbsentRegisterModel {
+        subject: ResearchRegisterResolutionSubject,
+        current_observation: Option<ResearchRegisterObservationEvidence>,
+        current_identity: Option<String>,
+        matching_scopes: Vec<String>,
+        applied_assertions: Vec<open_radio_vendor_review::EffectiveAssertion>,
+        model_sources: Vec<String>,
+    },
+    UnknownHardwareWriteSemantics {
+        assertion_id: String,
+        effective_write_semantics: String,
+        subject: ResearchRegisterResolutionSubject,
+        current_observation: Option<ResearchRegisterObservationEvidence>,
+        current_identity: Option<String>,
+        matching_scopes: Vec<String>,
+        applied_assertions: Vec<open_radio_vendor_review::EffectiveAssertion>,
+        model_sources: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -64,7 +131,11 @@ pub(crate) struct ResearchFindingQuery {
     pub(crate) finding_id: Option<String>,
     /// Looking up a queue identity never proves the underlying research done.
     pub(crate) completion_claim: bool,
+    /// Exact lookup is not evidence about a prior occurrence of this ID.
+    pub(crate) historical_finding_claim: bool,
     pub(crate) interpretation: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) resolution_evidence: Option<ResearchFindingResolutionEvidence>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -463,7 +534,13 @@ pub(crate) fn next(
         .collect::<Vec<_>>();
     analyzed_scopes.sort();
     analyzed_scopes.dedup();
-    let (direct_diagnostic_owners, graphs) = load_research_graphs(session, &scopes)?;
+    let configured_scopes = document.scopes.iter().collect::<Vec<_>>();
+    let graph_scopes = if options.finding.is_some() {
+        configured_scopes.clone()
+    } else {
+        scopes.clone()
+    };
+    let (direct_diagnostic_owners, graphs) = load_research_graphs(session, &graph_scopes)?;
     let mut candidates = BTreeMap::new();
     for scope in &scopes {
         add_blockers(
@@ -473,10 +550,11 @@ pub(crate) fn next(
             &mut candidates,
         )?;
     }
-    if let Some(paths) = session.project.registers.as_ref() {
+    let exact_resolution = if let Some(paths) = session.project.registers.as_ref() {
         // These adjacent producers share the heavyweight MMIO facts, but the
         // workspace must be dropped before interface ranking and rendering.
         let workspace = ProjectRegisterWorkspace::load(paths)?;
+        let knowledge = selected_review_knowledge(session)?;
         add_registers(
             session,
             paths,
@@ -489,14 +567,28 @@ pub(crate) fn next(
             session,
             paths,
             &workspace,
+            &knowledge,
             &scopes,
             &graphs,
             &mut candidates,
         )?;
-    }
+        resolve_exact_register_finding(
+            options.finding,
+            &ExactRegisterResolutionContext {
+                paths,
+                workspace: &workspace,
+                knowledge: &knowledge,
+                configured_scopes: &configured_scopes,
+                selected_scopes: &scopes,
+                graphs: &graphs,
+            },
+        )?
+    } else {
+        resolve_exact_without_register_workspace(options.finding)
+    };
     add_interfaces(session, &scopes, &graphs, &mut candidates)?;
     attach_candidate_co_blockers(&mut candidates);
-    let finding_query = apply_finding_query(&mut candidates, options.finding)?;
+    let finding_query = apply_finding_query(&mut candidates, options.finding, exact_resolution)?;
     let (capabilities, capability_diagnostic) = capability_contexts(session);
     let (surfaces, verification_diagnostic) = verification_contexts(&session.project);
     let context = session.context();
@@ -700,9 +792,12 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
             report.schema_version
         )));
     }
-    if report.completion_claim || report.finding_query.completion_claim {
+    if report.completion_claim
+        || report.finding_query.completion_claim
+        || report.finding_query.historical_finding_claim
+    {
         return Err(crate::Error::invalid(
-            "research finding lookup cannot claim completion",
+            "research finding lookup cannot claim completion or historical occurrence",
         ));
     }
     let inventory = &report.inventory;
@@ -730,14 +825,37 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
         report.finding_query.state,
         report.finding_query.finding_id.as_deref(),
     ) {
-        (ResearchFindingQueryState::All, None) => {}
+        (ResearchFindingQueryState::All, None)
+            if report.finding_query.resolution_evidence.is_none() => {}
         (ResearchFindingQueryState::Open, Some(id)) if finding_ids == [id].into() => {}
-        (ResearchFindingQueryState::NotPresent, Some(_)) if finding_ids.is_empty() => {}
+        (
+            ResearchFindingQueryState::ConditionSatisfied
+            | ResearchFindingQueryState::InputNotObserved
+            | ResearchFindingQueryState::FilteredOut
+            | ResearchFindingQueryState::NotPresent,
+            Some(_),
+        ) if finding_ids.is_empty() => {}
         _ => {
             return Err(crate::Error::invalid(
                 "research finding query state does not match the exact inventory",
             ));
         }
+    }
+    validate_finding_resolution(report)?;
+    if matches!(
+        report.finding_query.state,
+        ResearchFindingQueryState::ConditionSatisfied
+            | ResearchFindingQueryState::InputNotObserved
+            | ResearchFindingQueryState::FilteredOut
+            | ResearchFindingQueryState::NotPresent
+    ) && (!report.selection.steps.is_empty()
+        || report.selection.eligible_actions != 0
+        || report.selection.eligible_prerequisites != 0
+        || report.selection.consumed_budget != 0)
+    {
+        return Err(crate::Error::invalid(
+            "terminal exact finding resolution must have an empty selection",
+        ));
     }
     let action_ids = inventory
         .actions
@@ -830,6 +948,254 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+fn validate_finding_resolution(report: &ResearchNextReport) -> Result<()> {
+    let state = report.finding_query.state;
+    let evidence = report.finding_query.resolution_evidence.as_ref();
+    if let Some(evidence) = evidence {
+        let Some(finding_id) = report.finding_query.finding_id.as_deref() else {
+            return Err(crate::Error::invalid(
+                "typed finding resolution evidence requires an exact finding ID",
+            ));
+        };
+        if !resolution_evidence_matches_finding(finding_id, evidence) {
+            return Err(crate::Error::invalid(
+                "research finding resolution evidence does not match the exact finding ID and subject",
+            ));
+        }
+    }
+    let selected_scopes = report
+        .analyzed_scopes
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let intersects_selected = |matching_scopes: &[String]| {
+        matching_scopes
+            .iter()
+            .any(|scope| selected_scopes.contains(scope.as_str()))
+    };
+    let valid = match (state, evidence) {
+        (ResearchFindingQueryState::All, None) => true,
+        (ResearchFindingQueryState::Open, None) => true,
+        (
+            ResearchFindingQueryState::Open,
+            Some(ResearchFindingResolutionEvidence::AbsentRegisterModel {
+                current_observation: Some(_),
+                current_identity: None,
+                matching_scopes,
+                applied_assertions,
+                ..
+            }),
+        ) => {
+            !matching_scopes.is_empty()
+                && intersects_selected(matching_scopes)
+                && applied_assertions.is_empty()
+        }
+        (
+            ResearchFindingQueryState::Open,
+            Some(ResearchFindingResolutionEvidence::UnknownHardwareWriteSemantics {
+                assertion_id,
+                effective_write_semantics,
+                current_observation: Some(_),
+                matching_scopes,
+                applied_assertions,
+                ..
+            }),
+        ) => {
+            effective_write_semantics == "unknown"
+                && !matching_scopes.is_empty()
+                && intersects_selected(matching_scopes)
+                && semantic_assertion_matches(
+                    assertion_id,
+                    effective_write_semantics,
+                    applied_assertions,
+                )
+        }
+        (
+            ResearchFindingQueryState::ConditionSatisfied,
+            Some(ResearchFindingResolutionEvidence::AbsentRegisterModel {
+                current_observation: Some(observation),
+                current_identity: Some(_),
+                matching_scopes,
+                applied_assertions,
+                ..
+            }),
+        ) => {
+            observation.publication_ownership == ResearchRegisterPublicationOwnership::Owned
+                && !matching_scopes.is_empty()
+                && intersects_selected(matching_scopes)
+                && applied_assertions.len() == 2
+                && applied_assertions
+                    .iter()
+                    .map(|assertion| assertion.kind.as_str())
+                    .collect::<BTreeSet<_>>()
+                    == ["register-declaration", "register-name"].into()
+                && applied_assertions
+                    .iter()
+                    .all(|assertion| !assertion.evidence.is_empty())
+        }
+        (
+            ResearchFindingQueryState::ConditionSatisfied,
+            Some(ResearchFindingResolutionEvidence::UnknownHardwareWriteSemantics {
+                assertion_id,
+                effective_write_semantics,
+                current_observation: Some(observation),
+                current_identity: Some(_),
+                matching_scopes,
+                applied_assertions,
+                ..
+            }),
+        ) => {
+            observation.publication_ownership == ResearchRegisterPublicationOwnership::Owned
+                && effective_write_semantics != "unknown"
+                && !matching_scopes.is_empty()
+                && intersects_selected(matching_scopes)
+                && semantic_assertion_matches(
+                    assertion_id,
+                    effective_write_semantics,
+                    applied_assertions,
+                )
+        }
+        (
+            ResearchFindingQueryState::InputNotObserved,
+            Some(ResearchFindingResolutionEvidence::RegisterWorkspaceAbsent { .. }),
+        ) => true,
+        (
+            ResearchFindingQueryState::InputNotObserved,
+            Some(
+                ResearchFindingResolutionEvidence::AbsentRegisterModel {
+                    current_identity: None,
+                    matching_scopes,
+                    applied_assertions,
+                    model_sources,
+                    ..
+                }
+                | ResearchFindingResolutionEvidence::UnknownHardwareWriteSemantics {
+                    current_identity: None,
+                    matching_scopes,
+                    applied_assertions,
+                    model_sources,
+                    ..
+                },
+            ),
+        ) => {
+            matching_scopes.is_empty() && applied_assertions.is_empty() && model_sources.is_empty()
+        }
+        (
+            ResearchFindingQueryState::FilteredOut,
+            Some(
+                ResearchFindingResolutionEvidence::AbsentRegisterModel {
+                    current_observation: Some(_),
+                    current_identity: None,
+                    matching_scopes,
+                    applied_assertions,
+                    model_sources,
+                    ..
+                }
+                | ResearchFindingResolutionEvidence::UnknownHardwareWriteSemantics {
+                    current_observation: Some(_),
+                    current_identity: None,
+                    matching_scopes,
+                    applied_assertions,
+                    model_sources,
+                    ..
+                },
+            ),
+        ) => {
+            !matching_scopes.is_empty()
+                && !intersects_selected(matching_scopes)
+                && applied_assertions.is_empty()
+                && model_sources.is_empty()
+        }
+        (ResearchFindingQueryState::NotPresent, None) => true,
+        (
+            ResearchFindingQueryState::NotPresent,
+            Some(
+                ResearchFindingResolutionEvidence::AbsentRegisterModel {
+                    current_observation: Some(_),
+                    matching_scopes,
+                    ..
+                }
+                | ResearchFindingResolutionEvidence::UnknownHardwareWriteSemantics {
+                    current_observation: Some(_),
+                    matching_scopes,
+                    ..
+                },
+            ),
+        ) => !matching_scopes.is_empty() && intersects_selected(matching_scopes),
+        _ => false,
+    };
+    if !valid {
+        return Err(crate::Error::invalid(format!(
+            "research finding resolution evidence does not satisfy state {state:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn resolution_evidence_matches_finding(
+    finding_id: &str,
+    evidence: &ResearchFindingResolutionEvidence,
+) -> bool {
+    match evidence {
+        ResearchFindingResolutionEvidence::RegisterWorkspaceAbsent { address, width } => {
+            register_finding_id(*address, *width) == finding_id
+        }
+        ResearchFindingResolutionEvidence::AbsentRegisterModel {
+            subject,
+            applied_assertions,
+            ..
+        } => {
+            register_finding_id(subject.address, subject.width) == finding_id
+                && assertions_match_register_subject(applied_assertions, subject)
+                && (applied_assertions.len() < 2
+                    || applied_assertions
+                        .windows(2)
+                        .all(|pair| pair[0].applies_to == pair[1].applies_to))
+        }
+        ResearchFindingResolutionEvidence::UnknownHardwareWriteSemantics {
+            assertion_id,
+            subject,
+            applied_assertions,
+            ..
+        } => {
+            format!("semantic-{assertion_id}") == finding_id
+                && assertions_match_register_subject(applied_assertions, subject)
+        }
+    }
+}
+
+fn register_finding_id(address: u32, width: u8) -> String {
+    format!("register-{address:#010x}-{width}")
+}
+
+fn assertions_match_register_subject(
+    assertions: &[open_radio_vendor_review::EffectiveAssertion],
+    subject: &ResearchRegisterResolutionSubject,
+) -> bool {
+    let expected = format!(
+        "mmio:{}:{:#010x}/{}",
+        subject.address_space, subject.address, subject.width
+    );
+    assertions
+        .iter()
+        .all(|assertion| assertion.subject == expected)
+}
+
+fn semantic_assertion_matches(
+    assertion_id: &str,
+    effective_write_semantics: &str,
+    applied_assertions: &[open_radio_vendor_review::EffectiveAssertion],
+) -> bool {
+    applied_assertions.len() == 1
+        && applied_assertions.first().is_some_and(|assertion| {
+            assertion.id == assertion_id
+                && assertion.kind == "hardware-write-semantics"
+                && !assertion.evidence.is_empty()
+                && normalize_write_semantics(&assertion.value).as_deref()
+                    == Some(effective_write_semantics)
+        })
 }
 
 fn validate_sorted_unique_ids<'a>(kind: &str, ids: impl Iterator<Item = &'a str>) -> Result<()> {
@@ -1514,17 +1880,9 @@ fn add_register_seed(
     fact: &crate::registers::RegisterFact,
     template: SeedTemplate,
 ) -> Result<()> {
-    let function_keys = fact
-        .read_functions
-        .iter()
-        .chain(&fact.write_functions)
-        .collect::<BTreeSet<_>>();
     for scope in scopes {
         let graph = &graphs[&scope.id];
-        let direct = function_keys
-            .iter()
-            .filter_map(|function| resolve_function(graph, function))
-            .collect::<BTreeSet<_>>();
+        let direct = register_fact_functions_in_scope(fact, graph);
         if direct.is_empty() {
             continue;
         }
@@ -1558,22 +1916,28 @@ fn add_register_seed(
     Ok(())
 }
 
+fn register_fact_functions_in_scope(
+    fact: &crate::registers::RegisterFact,
+    graph: &ScopeGraph,
+) -> BTreeSet<String> {
+    fact.read_functions
+        .iter()
+        .chain(&fact.write_functions)
+        .filter_map(|function| resolve_function(graph, function))
+        .collect()
+}
+
 fn add_unknown_semantics(
     session: &ProjectSession,
     paths: &crate::project::RegisterWorkspacePaths,
     workspace: &ProjectRegisterWorkspace,
+    knowledge: &open_radio_vendor_review::ReviewKnowledge,
     scopes: &[&ReviewScopeReport],
     graphs: &BTreeMap<String, ScopeGraph>,
     candidates: &mut BTreeMap<String, Accumulator>,
 ) -> Result<()> {
     let facts = workspace.required_facts()?;
     let model_address_space = workspace.model().address_space().to_owned();
-    let knowledge =
-        open_radio_vendor_review::ReviewKnowledge::load_all(&session.project.reviewed_knowledge)
-            .and_then(|knowledge| knowledge.select_for(&session.project.review_context))
-            .map_err(|error| {
-                crate::Error::invalid(format!("cannot prioritize reviewed knowledge: {error}"))
-            })?;
     for assertion in knowledge.assertions().values().filter(|assertion| {
         assertion.kind == "hardware-write-semantics"
             && matches!(&assertion.value, open_radio_vendor_review::AssertionValue::String(value) if value == "unknown")
@@ -1629,6 +1993,16 @@ fn add_unknown_semantics(
         )?;
     }
     Ok(())
+}
+
+fn selected_review_knowledge(
+    session: &ProjectSession,
+) -> Result<open_radio_vendor_review::ReviewKnowledge> {
+    open_radio_vendor_review::ReviewKnowledge::load_all(&session.project.reviewed_knowledge)
+        .and_then(|knowledge| knowledge.select_for(&session.project.review_context))
+        .map_err(|error| {
+            crate::Error::invalid(format!("cannot prioritize reviewed knowledge: {error}"))
+        })
 }
 
 fn parse_register(subject: &str) -> Option<(String, u32, u8)> {
@@ -1797,17 +2171,544 @@ fn attach_candidate_co_blockers(candidates: &mut BTreeMap<String, Accumulator>) 
     }
 }
 
+struct ExactFindingResolution {
+    state: ResearchFindingQueryState,
+    interpretation: String,
+    evidence: Option<ResearchFindingResolutionEvidence>,
+}
+
+struct ExactRegisterResolutionContext<'a> {
+    paths: &'a crate::project::RegisterWorkspacePaths,
+    workspace: &'a ProjectRegisterWorkspace,
+    knowledge: &'a open_radio_vendor_review::ReviewKnowledge,
+    configured_scopes: &'a [&'a ReviewScopeReport],
+    selected_scopes: &'a [&'a ReviewScopeReport],
+    graphs: &'a BTreeMap<String, ScopeGraph>,
+}
+
+fn resolve_exact_without_register_workspace(
+    requested: Option<&str>,
+) -> Option<ExactFindingResolution> {
+    let (address, width) = parse_register_finding_id(requested?)?;
+    Some(ExactFindingResolution {
+        state: ResearchFindingQueryState::InputNotObserved,
+        interpretation: "the register finding cannot be resolved because the project has no current MMIO discovery workspace".to_owned(),
+        evidence: Some(ResearchFindingResolutionEvidence::RegisterWorkspaceAbsent {
+            address,
+            width,
+        }),
+    })
+}
+
+fn resolve_exact_register_finding(
+    requested: Option<&str>,
+    context: &ExactRegisterResolutionContext<'_>,
+) -> Result<Option<ExactFindingResolution>> {
+    let ExactRegisterResolutionContext {
+        paths,
+        workspace,
+        knowledge,
+        configured_scopes,
+        selected_scopes,
+        graphs,
+    } = context;
+    let Some(requested) = requested else {
+        return Ok(None);
+    };
+    if let Some((address, width)) = parse_register_finding_id(requested) {
+        return resolve_register_model_finding(context, address, width).map(Some);
+    }
+    let Some(assertion_id) = requested.strip_prefix("semantic-") else {
+        return Ok(None);
+    };
+    let Some(assertion) = knowledge.assertions().get(assertion_id) else {
+        return Ok(None);
+    };
+    if assertion.kind != "hardware-write-semantics" || assertion.evidence.is_empty() {
+        return Ok(None);
+    }
+    let Some(effective_write_semantics) = normalize_write_semantics(&assertion.value) else {
+        return Ok(None);
+    };
+    let Some((address_space, address, width)) = parse_register(&assertion.subject) else {
+        return Ok(None);
+    };
+    if address_space != workspace.model().address_space() {
+        return Ok(None);
+    }
+    let subject = ResearchRegisterResolutionSubject {
+        address_space,
+        address,
+        width,
+    };
+    let facts = workspace.required_facts()?;
+    let Some(fact) = facts
+        .registers
+        .iter()
+        .find(|fact| fact.address == address && fact.width == width)
+    else {
+        return Ok(Some(register_resolution(
+            ExactRegisterPredicate::UnknownHardwareWriteSemantics {
+                assertion_id: assertion.id.clone(),
+                effective_write_semantics: effective_write_semantics.clone(),
+            },
+            ResearchFindingQueryState::InputNotObserved,
+            ExactRegisterEvidence {
+                subject,
+                current_observation: None,
+                current_identity: None,
+                matching_scopes: Vec::new(),
+                applied_assertions: Vec::new(),
+                model_sources: Vec::new(),
+            },
+            "the exact semantic assertion remains configured, but its physical register is not observed in current MMIO discovery facts",
+        )));
+    };
+    let observation = register_observation_evidence(facts, paths, fact)?;
+    let matching_scopes = matching_register_scopes(fact, configured_scopes, graphs);
+    if matching_scopes.is_empty() {
+        return Ok(Some(register_resolution(
+            ExactRegisterPredicate::UnknownHardwareWriteSemantics {
+                assertion_id: assertion.id.clone(),
+                effective_write_semantics: effective_write_semantics.clone(),
+            },
+            ResearchFindingQueryState::InputNotObserved,
+            ExactRegisterEvidence {
+                subject,
+                current_observation: Some(observation.clone()),
+                current_identity: None,
+                matching_scopes: Vec::new(),
+                applied_assertions: Vec::new(),
+                model_sources: Vec::new(),
+            },
+            "the physical register is present in discovery facts but no configured review scope observes it through the current function graphs",
+        )));
+    }
+    if !selected_scope_intersects(&matching_scopes, selected_scopes) {
+        return Ok(Some(register_resolution(
+            ExactRegisterPredicate::UnknownHardwareWriteSemantics {
+                assertion_id: assertion.id.clone(),
+                effective_write_semantics: effective_write_semantics.clone(),
+            },
+            ResearchFindingQueryState::FilteredOut,
+            ExactRegisterEvidence {
+                subject,
+                current_observation: Some(observation.clone()),
+                current_identity: None,
+                matching_scopes,
+                applied_assertions: Vec::new(),
+                model_sources: Vec::new(),
+            },
+            "the physical register is observed by configured scopes, but none intersects the selected research filter",
+        )));
+    }
+    let identities = workspace.model().register_identities()?;
+    let current_identity = identities
+        .get(&(u64::from(address), u32::from(width)))
+        .cloned();
+    let model_sources = current_identity
+        .as_deref()
+        .map(|identity| model_sources(workspace, identity))
+        .unwrap_or_default();
+    let is_unknown = effective_write_semantics == "unknown";
+    let state = semantic_resolution_state(
+        &effective_write_semantics,
+        observation.publication_ownership,
+        current_identity.as_deref(),
+    );
+    Ok(Some(register_resolution(
+        ExactRegisterPredicate::UnknownHardwareWriteSemantics {
+            assertion_id: assertion.id.clone(),
+            effective_write_semantics,
+        },
+        state,
+        ExactRegisterEvidence {
+            subject,
+            current_observation: Some(observation),
+            current_identity,
+            matching_scopes,
+            applied_assertions: vec![assertion.clone()],
+            model_sources,
+        },
+        if is_unknown {
+            "the exact selected semantic assertion still records unknown hardware write semantics"
+        } else if state == ResearchFindingQueryState::ConditionSatisfied {
+            "the current producer predicate is false: the exact selected assertion records supported non-unknown write semantics with retained evidence for a project-owned modeled register"
+        } else {
+            "the finding is not current, but a non-unknown assertion is not satisfaction proof without a project-owned current effective register identity"
+        },
+    )))
+}
+
+fn resolve_register_model_finding(
+    context: &ExactRegisterResolutionContext<'_>,
+    address: u32,
+    width: u8,
+) -> Result<ExactFindingResolution> {
+    let ExactRegisterResolutionContext {
+        paths,
+        workspace,
+        knowledge,
+        configured_scopes,
+        selected_scopes,
+        graphs,
+    } = context;
+    let subject = ResearchRegisterResolutionSubject {
+        address_space: workspace.model().address_space().to_owned(),
+        address,
+        width,
+    };
+    let facts = workspace.required_facts()?;
+    let Some(fact) = facts
+        .registers
+        .iter()
+        .find(|fact| fact.address == address && fact.width == width)
+    else {
+        return Ok(register_resolution(
+            ExactRegisterPredicate::AbsentRegisterModel,
+            ResearchFindingQueryState::InputNotObserved,
+            ExactRegisterEvidence {
+                subject,
+                current_observation: None,
+                current_identity: None,
+                matching_scopes: Vec::new(),
+                applied_assertions: Vec::new(),
+                model_sources: Vec::new(),
+            },
+            "the exact register is absent from current MMIO discovery facts",
+        ));
+    };
+    let observation = register_observation_evidence(facts, paths, fact)?;
+    let matching_scopes = matching_register_scopes(fact, configured_scopes, graphs);
+    if matching_scopes.is_empty() {
+        return Ok(register_resolution(
+            ExactRegisterPredicate::AbsentRegisterModel,
+            ResearchFindingQueryState::InputNotObserved,
+            ExactRegisterEvidence {
+                subject,
+                current_observation: Some(observation.clone()),
+                current_identity: None,
+                matching_scopes: Vec::new(),
+                applied_assertions: Vec::new(),
+                model_sources: Vec::new(),
+            },
+            "the register is present in discovery facts but no configured review scope observes it through the current function graphs",
+        ));
+    }
+    if !selected_scope_intersects(&matching_scopes, selected_scopes) {
+        return Ok(register_resolution(
+            ExactRegisterPredicate::AbsentRegisterModel,
+            ResearchFindingQueryState::FilteredOut,
+            ExactRegisterEvidence {
+                subject,
+                current_observation: Some(observation.clone()),
+                current_identity: None,
+                matching_scopes,
+                applied_assertions: Vec::new(),
+                model_sources: Vec::new(),
+            },
+            "the register is observed by configured scopes, but none intersects the selected research filter",
+        ));
+    }
+    let identities = workspace.model().register_identities()?;
+    let current_identity = identities
+        .get(&(u64::from(address), u32::from(width)))
+        .cloned();
+    let model_sources = current_identity
+        .as_deref()
+        .map(|identity| model_sources(workspace, identity))
+        .unwrap_or_default();
+    if current_identity.is_none() {
+        return Ok(register_resolution(
+            ExactRegisterPredicate::AbsentRegisterModel,
+            ResearchFindingQueryState::Open,
+            ExactRegisterEvidence {
+                subject,
+                current_observation: Some(observation),
+                current_identity: None,
+                matching_scopes,
+                applied_assertions: Vec::new(),
+                model_sources,
+            },
+            "the exact observed and relevant register still has no current effective register identity",
+        ));
+    }
+    let retained = workspace
+        .model()
+        .reviewed_register_declarations()
+        .iter()
+        .find(|declaration| {
+            declaration.address_space == workspace.model().address_space()
+                && declaration.address == u64::from(address)
+                && declaration.width == u32::from(width)
+                && current_identity.as_deref() == Some(declaration.identity.as_str())
+        })
+        .and_then(|declaration| {
+            let configured_declaration = knowledge.assertions().get(&declaration.declaration.id)?;
+            let configured_name = knowledge.assertions().get(&declaration.name.id)?;
+            (configured_declaration == &declaration.declaration
+                && configured_name == &declaration.name
+                && configured_declaration.subject == configured_name.subject
+                && configured_declaration.applies_to == configured_name.applies_to
+                && !configured_declaration.evidence.is_empty()
+                && !configured_name.evidence.is_empty())
+            .then(|| vec![configured_declaration.clone(), configured_name.clone()])
+        });
+    let state =
+        modeled_register_resolution_state(observation.publication_ownership, retained.is_some());
+    if state == ResearchFindingQueryState::ConditionSatisfied {
+        let applied_assertions = retained.expect("satisfied register identity is retained");
+        return Ok(register_resolution(
+            ExactRegisterPredicate::AbsentRegisterModel,
+            state,
+            ExactRegisterEvidence {
+                subject,
+                current_observation: Some(observation),
+                current_identity,
+                matching_scopes,
+                applied_assertions,
+                model_sources,
+            },
+            "the current producer predicate is false: the observed relevant project-owned register has an exact retained reviewed declaration/name pair",
+        ));
+    }
+    Ok(register_resolution(
+        ExactRegisterPredicate::AbsentRegisterModel,
+        ResearchFindingQueryState::NotPresent,
+        ExactRegisterEvidence {
+            subject,
+            current_observation: Some(observation),
+            current_identity,
+            matching_scopes,
+            applied_assertions: Vec::new(),
+            model_sources,
+        },
+        "the finding is not current, but no exact retained reviewed declaration/name pair attributes that absence; a base-model identity alone is not satisfaction proof",
+    ))
+}
+
+fn semantic_resolution_state(
+    effective_write_semantics: &str,
+    ownership: ResearchRegisterPublicationOwnership,
+    current_identity: Option<&str>,
+) -> ResearchFindingQueryState {
+    if effective_write_semantics == "unknown" {
+        ResearchFindingQueryState::Open
+    } else if ownership == ResearchRegisterPublicationOwnership::Owned && current_identity.is_some()
+    {
+        ResearchFindingQueryState::ConditionSatisfied
+    } else {
+        ResearchFindingQueryState::NotPresent
+    }
+}
+
+fn modeled_register_resolution_state(
+    ownership: ResearchRegisterPublicationOwnership,
+    retained_identity: bool,
+) -> ResearchFindingQueryState {
+    if ownership == ResearchRegisterPublicationOwnership::Owned && retained_identity {
+        ResearchFindingQueryState::ConditionSatisfied
+    } else {
+        ResearchFindingQueryState::NotPresent
+    }
+}
+
+fn matching_register_scopes(
+    fact: &crate::registers::RegisterFact,
+    scopes: &[&ReviewScopeReport],
+    graphs: &BTreeMap<String, ScopeGraph>,
+) -> Vec<String> {
+    scopes
+        .iter()
+        .filter(|scope| !register_fact_functions_in_scope(fact, &graphs[&scope.id]).is_empty())
+        .map(|scope| scope.id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn selected_scope_intersects(
+    matching_scopes: &[String],
+    selected_scopes: &[&ReviewScopeReport],
+) -> bool {
+    let selected = selected_scopes
+        .iter()
+        .map(|scope| scope.id.as_str())
+        .collect::<BTreeSet<_>>();
+    matching_scopes
+        .iter()
+        .any(|scope| selected.contains(scope.as_str()))
+}
+
+fn model_sources(workspace: &ProjectRegisterWorkspace, identity: &str) -> Vec<String> {
+    workspace
+        .model()
+        .review()
+        .iter()
+        .filter(|annotation| annotation.entity == identity)
+        .flat_map(|annotation| annotation.sources.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn register_observation_evidence(
+    facts: &crate::registers::RegisterFacts,
+    paths: &crate::project::RegisterWorkspacePaths,
+    fact: &crate::registers::RegisterFact,
+) -> Result<ResearchRegisterObservationEvidence> {
+    let ownership =
+        classify_register_publication(facts, &paths.owned_ranges, fact.address, fact.width)?;
+    let (range, publication_ownership) = match ownership {
+        RegisterPublicationOwnership::Owned(range) => {
+            (range, ResearchRegisterPublicationOwnership::Owned)
+        }
+        RegisterPublicationOwnership::External(range) => {
+            (range, ResearchRegisterPublicationOwnership::External)
+        }
+    };
+    let analysis_artifacts = facts
+        .artifacts
+        .iter()
+        .map(|artifact| ResearchRegisterObservationArtifact {
+            source: artifact.source.clone(),
+            sha256: artifact.sha256.clone(),
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    Ok(ResearchRegisterObservationEvidence {
+        analysis_artifacts,
+        range: range.name.clone(),
+        publication_ownership,
+        read_functions: fact.read_functions.iter().cloned().collect(),
+        write_functions: fact.write_functions.iter().cloned().collect(),
+        read_sites: fact
+            .read_sites
+            .iter()
+            .map(|site| ResearchRegisterObservationSite {
+                function: site.function.clone(),
+                pc: site.pc,
+            })
+            .collect(),
+        write_sites: fact
+            .write_sites
+            .iter()
+            .map(|site| ResearchRegisterObservationSite {
+                function: site.function.clone(),
+                pc: site.pc,
+            })
+            .collect(),
+    })
+}
+
+enum ExactRegisterPredicate {
+    AbsentRegisterModel,
+    UnknownHardwareWriteSemantics {
+        assertion_id: String,
+        effective_write_semantics: String,
+    },
+}
+
+struct ExactRegisterEvidence {
+    subject: ResearchRegisterResolutionSubject,
+    current_observation: Option<ResearchRegisterObservationEvidence>,
+    current_identity: Option<String>,
+    matching_scopes: Vec<String>,
+    applied_assertions: Vec<open_radio_vendor_review::EffectiveAssertion>,
+    model_sources: Vec<String>,
+}
+
+fn register_resolution(
+    predicate: ExactRegisterPredicate,
+    state: ResearchFindingQueryState,
+    evidence: ExactRegisterEvidence,
+    interpretation: &str,
+) -> ExactFindingResolution {
+    let ExactRegisterEvidence {
+        subject,
+        current_observation,
+        current_identity,
+        matching_scopes,
+        applied_assertions,
+        model_sources,
+    } = evidence;
+    let evidence = match predicate {
+        ExactRegisterPredicate::AbsentRegisterModel => {
+            ResearchFindingResolutionEvidence::AbsentRegisterModel {
+                subject,
+                current_observation,
+                current_identity,
+                matching_scopes,
+                applied_assertions,
+                model_sources,
+            }
+        }
+        ExactRegisterPredicate::UnknownHardwareWriteSemantics {
+            assertion_id,
+            effective_write_semantics,
+        } => ResearchFindingResolutionEvidence::UnknownHardwareWriteSemantics {
+            assertion_id,
+            effective_write_semantics,
+            subject,
+            current_observation,
+            current_identity,
+            matching_scopes,
+            applied_assertions,
+            model_sources,
+        },
+    };
+    ExactFindingResolution {
+        state,
+        interpretation: interpretation.to_owned(),
+        evidence: Some(evidence),
+    }
+}
+
+fn normalize_write_semantics(value: &open_radio_vendor_review::AssertionValue) -> Option<String> {
+    let open_radio_vendor_review::AssertionValue::String(value) = value else {
+        return None;
+    };
+    Some(
+        match value.as_str() {
+            "unknown" => "unknown",
+            "w1c" | "one-to-clear" => "one-to-clear",
+            "w1s" | "one-to-set" => "one-to-set",
+            "one-to-toggle" => "one-to-toggle",
+            "zero-to-clear" => "zero-to-clear",
+            "zero-to-set" => "zero-to-set",
+            "zero-to-toggle" => "zero-to-toggle",
+            "clear" => "clear",
+            "set" => "set",
+            "modify" => "modify",
+            _ => return None,
+        }
+        .to_owned(),
+    )
+}
+
+fn parse_register_finding_id(id: &str) -> Option<(u32, u8)> {
+    let (address, width) = id.strip_prefix("register-")?.rsplit_once('-')?;
+    let address = u32::from_str_radix(address.strip_prefix("0x")?, 16).ok()?;
+    let width = width.parse::<u8>().ok()?;
+    (matches!(width, 8 | 16 | 32) && format!("register-{address:#010x}-{width}") == id)
+        .then_some((address, width))
+}
+
 fn apply_finding_query(
     candidates: &mut BTreeMap<String, Accumulator>,
     requested: Option<&str>,
+    exact_resolution: Option<ExactFindingResolution>,
 ) -> Result<ResearchFindingQuery> {
     let Some(requested) = requested else {
         return Ok(ResearchFindingQuery {
             state: ResearchFindingQueryState::All,
             finding_id: None,
             completion_claim: false,
+            historical_finding_claim: false,
             interpretation: "no exact finding was requested; the inventory contains every finding in the selected current scopes"
                 .to_owned(),
+            resolution_evidence: None,
         });
     };
     if requested.is_empty() {
@@ -1816,21 +2717,38 @@ fn apply_finding_query(
         ));
     }
     let present = candidates.contains_key(requested);
-    candidates.retain(|id, _| id == requested);
+    let (state, interpretation, resolution_evidence) = if let Some(resolution) = exact_resolution {
+        if present != (resolution.state == ResearchFindingQueryState::Open) {
+            return Err(crate::Error::invalid(
+                "exact register resolution disagrees with the generated research inventory",
+            ));
+        }
+        (
+            resolution.state,
+            resolution.interpretation,
+            resolution.evidence,
+        )
+    } else if present {
+        (
+            ResearchFindingQueryState::Open,
+            "the exact finding is open in the selected current analyzed inputs; this is not a completion claim".to_owned(),
+            None,
+        )
+    } else {
+        (
+            ResearchFindingQueryState::NotPresent,
+            "the exact finding ID is absent from the selected current analyzed inputs without typed resolution evidence; absence is not proof of correctness or completion".to_owned(),
+            None,
+        )
+    };
+    candidates.retain(|id, _| state == ResearchFindingQueryState::Open && id == requested);
     Ok(ResearchFindingQuery {
-        state: if present {
-            ResearchFindingQueryState::Open
-        } else {
-            ResearchFindingQueryState::NotPresent
-        },
+        state,
         finding_id: Some(requested.to_owned()),
         completion_claim: false,
-        interpretation: if present {
-            "the exact finding is open in the selected current analyzed inputs; this is not a completion claim"
-        } else {
-            "the exact finding ID is absent from the selected current analyzed inputs; absence is not proof of correctness or completion"
-        }
-        .to_owned(),
+        historical_finding_claim: false,
+        interpretation,
+        resolution_evidence,
     })
 }
 
@@ -2629,7 +3547,9 @@ mod tests {
                 state: ResearchFindingQueryState::All,
                 finding_id: None,
                 completion_claim: false,
+                historical_finding_claim: false,
                 interpretation: "fixture all-findings query".to_owned(),
+                resolution_evidence: None,
             },
             completion_claim: false,
             capability_diagnostic: None,
@@ -3154,7 +4074,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 9);
+        assert_eq!(report.schema_version, 10);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -3183,13 +4103,14 @@ mod tests {
         };
 
         let mut all = candidates();
-        let all_query = apply_finding_query(&mut all, None).unwrap();
+        let all_query = apply_finding_query(&mut all, None, None).unwrap();
         assert_eq!(all_query.state, ResearchFindingQueryState::All);
         assert_eq!(all.len(), 2);
         assert!(!all_query.completion_claim);
 
         let mut open = candidates();
-        let open_query = apply_finding_query(&mut open, Some("register-0x20103100-32")).unwrap();
+        let open_query =
+            apply_finding_query(&mut open, Some("register-0x20103100-32"), None).unwrap();
         assert_eq!(open_query.state, ResearchFindingQueryState::Open);
         assert_eq!(
             open.keys().map(String::as_str).collect::<Vec<_>>(),
@@ -3198,7 +4119,8 @@ mod tests {
         assert!(!open_query.completion_claim);
 
         let mut missing = candidates();
-        let missing_query = apply_finding_query(&mut missing, Some("register-missing")).unwrap();
+        let missing_query =
+            apply_finding_query(&mut missing, Some("register-missing"), None).unwrap();
         assert_eq!(missing_query.state, ResearchFindingQueryState::NotPresent);
         assert!(missing.is_empty());
         assert!(!missing_query.completion_claim);
@@ -3239,7 +4161,7 @@ mod tests {
         assert_eq!(original.selection.steps, changed.selection.steps);
         assert_ne!(original.inventory.sha256, changed.inventory.sha256);
         let path = std::env::temp_dir().join(format!(
-            "blobray-research-schema9-check-{}.json",
+            "blobray-research-schema10-check-{}.json",
             std::process::id()
         ));
         if path.exists() {
@@ -3293,6 +4215,130 @@ mod tests {
                 .to_string()
                 .contains("selection references missing")
         );
+    }
+
+    #[test]
+    fn exact_resolution_validation_rejects_a_filtered_scope_intersection() {
+        let mut report = report_from_actions(
+            vec![ranked_candidate("selected", 100, 21, 4)],
+            ResearchRankingStrategy::Impact,
+            1,
+            None,
+        );
+        let observation = ResearchRegisterObservationEvidence {
+            analysis_artifacts: Vec::new(),
+            range: "radio".to_owned(),
+            publication_ownership: ResearchRegisterPublicationOwnership::Owned,
+            read_functions: vec!["vendor::read".to_owned()],
+            write_functions: Vec::new(),
+            read_sites: vec![ResearchRegisterObservationSite {
+                function: "vendor::read".to_owned(),
+                pc: 0x1000,
+            }],
+            write_sites: Vec::new(),
+        };
+        report.finding_query = ResearchFindingQuery {
+            state: ResearchFindingQueryState::FilteredOut,
+            finding_id: Some("register-0x10000000-32".to_owned()),
+            completion_claim: false,
+            historical_finding_claim: false,
+            interpretation: "fixture filtered query".to_owned(),
+            resolution_evidence: Some(ResearchFindingResolutionEvidence::AbsentRegisterModel {
+                subject: ResearchRegisterResolutionSubject {
+                    address_space: "cpu".to_owned(),
+                    address: 0x1000_0000,
+                    width: 32,
+                },
+                current_observation: Some(observation),
+                current_identity: None,
+                matching_scopes: vec!["other-radio".to_owned()],
+                applied_assertions: Vec::new(),
+                model_sources: Vec::new(),
+            }),
+        };
+        validate_finding_resolution(&report).unwrap();
+
+        if let Some(ResearchFindingResolutionEvidence::AbsentRegisterModel { subject, .. }) =
+            report.finding_query.resolution_evidence.as_mut()
+        {
+            subject.address += 4;
+        }
+        assert!(
+            validate_finding_resolution(&report)
+                .unwrap_err()
+                .to_string()
+                .contains("does not match the exact finding ID")
+        );
+        let Some(ResearchFindingResolutionEvidence::AbsentRegisterModel {
+            subject,
+            matching_scopes,
+            ..
+        }) = report.finding_query.resolution_evidence.as_mut()
+        else {
+            panic!("fixture must contain register resolution evidence");
+        };
+        subject.address -= 4;
+        *matching_scopes = report.analyzed_scopes.clone();
+        assert!(
+            validate_finding_resolution(&report)
+                .unwrap_err()
+                .to_string()
+                .contains("does not satisfy state FilteredOut")
+        );
+    }
+
+    #[test]
+    fn semantic_resolution_requires_owned_identity_for_a_positive_current_claim() {
+        assert_eq!(
+            semantic_resolution_state(
+                "unknown",
+                ResearchRegisterPublicationOwnership::Owned,
+                Some("RADIO.STATUS")
+            ),
+            ResearchFindingQueryState::Open
+        );
+        assert_eq!(
+            semantic_resolution_state(
+                "one-to-clear",
+                ResearchRegisterPublicationOwnership::Owned,
+                Some("RADIO.STATUS")
+            ),
+            ResearchFindingQueryState::ConditionSatisfied
+        );
+        assert_eq!(
+            semantic_resolution_state(
+                "one-to-clear",
+                ResearchRegisterPublicationOwnership::External,
+                Some("SYSTEM.STATUS")
+            ),
+            ResearchFindingQueryState::NotPresent
+        );
+        assert_eq!(
+            semantic_resolution_state(
+                "one-to-clear",
+                ResearchRegisterPublicationOwnership::Owned,
+                None
+            ),
+            ResearchFindingQueryState::NotPresent
+        );
+    }
+
+    #[test]
+    fn register_resolution_requires_an_owned_retained_identity() {
+        assert_eq!(
+            modeled_register_resolution_state(ResearchRegisterPublicationOwnership::Owned, true),
+            ResearchFindingQueryState::ConditionSatisfied
+        );
+        for (ownership, retained) in [
+            (ResearchRegisterPublicationOwnership::Owned, false),
+            (ResearchRegisterPublicationOwnership::External, true),
+            (ResearchRegisterPublicationOwnership::External, false),
+        ] {
+            assert_eq!(
+                modeled_register_resolution_state(ownership, retained),
+                ResearchFindingQueryState::NotPresent
+            );
+        }
     }
 
     #[test]
@@ -3634,7 +4680,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_nine_serializes_query_and_one_typed_finding_catalog() {
+    fn schema_ten_serializes_query_and_one_typed_finding_catalog() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -3659,7 +4705,7 @@ mod tests {
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 9);
+        assert_eq!(value["schema_version"], 10);
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);
         assert_eq!(

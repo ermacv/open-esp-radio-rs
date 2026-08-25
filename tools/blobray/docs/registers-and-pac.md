@@ -82,8 +82,10 @@ cargo blobray project publish --project path/to/vendor-project.toml
 ```
 
 `research next` ranks blockers by transitive benefit and co-blocking structure.
-`inspect register` schema 4 prints the stable sparse-fact subject, configured
-review pack and supported assertion kinds. For an owned, unreviewed discovery
+`inspect register` schema 5 prints the stable sparse-fact subject, configured
+review pack and supported assertion kinds. It also lists every selected
+reviewed assertion for the exact physical subject, including its pack, ID,
+kind, value and evidence; that list has `completion_claim = false`. For an owned, unreviewed discovery
 fact it also emits a raw TOML draft whose state is `review-required` and whose
 `completion_claim` is always false. External, already reviewed,
 non-operational-only, and model/catalog-only addresses receive no draft. A

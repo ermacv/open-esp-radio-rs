@@ -58,6 +58,9 @@ fn render(report: &research::ResearchNextReport) {
         match report.finding_query.state {
             research::ResearchFindingQueryState::All => "all",
             research::ResearchFindingQueryState::Open => "open",
+            research::ResearchFindingQueryState::ConditionSatisfied => "condition-satisfied",
+            research::ResearchFindingQueryState::InputNotObserved => "input-not-observed",
+            research::ResearchFindingQueryState::FilteredOut => "filtered-out",
             research::ResearchFindingQueryState::NotPresent => "not-present",
         },
         report
@@ -67,6 +70,9 @@ fn render(report: &research::ResearchNextReport) {
             .map_or_else(String::new, |id| format!(" — {id}"))
     );
     outputln!("Meaning: {}", report.finding_query.interpretation);
+    if let Some(evidence) = &report.finding_query.resolution_evidence {
+        render_resolution_evidence(evidence);
+    }
     outputln!(
         "Filter: protocol {}; scope {}; budget {}.",
         report.protocol.as_deref().unwrap_or("all"),
@@ -95,11 +101,17 @@ fn render(report: &research::ResearchNextReport) {
     }
     render_prerequisites(&prerequisites);
     if actions.is_empty() {
-        if report.finding_query.state == research::ResearchFindingQueryState::NotPresent {
+        if matches!(
+            report.finding_query.state,
+            research::ResearchFindingQueryState::ConditionSatisfied
+                | research::ResearchFindingQueryState::InputNotObserved
+                | research::ResearchFindingQueryState::FilteredOut
+                | research::ResearchFindingQueryState::NotPresent
+        ) {
             outputln!(
                 "\n{}",
                 output::warning(
-                    "FINDING ID NOT PRESENT — this is not proof of correctness or completion"
+                    "EXACT FINDING IS NOT OPEN — this state is not proof of correctness or completion"
                 )
             );
             return;
@@ -221,6 +233,79 @@ fn render(report: &research::ResearchNextReport) {
             render_findings(&candidate.findings);
         }
     }
+}
+
+fn render_resolution_evidence(evidence: &research::ResearchFindingResolutionEvidence) {
+    match evidence {
+        research::ResearchFindingResolutionEvidence::RegisterWorkspaceAbsent { address, width } => {
+            outputln!(
+                "Evidence: register workspace absent; parsed subject {address:#010x}/{width}."
+            )
+        }
+        research::ResearchFindingResolutionEvidence::AbsentRegisterModel {
+            current_observation,
+            current_identity,
+            matching_scopes,
+            applied_assertions,
+            ..
+        } => render_register_resolution_summary(
+            current_observation.as_ref(),
+            current_identity.as_deref(),
+            matching_scopes,
+            applied_assertions,
+            None,
+        ),
+        research::ResearchFindingResolutionEvidence::UnknownHardwareWriteSemantics {
+            effective_write_semantics,
+            current_observation,
+            current_identity,
+            matching_scopes,
+            applied_assertions,
+            ..
+        } => render_register_resolution_summary(
+            current_observation.as_ref(),
+            current_identity.as_deref(),
+            matching_scopes,
+            applied_assertions,
+            Some(effective_write_semantics),
+        ),
+    }
+}
+
+fn render_register_resolution_summary(
+    observation: Option<&research::ResearchRegisterObservationEvidence>,
+    identity: Option<&str>,
+    matching_scopes: &[String],
+    applied_assertions: &[open_radio_vendor_review::EffectiveAssertion],
+    write_semantics: Option<&str>,
+) {
+    let observation = observation.map_or_else(
+        || "not observed".to_owned(),
+        |observation| {
+            let ownership = match observation.publication_ownership {
+                research::ResearchRegisterPublicationOwnership::Owned => "owned",
+                research::ResearchRegisterPublicationOwnership::External => "external",
+            };
+            format!(
+                "observed ({ownership}, range {}, {} functions, {} sites, {} analysis artifacts)",
+                observation.range,
+                observation.read_functions.len() + observation.write_functions.len(),
+                observation.read_sites.len() + observation.write_sites.len(),
+                observation.analysis_artifacts.len()
+            )
+        },
+    );
+    let assertion_ids = applied_assertions
+        .iter()
+        .map(|assertion| assertion.id.clone())
+        .collect::<Vec<_>>();
+    outputln!(
+        "Evidence: input {observation}; scopes {}; identity {}; assertions {}{}.",
+        list_or_none(matching_scopes),
+        identity.unwrap_or("none"),
+        list_or_none(&assertion_ids),
+        write_semantics.map_or_else(String::new, |value| format!("; write semantics {value}"))
+    );
 }
 
 fn render_prerequisites(prerequisites: &[SelectedPrerequisite<'_>]) {

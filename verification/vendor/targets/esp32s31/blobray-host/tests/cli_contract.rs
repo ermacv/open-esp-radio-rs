@@ -77,7 +77,7 @@ fn checked_register_publications_are_typed_reports() {
 }
 
 #[test]
-fn inspect_register_schema_four_drafts_only_owned_unreviewed_facts() {
+fn inspect_register_schema_five_exposes_assertions_and_drafts_only_owned_unreviewed_facts() {
     let inspect = |address: &str| {
         let output = blobray()
             .args(["inspect", "register", address, "--project"])
@@ -94,7 +94,7 @@ fn inspect_register_schema_four_drafts_only_owned_unreviewed_facts() {
     };
 
     let owned = inspect("0x20103100");
-    assert_eq!(owned["schema_version"], 4);
+    assert_eq!(owned["schema_version"], 5);
     assert_eq!(owned["register"]["review_status"], "unreviewed");
     assert_eq!(owned["review_draft"]["state"], "review-required");
     assert_eq!(owned["review_draft"]["completion_claim"], false);
@@ -137,22 +137,55 @@ fn inspect_register_schema_four_drafts_only_owned_unreviewed_facts() {
         ("0x2010fcb0", "manual"),
     ] {
         let report = inspect(address);
-        assert_eq!(report["schema_version"], 4);
+        assert_eq!(report["schema_version"], 5);
         assert_eq!(report["register"]["review_status"], expected_state);
         assert!(report["review_draft"].is_null());
     }
+
+    let event_status = inspect("0x20103064");
+    assert_eq!(event_status["schema_version"], 5);
+    assert_eq!(
+        event_status["reviewed_assertions"]["subject"],
+        "mmio:cpu:0x20103064/32"
+    );
+    assert_eq!(
+        event_status["reviewed_assertions"]["completion_claim"],
+        false
+    );
+    let assertions = event_status["reviewed_assertions"]["assertions"]
+        .as_array()
+        .unwrap();
+    assert_eq!(assertions.len(), 2);
+    assert_eq!(
+        assertions
+            .iter()
+            .map(|assertion| assertion["id"].as_str().unwrap())
+            .collect::<std::collections::BTreeSet<_>>(),
+        [
+            "ieee802154.event-status.name",
+            "ieee802154.event-status.write-semantics",
+        ]
+        .into()
+    );
+    assert!(assertions.iter().all(|assertion| {
+        assertion["pack"] == "esp32s31-radio-rev0-project-facts"
+            && assertion["subject"] == "mmio:cpu:0x20103064/32"
+            && !assertion["kind"].as_str().unwrap().is_empty()
+            && !assertion["evidence"].as_array().unwrap().is_empty()
+    }));
+    assert!(event_status["review_draft"].is_null());
 }
 
 #[test]
-fn research_schema_nine_exact_finding_lookup_is_not_a_completion_verdict() {
-    let lookup = |finding: &str| {
+fn research_schema_ten_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
+    let lookup = |scope: &str, finding: &str| {
         let output = blobray()
             .args([
                 "project",
                 "research",
                 "next",
                 "--scope",
-                "ieee802154-baseband-leaves",
+                scope,
                 "--finding",
                 finding,
                 "--project",
@@ -176,19 +209,45 @@ fn research_schema_nine_exact_finding_lookup_is_not_a_completion_verdict() {
         serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
     };
 
-    let open = lookup("register-0x20103100-32");
-    assert_eq!(open["schema_version"], 9);
+    let open = lookup("ieee802154-baseband-leaves", "register-0x20103100-32");
+    assert_eq!(open["schema_version"], 10);
     assert_eq!(open["completion_claim"], false);
     assert_eq!(open["finding_query"]["state"], "open");
     assert_eq!(open["finding_query"]["completion_claim"], false);
+    assert_eq!(open["finding_query"]["historical_finding_claim"], false);
     assert_eq!(open["inventory"]["findings"].as_array().unwrap().len(), 1);
     assert_eq!(
         open["inventory"]["findings"][0]["id"],
         "register-0x20103100-32"
     );
 
-    let missing = lookup("register-not-current");
-    assert_eq!(missing["schema_version"], 9);
+    let input_not_observed = lookup("ieee802154-baseband-leaves", "register-0x20103064-32");
+    assert_eq!(
+        input_not_observed["finding_query"]["state"],
+        "input-not-observed"
+    );
+    assert_eq!(
+        input_not_observed["finding_query"]["resolution_evidence"]["subject"]["address"],
+        0x20103064_u32
+    );
+    assert!(
+        input_not_observed["inventory"]["findings"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    let filtered = lookup("wifi-rx", "register-0x20103100-32");
+    assert_eq!(filtered["finding_query"]["state"], "filtered-out");
+    assert!(
+        !filtered["finding_query"]["resolution_evidence"]["matching_scopes"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    let missing = lookup("ieee802154-baseband-leaves", "register-not-current");
+    assert_eq!(missing["schema_version"], 10);
     assert_eq!(missing["completion_claim"], false);
     assert_eq!(missing["finding_query"]["state"], "not-present");
     assert_eq!(missing["finding_query"]["completion_claim"], false);

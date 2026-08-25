@@ -17,8 +17,16 @@ struct RegisterInvestigationReport {
     register: crate::RegisterDetailSummary,
     neighbors: Vec<RegisterNeighbor>,
     recording: Option<RegisterRecordingGuide>,
+    reviewed_assertions: Option<RegisterReviewedAssertions>,
     review_draft: Option<RegisterReviewDraft>,
     conclusion: String,
+}
+
+#[derive(Serialize)]
+struct RegisterReviewedAssertions {
+    subject: String,
+    completion_claim: bool,
+    assertions: Vec<open_radio_vendor_review::EffectiveAssertion>,
 }
 
 #[derive(Serialize)]
@@ -68,14 +76,52 @@ pub(super) fn run(
     let report = RegisterInvestigationReport {
         neighbors: neighbors(&session.project, &detail)?,
         recording: recording_guide(&session.project, &detail)?,
+        reviewed_assertions: reviewed_assertions(session, &detail)?,
         review_draft: review_draft(session, &detail)?,
         conclusion: conclusion(&detail),
-        schema_version: 4,
+        schema_version: 5,
         command: "inspect register",
         register: detail,
     };
     crate::cli::output::render_report(&report, || render_human(&report));
     Ok(true)
+}
+
+fn reviewed_assertions(
+    session: &crate::application::ProjectSession,
+    detail: &crate::RegisterDetailSummary,
+) -> Result<Option<RegisterReviewedAssertions>> {
+    let Some(paths) = session.project.registers.as_ref() else {
+        return Ok(None);
+    };
+    let Some(width) = detail.width else {
+        return Ok(None);
+    };
+    let model = load_effective_register_model(paths)?;
+    let subject = format!(
+        "mmio:{}:{:#010x}/{width}",
+        model.address_space(),
+        detail.address
+    );
+    let knowledge =
+        open_radio_vendor_review::ReviewKnowledge::load_all(&session.project.reviewed_knowledge)
+            .and_then(|knowledge| knowledge.select_for(&session.project.review_context))
+            .map_err(|error| {
+                crate::Error::invalid(format!(
+                    "cannot inspect reviewed knowledge for register: {error}"
+                ))
+            })?;
+    let assertions = knowledge
+        .assertions()
+        .values()
+        .filter(|assertion| assertion.subject == subject)
+        .cloned()
+        .collect();
+    Ok(Some(RegisterReviewedAssertions {
+        subject,
+        completion_claim: false,
+        assertions,
+    }))
 }
 
 fn review_draft(
@@ -324,6 +370,38 @@ fn render_human(report: &RegisterInvestigationReport) {
         );
         outputln!("Evidence:     {}", recording.evidence_rule);
         outputln!("Reuse:        {}", recording.reuse_rule);
+    }
+
+    if let Some(reviewed) = &report.reviewed_assertions {
+        outputln!(
+            "\n{}",
+            crate::cli::output::heading("Applicable reviewed assertions — not a completion claim")
+        );
+        outputln!("Subject:      {}", reviewed.subject);
+        if reviewed.assertions.is_empty() {
+            outputln!("No selected reviewed assertion targets this exact physical subject.");
+        } else {
+            outputln!(
+                "{}",
+                crate::cli::table::render(
+                    ["Pack", "ID", "Kind", "Value", "Evidence"],
+                    reviewed.assertions.iter().map(|assertion| [
+                        assertion.pack.clone(),
+                        assertion.id.clone(),
+                        assertion.kind.clone(),
+                        serde_json::to_string(&assertion.value)
+                            .unwrap_or_else(|_| "<unrenderable>".to_owned()),
+                        assertion
+                            .evidence
+                            .iter()
+                            .map(|evidence| format!("{}:{}", evidence.source, evidence.locator))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ]),
+                )
+            );
+        }
+        outputln!("Completion:   false");
     }
 
     if let Some(draft) = &report.review_draft {

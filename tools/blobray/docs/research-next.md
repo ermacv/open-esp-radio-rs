@@ -23,7 +23,7 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 9. It separates the complete backlog from the
+The machine report uses schema 10. It separates the complete backlog from the
 bounded recommendation:
 
 - `inventory.findings` contains every typed finding exactly once;
@@ -33,9 +33,25 @@ bounded recommendation:
   action without a selection-specific rank;
 - `selection.steps` is the only ranked list. Its typed prerequisite/action
   references are bounded by `--limit` and `--budget`.
-- `finding_query` is always present. It is `all` without an exact lookup,
-  `open` when `--finding ID` matches the current selected inputs, and
-  `not-present` otherwise. Every state has `completion_claim = false`.
+- `finding_query` is always present. It distinguishes `all`, `open`,
+  `condition-satisfied`, `input-not-observed`, `filtered-out`, and
+  `not-present`. Correlated register states include typed current observation,
+  ownership, scope, model and exact reviewed-assertion evidence. Every state
+  has `completion_claim = false` and `historical_finding_claim = false`.
+
+For an exact register lookup, interpret the states in this order:
+
+- `open`: the current observation is relevant to the selected scopes and still
+  satisfies the finding predicate;
+- `input-not-observed`: the current MMIO facts do not contain the physical
+  input, or no configured scope observes it;
+- `filtered-out`: configured scopes observe the input, but the selected
+  protocol/scope filter excludes all of them;
+- `condition-satisfied`: exact retained reviewed evidence makes the current
+  producer predicate false. This describes current state, not a historical
+  transition and not completion;
+- `not-present`: no typed attribution supports a stronger conclusion. A
+  base-model identity or an unknown arbitrary ID is not resolution proof.
 
 An action is one copyable `inspect_command` and may coalesce several findings
 without duplicating them. A finding retains its typed `subject`, typed

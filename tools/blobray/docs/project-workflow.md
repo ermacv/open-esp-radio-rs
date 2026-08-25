@@ -24,7 +24,7 @@ cargo blobray project research next --project path/to/vendor-project.toml
 - `research next` ranks concrete human-review actions by downstream impact.
 
 `status` is deliberately shallow and reports generated freshness as unknown;
-it does not deserialize every large evidence record. Status schema 10 exposes
+it does not deserialize every large evidence record. Status schema 11 exposes
 three independent workflow dimensions: generated `freshness`, `research`
 completeness, and `verification`. Phase readiness only says that configured
 artifacts are present and structurally inspectable; an `open` research state
@@ -125,6 +125,29 @@ Every review scope must declare one or more canonical protocol memberships:
 `wifi`, `bluetooth`, `ble`, `ieee802154`, `coex`, or `shared`. Membership is
 many-to-many and is not inferred from the scope ID. Human CLI input additionally
 accepts `bt`, `802.15.4`, and `802154` aliases.
+
+Public radio entry-point families that are expected but do not yet have an
+analysis profile must also be explicit:
+
+```toml
+[[analysis.public-symbol-families]]
+id = "ieee802154-public-controller"
+protocols = ["ieee802154"]
+source = "ieee802154"
+symbol-prefix = "esp_ieee802154_"
+disposition = "required"
+profile = "ieee802154-controller"
+```
+
+Status reports this family as `missing-vendor-artifact` until the exact source
+binding exists, then as `missing-profile` until the declared linked-IR profile
+is generated and non-empty. A deliberately omitted family uses
+`disposition = "excluded"`, omits `profile`, and requires a one-line `reason`.
+Exclusion is not analyzed coverage: Blobray checks the prefix against the
+generated symbol inventory, reports every matched identity, and marks a
+zero-match declaration `stale-exclusion`. Missing inventory leaves the
+exclusion unverified and the analysis phase incomplete. Undeclared public
+families are never inferred to be covered or excluded.
 
 ```console
 cargo blobray project research next --scope ieee802154-baseband-leaves \

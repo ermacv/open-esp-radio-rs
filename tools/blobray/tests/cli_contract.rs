@@ -163,7 +163,7 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
-    assert_eq!(document["schema"], 10);
+    assert_eq!(document["schema"], 11);
     assert_eq!(document["scope"], "blobray-pipeline");
     assert_eq!(document["command"], "project status");
     assert_eq!(document["validation"]["depth"], "shallow");

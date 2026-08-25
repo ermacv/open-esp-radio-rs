@@ -277,7 +277,7 @@ pub(super) fn document(
         })
         .collect();
     StatusDocument {
-        schema: 10,
+        schema: 11,
         command: "project status",
         scope: "blobray-pipeline",
         project: ProjectIdentity {
@@ -336,6 +336,9 @@ fn human_detail_value(value: &DetailValue) -> String {
         DetailValue::Artifacts(values) => structured_detail_summary(values.len(), "artifact"),
         DetailValue::ReviewScopes(values) => {
             structured_detail_summary(values.len(), "review scope")
+        }
+        DetailValue::AnalysisSurfaces(values) => {
+            structured_detail_summary(values.len(), "analysis surface")
         }
     }
 }
@@ -413,7 +416,7 @@ mod tests {
         );
         let document: serde_json::Value =
             serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
-        assert_eq!(document["schema"], 10);
+        assert_eq!(document["schema"], 11);
         assert_eq!(document["scope"], "blobray-pipeline");
         assert_eq!(document["validation"]["depth"], "shallow");
         assert_eq!(document["validation"]["freshness"], "unknown");

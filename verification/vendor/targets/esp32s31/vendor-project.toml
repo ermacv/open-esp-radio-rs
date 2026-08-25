@@ -180,6 +180,14 @@ output = "generated/findings/ble-task-lifecycle.ir"
 # of executable analysis until its matching linked ESP-IDF image exists. The
 # existing artifact-wide profiles remain the function/register inventory
 # authority; these focused profiles only bound human-sized review scopes.
+[[analysis.public-symbol-families]]
+id = "ieee802154-public-controller"
+protocols = ["ieee802154"]
+source = "ieee802154"
+symbol-prefix = "esp_ieee802154_"
+disposition = "required"
+profile = "ieee802154-controller"
+
 [[analysis.ir]]
 id = "ieee802154-btbb"
 sources = ["btbb"]

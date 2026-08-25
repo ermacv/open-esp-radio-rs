@@ -26,6 +26,12 @@ unknown fields.
   `default-pack` is mandatory for a non-empty list and exactly selects the one
   configured project pack that receives newly reviewed facts. It is forbidden
   when no packs are configured; pack order is never a destination fallback;
+- `[[analysis.public-symbol-families]]`: explicit required or intentionally
+  excluded public entry-point families, each with canonical protocol tags,
+  source and symbol prefix. Required families name their expected profile;
+  exclusions require a reason and must match current symbol-inventory
+  identities. Missing artifacts/profiles, analyzed profiles and exclusions
+  remain distinct states; exclusions never count as analyzed coverage;
 - local run specification: ignored bindings to caller-owned private artifacts.
 
 `project files` schema 3 exposes the resolved portability layer separately
@@ -154,10 +160,12 @@ a fresh schema-2 baseline from the live typed vendor bindings.
   evidence, impact sets and revalidation commands. Capability matches and
   verification surfaces are context-only links with zero ranking weight, and
   the report makes no completion claim.
-- project-status reports (`schema = 10`) keep shallow artifact readiness
+- project-status reports (`schema = 11`) keep shallow artifact readiness
   separate from generated freshness, open research debt and verification
   readiness; review-scope details expose their explicit protocol memberships,
-  and `ready` never means that a review scope has no remaining work.
+  while `radio_surfaces` reports analyzed profiles, missing vendor
+  artifacts/profiles, and audited public-family exclusions. `ready` never means
+  that a review scope has no remaining work.
 
 Generated outputs are disposable and reproducible. They must preserve source
 artifact identity/provenance and must not contain proprietary payloads or full

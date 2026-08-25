@@ -171,6 +171,8 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         .and_then(|knowledge| knowledge.select_for(&review_context))
         .map_err(|error| source.item(document.get("reviewed-knowledge"), error.to_string()))?;
     let ir_profiles = load_ir_profiles(&document, base, source)?;
+    let analysis_symbol_families =
+        crate::project_ir::load_symbol_family_surfaces(&document, &ir_profiles, source)?;
     let symbol_inventory = load_symbol_inventory(&document, base, &ir_profiles, source)?;
     let navigation_index = load_navigation_index(
         &document,
@@ -607,6 +609,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         navigation_index,
         code,
         ir_profiles,
+        analysis_symbol_families,
         registers,
         interfaces,
         functions,

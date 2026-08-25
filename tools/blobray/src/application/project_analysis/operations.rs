@@ -1755,6 +1755,7 @@ mod cache_domain_tests {
             navigation_index: None,
             code: None,
             ir_profiles: Vec::new(),
+            analysis_symbol_families: Vec::new(),
             registers: None,
             interfaces: None,
             functions: None,

@@ -20,6 +20,22 @@ pub struct LinkedIrProfileDetail {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AnalysisSurfaceDetail {
+    pub id: String,
+    pub protocols: Vec<String>,
+    pub kind: String,
+    pub status: String,
+    pub profile: Option<String>,
+    pub sources: Vec<String>,
+    pub missing_sources: Vec<String>,
+    pub output: Option<String>,
+    pub symbol_prefix: Option<String>,
+    pub matched_symbols: Vec<String>,
+    pub reason: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct MmioRegionDetail {
     pub name: String,
     pub address_space: String,
@@ -92,6 +108,7 @@ pub enum DetailValue {
     MmioRegions(Vec<MmioRegionDetail>),
     Artifacts(Vec<ArtifactDetail>),
     ReviewScopes(Vec<ReviewScopeDetail>),
+    AnalysisSurfaces(Vec<AnalysisSurfaceDetail>),
 }
 
 impl From<String> for DetailValue {
@@ -151,6 +168,12 @@ impl From<Vec<ArtifactDetail>> for DetailValue {
 impl From<Vec<ReviewScopeDetail>> for DetailValue {
     fn from(value: Vec<ReviewScopeDetail>) -> Self {
         Self::ReviewScopes(value)
+    }
+}
+
+impl From<Vec<AnalysisSurfaceDetail>> for DetailValue {
+    fn from(value: Vec<AnalysisSurfaceDetail>) -> Self {
+        Self::AnalysisSurfaces(value)
     }
 }
 

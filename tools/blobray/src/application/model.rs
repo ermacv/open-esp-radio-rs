@@ -541,6 +541,7 @@ pub struct WorkspaceSnapshot {
     pub registers: RegisterWorkspaceReport,
     pub interfaces: InterfaceWorkspaceReport,
     pub review_scopes: Vec<ReviewScopeSummary>,
+    pub analysis_surfaces: Vec<crate::application::status::model::AnalysisSurfaceDetail>,
     pub verification_policy: Vec<VerificationSurfaceSummary>,
     pub review_queue: Vec<ReviewQueueSummary>,
     pub comparisons: Vec<ComparisonProfileSummary>,

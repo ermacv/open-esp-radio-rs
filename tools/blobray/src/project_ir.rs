@@ -7,7 +7,11 @@ use std::{
 
 use toml_edit::{Item, Table};
 
-use crate::{Result, project::ProjectSource, source_id::validate_source_id};
+use crate::{
+    Result,
+    project::{AnalysisSymbolFamilyDisposition, AnalysisSymbolFamilySurface, ProjectSource},
+    source_id::validate_source_id,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectIrProfile {
@@ -130,6 +134,241 @@ pub(crate) fn load_ir_profiles(
                 include_reachable,
                 entry_contract,
                 output,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn load_symbol_family_surfaces(
+    document: &Table,
+    profiles: &[ProjectIrProfile],
+    source: ProjectSource<'_>,
+) -> Result<Vec<AnalysisSymbolFamilySurface>> {
+    let Some(analysis) = document.get("analysis").and_then(Item::as_table) else {
+        return Ok(Vec::new());
+    };
+    let Some(item) = analysis.get("public-symbol-families") else {
+        return Ok(Vec::new());
+    };
+    let entries = item.as_array_of_tables().ok_or_else(|| {
+        source.item(
+            Some(item),
+            "project analysis.public-symbol-families must be an array of tables",
+        )
+    })?;
+    let mut ids = BTreeSet::new();
+    let mut families = BTreeSet::new();
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, table)| {
+            let context = format!("project analysis.public-symbol-families[{index}]");
+            if let Some((key, item)) = table.iter().find(|(key, _)| {
+                ![
+                    "id",
+                    "protocols",
+                    "source",
+                    "symbol-prefix",
+                    "disposition",
+                    "profile",
+                    "reason",
+                ]
+                .contains(key)
+            }) {
+                return Err(source.item(
+                    Some(item),
+                    format!("unknown {context} key {key:?}"),
+                ));
+            }
+            let id = required_string(table, "id", &context, source)?;
+            validate_profile_id(&id, &context)
+                .map_err(|message| source.table_key(table, "id", message))?;
+            if !ids.insert(id.clone()) {
+                return Err(source.table_key(
+                    table,
+                    "id",
+                    format!("duplicate public symbol family id {id:?}"),
+                ));
+            }
+            let protocol_item = table.get("protocols").ok_or_else(|| {
+                source.table_key(
+                    table,
+                    "protocols",
+                    format!("{context} requires protocols"),
+                )
+            })?;
+            let protocol_values = protocol_item.as_array().ok_or_else(|| {
+                source.item(
+                    Some(protocol_item),
+                    format!("{context}.protocols must be an array"),
+                )
+            })?;
+            if protocol_values.is_empty() {
+                return Err(source.item(
+                    Some(protocol_item),
+                    format!("{context}.protocols must not be empty"),
+                ));
+            }
+            let mut seen_protocols = BTreeSet::new();
+            let protocols = protocol_values
+                .iter()
+                .enumerate()
+                .map(|(protocol_index, value)| {
+                    let protocol = value.as_str().ok_or_else(|| {
+                        source.error(
+                            value.span(),
+                            format!(
+                                "{context}.protocols[{protocol_index}] must be a string"
+                            ),
+                        )
+                    })?;
+                    let canonical = crate::project::canonical_review_protocol(protocol)
+                        .ok_or_else(|| {
+                            source.error(
+                                value.span(),
+                                format!(
+                                    "{context}.protocols contains unsupported protocol {protocol:?}; expected one of {}",
+                                    crate::project::REVIEW_PROTOCOLS.join(", ")
+                                ),
+                            )
+                        })?;
+                    if !seen_protocols.insert(canonical) {
+                        return Err(source.error(
+                            value.span(),
+                            format!("duplicate {context}.protocols value {protocol:?}"),
+                        ));
+                    }
+                    Ok(canonical.to_owned())
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let family_source = required_string(table, "source", &context, source)?;
+            validate_source_id(&family_source).map_err(|_| {
+                source.table_key(
+                    table,
+                    "source",
+                    format!("invalid source id {family_source:?} in {context}"),
+                )
+            })?;
+            let symbol_prefix = required_string(table, "symbol-prefix", &context, source)?;
+            let disposition = match required_string(table, "disposition", &context, source)?.as_str()
+            {
+                "required" => AnalysisSymbolFamilyDisposition::Required,
+                "excluded" => AnalysisSymbolFamilyDisposition::Excluded,
+                value => {
+                    return Err(source.table_key(
+                        table,
+                        "disposition",
+                        format!(
+                            "{context}.disposition must be \"required\" or \"excluded\", got {value:?}"
+                        ),
+                    ));
+                }
+            };
+            let profile = optional_string(table, "profile", &context, source)?;
+            let reason = optional_string(table, "reason", &context, source)?;
+            match disposition {
+                AnalysisSymbolFamilyDisposition::Required => {
+                    if profile.is_none() {
+                        return Err(source.table_key(
+                            table,
+                            "profile",
+                            format!("required {context} requires profile"),
+                        ));
+                    }
+                    if reason.is_some() {
+                        return Err(source.table_key(
+                            table,
+                            "reason",
+                            format!("required {context} must not declare an exclusion reason"),
+                        ));
+                    }
+                }
+                AnalysisSymbolFamilyDisposition::Excluded => {
+                    if profile.is_some() {
+                        return Err(source.table_key(
+                            table,
+                            "profile",
+                            format!("excluded {context} must not declare profile"),
+                        ));
+                    }
+                    if reason.is_none() {
+                        return Err(source.table_key(
+                            table,
+                            "reason",
+                            format!("excluded {context} requires reason"),
+                        ));
+                    }
+                }
+            }
+            if !families.insert((family_source.clone(), symbol_prefix.clone())) {
+                return Err(source.table_key(
+                    table,
+                    "symbol-prefix",
+                    format!(
+                        "duplicate public symbol family {family_source}:{symbol_prefix}"
+                    ),
+                ));
+            }
+            let covering_profile = profiles.iter().find(|profile| {
+                profile.sources.iter().any(|value| value == &family_source)
+                    && match &profile.roots {
+                        ProjectIrRoots::All => true,
+                        ProjectIrRoots::SymbolPrefix(prefix) => prefix == &symbol_prefix,
+                    }
+            });
+            match disposition {
+                AnalysisSymbolFamilyDisposition::Required => {
+                    if let Some(expected) = profile.as_deref()
+                        && let Some(configured) = profiles.iter().find(|value| value.id == expected)
+                        && !(configured
+                            .sources
+                            .iter()
+                            .any(|value| value == &family_source)
+                            && match &configured.roots {
+                                ProjectIrRoots::All => true,
+                                ProjectIrRoots::SymbolPrefix(prefix) => prefix == &symbol_prefix,
+                            })
+                    {
+                        return Err(source.table_key(
+                            table,
+                            "profile",
+                            format!(
+                                "required public symbol family profile {expected:?} does not analyze source {family_source:?}"
+                            ),
+                        ));
+                    }
+                    if let (Some(expected), Some(actual)) = (profile.as_deref(), covering_profile)
+                        && expected != actual.id
+                    {
+                        return Err(source.table_key(
+                            table,
+                            "profile",
+                            format!(
+                                "required public symbol family {family_source}:{symbol_prefix} is covered by profile {:?}, not declared profile {expected:?}",
+                                actual.id
+                            ),
+                        ));
+                    }
+                }
+                AnalysisSymbolFamilyDisposition::Excluded if covering_profile.is_some() => {
+                    return Err(source.table_key(
+                        table,
+                        "symbol-prefix",
+                        format!(
+                            "excluded public symbol family {family_source}:{symbol_prefix} overlaps a configured analysis profile"
+                        ),
+                    ));
+                }
+                AnalysisSymbolFamilyDisposition::Excluded => {}
+            }
+            Ok(AnalysisSymbolFamilySurface {
+                id,
+                protocols,
+                source: family_source,
+                symbol_prefix,
+                disposition,
+                profile,
+                reason,
             })
         })
         .collect()
@@ -339,6 +578,73 @@ output = "generated/shared.json"
         )
         .unwrap_err();
         assert!(error.to_string().contains("reuses output path"));
+    }
+
+    #[test]
+    fn public_symbol_family_coverage_is_explicit_and_fail_closed() {
+        let required_input = r#"
+[analysis]
+
+[[analysis.public-symbol-families]]
+id = "ieee802154-controller"
+protocols = ["ieee802154"]
+source = "ieee802154"
+symbol-prefix = "esp_ieee802154_"
+disposition = "required"
+profile = "ieee802154-controller"
+"#;
+        let required = required_input.parse::<DocumentMut>().unwrap();
+        let surfaces = load_symbol_family_surfaces(
+            &required,
+            &[],
+            ProjectSource::new(Path::new("project.toml"), required_input),
+        )
+        .unwrap();
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(
+            surfaces[0].disposition,
+            AnalysisSymbolFamilyDisposition::Required
+        );
+        assert_eq!(
+            surfaces[0].profile.as_deref(),
+            Some("ieee802154-controller")
+        );
+
+        let excluded_input = r#"
+[analysis]
+
+[[analysis.ir]]
+id = "ble-all"
+sources = ["ble-controller"]
+roots = "all"
+output = "generated/ble.ir"
+
+[[analysis.public-symbol-families]]
+id = "ble-public"
+protocols = ["bluetooth", "ble"]
+source = "ble-controller"
+symbol-prefix = "r_ble_"
+disposition = "excluded"
+reason = "fixture exclusion"
+"#;
+        let excluded = excluded_input.parse::<DocumentMut>().unwrap();
+        let profiles = load_ir_profiles(
+            &excluded,
+            Path::new("project"),
+            ProjectSource::new(Path::new("project.toml"), excluded_input),
+        )
+        .unwrap();
+        let error = load_symbol_family_surfaces(
+            &excluded,
+            &profiles,
+            ProjectSource::new(Path::new("project.toml"), excluded_input),
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("overlaps a configured analysis profile")
+        );
     }
 
     #[test]

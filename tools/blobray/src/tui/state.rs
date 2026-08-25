@@ -368,6 +368,7 @@ mod tests {
                 slots: Vec::new(),
             },
             review_scopes: Vec::new(),
+            analysis_surfaces: Vec::new(),
             verification_policy: Vec::new(),
             review_queue: Vec::new(),
             comparisons: Vec::new(),

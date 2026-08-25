@@ -184,6 +184,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         }),
         code: None,
         ir_profiles: Vec::new(),
+        analysis_symbol_families: Vec::new(),
         registers: None,
         interfaces: Some(InterfaceWorkspacePaths {
             facts: interfaces_path,

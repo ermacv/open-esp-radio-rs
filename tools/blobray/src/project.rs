@@ -249,6 +249,23 @@ pub(crate) struct ReviewWorkspaceSpec {
     pub(crate) scopes: Vec<ReviewScopeSpec>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AnalysisSymbolFamilyDisposition {
+    Required,
+    Excluded,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AnalysisSymbolFamilySurface {
+    pub(crate) id: String,
+    pub(crate) protocols: Vec<String>,
+    pub(crate) source: String,
+    pub(crate) symbol_prefix: String,
+    pub(crate) disposition: AnalysisSymbolFamilyDisposition,
+    pub(crate) profile: Option<String>,
+    pub(crate) reason: Option<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectSpec {
     pub(crate) id: String,
@@ -273,6 +290,9 @@ pub(crate) struct ProjectSpec {
     pub(crate) navigation_index: Option<NavigationIndexSpec>,
     pub(crate) code: Option<CodeWorkspacePaths>,
     pub(crate) ir_profiles: Vec<ProjectIrProfile>,
+    /// Expected and intentionally excluded public symbol families. Undeclared
+    /// families are never inferred to be covered or excluded.
+    pub(crate) analysis_symbol_families: Vec<AnalysisSymbolFamilySurface>,
     pub(crate) registers: Option<RegisterWorkspacePaths>,
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
     pub(crate) functions: Option<FunctionWorkspacePaths>,

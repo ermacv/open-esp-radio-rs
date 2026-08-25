@@ -20,6 +20,22 @@ use crate::function_workspace::{
 pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSnapshot {
     let context = resolved.context();
     let status = crate::application::status::collect(&context);
+    let analysis_surfaces = status
+        .phases
+        .iter()
+        .find(|phase| phase.name == "analysis")
+        .and_then(|phase| {
+            phase
+                .components
+                .iter()
+                .find(|component| component.name == "radio_surfaces")
+        })
+        .and_then(|component| component.details.get("surfaces"))
+        .and_then(|value| match value {
+            crate::DetailValue::AnalysisSurfaces(surfaces) => Some(surfaces.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
     let project_status = status.clone();
     let mut diagnostics = status
         .phases
@@ -63,6 +79,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
         registers,
         interfaces,
         review_scopes,
+        analysis_surfaces,
         verification_policy,
         review_queue,
         comparisons,

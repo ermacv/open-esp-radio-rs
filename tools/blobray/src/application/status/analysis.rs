@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::model::{Component, LinkedIrProfileDetail, Phase, Readiness};
+use super::model::{AnalysisSurfaceDetail, Component, LinkedIrProfileDetail, Phase, Readiness};
 use crate::application::{FollowUpRequirements, ProjectContext};
 use crate::{artifacts::inspect_linked_ir, harnesses, run_spec::InputRole};
 
@@ -22,12 +22,377 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
         vec![
             component("symbol_inventory", || symbol_inventory(context)),
             component("linked_ir", || linked_ir(context)),
+            component("radio_surfaces", || radio_surfaces(context)),
             component("event_replays", || event_replays(context)),
             component("mmio_facts", || mmio_facts(context)),
             component("interface_facts", || interface_facts(context)),
             component("navigation_index", || navigation_index(context)),
         ],
     )
+}
+
+fn radio_surfaces(context: &ProjectContext<'_>) -> Component {
+    let mut profile_protocols = std::collections::BTreeMap::<String, BTreeSet<String>>::new();
+    if let Some(review) = &context.project.review {
+        for scope in &review.scopes {
+            for profile in &scope.profiles {
+                profile_protocols
+                    .entry(profile.clone())
+                    .or_default()
+                    .extend(scope.protocols.iter().cloned());
+            }
+        }
+    }
+    if profile_protocols.is_empty() && context.project.analysis_symbol_families.is_empty() {
+        return Component::new("radio_surfaces", Readiness::NotConfigured);
+    }
+
+    let available_sources = context
+        .run_spec
+        .into_iter()
+        .flat_map(crate::run_spec::RunSpec::inputs)
+        .filter(|input| input.path.is_file())
+        .filter_map(|input| match &input.role {
+            InputRole::SourceArtifact(source) => Some(source.as_str().to_owned()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let mut surfaces = Vec::new();
+    for (profile_id, protocols) in profile_protocols {
+        let Some(profile) = context
+            .project
+            .ir_profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+        else {
+            surfaces.push(AnalysisSurfaceDetail {
+                id: format!("profile:{profile_id}"),
+                protocols: protocols.into_iter().collect(),
+                kind: "review-profile".to_owned(),
+                status: "missing-profile".to_owned(),
+                profile: Some(profile_id),
+                sources: Vec::new(),
+                missing_sources: Vec::new(),
+                output: None,
+                symbol_prefix: None,
+                matched_symbols: Vec::new(),
+                reason: None,
+                error: Some("configured review scope refers to a missing IR profile".to_owned()),
+            });
+            continue;
+        };
+        let missing_sources = if context.run_spec.is_none() && profile.sources.is_empty() {
+            vec!["<project-source-artifacts>".to_owned()]
+        } else {
+            profile
+                .sources
+                .iter()
+                .filter(|source| !available_sources.contains(*source))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let (status, error) = if !missing_sources.is_empty() || context.run_spec.is_none() {
+            ("missing-vendor-artifact", None)
+        } else if !profile.output.is_dir() {
+            ("missing-profile", None)
+        } else {
+            match inspect_linked_ir(&profile.output) {
+                Ok(summary) if summary.functions != 0 => ("analyzed", None),
+                Ok(_) => (
+                    "invalid-profile",
+                    Some("linked-IR profile contains zero functions".to_owned()),
+                ),
+                Err(error) => ("invalid-profile", Some(error.to_string())),
+            }
+        };
+        surfaces.push(AnalysisSurfaceDetail {
+            id: format!("profile:{}", profile.id),
+            protocols: protocols.into_iter().collect(),
+            kind: "review-profile".to_owned(),
+            status: status.to_owned(),
+            profile: Some(profile.id.clone()),
+            sources: profile.sources.clone(),
+            missing_sources,
+            output: Some(profile.output.display().to_string()),
+            symbol_prefix: match &profile.roots {
+                crate::project_ir::ProjectIrRoots::All => None,
+                crate::project_ir::ProjectIrRoots::SymbolPrefix(prefix) => Some(prefix.clone()),
+            },
+            matched_symbols: Vec::new(),
+            reason: None,
+            error,
+        });
+    }
+
+    let inventory = context
+        .project
+        .symbol_inventory
+        .as_ref()
+        .filter(|spec| spec.output.is_file())
+        .map(|spec| {
+            std::fs::read_to_string(&spec.output)
+                .map_err(|error| error.to_string())
+                .and_then(|input| {
+                    crate::artifacts::parse_symbol_inventory(&input)
+                        .map_err(|error| error.to_string())
+                })
+        })
+        .transpose();
+    let inventory_error = inventory.as_ref().err().cloned();
+    let inventory = inventory.ok().flatten();
+    for family in &context.project.analysis_symbol_families {
+        let source_available = available_sources.contains(&family.source);
+        match family.disposition {
+            crate::project::AnalysisSymbolFamilyDisposition::Required => {
+                let matched_symbols = if source_available {
+                    inventory
+                        .as_ref()
+                        .map(|inventory| {
+                            let artifact_sources = inventory
+                                .artifacts
+                                .iter()
+                                .map(|artifact| {
+                                    (
+                                        artifact.index,
+                                        artifact.sources.iter().cloned().collect::<BTreeSet<_>>(),
+                                    )
+                                })
+                                .collect::<std::collections::BTreeMap<_, _>>();
+                            let symbols = inventory
+                                .symbols
+                                .iter()
+                                .map(|symbol| (symbol.artifact, symbol.name.clone()))
+                                .collect::<Vec<_>>();
+                            matching_symbol_identities(
+                                &family.source,
+                                &family.symbol_prefix,
+                                &artifact_sources,
+                                &symbols,
+                            )
+                        })
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                let profile = family.profile.as_ref().and_then(|expected| {
+                    context
+                        .project
+                        .ir_profiles
+                        .iter()
+                        .find(|profile| &profile.id == expected)
+                });
+                let (status, output, error) = if !source_available {
+                    ("missing-vendor-artifact", None, None)
+                } else if inventory.is_none() {
+                    (
+                        "unverified-required-family",
+                        None,
+                        Some(inventory_error.clone().unwrap_or_else(|| {
+                            "symbol inventory is unavailable; required family matches are unverified"
+                                .to_owned()
+                        })),
+                    )
+                } else if matched_symbols.is_empty() {
+                    (
+                        "stale-required-family",
+                        None,
+                        Some(
+                            "required public symbol prefix matched zero inventory symbols"
+                                .to_owned(),
+                        ),
+                    )
+                } else if let Some(profile) = profile {
+                    if !profile.output.is_dir() {
+                        (
+                            "missing-profile",
+                            Some(profile.output.display().to_string()),
+                            None,
+                        )
+                    } else {
+                        match inspect_linked_ir(&profile.output) {
+                            Ok(summary) if summary.functions != 0 => {
+                                ("analyzed", Some(profile.output.display().to_string()), None)
+                            }
+                            Ok(_) => (
+                                "invalid-profile",
+                                Some(profile.output.display().to_string()),
+                                Some("linked-IR profile contains zero functions".to_owned()),
+                            ),
+                            Err(error) => (
+                                "invalid-profile",
+                                Some(profile.output.display().to_string()),
+                                Some(error.to_string()),
+                            ),
+                        }
+                    }
+                } else {
+                    ("missing-profile", None, None)
+                };
+                surfaces.push(AnalysisSurfaceDetail {
+                    id: family.id.clone(),
+                    protocols: family.protocols.clone(),
+                    kind: "public-symbol-family".to_owned(),
+                    status: status.to_owned(),
+                    profile: family.profile.clone(),
+                    sources: vec![family.source.clone()],
+                    missing_sources: (!source_available)
+                        .then(|| family.source.clone())
+                        .into_iter()
+                        .collect(),
+                    output,
+                    symbol_prefix: Some(family.symbol_prefix.clone()),
+                    matched_symbols,
+                    reason: None,
+                    error,
+                });
+            }
+            crate::project::AnalysisSymbolFamilyDisposition::Excluded => {
+                let (status, matched_symbols, error) = if let Some(inventory) = &inventory {
+                    let artifact_sources = inventory
+                        .artifacts
+                        .iter()
+                        .map(|artifact| {
+                            (
+                                artifact.index,
+                                artifact.sources.iter().cloned().collect::<BTreeSet<_>>(),
+                            )
+                        })
+                        .collect::<std::collections::BTreeMap<_, _>>();
+                    let symbols = inventory
+                        .symbols
+                        .iter()
+                        .map(|symbol| (symbol.artifact, symbol.name.clone()))
+                        .collect::<Vec<_>>();
+                    let matched = matching_symbol_identities(
+                        &family.source,
+                        &family.symbol_prefix,
+                        &artifact_sources,
+                        &symbols,
+                    );
+                    if exclusion_match_status(true, matched.len()) == "stale-exclusion" {
+                        (
+                            "stale-exclusion",
+                            matched,
+                            Some(
+                                "excluded public symbol prefix matched zero inventory symbols"
+                                    .to_owned(),
+                            ),
+                        )
+                    } else {
+                        ("intentionally-excluded", matched, None)
+                    }
+                } else {
+                    (
+                        "unverified-exclusion",
+                        Vec::new(),
+                        Some(inventory_error.clone().unwrap_or_else(|| {
+                            "symbol inventory is unavailable; exclusion matches are unverified"
+                                .to_owned()
+                        })),
+                    )
+                };
+                surfaces.push(AnalysisSurfaceDetail {
+                    id: family.id.clone(),
+                    protocols: family.protocols.clone(),
+                    kind: "public-symbol-family".to_owned(),
+                    status: status.to_owned(),
+                    profile: None,
+                    sources: vec![family.source.clone()],
+                    missing_sources: Vec::new(),
+                    output: None,
+                    symbol_prefix: Some(family.symbol_prefix.clone()),
+                    matched_symbols,
+                    reason: family.reason.clone(),
+                    error,
+                });
+            }
+        }
+    }
+    surfaces.sort_by(|left, right| left.id.cmp(&right.id));
+    let analyzed = surfaces
+        .iter()
+        .filter(|surface| surface.status == "analyzed")
+        .count();
+    let excluded = surfaces
+        .iter()
+        .filter(|surface| surface.status == "intentionally-excluded")
+        .count();
+    let missing = surfaces
+        .iter()
+        .filter(|surface| {
+            matches!(
+                surface.status.as_str(),
+                "missing-vendor-artifact"
+                    | "missing-profile"
+                    | "unverified-exclusion"
+                    | "unverified-required-family"
+            )
+        })
+        .count();
+    let invalid = surfaces
+        .iter()
+        .filter(|surface| {
+            matches!(
+                surface.status.as_str(),
+                "invalid-profile" | "stale-exclusion" | "stale-required-family"
+            )
+        })
+        .count();
+    let mut component = Component::new(
+        "radio_surfaces",
+        if invalid != 0 {
+            Readiness::Invalid
+        } else if missing != 0 {
+            Readiness::Incomplete
+        } else {
+            Readiness::Ready
+        },
+    )
+    .detail("analyzed", analyzed)
+    .detail("missing", missing)
+    .detail("intentionally_excluded", excluded)
+    .detail("surfaces", surfaces);
+    if invalid != 0 {
+        component = component.diagnostic(format!(
+            "{invalid} radio analysis surface declaration(s) are invalid or stale"
+        ));
+    } else if missing != 0 {
+        component = component.diagnostic(format!(
+            "{missing} required radio analysis surface(s) lack a vendor artifact, generated profile, or exclusion inventory"
+        ));
+    }
+    component
+}
+
+fn matching_symbol_identities(
+    source: &str,
+    prefix: &str,
+    artifact_sources: &std::collections::BTreeMap<usize, BTreeSet<String>>,
+    symbols: &[(usize, String)],
+) -> Vec<String> {
+    let mut matched = symbols
+        .iter()
+        .filter(|(artifact, name)| {
+            artifact_sources
+                .get(artifact)
+                .is_some_and(|sources| sources.contains(source))
+                && name.starts_with(prefix)
+        })
+        .map(|(_, name)| format!("{source}:{name}"))
+        .collect::<Vec<_>>();
+    matched.sort();
+    matched.dedup();
+    matched
+}
+
+fn exclusion_match_status(inventory_available: bool, matched: usize) -> &'static str {
+    if !inventory_available {
+        "unverified-exclusion"
+    } else if matched == 0 {
+        "stale-exclusion"
+    } else {
+        "intentionally-excluded"
+    }
 }
 
 fn event_replays(context: &ProjectContext<'_>) -> Component {
@@ -261,5 +626,35 @@ fn generated_output(name: &'static str, path: &std::path::Path) -> Component {
         Err(error) => Component::new(name, Readiness::Invalid)
             .detail("path", path.display().to_string())
             .diagnostic(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn excluded_prefix_must_match_the_declared_source_inventory() {
+        let artifacts = std::collections::BTreeMap::from([
+            (0, BTreeSet::from(["ble-controller".to_owned()])),
+            (1, BTreeSet::from(["ieee802154".to_owned()])),
+        ]);
+        let symbols = vec![
+            (0, "esp_ieee802154_enable".to_owned()),
+            (1, "esp_ieee802154_disable".to_owned()),
+            (1, "unrelated".to_owned()),
+        ];
+
+        assert_eq!(
+            matching_symbol_identities("ieee802154", "esp_ieee802154_", &artifacts, &symbols,),
+            ["ieee802154:esp_ieee802154_disable"]
+        );
+        assert!(
+            matching_symbol_identities("ieee802154", "stale_public_prefix_", &artifacts, &symbols,)
+                .is_empty()
+        );
+        assert_eq!(exclusion_match_status(true, 0), "stale-exclusion");
+        assert_eq!(exclusion_match_status(true, 1), "intentionally-excluded");
+        assert_eq!(exclusion_match_status(false, 0), "unverified-exclusion");
     }
 }

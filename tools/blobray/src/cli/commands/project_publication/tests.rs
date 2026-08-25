@@ -186,6 +186,7 @@ bitWidth = 1
         navigation_index: None,
         code: None,
         ir_profiles: Vec::new(),
+        analysis_symbol_families: Vec::new(),
         registers: Some(paths),
         interfaces: None,
         functions: None,

@@ -1,6 +1,6 @@
 //! Positive resource requirements for every CLI command.
 
-use crate::cli::args::Command;
+use crate::{application::revision::LIVE_REVISION_SELECTOR, cli::args::Command};
 
 /// Resources and capabilities needed before a typed command can be resolved.
 ///
@@ -50,7 +50,7 @@ impl ResolutionNeeds {
         self.knowledge_provider || (self.knowledge_provider_if_configured && configured)
     }
 
-    pub(super) const fn for_command(command: &Command) -> Self {
+    pub(super) fn for_command(command: &Command) -> Self {
         match command {
             Command::GenerateCompletions(_)
             | Command::GenerateManpage(_)
@@ -69,9 +69,24 @@ impl ResolutionNeeds {
             | Command::ProjectCacheCompact(_) => {
                 Self::new(true, false, false, false, false, false, false)
             }
-            Command::RevisionDiff(_) | Command::RevisionRebase(_) => {
-                Self::new(true, false, false, false, false, false, false)
-            }
+            Command::RevisionDiff(arguments) => Self::new(
+                true,
+                false,
+                false,
+                false,
+                false,
+                false,
+                revision_operands_need_live_bindings(&arguments.from, &arguments.to),
+            ),
+            Command::RevisionRebase(arguments) => Self::new(
+                true,
+                false,
+                false,
+                false,
+                false,
+                false,
+                revision_operands_need_live_bindings(&arguments.from, &arguments.to),
+            ),
             Command::RevisionSnapshot(_) | Command::RevisionPrepareUpdate(_) => {
                 Self::new(true, false, false, false, false, false, true)
             }
@@ -144,6 +159,10 @@ impl ResolutionNeeds {
     }
 }
 
+fn revision_operands_need_live_bindings(from: &str, to: &str) -> bool {
+    from == LIVE_REVISION_SELECTOR || to == LIVE_REVISION_SELECTOR
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +182,12 @@ mod tests {
             ResolutionNeeds::for_command(&Command::ProjectCacheCompact(Default::default())),
             expected
         );
+    }
+
+    #[test]
+    fn only_live_revision_operands_require_caller_owned_bindings() {
+        assert!(!revision_operands_need_live_bindings("old", "new"));
+        assert!(revision_operands_need_live_bindings("old", "@live"));
+        assert!(revision_operands_need_live_bindings("@live", "new"));
     }
 }

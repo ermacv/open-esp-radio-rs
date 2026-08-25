@@ -118,10 +118,8 @@ fn prepare_update(
 }
 
 fn diff(arguments: RevisionDiffArgs, session: &crate::application::ProjectSession) -> Result<bool> {
-    let from_path = revision::resolve_path(&session.manifest, &arguments.from)?;
-    let to_path = revision::resolve_path(&session.manifest, &arguments.to)?;
-    let from = revision::load(&from_path)?;
-    let to = revision::load(&to_path)?;
+    let from = revision::load_operand(session, &arguments.from)?;
+    let to = revision::load_operand(session, &arguments.to)?;
     let report = revision::diff(&from, &to);
     if let Some(path) = arguments.output.as_deref() {
         generated_file::write_or_check_json(path, &report, arguments.check, "revision diff", true)?;
@@ -134,10 +132,8 @@ fn rebase(
     arguments: RevisionRebaseArgs,
     session: &crate::application::ProjectSession,
 ) -> Result<bool> {
-    let from_path = revision::resolve_path(&session.manifest, &arguments.from)?;
-    let to_path = revision::resolve_path(&session.manifest, &arguments.to)?;
-    let from = revision::load(&from_path)?;
-    let to = revision::load(&to_path)?;
+    let from = revision::load_operand(session, &arguments.from)?;
+    let to = revision::load_operand(session, &arguments.to)?;
     let report = revision::rebase(&from, &to);
     if let Some(path) = arguments.output.as_deref() {
         generated_file::write_or_check_json(
@@ -181,6 +177,88 @@ fn render_diff(report: &revision::RevisionDiffReport) {
             ],
         )
     );
+    let functions = &report.functions;
+    outputln!("\n{}", output::heading("Function delta"));
+    outputln!(
+        "{}",
+        table::render(
+            ["Class", "Functions"],
+            [
+                ["Changed".to_owned(), functions.changed.len().to_string()],
+                ["Added".to_owned(), functions.added.len().to_string()],
+                ["Removed".to_owned(), functions.removed.len().to_string()],
+                ["Remapped".to_owned(), functions.remapped.len().to_string()],
+                [
+                    "Uncertain".to_owned(),
+                    functions.uncertain.len().to_string()
+                ],
+            ],
+        )
+    );
+    if !report.invalidated_research.is_empty() {
+        outputln!("\n{}", output::heading("Research invalidation"));
+        outputln!(
+            "{}",
+            table::render(
+                ["Area", "Subjects", "Reviewed facts"],
+                report.invalidated_research.iter().map(|area| [
+                    area.area.clone(),
+                    area.subjects.len().to_string(),
+                    area.reviewed_records.len().to_string(),
+                ]),
+            )
+        );
+        if output::details() {
+            outputln!("\n{}", output::heading("Invalidation details"));
+            outputln!(
+                "{}",
+                table::render(
+                    ["Area", "Subjects", "Reviewed facts", "Reason"],
+                    report.invalidated_research.iter().map(|area| [
+                        area.area.clone(),
+                        area.subjects.join(", "),
+                        area.reviewed_records.join(", "),
+                        area.reason.clone(),
+                    ]),
+                )
+            );
+        }
+    }
+    if output::details() {
+        let rows = functions
+            .changed
+            .iter()
+            .map(|id| ["changed".to_owned(), id.clone()])
+            .chain(
+                functions
+                    .added
+                    .iter()
+                    .map(|id| ["added".to_owned(), id.clone()]),
+            )
+            .chain(
+                functions
+                    .removed
+                    .iter()
+                    .map(|id| ["removed".to_owned(), id.clone()]),
+            )
+            .chain(functions.remapped.iter().map(|remap| {
+                [
+                    "remapped".to_owned(),
+                    format!("{} -> {}", remap.before, remap.after),
+                ]
+            }))
+            .chain(
+                functions
+                    .uncertain
+                    .iter()
+                    .map(|id| ["uncertain".to_owned(), id.clone()]),
+            )
+            .collect::<Vec<_>>();
+        if !rows.is_empty() {
+            outputln!("\n{}", output::heading("Affected functions"));
+            outputln!("{}", table::render(["Class", "Identity"], rows));
+        }
+    }
     if output::details() && !report.changes.is_empty() {
         outputln!("\n{}", output::heading("Changes"));
         outputln!(

@@ -153,13 +153,20 @@ a fresh schema-2 baseline from the live typed vendor bindings.
 - pseudo-Rust and executable reference artifacts;
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output;
-- revision diff and rebase plans;
-- research-next reports (`schema_version = 6`), including explicit benefit,
-  cost and co-blocker score terms; one action per copyable inspection command;
-  and full typed findings with subjects, executable-consumer resolution,
-  evidence, impact sets and revalidation commands. Capability matches and
-  verification surfaces are context-only links with zero ranking weight, and
-  the report makes no completion claim.
+- revision diff and rebase plans. Diff reports use their own schema 1,
+  independently of schema-2 stored snapshots, and include a typed function
+  delta (`changed`, `added`, `removed`, `{ before, after }` remaps and uncertain
+  identities) plus research invalidation areas with affected subjects and
+  reviewed-record IDs. `@live` is a read-only operand for validating and
+  comparing current analyzed bindings before publishing a new immutable
+  snapshot;
+- research-next reports (`schema_version = 7`), including bounded typed
+  prerequisites, finding/action actionability, explicit benefit, cost and
+  co-blocker score terms; one action per copyable inspection command; and full
+  typed findings with subjects, executable-consumer resolution, evidence,
+  impact sets and revalidation commands. Capability matches and verification
+  surfaces are context-only links with zero ranking weight, and the report
+  makes no completion claim.
 - project-status reports (`schema = 11`) keep shallow artifact readiness
   separate from generated freshness, open research debt and verification
   readiness; review-scope details expose their explicit protocol memberships,

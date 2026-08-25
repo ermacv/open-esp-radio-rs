@@ -243,13 +243,22 @@ compare the ledger's adjacent `baseline` and `current` entries:
 cargo blobray project revision snapshot vendor-2026-05 --project path/to/vendor-project.toml
 cargo blobray project revision prepare-update --project path/to/vendor-project.toml
 # only now update local artifact bindings, then run project analyze
-cargo blobray project revision snapshot vendor-2026-08 --project path/to/vendor-project.toml
-cargo blobray project revision diff vendor-2026-05 vendor-2026-08 \
+cargo blobray project revision diff vendor-2026-05 @live \
   --project path/to/vendor-project.toml --details
-cargo blobray project revision rebase vendor-2026-05 vendor-2026-08 \
+cargo blobray project revision rebase vendor-2026-05 @live \
   --project path/to/vendor-project.toml \
   --output generated/revisions/vendor-2026-08.rebase.json
+# after reviewing the delta and rebase plan, publish the immutable new snapshot
+cargo blobray project revision snapshot vendor-2026-08 --project path/to/vendor-project.toml
 ```
+
+`@live` is a read-only revision operand. It builds and validates the same
+projection as `revision snapshot`, including current artifact identities and
+generated evidence, but does not write a snapshot or advance the ledger. This
+lets a named, durable baseline be compared with newly analyzed bindings before
+they are published. The diff has an explicit function delta and typed research
+invalidation areas (including affected reviewed records); the rebase plan says
+which reviewed facts remain exact, remap uniquely, or require review.
 
 Snapshots default to deterministic `revisions/snapshots/NAME.json.gz`; the small
 `revisions/ledger.toml` is updated atomically with the snapshot location,

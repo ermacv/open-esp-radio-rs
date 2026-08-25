@@ -160,10 +160,10 @@ pub(crate) struct RevisionSnapshotArgs {
 
 #[derive(Clone, Debug, Args)]
 pub(crate) struct RevisionDiffArgs {
-    /// Old snapshot name or path.
+    /// Old snapshot name/path, or @live for the current analyzed bindings.
     #[arg(value_name = "FROM")]
     pub(crate) from: String,
-    /// New snapshot name or path.
+    /// New snapshot name/path, or @live for the current analyzed bindings.
     #[arg(value_name = "TO")]
     pub(crate) to: String,
     /// Optional generated machine-readable diff report.
@@ -176,10 +176,10 @@ pub(crate) struct RevisionDiffArgs {
 
 #[derive(Clone, Debug, Args)]
 pub(crate) struct RevisionRebaseArgs {
-    /// Snapshot whose reviewed progress is being carried forward.
+    /// Source snapshot name/path, or @live for the current analyzed bindings.
     #[arg(value_name = "FROM")]
     pub(crate) from: String,
-    /// Target snapshot receiving reviewed progress.
+    /// Target snapshot name/path, or @live for the current analyzed bindings.
     #[arg(value_name = "TO")]
     pub(crate) to: String,
     /// Optional generated rebase plan containing every old reviewed record.

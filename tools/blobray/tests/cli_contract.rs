@@ -2672,9 +2672,39 @@ fn revision_diff_is_a_typed_project_workflow() {
         String::from_utf8_lossy(&output.stderr)
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["schema_version"], 1);
     assert_eq!(document["command"], "revision diff");
     assert_eq!(document["summary"]["moved"], 1);
+    assert_eq!(
+        document["functions"]["remapped"][0],
+        serde_json::json!({"before":"vendor:old","after":"vendor:new"})
+    );
+    assert_eq!(
+        document["invalidated_research"][0]["area"],
+        "evidence-locations"
+    );
     assert_eq!(document["changes"][0]["classification"], "moved");
+
+    let human = blobray()
+        .current_dir(repository_root())
+        .args(["project", "revision", "diff"])
+        .arg(&old)
+        .arg(&new)
+        .args(["--project"])
+        .arg(&manifest)
+        .args(["--details", "--color", "never"])
+        .output()
+        .expect("render revision diff");
+    assert!(human.status.success());
+    let human = String::from_utf8(human.stdout).unwrap();
+    for heading in [
+        "Function delta",
+        "Research invalidation",
+        "Invalidation details",
+        "Affected functions",
+    ] {
+        assert!(human.contains(heading), "missing {heading:?}: {human}");
+    }
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -2772,6 +2802,27 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
         checked.status.success(),
         "stderr: {}",
         String::from_utf8_lossy(&checked.stderr)
+    );
+    let ledger_before_live_diff = std::fs::read(directory.join("revisions/ledger.toml")).unwrap();
+    let live_diff = run_project_command(
+        &manifest,
+        &["project", "revision", "diff", "vendor-1", "@live"],
+    );
+    assert!(
+        live_diff.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&live_diff.stderr)
+    );
+    let live_diff: serde_json::Value = serde_json::from_slice(&live_diff.stdout).unwrap();
+    assert_eq!(live_diff["schema_version"], 1);
+    assert_eq!(live_diff["from"], "vendor-1");
+    assert_eq!(live_diff["to"], "@live");
+    assert_eq!(live_diff["artifacts_changed"], false);
+    assert!(live_diff["changes"].as_array().unwrap().is_empty());
+    assert_eq!(
+        std::fs::read(directory.join("revisions/ledger.toml")).unwrap(),
+        ledger_before_live_diff,
+        "a live diff must not advance or rewrite the revision ledger"
     );
     let prepared = run_project_command(&manifest, &["project", "revision", "prepare-update"]);
     assert!(

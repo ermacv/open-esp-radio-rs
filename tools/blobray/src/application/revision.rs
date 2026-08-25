@@ -23,6 +23,8 @@ use crate::{
 
 pub(crate) const REVISION_SCHEMA: u32 = 2;
 pub(crate) const REVISION_LEDGER_SCHEMA: u32 = 2;
+pub(crate) const REVISION_DIFF_REPORT_SCHEMA: u32 = 1;
+pub(crate) const LIVE_REVISION_SELECTOR: &str = "@live";
 
 const REVISION_CUTOVER_INSTRUCTION: &str = "archive or remove revisions/ledger.toml and create a new current state with `project revision snapshot CURRENT`";
 
@@ -150,6 +152,32 @@ pub(crate) struct RevisionDiffSummary {
     pub(crate) ambiguous: usize,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RevisionFunctionDelta {
+    pub(crate) changed: Vec<String>,
+    pub(crate) added: Vec<String>,
+    pub(crate) removed: Vec<String>,
+    pub(crate) remapped: Vec<RevisionFunctionRemap>,
+    pub(crate) uncertain: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RevisionFunctionRemap {
+    pub(crate) before: String,
+    pub(crate) after: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RevisionResearchInvalidation {
+    pub(crate) area: String,
+    pub(crate) subjects: Vec<String>,
+    pub(crate) reviewed_records: Vec<String>,
+    pub(crate) reason: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RevisionDiffReport {
@@ -159,6 +187,8 @@ pub(crate) struct RevisionDiffReport {
     pub(crate) to: String,
     pub(crate) artifacts_changed: bool,
     pub(crate) summary: RevisionDiffSummary,
+    pub(crate) functions: RevisionFunctionDelta,
+    pub(crate) invalidated_research: Vec<RevisionResearchInvalidation>,
     pub(crate) changes: Vec<RevisionEntityChange>,
 }
 
@@ -318,6 +348,18 @@ pub(crate) fn resolve_path(manifest: &Path, value: &str) -> Result<PathBuf> {
         return snapshot_path(manifest, &entry.snapshot);
     }
     default_path(manifest, value)
+}
+
+/// Load an immutable named snapshot or build a read-only snapshot from the
+/// currently analyzed vendor bindings. The live projection is never persisted
+/// and therefore cannot advance the durable ledger before review.
+pub(crate) fn load_operand(session: &ProjectSession, value: &str) -> Result<RevisionSnapshot> {
+    if value == LIVE_REVISION_SELECTOR {
+        let mut snapshot = snapshot(session, "live-analysis")?;
+        snapshot.name = LIVE_REVISION_SELECTOR.to_owned();
+        return Ok(snapshot);
+    }
+    load(&resolve_path(&session.manifest, value)?)
 }
 
 pub(crate) fn load(path: &Path) -> Result<RevisionSnapshot> {
@@ -1939,15 +1981,201 @@ pub(crate) fn diff(from: &RevisionSnapshot, to: &RevisionSnapshot) -> RevisionDi
             &right.after,
         ))
     });
+    let functions = function_delta(&changes);
+    let invalidated_research = research_invalidations(from, to, &changes);
     RevisionDiffReport {
-        schema_version: REVISION_SCHEMA,
+        schema_version: REVISION_DIFF_REPORT_SCHEMA,
         command: "revision diff".to_owned(),
         from: from.name.clone(),
         to: to.name.clone(),
         artifacts_changed: from.artifacts != to.artifacts,
         summary,
+        functions,
+        invalidated_research,
         changes,
     }
+}
+
+fn function_delta(changes: &[RevisionEntityChange]) -> RevisionFunctionDelta {
+    let mut delta = RevisionFunctionDelta::default();
+    for change in changes.iter().filter(|change| change.domain == "function") {
+        match change.classification {
+            RevisionChangeClass::Modified => delta.changed.extend(change.before.iter().cloned()),
+            RevisionChangeClass::Added => delta.added.extend(change.after.iter().cloned()),
+            RevisionChangeClass::Removed => delta.removed.extend(change.before.iter().cloned()),
+            RevisionChangeClass::Moved => {
+                delta
+                    .remapped
+                    .extend(
+                        change
+                            .before
+                            .iter()
+                            .zip(&change.after)
+                            .map(|(before, after)| RevisionFunctionRemap {
+                                before: before.clone(),
+                                after: after.clone(),
+                            }),
+                    )
+            }
+            RevisionChangeClass::Split
+            | RevisionChangeClass::Merged
+            | RevisionChangeClass::Ambiguous => {
+                delta.uncertain.extend(change.before.iter().cloned());
+                delta.uncertain.extend(change.after.iter().cloned());
+            }
+            RevisionChangeClass::Unchanged => {}
+        }
+    }
+    for values in [
+        &mut delta.changed,
+        &mut delta.added,
+        &mut delta.removed,
+        &mut delta.uncertain,
+    ] {
+        values.sort();
+        values.dedup();
+    }
+    delta.remapped.sort();
+    delta.remapped.dedup();
+    delta
+}
+
+struct ResearchInvalidationAccumulator {
+    reason: &'static str,
+    subjects: BTreeSet<String>,
+    reviewed_records: BTreeSet<String>,
+}
+
+fn research_invalidations(
+    from: &RevisionSnapshot,
+    to: &RevisionSnapshot,
+    changes: &[RevisionEntityChange],
+) -> Vec<RevisionResearchInvalidation> {
+    let mut areas = BTreeMap::<&'static str, ResearchInvalidationAccumulator>::new();
+    let mut add = |area: &'static str, reason: &'static str, subjects: &[String]| {
+        let entry = areas
+            .entry(area)
+            .or_insert_with(|| ResearchInvalidationAccumulator {
+                reason,
+                subjects: BTreeSet::new(),
+                reviewed_records: BTreeSet::new(),
+            });
+        entry.subjects.extend(subjects.iter().cloned());
+    };
+    for change in changes {
+        let mut subjects = change.before.clone();
+        subjects.extend(change.after.iter().cloned());
+        subjects.sort();
+        subjects.dedup();
+        match (change.domain.as_str(), change.classification) {
+            ("function", RevisionChangeClass::Added) => add(
+                "function-coverage",
+                "new vendor functions have no inherited analysis or reviewed coverage",
+                &subjects,
+            ),
+            ("function", RevisionChangeClass::Moved) => add(
+                "evidence-locations",
+                "function semantics correlate exactly, but address-bound evidence must be revalidated",
+                &subjects,
+            ),
+            ("function", RevisionChangeClass::Modified)
+            | ("function", RevisionChangeClass::Removed)
+            | ("function", RevisionChangeClass::Split)
+            | ("function", RevisionChangeClass::Merged)
+            | ("function", RevisionChangeClass::Ambiguous) => add(
+                "function-semantics",
+                "changed or unresolved function identity invalidates semantic conclusions and dependent evidence",
+                &subjects,
+            ),
+            ("register", classification) if classification != RevisionChangeClass::Unchanged => {
+                add(
+                    "register-model",
+                    "register observations changed and reviewed names/access semantics require revalidation",
+                    &subjects,
+                )
+            }
+            ("interface", classification) if classification != RevisionChangeClass::Unchanged => {
+                add(
+                    "interface-contracts",
+                    "interface observations changed and dependent call/event contracts require revalidation",
+                    &subjects,
+                )
+            }
+            _ => {}
+        }
+    }
+
+    let before_functions = from
+        .functions
+        .iter()
+        .map(|function| (function.id.as_str(), function))
+        .collect::<BTreeMap<_, _>>();
+    for function in &to.functions {
+        if let Some(before) = before_functions.get(function.id.as_str())
+            && (before.completeness != function.completeness
+                || before.blocker_roots != function.blocker_roots)
+        {
+            add(
+                "analysis-completeness",
+                "analysis completeness or blocker roots changed; prior research priorities must be recalculated",
+                std::slice::from_ref(&function.id),
+            );
+        }
+    }
+
+    if from.artifacts != to.artifacts {
+        let from_artifacts = from.artifacts.iter().collect::<BTreeSet<_>>();
+        let to_artifacts = to.artifacts.iter().collect::<BTreeSet<_>>();
+        let subjects = from_artifacts
+            .symmetric_difference(&to_artifacts)
+            .map(|artifact| artifact.source.clone())
+            .collect::<Vec<_>>();
+        add(
+            "artifact-applicability",
+            "vendor artifact identities changed; artifact-bounded reviewed facts must be revalidated",
+            &subjects,
+        );
+    }
+
+    let reviewed = from
+        .assertions
+        .iter()
+        .chain(&from.vendor_bugs)
+        .collect::<Vec<_>>();
+    for area in areas.values_mut() {
+        for record in &reviewed {
+            let subject_matches = record
+                .subject
+                .as_deref()
+                .map(split_subject_suffix)
+                .is_some_and(|(subject, _)| area.subjects.contains(subject));
+            let artifact_bounded = area.subjects.iter().any(|subject| {
+                record
+                    .record
+                    .get("applies-to")
+                    .and_then(|value| value.get("artifacts"))
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|artifacts| {
+                        artifacts.iter().any(|artifact| {
+                            artifact.get("source").and_then(serde_json::Value::as_str)
+                                == Some(subject.as_str())
+                        })
+                    })
+            });
+            if subject_matches || artifact_bounded {
+                area.reviewed_records.insert(record.id.clone());
+            }
+        }
+    }
+    areas
+        .into_iter()
+        .map(|(area, invalidation)| RevisionResearchInvalidation {
+            area: area.to_owned(),
+            subjects: invalidation.subjects.into_iter().collect(),
+            reviewed_records: invalidation.reviewed_records.into_iter().collect(),
+            reason: invalidation.reason.to_owned(),
+        })
+        .collect()
 }
 
 fn diff_domain<'a>(
@@ -2397,12 +2625,66 @@ mod tests {
 
         let report = diff(&before, &after);
 
+        assert_eq!(before.schema_version, REVISION_SCHEMA);
+        assert_eq!(report.schema_version, REVISION_DIFF_REPORT_SCHEMA);
+        assert_ne!(report.schema_version, before.schema_version);
         assert_eq!(report.summary.unchanged, 1);
         assert_eq!(report.summary.modified, 1);
         assert_eq!(report.summary.moved, 1);
         assert_eq!(report.summary.ambiguous, 1);
         assert_eq!(report.summary.removed, 1);
         assert_eq!(report.summary.added, 1);
+        assert_eq!(report.functions.changed, ["changed"]);
+        assert_eq!(report.functions.added, ["added"]);
+        assert_eq!(report.functions.removed, ["removed"]);
+        assert_eq!(
+            report.functions.remapped,
+            [RevisionFunctionRemap {
+                before: "old-moved".to_owned(),
+                after: "new-moved".to_owned(),
+            }]
+        );
+        assert_eq!(
+            serde_json::to_value(&report.functions.remapped[0]).unwrap(),
+            serde_json::json!({"before":"old-moved","after":"new-moved"})
+        );
+        assert!(
+            report
+                .invalidated_research
+                .iter()
+                .any(|area| area.area == "function-semantics")
+        );
+    }
+
+    #[test]
+    fn research_invalidation_ignores_unchanged_entities_and_tracks_blocker_drift() {
+        let mut before = snapshot("old", vec![function("stable", "same")]);
+        before.assertions.push(RevisionReviewedRecord {
+            id: "fact.stable".to_owned(),
+            subject: Some("stable".to_owned()),
+            record: serde_json::json!({"id":"fact.stable","subject":"stable"}),
+        });
+        let mut after = snapshot("new", vec![function("stable", "same")]);
+        after.functions[0].blocker_roots = vec!["decode:unsupported:16".to_owned()];
+        let unchanged = ["register", "interface"].map(|domain| RevisionEntityChange {
+            domain: domain.to_owned(),
+            classification: RevisionChangeClass::Unchanged,
+            before: vec![format!("{domain}:stable")],
+            after: vec![format!("{domain}:stable")],
+            confidence: "high".to_owned(),
+            reason: "fixture".to_owned(),
+        });
+
+        let areas = research_invalidations(&before, &after, &unchanged);
+
+        assert!(!areas.iter().any(|area| area.area == "register-model"));
+        assert!(!areas.iter().any(|area| area.area == "interface-contracts"));
+        let completeness = areas
+            .iter()
+            .find(|area| area.area == "analysis-completeness")
+            .unwrap();
+        assert_eq!(completeness.subjects, ["stable"]);
+        assert_eq!(completeness.reviewed_records, ["fact.stable"]);
     }
 
     #[test]

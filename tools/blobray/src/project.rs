@@ -232,9 +232,9 @@ pub(crate) struct ProjectSpec {
     pub(crate) target_spec: PathBuf,
     pub(crate) ecosystem_packs: Vec<EcosystemPack>,
     pub(crate) chip_pack: Option<ChipPack>,
-    /// Investigation-specific compiled analysis logic. Reusable providers may
-    /// instead be selected by the chip pack, but the two scopes never merge
-    /// implicitly.
+    /// Investigation-specific compiled analysis logic. When a chip pack also
+    /// selects reusable knowledge, composition requires the installed overlay
+    /// descriptor to explicitly extend that exact chip provider.
     pub(crate) analysis_provider: Option<String>,
     pub(crate) run_spec: Option<PathBuf>,
     pub(crate) memory_map: Option<PathBuf>,
@@ -260,12 +260,18 @@ impl ProjectSpec {
         }
         if let Some(provider) = &self.analysis_provider {
             if let Some(existing) = &target.knowledge_provider {
-                return Err(crate::Error::invalid(format!(
-                    "project {:?} selects analysis-provider {provider:?}, but its chip pack already selects knowledge-provider {existing:?}",
-                    self.id
-                )));
+                let composed = crate::harnesses::compose_provider(existing, provider).map_err(
+                    |error| {
+                        crate::Error::invalid(format!(
+                            "project {:?} cannot compose analysis-provider {provider:?} over chip knowledge-provider {existing:?}: {error}",
+                            self.id
+                        ))
+                    },
+                )?;
+                target.knowledge_provider = Some(composed.to_owned());
+            } else {
+                target.knowledge_provider = Some(provider.clone());
             }
-            target.knowledge_provider = Some(provider.clone());
         }
         Ok(())
     }

@@ -88,23 +88,6 @@ static PP_POST_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec
     evidence: "exact-body-and-relocation-schema",
 };
 
-static RTC_XTAL_FREQUENCY_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
-    id: "esp32s31-rtc-xtal-frequency-v1",
-    source: "esp32s31-chip-addon",
-    c_name: "rtc_clk_xtal_freq_get",
-    argument_count: 0,
-    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
-    return_model: ExternalReturnModel::Constant(40),
-    semantic: ExternalSemanticSpec {
-        operation: "clock.xtal-frequency.read",
-        arguments: &[],
-        return_type: "u32",
-        replacement: Some("fixed ESP32-S31 40 MHz crystal contract"),
-        event_dispatch: None,
-    },
-    evidence: "esp32s31-fixed-crystal-target-contract",
-};
-
 fn exact_pp_post(symbol: &artifact::ArtifactSymbolDefinition) -> bool {
     symbol.member.as_deref() == Some("pp.o")
         && symbol.name == "pp_post"
@@ -129,10 +112,7 @@ pub(crate) fn direct_semantic_function(
 }
 
 pub(crate) fn direct_external_semantic_function(
-    symbol: &str,
+    _symbol: &str,
 ) -> Option<&'static DirectSemanticFunctionSpec> {
-    match symbol {
-        "rtc_clk_xtal_freq_get" => Some(&RTC_XTAL_FREQUENCY_SEMANTIC),
-        _ => None,
-    }
+    None
 }

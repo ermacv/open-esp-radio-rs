@@ -64,8 +64,11 @@ assertion (plus its evidence), not copy or edit a complete generated register
 catalog. The generated SVD/PAC and review output may change broadly without
 inflating the reviewed diff. A compiled provider is selected by `chip.toml`
 only when all of its assumptions are reusable for that chip; use the project's
-`analysis-provider` for exact blob-lineage ABI contracts and body guards. The
-two selections conflict fail-closed.
+`analysis-provider` for exact blob-lineage ABI contracts and body guards. When
+both are selected, the installed project descriptor must explicitly extend the
+exact chip provider and publish a checked contract superset through a
+precomposed harness. Arbitrary pairs and implicit manifest layering fail
+closed.
 
 `research next` combines root-cause blockers, the reverse call graph,
 unreviewed MMIO and interface observations, sparse unknown hardware semantics,

@@ -38,6 +38,8 @@ members = [
     "tools/blobray/crates/contracts",
     "tools/blobray/crates/review-model",
     "tools/blobray/crates/execution-model",
+    "verification/vendor/chips/esp32s31/blobray-provider/contracts",
+    "verification/vendor/chips/esp32s31/blobray-provider/knowledge",
     "verification/vendor/targets/esp32s31/blobray-provider/contracts",
     "verification/vendor/targets/esp32s31/blobray-provider/knowledge",
     "tools/blobray/crates/analysis-model",

@@ -26,9 +26,12 @@ ecosystem/chip knowledge or as investigation-local review.
 The schema-3 project, target, ecosystem, and chip formats are a clean break.
 Old inline `memory-map`, `svd`, `platform-pack`, `harness`, and
 `semantic-catalogs` keys fail closed; no compatibility shim reinterprets them.
-At most one compiled provider may be selected: a project-local
-`analysis-provider` conflicts with a chip pack `knowledge-provider` instead of
-silently layering executable assumptions from different ownership scopes.
+A project-local `analysis-provider` and chip-pack `knowledge-provider` compose
+only when the installed analysis descriptor explicitly extends that exact chip
+provider. Registry validation requires a reusable root, a complete contract
+superset and a distinct precomposed harness/cache domain; there is still one
+effective provider after resolution. Missing or unrelated descriptors fail
+closed instead of using manifest order as executable precedence.
 
 ## Other reviewed inputs
 

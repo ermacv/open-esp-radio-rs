@@ -72,7 +72,10 @@ ecosystem add-on, while ESP32-S31 addresses and compiled summary hooks remain
 chip knowledge only when they are revision-stable. Exact ABI layouts,
 body-identity guards, and Wi-Fi/BLE/802.15.4 artifact profiles remain
 investigation-local because they describe the supplied blob lineage. A project
-provider and a chip provider conflict rather than compose implicitly.
+provider may compose with a chip provider only when its compiled descriptor
+explicitly extends that exact reusable root, exposes a contract superset and a
+distinct precomposed harness/cache domain. Unrelated providers, transitive
+extension chains and contract downgrades fail closed.
 
 ## Demand-driven analysis and persistent ownership
 

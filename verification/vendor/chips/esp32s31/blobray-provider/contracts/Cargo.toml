@@ -1,16 +1,15 @@
 [package]
-name = "open-radio-vendor-harness-esp32s31"
+name = "open-radio-vendor-chip-contracts-esp32s31-rev0"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "ESP32-S31 ABI and lifecycle fixture for vendor-binary analysis and verification"
+description = "Reusable ESP32-S31 rev0 ROM contracts for vendor-binary analysis"
 
 [dependencies]
 open-radio-vendor-contracts = { path = "../../../../../../tools/blobray/crates/contracts" }
-open-radio-vendor-chip-contracts-esp32s31-rev0 = { path = "../../../../chips/esp32s31/blobray-provider/contracts" }
 
 [lints]
 workspace = true

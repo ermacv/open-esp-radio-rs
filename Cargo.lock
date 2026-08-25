@@ -257,6 +257,7 @@ name = "blobray-esp32s31"
 version = "0.1.0"
 dependencies = [
  "blobray",
+ "open-radio-vendor-chip-knowledge-esp32s31-rev0",
  "open-radio-vendor-knowledge-esp32s31",
  "serde_json",
  "toml_edit",
@@ -2556,6 +2557,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-radio-vendor-chip-contracts-esp32s31-rev0"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-contracts",
+]
+
+[[package]]
+name = "open-radio-vendor-chip-knowledge-esp32s31-rev0"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-addon-c",
+ "open-radio-vendor-addon-esp-idf",
+ "open-radio-vendor-backend-riscv",
+ "open-radio-vendor-chip-contracts-esp32s31-rev0",
+ "open-radio-vendor-semantics",
+]
+
+[[package]]
 name = "open-radio-vendor-contracts"
 version = "0.1.0"
 dependencies = [
@@ -2574,6 +2593,7 @@ dependencies = [
 name = "open-radio-vendor-harness-esp32s31"
 version = "0.1.0"
 dependencies = [
+ "open-radio-vendor-chip-contracts-esp32s31-rev0",
  "open-radio-vendor-contracts",
 ]
 
@@ -2581,9 +2601,8 @@ dependencies = [
 name = "open-radio-vendor-knowledge-esp32s31"
 version = "0.1.0"
 dependencies = [
- "open-radio-vendor-addon-c",
- "open-radio-vendor-addon-esp-idf",
  "open-radio-vendor-backend-riscv",
+ "open-radio-vendor-chip-knowledge-esp32s31-rev0",
  "open-radio-vendor-execution-model",
  "open-radio-vendor-harness-esp32s31",
  "open-radio-vendor-semantics",

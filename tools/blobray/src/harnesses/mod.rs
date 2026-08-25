@@ -1,6 +1,6 @@
 //! Runtime registry for optional compiled knowledge and verification add-ons.
 
-use std::sync::OnceLock;
+use std::{collections::BTreeSet, sync::OnceLock};
 
 mod neutral;
 
@@ -11,6 +11,10 @@ mod neutral;
 /// `id`, according to the provider's reuse scope.
 pub struct KnowledgeProviderDescriptor {
     pub id: &'static str,
+    /// Optional reusable provider that this investigation overlay explicitly
+    /// extends. The overlay descriptor must expose a contract superset and a
+    /// precomposed architecture harness; arbitrary provider pairs never layer.
+    pub extends: Option<&'static str>,
     /// Semantic revision of the compiled provider used by persistent
     /// analysis queries.
     ///
@@ -31,11 +35,20 @@ pub struct ProviderRegistry {
     pub knowledge: &'static [KnowledgeProviderDescriptor],
 }
 
+impl ProviderRegistry {
+    /// Validate descriptor identity, explicit extension and contract-superset
+    /// invariants without installing the registry globally.
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        validate_registry(self)
+    }
+}
+
 static BUILTIN_REGISTRY: ProviderRegistry = ProviderRegistry { knowledge: &[] };
 
 static INSTALLED_REGISTRY: OnceLock<&'static ProviderRegistry> = OnceLock::new();
 
 pub fn install_registry(registry: &'static ProviderRegistry) -> std::result::Result<(), String> {
+    registry.validate()?;
     INSTALLED_REGISTRY
         .set(registry)
         .map_err(|_| "add-on provider registry was already installed".to_owned())
@@ -67,7 +80,181 @@ fn knowledge_descriptor(provider: &str) -> crate::Result<&'static KnowledgeProvi
 }
 
 fn descriptor_identity(descriptor: &KnowledgeProviderDescriptor) -> String {
-    format!("{}@{}", descriptor.id, descriptor.analysis_cache_revision)
+    descriptor_identity_in(registry(), descriptor)
+}
+
+fn descriptor_identity_in(
+    registry: &ProviderRegistry,
+    descriptor: &KnowledgeProviderDescriptor,
+) -> String {
+    let own = format!("{}@{}", descriptor.id, descriptor.analysis_cache_revision);
+    descriptor.extends.map_or(own.clone(), |base| {
+        let base = registry
+            .knowledge
+            .iter()
+            .find(|candidate| candidate.id == base)
+            .expect("installed provider registry was validated");
+        format!("{}+{own}", descriptor_identity_in(registry, base))
+    })
+}
+
+fn validate_registry(registry: &ProviderRegistry) -> std::result::Result<(), String> {
+    let mut ids = BTreeSet::new();
+    for descriptor in registry.knowledge {
+        if descriptor.id.is_empty()
+            || descriptor.id.chars().any(char::is_whitespace)
+            || !ids.insert(descriptor.id)
+        {
+            return Err(format!(
+                "knowledge provider IDs must be unique non-empty tokens, got {:?}",
+                descriptor.id
+            ));
+        }
+        if descriptor.analysis_cache_revision == 0 {
+            return Err(format!(
+                "knowledge provider {:?} has zero analysis cache revision",
+                descriptor.id
+            ));
+        }
+        if descriptor
+            .riscv
+            .is_some_and(|harness| harness.semantic_cache_domain.is_empty())
+        {
+            return Err(format!(
+                "knowledge provider {:?} has an empty RISC-V semantic cache domain",
+                descriptor.id
+            ));
+        }
+    }
+    for descriptor in registry.knowledge {
+        let Some(base_id) = descriptor.extends else {
+            continue;
+        };
+        let base = registry
+            .knowledge
+            .iter()
+            .find(|candidate| candidate.id == base_id)
+            .ok_or_else(|| {
+                format!(
+                    "knowledge provider {:?} extends unavailable base {base_id:?}",
+                    descriptor.id
+                )
+            })?;
+        if base.id == descriptor.id || base.extends.is_some() {
+            return Err(format!(
+                "knowledge provider {:?} must extend one reusable root provider, got {base_id:?}",
+                descriptor.id
+            ));
+        }
+        validate_contract_superset(base, descriptor)?;
+        match (base.riscv, descriptor.riscv) {
+            (Some(base), Some(overlay))
+                if !overlay
+                    .semantic_cache_domain
+                    .strip_prefix(base.semantic_cache_domain)
+                    .is_some_and(|suffix| suffix.starts_with('+') && suffix.len() > 1) =>
+            {
+                return Err(format!(
+                    "knowledge provider {:?} semantic cache domain {:?} does not extend base domain {:?}",
+                    descriptor.id, overlay.semantic_cache_domain, base.semantic_cache_domain
+                ));
+            }
+            (Some(_), None) => {
+                return Err(format!(
+                    "knowledge provider {:?} drops its base RISC-V harness",
+                    descriptor.id
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_contract_superset(
+    base: &KnowledgeProviderDescriptor,
+    overlay: &KnowledgeProviderDescriptor,
+) -> std::result::Result<(), String> {
+    let models_are_preserved = base
+        .contracts
+        .external_call_model_sets
+        .iter()
+        .all(|base_models| {
+            overlay
+                .contracts
+                .external_call_model_sets
+                .iter()
+                .any(|overlay_models| overlay_models.spec() == base_models.spec())
+        });
+    let entries_are_preserved = base.contracts.entry_contracts.iter().all(|base_entry| {
+        overlay
+            .contracts
+            .entry_contracts
+            .iter()
+            .any(|overlay_entry| entry_contract_specs_equal(*base_entry, *overlay_entry))
+    });
+    let base_diagnostics = base
+        .contracts
+        .diagnostic_calls
+        .iter()
+        .map(|call| (call.symbol, call.argument_count))
+        .collect::<BTreeSet<_>>();
+    let overlay_diagnostics = overlay
+        .contracts
+        .diagnostic_calls
+        .iter()
+        .map(|call| (call.symbol, call.argument_count))
+        .collect::<BTreeSet<_>>();
+    if !models_are_preserved
+        || !entries_are_preserved
+        || !base_diagnostics.is_subset(&overlay_diagnostics)
+    {
+        return Err(format!(
+            "knowledge provider {:?} is not a contract superset of base {:?}",
+            overlay.id, base.id
+        ));
+    }
+    Ok(())
+}
+
+fn entry_contract_specs_equal(
+    left: crate::EntryContractRef,
+    right: crate::EntryContractRef,
+) -> bool {
+    let left = left.spec();
+    let right = right.spec();
+    let tables_are_equal = match (left.function_table, right.function_table) {
+        (None, None) => true,
+        (Some(left), Some(right)) => left.id() == right.id() && left.targets().eq(right.targets()),
+        _ => false,
+    };
+    left.id == right.id
+        && tables_are_equal
+        && left.pointer_symbols == right.pointer_symbols
+        && left.data_pointer_binding == right.data_pointer_binding
+}
+
+pub(crate) fn compose_provider(base: &str, overlay: &str) -> crate::Result<&'static str> {
+    compose_provider_in(registry(), base, overlay).map_err(crate::Error::invalid)
+}
+
+fn compose_provider_in(
+    registry: &'static ProviderRegistry,
+    base: &str,
+    overlay: &str,
+) -> std::result::Result<&'static str, String> {
+    let overlay = registry
+        .knowledge
+        .iter()
+        .find(|descriptor| descriptor.id == overlay)
+        .ok_or_else(|| format!("unavailable investigation knowledge provider {overlay:?}"))?;
+    if overlay.extends != Some(base) {
+        return Err(format!(
+            "investigation knowledge provider {:?} does not explicitly extend chip provider {base:?}",
+            overlay.id
+        ));
+    }
+    Ok(overlay.id)
 }
 
 pub(crate) fn is_available(provider: &str) -> bool {
@@ -197,6 +384,7 @@ mod tests {
         };
         let descriptor = KnowledgeProviderDescriptor {
             id: "fixture-provider",
+            extends: None,
             analysis_cache_revision: 7,
             contracts: &CONTRACTS,
             riscv: None,
@@ -212,5 +400,218 @@ mod tests {
         assert_eq!(actual.calls[0].argument_count, 4);
         assert_eq!(actual.calls[1].symbol, "z_log");
         assert_eq!(actual.calls[1].argument_count, 2);
+    }
+
+    #[test]
+    fn provider_composition_requires_an_explicit_contract_superset() {
+        static BASE_CALLS: &[crate::DiagnosticCallSpec] = &[crate::DiagnosticCallSpec {
+            symbol: "rom_log",
+            argument_count: 1,
+        }];
+        static OVERLAY_CALLS: &[crate::DiagnosticCallSpec] = &[
+            crate::DiagnosticCallSpec {
+                symbol: "rom_log",
+                argument_count: 1,
+            },
+            crate::DiagnosticCallSpec {
+                symbol: "blob_log",
+                argument_count: 2,
+            },
+        ];
+        static BASE_CONTRACTS: crate::KnowledgeContractSpec = crate::KnowledgeContractSpec {
+            external_call_model_sets: &[],
+            entry_contracts: &[],
+            diagnostic_calls: BASE_CALLS,
+        };
+        static OVERLAY_CONTRACTS: crate::KnowledgeContractSpec = crate::KnowledgeContractSpec {
+            external_call_model_sets: &[],
+            entry_contracts: &[],
+            diagnostic_calls: OVERLAY_CALLS,
+        };
+        static PROVIDERS: &[KnowledgeProviderDescriptor] = &[
+            KnowledgeProviderDescriptor {
+                id: "chip-v1",
+                extends: None,
+                analysis_cache_revision: 1,
+                contracts: &BASE_CONTRACTS,
+                riscv: None,
+            },
+            KnowledgeProviderDescriptor {
+                id: "project-v1",
+                extends: Some("chip-v1"),
+                analysis_cache_revision: 2,
+                contracts: &OVERLAY_CONTRACTS,
+                riscv: None,
+            },
+        ];
+        static REGISTRY: ProviderRegistry = ProviderRegistry {
+            knowledge: PROVIDERS,
+        };
+
+        validate_registry(&REGISTRY).unwrap();
+        assert_eq!(
+            compose_provider_in(&REGISTRY, "chip-v1", "project-v1").unwrap(),
+            "project-v1"
+        );
+        assert!(compose_provider_in(&REGISTRY, "other-chip", "project-v1").is_err());
+        assert_eq!(
+            descriptor_identity_in(&REGISTRY, &PROVIDERS[1]),
+            "chip-v1@1+project-v1@2"
+        );
+    }
+
+    #[test]
+    fn provider_composition_rejects_a_contract_downgrade() {
+        static BASE_CALLS: &[crate::DiagnosticCallSpec] = &[crate::DiagnosticCallSpec {
+            symbol: "rom_log",
+            argument_count: 1,
+        }];
+        static BASE_CONTRACTS: crate::KnowledgeContractSpec = crate::KnowledgeContractSpec {
+            external_call_model_sets: &[],
+            entry_contracts: &[],
+            diagnostic_calls: BASE_CALLS,
+        };
+        static EMPTY_CONTRACTS: crate::KnowledgeContractSpec = crate::KnowledgeContractSpec {
+            external_call_model_sets: &[],
+            entry_contracts: &[],
+            diagnostic_calls: &[],
+        };
+        static PROVIDERS: &[KnowledgeProviderDescriptor] = &[
+            KnowledgeProviderDescriptor {
+                id: "chip-v1",
+                extends: None,
+                analysis_cache_revision: 1,
+                contracts: &BASE_CONTRACTS,
+                riscv: None,
+            },
+            KnowledgeProviderDescriptor {
+                id: "project-v1",
+                extends: Some("chip-v1"),
+                analysis_cache_revision: 1,
+                contracts: &EMPTY_CONTRACTS,
+                riscv: None,
+            },
+        ];
+        static REGISTRY: ProviderRegistry = ProviderRegistry {
+            knowledge: PROVIDERS,
+        };
+
+        assert!(
+            validate_registry(&REGISTRY)
+                .unwrap_err()
+                .contains("not a contract superset")
+        );
+    }
+
+    #[test]
+    fn provider_composition_rejects_a_same_id_model_semantic_change() {
+        static BASE_MODEL: crate::ExternalCallModelSetSpec = crate::ExternalCallModelSetSpec {
+            id: "runtime-models-v1",
+            models: &[crate::ExternalCallModelSpec {
+                id: "clock-frequency",
+                return_model: crate::ExternalReturnModel::Constant(40),
+                outputs: &[],
+            }],
+        };
+        static CHANGED_MODEL: crate::ExternalCallModelSetSpec = crate::ExternalCallModelSetSpec {
+            id: "runtime-models-v1",
+            models: &[crate::ExternalCallModelSpec {
+                id: "clock-frequency",
+                return_model: crate::ExternalReturnModel::Constant(26),
+                outputs: &[],
+            }],
+        };
+        static BASE_MODEL_REFS: &[crate::ExternalCallModelSetRef] =
+            &[crate::ExternalCallModelSetRef::new(&BASE_MODEL)];
+        static CHANGED_MODEL_REFS: &[crate::ExternalCallModelSetRef] =
+            &[crate::ExternalCallModelSetRef::new(&CHANGED_MODEL)];
+        static BASE_CONTRACTS: crate::KnowledgeContractSpec = crate::KnowledgeContractSpec {
+            external_call_model_sets: BASE_MODEL_REFS,
+            entry_contracts: &[],
+            diagnostic_calls: &[],
+        };
+        static CHANGED_CONTRACTS: crate::KnowledgeContractSpec = crate::KnowledgeContractSpec {
+            external_call_model_sets: CHANGED_MODEL_REFS,
+            entry_contracts: &[],
+            diagnostic_calls: &[],
+        };
+        let base = KnowledgeProviderDescriptor {
+            id: "chip-v1",
+            extends: None,
+            analysis_cache_revision: 1,
+            contracts: &BASE_CONTRACTS,
+            riscv: None,
+        };
+        let overlay = KnowledgeProviderDescriptor {
+            id: "project-v1",
+            extends: Some("chip-v1"),
+            analysis_cache_revision: 1,
+            contracts: &CHANGED_CONTRACTS,
+            riscv: None,
+        };
+
+        assert!(
+            validate_contract_superset(&base, &overlay)
+                .unwrap_err()
+                .contains("not a contract superset")
+        );
+    }
+
+    #[test]
+    fn provider_composition_rejects_a_same_id_entry_table_change() {
+        static BASE_TABLE: crate::FunctionTableSpec = crate::FunctionTableSpec {
+            id: "rom-phy-table-v1",
+            targets: &[crate::FunctionTarget::Address(0x4000_1000)],
+        };
+        static CHANGED_TABLE: crate::FunctionTableSpec = crate::FunctionTableSpec {
+            id: "rom-phy-table-v1",
+            targets: &[crate::FunctionTarget::Address(0x4000_2000)],
+        };
+        static BASE_ENTRY_SPEC: crate::EntryContractSpec = crate::EntryContractSpec {
+            id: "phy-cold",
+            function_table: Some(crate::FunctionTableRef::new(&BASE_TABLE)),
+            pointer_symbols: &["g_phy_table"],
+            data_pointer_binding: None,
+        };
+        static CHANGED_ENTRY_SPEC: crate::EntryContractSpec = crate::EntryContractSpec {
+            id: "phy-cold",
+            function_table: Some(crate::FunctionTableRef::new(&CHANGED_TABLE)),
+            pointer_symbols: &["g_phy_table"],
+            data_pointer_binding: None,
+        };
+        static BASE_ENTRY_REFS: &[crate::EntryContractRef] =
+            &[crate::EntryContractRef::new(&BASE_ENTRY_SPEC)];
+        static CHANGED_ENTRY_REFS: &[crate::EntryContractRef] =
+            &[crate::EntryContractRef::new(&CHANGED_ENTRY_SPEC)];
+        static BASE_CONTRACTS: crate::KnowledgeContractSpec = crate::KnowledgeContractSpec {
+            external_call_model_sets: &[],
+            entry_contracts: BASE_ENTRY_REFS,
+            diagnostic_calls: &[],
+        };
+        static CHANGED_CONTRACTS: crate::KnowledgeContractSpec = crate::KnowledgeContractSpec {
+            external_call_model_sets: &[],
+            entry_contracts: CHANGED_ENTRY_REFS,
+            diagnostic_calls: &[],
+        };
+        let base = KnowledgeProviderDescriptor {
+            id: "chip-v1",
+            extends: None,
+            analysis_cache_revision: 1,
+            contracts: &BASE_CONTRACTS,
+            riscv: None,
+        };
+        let overlay = KnowledgeProviderDescriptor {
+            id: "project-v1",
+            extends: Some("chip-v1"),
+            analysis_cache_revision: 1,
+            contracts: &CHANGED_CONTRACTS,
+            riscv: None,
+        };
+
+        assert!(
+            validate_contract_superset(&base, &overlay)
+                .unwrap_err()
+                .contains("not a contract superset")
+        );
     }
 }

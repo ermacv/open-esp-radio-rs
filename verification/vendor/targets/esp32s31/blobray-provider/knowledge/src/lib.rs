@@ -14,36 +14,32 @@ pub use open_radio_vendor_semantics::*;
 
 mod reviewed_summaries;
 
+const CHIP_SUMMARIES: &RiscvSummaryHooks =
+    open_radio_vendor_chip_knowledge_esp32s31_rev0::RISCV_HARNESS.summaries;
+
 const RISCV_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     secondary_return_target: |target| target == wide_signed_divide_target_address(),
     direct_semantic: |symbol| {
-        open_radio_vendor_addon_c::direct_semantic_function(symbol)
-            .or_else(|| open_radio_vendor_addon_esp_idf::direct_semantic_function(symbol))
+        (CHIP_SUMMARIES.direct_semantic)(symbol)
             .or_else(|| reviewed_summaries::direct_semantic_function(symbol))
     },
     direct_external_semantic: |symbol| {
-        open_radio_vendor_addon_c::direct_external_semantic_function(symbol)
-            .or_else(|| open_radio_vendor_addon_esp_idf::direct_external_semantic_function(symbol))
+        (CHIP_SUMMARIES.direct_external_semantic)(symbol)
             .or_else(|| reviewed_summaries::direct_external_semantic_function(symbol))
     },
     direct_external_intrinsic: |symbol, arguments| {
-        open_radio_vendor_addon_c::direct_external_intrinsic(symbol, arguments).or_else(|| {
-            open_radio_vendor_addon_esp_idf::direct_external_intrinsic(symbol, arguments)
-        })
+        (CHIP_SUMMARIES.direct_external_intrinsic)(symbol, arguments)
     },
     reference_intrinsic: |symbol, svd, context| {
-        open_radio_vendor_addon_c::reference_intrinsic_trace(symbol, svd, context)
-            .or_else(|| {
-                open_radio_vendor_addon_esp_idf::reference_intrinsic_trace(symbol, svd, context)
-            })
+        (CHIP_SUMMARIES.reference_intrinsic)(symbol, svd, context)
             .or_else(|| reviewed_summaries::reference_intrinsic_trace(symbol, svd, context))
     },
-    standard_memory_function: open_radio_vendor_addon_c::standard_memory_function,
+    standard_memory_function: CHIP_SUMMARIES.standard_memory_function,
     wide_signed_divide: reviewed_summaries::wide_signed_divide_intrinsic,
 };
 
 pub static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
-    semantic_cache_domain: "blobray/riscv-harness/esp32s31/v1",
+    semantic_cache_domain: "blobray/riscv-harness/esp32s31-rev0-chip/v1+radio-investigation-overlay/v1",
     contracts: &CONTRACTS,
     summaries: &RISCV_SUMMARIES,
 };

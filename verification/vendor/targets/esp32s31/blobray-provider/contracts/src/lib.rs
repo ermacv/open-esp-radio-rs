@@ -4,6 +4,7 @@
 //! instruction decoder, verifier policy, vendor artifact hashes, or private
 //! artifact paths.
 
+use open_radio_vendor_chip_contracts_esp32s31_rev0::ETS_PRINTF_DIAGNOSTIC;
 use open_radio_vendor_contracts::{DiagnosticCallSpec, KnowledgeContractSpec};
 
 pub mod entry_contract;
@@ -51,10 +52,7 @@ const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
     // ESP32-S31 archive relocations target the ROM printf entry directly.
     // The format pointer is the only stable input retained at this variadic
     // diagnostic boundary; payload registers do not become semantic inputs.
-    DiagnosticCallSpec {
-        symbol: "ets_printf",
-        argument_count: 1,
-    },
+    ETS_PRINTF_DIAGNOSTIC,
 ];
 
 pub const CONTRACTS: KnowledgeContractSpec = KnowledgeContractSpec {
@@ -83,6 +81,28 @@ mod tests {
             DIAGNOSTIC_CALLS[3..]
                 .iter()
                 .all(|call| call.argument_count == 1)
+        );
+    }
+
+    #[test]
+    fn project_contracts_are_an_explicit_superset_of_chip_contracts() {
+        let chip = open_radio_vendor_chip_contracts_esp32s31_rev0::CONTRACTS;
+        assert!(chip.entry_contracts.iter().all(|base| {
+            CONTRACTS
+                .entry_contracts
+                .iter()
+                .any(|combined| combined.id() == base.id())
+        }));
+        assert!(chip.diagnostic_calls.iter().all(|base| {
+            CONTRACTS
+                .diagnostic_calls
+                .iter()
+                .any(|combined| combined == base)
+        }));
+        assert!(
+            CONTRACTS
+                .entry_contract("esp32s31-phy-registered")
+                .is_some()
         );
     }
 }

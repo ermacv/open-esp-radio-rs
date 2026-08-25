@@ -1039,7 +1039,10 @@ fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
     assert!(manifest.contains("packs = [\"reviewed/ieee802154.toml\"]"));
 
     let chip_manifest = fs::read_to_string(chip.join("chip.toml")).unwrap();
-    assert!(!chip_manifest.contains("knowledge-provider"));
+    assert!(chip_manifest.contains("knowledge-provider = \"esp32s31-rev0-chip-knowledge-v1\""));
+    assert!(chip.join("blobray-provider/contracts").is_dir());
+    assert!(chip.join("blobray-provider/knowledge").is_dir());
+    assert!(target.join("blobray-provider/OWNERSHIP.md").is_file());
 
     let reviewed = fs::read_to_string(target.join("reviewed/ieee802154.toml"))
         .expect("read sparse reviewed facts");
@@ -1051,29 +1054,45 @@ fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
 
 #[test]
 fn investigation_provider_cannot_acquire_a_production_or_qualification_dependency() {
-    let provider = repository_root().join("verification/vendor/targets/esp32s31/blobray-provider");
-    let knowledge = fs::read_to_string(provider.join("knowledge/Cargo.toml")).unwrap();
-    for forbidden in [
-        "driver/chips",
-        "open-esp-radio-esp32s31",
-        "qualification-check",
-        "qualification/",
+    let vendor = repository_root().join("verification/vendor");
+    let project_provider = vendor.join("targets/esp32s31/blobray-provider");
+    let chip_provider = vendor.join("chips/esp32s31/blobray-provider");
+    let project_knowledge =
+        fs::read_to_string(project_provider.join("knowledge/Cargo.toml")).unwrap();
+    let chip_knowledge = fs::read_to_string(chip_provider.join("knowledge/Cargo.toml")).unwrap();
+    for (owner, knowledge) in [
+        ("chip", chip_knowledge.as_str()),
+        ("project", project_knowledge.as_str()),
     ] {
-        assert!(
-            !knowledge.contains(forbidden),
-            "chip knowledge provider acquired forbidden dependency {forbidden}"
-        );
+        for forbidden in [
+            "driver/chips",
+            "open-esp-radio-esp32s31",
+            "qualification-check",
+            "qualification/",
+        ] {
+            assert!(
+                !knowledge.contains(forbidden),
+                "{owner} knowledge provider acquired forbidden dependency {forbidden}"
+            );
+        }
     }
 
     assert!(
-        !provider.join("verification").exists(),
+        !project_provider.join("verification").exists()
+            && !chip_provider.join("verification").exists(),
         "compiled target code must not own comparison verdicts"
     );
 
     assert!(
-        knowledge.contains("open-radio-vendor-addon-c")
-            && knowledge.contains("open-radio-vendor-addon-esp-idf"),
-        "the target provider must compose language and ecosystem semantics explicitly"
+        chip_knowledge.contains("open-radio-vendor-addon-c")
+            && chip_knowledge.contains("open-radio-vendor-addon-esp-idf"),
+        "the reusable chip provider must compose language and ecosystem semantics explicitly"
+    );
+    assert!(
+        project_knowledge.contains("open-radio-vendor-chip-knowledge-esp32s31-rev0")
+            && !project_knowledge.contains("open-radio-vendor-addon-c")
+            && !project_knowledge.contains("open-radio-vendor-addon-esp-idf"),
+        "the project overlay must extend the exact chip root instead of rebuilding it"
     );
 }
 

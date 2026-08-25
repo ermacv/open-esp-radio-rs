@@ -1,42 +1,24 @@
-//! Explicit runtime entry contracts for mutable pointer cells.
+//! Investigation-local registered PHY entry contract.
 //!
-//! ELF bytes prove immutable data and the load/store sites, but a mutable
-//! pointer cell needs a lifecycle precondition. These contracts are selected
-//! explicitly by the caller; the structural resolver never assumes that PHY
-//! registration has happened merely because the relevant symbols exist.
+//! The cold ROM table is reusable rev0 chip knowledge. The registered table
+//! is an overlay because eleven targets are resolved from this project's
+//! authenticated `archive` source and its linked mutable pointer symbols.
 
 use open_radio_vendor_contracts::{
     DataPointerBinding, EntryContractRef, EntryContractSpec, FunctionTableRef, FunctionTableSpec,
     FunctionTarget,
 };
 
-pub const ROM_PHY_FUNCTION_TABLE: u32 = 0x2f07_f944;
-pub const ROM_PHY_FUNCTION_TABLE_POINTER_SYMBOL: &str = "rom_phyFuns";
+pub use open_radio_vendor_chip_contracts_esp32s31_rev0::entry_contract::{
+    NONE, PHY_COLD, PHY_COLD_TABLE, ROM_PHY_FUNCTION_TABLE, ROM_PHY_FUNCTION_TABLE_POINTER_SYMBOL,
+    ROM_PHY_PARAM_POINTER_SYMBOL,
+};
+
 pub const LINKED_PHY_FUNCTION_TABLE_POINTER_SYMBOL: &str = "g_phyFuns";
-pub const ROM_PHY_PARAM_POINTER_SYMBOL: &str = "phy_param_rom";
 pub const LINKED_PHY_PARAM_SYMBOL: &str = "phy_param";
 
-// Pinned ESP32-S31 rev0 ROM g_phyFuns_instance image. This is the same table
-// used by semantic verification scenarios; keeping it here gives structural
-// analysis and concrete execution one reviewed source of truth.
-const COLD_TARGETS: [FunctionTarget; 13] = [
-    FunctionTarget::Address(0x2f82_9f18),
-    FunctionTarget::Address(0x2f82_9f1a),
-    FunctionTarget::Address(0x2f82_9f84),
-    FunctionTarget::Address(0x2f82_9fc0),
-    FunctionTarget::Address(0x2f82_44fe),
-    FunctionTarget::Address(0x2f82_78b0),
-    FunctionTarget::Address(0x2f82_5dc8),
-    FunctionTarget::Address(0x2f82_5ecc),
-    FunctionTarget::Address(0x2f82_5f7c),
-    FunctionTarget::Address(0x2f82_711c),
-    FunctionTarget::Address(0x2f82_7392),
-    FunctionTarget::Address(0x2f82_66da),
-    FunctionTarget::Address(0x2f82_88de),
-];
-
-// phy_get_romfunc_addr replaces eleven slots in the linked image and retains
-// the ROM debug and tone-SAR callbacks at offsets 0x10 and 0x2c.
+// phy_get_romfunc_addr replaces eleven slots in this vendor-library lineage
+// and retains the ROM debug and tone-SAR callbacks at offsets 0x10 and 0x2c.
 const REGISTERED_TARGETS: [FunctionTarget; 13] = [
     FunctionTarget::SourceSymbol {
         source: "archive",
@@ -86,30 +68,13 @@ const REGISTERED_TARGETS: [FunctionTarget; 13] = [
     },
 ];
 
-const COLD_TABLE_SPEC: FunctionTableSpec = FunctionTableSpec {
-    id: "esp32s31-rom-phy-functions-cold",
-    targets: &COLD_TARGETS,
-};
 const REGISTERED_TABLE_SPEC: FunctionTableSpec = FunctionTableSpec {
     id: "esp32s31-rom-phy-functions-registered",
     targets: &REGISTERED_TARGETS,
 };
 
-pub const PHY_COLD_TABLE: FunctionTableRef = FunctionTableRef::new(&COLD_TABLE_SPEC);
 pub const PHY_REGISTERED_TABLE: FunctionTableRef = FunctionTableRef::new(&REGISTERED_TABLE_SPEC);
 
-const NONE_SPEC: EntryContractSpec = EntryContractSpec {
-    id: "none",
-    function_table: None,
-    pointer_symbols: &[],
-    data_pointer_binding: None,
-};
-const PHY_COLD_SPEC: EntryContractSpec = EntryContractSpec {
-    id: "esp32s31-phy-cold",
-    function_table: Some(PHY_COLD_TABLE),
-    pointer_symbols: &[ROM_PHY_FUNCTION_TABLE_POINTER_SYMBOL],
-    data_pointer_binding: None,
-};
 const PHY_REGISTERED_SPEC: EntryContractSpec = EntryContractSpec {
     id: "esp32s31-phy-registered",
     function_table: Some(PHY_REGISTERED_TABLE),
@@ -123,8 +88,6 @@ const PHY_REGISTERED_SPEC: EntryContractSpec = EntryContractSpec {
     }),
 };
 
-pub const NONE: EntryContractRef = EntryContractRef::new(&NONE_SPEC);
-pub const PHY_COLD: EntryContractRef = EntryContractRef::new(&PHY_COLD_SPEC);
 pub const PHY_REGISTERED: EntryContractRef = EntryContractRef::new(&PHY_REGISTERED_SPEC);
 pub const ALL: &[EntryContractRef] = &[NONE, PHY_COLD, PHY_REGISTERED];
 
@@ -133,20 +96,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn both_phy_table_contracts_cover_exactly_thirteen_aligned_slots() {
-        for table in [PHY_COLD_TABLE, PHY_REGISTERED_TABLE] {
-            assert_eq!(
-                table
-                    .targets()
-                    .map(|(offset, _)| offset)
-                    .collect::<Vec<_>>(),
-                (0..13).map(|index| index * 4).collect::<Vec<_>>()
-            );
-        }
-    }
-
-    #[test]
-    fn registered_contract_replaces_the_two_obsolete_rom_phy_callbacks() {
+    fn registered_contract_extends_cold_rom_with_archive_targets() {
+        assert_eq!(
+            PHY_REGISTERED_TABLE
+                .targets()
+                .map(|(offset, _)| offset)
+                .collect::<Vec<_>>(),
+            (0..13).map(|index| index * 4).collect::<Vec<_>>()
+        );
         assert_eq!(
             PHY_COLD_TABLE.targets().nth(3).unwrap().1,
             FunctionTarget::Address(0x2f82_9fc0)
@@ -157,10 +114,6 @@ mod tests {
                 source: "archive",
                 symbol: "phy_get_i2c_hostid_new",
             }
-        );
-        assert_eq!(
-            PHY_COLD_TABLE.targets().nth(5).unwrap().1,
-            FunctionTarget::Address(0x2f82_78b0)
         );
         assert_eq!(
             PHY_REGISTERED_TABLE.targets().nth(5).unwrap().1,

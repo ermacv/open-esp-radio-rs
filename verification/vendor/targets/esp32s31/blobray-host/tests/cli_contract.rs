@@ -115,6 +115,8 @@ fn checked_in_project_and_target_owned_review_packs_pass_doctor() {
                     Some("available" | "ready" | "valid" | "not-generated" | "facts-not-generated")
                 ) || (capability["name"] == "verification-report"
                     && capability["status"] == "incomplete")
+                    || (capability["name"] == "revision-workflow"
+                        && capability["status"] == "baseline-missing")
             }))
     );
 }

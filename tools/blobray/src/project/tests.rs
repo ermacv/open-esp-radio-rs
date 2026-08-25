@@ -750,7 +750,7 @@ fn project_local_analysis_provider_is_explicit_and_conflicts_fail_closed() {
     assert!(
         error
             .to_string()
-            .contains("already selects knowledge-provider")
+            .contains("cannot compose analysis-provider")
     );
 
     std::fs::remove_dir_all(directory).unwrap();

@@ -12,7 +12,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 2;
+pub(crate) const RESEARCH_SCHEMA: u32 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct ResearchScoreBreakdown {
@@ -42,10 +42,15 @@ pub(crate) struct ResearchCandidate {
     pub(crate) severity: String,
     pub(crate) score: u64,
     pub(crate) direct_functions: usize,
+    pub(crate) direct_function_ids: Vec<String>,
     pub(crate) guaranteed_unlock: usize,
+    pub(crate) guaranteed_function_ids: Vec<String>,
     pub(crate) optimistic_unlock: usize,
+    pub(crate) optimistic_function_ids: Vec<String>,
     pub(crate) marginal_unlock_after_co_blockers: usize,
+    pub(crate) marginal_function_ids: Vec<String>,
     pub(crate) co_blockers: usize,
+    pub(crate) co_blocker_ids: Vec<String>,
     pub(crate) affected_scope_roots: Vec<String>,
     pub(crate) scopes: Vec<String>,
     pub(crate) verification_surfaces: Vec<String>,
@@ -53,6 +58,9 @@ pub(crate) struct ResearchCandidate {
     pub(crate) estimated_cost: String,
     pub(crate) confidence: String,
     pub(crate) knowledge_required: String,
+    pub(crate) evidence_required: Vec<String>,
+    pub(crate) review_destinations: Vec<String>,
+    pub(crate) completion_conditions: Vec<String>,
     pub(crate) next_command: String,
     pub(crate) summary: String,
     /// Other independently scored findings resolved by the same next action.
@@ -146,10 +154,12 @@ pub(crate) fn next(
     add_interfaces(session, &scopes, &graphs, &mut candidates)?;
     attach_candidate_co_blockers(&mut candidates);
     let (surfaces, verification_diagnostic) = verification_surfaces(&session.project);
-    let mut ranked = candidates
+    let ranked = candidates
         .into_values()
         .map(|candidate| finalize(candidate, &surfaces))
         .collect::<Vec<_>>();
+    let total_candidates = ranked.len();
+    let mut ranked = coalesce_actions(ranked);
     ranked.sort_by(|left, right| {
         right
             .score
@@ -158,8 +168,6 @@ pub(crate) fn next(
             .then_with(|| right.optimistic_unlock.cmp(&left.optimistic_unlock))
             .then_with(|| left.id.cmp(&right.id))
     });
-    let total_candidates = ranked.len();
-    let mut ranked = coalesce_actions(ranked);
     let total_actions = ranked.len();
     ranked.truncate(limit);
     for (index, candidate) in ranked.iter_mut().enumerate() {
@@ -657,54 +665,50 @@ fn finalize(
         .flat_map(|scope| surfaces_by_scope.get(scope).into_iter().flatten())
         .cloned()
         .collect::<BTreeSet<_>>();
-    let cost = cost_units(&candidate.kind, candidate.direct.len());
-    let score_breakdown = ResearchScoreBreakdown {
-        guaranteed_weight: candidate.guaranteed.len() as u64 * 20,
-        optimistic_weight: candidate.optimistic.len() as u64 * 3,
-        marginal_weight: candidate.marginal.len() as u64 * 5,
-        root_weight: candidate.roots.len() as u64 * 10,
-        verification_weight: surfaces.len() as u64 * 15,
-        publication_weight: candidate.publication_scopes.len() as u64 * 20,
-        cost_penalty: cost * 10,
-        co_blocker_penalty: candidate.co_blockers.len() as u64 * 5,
-    };
-    let benefit = score_breakdown.guaranteed_weight
-        + score_breakdown.optimistic_weight
-        + score_breakdown.marginal_weight
-        + score_breakdown.root_weight
-        + score_breakdown.verification_weight
-        + score_breakdown.publication_weight;
-    let score = benefit.saturating_mul(100)
-        / (score_breakdown.cost_penalty + score_breakdown.co_blocker_penalty + 1);
     let next_command = next_command(&candidate);
-    ResearchCandidate {
+    let kind = candidate.kind.clone();
+    let mut result = ResearchCandidate {
         rank: 0,
         id: candidate.id,
-        kind: candidate.kind.clone(),
+        kind: kind.clone(),
         severity: candidate.severity,
-        score,
+        score: 0,
         direct_functions: candidate.direct.len(),
+        direct_function_ids: candidate.direct.into_iter().collect(),
         guaranteed_unlock: candidate.guaranteed.len(),
+        guaranteed_function_ids: candidate.guaranteed.into_iter().collect(),
         optimistic_unlock: candidate.optimistic.len(),
+        optimistic_function_ids: candidate.optimistic.into_iter().collect(),
         marginal_unlock_after_co_blockers: candidate.marginal.len(),
+        marginal_function_ids: candidate.marginal.into_iter().collect(),
         co_blockers: candidate.co_blockers.len(),
+        co_blocker_ids: candidate.co_blockers.into_iter().collect(),
         affected_scope_roots: candidate.roots.into_iter().collect(),
         scopes: candidate.scopes.into_iter().collect(),
         verification_surfaces: surfaces.into_iter().collect(),
         publication_scopes: candidate.publication_scopes.into_iter().collect(),
-        estimated_cost: match cost {
-            0..=2 => "low",
-            3..=5 => "medium",
-            _ => "high",
-        }
-        .to_owned(),
-        confidence: confidence(&candidate.kind, candidate.co_blockers.len()).to_owned(),
-        knowledge_required: knowledge_required(&candidate.kind).to_owned(),
+        estimated_cost: String::new(),
+        confidence: String::new(),
+        knowledge_required: knowledge_required(&kind).to_owned(),
+        evidence_required: evidence_required(&kind),
+        review_destinations: vec![review_destination(&kind).to_owned()],
+        completion_conditions: vec![completion_condition(&kind).to_owned()],
         next_command,
         summary: candidate.message,
         related_findings: Vec::new(),
-        score_breakdown,
-    }
+        score_breakdown: ResearchScoreBreakdown {
+            guaranteed_weight: 0,
+            optimistic_weight: 0,
+            marginal_weight: 0,
+            root_weight: 0,
+            verification_weight: 0,
+            publication_weight: 0,
+            cost_penalty: 0,
+            co_blocker_penalty: 0,
+        },
+    };
+    refresh_action_score(&mut result);
+    result
 }
 
 fn coalesce_actions(candidates: Vec<ResearchCandidate>) -> Vec<ResearchCandidate> {
@@ -725,12 +729,75 @@ fn coalesce_actions(candidates: Vec<ResearchCandidate>) -> Vec<ResearchCandidate
                 candidate.verification_surfaces,
             );
             merge_strings(&mut action.publication_scopes, candidate.publication_scopes);
+            merge_strings(
+                &mut action.direct_function_ids,
+                candidate.direct_function_ids,
+            );
+            merge_strings(
+                &mut action.guaranteed_function_ids,
+                candidate.guaranteed_function_ids,
+            );
+            merge_strings(
+                &mut action.optimistic_function_ids,
+                candidate.optimistic_function_ids,
+            );
+            merge_strings(
+                &mut action.marginal_function_ids,
+                candidate.marginal_function_ids,
+            );
+            merge_strings(&mut action.co_blocker_ids, candidate.co_blocker_ids);
+            merge_strings(&mut action.evidence_required, candidate.evidence_required);
+            merge_strings(
+                &mut action.review_destinations,
+                candidate.review_destinations,
+            );
+            merge_strings(
+                &mut action.completion_conditions,
+                candidate.completion_conditions,
+            );
+            refresh_action_score(action);
         } else {
             by_command.insert(candidate.next_command.clone(), actions.len());
             actions.push(candidate);
         }
     }
     actions
+}
+
+fn refresh_action_score(candidate: &mut ResearchCandidate) {
+    candidate.direct_functions = candidate.direct_function_ids.len();
+    candidate.guaranteed_unlock = candidate.guaranteed_function_ids.len();
+    candidate.optimistic_unlock = candidate.optimistic_function_ids.len();
+    candidate.marginal_unlock_after_co_blockers = candidate.marginal_function_ids.len();
+    candidate.co_blockers = candidate.co_blocker_ids.len();
+    let cost = cost_units(&candidate.kind, candidate.direct_functions);
+    candidate.estimated_cost = match cost {
+        0..=2 => "low",
+        3..=5 => "medium",
+        _ => "high",
+    }
+    .to_owned();
+    candidate.confidence = confidence(&candidate.kind, candidate.co_blockers).to_owned();
+    candidate.score_breakdown = ResearchScoreBreakdown {
+        guaranteed_weight: candidate.guaranteed_unlock as u64 * 20,
+        optimistic_weight: candidate.optimistic_unlock as u64 * 3,
+        marginal_weight: candidate.marginal_unlock_after_co_blockers as u64 * 5,
+        root_weight: candidate.affected_scope_roots.len() as u64 * 10,
+        verification_weight: candidate.verification_surfaces.len() as u64 * 15,
+        publication_weight: candidate.publication_scopes.len() as u64 * 20,
+        cost_penalty: cost * 10,
+        co_blocker_penalty: candidate.co_blockers as u64 * 5,
+    };
+    let benefit = candidate.score_breakdown.guaranteed_weight
+        + candidate.score_breakdown.optimistic_weight
+        + candidate.score_breakdown.marginal_weight
+        + candidate.score_breakdown.root_weight
+        + candidate.score_breakdown.verification_weight
+        + candidate.score_breakdown.publication_weight;
+    candidate.score = benefit.saturating_mul(100)
+        / (candidate.score_breakdown.cost_penalty
+            + candidate.score_breakdown.co_blocker_penalty
+            + 1);
 }
 
 fn merge_strings(target: &mut Vec<String>, source: Vec<String>) {
@@ -775,6 +842,88 @@ fn knowledge_required(kind: &str) -> &'static str {
         kind if kind.starts_with("replacement-") => "production binding and verification evidence",
         "memory-load" | "memory-store" | "memory-intrinsic" => "memory-object/type layout",
         _ => "reviewed semantic model",
+    }
+}
+
+fn evidence_required(kind: &str) -> Vec<String> {
+    let values: &[&str] = match kind {
+        "decode" => &[
+            "exact undecoded instruction bytes and artifact provenance",
+            "architecture or toolchain evidence for the missing ISA behavior",
+            "focused decoder regression fixture",
+        ],
+        "unresolved-call" => &[
+            "source-qualified call site and relocation evidence",
+            "unique symbol or linkage identity",
+        ],
+        "call-result-model" | "call-shape" | "indirect-control-flow" => &[
+            "caller and callee linked-IR projections",
+            "body-bounded ABI/effect evidence",
+        ],
+        "interface-layout" => &[
+            "producer and consumer slot access sites",
+            "offset, width, selector and calling-convention evidence",
+        ],
+        "register-model" => &[
+            "generated MMIO read/write observations",
+            "reviewed address-space, register width and owning region",
+            "authoritative or cross-checked register-name evidence",
+        ],
+        "register-write-semantics" => &[
+            "reviewed HIL trace or authoritative hardware documentation",
+            "software access evidence kept separate from hardware semantics",
+        ],
+        kind if kind.starts_with("replacement-") => &[
+            "compiled production component identity",
+            "qualifying vendor comparison or reviewed policy disposition",
+        ],
+        "memory-load" | "memory-store" | "memory-intrinsic" => &[
+            "data-object provenance and access sites",
+            "reviewed object or field layout",
+        ],
+        _ => &[
+            "source-qualified linked-IR evidence",
+            "applicability-bounded reviewed semantic assertion",
+        ],
+    };
+    values.iter().map(|value| (*value).to_owned()).collect()
+}
+
+fn review_destination(kind: &str) -> &'static str {
+    match kind {
+        "decode" => "generic backend source plus a focused regression test",
+        "interface-layout" | "call-shape" | "indirect-control-flow" => {
+            "reusable interface pack or artifact-bounded project overlay"
+        }
+        "register-model" => "sparse register-declaration and register-name reviewed assertions",
+        "register-write-semantics" => "sparse hardware-write-semantics reviewed assertion",
+        kind if kind.starts_with("replacement-") => {
+            "production binding, verification evidence or reviewed disposition"
+        }
+        "unresolved-call" | "call-result-model" => {
+            "reusable ecosystem contract or artifact-bounded function knowledge"
+        }
+        "memory-load" | "memory-store" | "memory-intrinsic" => "reviewed object/type layout pack",
+        _ => "applicability-bounded reviewed knowledge pack",
+    }
+}
+
+fn completion_condition(kind: &str) -> &'static str {
+    match kind {
+        "decode" => "the blocker disappears without weakening decode limits",
+        "register-model" => {
+            "the effective model contains the physical register while access semantics remain explicit"
+        }
+        "register-write-semantics" => {
+            "hardware semantics are explicit and no longer inferred from vendor software writes"
+        }
+        "interface-layout" | "call-shape" | "indirect-control-flow" => {
+            "the affected call sites resolve through one reviewed ABI identity"
+        }
+        kind if kind.starts_with("replacement-") => {
+            "the explicit replacement root has qualifying evidence or an explicit fail-closed disposition"
+        }
+        _ => "the named root cause is absent after regenerating the affected scopes",
     }
 }
 
@@ -853,7 +1002,7 @@ mod tests {
             guaranteed: ["leaf".to_owned()].into(),
             optimistic: ["leaf".to_owned(), "root".to_owned()].into(),
             marginal: ["leaf".to_owned()].into(),
-            co_blockers: BTreeSet::new(),
+            co_blockers: ["other-cause".to_owned()].into(),
             roots: ["root".to_owned()].into(),
             scopes: ["radio".to_owned()].into(),
             publication_scopes: ["radio".to_owned()].into(),
@@ -864,6 +1013,8 @@ mod tests {
         );
         assert_eq!(result.guaranteed_unlock, 1);
         assert_eq!(result.optimistic_unlock, 2);
+        assert_eq!(result.direct_function_ids, ["leaf"]);
+        assert_eq!(result.co_blocker_ids, ["other-cause"]);
         assert_eq!(result.score_breakdown.cost_penalty, 20);
         assert!(result.score > 100);
         assert_eq!(
@@ -874,16 +1025,18 @@ mod tests {
 
     #[test]
     fn one_user_action_keeps_all_related_findings_without_duplicate_ranks() {
-        fn candidate(id: &str, message: &str) -> Accumulator {
+        fn candidate(id: &str, message: &str, extra_function: Option<&str>) -> Accumulator {
+            let mut direct = BTreeSet::from(["ble-controller::logger".to_owned()]);
+            direct.extend(extra_function.map(str::to_owned));
             Accumulator {
                 id: id.to_owned(),
                 kind: "interface-layout".to_owned(),
                 severity: "warning".to_owned(),
                 message: message.to_owned(),
-                direct: ["ble-controller::logger".to_owned()].into(),
+                direct: direct.clone(),
                 guaranteed: BTreeSet::new(),
-                optimistic: ["ble-controller::logger".to_owned()].into(),
-                marginal: ["ble-controller::logger".to_owned()].into(),
+                optimistic: direct.clone(),
+                marginal: direct,
                 co_blockers: BTreeSet::new(),
                 roots: BTreeSet::new(),
                 scopes: ["ble".to_owned()].into(),
@@ -892,8 +1045,11 @@ mod tests {
         }
 
         let actions = coalesce_actions(vec![
-            finalize(candidate("slot-a", "review slot A"), &BTreeMap::new()),
-            finalize(candidate("slot-b", "review slot B"), &BTreeMap::new()),
+            finalize(candidate("slot-a", "review slot A", None), &BTreeMap::new()),
+            finalize(
+                candidate("slot-b", "review slot B", Some("ble-controller::worker")),
+                &BTreeMap::new(),
+            ),
         ]);
 
         assert_eq!(actions.len(), 1);
@@ -901,6 +1057,11 @@ mod tests {
         assert_eq!(actions[0].related_findings.len(), 1);
         assert_eq!(actions[0].related_findings[0].id, "slot-b");
         assert_eq!(actions[0].related_findings[0].summary, "review slot B");
+        assert_eq!(actions[0].direct_functions, 2);
+        assert_eq!(
+            actions[0].direct_function_ids,
+            ["ble-controller::logger", "ble-controller::worker"]
+        );
     }
 
     #[test]

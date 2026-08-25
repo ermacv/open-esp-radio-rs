@@ -84,6 +84,22 @@ fn render(report: &research::ResearchNextReport) {
     );
     outputln!("Knowledge: {}", first.knowledge_required);
     outputln!("Confidence: {}", first.confidence);
+    outputln!(
+        "Impact: {} direct; {} guaranteed / {} optimistic / {} marginal",
+        first.direct_functions,
+        first.guaranteed_unlock,
+        first.optimistic_unlock,
+        first.marginal_unlock_after_co_blockers,
+    );
+    if !first.co_blocker_ids.is_empty() {
+        outputln!("Co-blockers: {}", first.co_blocker_ids.join(", "));
+    }
+    outputln!("Evidence:");
+    for evidence in &first.evidence_required {
+        outputln!("  - {evidence}");
+    }
+    outputln!("Review into: {}", first.review_destinations.join("; "));
+    outputln!("Done when: {}", first.completion_conditions.join("; "));
     if !first.related_findings.is_empty() {
         outputln!(
             "Also covers: {} related finding(s)",
@@ -95,11 +111,15 @@ fn render(report: &research::ResearchNextReport) {
     if output::details() {
         for candidate in report.candidates.iter().skip(1) {
             outputln!(
-                "\n#{} {} — {}\n  Knowledge: {}\n  Related findings: {}\n  Next: {}",
+                "\n#{} {} — {}\n  Knowledge: {}\n  Direct functions: {}\n  Co-blockers: {}\n  Review into: {}\n  Done when: {}\n  Related findings: {}\n  Next: {}",
                 candidate.rank,
                 candidate.id,
                 candidate.summary,
                 candidate.knowledge_required,
+                candidate.direct_function_ids.join(", "),
+                candidate.co_blocker_ids.join(", "),
+                candidate.review_destinations.join("; "),
+                candidate.completion_conditions.join("; "),
                 candidate.related_findings.len(),
                 candidate.next_command
             );

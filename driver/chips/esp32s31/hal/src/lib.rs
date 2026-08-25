@@ -25,6 +25,7 @@ pub mod ieee802154_lifecycle;
 mod ieee802154_operation;
 mod ieee802154_policy;
 mod ieee802154_role;
+mod ieee802154_tx_power;
 mod modem_clock_planner;
 pub mod pbus;
 pub mod phy_agc;
@@ -87,6 +88,9 @@ pub use ieee802154_role::{
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 pub use ieee802154_role::{Ieee802154EdEventProbeFinished, Ieee802154EventStatusProbeFinished};
+pub use ieee802154_tx_power::{
+    Ieee802154ResolvedTxPower, Ieee802154TxPowerLevels, Ieee802154TxPowerLevelsError,
+};
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothMemoryListSelector, Ieee802154TimingPrerequisite, Ieee802154TimingReady,

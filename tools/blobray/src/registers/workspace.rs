@@ -137,6 +137,16 @@ impl ProjectRegisterWorkspace {
         })
     }
 
+    pub(crate) fn required_facts(&self) -> Result<&RegisterFacts> {
+        self.facts
+            .as_ref()
+            .ok_or_else(|| crate::Error::invalid("register research requires MMIO discovery facts"))
+    }
+
+    pub(crate) fn model(&self) -> &RegisterModel {
+        &self.model
+    }
+
     pub(crate) fn summary(&self) -> Result<RegisterWorkspaceSummary> {
         let identities = self.model.register_identities()?;
         let observations = self.facts.as_ref().map_or_else(
@@ -653,9 +663,29 @@ locator = "name"
         };
 
         let workspace = ProjectRegisterWorkspace::load(&paths).unwrap();
+        let loaded_facts = workspace.required_facts().unwrap();
+        assert!(std::ptr::eq(
+            loaded_facts,
+            workspace.required_facts().unwrap()
+        ));
+        assert_eq!(loaded_facts.registers.len(), 1);
+        assert_eq!(workspace.model().address_space(), "cpu");
+        let without_facts = ProjectRegisterWorkspace {
+            facts: None,
+            model: workspace.model.clone(),
+            owned_ranges: workspace.owned_ranges.clone(),
+            non_operational_functions: workspace.non_operational_functions.clone(),
+        };
+        assert!(
+            without_facts
+                .required_facts()
+                .unwrap_err()
+                .to_string()
+                .contains("requires MMIO discovery facts")
+        );
         let summary = workspace.summary().unwrap();
         let (svd, export) = workspace.render_svd().unwrap();
-        let declaration = &workspace.model.reviewed_register_declarations()[0];
+        let declaration = &workspace.model().reviewed_register_declarations()[0];
         std::fs::remove_dir_all(directory).unwrap();
 
         assert_eq!(summary.observed, 1);

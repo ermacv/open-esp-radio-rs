@@ -14,8 +14,7 @@ use super::ProjectSession;
 use crate::{
     Result,
     registers::{
-        RegisterFacts, RegisterPublicationOwnership, classify_register_publication,
-        load_effective_register_model,
+        ProjectRegisterWorkspace, RegisterPublicationOwnership, classify_register_publication,
     },
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
@@ -474,8 +473,27 @@ pub(crate) fn next(
             &mut candidates,
         )?;
     }
-    add_registers(session, &scopes, &graphs, &mut candidates)?;
-    add_unknown_semantics(session, &scopes, &graphs, &mut candidates)?;
+    if let Some(paths) = session.project.registers.as_ref() {
+        // These adjacent producers share the heavyweight MMIO facts, but the
+        // workspace must be dropped before interface ranking and rendering.
+        let workspace = ProjectRegisterWorkspace::load(paths)?;
+        add_registers(
+            session,
+            paths,
+            &workspace,
+            &scopes,
+            &graphs,
+            &mut candidates,
+        )?;
+        add_unknown_semantics(
+            session,
+            paths,
+            &workspace,
+            &scopes,
+            &graphs,
+            &mut candidates,
+        )?;
+    }
     add_interfaces(session, &scopes, &graphs, &mut candidates)?;
     attach_candidate_co_blockers(&mut candidates);
     let finding_query = apply_finding_query(&mut candidates, options.finding)?;
@@ -1384,15 +1402,14 @@ fn merge(
 
 fn add_registers(
     session: &ProjectSession,
+    paths: &crate::project::RegisterWorkspacePaths,
+    workspace: &ProjectRegisterWorkspace,
     scopes: &[&ReviewScopeReport],
     graphs: &BTreeMap<String, ScopeGraph>,
     candidates: &mut BTreeMap<String, Accumulator>,
 ) -> Result<()> {
-    let Some(paths) = session.project.registers.as_ref() else {
-        return Ok(());
-    };
-    let facts = RegisterFacts::load(&paths.facts)?;
-    let model = load_effective_register_model(paths)?;
+    let facts = workspace.required_facts()?;
+    let model = workspace.model();
     let address_space = model.address_space().to_owned();
     let identities = model.register_identities()?;
     for fact in &facts.registers {
@@ -1400,7 +1417,7 @@ fn add_registers(
             continue;
         }
         let ownership =
-            classify_register_publication(&facts, &paths.owned_ranges, fact.address, fact.width)?;
+            classify_register_publication(facts, &paths.owned_ranges, fact.address, fact.width)?;
         let message = match ownership {
             RegisterPublicationOwnership::Owned(_) => format!(
                 "name and review MMIO {:#010x}/{} before publication",
@@ -1543,17 +1560,14 @@ fn add_register_seed(
 
 fn add_unknown_semantics(
     session: &ProjectSession,
+    paths: &crate::project::RegisterWorkspacePaths,
+    workspace: &ProjectRegisterWorkspace,
     scopes: &[&ReviewScopeReport],
     graphs: &BTreeMap<String, ScopeGraph>,
     candidates: &mut BTreeMap<String, Accumulator>,
 ) -> Result<()> {
-    let Some(paths) = session.project.registers.as_ref() else {
-        return Ok(());
-    };
-    let facts = RegisterFacts::load(&paths.facts)?;
-    let model_address_space = load_effective_register_model(paths)?
-        .address_space()
-        .to_owned();
+    let facts = workspace.required_facts()?;
+    let model_address_space = workspace.model().address_space().to_owned();
     let knowledge =
         open_radio_vendor_review::ReviewKnowledge::load_all(&session.project.reviewed_knowledge)
             .and_then(|knowledge| knowledge.select_for(&session.project.review_context))
@@ -1578,7 +1592,7 @@ fn add_unknown_semantics(
             continue;
         };
         let ownership = classify_register_publication(
-            &facts,
+            facts,
             &paths.owned_ranges,
             fact.address,
             fact.width,
@@ -3506,7 +3520,7 @@ mod tests {
 
     #[test]
     fn external_registers_cannot_route_declarations_or_write_semantics() {
-        let facts = RegisterFacts {
+        let facts = crate::registers::RegisterFacts {
             artifacts: Vec::new(),
             ranges: vec![
                 crate::registers::FactRange {

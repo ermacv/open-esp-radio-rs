@@ -9,6 +9,7 @@ mod agc_runtime;
 mod baseband;
 mod bluetooth_baseband;
 mod bluetooth_controller_hal_init;
+mod bluetooth_controller_time;
 mod bluetooth_interrupt;
 mod bluetooth_memory_lists;
 mod bluetooth_phy_init;
@@ -67,6 +68,10 @@ pub use agc_runtime::ForcedRxGain;
 pub use bluetooth_controller_hal_init::{
     BluetoothControllerHalInitConfig, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
     BluetoothHalInitScale, BluetoothRawTimeDeltaProjection,
+};
+pub use bluetooth_controller_time::{
+    BluetoothControllerLatchedTime, BluetoothControllerTimeLatchObservation,
+    BluetoothControllerTimeLatchRequest,
 };
 pub use bluetooth_interrupt::{
     BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,

@@ -59,7 +59,7 @@ impl BluetoothSchedulerLockModifyRequest {
 
     /// Return the exact complete request publication image.
     pub const fn publication_image(self) -> u32 {
-        REQUEST_START | self.address.compressed()
+        REQUEST_START | self.address.compressed_image()
     }
 
     /// Return the validated CPU address without granting dereference access.

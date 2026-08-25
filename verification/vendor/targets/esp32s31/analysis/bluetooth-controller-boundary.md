@@ -120,8 +120,8 @@ minimum dependency graph and publication gate for each unit are:
 | Register evidence and SVD | Address, field, access and transaction provenance | Partial but substantial; generated model is fail-closed | Every register used by the first vertical slice is reviewed and generated with no raw-address escape in upper layers. |
 | Restricted PAC | Affine peripheral ownership and finite MMIO operations | Cold ownership, scheduler prefix, full 50-operation HAL body, memory-pointer geometry, IRQ prefixes and the ISR scheduler read/clear plus worker finished-list mask transfer exist | DTM trace uses only typed operations and has exact rollback/quiescence edges. |
 | Platform/HAL lifecycle | Clocks, reset, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset is live; PHY/BTBB are disconnected; typed IRQ pair primitives exist but the live epoch remains closed | One owner can power, route both IRQs, run and return cold without owner duplication. |
-| Controller timer and scheduler | Radio timebase, prepare/abort/doorbell/completion and collision policy | Command/status semantics absent | Virtual-time model plus register trace proves one scheduled event, cancellation and late/error handling. |
-| Packet memory dataplane | Static RX/TX/free/ready storage, DMA visibility and backpressure | Pointer encoding exists; list roles/layouts do not | Every buffer has an affine CPU/hardware state and is reclaimed on success, error, abort and shutdown. |
+| Controller timer and scheduler | Radio timebase, prepare/abort/doorbell/completion and collision policy | The always-awake latch request/self-clear/read order, bidirectional wrapping scheduler epoch and nine-word DTM item update have pure models; no live owner, physical counter contract or complete command/status semantics exist | Virtual-time model plus register trace proves one scheduled event, cancellation and late/error handling. |
+| Packet memory dataplane | Static RX/TX/free/ready storage, DMA visibility and backpressure | Pointer encoding, the exact eight-word DTM link-state reset and nine-word scheduler-item event regions exist; list roles, complete descriptors and publication/reclaim edges do not | Every buffer has an affine CPU/hardware state and is reclaimed on success, error, abort and shutdown. |
 | Lower Link Layer (LLL) | Channel/whitening/CRC/access address, hard ISR turnaround and one radio-event state machine | Absent | DTM TX/RX works first; then one advertising event executes without executor-latency dependence. |
 | Upper Link Layer (ULL) | Advertising/scanning/connection scheduling, SN/NESN/retry, supervision and LLCP | Absent | Legacy advertising, scanning and one peripheral connection pass deterministic virtual-clock tests and HIL. |
 | HCI Controller | Command/event table, capability reporting, ACL flow control and completed-packet credits | Bounded transport/bootstrap exists; operational Controller is absent | Only implemented LL features are advertised; all supported commands and ACL paths reach owned ULL state with bounded cancellation-safe queues. |
@@ -204,7 +204,7 @@ shared hardware lease can be dropped.
 | `btdm_coex_enable` | profile-optional for standalone | A no-op success is source-correct only while the product contract excludes simultaneous Wi-Fi. |
 | `ble_stack_enable` | unresolved composite | Replace protocol activation; recover any remaining radio-engine activation transaction separately. |
 | `r_btdm_hci_fc_enable` | open-controller replacement | Start a fresh bounded HCI credit epoch in Rust. |
-| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline fault masks and diagnostic capture, controller-output strobes, typed two-route ESP-HAL primitives, affine ISR scheduler MMIO, dynamic scheduler classifier and RTOS-free coalesced wake cell are recovered as separate contracts. Replace the RTOS task with one affine async Controller owner; feature-specific NRT policy, live-route composition, typed selector-4/6 actions, the open scheduler queue and timer/scheduler activation remain unresolved. |
+| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline fault masks and diagnostic capture, controller-output strobes, typed two-route ESP-HAL primitives, affine ISR scheduler MMIO, dynamic scheduler classifier, RTOS-free coalesced wake cell and pure controller-time latch/epoch phases are recovered as separate contracts. Replace the RTOS task with one affine async Controller owner; feature-specific NRT policy, live-route composition, the controller-time wake/recheck source, typed selector-4/6 actions, the open scheduler queue and live scheduler activation remain unresolved. |
 | `r_btdm_task_disable` and `ble_stack_disable` | unresolved composite | Define a stop barrier: mask sources, cancel/abort commands, acknowledge residual status, reclaim every packet, then expose a quiesced owner. |
 
 The public OSAL demonstrates that the vendor implementation uses FreeRTOS
@@ -253,15 +253,16 @@ DTM prerequisite; selector 6 becomes an invariant of the open scheduler.
 The implementation order is:
 
 1. finish restricted PAC access for the remaining scheduler command/status
-   words, controller timer and memory-list pointer geometry; the lock/modify
-   head request already has exact images, predicate, diagnostic publication-
-   result projection and affine event phases, while both interrupt snapshot modes,
-   baseline setup/teardown masks, route identities, policies and typed ESP-HAL
-   pair binding, dynamic scheduler classification, affine ISR scheduler MMIO
-   and sticky coalesced wake state are finite components. Live cross-owner
-   request/ISR composition, feature-specific NRT policy, the selector-6
-   invariant and the open scheduler queue are still absent, so this is not a
-   live interrupt epoch;
+   words and memory-list pointer geometry; the lock/modify head request already
+   has exact images, predicate, diagnostic publication-result projection and
+   affine event phases, while the controller-time latch has exact always-awake
+   request/self-clear/read phases and a pure epoch projection. Both interrupt
+   snapshot modes, baseline setup/teardown masks, route identities, policies
+   and typed ESP-HAL pair binding, dynamic scheduler classification, affine
+   ISR scheduler MMIO and sticky coalesced wake state are finite components.
+   Live cross-owner request/ISR composition, feature-specific NRT policy, the
+   selector-6 invariant and the open scheduler queue are still absent, so this
+   is not a live interrupt epoch;
 2. recover a hardware-only init transition from the composite task/BLE init
    functions, with read-back or bounded postconditions and exact rollback up
    to every fallible edge;

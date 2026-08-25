@@ -8,9 +8,12 @@ vendor-evidence-index verification/vendor/targets/esp32s31/evidence/vendor-evide
 require-capability cold-ownership
 require-capability clock-reset-prerequisite
 require-capability controller-initialization
+require-capability controller-timebase
 require-capability common-phy-baseband
 require-capability interrupt-runtime
 require-capability controller-memory-lists
+require-capability dtm-link-state-reset
+require-capability dtm-scheduler-item
 require-capability scheduler-head-transaction
 require-capability scheduler-finished-list-drain
 require-capability hci-handoff-storage
@@ -59,18 +62,43 @@ hil-proof missing
 async-proof partial
 owner driver/chips/esp32s31/bluetooth/src/scheduler.rs BluetoothSchedulerTableLowBitsCleared
 owner driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs BluetoothControllerHalInitConfig
-owner driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs BluetoothControllerTimeScale
 test driver/chips/esp32s31/bluetooth/src/scheduler.rs scheduler_prefix_consumes_reversible_clocks_and_arms_fail_stop
 test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs reviewed_profile_derives_all_runtime_images
 test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs complete_transaction_has_exact_prefix_and_thirty_two_lane_edges
-test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs standalone_time_scale_matches_complete_shift_helpers
-test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs every_accepted_time_scale_retains_inverse_remainder
 vendor-anchor verification/vendor/targets/esp32s31/README.md event/list
 depends-on clock-reset-prerequisite
 gap implementation hal-init-component-disconnected-by-event-list-low-power-ble-and-task-stages
 gap vendor complete-controller-init-production-trace-missing
 gap hil initialized-controller-cell-missing
 gap async controller-task-wake-contract-missing
+
+capability controller-timebase
+title Event-driven controller scheduler timebase
+scope Exact always-awake latch images affine request self-clear read phases and bidirectional wrapping raw scheduler epoch projection
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof partial
+owner driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs BluetoothControllerTimeScale
+owner driver/chips/esp32s31/pac/src/bluetooth_controller_time.rs BluetoothControllerTimeLatchRequest
+owner driver/chips/esp32s31/pac/src/bluetooth_controller_time.rs BluetoothControllerTimeLatchObservation
+owner driver/chips/esp32s31/pac/src/bluetooth_controller_time.rs BluetoothControllerLatchedTime
+owner driver/chips/esp32s31/bluetooth/src/controller_time.rs BluetoothControllerTimeLatchPublication
+owner driver/chips/esp32s31/bluetooth/src/controller_time.rs BluetoothControllerTimeLatchInFlight
+owner driver/chips/esp32s31/bluetooth/src/controller_time.rs BluetoothControllerSchedulerEpoch
+test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs standalone_time_scale_matches_complete_shift_helpers
+test driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs every_accepted_time_scale_retains_inverse_remainder
+test driver/chips/esp32s31/pac/src/bluetooth_controller_time.rs latch_publication_preserves_every_non_request_bit
+test driver/chips/esp32s31/pac/src/bluetooth_controller_time.rs only_latch_request_bit_controls_the_wait_decision
+test driver/chips/esp32s31/pac/src/bluetooth_controller_time.rs latched_time_retains_the_complete_wrapping_image
+test driver/chips/esp32s31/bluetooth/src/controller_time.rs pending_observation_returns_control_without_reading_time
+test driver/chips/esp32s31/bluetooth/src/controller_time.rs scheduler_epoch_matches_forward_backward_and_wrapping_branches
+vendor-anchor verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md SLEEP_TIMER_CONTROL.LATCH_REQUEST
+depends-on controller-initialization
+gap implementation live-task-owner-mmio-latch-sequence-missing
+gap vendor effective-counter-width-physical-unit-and-wake-source-missing
+gap hil controller-time-latch-and-wrap-cell-missing
+gap async registered-waker-or-bounded-timer-recheck-missing
 
 capability common-phy-baseband
 title Common PHY and Bluetooth baseband enable
@@ -163,6 +191,48 @@ gap vendor complete-list-lifecycle-production-trace-missing
 gap hil controller-list-publication-cell-missing
 gap async list-completion-wake-and-backpressure-missing
 
+capability dtm-link-state-reset
+title DTM controller-SRAM link-state reset region
+scope Exact positional transforms for the eight completely reviewed words without allocator layout or publication claims
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof not-applicable
+owner driver/chips/esp32s31/bluetooth/src/dtm_link_state.rs BluetoothDtmLinkStateReset
+owner driver/chips/esp32s31/bluetooth/src/dtm_link_state.rs BluetoothDtmLinkStateReviewedWords
+test driver/chips/esp32s31/bluetooth/src/dtm_link_state.rs reset_matches_all_complete_positional_transforms
+test driver/chips/esp32s31/bluetooth/src/dtm_link_state.rs zero_links_and_tx_role_preserve_only_the_reviewed_state
+test driver/chips/esp32s31/bluetooth/src/dtm_link_state.rs reset_rejects_images_wider_than_the_complete_fields
+vendor-anchor verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md r_sym_ble_VikJlxpO0kioDchKDFeI
+depends-on controller-memory-lists
+gap implementation complete-descriptor-storage-publication-and-affine-lifecycle-missing
+gap vendor remaining-hardware-consumed-words-and-field-semantics-missing
+gap hil dtm-link-state-reset-register-and-memory-trace-missing
+
+capability dtm-scheduler-item
+title DTM scheduler-item event region
+scope Exact positional pre-insert transforms for nine reviewed words with typed channel role PHY images and bidirectional scheduler epoch projection
+implementation partial
+host-proof covered
+hil-proof missing
+async-proof not-applicable
+owner driver/chips/esp32s31/bluetooth/src/dtm_parameters.rs BluetoothDtmChannel
+owner driver/chips/esp32s31/bluetooth/src/dtm_parameters.rs BluetoothDtmPhy
+owner driver/chips/esp32s31/bluetooth/src/dtm_scheduler_item.rs BluetoothDtmSchedulerItemEvent
+owner driver/chips/esp32s31/bluetooth/src/dtm_scheduler_item.rs BluetoothDtmSchedulerItemReviewedWords
+test driver/chips/esp32s31/bluetooth/src/dtm_parameters.rs all_dtm_channels_match_the_composed_vendor_lookup
+test driver/chips/esp32s31/bluetooth/src/dtm_parameters.rs hci_phy_selectors_have_exact_role_dependent_rate_images
+test driver/chips/esp32s31/bluetooth/src/dtm_parameters.rs hci_phy_decoder_accepts_only_the_reviewed_selector_domain
+test driver/chips/esp32s31/bluetooth/src/dtm_scheduler_item.rs rx_event_matches_every_complete_scheduler_item_image
+test driver/chips/esp32s31/bluetooth/src/dtm_scheduler_item.rs tx_event_preserves_rx_only_word_and_selects_tx_role_byte
+test driver/chips/esp32s31/bluetooth/src/dtm_scheduler_item.rs event_rejects_transmitter_only_phy_for_receiver_role
+vendor-anchor verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md r_sym_ble_G4zC4UNjJYmyjOsZ3vNq
+depends-on controller-timebase
+depends-on dtm-link-state-reset
+gap implementation complete-item-storage-insertion-and-affine-lifecycle-missing
+gap vendor remaining-hardware-consumed-words-and-packet-field-semantics-missing
+gap hil dtm-scheduler-item-memory-and-insert-trace-missing
+
 capability hci-handoff-storage
 title Bounded bidirectional HCI handoff
 scope Affine allocation-free bidirectional transport with validation backpressure wake and cancellation-safe caller-buffer retry at the direct in-process HCI boundary
@@ -241,6 +311,7 @@ test driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs each_busy_edge
 test driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs scheduler_idle_forces_zero_publication_result_code
 vendor-anchor verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md SCHEDULER_LOCK_MODIFY_REQUEST
 depends-on controller-initialization
+depends-on controller-timebase
 depends-on interrupt-runtime
 gap implementation live-task-isr-coordinator-and-mmio-publication-missing
 gap vendor publication-result-meaning-and-live-radio-descriptor-recycle-proof-missing
@@ -278,6 +349,8 @@ vendor-anchor verification/vendor/targets/esp32s31/README.md memory-list
 depends-on common-phy-baseband
 depends-on interrupt-runtime
 depends-on controller-memory-lists
+depends-on dtm-link-state-reset
+depends-on dtm-scheduler-item
 depends-on scheduler-head-transaction
 depends-on scheduler-finished-list-drain
 gap implementation tx-rx-descriptor-publication-finished-mask-and-recycle-owner-missing

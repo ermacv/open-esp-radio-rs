@@ -2,12 +2,16 @@
 
 Verdict: **INCOMPLETE**. The complete ESP32-S31 DTM command bodies, their path
 into the common scheduler, the finite lock/modify head-publication transaction
-and the later scheduler-item recycle callback are now identified. They prove
-that DTM is a small Lower Link Layer role built from controller-SRAM
-descriptors, a common radio wake operation and an event-driven scheduler
-lifecycle. They do not yet prove the complete descriptor layout, the hardware
-status-to-finished-mask boundary, memory fences or RX buffer reclamation needed
-for an on-air open implementation.
+and the later scheduler-item recycle callback are now identified. The exact
+eight-word reset region of its link-state image and the nine-word event update
+of its scheduler item are also modeled without the vendor allocator. The exact
+forty-channel permutation/frequency composition and role-dependent PHY-rate
+images are now typed inputs to that event. Together these prove that DTM is a
+small Lower Link Layer role built from
+controller-SRAM descriptors, a common radio wake operation and an event-driven
+scheduler lifecycle. They do not yet prove the complete descriptor layout, the
+hardware status-to-finished-mask boundary, memory fences or RX buffer
+reclamation needed for an on-air open implementation.
 
 This review narrows the first physical vertical slice. It does not make DTM a
 production capability and does not import the vendor scheduler, callback
@@ -53,7 +57,7 @@ following useful map:
 | `r_sym_ble_bWydXXPAXzjyon1EdAMg` | 122 | DTM interval calculation. Its size and body agree with the named `r_ble_lll_dtm_calculate_itvl` reference. |
 | `r_sym_ble_7F349oHpjOqsP8rHzlIj` | 558 | Allocate and connect the DTM memory graph. Its callers and complete control/data flow agree with the named `r_ble_lll_dtm_alloc_memory` reference. The S31 body requests link-state kind 6, creates a scheduler item with kind byte 5, installs `r_sym_ble_kdHGLPeGDJlAvxmbjQ6e` as its recycle callback, attaches bounded RX/header storage and rolls every partial allocation back before returning its finite error code. |
 | `r_sym_ble_VikJlxpO0kioDchKDFeI` | 278 | Reset one DTM controller-SRAM link-state image. It installs compressed links, a complete `0x71764129` access-address word, low 24-bit `0x555555` state and a rounded-power field. |
-| `r_sym_ble_G4zC4UNjJYmyjOsZ3vNq` | 618 | Construct and schedule one DTM event. It accepts only role values one and two, wakes the common RF owner, constructs the timing image, begins a scheduler transaction and completes that transaction. |
+| `r_sym_ble_G4zC4UNjJYmyjOsZ3vNq` | 618 | Construct and schedule one DTM event. It accepts only role values one and two, wakes the common RF owner, writes the reviewed frequency/rate/role/timing scheduler-item images, begins a scheduler transaction and completes that transaction. |
 | `r_sym_ble_XaQTq1AjtothrIFLgEeJ` | 362 | Construct TX context and payload. It accepts the reviewed payload-pattern selector domain, stores channel, length and PHY inputs, calculates the interval and repeatedly schedules TX role one until accepted. |
 | `r_sym_ble_odiPxxFv9QenApESv5qy` | 166 | Validate and start a transmitter test, including channel `0..=39`, payload selector `0..=7` and PHY-dependent parameter checks before creating the TX context. |
 | `r_sym_ble_x4t8591NiUiinayCMpjZ` | 116 | Construct RX context, store the channel/PHY inputs and repeatedly schedule RX role two until accepted. |
@@ -66,6 +70,51 @@ The fixed `0x71764129` word agrees with the standardized DTM access address,
 but its descriptor offset is still recorded positionally. Likewise, the
 `0x555555` low-24-bit image is not promoted into a public `CRC_INIT` field
 until an independent packet-engine consumer proves that field boundary.
+
+The reset transaction itself is now reproduced as a non-publishable reviewed
+region in the Bluetooth crate. It retains the exact low-twenty-bit compressed
+links at `+0x00` and `+0x08`, including the overlapping `+0x02` halfword
+transform; five-bit rounded-power image at `+0x04`; high control bits at
+`+0x14`; high-byte-preserving `0x555555` image at `+0x2c`; RX-only zero at
+`+0x34`; complete `0x71764129` word at `+0x38`; and six-bit configuration image
+at `+0x50`. Bounded inputs are rejected before any transform. The type exposes
+no controller address, storage publication or hardware-ownership transition,
+because the omitted descriptor words and their hardware consumer remain open.
+
+The scheduler-item update is now a second non-publishable reviewed region.
+It reproduces the role byte at `+0x02`, bit-31 publication prerequisite at
+`+0x04`, four-bit clear at `+0x08`, repeated two-bit rate image at `+0x14`,
+seven-bit frequency plus low-nibble image at `+0x18`, RX-only complete
+`0x000f0001` at `+0x2c`, two epoch-projected raw-time words at `+0x44/+0x48`
+and the low-byte clear at `+0x4c`. The timebase model now retains both exact
+wrapping conversion directions; the inverse truncates discarded scheduler
+bits toward its anchor, as the complete helper does.
+
+The event's channel and PHY inputs are no longer arbitrary field images. The
+current `r_sym_ble_fQsMV3sWyYa3SB0n61bb` and initial
+`g_channel_rf_to_index_ro` forty-byte DTM permutations are byte-identical:
+channels 0, 12 and 39 select RF indices 37, 38 and 39 while the remaining DTM
+channels select RF indices 0 through 36 in order. Current
+`r_sym_ble_KlCLZ2Zedz0kVQxLavnT` and initial `g_ble_phy_chan_freq_ro` are also
+byte-identical. Their complete composition maps DTM channel `n` to positional
+frequency image `2*n` for all `0..=39`. Complete
+`r_sym_ble_c4Wk4lIgPXJQLMwbA2Zp` and named `r_ble_phy_chan_to_freq` bodies
+confirm the table consumer.
+
+The current TX/RX validators additionally agree instruction-for-instruction
+with their named initial S31 roles over the accepted PHY domains. TX accepts
+HCI selectors one through four, maps selector four to internal mode zero and
+passes the other selectors through. RX accepts only selectors one through
+three and maps selector three to mode zero. Complete
+`r_sym_ble_7iafDUuOcihxmYHJfSBd` and named `r_ble_phy_mode_to_rate` map modes
+one, two, three and zero to positional rate images zero, one, two and three.
+Consequently 1M/2M map to zero/one for both roles, selector-three Coded maps to
+two for TX and three for RX, and Coded S=2 selector four maps to three for TX
+but is unrepresentable for RX. The Rust event now enforces this asymmetry and
+cannot accept an odd frequency image or an arbitrary two-bit rate. These
+remain descriptor images rather than a packet-engine readiness claim; the
+scheduler-item type still cannot insert itself or produce a hardware-owned
+token.
 
 The TX payload construction has no allocator requirement. The complete S31
 body chooses finite repeated-byte images for the supported patterns and copies
@@ -212,7 +261,10 @@ affine-item mapping remains the next layer above that token.
 The always-awake time-read prefix is now exact. Complete
 `r_sym_bt_KrvfcwDw4eZoaTPVdFj5` sets `SLEEP_TIMER_CONTROL.LATCH_REQUEST` at
 `0x2010_1090`, waits for hardware to clear that same bit and reads
-`SLEEP_TIMER_LATCHED_TIME_0` at `0x2010_10ac`. Complete
+`SLEEP_TIMER_LATCHED_TIME_0` at `0x2010_10ac`. Exact same-chip historical-body
+comparison names that function `r_btdm_sleep_timer_ticks_get`; it also maps
+the two conversion helpers below without importing a historical address or
+ABI claim. Complete
 `r_sym_ble_3ISuZaEAZjklAjtGLFxW` converts the delta from an owned raw-time
 anchor into the BLE scheduler epoch, handling either side of the anchor and
 rounding the negative side by one when a discarded remainder is nonzero. For
@@ -220,18 +272,23 @@ the reviewed standalone HAL profile, the signed scale image is three: the
 complete conversion helper shifts a positive raw-time delta left by two and
 the inverse helper shifts a scheduler delta right by two. This proves the
 arithmetic used by DTM, but not a public time unit or the wrap width of the raw
-counter. A production implementation must replace the vendor busy wait with a
-nonblocking pending-latch state and bounded wake/poll policy.
+counter. The restricted PAC now exposes only fresh-read OR publication,
+pending-bit observation and the complete latched word. The Bluetooth layer
+owns affine `publication -> in flight -> read ready -> sample` phases and a
+pure wrapping scheduler-epoch projection. Every pending observation returns
+control immediately. A live owner, registered wake or bounded timer recheck,
+and the MMIO ordering fence remain absent, so this is not yet a production
+time source.
 
 ## What belongs in each open layer
 
 | Layer | DTM responsibility | Current publication gate |
 | --- | --- | --- |
-| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify request fields, exact images, wait predicate and positional publication-result projection are finite. Live cross-owner MMIO and the remaining scheduler commands are absent. |
-| HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | Clock/PHY/BTBB components exist separately; no reachable composed epoch or powered rollback exists. |
-| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases. The finished-item/recycle call chain and DTM callback edge are mapped; the open queue, raw status source, fences and abort path are absent. |
-| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | Compressed address validation, positional list pairs, DTM software object kinds and the narrow RX result-word projection exist. Descriptor layout and RX reclamation are incomplete. |
-| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | Exact command roles, allocation rollback, substantial descriptor writes and the positional RX result split are mapped, but field boundaries and result meaning are incomplete. |
+| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify and always-awake time-latch fields, exact images and wait predicates are finite. Live cross-owner MMIO and the remaining scheduler commands are absent. |
+| HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | Clock/PHY/BTBB components exist separately; the time-scale transform and pure affine latch phases exist, but no reachable composed epoch, live latch owner or powered rollback exists. |
+| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; nine DTM scheduler-item words and their typed channel/role/PHY inputs have exact pre-insert transforms. The finished-item/recycle call chain and DTM callback edge are mapped; the open queue, raw status source, fences and abort path are absent. |
+| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | Compressed address validation, positional list pairs, the exact eight-word DTM link-state reset and nine-word scheduler-item event regions, software object kinds and the narrow RX result-word projection exist. The complete descriptors, publication edge and RX reclamation are incomplete. |
+| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup and role-dependent PHY/rate mapping are typed. Exact command roles, allocation rollback, substantial descriptor writes and the positional RX result split are mapped, but payload and remaining field boundaries and result meaning are incomplete. |
 | HCI | LE Receiver Test, LE Transmitter Test and LE Test End command/event semantics for only the implemented variants | Bootstrap transport exists; operational DTM opcodes must remain unsupported until the physical owner is live. |
 
 No ULL advertising, scanning, connection, ACL or LLCP implementation is
@@ -267,15 +324,20 @@ The remaining work should proceed in narrow, testable increments:
    Connect task-side publication with fresh ISR-side observations through one
    lost-wake-safe owner. Keep the result positional and do not couple it to
    radio completion. Do not create a task-side alias for `SCHEDULER_STATE`.
-2. **Publish the controller timebase component.** The latch address/order and
-   standalone scale arithmetic are now known. Add an affine nonblocking latch
-   request, prove the raw counter width/wrap behavior and build the same
-   conversion as a pure virtual-clock model before live scheduler MMIO.
-3. **Freeze the minimum descriptor.** Trace each word read by hardware for one
-   TX-role event and prove the complete field masks for access address, CRC,
-   channel/frequency, whitening, PHY/rate, power, payload pointer/length and
-   next link. For RX, connect the now-exact low-24/high-byte result projection
-   to validity, receive-count and reclamation semantics.
+2. **Compose the controller timebase owner.** The latch address/order,
+   standalone scale arithmetic, affine nonblocking request phases and pure
+   wrapping epoch projection now exist. Bind them to the sole task-side MMIO
+   owner and a lost-wake-safe registered event or bounded timer recheck; prove
+   the effective counter width, physical unit and required ordering fence
+   before scheduler deadlines become live.
+3. **Freeze the minimum descriptor.** Eight link-state reset words and nine
+   scheduler-item event words, including their preservation masks, typed
+   channel/PHY images and epoch projection, are now exact. Trace every
+   additional word read by hardware for one TX-role event and prove the
+   complete field masks for access address, CRC, whitening, power, payload
+   pointer/length and next link. For RX, connect the now-exact
+   low-24/high-byte result projection to validity, receive-count and
+   reclamation semantics.
 4. **Implement affine static slots.** Introduce no-heap aligned storage whose
    typestates prevent CPU mutation after publication and prevent reuse before
    the mapped recycle callback, abort or quiesce. Include device fences and

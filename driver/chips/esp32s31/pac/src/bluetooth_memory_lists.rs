@@ -100,7 +100,11 @@ impl BluetoothControllerSramAddress {
         self.0
     }
 
-    pub(super) const fn compressed(self) -> u32 {
+    /// Return the exact low-twenty-bit positional controller image.
+    ///
+    /// This does not grant dereference or publication authority. It is shared
+    /// by reviewed list registers and controller-SRAM descriptor links.
+    pub const fn compressed_image(self) -> u32 {
         (self.0 >> 2) & 0x000f_ffff
     }
 }
@@ -122,7 +126,7 @@ impl BluetoothMemoryListPointerImage {
     const fn compressed(self) -> u32 {
         match self {
             Self::Zero => 0,
-            Self::Address(address) => address.compressed(),
+            Self::Address(address) => address.compressed_image(),
         }
     }
 }
@@ -249,8 +253,8 @@ mod tests {
         let last =
             BluetoothControllerSramAddress::new(0x2f3f_fffc).expect("window end is representable");
         assert_eq!(first.address(), 0x2f00_0000);
-        assert_eq!(first.compressed(), 0);
-        assert_eq!(last.compressed(), 0x000f_ffff);
+        assert_eq!(first.compressed_image(), 0);
+        assert_eq!(last.compressed_image(), 0x000f_ffff);
         assert_eq!(BluetoothMemoryListPointerImage::Zero.compressed(), 0);
         assert_eq!(
             BluetoothMemoryListPointerImage::Address(last).compressed(),

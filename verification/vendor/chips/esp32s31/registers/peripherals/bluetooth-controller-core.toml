@@ -907,7 +907,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
@@ -928,7 +928,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.LATCH_REQUEST"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -984,14 +984,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME_0"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT"]
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_LATCHED_TIME_0.IMAGE"
-sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT"]
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

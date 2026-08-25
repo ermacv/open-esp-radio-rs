@@ -27,6 +27,10 @@ mod baseband;
 mod clock;
 #[cfg(any(target_arch = "riscv32", test))]
 mod common_phy_state;
+mod controller_time;
+mod dtm_link_state;
+mod dtm_parameters;
+mod dtm_scheduler_item;
 mod interrupt;
 mod interrupt_classifier;
 mod interrupt_wake;
@@ -49,6 +53,23 @@ pub use clock::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use common_phy_state::{BluetoothPhyInitializationReport, BluetoothPhyInitialized};
+pub use controller_time::{
+    BluetoothControllerSchedulerEpoch, BluetoothControllerTimeLatchInFlight,
+    BluetoothControllerTimeLatchProgress, BluetoothControllerTimeLatchPublication,
+    BluetoothControllerTimeLatchReadReady, BluetoothControllerTimeSample,
+};
+pub use dtm_link_state::{
+    BluetoothDtmLinkStateReset, BluetoothDtmLinkStateResetError,
+    BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,
+};
+pub use dtm_parameters::{
+    BluetoothDtmChannel, BluetoothDtmChannelError, BluetoothDtmPhy, BluetoothDtmPhyError,
+    BluetoothDtmPhyRoleError,
+};
+pub use dtm_scheduler_item::{
+    BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
+    BluetoothDtmSchedulerItemReviewedWords,
+};
 pub use interrupt::{
     BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,
     BluetoothInterruptHandlerResidency,

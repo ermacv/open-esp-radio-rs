@@ -23,7 +23,7 @@ use crate::Result;
 
 type PackedObjectLocations = Vec<(String, u64, u64)>;
 
-const STORE_SCHEMA: i64 = 8;
+const STORE_SCHEMA: i64 = 9;
 const INLINE_VALUE_LIMIT: usize = 64 * 1024;
 // Stay comfortably below SQLite's host-parameter limit while amortizing one
 // lookup across many function keys. This also bounds the dynamically prepared
@@ -63,6 +63,14 @@ pub(crate) struct QueryStoreStatistics {
     pub(crate) query_kinds: Vec<QueryKindStatistics>,
     pub(crate) inline_bytes: u64,
     pub(crate) dependencies: u64,
+    pub(crate) epoch_metadata: bool,
+    pub(crate) analysis_epochs: u64,
+    pub(crate) completed_epochs: u64,
+    pub(crate) retired_epochs: u64,
+    pub(crate) pinned_epochs: u64,
+    pub(crate) active_epoch: Option<String>,
+    pub(crate) epoch_memberships: u64,
+    pub(crate) unscoped_query_results: u64,
     pub(crate) objects: u64,
     pub(crate) object_payload_bytes: u64,
     pub(crate) stage_bindings: u64,
@@ -170,6 +178,14 @@ impl QueryStoreStatistics {
             query_kinds: Vec::new(),
             inline_bytes: 0,
             dependencies: 0,
+            epoch_metadata: false,
+            analysis_epochs: 0,
+            completed_epochs: 0,
+            retired_epochs: 0,
+            pinned_epochs: 0,
+            active_epoch: None,
+            epoch_memberships: 0,
+            unscoped_query_results: 0,
             objects: 0,
             object_payload_bytes: 0,
             stage_bindings: 0,
@@ -459,6 +475,7 @@ pub(crate) struct QueryStore {
     storage_root: PathBuf,
     pack_path: PathBuf,
     next_pack_generation: u64,
+    active_epoch: Option<String>,
     _root_pin: PinnedCacheRoot,
     _access_lock: File,
 }
@@ -626,26 +643,22 @@ impl QueryStore {
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .map_err(|error| store_error("read query database schema", error))?;
         if schema != STORE_SCHEMA {
-            // Write-mode opening deliberately replaces an obsolete schema.
-            // A plan must remain read-only, but it should predict the same
-            // cold computation instead of treating replaceable cache state as
-            // a project blocker.
-            drop(connection);
-            let postflight = fingerprint_cache_tree(&guard.pinned_root.storage_root)?;
-            reject_nonempty_wal(&postflight, &guard.database_path)?;
-            if postflight != preflight {
-                return Err(crate::Error::invalid(
-                    "query cache changed during read-only stage inspection; retry after the cache writer exits",
-                ));
-            }
-            guard.validate_lexical_root()?;
-            return Ok(None);
+            return Err(crate::Error::invalid(format!(
+                "query cache schema {schema} is unsupported; expected {STORE_SCHEMA}; remove the disposable cache and rerun analysis"
+            )));
         }
-        let (active_pack, next_pack_generation) = connection
+        let (active_pack, next_pack_generation, active_epoch) = connection
             .query_row(
-                "SELECT active_pack, next_pack_generation FROM cache_state WHERE singleton = 1",
+                "SELECT active_pack, next_pack_generation, active_epoch
+                 FROM cache_state WHERE singleton = 1",
                 [],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
             )
             .map_err(|error| store_error("read query-cache state", error))?;
         if !is_pack_name(&active_pack) || next_pack_generation < 0 {
@@ -653,6 +666,7 @@ impl QueryStore {
                 "query cache has an invalid active pack or generation",
             ));
         }
+        validate_epoch_id(&active_epoch)?;
         let root_pin = guard.pinned_root.try_clone()?;
         let storage_root = root_pin.storage_root.clone();
         let store = Self {
@@ -662,6 +676,7 @@ impl QueryStore {
             storage_root,
             pack_path: guard.root.join(active_pack),
             next_pack_generation: next_pack_generation as u64,
+            active_epoch: Some(active_epoch),
             _root_pin: root_pin,
             _access_lock: guard.access_lock.try_clone()?,
         };
@@ -780,11 +795,6 @@ impl QueryStore {
         let schema = connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .map_err(|error| store_error("read query database schema", error))?;
-        if schema == 7 {
-            return Err(crate::Error::invalid(
-                "query cache schema 7 has no persisted retirement timestamps; run a writing analysis once to migrate it in place before retention planning",
-            ));
-        }
         if schema != STORE_SCHEMA {
             return Err(crate::Error::invalid(format!(
                 "query cache schema {schema} is unsupported; expected {STORE_SCHEMA}"
@@ -821,6 +831,14 @@ impl QueryStore {
             query_kinds: Vec::new(),
             inline_bytes: 0,
             dependencies: 0,
+            epoch_metadata: true,
+            analysis_epochs: 0,
+            completed_epochs: 0,
+            retired_epochs: 0,
+            pinned_epochs: 0,
+            active_epoch: None,
+            epoch_memberships: 0,
+            unscoped_query_results: 0,
             objects: 0,
             object_payload_bytes: 0,
             stage_bindings: 0,
@@ -1036,12 +1054,11 @@ impl QueryStore {
         let schema = connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .map_err(|error| store_error("read query database schema", error))?;
-        if schema != 7 && schema != STORE_SCHEMA {
+        if schema != STORE_SCHEMA {
             return Err(crate::Error::invalid(format!(
-                "query cache schema {schema} is unsupported; expected 7 or {STORE_SCHEMA}"
+                "query cache schema {schema} is unsupported; expected {STORE_SCHEMA}; remove the disposable cache and rerun analysis"
             )));
         }
-        let has_retirement_metadata = schema == STORE_SCHEMA;
         let schema = u32::try_from(schema)
             .map_err(|_| crate::Error::invalid("query cache schema is outside u32"))?;
 
@@ -1055,17 +1072,65 @@ impl QueryStore {
                 "query cache has {state_rows} cache-state rows; expected exactly one"
             )));
         }
-        let (active_pack, next_pack_generation) = connection
+        let (active_pack, next_pack_generation, active_epoch) = connection
             .query_row(
-                "SELECT active_pack, next_pack_generation FROM cache_state WHERE singleton = 1",
+                "SELECT active_pack, next_pack_generation, active_epoch
+                 FROM cache_state WHERE singleton = 1",
                 [],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
             )
             .map_err(|error| store_error("read query-cache state", error))?;
         if !is_pack_name(&active_pack) || next_pack_generation < 0 {
             return Err(crate::Error::invalid(
                 "query cache has an invalid active pack or generation",
             ));
+        }
+        validate_epoch_id(&active_epoch)?;
+
+        let analysis_epochs = query_nonnegative_count(
+            &connection,
+            "count analysis epochs",
+            "SELECT COUNT(*) FROM analysis_epochs",
+        )?;
+        let completed_epochs = query_nonnegative_count(
+            &connection,
+            "count completed analysis epochs",
+            "SELECT COUNT(*) FROM analysis_epochs WHERE completed_unix_seconds IS NOT NULL",
+        )?;
+        let retired_epochs = query_nonnegative_count(
+            &connection,
+            "count retired analysis epochs",
+            "SELECT COUNT(*) FROM analysis_epochs WHERE retired_unix_seconds IS NOT NULL",
+        )?;
+        let pinned_epochs = query_nonnegative_count(
+            &connection,
+            "count pinned analysis epochs",
+            "SELECT COUNT(DISTINCT epoch_id) FROM epoch_pins",
+        )?;
+        let epoch_memberships = query_nonnegative_count(
+            &connection,
+            "count query epoch memberships",
+            "SELECT COUNT(*) FROM query_epoch_members",
+        )?;
+        let unscoped_query_results = query_nonnegative_count(
+            &connection,
+            "count unscoped query results",
+            "SELECT COUNT(*) FROM query_results AS result
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM query_epoch_members AS member
+                 WHERE member.query_key = result.query_key
+             )",
+        )?;
+        if unscoped_query_results != 0 {
+            return Err(crate::Error::invalid(format!(
+                "query cache contains {unscoped_query_results} result(s) without an analysis epoch"
+            )));
         }
 
         let (query_results, inline_bytes) = query_nonnegative_pair(
@@ -1167,27 +1232,23 @@ impl QueryStore {
             )));
         }
         let (retired_objects, retired_payload_bytes, retired_record_bytes, oldest_retired) =
-            if has_retirement_metadata {
-                connection
-                    .query_row(
-                        "SELECT COUNT(*), COALESCE(SUM(objects.payload_length), 0),
+            connection
+                .query_row(
+                    "SELECT COUNT(*), COALESCE(SUM(objects.payload_length), 0),
                             COALESCE(SUM(?1 + objects.payload_length), 0),
                             MIN(retired_objects.retired_unix_seconds)
                      FROM retired_objects JOIN objects USING (digest)",
-                        [PACK_HEADER_BYTES as i64],
-                        |row| {
-                            Ok((
-                                row.get::<_, i64>(0)?,
-                                row.get::<_, i64>(1)?,
-                                row.get::<_, i64>(2)?,
-                                row.get::<_, Option<i64>>(3)?,
-                            ))
-                        },
-                    )
-                    .map_err(|error| store_error("measure retired query-cache objects", error))?
-            } else {
-                (0, 0, 0, None)
-            };
+                    [PACK_HEADER_BYTES as i64],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, Option<i64>>(3)?,
+                        ))
+                    },
+                )
+                .map_err(|error| store_error("measure retired query-cache objects", error))?;
         let retired_objects = nonnegative(retired_objects, "retired object count")?;
         let retired_payload_bytes =
             nonnegative(retired_payload_bytes, "retired object payload bytes")?;
@@ -1196,20 +1257,16 @@ impl QueryStore {
         let oldest_retired_unix_seconds = oldest_retired
             .map(|value| nonnegative(value, "oldest retired-object timestamp"))
             .transpose()?;
-        let active_retired_objects = if has_retirement_metadata {
-            query_nonnegative_count(
-                &connection,
-                "validate retired query-cache objects",
-                "SELECT COUNT(*) FROM retired_objects
+        let active_retired_objects = query_nonnegative_count(
+            &connection,
+            "validate retired query-cache objects",
+            "SELECT COUNT(*) FROM retired_objects
                  WHERE digest IN (
                      SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
                      UNION
                      SELECT digest FROM stage_outputs
                  )",
-            )?
-        } else {
-            0
-        };
+        )?;
         if active_retired_objects != 0 {
             return Err(crate::Error::invalid(format!(
                 "query cache marks {active_retired_objects} reachable object(s) as retired"
@@ -1244,6 +1301,14 @@ impl QueryStore {
             query_kinds,
             inline_bytes,
             dependencies,
+            epoch_metadata: true,
+            analysis_epochs,
+            completed_epochs,
+            retired_epochs,
+            pinned_epochs,
+            active_epoch: Some(active_epoch),
+            epoch_memberships,
+            unscoped_query_results,
             objects,
             object_payload_bytes,
             stage_bindings,
@@ -1299,15 +1364,15 @@ impl QueryStore {
         connection
             .busy_timeout(Duration::from_secs(30))
             .map_err(|error| store_error("configure query database timeout", error))?;
-        // Inspect compatibility before changing journal mode or creating WAL
-        // sidecars. Unsupported stores fail byte-preserving and require an
-        // explicit caller decision instead of being mutated during rejection.
+        // The cache is disposable derived state. Schema changes are hard
+        // cutovers: an older store is never migrated or interpreted by a new
+        // binary, and must be removed explicitly before a cold rebuild.
         let schema = connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .map_err(|error| store_error("read query database schema", error))?;
-        if schema != 0 && schema != 7 && schema != STORE_SCHEMA {
+        if schema != 0 && schema != STORE_SCHEMA {
             return Err(crate::Error::invalid(format!(
-                "query cache schema {schema} is unsupported; expected 0, 7 or {STORE_SCHEMA}; preserve or remove the disposable cache explicitly instead of resetting it implicitly"
+                "query cache schema {schema} is unsupported; expected 0 or {STORE_SCHEMA}; remove the disposable cache explicitly and rerun analysis"
             )));
         }
         connection
@@ -1318,12 +1383,10 @@ impl QueryStore {
             )
             .map_err(|error| store_error("configure query database", error))?;
 
-        if schema == 7 {
-            migrate_store_schema_7_to_8(&connection)?;
-        }
-        connection
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS objects (
+        if schema == 0 {
+            connection
+                .execute_batch(
+                    "CREATE TABLE IF NOT EXISTS objects (
                      digest TEXT PRIMARY KEY,
                      pack_name TEXT NOT NULL,
                      pack_offset INTEGER NOT NULL,
@@ -1361,21 +1424,80 @@ impl QueryStore {
                  ON query_results(object_digest) WHERE object_digest IS NOT NULL;
                  CREATE INDEX IF NOT EXISTS stage_outputs_by_digest
                  ON stage_outputs(digest);
+                 CREATE TABLE analysis_epochs (
+                     epoch_id TEXT PRIMARY KEY,
+                     created_unix_seconds INTEGER NOT NULL
+                         CHECK (created_unix_seconds >= 0),
+                     completed_unix_seconds INTEGER
+                         CHECK (completed_unix_seconds IS NULL OR
+                                completed_unix_seconds >= created_unix_seconds),
+                     retired_unix_seconds INTEGER
+                         CHECK (retired_unix_seconds IS NULL OR
+                                (completed_unix_seconds IS NOT NULL AND
+                                 retired_unix_seconds >= completed_unix_seconds))
+                 ) WITHOUT ROWID;
+                 CREATE TABLE query_epoch_members (
+                     epoch_id TEXT NOT NULL REFERENCES analysis_epochs(epoch_id)
+                         ON DELETE CASCADE,
+                     query_key TEXT NOT NULL REFERENCES query_results(query_key)
+                         ON DELETE CASCADE,
+                     PRIMARY KEY (epoch_id, query_key)
+                 ) WITHOUT ROWID;
+                 CREATE INDEX query_epoch_members_by_query
+                 ON query_epoch_members(query_key, epoch_id);
+                 CREATE TABLE epoch_pins (
+                     pin_id TEXT PRIMARY KEY,
+                     epoch_id TEXT NOT NULL REFERENCES analysis_epochs(epoch_id)
+                         ON DELETE CASCADE,
+                     kind TEXT NOT NULL CHECK (kind IN (
+                         'revision-baseline', 'revision-current', 'manual'
+                     ))
+                 ) WITHOUT ROWID;
+                 CREATE INDEX epoch_pins_by_epoch
+                 ON epoch_pins(epoch_id, pin_id);
                  CREATE TABLE IF NOT EXISTS cache_state (
                      singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
                      active_pack TEXT NOT NULL,
-                     next_pack_generation INTEGER NOT NULL
+                     next_pack_generation INTEGER NOT NULL,
+                     active_epoch TEXT NOT NULL REFERENCES analysis_epochs(epoch_id)
                  );
-                 INSERT OR IGNORE INTO cache_state(singleton, active_pack, next_pack_generation)
-                 VALUES (1, 'objects-0.pack', 1);
-                 PRAGMA user_version=8;",
-            )
-            .map_err(|error| store_error("initialize query database", error))?;
-        let (active_pack, next_pack_generation) = connection
+                 PRAGMA user_version=9;",
+                )
+                .map_err(|error| store_error("initialize query database", error))?;
+            let epoch = standalone_epoch_id();
+            let now = i64::try_from(unix_timestamp_seconds()?).map_err(|_| {
+                crate::Error::invalid("analysis epoch timestamp is outside SQLite INTEGER")
+            })?;
+            connection
+                .execute(
+                    "INSERT INTO analysis_epochs(
+                         epoch_id, created_unix_seconds,
+                         completed_unix_seconds, retired_unix_seconds
+                     ) VALUES (?1, ?2, NULL, NULL)",
+                    params![&epoch, now],
+                )
+                .map_err(|error| store_error("initialize standalone analysis epoch", error))?;
+            connection
+                .execute(
+                    "INSERT INTO cache_state(
+                         singleton, active_pack, next_pack_generation, active_epoch
+                     ) VALUES (1, 'objects-0.pack', 1, ?1)",
+                    [&epoch],
+                )
+                .map_err(|error| store_error("initialize query-cache state", error))?;
+        }
+        let (active_pack, next_pack_generation, active_epoch) = connection
             .query_row(
-                "SELECT active_pack, next_pack_generation FROM cache_state WHERE singleton = 1",
+                "SELECT active_pack, next_pack_generation, active_epoch
+                 FROM cache_state WHERE singleton = 1",
                 [],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
             )
             .map_err(|error| store_error("read active query-cache pack", error))?;
         let next_pack_generation = u64::try_from(next_pack_generation).map_err(|_| {
@@ -1386,6 +1508,7 @@ impl QueryStore {
                 "query cache has invalid active pack name {active_pack:?}"
             )));
         }
+        validate_epoch_id(&active_epoch)?;
         let mut store = Self {
             connection,
             pack_path: root.join(active_pack),
@@ -1393,6 +1516,7 @@ impl QueryStore {
             root_identity,
             storage_root,
             next_pack_generation,
+            active_epoch: Some(active_epoch),
             _root_pin: root_pin,
             _access_lock: access_lock,
         };
@@ -1436,6 +1560,14 @@ impl QueryStore {
             query_kinds: Vec::new(),
             inline_bytes: 0,
             dependencies: 0,
+            epoch_metadata: true,
+            analysis_epochs: 0,
+            completed_epochs: 0,
+            retired_epochs: 0,
+            pinned_epochs: 0,
+            active_epoch: None,
+            epoch_memberships: 0,
+            unscoped_query_results: 0,
             objects: 0,
             object_payload_bytes: 0,
             stage_bindings: 0,
@@ -1495,6 +1627,14 @@ impl QueryStore {
             query_kinds: Vec::new(),
             inline_bytes: 0,
             dependencies: 0,
+            epoch_metadata: true,
+            analysis_epochs: 0,
+            completed_epochs: 0,
+            retired_epochs: 0,
+            pinned_epochs: 0,
+            active_epoch: None,
+            epoch_memberships: 0,
+            unscoped_query_results: 0,
             objects: 0,
             object_payload_bytes: 0,
             stage_bindings: 0,
@@ -1530,6 +1670,12 @@ impl QueryStore {
             "query cache database",
         )?;
         self.root_identity.validate(&self.root)
+    }
+
+    fn writable_active_epoch(&self) -> Result<&str> {
+        self.active_epoch.as_deref().ok_or_else(|| {
+            crate::Error::invalid("read-only query cache cannot publish analysis results")
+        })
     }
 
     fn active_storage_pack_path(&self) -> Result<PathBuf> {
@@ -1677,6 +1823,7 @@ impl QueryStore {
         content_digests: &[String],
     ) -> Result<()> {
         self.validate_root_identity()?;
+        let active_epoch = self.writable_active_epoch()?.to_owned();
         let transaction = self
             .connection
             .transaction()
@@ -1697,6 +1844,7 @@ impl QueryStore {
                 params![stage, query_key],
             )
             .map_err(|error| store_error("record cached stage binding", error))?;
+        attach_query_to_epoch(&transaction, &active_epoch, query_key)?;
         transaction
             .execute("DELETE FROM stage_outputs WHERE stage = ?1", [stage])
             .map_err(|error| store_error("replace cached stage outputs", error))?;
@@ -1876,6 +2024,8 @@ impl QueryStore {
                 && existing_result == result_digest
                 && existing_dependencies == requested_dependencies
             {
+                let active_epoch = self.writable_active_epoch()?;
+                attach_query_to_epoch(&self.connection, active_epoch, query_key)?;
                 return Ok(result_digest);
             }
             return Err(crate::Error::invalid(format!(
@@ -1888,6 +2038,7 @@ impl QueryStore {
             self.ensure_object(&result_digest, value)?;
             (None, Some(result_digest.as_str()))
         };
+        let active_epoch = self.writable_active_epoch()?.to_owned();
         let transaction = self
             .connection
             .transaction()
@@ -1908,6 +2059,7 @@ impl QueryStore {
                 ],
             )
             .map_err(|error| store_error("record query result", error))?;
+        attach_query_to_epoch(&transaction, &active_epoch, query_key)?;
         if let Some(digest) = object_digest {
             transaction
                 .execute("DELETE FROM retired_objects WHERE digest = ?1", [digest])
@@ -2021,7 +2173,7 @@ impl QueryStore {
             })
             .collect::<Vec<_>>();
         let inserts = self.preflight_function_fact_batches(&prepared, observe_statement)?;
-        if inserts.is_empty() {
+        if prepared.is_empty() {
             return Ok(());
         }
         self.ensure_objects(inserts.iter().filter_map(|index| {
@@ -2029,6 +2181,7 @@ impl QueryStore {
             (fact.value.len() > INLINE_VALUE_LIMIT)
                 .then_some((fact.result_digest.as_str(), fact.value))
         }))?;
+        let active_epoch = self.writable_active_epoch()?.to_owned();
         let transaction = self
             .connection
             .transaction()
@@ -2065,6 +2218,9 @@ impl QueryStore {
                         .map_err(|error| store_error("reactivate function-fact object", error))?;
                 }
             }
+        }
+        for fact in &prepared {
+            attach_query_to_epoch(&transaction, &active_epoch, fact.query_key)?;
         }
         transaction
             .commit()
@@ -2949,53 +3105,43 @@ fn sqlite_sidecar_path(database: &Path, suffix: &str) -> PathBuf {
     path.into()
 }
 
-fn migrate_store_schema_7_to_8(connection: &Connection) -> Result<()> {
-    let conflicting_object = connection
-        .query_row(
-            "SELECT type FROM sqlite_master WHERE name = 'retired_objects'",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| store_error("inspect schema-7 retention metadata", error))?;
-    if let Some(kind) = conflicting_object {
+fn standalone_epoch_id() -> String {
+    sha256_hex(b"blobray/analysis-epoch/standalone/v1\0")
+}
+
+fn validate_epoch_id(epoch_id: &str) -> Result<()> {
+    if epoch_id.len() != 64
+        || !epoch_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    {
         return Err(crate::Error::invalid(format!(
-            "query cache schema 7 unexpectedly contains {kind} retired_objects; refusing destructive migration"
+            "query cache has invalid analysis epoch {epoch_id:?}"
         )));
     }
-    if let Err(error) = connection.execute_batch(
-        "BEGIN IMMEDIATE;
-         CREATE TABLE retired_objects (
-             digest TEXT PRIMARY KEY REFERENCES objects(digest) ON DELETE CASCADE,
-             retired_unix_seconds INTEGER NOT NULL CHECK (retired_unix_seconds >= 0)
-         ) WITHOUT ROWID;
-         CREATE INDEX query_results_by_object
-         ON query_results(object_digest) WHERE object_digest IS NOT NULL;
-         CREATE INDEX stage_outputs_by_digest
-         ON stage_outputs(digest);
-         INSERT INTO retired_objects(digest, retired_unix_seconds)
-         SELECT objects.digest, unixepoch()
-         FROM objects
-         WHERE NOT EXISTS (
-                   SELECT 1 FROM query_results
-                   WHERE query_results.object_digest = objects.digest
-               )
-           AND NOT EXISTS (
-                   SELECT 1 FROM stage_outputs
-                   WHERE stage_outputs.digest = objects.digest
-               );
-         PRAGMA user_version=8;
-         COMMIT;",
-    ) {
-        let _ = connection.execute_batch("ROLLBACK;");
-        return Err(store_error("migrate query cache schema 7 to 8", error));
-    }
-    let migrated_schema = connection
-        .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
-        .map_err(|error| store_error("verify query-cache schema migration", error))?;
-    if migrated_schema != STORE_SCHEMA {
+    Ok(())
+}
+
+fn attach_query_to_epoch(connection: &Connection, epoch_id: &str, query_key: &str) -> Result<()> {
+    validate_epoch_id(epoch_id)?;
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO query_epoch_members(epoch_id, query_key)
+             SELECT ?1, query_key FROM query_results WHERE query_key = ?2",
+            params![epoch_id, query_key],
+        )
+        .map_err(|error| store_error("scope query result to analysis epoch", error))?;
+    let attached = connection
+        .query_row(
+            "SELECT COUNT(*) FROM query_epoch_members
+             WHERE epoch_id = ?1 AND query_key = ?2",
+            params![epoch_id, query_key],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| store_error("verify query analysis epoch", error))?;
+    if attached != 1 {
         return Err(crate::Error::invalid(format!(
-            "query cache migration finished at schema {migrated_schema}; expected {STORE_SCHEMA}"
+            "query result {query_key:?} does not exist for analysis epoch {epoch_id}"
         )));
     }
     Ok(())
@@ -3825,22 +3971,6 @@ mod tests {
         (path.to_string_lossy().into_owned(), sha256_hex(value), path)
     }
 
-    fn indexed_object_locations(connection: &Connection) -> Vec<(String, String, i64, i64)> {
-        let mut statement = connection
-            .prepare(
-                "SELECT digest, pack_name, pack_offset, payload_length
-                 FROM objects ORDER BY digest",
-            )
-            .unwrap();
-        statement
-            .query_map([], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-            })
-            .unwrap()
-            .map(|row| row.unwrap())
-            .collect()
-    }
-
     fn read_only_stage_digests(
         manifest: &Path,
         query_key: &str,
@@ -4222,6 +4352,14 @@ mod tests {
             small.len() as u64 + live_query_bytes + 2
         );
         assert_eq!(statistics.dependencies, 2);
+        assert!(statistics.epoch_metadata);
+        assert_eq!(statistics.analysis_epochs, 1);
+        assert_eq!(statistics.completed_epochs, 0);
+        assert_eq!(statistics.retired_epochs, 0);
+        assert_eq!(statistics.pinned_epochs, 0);
+        assert_eq!(statistics.active_epoch, Some(standalone_epoch_id()));
+        assert_eq!(statistics.epoch_memberships, statistics.query_results);
+        assert_eq!(statistics.unscoped_query_results, 0);
         assert_eq!(statistics.objects, 3);
         assert_eq!(
             statistics.object_payload_bytes,
@@ -4290,6 +4428,31 @@ mod tests {
     }
 
     #[test]
+    fn statistics_reject_query_results_outside_an_analysis_epoch() {
+        let manifest = manifest("statistics-unscoped-query");
+        let project_root = manifest.parent().unwrap();
+        {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            store
+                .put("unscoped", "function", "inputs", &[], b"value")
+                .unwrap();
+            store
+                .connection
+                .execute(
+                    "DELETE FROM query_epoch_members WHERE query_key = 'unscoped'",
+                    [],
+                )
+                .unwrap();
+        }
+        let before = snapshot_tree(project_root);
+
+        let error = QueryStore::statistics(&manifest).unwrap_err();
+
+        assert!(error.to_string().contains("without an analysis epoch"));
+        assert_eq!(snapshot_tree(project_root), before);
+    }
+
+    #[test]
     fn writer_rejects_an_unsupported_schema_without_resetting_it() {
         let manifest = manifest("writer-unsupported");
         let project_root = manifest.parent().unwrap();
@@ -4353,175 +4516,44 @@ mod tests {
     }
 
     #[test]
-    fn schema_seven_migrates_in_place_without_losing_queries_bindings_or_pack_references() {
-        let manifest = manifest("schema-seven-migration");
-        let large = vec![0x67; INLINE_VALUE_LIMIT + 1];
-        let stage = output(&manifest, "stage/output.json", b"stage-output");
-        let stage_digest = stage.1.clone();
-        let orphan = output(&manifest, "obsolete/output.json", b"obsolete-output");
-        let orphan_digest = orphan.1.clone();
-        let (locations_before, pack_before, query_count_before) = {
+    fn obsolete_schema_is_rejected_without_migration_or_mutation() {
+        let manifest = manifest("obsolete-schema-hard-cutover");
+        let project_root = manifest.parent().unwrap();
+        {
             let mut store = QueryStore::open(&manifest).unwrap();
             store
-                .put("large-function", "function", "inputs", &[], &large)
-                .unwrap();
-            store
-                .record_stage("linked-ir:full", "stage-query", &[stage])
-                .unwrap();
-            store
-                .record_stage("linked-ir:obsolete", "obsolete-query", &[orphan])
-                .unwrap();
-            store
-                .record_stage("linked-ir:obsolete", "replacement-query", &[])
-                .unwrap();
-            let locations = indexed_object_locations(&store.connection);
-            let pack = fs::read(store.active_storage_pack_path().unwrap()).unwrap();
-            let query_count = store
-                .connection
-                .query_row("SELECT COUNT(*) FROM query_results", [], |row| {
-                    row.get::<_, i64>(0)
-                })
+                .put("preserved", "function", "inputs", &[], b"preserve me")
                 .unwrap();
             store
                 .connection
-                .execute_batch(
-                    "DROP INDEX query_results_by_object;
-                     DROP INDEX stage_outputs_by_digest;
-                     DROP TABLE retired_objects;
-                     PRAGMA user_version=7;",
-                )
+                .execute_batch("PRAGMA user_version=8;")
                 .unwrap();
-            (locations, pack, query_count)
-        };
-        let before_migration = snapshot_tree(manifest.parent().unwrap());
+        }
+        let before = snapshot_tree(project_root);
 
-        let transitional = QueryStore::statistics(&manifest).unwrap();
-
-        assert_eq!(transitional.schema, Some(7));
-        assert_eq!(
-            transitional.query_results,
-            u64::try_from(query_count_before).unwrap()
-        );
-        assert_eq!(transitional.objects, locations_before.len() as u64);
-        assert_eq!(transitional.retired_objects, 0);
-        assert_eq!(
-            transitional.reclaimable_pack_bytes,
-            PACK_HEADER_BYTES + b"obsolete-output".len() as u64
-        );
-        assert_eq!(snapshot_tree(manifest.parent().unwrap()), before_migration);
-        let retention_error =
-            QueryStore::retention_plan_at(&manifest, 86_400, 1, None).unwrap_err();
+        let statistics_error = QueryStore::statistics(&manifest).unwrap_err();
         assert!(
-            retention_error
+            statistics_error
                 .to_string()
-                .contains("run a writing analysis once to migrate it in place")
+                .contains("schema 8 is unsupported")
         );
-        assert_eq!(snapshot_tree(manifest.parent().unwrap()), before_migration);
+        assert!(
+            statistics_error
+                .to_string()
+                .contains("remove the disposable cache")
+        );
+        assert_eq!(snapshot_tree(project_root), before);
 
-        let store = QueryStore::open(&manifest).unwrap();
-
-        assert_eq!(
-            store
-                .connection
-                .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
-                .unwrap(),
-            STORE_SCHEMA
-        );
-        assert_eq!(
-            store
-                .connection
-                .query_row("SELECT COUNT(*) FROM query_results", [], |row| {
-                    row.get::<_, i64>(0)
-                })
-                .unwrap(),
-            query_count_before
-        );
-        assert_eq!(store.get("large-function").unwrap().unwrap(), large);
-        assert_eq!(
-            store.stage_output_digests("stage-query").unwrap(),
-            Some(vec![stage_digest.clone()])
-        );
-        assert_eq!(
-            indexed_object_locations(&store.connection),
-            locations_before
-        );
-        assert_eq!(
-            fs::read(store.active_storage_pack_path().unwrap()).unwrap(),
-            pack_before
-        );
-        assert_eq!(
-            store
-                .connection
-                .query_row(
-                    "SELECT COUNT(*) FROM retired_objects WHERE digest = ?1",
-                    [&orphan_digest],
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            store
-                .connection
-                .query_row(
-                    "SELECT COUNT(*) FROM retired_objects
-                     WHERE digest IN (?1, ?2)",
-                    params![sha256_hex(&large), stage_digest],
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap(),
-            0
-        );
-    }
-
-    #[test]
-    fn malformed_schema_seven_retention_state_fails_without_resetting_data() {
-        let manifest = manifest("schema-seven-conflict");
-        let value = vec![0x68; INLINE_VALUE_LIMIT + 1];
-        let (database, pack, pack_before) = {
-            let mut store = QueryStore::open(&manifest).unwrap();
-            store
-                .put("preserved", "function", "inputs", &[], &value)
-                .unwrap();
-            store
-                .connection
-                .execute_batch("PRAGMA user_version=7;")
-                .unwrap();
-            let database = store.root.join("queries.sqlite3");
-            let pack = store.pack_path.clone();
-            let pack_before = fs::read(&pack).unwrap();
-            (database, pack, pack_before)
-        };
-
-        let error = QueryStore::open(&manifest)
+        let writer_error = QueryStore::open(&manifest)
             .err()
-            .expect("conflicting schema-7 metadata must fail closed");
-
-        assert!(error.to_string().contains("refusing destructive migration"));
-        assert_eq!(fs::read(&pack).unwrap(), pack_before);
-        let connection = Connection::open_with_flags(
-            immutable_database_uri_for_path(&database).unwrap(),
-            OpenFlags::SQLITE_OPEN_READ_ONLY
-                | OpenFlags::SQLITE_OPEN_NO_MUTEX
-                | OpenFlags::SQLITE_OPEN_URI,
-        )
-        .unwrap();
-        assert_eq!(
-            connection
-                .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
-                .unwrap(),
-            7
+            .expect("obsolete cache schema must require a cold rebuild");
+        assert!(writer_error.to_string().contains("schema 8 is unsupported"));
+        assert!(
+            writer_error
+                .to_string()
+                .contains("remove the disposable cache")
         );
-        assert_eq!(
-            connection
-                .query_row(
-                    "SELECT COUNT(*) FROM query_results WHERE query_key = 'preserved'",
-                    [],
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap(),
-            1
-        );
+        assert_eq!(snapshot_tree(project_root), before);
     }
 
     #[test]
@@ -4878,7 +4910,7 @@ mod tests {
     }
 
     #[test]
-    fn stage_plan_treats_an_obsolete_schema_as_a_cold_cache_without_resetting_it() {
+    fn stage_plan_rejects_an_obsolete_schema_without_resetting_it() {
         let manifest = manifest("stage-plan-obsolete-schema");
         let project_root = manifest.parent().unwrap();
         {
@@ -4894,9 +4926,10 @@ mod tests {
         }
         let before = snapshot_tree(project_root);
 
-        let result = read_only_stage_digests(&manifest, "stage-signature", false).unwrap();
+        let error = read_only_stage_digests(&manifest, "stage-signature", false).unwrap_err();
 
-        assert_eq!(result, None);
+        assert!(error.to_string().contains("schema 99 is unsupported"));
+        assert!(error.to_string().contains("remove the disposable cache"));
         assert_eq!(snapshot_tree(project_root), before);
     }
 

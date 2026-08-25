@@ -168,7 +168,7 @@ fn fresh_cache_stats_is_typed_and_does_not_create_or_modify_the_project_tree() {
     );
     let report: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("cache stats stdout is one JSON document");
-    assert_eq!(report["schema_version"], 3);
+    assert_eq!(report["schema_version"], 4);
     assert_eq!(report["command"], "project cache stats");
     assert_eq!(report["present"], false);
     assert_eq!(
@@ -195,6 +195,12 @@ fn fresh_cache_stats_is_typed_and_does_not_create_or_modify_the_project_tree() {
         "query_results",
         "inline_bytes",
         "dependencies",
+        "analysis_epochs",
+        "completed_epochs",
+        "retired_epochs",
+        "pinned_epochs",
+        "epoch_memberships",
+        "unscoped_query_results",
         "objects",
         "object_payload_bytes",
         "stage_bindings",
@@ -213,6 +219,8 @@ fn fresh_cache_stats_is_typed_and_does_not_create_or_modify_the_project_tree() {
         report["oldest_retired_unix_seconds"],
         serde_json::Value::Null
     );
+    assert_eq!(report["epoch_metadata"], false);
+    assert_eq!(report["active_epoch"], serde_json::Value::Null);
     assert_eq!(report["query_kinds"], serde_json::json!([]));
     assert_eq!(report["compaction"]["eligible_on_next_write"], false);
     assert_eq!(report["compaction"]["minimum_reclaimable_percent"], 25);

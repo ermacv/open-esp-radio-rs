@@ -59,7 +59,7 @@ struct CachePruneDocument<'a> {
 pub(super) fn stats(project_manifest: &Path) -> Result<bool> {
     let statistics = project_cache_statistics(project_manifest)?;
     let document = CacheStatsDocument {
-        schema_version: 3,
+        schema_version: 4,
         command: "project cache stats",
         statistics: &statistics,
     };
@@ -420,6 +420,37 @@ fn detail_metric_rows(statistics: &ProjectCacheStatistics) -> Vec<[String; 2]> {
             human_bytes(statistics.inline_bytes),
         ],
         [
+            "Analysis epochs".to_owned(),
+            statistics.analysis_epochs.to_string(),
+        ],
+        [
+            "Completed epochs".to_owned(),
+            statistics.completed_epochs.to_string(),
+        ],
+        [
+            "Retired epochs".to_owned(),
+            statistics.retired_epochs.to_string(),
+        ],
+        [
+            "Pinned epochs".to_owned(),
+            statistics.pinned_epochs.to_string(),
+        ],
+        [
+            "Active epoch".to_owned(),
+            statistics
+                .active_epoch
+                .clone()
+                .unwrap_or_else(|| "none".to_owned()),
+        ],
+        [
+            "Epoch memberships".to_owned(),
+            statistics.epoch_memberships.to_string(),
+        ],
+        [
+            "Unscoped queries".to_owned(),
+            statistics.unscoped_query_results.to_string(),
+        ],
+        [
             "Object payload".to_owned(),
             human_bytes(statistics.object_payload_bytes),
         ],
@@ -493,19 +524,19 @@ mod tests {
             "generated/.blobray-cache/queries.sqlite3".into(),
         );
         let document = serde_json::to_value(CacheStatsDocument {
-            schema_version: 3,
+            schema_version: 4,
             command: "project cache stats",
             statistics: &statistics,
         })
         .unwrap();
-        assert_eq!(document["schema_version"], 3);
+        assert_eq!(document["schema_version"], 4);
         assert_eq!(document["command"], "project cache stats");
         assert_eq!(document["schema"], serde_json::Value::Null);
         assert_eq!(document["present"], false);
         assert_eq!(document["compaction"]["eligible_on_next_write"], false);
-        assert_eq!(detail_metric_rows(&statistics).len(), 10);
+        assert_eq!(detail_metric_rows(&statistics).len(), 17);
         assert_eq!(detail_metric_rows(&statistics)[0][0], "Store schema");
-        assert_eq!(detail_metric_rows(&statistics)[5][0], "Live objects");
+        assert_eq!(detail_metric_rows(&statistics)[12][0], "Live objects");
     }
 
     #[test]

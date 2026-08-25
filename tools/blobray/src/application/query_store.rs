@@ -23,7 +23,7 @@ use crate::Result;
 
 type PackedObjectLocations = Vec<(String, u64, u64)>;
 
-const STORE_SCHEMA: i64 = 9;
+const STORE_SCHEMA: i64 = 10;
 const INLINE_VALUE_LIMIT: usize = 64 * 1024;
 // Stay comfortably below SQLite's host-parameter limit while amortizing one
 // lookup across many function keys. This also bounds the dynamically prepared
@@ -36,6 +36,7 @@ const COMPACT_MIN_RECLAIMABLE_BYTES: u64 = 64 * 1024 * 1024;
 const COMPACT_MIN_RECLAIMABLE_PERCENT: u8 = 25;
 const COMPACT_FREE_SPACE_RESERVE_BYTES: u64 = 8 * 1024 * 1024;
 static NEXT_RESTORE_ID: AtomicU64 = AtomicU64::new(0);
+static NEXT_ANALYSIS_EPOCH_ID: AtomicU64 = AtomicU64::new(0);
 
 struct PreparedFunctionFact<'a> {
     query_key: &'a str,
@@ -475,7 +476,18 @@ pub(crate) struct QueryStore {
     storage_root: PathBuf,
     pack_path: PathBuf,
     next_pack_generation: u64,
+    /// Epoch receiving publications from this writer. Ordinary focused
+    /// writers always use the stable standalone epoch; a complete project
+    /// analysis replaces this with a fresh, unpublished epoch.
     active_epoch: Option<String>,
+    /// Fresh epoch owned by one complete project-analysis run. This remains
+    /// absent for focused writers and read-only snapshots, making activation
+    /// impossible outside the coordinator success boundary.
+    publishing_epoch: Option<String>,
+    /// Last atomically published complete project-analysis epoch. Reads are
+    /// restricted to this snapshot plus the standalone focused scope and the
+    /// writer's private publication epoch.
+    published_epoch: Option<String>,
     _root_pin: PinnedCacheRoot,
     _access_lock: File,
 }
@@ -667,6 +679,7 @@ impl QueryStore {
             ));
         }
         validate_epoch_id(&active_epoch)?;
+        validate_published_epoch(&connection, &active_epoch)?;
         let root_pin = guard.pinned_root.try_clone()?;
         let storage_root = root_pin.storage_root.clone();
         let store = Self {
@@ -676,7 +689,9 @@ impl QueryStore {
             storage_root,
             pack_path: guard.root.join(active_pack),
             next_pack_generation: next_pack_generation as u64,
-            active_epoch: Some(active_epoch),
+            active_epoch: None,
+            publishing_epoch: None,
+            published_epoch: Some(active_epoch),
             _root_pin: root_pin,
             _access_lock: guard.access_lock.try_clone()?,
         };
@@ -1092,6 +1107,7 @@ impl QueryStore {
             ));
         }
         validate_epoch_id(&active_epoch)?;
+        validate_published_epoch(&connection, &active_epoch)?;
 
         let analysis_epochs = query_nonnegative_count(
             &connection,
@@ -1130,6 +1146,21 @@ impl QueryStore {
         if unscoped_query_results != 0 {
             return Err(crate::Error::invalid(format!(
                 "query cache contains {unscoped_query_results} result(s) without an analysis epoch"
+            )));
+        }
+        let invalid_stage_bindings = query_nonnegative_count(
+            &connection,
+            "validate stage epoch ownership",
+            "SELECT COUNT(*) FROM stage_bindings AS binding
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM query_epoch_members AS member
+                 WHERE member.epoch_id = binding.epoch_id
+                   AND member.query_key = binding.query_key
+             )",
+        )?;
+        if invalid_stage_bindings != 0 {
+            return Err(crate::Error::invalid(format!(
+                "query cache contains {invalid_stage_bindings} stage binding(s) outside their analysis epoch"
             )));
         }
 
@@ -1411,19 +1442,29 @@ impl QueryStore {
                      retired_unix_seconds INTEGER NOT NULL CHECK (retired_unix_seconds >= 0)
                  ) WITHOUT ROWID;
                  CREATE TABLE IF NOT EXISTS stage_bindings (
-                     stage TEXT PRIMARY KEY,
-                     query_key TEXT NOT NULL
+                     epoch_id TEXT NOT NULL REFERENCES analysis_epochs(epoch_id)
+                         ON DELETE CASCADE,
+                     stage TEXT NOT NULL,
+                     query_key TEXT NOT NULL REFERENCES query_results(query_key)
+                         ON DELETE CASCADE,
+                     PRIMARY KEY (epoch_id, stage)
                  ) WITHOUT ROWID;
+                 CREATE INDEX stage_bindings_by_query
+                 ON stage_bindings(query_key, epoch_id, stage);
                  CREATE TABLE IF NOT EXISTS stage_outputs (
+                     epoch_id TEXT NOT NULL,
                      stage TEXT NOT NULL,
                      path TEXT NOT NULL,
-                     digest TEXT NOT NULL,
-                     PRIMARY KEY (stage, path)
+                     digest TEXT NOT NULL REFERENCES objects(digest),
+                     PRIMARY KEY (epoch_id, stage, path),
+                     FOREIGN KEY (epoch_id, stage)
+                         REFERENCES stage_bindings(epoch_id, stage)
+                         ON DELETE CASCADE
                  ) WITHOUT ROWID;
                  CREATE INDEX IF NOT EXISTS query_results_by_object
                  ON query_results(object_digest) WHERE object_digest IS NOT NULL;
                  CREATE INDEX IF NOT EXISTS stage_outputs_by_digest
-                 ON stage_outputs(digest);
+                 ON stage_outputs(digest, epoch_id, stage);
                  CREATE TABLE analysis_epochs (
                      epoch_id TEXT PRIMARY KEY,
                      created_unix_seconds INTEGER NOT NULL
@@ -1461,7 +1502,7 @@ impl QueryStore {
                      next_pack_generation INTEGER NOT NULL,
                      active_epoch TEXT NOT NULL REFERENCES analysis_epochs(epoch_id)
                  );
-                 PRAGMA user_version=9;",
+                 PRAGMA user_version=10;",
                 )
                 .map_err(|error| store_error("initialize query database", error))?;
             let epoch = standalone_epoch_id();
@@ -1509,6 +1550,7 @@ impl QueryStore {
             )));
         }
         validate_epoch_id(&active_epoch)?;
+        validate_published_epoch(&connection, &active_epoch)?;
         let mut store = Self {
             connection,
             pack_path: root.join(active_pack),
@@ -1516,7 +1558,12 @@ impl QueryStore {
             root_identity,
             storage_root,
             next_pack_generation,
-            active_epoch: Some(active_epoch),
+            // Focused writers never mutate the active full-analysis epoch.
+            // Their individually validated results live in the stable
+            // standalone epoch and may be reused by a later complete run.
+            active_epoch: Some(standalone_epoch_id()),
+            publishing_epoch: None,
+            published_epoch: Some(active_epoch),
             _root_pin: root_pin,
             _access_lock: access_lock,
         };
@@ -1524,6 +1571,115 @@ impl QueryStore {
             store.remove_unreferenced_pack_files()?;
         }
         Ok(store)
+    }
+
+    /// Open one writer for a complete project analysis and create its private
+    /// publication epoch. Creating the epoch does not activate it and does not
+    /// retire the last successful generation.
+    pub(crate) fn open_analysis_epoch(project_manifest: &Path) -> Result<Self> {
+        let mut store = Self::open(project_manifest)?;
+        let epoch = analysis_epoch_id(project_manifest)?;
+        let created = i64::try_from(unix_timestamp_seconds()?).map_err(|_| {
+            crate::Error::invalid("analysis epoch timestamp is outside SQLite INTEGER")
+        })?;
+        store
+            .connection
+            .execute(
+                "INSERT INTO analysis_epochs(
+                     epoch_id, created_unix_seconds,
+                     completed_unix_seconds, retired_unix_seconds
+                 ) VALUES (?1, ?2, NULL, NULL)",
+                params![&epoch, created],
+            )
+            .map_err(|error| store_error("create project-analysis epoch", error))?;
+        store.active_epoch = Some(epoch.clone());
+        store.publishing_epoch = Some(epoch);
+        store.validate_root_identity()?;
+        Ok(store)
+    }
+
+    /// Atomically publish the complete analysis generation. Until this call,
+    /// the cache-state active epoch and the prior generation's retirement
+    /// timestamp are byte-for-byte unchanged.
+    pub(crate) fn complete_analysis_epoch(&mut self) -> Result<()> {
+        self.validate_root_identity()?;
+        let publishing = self.publishing_epoch.as_deref().ok_or_else(|| {
+            crate::Error::invalid(
+                "focused query-cache writer cannot complete a project-analysis epoch",
+            )
+        })?;
+        if self.active_epoch.as_deref() != Some(publishing) {
+            return Err(crate::Error::invalid(
+                "query-cache writer lost its project-analysis publication epoch",
+            ));
+        }
+        let publishing = publishing.to_owned();
+        let completed = i64::try_from(unix_timestamp_seconds()?).map_err(|_| {
+            crate::Error::invalid("analysis epoch timestamp is outside SQLite INTEGER")
+        })?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|error| store_error("begin analysis-epoch publication", error))?;
+        let previous = transaction
+            .query_row(
+                "SELECT active_epoch FROM cache_state WHERE singleton = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|error| store_error("read previous active analysis epoch", error))?;
+        validate_epoch_id(&previous)?;
+        let completed_rows = transaction
+            .execute(
+                "UPDATE analysis_epochs
+                 SET completed_unix_seconds = ?2
+                 WHERE epoch_id = ?1
+                   AND completed_unix_seconds IS NULL
+                   AND retired_unix_seconds IS NULL",
+                params![&publishing, completed],
+            )
+            .map_err(|error| store_error("complete project-analysis epoch", error))?;
+        if completed_rows != 1 {
+            return Err(crate::Error::invalid(format!(
+                "project-analysis epoch {publishing} is missing or already finalized"
+            )));
+        }
+        if previous != standalone_epoch_id() && previous != publishing {
+            let retired_rows = transaction
+                .execute(
+                    "UPDATE analysis_epochs
+                     SET retired_unix_seconds = ?2
+                     WHERE epoch_id = ?1
+                       AND completed_unix_seconds IS NOT NULL
+                       AND retired_unix_seconds IS NULL",
+                    params![&previous, completed],
+                )
+                .map_err(|error| store_error("retire previous analysis epoch", error))?;
+            if retired_rows != 1 {
+                return Err(crate::Error::invalid(format!(
+                    "previous active analysis epoch {previous} is not complete and current"
+                )));
+            }
+        }
+        transaction
+            .execute(
+                "UPDATE cache_state SET active_epoch = ?1 WHERE singleton = 1",
+                [&publishing],
+            )
+            .map_err(|error| store_error("activate project-analysis epoch", error))?;
+
+        // Failed runs are unpublished generations. Once a newer complete run
+        // succeeds, delete every older unpinned failed generation as a whole;
+        // never peel individual members out of an epoch. Queries still owned
+        // by a live stage binding are moved to the standalone scope so focused
+        // reuse stays valid without mutating the completed epoch.
+        delete_abandoned_analysis_epochs(&transaction, &publishing)?;
+        transaction
+            .commit()
+            .map_err(|error| store_error("commit analysis-epoch publication", error))?;
+        self.publishing_epoch = None;
+        self.published_epoch = Some(publishing);
+        self.validate_root_identity()
     }
 
     fn maintenance_plan_locked(
@@ -1678,6 +1834,23 @@ impl QueryStore {
         })
     }
 
+    fn visible_epoch_sql_list(&self) -> Result<String> {
+        let mut epochs = BTreeSet::from([standalone_epoch_id()]);
+        if let Some(epoch) = self.published_epoch.as_deref() {
+            validate_epoch_id(epoch)?;
+            epochs.insert(epoch.to_owned());
+        }
+        if let Some(epoch) = self.publishing_epoch.as_deref() {
+            validate_epoch_id(epoch)?;
+            epochs.insert(epoch.to_owned());
+        }
+        Ok(epochs
+            .into_iter()
+            .map(|epoch| format!("'{epoch}'"))
+            .collect::<Vec<_>>()
+            .join(", "))
+    }
+
     fn active_storage_pack_path(&self) -> Result<PathBuf> {
         let name = self
             .pack_path
@@ -1695,10 +1868,19 @@ impl QueryStore {
 
     pub(crate) fn stage_output_digests(&self, query_key: &str) -> Result<Option<Vec<String>>> {
         self.validate_root_identity()?;
+        let visible_epochs = self.visible_epoch_sql_list()?;
         let kind = self
             .connection
             .query_row(
-                "SELECT kind FROM query_results WHERE query_key = ?1",
+                &format!(
+                    "SELECT result.kind FROM query_results AS result
+                     WHERE result.query_key = ?1
+                       AND EXISTS (
+                           SELECT 1 FROM query_epoch_members AS member
+                           WHERE member.query_key = result.query_key
+                             AND member.epoch_id IN ({visible_epochs})
+                       )"
+                ),
                 [query_key],
                 |row| row.get::<_, String>(0),
             )
@@ -1761,33 +1943,51 @@ impl QueryStore {
     ///
     /// Input mutation checks use this after a post-commit validation fails.
     /// The immutable query result is removed only when no other stage binding
-    /// owns it. CAS objects that then become unreachable receive a persisted
-    /// retirement timestamp and remain protected until explicit retention GC.
+    /// or completed/retained epoch owns it. CAS objects that then become
+    /// unreachable receive a persisted retirement timestamp and remain
+    /// protected until explicit retention GC.
     pub(crate) fn retire_stage_binding(&mut self, stage: &str, query_key: &str) -> Result<()> {
         self.validate_root_identity()?;
+        let writable_epoch = self.writable_active_epoch()?.to_owned();
         let transaction = self
             .connection
             .transaction()
             .map_err(|error| store_error("begin stage-binding retirement transaction", error))?;
-        let mut retirement_candidates = stage_output_object_digests(&transaction, stage)?;
+        let mut retirement_candidates =
+            stage_output_object_digests(&transaction, &writable_epoch, stage)?;
         let retired = transaction
             .execute(
-                "DELETE FROM stage_bindings WHERE stage = ?1 AND query_key = ?2",
-                params![stage, query_key],
+                "DELETE FROM stage_bindings
+                 WHERE epoch_id = ?1 AND stage = ?2 AND query_key = ?3",
+                params![&writable_epoch, stage, query_key],
             )
             .map_err(|error| store_error("retire cached stage binding", error))?;
         if retired != 0 {
-            transaction
-                .execute("DELETE FROM stage_outputs WHERE stage = ?1", [stage])
-                .map_err(|error| store_error("retire cached stage outputs", error))?;
             let remaining_bindings = transaction
                 .query_row(
-                    "SELECT COUNT(*) FROM stage_bindings WHERE query_key = ?1",
-                    [query_key],
+                    "SELECT COUNT(*) FROM stage_bindings
+                     WHERE epoch_id = ?1 AND query_key = ?2",
+                    params![&writable_epoch, query_key],
                     |row| row.get::<_, i64>(0),
                 )
                 .map_err(|error| store_error("count remaining cached stage owners", error))?;
             if remaining_bindings == 0 {
+                transaction
+                    .execute(
+                        "DELETE FROM query_epoch_members
+                         WHERE epoch_id = ?1 AND query_key = ?2",
+                        params![&writable_epoch, query_key],
+                    )
+                    .map_err(|error| {
+                        store_error("remove invalid stage result from writable epoch", error)
+                    })?;
+                let remaining_memberships = transaction
+                    .query_row(
+                        "SELECT COUNT(*) FROM query_epoch_members WHERE query_key = ?1",
+                        [query_key],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map_err(|error| store_error("count remaining analysis-epoch owners", error))?;
                 if let Some(digest) = transaction
                     .query_row(
                         "SELECT object_digest FROM query_results WHERE query_key = ?1",
@@ -1800,12 +2000,16 @@ impl QueryStore {
                 {
                     retirement_candidates.insert(digest);
                 }
-                transaction
-                    .execute(
-                        "DELETE FROM query_results WHERE query_key = ?1",
-                        [query_key],
-                    )
-                    .map_err(|error| store_error("retire unowned cached stage result", error))?;
+                if remaining_memberships == 0 {
+                    transaction
+                        .execute(
+                            "DELETE FROM query_results WHERE query_key = ?1",
+                            [query_key],
+                        )
+                        .map_err(|error| {
+                            store_error("retire unowned cached stage result", error)
+                        })?;
+                }
             }
             mark_unreachable_objects_retired(&transaction, &retirement_candidates)?;
         }
@@ -1830,31 +2034,40 @@ impl QueryStore {
             .map_err(|error| store_error("begin cached stage transaction", error))?;
         let previous = transaction
             .query_row(
-                "SELECT query_key FROM stage_bindings WHERE stage = ?1",
-                [stage],
+                "SELECT query_key FROM stage_bindings
+                 WHERE epoch_id = ?1 AND stage = ?2",
+                params![&active_epoch, stage],
                 |row| row.get::<_, String>(0),
             )
             .optional()
             .map_err(|error| store_error("read previous cached stage binding", error))?;
-        let mut retirement_candidates = stage_output_object_digests(&transaction, stage)?;
+        let mut retirement_candidates =
+            stage_output_object_digests(&transaction, &active_epoch, stage)?;
         transaction
             .execute(
-                "INSERT INTO stage_bindings(stage, query_key) VALUES (?1, ?2)
-                 ON CONFLICT(stage) DO UPDATE SET query_key = excluded.query_key",
-                params![stage, query_key],
+                "INSERT INTO stage_bindings(epoch_id, stage, query_key) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(epoch_id, stage)
+                 DO UPDATE SET query_key = excluded.query_key",
+                params![&active_epoch, stage, query_key],
             )
             .map_err(|error| store_error("record cached stage binding", error))?;
         attach_query_to_epoch(&transaction, &active_epoch, query_key)?;
         transaction
-            .execute("DELETE FROM stage_outputs WHERE stage = ?1", [stage])
+            .execute(
+                "DELETE FROM stage_outputs WHERE epoch_id = ?1 AND stage = ?2",
+                params![&active_epoch, stage],
+            )
             .map_err(|error| store_error("replace cached stage outputs", error))?;
         {
             let mut statement = transaction
-                .prepare("INSERT INTO stage_outputs(stage, path, digest) VALUES (?1, ?2, ?3)")
+                .prepare(
+                    "INSERT INTO stage_outputs(epoch_id, stage, path, digest)
+                     VALUES (?1, ?2, ?3, ?4)",
+                )
                 .map_err(|error| store_error("prepare cached stage outputs", error))?;
             for (path, digest) in paths.iter().zip(content_digests) {
                 statement
-                    .execute(params![stage, path, digest])
+                    .execute(params![&active_epoch, stage, path, digest])
                     .map_err(|error| store_error("record cached stage output", error))?;
             }
         }
@@ -1875,27 +2088,52 @@ impl QueryStore {
         if let Some(previous) = previous.filter(|previous| previous != query_key) {
             let remaining_bindings = transaction
                 .query_row(
-                    "SELECT COUNT(*) FROM stage_bindings WHERE query_key = ?1",
-                    [&previous],
+                    "SELECT COUNT(*) FROM stage_bindings
+                     WHERE epoch_id = ?1 AND query_key = ?2",
+                    params![&active_epoch, &previous],
                     |row| row.get::<_, i64>(0),
                 )
                 .map_err(|error| store_error("count cached stage result owners", error))?;
             if remaining_bindings == 0 {
-                if let Some(digest) = transaction
-                    .query_row(
-                        "SELECT object_digest FROM query_results WHERE query_key = ?1",
-                        [&previous],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .optional()
-                    .map_err(|error| store_error("read replaced cached stage object", error))?
-                    .flatten()
-                {
-                    retirement_candidates.insert(digest);
-                }
+                // Replacing a focused/standalone binding must not retain an
+                // obsolete query forever. For a full run this removes only a
+                // membership in the fresh writable epoch; ownership by an
+                // older completed or pinned epoch remains intact.
                 transaction
-                    .execute("DELETE FROM query_results WHERE query_key = ?1", [previous])
-                    .map_err(|error| store_error("retire unbound cached stage result", error))?;
+                    .execute(
+                        "DELETE FROM query_epoch_members
+                         WHERE epoch_id = ?1 AND query_key = ?2",
+                        params![&active_epoch, &previous],
+                    )
+                    .map_err(|error| {
+                        store_error("remove replaced result from writable epoch", error)
+                    })?;
+                let memberships = transaction
+                    .query_row(
+                        "SELECT COUNT(*) FROM query_epoch_members WHERE query_key = ?1",
+                        [&previous],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map_err(|error| store_error("count cached epoch owners", error))?;
+                if memberships == 0 {
+                    if let Some(digest) = transaction
+                        .query_row(
+                            "SELECT object_digest FROM query_results WHERE query_key = ?1",
+                            [&previous],
+                            |row| row.get::<_, Option<String>>(0),
+                        )
+                        .optional()
+                        .map_err(|error| store_error("read replaced cached stage object", error))?
+                        .flatten()
+                    {
+                        retirement_candidates.insert(digest);
+                    }
+                    transaction
+                        .execute("DELETE FROM query_results WHERE query_key = ?1", [previous])
+                        .map_err(|error| {
+                            store_error("retire unbound cached stage result", error)
+                        })?;
+                }
             }
         }
         mark_unreachable_objects_retired(&transaction, &retirement_candidates)?;
@@ -2092,11 +2330,20 @@ impl QueryStore {
 
     pub(crate) fn get(&self, query_key: &str) -> Result<Option<Vec<u8>>> {
         self.validate_root_identity()?;
+        let visible_epochs = self.visible_epoch_sql_list()?;
         let location = self
             .connection
             .query_row(
-                "SELECT result_digest, inline_value, object_digest
-                 FROM query_results WHERE query_key = ?1",
+                &format!(
+                    "SELECT result.result_digest, result.inline_value, result.object_digest
+                     FROM query_results AS result
+                     WHERE result.query_key = ?1
+                       AND EXISTS (
+                           SELECT 1 FROM query_epoch_members AS member
+                           WHERE member.query_key = result.query_key
+                             AND member.epoch_id IN ({visible_epochs})
+                       )"
+                ),
                 [query_key],
                 |row| {
                     Ok((
@@ -2800,12 +3047,13 @@ impl QueryStore {
         mut observe_statement: impl FnMut(usize),
     ) -> Result<Vec<(String, Vec<u8>)>> {
         self.validate_root_identity()?;
+        let visible_epochs = self.visible_epoch_sql_list()?;
         let full_key_count = keys.len() / FUNCTION_FACT_LOOKUP_BATCH * FUNCTION_FACT_LOOKUP_BATCH;
         let (full_batches, tail) = keys.split_at(full_key_count);
         let mut output = Vec::new();
 
         if !full_batches.is_empty() {
-            let sql = function_fact_lookup_sql(FUNCTION_FACT_LOOKUP_BATCH);
+            let sql = function_fact_lookup_sql(FUNCTION_FACT_LOOKUP_BATCH, &visible_epochs);
             let mut statement = self
                 .connection
                 .prepare(&sql)
@@ -2816,7 +3064,7 @@ impl QueryStore {
             }
         }
         if !tail.is_empty() {
-            let sql = function_fact_lookup_sql(tail.len());
+            let sql = function_fact_lookup_sql(tail.len(), &visible_epochs);
             let mut statement = self
                 .connection
                 .prepare(&sql)
@@ -2968,7 +3216,7 @@ fn append_function_fact_preflight_batch(
     Ok(())
 }
 
-fn function_fact_lookup_sql(parameter_count: usize) -> String {
+fn function_fact_lookup_sql(parameter_count: usize, visible_epochs: &str) -> String {
     debug_assert!((1..=FUNCTION_FACT_LOOKUP_BATCH).contains(&parameter_count));
     let mut sql = String::from("WITH requested(ordinal, query_key) AS (VALUES ");
     for ordinal in 0..parameter_count {
@@ -2978,12 +3226,20 @@ fn function_fact_lookup_sql(parameter_count: usize) -> String {
         std::fmt::Write::write_fmt(&mut sql, format_args!("({ordinal}, ?)"))
             .expect("writing SQL into a String cannot fail");
     }
-    sql.push_str(
-        ") SELECT requested.query_key, result.result_digest, result.inline_value, \
-         result.object_digest FROM requested JOIN query_results AS result \
-         ON result.query_key = requested.query_key \
-         AND result.kind = 'function-direct-fact' ORDER BY requested.ordinal",
-    );
+    std::fmt::Write::write_fmt(
+        &mut sql,
+        format_args!(
+            ") SELECT requested.query_key, result.result_digest, result.inline_value, \
+             result.object_digest FROM requested JOIN query_results AS result \
+             ON result.query_key = requested.query_key \
+             AND result.kind = 'function-direct-fact' \
+             AND EXISTS (SELECT 1 FROM query_epoch_members AS member \
+                         WHERE member.query_key = result.query_key \
+                           AND member.epoch_id IN ({visible_epochs})) \
+             ORDER BY requested.ordinal"
+        ),
+    )
+    .expect("writing SQL into a String cannot fail");
     sql
 }
 
@@ -3109,6 +3365,21 @@ fn standalone_epoch_id() -> String {
     sha256_hex(b"blobray/analysis-epoch/standalone/v1\0")
 }
 
+fn analysis_epoch_id(project_manifest: &Path) -> Result<String> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| crate::Error::invalid("system clock is before the Unix epoch"))?;
+    let ordinal = NEXT_ANALYSIS_EPOCH_ID.fetch_add(1, Ordering::Relaxed);
+    let identity = format!(
+        "blobray/analysis-epoch/project/v1\0{}\0{}\0{}\0{}",
+        project_manifest.display(),
+        std::process::id(),
+        elapsed.as_nanos(),
+        ordinal,
+    );
+    Ok(sha256_hex(identity.as_bytes()))
+}
+
 fn validate_epoch_id(epoch_id: &str) -> Result<()> {
     if epoch_id.len() != 64
         || !epoch_id
@@ -3120,6 +3391,32 @@ fn validate_epoch_id(epoch_id: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+fn validate_published_epoch(connection: &Connection, epoch_id: &str) -> Result<()> {
+    validate_epoch_id(epoch_id)?;
+    if epoch_id == standalone_epoch_id() {
+        return Ok(());
+    }
+    let state = connection
+        .query_row(
+            "SELECT completed_unix_seconds IS NOT NULL,
+                    retired_unix_seconds IS NOT NULL
+             FROM analysis_epochs WHERE epoch_id = ?1",
+            [epoch_id],
+            |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
+        )
+        .optional()
+        .map_err(|error| store_error("validate published analysis epoch", error))?;
+    match state {
+        Some((true, false)) => Ok(()),
+        Some((completed, retired)) => Err(crate::Error::invalid(format!(
+            "published analysis epoch {epoch_id} has invalid state: completed={completed}, retired={retired}"
+        ))),
+        None => Err(crate::Error::invalid(format!(
+            "published analysis epoch {epoch_id} does not exist"
+        ))),
+    }
 }
 
 fn attach_query_to_epoch(connection: &Connection, epoch_id: &str, query_key: &str) -> Result<()> {
@@ -3147,6 +3444,124 @@ fn attach_query_to_epoch(connection: &Connection, epoch_id: &str, query_key: &st
     Ok(())
 }
 
+/// Delete unpublished failed generations as indivisible epochs.
+///
+/// The transaction runs only while publishing a newer successful epoch. Pins
+/// always win. Queries still referenced by the current stage index are moved
+/// to the standalone epoch; all other queries lose their last membership and
+/// are removed together with their immutable object references.
+fn delete_abandoned_analysis_epochs(
+    transaction: &rusqlite::Transaction<'_>,
+    publishing_epoch: &str,
+) -> Result<()> {
+    validate_epoch_id(publishing_epoch)?;
+    let standalone = standalone_epoch_id();
+    let mut abandoned = Vec::new();
+    {
+        let mut statement = transaction
+            .prepare(
+                "SELECT epoch.epoch_id
+                 FROM analysis_epochs AS epoch
+                 WHERE epoch.completed_unix_seconds IS NULL
+                   AND epoch.epoch_id != ?1
+                   AND epoch.epoch_id != ?2
+                   AND NOT EXISTS (
+                       SELECT 1 FROM epoch_pins AS pin
+                       WHERE pin.epoch_id = epoch.epoch_id
+                   )
+                 ORDER BY epoch.created_unix_seconds, epoch.epoch_id",
+            )
+            .map_err(|error| store_error("prepare abandoned analysis epochs", error))?;
+        let rows = statement
+            .query_map(params![publishing_epoch, &standalone], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|error| store_error("read abandoned analysis epochs", error))?;
+        for row in rows {
+            abandoned
+                .push(row.map_err(|error| store_error("decode abandoned analysis epoch", error))?);
+        }
+    }
+    if abandoned.is_empty() {
+        return Ok(());
+    }
+
+    let mut retirement_candidates = BTreeSet::new();
+    {
+        let mut statement = transaction
+            .prepare(
+                "SELECT object_digest FROM query_results
+                 WHERE object_digest IS NOT NULL
+                   AND query_key IN (
+                       SELECT query_key FROM query_epoch_members WHERE epoch_id = ?1
+                   )
+                 UNION
+                 SELECT digest FROM stage_outputs WHERE epoch_id = ?1",
+            )
+            .map_err(|error| store_error("prepare abandoned epoch objects", error))?;
+        for epoch in &abandoned {
+            let rows = statement
+                .query_map([epoch], |row| row.get::<_, String>(0))
+                .map_err(|error| store_error("read abandoned epoch objects", error))?;
+            for row in rows {
+                retirement_candidates.insert(
+                    row.map_err(|error| store_error("decode abandoned epoch object", error))?,
+                );
+            }
+        }
+    }
+    {
+        let mut statement = transaction
+            .prepare("DELETE FROM analysis_epochs WHERE epoch_id = ?1")
+            .map_err(|error| store_error("prepare whole-epoch deletion", error))?;
+        for epoch in &abandoned {
+            let deleted = statement
+                .execute([epoch])
+                .map_err(|error| store_error("delete abandoned analysis epoch", error))?;
+            if deleted != 1 {
+                return Err(crate::Error::invalid(format!(
+                    "abandoned analysis epoch {epoch} changed during deletion"
+                )));
+            }
+        }
+    }
+
+    // Preserve globally published stage results in the standalone scope. This
+    // is not partial epoch retention: the failed epoch and every membership in
+    // it have already been deleted as one unit.
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO query_epoch_members(epoch_id, query_key)
+             SELECT ?1, result.query_key
+             FROM query_results AS result
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM query_epoch_members AS member
+                 WHERE member.query_key = result.query_key
+             )
+               AND EXISTS (
+                   SELECT 1 FROM stage_bindings AS binding
+                   WHERE binding.query_key = result.query_key
+               )",
+            [&standalone],
+        )
+        .map_err(|error| store_error("rescope surviving failed-run stage results", error))?;
+    transaction
+        .execute(
+            "DELETE FROM query_results AS result
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM query_epoch_members AS member
+                 WHERE member.query_key = result.query_key
+             )
+               AND NOT EXISTS (
+                   SELECT 1 FROM stage_bindings AS binding
+                   WHERE binding.query_key = result.query_key
+               )",
+            [],
+        )
+        .map_err(|error| store_error("delete abandoned epoch query results", error))?;
+    mark_unreachable_objects_retired(transaction, &retirement_candidates)
+}
+
 fn nonnegative(value: i64, label: &str) -> Result<u64> {
     u64::try_from(value)
         .map_err(|_| crate::Error::invalid(format!("query cache reported a negative {label}")))
@@ -3161,13 +3576,18 @@ fn unix_timestamp_seconds() -> Result<u64> {
 
 fn stage_output_object_digests(
     transaction: &rusqlite::Transaction<'_>,
+    epoch_id: &str,
     stage: &str,
 ) -> Result<BTreeSet<String>> {
+    validate_epoch_id(epoch_id)?;
     let mut statement = transaction
-        .prepare("SELECT DISTINCT digest FROM stage_outputs WHERE stage = ?1 ORDER BY digest")
+        .prepare(
+            "SELECT DISTINCT digest FROM stage_outputs
+             WHERE epoch_id = ?1 AND stage = ?2 ORDER BY digest",
+        )
         .map_err(|error| store_error("prepare retiring cached stage objects", error))?;
     let rows = statement
-        .query_map([stage], |row| row.get::<_, String>(0))
+        .query_map(params![epoch_id, stage], |row| row.get::<_, String>(0))
         .map_err(|error| store_error("read retiring cached stage objects", error))?;
     let mut digests = BTreeSet::new();
     for row in rows {
@@ -4163,6 +4583,441 @@ mod tests {
         drop(reopened);
     }
 
+    #[test]
+    fn complete_analysis_epoch_activates_atomically_and_retires_only_previous_success() {
+        let manifest = manifest("analysis-epoch-publication");
+        let standalone = standalone_epoch_id();
+
+        let mut first = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let first_epoch = first.publishing_epoch.clone().unwrap();
+        first
+            .put("first-query", "fixture", "first", &[], b"first")
+            .unwrap();
+        assert_eq!(
+            first
+                .connection
+                .query_row(
+                    "SELECT active_epoch FROM cache_state WHERE singleton = 1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            standalone
+        );
+        assert_eq!(
+            first
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM analysis_epochs WHERE retired_unix_seconds IS NOT NULL",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+        first.complete_analysis_epoch().unwrap();
+        drop(first);
+
+        let after_first = QueryStore::statistics(&manifest).unwrap();
+        assert_eq!(after_first.active_epoch, Some(first_epoch.clone()));
+        assert_eq!(after_first.completed_epochs, 1);
+        assert_eq!(after_first.retired_epochs, 0);
+
+        let mut second = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let second_epoch = second.publishing_epoch.clone().unwrap();
+        second
+            .put("second-query", "fixture", "second", &[], b"second")
+            .unwrap();
+        assert_eq!(
+            second
+                .connection
+                .query_row(
+                    "SELECT active_epoch FROM cache_state WHERE singleton = 1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            first_epoch
+        );
+        second.complete_analysis_epoch().unwrap();
+        drop(second);
+
+        let after_second = QueryStore::statistics(&manifest).unwrap();
+        assert_eq!(after_second.active_epoch, Some(second_epoch));
+        assert_eq!(after_second.completed_epochs, 2);
+        assert_eq!(after_second.retired_epochs, 1);
+    }
+
+    #[test]
+    fn retired_epoch_keeps_its_complete_stage_cas_snapshot() {
+        let manifest = manifest("analysis-epoch-retired-stage-snapshot");
+        let first_output = output(&manifest, "generated/first.json", b"first-output");
+        let first_digest = first_output.1.clone();
+        let mut first = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let first_epoch = first.publishing_epoch.clone().unwrap();
+        first
+            .record_stage("fixture-stage", "first-query", &[first_output])
+            .unwrap();
+        first.complete_analysis_epoch().unwrap();
+        drop(first);
+
+        let second_output = output(&manifest, "generated/second.json", b"second-output");
+        let mut second = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let second_epoch = second.publishing_epoch.clone().unwrap();
+        second
+            .record_stage("fixture-stage", "second-query", &[second_output])
+            .unwrap();
+        second.complete_analysis_epoch().unwrap();
+
+        for (epoch, query) in [
+            (&first_epoch, "first-query"),
+            (&second_epoch, "second-query"),
+        ] {
+            assert_eq!(
+                second
+                    .connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM stage_bindings
+                         WHERE epoch_id = ?1 AND stage = 'fixture-stage' AND query_key = ?2",
+                        params![epoch, query],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap(),
+                1
+            );
+            assert_eq!(
+                second
+                    .connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM stage_outputs
+                         WHERE epoch_id = ?1 AND stage = 'fixture-stage'",
+                        [epoch],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+        assert!(second.open_object(&first_digest).is_ok());
+        assert_eq!(
+            second
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM retired_objects WHERE digest = ?1",
+                    [&first_digest],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0,
+            "retired epoch stage outputs remain live CAS ownership"
+        );
+    }
+
+    #[test]
+    fn failed_and_focused_writers_never_activate_or_retire_an_epoch() {
+        let manifest = manifest("analysis-epoch-failure-and-focus");
+        let mut successful = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        successful
+            .put("successful", "fixture", "successful", &[], b"successful")
+            .unwrap();
+        successful.complete_analysis_epoch().unwrap();
+        let active = successful.active_epoch.clone().unwrap();
+        drop(successful);
+
+        let mut failed = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let failed_epoch = failed.publishing_epoch.clone().unwrap();
+        failed
+            .put("failed", "fixture", "failed", &[], b"failed")
+            .unwrap();
+        drop(failed);
+
+        let after_failure = QueryStore::statistics(&manifest).unwrap();
+        assert_eq!(after_failure.active_epoch, Some(active.clone()));
+        assert_eq!(after_failure.completed_epochs, 1);
+        assert_eq!(after_failure.retired_epochs, 0);
+
+        let mut focused = QueryStore::open(&manifest).unwrap();
+        assert_eq!(focused.active_epoch, Some(standalone_epoch_id()));
+        focused
+            .put("focused", "fixture", "focused", &[], b"focused")
+            .unwrap();
+        drop(focused);
+
+        let after_focus = QueryStore::statistics(&manifest).unwrap();
+        assert_eq!(after_focus.active_epoch, Some(active));
+        assert_eq!(after_focus.completed_epochs, 1);
+        assert_eq!(after_focus.retired_epochs, 0);
+        assert_eq!(
+            after_focus.analysis_epochs, 3,
+            "standalone, successful and failed epochs remain distinct"
+        );
+
+        let store = QueryStore::open(&manifest).unwrap();
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT completed_unix_seconds FROM analysis_epochs WHERE epoch_id = ?1",
+                    [&failed_epoch],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn failed_rebind_cannot_delete_a_query_owned_by_the_active_epoch() {
+        let manifest = manifest("analysis-epoch-failed-rebind");
+        let cached = output(&manifest, "generated/result.json", b"active-result");
+        let digest = cached.1.clone();
+
+        let mut active = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let active_epoch = active.publishing_epoch.clone().unwrap();
+        active
+            .record_stage("fixture-stage", "shared-query", &[cached])
+            .unwrap();
+        active.complete_analysis_epoch().unwrap();
+        drop(active);
+
+        let mut failed = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let failed_epoch = failed.publishing_epoch.clone().unwrap();
+        failed
+            .bind_restored_stage(
+                "fixture-stage",
+                "shared-query",
+                &["generated/result.json".to_owned()],
+                std::slice::from_ref(&digest),
+            )
+            .unwrap();
+        failed
+            .retire_stage_binding("fixture-stage", "shared-query")
+            .unwrap();
+
+        assert_eq!(
+            failed.get("shared-query").unwrap(),
+            Some(serde_json::to_vec(&[digest]).unwrap())
+        );
+        assert_eq!(
+            failed
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM query_epoch_members
+                     WHERE epoch_id = ?1 AND query_key = 'shared-query'",
+                    [&active_epoch],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            failed
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM query_epoch_members
+                     WHERE epoch_id = ?1 AND query_key = 'shared-query'",
+                    [&failed_epoch],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn failed_epoch_stage_snapshot_is_invisible_to_published_and_read_only_views() {
+        let manifest = manifest("analysis-epoch-failed-snapshot-visibility");
+        let published_output = output(&manifest, "generated/published.json", b"published-output");
+        let mut published = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let published_epoch = published.publishing_epoch.clone().unwrap();
+        published
+            .record_stage("fixture-stage", "published-query", &[published_output])
+            .unwrap();
+        published.complete_analysis_epoch().unwrap();
+        drop(published);
+
+        let failed_output = output(&manifest, "generated/failed.json", b"failed-output");
+        let mut failed = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let failed_epoch = failed.publishing_epoch.clone().unwrap();
+        failed
+            .record_stage("fixture-stage", "failed-query", &[failed_output])
+            .unwrap();
+        assert!(
+            failed
+                .stage_output_digests("failed-query")
+                .unwrap()
+                .is_some()
+        );
+        drop(failed);
+
+        let focused = QueryStore::open(&manifest).unwrap();
+        assert!(
+            focused
+                .stage_output_digests("published-query")
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            focused
+                .stage_output_digests("failed-query")
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            focused
+                .connection
+                .query_row(
+                    "SELECT active_epoch FROM cache_state WHERE singleton = 1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            published_epoch
+        );
+        assert_eq!(
+            focused
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM stage_bindings
+                     WHERE epoch_id = ?1 AND stage = 'fixture-stage'",
+                    [&failed_epoch],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1,
+            "the failed snapshot exists physically but is outside the published view"
+        );
+        drop(focused);
+
+        assert!(
+            read_only_stage_digests(&manifest, "published-query", true)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            read_only_stage_digests(&manifest, "failed-query", true)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn failed_epoch_function_facts_are_invisible_until_recomputed_in_a_live_epoch() {
+        let manifest = manifest("analysis-epoch-failed-function-facts");
+        let mut published = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        published
+            .put_function_fact_batch(&[("published-fact".to_owned(), b"published".to_vec())])
+            .unwrap();
+        published.complete_analysis_epoch().unwrap();
+        drop(published);
+
+        let mut failed = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        failed
+            .put_function_fact_batch(&[("failed-fact".to_owned(), b"failed".to_vec())])
+            .unwrap();
+        assert_eq!(
+            failed
+                .load_function_facts_batched(
+                    &["published-fact".to_owned(), "failed-fact".to_owned()],
+                    |_| {},
+                )
+                .unwrap()
+                .len(),
+            2
+        );
+        drop(failed);
+
+        let focused = QueryStore::open(&manifest).unwrap();
+        assert_eq!(
+            focused
+                .load_function_facts_batched(
+                    &["published-fact".to_owned(), "failed-fact".to_owned()],
+                    |_| {},
+                )
+                .unwrap(),
+            vec![("published-fact".to_owned(), b"published".to_vec())]
+        );
+    }
+
+    #[test]
+    fn next_success_deletes_failed_generations_whole_but_preserves_pins() {
+        let manifest = manifest("analysis-epoch-whole-gc");
+        let mut failed = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let failed_epoch = failed.publishing_epoch.clone().unwrap();
+        failed
+            .put("failed-only", "fixture", "failed", &[], b"failed")
+            .unwrap();
+        drop(failed);
+
+        let mut pinned = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        let pinned_epoch = pinned.publishing_epoch.clone().unwrap();
+        pinned
+            .put("pinned-only", "fixture", "pinned", &[], b"pinned")
+            .unwrap();
+        pinned
+            .connection
+            .execute(
+                "INSERT INTO epoch_pins(pin_id, epoch_id, kind)
+                 VALUES ('fixture-pin', ?1, 'manual')",
+                [&pinned_epoch],
+            )
+            .unwrap();
+        drop(pinned);
+
+        let mut successful = QueryStore::open_analysis_epoch(&manifest).unwrap();
+        successful
+            .put("current", "fixture", "current", &[], b"current")
+            .unwrap();
+        successful.complete_analysis_epoch().unwrap();
+
+        assert_eq!(
+            successful
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM analysis_epochs WHERE epoch_id = ?1",
+                    [&failed_epoch],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            successful
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM query_results WHERE query_key = 'failed-only'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            successful
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM analysis_epochs WHERE epoch_id = ?1",
+                    [&pinned_epoch],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(successful.get("pinned-only").unwrap(), None);
+        assert_eq!(
+            successful
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM query_results WHERE query_key = 'pinned-only'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1,
+            "pin preserves the private epoch physically without publishing it"
+        );
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn plan_guard_fails_closed_after_cache_root_generation_replacement() {
@@ -4526,7 +5381,7 @@ mod tests {
                 .unwrap();
             store
                 .connection
-                .execute_batch("PRAGMA user_version=8;")
+                .execute_batch("PRAGMA user_version=9;")
                 .unwrap();
         }
         let before = snapshot_tree(project_root);
@@ -4535,7 +5390,7 @@ mod tests {
         assert!(
             statistics_error
                 .to_string()
-                .contains("schema 8 is unsupported")
+                .contains("schema 9 is unsupported")
         );
         assert!(
             statistics_error
@@ -4547,7 +5402,7 @@ mod tests {
         let writer_error = QueryStore::open(&manifest)
             .err()
             .expect("obsolete cache schema must require a cold rebuild");
-        assert!(writer_error.to_string().contains("schema 8 is unsupported"));
+        assert!(writer_error.to_string().contains("schema 9 is unsupported"));
         assert!(
             writer_error
                 .to_string()

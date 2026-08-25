@@ -801,6 +801,10 @@ fn ensure_unique_replay_outputs<'a>(
 }
 
 impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
+    fn complete_analysis_epoch(&mut self) -> Result<()> {
+        self.cache.complete_analysis_epoch()
+    }
+
     fn validate_pipeline_inputs(&mut self) -> Result<()> {
         if let Some(error) = self.pipeline_input_error.as_deref() {
             return Err(crate::Error::invalid(format!(

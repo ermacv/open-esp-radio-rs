@@ -78,6 +78,13 @@ pub(crate) trait ProjectAnalysisOperations {
         Ok(())
     }
 
+    /// Atomically activate the cache generation accumulated by this complete
+    /// run. Implementations must leave prior active/retired state unchanged
+    /// until this success boundary.
+    fn complete_analysis_epoch(&mut self) -> Result<()> {
+        Ok(())
+    }
+
     fn symbol_inventory(&mut self, check: bool) -> Result<StageRun>;
     fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<StageRun>;
     fn discover_interfaces(&mut self, check: bool) -> Result<StageRun>;
@@ -347,6 +354,19 @@ pub(crate) fn run(
         );
     }
 
+    if summary.succeeded()
+        && !request.check
+        && summary.written + summary.restored + summary.verified + summary.current != 0
+        && let Err(error) = operations.complete_analysis_epoch()
+    {
+        summary.record(
+            "cache-epoch-publication",
+            &StageExecution::failed(format!(
+                "complete analysis succeeded but its cache epoch was not activated: {error}"
+            )),
+        );
+    }
+
     let status = if !summary.succeeded() {
         ProjectAnalysisStatus::Failed
     } else if summary.written + summary.restored + summary.verified + summary.current == 0 {
@@ -429,6 +449,10 @@ mod tests {
     }
 
     impl ProjectAnalysisOperations for FakeOperations {
+        fn complete_analysis_epoch(&mut self) -> Result<()> {
+            self.called("epoch-publication").map(|_| ())
+        }
+
         fn validate_pipeline_inputs(&mut self) -> Result<()> {
             if let Some(inputs) = self.pipeline_inputs.as_mut() {
                 inputs.validate()?;
@@ -618,6 +642,7 @@ mod tests {
         assert_eq!(report.written, 0);
         assert_eq!(report.current, 1);
         assert_eq!(report.stages[0].status, "up-to-date");
+        assert_eq!(operations.calls.last(), Some(&"epoch-publication"));
         assert!(report.stages[0].duration_ms.is_some());
         assert_eq!(
             report.duration_ms,
@@ -669,6 +694,7 @@ mod tests {
         );
 
         assert!(!operations.calls.contains(&"ir"));
+        assert!(!operations.calls.contains(&"epoch-publication"));
         let linked_ir = report
             .stages
             .iter()

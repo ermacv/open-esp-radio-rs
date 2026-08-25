@@ -676,16 +676,30 @@ impl ProjectAnalysisCache {
         self.store_mut()
     }
 
+    /// Publish the run-owned epoch only after the complete coordinator has
+    /// succeeded. If no cacheable stage opened the store, success is a no-op
+    /// and preserves the lazy/disposable cache boundary.
+    pub(super) fn complete_analysis_epoch(&mut self) -> Result<()> {
+        match &mut self.store {
+            PersistentStore::Ready(store) => store.complete_analysis_epoch(),
+            PersistentStore::Deferred(_) | PersistentStore::Disabled => Ok(()),
+            PersistentStore::Failed(error) => Err(crate::Error::invalid(format!(
+                "persistent query store is unavailable: {error}"
+            ))),
+        }
+    }
+
     fn store_mut(&mut self) -> Result<&mut crate::application::query_store::QueryStore> {
         let manifest = match &self.store {
             PersistentStore::Deferred(manifest) => Some(manifest.clone()),
             _ => None,
         };
         if let Some(manifest) = manifest {
-            self.store = match crate::application::query_store::QueryStore::open(&manifest) {
-                Ok(store) => PersistentStore::Ready(Box::new(store)),
-                Err(error) => PersistentStore::Failed(error.to_string()),
-            };
+            self.store =
+                match crate::application::query_store::QueryStore::open_analysis_epoch(&manifest) {
+                    Ok(store) => PersistentStore::Ready(Box::new(store)),
+                    Err(error) => PersistentStore::Failed(error.to_string()),
+                };
         }
         match &mut self.store {
             PersistentStore::Ready(store) => Ok(store),
@@ -1088,7 +1102,9 @@ mod tests {
         let manifest = directory.join("vendor-project.toml");
         fs::write(&manifest, "schema = 3\n").unwrap();
 
-        let cache = ProjectAnalysisCache::deferred(&manifest);
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(!directory.join("generated/.blobray-cache").exists());
+        cache.complete_analysis_epoch().unwrap();
         assert!(!directory.join("generated/.blobray-cache").exists());
 
         drop(cache);

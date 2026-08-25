@@ -16,7 +16,6 @@ use svd_rs::{
     RegisterCluster, RegisterInfo, RegisterProperties, ValidateLevel,
 };
 
-mod migration;
 mod model_validation;
 mod pac_api;
 mod pac_api_render;
@@ -25,11 +24,6 @@ mod pac_bindings;
 mod register_evidence;
 mod register_lints;
 
-pub use migration::{
-    RegisterMigrationAssertion, RegisterMigrationAssertionDisposition,
-    RegisterMigrationBaseDisposition, RegisterMigrationBaseEntity, RegisterMigrationDiagnostic,
-    RegisterMigrationPlan, RegisterMigrationSummary,
-};
 pub use pac_api::{
     BoundedDomain, EnumDomain, EnumValue, FeatureModule, FixedRegisterImage, FixedRegisterWrite,
     FlagDomain, FlagValue, FullRegisterWrite, InterruptSnapshot, MaskedRegisterModify,

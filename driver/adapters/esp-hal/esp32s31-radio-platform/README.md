@@ -14,6 +14,13 @@ the same singleton types independently, so safe Wi-Fi + Bluetooth composition
 is intentionally impossible today. Wi-Fi must migrate to this coordinator
 before coexistence can be enabled; no duplicate or compatibility owner exists.
 
+The pinned ESP32-S31 PAC names the primary and NRT Controller sources as
+`BT_MAC` and `BT_MAC_INT1`. This adapter compile-checks those identities
+against the reviewed source-124/source-133 policies and contains a
+same-core, level-three bind/disable pair. The primitives remain crate-private:
+shared ISR register storage and lossless event classification must exist
+before a public live interrupt epoch can safely enable either route.
+
 The Bluetooth clock/reset sequence is pinned to the reviewed ESP-IDF source:
 
 - [`bt.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/controller/esp32s31/bt.c)

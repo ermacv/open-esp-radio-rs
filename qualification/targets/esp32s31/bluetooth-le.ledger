@@ -95,6 +95,7 @@ owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothInterruptObs
 owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothPrimaryInterruptObservation
 owner driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs BluetoothInterruptOutputPrepared
 owner driver/chips/esp32s31/bluetooth/src/interrupt.rs BluetoothCpuInterruptRoutePolicy
+owner driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs BoundBluetoothInterruptRoutes
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs observation_preserves_both_opaque_banks
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_observation_preserves_both_masked_banks
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_baseline_masks_are_exact_complete_helper_images
@@ -103,9 +104,12 @@ test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs primary_release_preser
 test driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs interrupt_control_geometry_matches_the_three_reviewed_strobes
 test driver/chips/esp32s31/bluetooth/src/interrupt.rs primary_route_is_source_124_level_three_and_iram
 test driver/chips/esp32s31/bluetooth/src/interrupt.rs nrt_route_is_distinct_source_133_without_iram_request
+test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs complete_level_three_pair_is_accepted
+test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs either_invalid_priority_rejects_the_pair_before_binding
+test driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs quiesce_is_affine_to_the_binding_core
 vendor-anchor verification/vendor/targets/esp32s31/README.md 0x00008000
 depends-on controller-initialization
-gap implementation typed-primary-and-nrt-platform-routes-missing
+gap implementation shared-isr-storage-and-live-route-lifecycle-missing
 gap implementation dynamic-bit-classification-and-shared-clear-bank-dispatch-missing
 gap vendor complete-interrupt-production-trace-missing
 gap hil bluetooth-interrupt-epoch-cell-missing

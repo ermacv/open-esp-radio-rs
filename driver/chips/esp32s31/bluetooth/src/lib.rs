@@ -7,10 +7,10 @@
 //! BTDM HAL-init body are implemented as later enable-stage components. The
 //! two Controller interrupt sources, level/residency policies, baseline masks,
 //! snapshot modes and shared-register staging are also represented, but are
-//! deliberately not connected across the missing event/list, LP, BLE, typed
-//! CPU-route and interrupt-classification prerequisites. No current finite
-//! state claims that the complete controller lifecycle, HCI transport, task or
-//! live interrupt epoch has completed.
+//! deliberately not connected across the missing event/list, LP, BLE,
+//! live-route lifecycle and interrupt-classification prerequisites. No
+//! current finite state claims that the complete controller lifecycle, HCI
+//! transport, task or live interrupt epoch has completed.
 
 #![no_std]
 #![deny(unsafe_code)]

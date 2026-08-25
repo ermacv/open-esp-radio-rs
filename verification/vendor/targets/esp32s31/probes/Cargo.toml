@@ -44,4 +44,4 @@ strip = false
 # This workspace is intentionally excluded from the root workspace, so Cargo
 # does not inherit the root patch table automatically.
 [patch."https://github.com/esp-rs/esp-pacs"]
-esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "d0fb94ef3" }
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "5b8b56036abd5f4646505b15988cc9da51cec826" }

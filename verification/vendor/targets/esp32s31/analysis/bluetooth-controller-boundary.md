@@ -75,11 +75,13 @@ setup/teardown prefix. It does not close bit semantics or the dynamic primary
 groups (`0x1820_0000` and `0x0000_0008`). Both vendor handlers perform
 synchronous callback dispatch, and the primary handler has an additional
 scheduler-sensitive path. Replacing those callbacks with a coalescing async
-wake before multiplicity and re-arm semantics are known could lose work.
-The pinned `esp-pacs` revision is also a platform blocker: its typed
-ESP32-S31 `Interrupt` enum omits both source 124 and source 133. Production
-routing must wait for a reviewed PAC update rather than casting raw integers
-into an incomplete enum.
+wake before multiplicity and re-arm semantics are known could lose work. The
+pinned `esp-pacs` revision now names source 124 as `BT_MAC` and source 133 as
+`BT_MAC_INT1`. The ESP-HAL adapter compile-checks both identities against the
+chip policy, requires level-three handlers, binds the complete pair on one
+core and disables both through the same retained core identity. Those
+primitives stay crate-private until shared ISR storage and the event
+classifier can make a lossless live epoch.
 
 ## Reference Controller implementations
 
@@ -102,7 +104,7 @@ minimum dependency graph and publication gate for each unit are:
 | --- | --- | --- | --- |
 | Register evidence and SVD | Address, field, access and transaction provenance | Partial but substantial; generated model is fail-closed | Every register used by the first vertical slice is reviewed and generated with no raw-address escape in upper layers. |
 | Restricted PAC | Affine peripheral ownership and finite MMIO operations | Cold ownership, scheduler prefix, full 50-operation HAL body, memory-pointer geometry and IRQ prefixes exist | DTM trace uses only typed operations and has exact rollback/quiescence edges. |
-| Platform/HAL lifecycle | Clocks, reset, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset is live; PHY/BTBB are disconnected; typed IRQ routes are blocked | One owner can power, route both IRQs, run and return cold without owner duplication. |
+| Platform/HAL lifecycle | Clocks, reset, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset is live; PHY/BTBB are disconnected; typed IRQ pair primitives exist but the live epoch remains closed | One owner can power, route both IRQs, run and return cold without owner duplication. |
 | Controller timer and scheduler | Radio timebase, prepare/abort/doorbell/completion and collision policy | Command/status semantics absent | Virtual-time model plus register trace proves one scheduled event, cancellation and late/error handling. |
 | Packet memory dataplane | Static RX/TX/free/ready storage, DMA visibility and backpressure | Pointer encoding exists; list roles/layouts do not | Every buffer has an affine CPU/hardware state and is reclaimed on success, error, abort and shutdown. |
 | Lower Link Layer (LLL) | Channel/whitening/CRC/access address, hard ISR turnaround and one radio-event state machine | Absent | DTM TX/RX works first; then one advertising event executes without executor-latency dependence. |
@@ -187,7 +189,7 @@ shared hardware lease can be dropped.
 | `btdm_coex_enable` | profile-optional for standalone | A no-op success is source-correct only while the product contract excludes simultaneous Wi-Fi. |
 | `ble_stack_enable` | unresolved composite | Replace protocol activation; recover any remaining radio-engine activation transaction separately. |
 | `r_btdm_hci_fc_enable` | open-controller replacement | Start a fresh bounded HCI credit epoch in Rust. |
-| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline interrupt masks, controller-output strobes and two CPU-route policies are recovered as separate restricted-PAC/platform contracts. Replace the RTOS task with one affine async Controller owner; typed CPU route installation, dynamic interrupt meanings, timer/scheduler activation and event-to-work classification remain unresolved. |
+| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline interrupt masks, controller-output strobes and typed two-route ESP-HAL primitives are recovered as separate restricted-PAC/platform contracts. Replace the RTOS task with one affine async Controller owner; shared ISR storage, live-route composition, dynamic interrupt meanings, timer/scheduler activation and event-to-work classification remain unresolved. |
 | `r_btdm_task_disable` and `ble_stack_disable` | unresolved composite | Define a stop barrier: mask sources, cancel/abort commands, acknowledge residual status, reclaim every packet, then expose a quiesced owner. |
 
 The public OSAL demonstrates that the vendor implementation uses FreeRTOS
@@ -232,9 +234,9 @@ The implementation order is:
 
 1. finish restricted PAC access for scheduler command/status words, controller
    timer and memory-list pointer geometry; both interrupt snapshot modes,
-   baseline setup/teardown masks, route identities and policies are finite
-   components, but typed CPU route installation and dynamic bit semantics are
-   still absent, so this is not a live interrupt epoch;
+   baseline setup/teardown masks, route identities, policies and typed ESP-HAL
+   pair binding are finite components, but shared ISR storage and dynamic bit
+   semantics are still absent, so this is not a live interrupt epoch;
 2. recover a hardware-only init transition from the composite task/BLE init
    functions, with read-back or bounded postconditions and exact rollback up
    to every fallible edge;

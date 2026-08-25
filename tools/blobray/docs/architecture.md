@@ -143,15 +143,19 @@ failure.
 The persistent store is disposable Blobray state under
 `generated/.blobray-cache/`. SQLite in WAL mode owns the indexed query DAG,
 atomic bindings and content locations. Values up to 64 KiB are inline; larger
-query values are deduplicated into append-only SHA-256 CAS pack generations. Generated
+query values are deduplicated into append-only SHA-256 CAS pack generations. The
+measured boundary and retention policy are documented in
+[`cache-policy.md`](cache-policy.md). Generated
 output files are always streamed into the same CAS and may be atomically
 restored; generated IR bundles remain publication artifacts and are not the
 cache database. Reviewed packs and the qualification ledger must never be
-copied into or modified by the store. A schema mismatch discards this derived
-store; there is no cache format compatibility layer.
+copied into or modified by the store. Schema 7 migrates atomically to schema 8
+without discarding queries or packs. Unsupported schemas fail closed and
+require the caller to preserve or explicitly remove the disposable cache.
 
-Pack lifetime is reachability-based. Query results and stage-output bindings
-are the only roots. When unreachable records exceed the bounded compaction
+Pack lifetime is reachability-based with explicit retention roots. Query
+results, stage-output bindings and timestamped retired objects are preserved.
+When unprotected unreachable records exceed the bounded compaction
 threshold, the store streams all live objects into a new immutable generation,
 fsyncs it, atomically redirects SQLite, and only then removes old generations.
 A crash can therefore leave an unreferenced old or new pack, but never an

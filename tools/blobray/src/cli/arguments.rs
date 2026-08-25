@@ -19,8 +19,14 @@ pub(crate) struct EmptyArgs {}
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ProjectCacheGcArgs {
     /// Compute and report the exact reachability-compaction plan without writing cache state.
-    #[arg(long, required = true)]
+    #[arg(long, required_unless_present = "apply", conflicts_with = "apply")]
     pub(crate) dry_run: bool,
+    /// Apply an age-based prune to persisted unreachable CAS objects.
+    #[arg(long, required_unless_present = "dry_run", conflicts_with = "dry_run")]
+    pub(crate) apply: bool,
+    /// Protect retired CAS objects newer than this many whole days.
+    #[arg(long, value_name = "DAYS", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) retention_days: Option<u64>,
     /// Require the projected cache to fit this many bytes without evicting live results.
     #[arg(long, value_name = "BYTES", value_parser = clap::value_parser!(u64).range(1..))]
     pub(crate) max_size: Option<u64>,

@@ -181,10 +181,11 @@ cargo blobray project revision rebase vendor-2026-05 vendor-2026-08 \
   --output generated/revisions/vendor-2026-08.rebase.json
 ```
 
-Snapshots default to `revisions/snapshots/NAME.json`; the small
+Snapshots default to deterministic `revisions/snapshots/NAME.json.gz`; the small
 `revisions/ledger.toml` is updated atomically with the snapshot location,
-snapshot SHA-256, artifact-set SHA-256 and explicit `baseline`/`current`
-pointers. Both paths are outside disposable `generated/` state and should be
+logical-content SHA-256, artifact-set SHA-256 and explicit `baseline`/`current`
+pointers. The logical digest is independent of the replaceable gzip storage
+codec. Both paths are outside disposable `generated/` state and should be
 committed or backed by equivalent durable, access-controlled storage. `project
 status` and `project doctor` warn when no baseline exists; deep doctor also
 checks immutable snapshot digests and reports current binding drift.
@@ -220,6 +221,10 @@ Inspect the store before deciding whether cache growth needs investigation:
 cargo blobray project cache stats --project path/to/vendor-project.toml
 cargo blobray project cache gc --dry-run --max-size 4294967296 \
   --project path/to/vendor-project.toml
+cargo blobray project cache gc --dry-run --retention-days 30 \
+  --max-size 4294967296 --project path/to/vendor-project.toml
+cargo blobray project cache gc --apply --retention-days 30 \
+  --max-size 4294967296 --project path/to/vendor-project.toml
 cargo blobray project cache compact --max-size 4294967296 \
   --project path/to/vendor-project.toml
 ```
@@ -231,22 +236,27 @@ reported without creating `generated/.blobray-cache/` or any SQLite sidecar.
 `cache stats` does not perform garbage collection, compaction, pruning, schema
 migration, or quota enforcement; it only describes the state already on disk.
 Its assessment reports the platform support and exact thresholds for automatic
-pack compaction. `cache gc` currently requires `--dry-run`: it reports the
-reachable-pack projection, temporary space requirement, available space and an
+pack compaction. `cache gc --dry-run` reports the reachable-pack or explicit
+retention projection, temporary space requirement, available space and an
 optional byte-exact `--max-size` guard without creating or changing cache
-state. `cache compact` is the explicit mutation; it is supported only on Linux
-local filesystems, holds the cache writer lock, rewrites and verifies every
-live CAS digest through the pinned cache root, atomically switches the SQLite
-index, then removes old packs. It refuses known network/userspace filesystems,
+state. `cache gc --apply` additionally requires `--retention-days` and prunes
+only CAS objects with a persisted obsolete timestamp at or before that cutoff.
+`cache compact` is an explicit reachability mutation; both mutations are
+supported only on Linux local filesystems, hold the cache writer lock, rewrite
+and verify every preserved CAS digest through the pinned cache root, atomically
+switch the SQLite index, then remove old packs. They refuse known
+network/userspace filesystems,
 insufficient working space and a size limit that cannot be met without
 evicting live results. The size limit is therefore an actionable guard, not a
 silent lossy quota.
 
-Age/LRU retention is intentionally not guessed from file mtimes: the current
-store schema has no durable per-query access clock. Removing the entire
-disposable cache remains the safe cold-start escape hatch; selective retention
-requires a future schema and access-accounting iteration. `project analyze
---plan` is the read-only way to see whether
+Age retention is never guessed from file mtimes. Schema 8 persists the time at
+which a CAS object loses its final stage/query reference; current results and
+unretired function facts are not LRU candidates. The complete measurement,
+migration, retention and 64-KiB storage rationale is in
+[`cache-policy.md`](cache-policy.md). Removing the entire disposable cache
+remains the safe cold-start escape hatch. `project analyze --plan` is the
+read-only way to see whether
 each stage is current, restorable from CAS, or requires recomputation. Plan
 schema 2 keeps the default decision summary bounded while exposing every
 deferred generated input and its producer stage as structured

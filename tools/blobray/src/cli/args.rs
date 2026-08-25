@@ -377,7 +377,7 @@ impl ProjectCommand {
 leaf_commands!(ProjectCacheCommand {
     /// Report cache size, query inventory, dependencies and reclaimable data.
     Stats(EmptyArgs) => Command::ProjectCacheStats, Empty,
-    /// Preview reachability GC, disk-space needs and an optional size budget.
+    /// Preview reachability GC or explicitly prune old unreachable CAS objects.
     Gc(ProjectCacheGcArgs) => Command::ProjectCacheGc, ProjectCacheGc,
     /// Rewrite the CAS pack to remove unreachable records.
     Compact(ProjectCacheCompactArgs) => Command::ProjectCacheCompact, ProjectCacheCompact,
@@ -743,7 +743,25 @@ mod tests {
             panic!("expected project cache gc")
         };
         assert!(arguments.dry_run);
+        assert!(!arguments.apply);
+        assert_eq!(arguments.retention_days, None);
         assert_eq!(arguments.max_size, Some(1_048_576));
+
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "cache".to_owned(),
+            "gc".to_owned(),
+            "--apply".to_owned(),
+            "--retention-days".to_owned(),
+            "30".to_owned(),
+        ])
+        .unwrap();
+        let Command::ProjectCacheGc(arguments) = invocation.command else {
+            panic!("expected project cache gc")
+        };
+        assert!(arguments.apply);
+        assert!(!arguments.dry_run);
+        assert_eq!(arguments.retention_days, Some(30));
     }
 
     #[test]

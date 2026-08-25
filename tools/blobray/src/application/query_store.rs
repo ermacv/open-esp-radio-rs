@@ -12,7 +12,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, config::DbConfig, params};
@@ -23,7 +23,7 @@ use crate::Result;
 
 type PackedObjectLocations = Vec<(String, u64, u64)>;
 
-const STORE_SCHEMA: i64 = 7;
+const STORE_SCHEMA: i64 = 8;
 const INLINE_VALUE_LIMIT: usize = 64 * 1024;
 // Stay comfortably below SQLite's host-parameter limit while amortizing one
 // lookup across many function keys. This also bounds the dynamically prepared
@@ -69,6 +69,11 @@ pub(crate) struct QueryStoreStatistics {
     pub(crate) stage_outputs: u64,
     pub(crate) live_objects: u64,
     pub(crate) live_record_bytes: u64,
+    pub(crate) retired_objects: u64,
+    pub(crate) retired_payload_bytes: u64,
+    pub(crate) retired_record_bytes: u64,
+    pub(crate) oldest_retired_unix_seconds: Option<u64>,
+    pub(crate) preserved_record_bytes: u64,
     pub(crate) reclaimable_pack_bytes: u64,
     pub(crate) compaction: QueryStoreCompactionStatistics,
 }
@@ -111,12 +116,44 @@ pub(crate) struct QueryStoreCompactionResult {
     pub(crate) reclaimed_bytes: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct QueryStoreRetentionPlan {
+    pub(crate) maintenance: QueryStoreMaintenancePlan,
+    pub(crate) retention_seconds: u64,
+    pub(crate) cutoff_unix_seconds: u64,
+    pub(crate) retired_objects: u64,
+    pub(crate) eligible_objects: u64,
+    pub(crate) eligible_payload_bytes: u64,
+    pub(crate) eligible_record_bytes: u64,
+    pub(crate) would_prune: bool,
+    pub(crate) ready_to_prune: bool,
+    pub(crate) reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct QueryStorePruneResult {
+    pub(crate) plan: QueryStoreRetentionPlan,
+    pub(crate) pruned_objects: u64,
+    pub(crate) compacted: bool,
+    pub(crate) final_root_bytes: u64,
+    pub(crate) reclaimed_bytes: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CacheFilesystemAssessment {
     supported: bool,
     kind: String,
     magic: Option<String>,
     available_bytes: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RetentionMeasurements {
+    retired_objects: u64,
+    eligible_objects: u64,
+    eligible_payload_bytes: u64,
+    eligible_record_bytes: u64,
+    projected_preserved_record_bytes: u64,
 }
 
 impl QueryStoreStatistics {
@@ -139,6 +176,11 @@ impl QueryStoreStatistics {
             stage_outputs: 0,
             live_objects: 0,
             live_record_bytes: 0,
+            retired_objects: 0,
+            retired_payload_bytes: 0,
+            retired_record_bytes: 0,
+            oldest_retired_unix_seconds: None,
+            preserved_record_bytes: 0,
             reclaimable_pack_bytes: 0,
             compaction: compaction_statistics(0, 0),
         }
@@ -179,7 +221,7 @@ fn build_maintenance_plan(
     let would_compact = statistics.present && statistics.reclaimable_pack_bytes != 0;
     let temporary_bytes_required = if would_compact {
         statistics
-            .live_record_bytes
+            .preserved_record_bytes
             .checked_add(statistics.database_bytes)
             .and_then(|bytes| bytes.checked_add(COMPACT_FREE_SPACE_RESERVE_BYTES))
             .ok_or_else(|| {
@@ -207,7 +249,7 @@ fn build_maintenance_plan(
         ))
     } else if over_max_size_bytes != 0 {
         Some(format!(
-            "reachability compaction would preserve every live result but remain {over_max_size_bytes} bytes over --max-size; remove the disposable cache or choose a larger limit"
+            "compaction would preserve every live result and retention-protected object but remain {over_max_size_bytes} bytes over --max-size; run an explicit retention prune, remove the disposable cache or choose a larger limit"
         ))
     } else if !enough_free_space {
         Some(format!(
@@ -247,6 +289,63 @@ fn validate_manual_compaction_plan(plan: &QueryStoreMaintenancePlan) -> Result<(
     if !plan.supported || plan.over_max_size_bytes != 0 || !plan.enough_free_space {
         return Err(crate::Error::invalid(plan.reason.clone().unwrap_or_else(
             || "query cache compaction preflight failed".to_owned(),
+        )));
+    }
+    Ok(())
+}
+
+fn build_retention_plan(
+    statistics: &QueryStoreStatistics,
+    filesystem: CacheFilesystemAssessment,
+    max_size_bytes: Option<u64>,
+    retention_seconds: u64,
+    cutoff_unix_seconds: u64,
+    measurements: RetentionMeasurements,
+) -> Result<QueryStoreRetentionPlan> {
+    let mut projected = statistics.clone();
+    projected.preserved_record_bytes = measurements.projected_preserved_record_bytes;
+    projected.reclaimable_pack_bytes = projected
+        .pack_bytes
+        .checked_sub(measurements.projected_preserved_record_bytes)
+        .ok_or_else(|| {
+            crate::Error::invalid(
+                "query cache retention plan preserves more CAS bytes than the pack contains",
+            )
+        })?;
+    let maintenance = build_maintenance_plan(&projected, filesystem, max_size_bytes)?;
+    let would_prune = statistics.present && measurements.eligible_objects != 0;
+    let reason = if !statistics.present {
+        Some("cache is not created".to_owned())
+    } else if measurements.eligible_objects == 0 {
+        Some("no retired CAS objects satisfy the retention cutoff".to_owned())
+    } else {
+        maintenance.reason.clone()
+    };
+    let ready_to_prune = would_prune
+        && maintenance.supported
+        && maintenance.enough_free_space
+        && maintenance.over_max_size_bytes == 0;
+    Ok(QueryStoreRetentionPlan {
+        maintenance,
+        retention_seconds,
+        cutoff_unix_seconds,
+        retired_objects: measurements.retired_objects,
+        eligible_objects: measurements.eligible_objects,
+        eligible_payload_bytes: measurements.eligible_payload_bytes,
+        eligible_record_bytes: measurements.eligible_record_bytes,
+        would_prune,
+        ready_to_prune,
+        reason,
+    })
+}
+
+fn validate_retention_plan(plan: &QueryStoreRetentionPlan) -> Result<()> {
+    if !plan.maintenance.supported
+        || plan.maintenance.over_max_size_bytes != 0
+        || !plan.maintenance.enough_free_space
+    {
+        return Err(crate::Error::invalid(plan.reason.clone().unwrap_or_else(
+            || "query cache retention preflight failed".to_owned(),
         )));
     }
     Ok(())
@@ -585,6 +684,204 @@ impl QueryStore {
         build_maintenance_plan(&statistics, filesystem, max_size_bytes)
     }
 
+    /// Plan an age-based prune without creating or mutating cache state.
+    ///
+    /// Age is applied only to CAS objects that were transactionally marked
+    /// unreachable when their final stage owner disappeared. Current query
+    /// results and stage outputs are unconditional roots and are never quota
+    /// eviction candidates.
+    pub(crate) fn retention_plan(
+        project_manifest: &Path,
+        retention: Duration,
+        max_size_bytes: Option<u64>,
+    ) -> Result<QueryStoreRetentionPlan> {
+        let retention_seconds = retention.as_secs();
+        let cutoff_unix_seconds = unix_timestamp_seconds()?.saturating_sub(retention_seconds);
+        Self::retention_plan_at(
+            project_manifest,
+            retention_seconds,
+            cutoff_unix_seconds,
+            max_size_bytes,
+        )
+    }
+
+    fn retention_plan_at(
+        project_manifest: &Path,
+        retention_seconds: u64,
+        cutoff_unix_seconds: u64,
+        max_size_bytes: Option<u64>,
+    ) -> Result<QueryStoreRetentionPlan> {
+        let Some(guard) = Self::plan_read_guard(project_manifest)? else {
+            let project_root = project_manifest.parent().unwrap_or_else(|| Path::new("."));
+            let cache_root = project_root.join("generated/.blobray-cache");
+            let database_path = cache_root.join("queries.sqlite3");
+            let statistics = QueryStoreStatistics::empty(cache_root.clone(), database_path);
+            let filesystem = cache_filesystem_assessment(nearest_existing_ancestor(&cache_root))?;
+            return build_retention_plan(
+                &statistics,
+                filesystem,
+                max_size_bytes,
+                retention_seconds,
+                cutoff_unix_seconds,
+                RetentionMeasurements {
+                    retired_objects: 0,
+                    eligible_objects: 0,
+                    eligible_payload_bytes: 0,
+                    eligible_record_bytes: 0,
+                    projected_preserved_record_bytes: 0,
+                },
+            );
+        };
+
+        guard.validate_lexical_root()?;
+        let storage_root = &guard.pinned_root.storage_root;
+        let storage_database_path = storage_root.join("queries.sqlite3");
+        let preflight = fingerprint_cache_tree(storage_root)?;
+        reject_nonempty_wal(&preflight, &guard.database_path)?;
+        let root_bytes = preflight.file_bytes()?;
+        let database_bytes = preflight
+            .file_len(Path::new("queries.sqlite3"))
+            .ok_or_else(|| crate::Error::invalid("query cache database disappeared"))?;
+        let pack_bytes = preflight.pack_bytes()?;
+        let connection = Connection::open_with_flags(
+            immutable_database_uri_pinned(&storage_database_path)?,
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+                | OpenFlags::SQLITE_OPEN_URI,
+        )
+        .map_err(|error| store_error("open query database for retention planning", error))?;
+        let schema = connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .map_err(|error| store_error("read query database schema", error))?;
+        if schema == 7 {
+            return Err(crate::Error::invalid(
+                "query cache schema 7 has no persisted retirement timestamps; run a writing analysis once to migrate it in place before retention planning",
+            ));
+        }
+        if schema != STORE_SCHEMA {
+            return Err(crate::Error::invalid(format!(
+                "query cache schema {schema} is unsupported; expected {STORE_SCHEMA}"
+            )));
+        }
+        validate_indexed_pack_extents(&connection, storage_root)?;
+        validate_reachable_object_references(&connection)?;
+        let preserved_record_bytes = query_preserved_record_bytes(&connection, None)?;
+        let reclaimable_pack_bytes = pack_bytes.checked_sub(preserved_record_bytes).ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "query cache reports {preserved_record_bytes} preserved record bytes in {pack_bytes} pack bytes"
+            ))
+        })?;
+        let measurements = retention_measurements(&connection, cutoff_unix_seconds, pack_bytes)?;
+        drop(connection);
+
+        let postflight = fingerprint_cache_tree(storage_root)?;
+        reject_nonempty_wal(&postflight, &guard.database_path)?;
+        if postflight != preflight {
+            return Err(crate::Error::invalid(
+                "query cache changed during read-only retention planning; retry after the cache writer exits",
+            ));
+        }
+        guard.validate_lexical_root()?;
+        let statistics = QueryStoreStatistics {
+            present: true,
+            cache_root: guard.root.clone(),
+            database_path: guard.database_path.clone(),
+            schema: Some(STORE_SCHEMA as u32),
+            root_bytes,
+            database_bytes,
+            pack_bytes,
+            query_results: 0,
+            query_kinds: Vec::new(),
+            inline_bytes: 0,
+            dependencies: 0,
+            objects: 0,
+            object_payload_bytes: 0,
+            stage_bindings: 0,
+            stage_outputs: 0,
+            live_objects: 0,
+            live_record_bytes: 0,
+            retired_objects: measurements.retired_objects,
+            retired_payload_bytes: 0,
+            retired_record_bytes: 0,
+            oldest_retired_unix_seconds: None,
+            preserved_record_bytes,
+            reclaimable_pack_bytes,
+            compaction: compaction_statistics(pack_bytes, reclaimable_pack_bytes),
+        };
+        let filesystem = cache_filesystem_assessment(storage_root)?;
+        build_retention_plan(
+            &statistics,
+            filesystem,
+            max_size_bytes,
+            retention_seconds,
+            cutoff_unix_seconds,
+            measurements,
+        )
+    }
+
+    /// Remove only persisted, unreachable CAS objects older than `retention`,
+    /// then rewrite the pack through the pinned Linux cache generation.
+    pub(crate) fn prune_cache(
+        project_manifest: &Path,
+        retention: Duration,
+        max_size_bytes: Option<u64>,
+    ) -> Result<QueryStorePruneResult> {
+        let plan = Self::retention_plan(project_manifest, retention, max_size_bytes)?;
+        if !plan.would_prune {
+            return Ok(QueryStorePruneResult {
+                final_root_bytes: plan.maintenance.root_bytes,
+                plan,
+                pruned_objects: 0,
+                compacted: false,
+                reclaimed_bytes: 0,
+            });
+        }
+        validate_retention_plan(&plan)?;
+
+        let mut store = Self::open_without_pack_cleanup(project_manifest)?;
+        let locked_plan = store.retention_plan_locked(
+            plan.retention_seconds,
+            plan.cutoff_unix_seconds,
+            max_size_bytes,
+        )?;
+        validate_retention_plan(&locked_plan)?;
+        if !locked_plan.would_prune {
+            drop(store);
+            let final_statistics = Self::statistics(project_manifest)?;
+            return Ok(QueryStorePruneResult {
+                final_root_bytes: final_statistics.root_bytes,
+                plan: locked_plan,
+                pruned_objects: 0,
+                compacted: false,
+                reclaimed_bytes: 0,
+            });
+        }
+        let pruned_objects = locked_plan.eligible_objects;
+        store.compact_with_retention_cutoff(Some(locked_plan.cutoff_unix_seconds))?;
+        drop(store);
+
+        let final_statistics = Self::statistics(project_manifest)?;
+        if let Some(max_size_bytes) = max_size_bytes
+            && final_statistics.root_bytes > max_size_bytes
+        {
+            return Err(crate::Error::invalid(format!(
+                "query cache retention preserved every current result but the final cache is {} bytes, {} bytes over --max-size={max_size_bytes}; remove the disposable cache or choose a larger limit",
+                final_statistics.root_bytes,
+                final_statistics.root_bytes - max_size_bytes,
+            )));
+        }
+        Ok(QueryStorePruneResult {
+            final_root_bytes: final_statistics.root_bytes,
+            reclaimed_bytes: locked_plan
+                .maintenance
+                .root_bytes
+                .saturating_sub(final_statistics.root_bytes),
+            plan: locked_plan,
+            pruned_objects,
+            compacted: true,
+        })
+    }
+
     /// Compact unreachable CAS records through the pinned cache generation.
     /// This never evicts a live query result to satisfy `max_size_bytes`.
     pub(crate) fn compact_cache(
@@ -708,11 +1005,12 @@ impl QueryStore {
         let schema = connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .map_err(|error| store_error("read query database schema", error))?;
-        if schema != STORE_SCHEMA {
+        if schema != 7 && schema != STORE_SCHEMA {
             return Err(crate::Error::invalid(format!(
-                "query cache schema {schema} is unsupported; expected {STORE_SCHEMA}"
+                "query cache schema {schema} is unsupported; expected 7 or {STORE_SCHEMA}"
             )));
         }
+        let has_retirement_metadata = schema == STORE_SCHEMA;
         let schema = u32::try_from(schema)
             .map_err(|_| crate::Error::invalid("query cache schema is outside u32"))?;
 
@@ -837,9 +1135,61 @@ impl QueryStore {
                 live_references - live_objects
             )));
         }
-        let reclaimable_pack_bytes = pack_bytes.checked_sub(live_record_bytes).ok_or_else(|| {
+        let (retired_objects, retired_payload_bytes, retired_record_bytes, oldest_retired) =
+            if has_retirement_metadata {
+                connection
+                    .query_row(
+                        "SELECT COUNT(*), COALESCE(SUM(objects.payload_length), 0),
+                            COALESCE(SUM(?1 + objects.payload_length), 0),
+                            MIN(retired_objects.retired_unix_seconds)
+                     FROM retired_objects JOIN objects USING (digest)",
+                        [PACK_HEADER_BYTES as i64],
+                        |row| {
+                            Ok((
+                                row.get::<_, i64>(0)?,
+                                row.get::<_, i64>(1)?,
+                                row.get::<_, i64>(2)?,
+                                row.get::<_, Option<i64>>(3)?,
+                            ))
+                        },
+                    )
+                    .map_err(|error| store_error("measure retired query-cache objects", error))?
+            } else {
+                (0, 0, 0, None)
+            };
+        let retired_objects = nonnegative(retired_objects, "retired object count")?;
+        let retired_payload_bytes =
+            nonnegative(retired_payload_bytes, "retired object payload bytes")?;
+        let retired_record_bytes =
+            nonnegative(retired_record_bytes, "retired object record bytes")?;
+        let oldest_retired_unix_seconds = oldest_retired
+            .map(|value| nonnegative(value, "oldest retired-object timestamp"))
+            .transpose()?;
+        let active_retired_objects = if has_retirement_metadata {
+            query_nonnegative_count(
+                &connection,
+                "validate retired query-cache objects",
+                "SELECT COUNT(*) FROM retired_objects
+                 WHERE digest IN (
+                     SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
+                     UNION
+                     SELECT digest FROM stage_outputs
+                 )",
+            )?
+        } else {
+            0
+        };
+        if active_retired_objects != 0 {
+            return Err(crate::Error::invalid(format!(
+                "query cache marks {active_retired_objects} reachable object(s) as retired"
+            )));
+        }
+        let preserved_record_bytes = live_record_bytes
+            .checked_add(retired_record_bytes)
+            .ok_or_else(|| crate::Error::invalid("query cache preserved-record size overflowed"))?;
+        let reclaimable_pack_bytes = pack_bytes.checked_sub(preserved_record_bytes).ok_or_else(|| {
             crate::Error::invalid(format!(
-                "query cache reports {live_record_bytes} live record bytes in {pack_bytes} pack bytes"
+                "query cache reports {preserved_record_bytes} preserved record bytes in {pack_bytes} pack bytes"
             ))
         })?;
 
@@ -869,6 +1219,11 @@ impl QueryStore {
             stage_outputs,
             live_objects,
             live_record_bytes,
+            retired_objects,
+            retired_payload_bytes,
+            retired_record_bytes,
+            oldest_retired_unix_seconds,
+            preserved_record_bytes,
             reclaimable_pack_bytes,
             compaction: compaction_statistics(pack_bytes, reclaimable_pack_bytes),
         })
@@ -924,19 +1279,12 @@ impl QueryStore {
         let schema = connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .map_err(|error| store_error("read query database schema", error))?;
-        if schema != 0 && schema != STORE_SCHEMA {
-            connection
-                .execute_batch(
-                    "DROP TABLE IF EXISTS stage_outputs;
-                     DROP TABLE IF EXISTS stage_bindings;
-                     DROP TABLE IF EXISTS query_dependencies;
-                     DROP TABLE IF EXISTS query_results;
-                     DROP TABLE IF EXISTS objects;
-                     DROP TABLE IF EXISTS cache_state;",
-                )
-                .map_err(|error| store_error("reset obsolete query database", error))?;
-            #[cfg(target_os = "linux")]
-            remove_pack_files(&storage_root)?;
+        if schema == 7 {
+            migrate_store_schema_7_to_8(&connection)?;
+        } else if schema != 0 && schema != STORE_SCHEMA {
+            return Err(crate::Error::invalid(format!(
+                "query cache schema {schema} is unsupported; expected 0, 7 or {STORE_SCHEMA}; preserve or remove the disposable cache explicitly instead of resetting it implicitly"
+            )));
         }
         connection
             .execute_batch(
@@ -960,6 +1308,10 @@ impl QueryStore {
                      dependency_key TEXT NOT NULL,
                      PRIMARY KEY (query_key, dependency_key)
                  ) WITHOUT ROWID;
+                 CREATE TABLE IF NOT EXISTS retired_objects (
+                     digest TEXT PRIMARY KEY REFERENCES objects(digest) ON DELETE CASCADE,
+                     retired_unix_seconds INTEGER NOT NULL CHECK (retired_unix_seconds >= 0)
+                 ) WITHOUT ROWID;
                  CREATE TABLE IF NOT EXISTS stage_bindings (
                      stage TEXT PRIMARY KEY,
                      query_key TEXT NOT NULL
@@ -970,6 +1322,10 @@ impl QueryStore {
                      digest TEXT NOT NULL,
                      PRIMARY KEY (stage, path)
                  ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS query_results_by_object
+                 ON query_results(object_digest) WHERE object_digest IS NOT NULL;
+                 CREATE INDEX IF NOT EXISTS stage_outputs_by_digest
+                 ON stage_outputs(digest);
                  CREATE TABLE IF NOT EXISTS cache_state (
                      singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
                      active_pack TEXT NOT NULL,
@@ -977,7 +1333,7 @@ impl QueryStore {
                  );
                  INSERT OR IGNORE INTO cache_state(singleton, active_pack, next_pack_generation)
                  VALUES (1, 'objects-0.pack', 1);
-                 PRAGMA user_version=7;",
+                 PRAGMA user_version=8;",
             )
             .map_err(|error| store_error("initialize query database", error))?;
         let (active_pack, next_pack_generation) = connection
@@ -1027,10 +1383,10 @@ impl QueryStore {
             .file_len(Path::new("queries.sqlite3"))
             .ok_or_else(|| crate::Error::invalid("query cache database disappeared"))?;
         let pack_bytes = fingerprint.pack_bytes()?;
-        let live_record_bytes = query_live_record_bytes(&self.connection)?;
-        let reclaimable_pack_bytes = pack_bytes.checked_sub(live_record_bytes).ok_or_else(|| {
+        let preserved_record_bytes = query_preserved_record_bytes(&self.connection, None)?;
+        let reclaimable_pack_bytes = pack_bytes.checked_sub(preserved_record_bytes).ok_or_else(|| {
             crate::Error::invalid(format!(
-                "query cache reports {live_record_bytes} live record bytes in {pack_bytes} pack bytes"
+                "query cache reports {preserved_record_bytes} preserved record bytes in {pack_bytes} pack bytes"
             ))
         })?;
         let statistics = QueryStoreStatistics {
@@ -1050,12 +1406,83 @@ impl QueryStore {
             stage_bindings: 0,
             stage_outputs: 0,
             live_objects: 0,
-            live_record_bytes,
+            live_record_bytes: 0,
+            retired_objects: 0,
+            retired_payload_bytes: 0,
+            retired_record_bytes: 0,
+            oldest_retired_unix_seconds: None,
+            preserved_record_bytes,
             reclaimable_pack_bytes,
             compaction: compaction_statistics(pack_bytes, reclaimable_pack_bytes),
         };
         let filesystem = cache_filesystem_assessment(&self.storage_root)?;
         let plan = build_maintenance_plan(&statistics, filesystem, max_size_bytes)?;
+        self.validate_root_identity()?;
+        Ok(plan)
+    }
+
+    fn retention_plan_locked(
+        &self,
+        retention_seconds: u64,
+        cutoff_unix_seconds: u64,
+        max_size_bytes: Option<u64>,
+    ) -> Result<QueryStoreRetentionPlan> {
+        self.validate_root_identity()?;
+        let fingerprint = fingerprint_cache_tree(&self.storage_root)?;
+        let root_bytes = fingerprint
+            .file_bytes()?
+            .checked_sub(fingerprint.sqlite_sidecar_bytes()?)
+            .ok_or_else(|| {
+                crate::Error::invalid("query cache SQLite sidecars exceed its physical size")
+            })?;
+        let database_bytes = fingerprint
+            .file_len(Path::new("queries.sqlite3"))
+            .ok_or_else(|| crate::Error::invalid("query cache database disappeared"))?;
+        let pack_bytes = fingerprint.pack_bytes()?;
+        validate_reachable_object_references(&self.connection)?;
+        let preserved_record_bytes = query_preserved_record_bytes(&self.connection, None)?;
+        let reclaimable_pack_bytes = pack_bytes.checked_sub(preserved_record_bytes).ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "query cache reports {preserved_record_bytes} preserved record bytes in {pack_bytes} pack bytes"
+            ))
+        })?;
+        let measurements =
+            retention_measurements(&self.connection, cutoff_unix_seconds, pack_bytes)?;
+        let statistics = QueryStoreStatistics {
+            present: true,
+            cache_root: self.root.clone(),
+            database_path: self.root.join("queries.sqlite3"),
+            schema: Some(STORE_SCHEMA as u32),
+            root_bytes,
+            database_bytes,
+            pack_bytes,
+            query_results: 0,
+            query_kinds: Vec::new(),
+            inline_bytes: 0,
+            dependencies: 0,
+            objects: 0,
+            object_payload_bytes: 0,
+            stage_bindings: 0,
+            stage_outputs: 0,
+            live_objects: 0,
+            live_record_bytes: 0,
+            retired_objects: measurements.retired_objects,
+            retired_payload_bytes: 0,
+            retired_record_bytes: 0,
+            oldest_retired_unix_seconds: None,
+            preserved_record_bytes,
+            reclaimable_pack_bytes,
+            compaction: compaction_statistics(pack_bytes, reclaimable_pack_bytes),
+        };
+        let filesystem = cache_filesystem_assessment(&self.storage_root)?;
+        let plan = build_retention_plan(
+            &statistics,
+            filesystem,
+            max_size_bytes,
+            retention_seconds,
+            cutoff_unix_seconds,
+            measurements,
+        )?;
         self.validate_root_identity()?;
         Ok(plan)
     }
@@ -1152,14 +1579,16 @@ impl QueryStore {
     /// Remove a stage publication only if it still names `query_key`.
     ///
     /// Input mutation checks use this after a post-commit validation fails.
-    /// The immutable query result is retired only when no other stage binding
-    /// owns it; pack payloads remain harmless orphans until later compaction.
+    /// The immutable query result is removed only when no other stage binding
+    /// owns it. CAS objects that then become unreachable receive a persisted
+    /// retirement timestamp and remain protected until explicit retention GC.
     pub(crate) fn retire_stage_binding(&mut self, stage: &str, query_key: &str) -> Result<()> {
         self.validate_root_identity()?;
         let transaction = self
             .connection
             .transaction()
             .map_err(|error| store_error("begin stage-binding retirement transaction", error))?;
+        let mut retirement_candidates = stage_output_object_digests(&transaction, stage)?;
         let retired = transaction
             .execute(
                 "DELETE FROM stage_bindings WHERE stage = ?1 AND query_key = ?2",
@@ -1178,6 +1607,18 @@ impl QueryStore {
                 )
                 .map_err(|error| store_error("count remaining cached stage owners", error))?;
             if remaining_bindings == 0 {
+                if let Some(digest) = transaction
+                    .query_row(
+                        "SELECT object_digest FROM query_results WHERE query_key = ?1",
+                        [query_key],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .optional()
+                    .map_err(|error| store_error("read retiring cached stage object", error))?
+                    .flatten()
+                {
+                    retirement_candidates.insert(digest);
+                }
                 transaction
                     .execute(
                         "DELETE FROM query_results WHERE query_key = ?1",
@@ -1185,6 +1626,7 @@ impl QueryStore {
                     )
                     .map_err(|error| store_error("retire unowned cached stage result", error))?;
             }
+            mark_unreachable_objects_retired(&transaction, &retirement_candidates)?;
         }
         transaction
             .commit()
@@ -1212,6 +1654,7 @@ impl QueryStore {
             )
             .optional()
             .map_err(|error| store_error("read previous cached stage binding", error))?;
+        let mut retirement_candidates = stage_output_object_digests(&transaction, stage)?;
         transaction
             .execute(
                 "INSERT INTO stage_bindings(stage, query_key) VALUES (?1, ?2)
@@ -1232,6 +1675,20 @@ impl QueryStore {
                     .map_err(|error| store_error("record cached stage output", error))?;
             }
         }
+        for digest in content_digests {
+            transaction
+                .execute("DELETE FROM retired_objects WHERE digest = ?1", [digest])
+                .map_err(|error| store_error("reactivate cached stage object", error))?;
+        }
+        transaction
+            .execute(
+                "DELETE FROM retired_objects
+                 WHERE digest = (
+                     SELECT object_digest FROM query_results WHERE query_key = ?1
+                 )",
+                [query_key],
+            )
+            .map_err(|error| store_error("reactivate cached stage result object", error))?;
         if let Some(previous) = previous.filter(|previous| previous != query_key) {
             let remaining_bindings = transaction
                 .query_row(
@@ -1241,11 +1698,24 @@ impl QueryStore {
                 )
                 .map_err(|error| store_error("count cached stage result owners", error))?;
             if remaining_bindings == 0 {
+                if let Some(digest) = transaction
+                    .query_row(
+                        "SELECT object_digest FROM query_results WHERE query_key = ?1",
+                        [&previous],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .optional()
+                    .map_err(|error| store_error("read replaced cached stage object", error))?
+                    .flatten()
+                {
+                    retirement_candidates.insert(digest);
+                }
                 transaction
                     .execute("DELETE FROM query_results WHERE query_key = ?1", [previous])
                     .map_err(|error| store_error("retire unbound cached stage result", error))?;
             }
         }
+        mark_unreachable_objects_retired(&transaction, &retirement_candidates)?;
         transaction
             .commit()
             .map_err(|error| store_error("commit cached stage transaction", error))?;
@@ -1403,6 +1873,11 @@ impl QueryStore {
                 ],
             )
             .map_err(|error| store_error("record query result", error))?;
+        if let Some(digest) = object_digest {
+            transaction
+                .execute("DELETE FROM retired_objects WHERE digest = ?1", [digest])
+                .map_err(|error| store_error("reactivate query-result object", error))?;
+        }
         transaction
             .execute(
                 "DELETE FROM query_dependencies WHERE query_key = ?1",
@@ -1531,6 +2006,9 @@ impl QueryStore {
                      ) VALUES (?1, 'function-direct-fact', ?1, ?2, ?3, ?4)",
                 )
                 .map_err(|error| store_error("prepare function-fact insert", error))?;
+            let mut reactivate = transaction
+                .prepare("DELETE FROM retired_objects WHERE digest = ?1")
+                .map_err(|error| store_error("prepare function-fact object reactivation", error))?;
             for index in inserts {
                 let fact = &prepared[index];
                 let (inline_value, object_digest) = if fact.value.len() <= INLINE_VALUE_LIMIT {
@@ -1546,6 +2024,11 @@ impl QueryStore {
                         object_digest
                     ])
                     .map_err(|error| store_error("record function fact", error))?;
+                if let Some(digest) = object_digest {
+                    reactivate
+                        .execute([digest])
+                        .map_err(|error| store_error("reactivate function-fact object", error))?;
+                }
             }
         }
         transaction
@@ -1865,24 +2348,8 @@ impl QueryStore {
         if total_pack_bytes < COMPACT_MIN_PACK_BYTES {
             return self.validate_root_identity();
         }
-        let live_record_bytes = self
-            .connection
-            .query_row(
-                "SELECT COALESCE(SUM(?1 + payload_length), 0)
-                 FROM objects
-                 WHERE digest IN (
-                     SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
-                     UNION
-                     SELECT digest FROM stage_outputs
-                 )",
-                [PACK_HEADER_BYTES as i64],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|error| store_error("measure live query-cache objects", error))?;
-        let live_record_bytes = u64::try_from(live_record_bytes).map_err(|_| {
-            crate::Error::invalid("query cache reported a negative live-object size")
-        })?;
-        let reclaimable = total_pack_bytes.saturating_sub(live_record_bytes);
+        let preserved_record_bytes = query_preserved_record_bytes(&self.connection, None)?;
+        let reclaimable = total_pack_bytes.saturating_sub(preserved_record_bytes);
         if reclaimable < COMPACT_MIN_RECLAIMABLE_BYTES
             || reclaimable.saturating_mul(100)
                 < total_pack_bytes.saturating_mul(u64::from(COMPACT_MIN_RECLAIMABLE_PERCENT))
@@ -1891,7 +2358,7 @@ impl QueryStore {
         }
         tracing::info!(
             total_pack_bytes,
-            live_record_bytes,
+            preserved_record_bytes,
             reclaimable_bytes = reclaimable,
             "compacting persistent query CAS"
         );
@@ -1907,11 +2374,36 @@ impl QueryStore {
         self.validate_root_identity()
     }
 
+    #[cfg(not(target_os = "linux"))]
+    fn compact_with_retention_cutoff(
+        &mut self,
+        _retention_cutoff_unix_seconds: Option<u64>,
+    ) -> Result<()> {
+        self.validate_root_identity()
+    }
+
     #[cfg(target_os = "linux")]
     fn compact(&mut self) -> Result<()> {
+        self.compact_with_retention_cutoff(None)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn compact_with_retention_cutoff(
+        &mut self,
+        retention_cutoff_unix_seconds: Option<u64>,
+    ) -> Result<()> {
         self.validate_root_identity()?;
-        let preflight = self.maintenance_plan_locked(None)?;
-        validate_manual_compaction_plan(&preflight)?;
+        if retention_cutoff_unix_seconds.is_none() {
+            let preflight = self.maintenance_plan_locked(None)?;
+            validate_manual_compaction_plan(&preflight)?;
+        }
+        let retention_cutoff = retention_cutoff_unix_seconds
+            .map(|value| {
+                i64::try_from(value).map_err(|_| {
+                    crate::Error::invalid("retention cutoff is outside SQLite INTEGER")
+                })
+            })
+            .transpose()?;
         let live = {
             let mut statement = self
                 .connection
@@ -1921,12 +2413,15 @@ impl QueryStore {
                          SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
                          UNION
                          SELECT digest FROM stage_outputs
+                         UNION
+                         SELECT digest FROM retired_objects
+                         WHERE ?1 IS NULL OR retired_unix_seconds > ?1
                      )
                      ORDER BY digest",
                 )
                 .map_err(|error| store_error("prepare live query-cache objects", error))?;
             let rows = statement
-                .query_map([], |row| row.get::<_, String>(0))
+                .query_map([retention_cutoff], |row| row.get::<_, String>(0))
                 .map_err(|error| store_error("read live query-cache objects", error))?;
             let mut live = Vec::new();
             for row in rows {
@@ -2014,8 +2509,11 @@ impl QueryStore {
                      SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
                      UNION
                      SELECT digest FROM stage_outputs
+                     UNION
+                     SELECT digest FROM retired_objects
+                     WHERE ?1 IS NULL OR retired_unix_seconds > ?1
                  )",
-                [],
+                [retention_cutoff],
             )
             .map_err(|error| store_error("delete unreachable query-cache objects", error))?;
         let next_generation = self.next_pack_generation.checked_add(1).ok_or_else(|| {
@@ -2392,9 +2890,119 @@ fn sqlite_sidecar_path(database: &Path, suffix: &str) -> PathBuf {
     path.into()
 }
 
+fn migrate_store_schema_7_to_8(connection: &Connection) -> Result<()> {
+    let conflicting_object = connection
+        .query_row(
+            "SELECT type FROM sqlite_master WHERE name = 'retired_objects'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| store_error("inspect schema-7 retention metadata", error))?;
+    if let Some(kind) = conflicting_object {
+        return Err(crate::Error::invalid(format!(
+            "query cache schema 7 unexpectedly contains {kind} retired_objects; refusing destructive migration"
+        )));
+    }
+    if let Err(error) = connection.execute_batch(
+        "BEGIN IMMEDIATE;
+         CREATE TABLE retired_objects (
+             digest TEXT PRIMARY KEY REFERENCES objects(digest) ON DELETE CASCADE,
+             retired_unix_seconds INTEGER NOT NULL CHECK (retired_unix_seconds >= 0)
+         ) WITHOUT ROWID;
+         CREATE INDEX query_results_by_object
+         ON query_results(object_digest) WHERE object_digest IS NOT NULL;
+         CREATE INDEX stage_outputs_by_digest
+         ON stage_outputs(digest);
+         INSERT INTO retired_objects(digest, retired_unix_seconds)
+         SELECT objects.digest, unixepoch()
+         FROM objects
+         WHERE NOT EXISTS (
+                   SELECT 1 FROM query_results
+                   WHERE query_results.object_digest = objects.digest
+               )
+           AND NOT EXISTS (
+                   SELECT 1 FROM stage_outputs
+                   WHERE stage_outputs.digest = objects.digest
+               );
+         PRAGMA user_version=8;
+         COMMIT;",
+    ) {
+        let _ = connection.execute_batch("ROLLBACK;");
+        return Err(store_error("migrate query cache schema 7 to 8", error));
+    }
+    let migrated_schema = connection
+        .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+        .map_err(|error| store_error("verify query-cache schema migration", error))?;
+    if migrated_schema != STORE_SCHEMA {
+        return Err(crate::Error::invalid(format!(
+            "query cache migration finished at schema {migrated_schema}; expected {STORE_SCHEMA}"
+        )));
+    }
+    Ok(())
+}
+
 fn nonnegative(value: i64, label: &str) -> Result<u64> {
     u64::try_from(value)
         .map_err(|_| crate::Error::invalid(format!("query cache reported a negative {label}")))
+}
+
+fn unix_timestamp_seconds() -> Result<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .map_err(|_| crate::Error::invalid("system clock is before the Unix epoch"))
+}
+
+fn stage_output_object_digests(
+    transaction: &rusqlite::Transaction<'_>,
+    stage: &str,
+) -> Result<BTreeSet<String>> {
+    let mut statement = transaction
+        .prepare("SELECT DISTINCT digest FROM stage_outputs WHERE stage = ?1 ORDER BY digest")
+        .map_err(|error| store_error("prepare retiring cached stage objects", error))?;
+    let rows = statement
+        .query_map([stage], |row| row.get::<_, String>(0))
+        .map_err(|error| store_error("read retiring cached stage objects", error))?;
+    let mut digests = BTreeSet::new();
+    for row in rows {
+        digests.insert(
+            row.map_err(|error| store_error("decode retiring cached stage object", error))?,
+        );
+    }
+    Ok(digests)
+}
+
+fn mark_unreachable_objects_retired(
+    transaction: &rusqlite::Transaction<'_>,
+    candidates: &BTreeSet<String>,
+) -> Result<()> {
+    if candidates.is_empty() {
+        return Ok(());
+    }
+    let retired_unix_seconds = i64::try_from(unix_timestamp_seconds()?)
+        .map_err(|_| crate::Error::invalid("retirement timestamp is outside SQLite INTEGER"))?;
+    let mut statement = transaction
+        .prepare(
+            "INSERT OR IGNORE INTO retired_objects(digest, retired_unix_seconds)
+             SELECT ?1, ?2
+             WHERE EXISTS (SELECT 1 FROM objects WHERE digest = ?1)
+               AND NOT EXISTS (
+                   SELECT 1 FROM query_results
+                   WHERE object_digest = ?1
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM stage_outputs
+                   WHERE digest = ?1
+               )",
+        )
+        .map_err(|error| store_error("prepare retired query-cache objects", error))?;
+    for digest in candidates {
+        statement
+            .execute(params![digest, retired_unix_seconds])
+            .map_err(|error| store_error("record retired query-cache object", error))?;
+    }
+    Ok(())
 }
 
 fn query_nonnegative_count(connection: &Connection, context: &str, sql: &str) -> Result<u64> {
@@ -2413,21 +3021,134 @@ fn query_nonnegative_pair(connection: &Connection, context: &str, sql: &str) -> 
     Ok((nonnegative(first, context)?, nonnegative(second, context)?))
 }
 
-fn query_live_record_bytes(connection: &Connection) -> Result<u64> {
+fn query_preserved_record_bytes(
+    connection: &Connection,
+    retention_cutoff_unix_seconds: Option<u64>,
+) -> Result<u64> {
+    let cutoff = retention_cutoff_unix_seconds
+        .map(|value| {
+            i64::try_from(value)
+                .map_err(|_| crate::Error::invalid("retention cutoff is outside SQLite INTEGER"))
+        })
+        .transpose()?;
     let value = connection
         .query_row(
             "SELECT COALESCE(SUM(?1 + payload_length), 0)
-             FROM objects
-             WHERE digest IN (
+         FROM objects
+         WHERE digest IN (
+             SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
+             UNION
+             SELECT digest FROM stage_outputs
+             UNION
+             SELECT digest FROM retired_objects
+             WHERE ?2 IS NULL OR retired_unix_seconds > ?2
+         )",
+            params![PACK_HEADER_BYTES as i64, cutoff],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| store_error("measure preserved query-cache objects", error))?;
+    nonnegative(value, "preserved query-cache record bytes")
+}
+
+fn validate_reachable_object_references(connection: &Connection) -> Result<()> {
+    let (references, objects) = connection
+        .query_row(
+            "WITH reachable(digest) AS (
                  SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
                  UNION
                  SELECT digest FROM stage_outputs
-             )",
-            [PACK_HEADER_BYTES as i64],
-            |row| row.get::<_, i64>(0),
+             )
+             SELECT COUNT(*), COUNT(objects.digest)
+             FROM reachable LEFT JOIN objects USING (digest)",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
         )
-        .map_err(|error| store_error("measure live query-cache objects", error))?;
-    nonnegative(value, "live query-cache record bytes")
+        .map_err(|error| store_error("validate reachable query-cache objects", error))?;
+    let references = nonnegative(references, "reachable object reference count")?;
+    let objects = nonnegative(objects, "reachable object count")?;
+    if references != objects {
+        return Err(crate::Error::invalid(format!(
+            "query cache references {} missing reachable object(s)",
+            references - objects
+        )));
+    }
+    let active_retired = query_nonnegative_count(
+        connection,
+        "validate retired query-cache object reachability",
+        "SELECT COUNT(*) FROM retired_objects
+         WHERE digest IN (
+             SELECT object_digest FROM query_results WHERE object_digest IS NOT NULL
+             UNION
+             SELECT digest FROM stage_outputs
+         )",
+    )?;
+    if active_retired != 0 {
+        return Err(crate::Error::invalid(format!(
+            "query cache marks {active_retired} reachable object(s) as retired"
+        )));
+    }
+    Ok(())
+}
+
+fn retention_measurements(
+    connection: &Connection,
+    cutoff_unix_seconds: u64,
+    pack_bytes: u64,
+) -> Result<RetentionMeasurements> {
+    let cutoff = i64::try_from(cutoff_unix_seconds)
+        .map_err(|_| crate::Error::invalid("retention cutoff is outside SQLite INTEGER"))?;
+    let retired_objects = query_nonnegative_count(
+        connection,
+        "count retired query-cache objects",
+        "SELECT COUNT(*) FROM retired_objects",
+    )?;
+    let (eligible_objects, eligible_payload_bytes, eligible_record_bytes) = connection
+        .query_row(
+            "SELECT COUNT(*), COALESCE(SUM(objects.payload_length), 0),
+                    COALESCE(SUM(?1 + objects.payload_length), 0)
+             FROM retired_objects JOIN objects USING (digest)
+             WHERE retired_objects.retired_unix_seconds <= ?2
+               AND NOT EXISTS (
+                   SELECT 1 FROM query_results
+                   WHERE object_digest = retired_objects.digest
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM stage_outputs
+                   WHERE stage_outputs.digest = retired_objects.digest
+               )",
+            params![PACK_HEADER_BYTES as i64, cutoff],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )
+        .map_err(|error| store_error("measure retention-eligible query-cache objects", error))?;
+    let eligible_objects = nonnegative(eligible_objects, "retention-eligible object count")?;
+    let eligible_payload_bytes = nonnegative(
+        eligible_payload_bytes,
+        "retention-eligible object payload bytes",
+    )?;
+    let eligible_record_bytes = nonnegative(
+        eligible_record_bytes,
+        "retention-eligible object record bytes",
+    )?;
+    let projected_preserved_record_bytes =
+        query_preserved_record_bytes(connection, Some(cutoff_unix_seconds))?;
+    if projected_preserved_record_bytes > pack_bytes {
+        return Err(crate::Error::invalid(format!(
+            "query cache retention plan preserves {projected_preserved_record_bytes} bytes in a {pack_bytes}-byte pack"
+        )));
+    }
+    Ok(RetentionMeasurements {
+        retired_objects,
+        eligible_objects,
+        eligible_payload_bytes,
+        eligible_record_bytes,
+        projected_preserved_record_bytes,
+    })
 }
 
 fn validate_indexed_pack_extents(connection: &Connection, root: &Path) -> Result<()> {
@@ -2981,18 +3702,6 @@ fn pack_files(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-#[cfg(target_os = "linux")]
-fn remove_pack_files(root: &Path) -> Result<()> {
-    for path in pack_files(root)? {
-        fs::remove_file(path)?;
-    }
-    let legacy = root.join("objects.pack");
-    if legacy.is_file() {
-        fs::remove_file(legacy)?;
-    }
-    Ok(())
-}
-
 fn sha256_hex(value: &[u8]) -> String {
     format!("{:x}", Sha256::digest(value))
 }
@@ -3030,6 +3739,9 @@ fn store_error(context: &str, error: rusqlite::Error) -> crate::Error {
 }
 
 #[cfg(test)]
+mod benchmark;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -3048,6 +3760,22 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, value).unwrap();
         (path.to_string_lossy().into_owned(), sha256_hex(value), path)
+    }
+
+    fn indexed_object_locations(connection: &Connection) -> Vec<(String, String, i64, i64)> {
+        let mut statement = connection
+            .prepare(
+                "SELECT digest, pack_name, pack_offset, payload_length
+                 FROM objects ORDER BY digest",
+            )
+            .unwrap();
+        statement
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .map(|row| row.unwrap())
+            .collect()
     }
 
     fn read_only_stage_digests(
@@ -3450,10 +4178,18 @@ mod tests {
                 + live_output.len() as u64
                 + retired_output.len() as u64
         );
+        assert_eq!(statistics.retired_objects, 1);
         assert_eq!(
-            statistics.reclaimable_pack_bytes,
+            statistics.retired_payload_bytes,
+            retired_output.len() as u64
+        );
+        assert_eq!(
+            statistics.retired_record_bytes,
             PACK_HEADER_BYTES + retired_output.len() as u64
         );
+        assert!(statistics.oldest_retired_unix_seconds.is_some());
+        assert_eq!(statistics.preserved_record_bytes, statistics.pack_bytes);
+        assert_eq!(statistics.reclaimable_pack_bytes, 0);
         assert!(statistics.database_bytes > 0);
         assert!(statistics.root_bytes >= statistics.database_bytes + statistics.pack_bytes);
         assert_eq!(snapshot_tree(project_root), before);
@@ -3488,6 +4224,209 @@ mod tests {
 
         assert!(error.to_string().contains("schema 99 is unsupported"));
         assert_eq!(snapshot_tree(project_root), before);
+    }
+
+    #[test]
+    fn writer_rejects_an_unsupported_schema_without_resetting_it() {
+        let manifest = manifest("writer-unsupported");
+        let project_root = manifest.parent().unwrap();
+        {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            store
+                .put(
+                    "large-function",
+                    "function",
+                    "inputs",
+                    &[],
+                    &vec![0x99; INLINE_VALUE_LIMIT + 1],
+                )
+                .unwrap();
+            store
+                .connection
+                .execute_batch("PRAGMA user_version=99;")
+                .unwrap();
+        }
+        let before = snapshot_tree(project_root);
+
+        let error = match QueryStore::open(&manifest) {
+            Ok(_) => panic!("unsupported cache schema unexpectedly opened"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("schema 99 is unsupported"));
+        assert_eq!(snapshot_tree(project_root), before);
+    }
+
+    #[test]
+    fn schema_seven_migrates_in_place_without_losing_queries_bindings_or_pack_references() {
+        let manifest = manifest("schema-seven-migration");
+        let large = vec![0x67; INLINE_VALUE_LIMIT + 1];
+        let stage = output(&manifest, "stage/output.json", b"stage-output");
+        let stage_digest = stage.1.clone();
+        let orphan = output(&manifest, "obsolete/output.json", b"obsolete-output");
+        let orphan_digest = orphan.1.clone();
+        let (locations_before, pack_before, query_count_before) = {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            store
+                .put("large-function", "function", "inputs", &[], &large)
+                .unwrap();
+            store
+                .record_stage("linked-ir:full", "stage-query", &[stage])
+                .unwrap();
+            store
+                .record_stage("linked-ir:obsolete", "obsolete-query", &[orphan])
+                .unwrap();
+            store
+                .record_stage("linked-ir:obsolete", "replacement-query", &[])
+                .unwrap();
+            let locations = indexed_object_locations(&store.connection);
+            let pack = fs::read(store.active_storage_pack_path().unwrap()).unwrap();
+            let query_count = store
+                .connection
+                .query_row("SELECT COUNT(*) FROM query_results", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap();
+            store
+                .connection
+                .execute_batch(
+                    "DROP INDEX query_results_by_object;
+                     DROP INDEX stage_outputs_by_digest;
+                     DROP TABLE retired_objects;
+                     PRAGMA user_version=7;",
+                )
+                .unwrap();
+            (locations, pack, query_count)
+        };
+        let before_migration = snapshot_tree(manifest.parent().unwrap());
+
+        let transitional = QueryStore::statistics(&manifest).unwrap();
+
+        assert_eq!(transitional.schema, Some(7));
+        assert_eq!(
+            transitional.query_results,
+            u64::try_from(query_count_before).unwrap()
+        );
+        assert_eq!(transitional.objects, locations_before.len() as u64);
+        assert_eq!(transitional.retired_objects, 0);
+        assert_eq!(
+            transitional.reclaimable_pack_bytes,
+            PACK_HEADER_BYTES + b"obsolete-output".len() as u64
+        );
+        assert_eq!(snapshot_tree(manifest.parent().unwrap()), before_migration);
+        let retention_error =
+            QueryStore::retention_plan_at(&manifest, 86_400, 1, None).unwrap_err();
+        assert!(
+            retention_error
+                .to_string()
+                .contains("run a writing analysis once to migrate it in place")
+        );
+        assert_eq!(snapshot_tree(manifest.parent().unwrap()), before_migration);
+
+        let store = QueryStore::open(&manifest).unwrap();
+
+        assert_eq!(
+            store
+                .connection
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            STORE_SCHEMA
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM query_results", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            query_count_before
+        );
+        assert_eq!(store.get("large-function").unwrap().unwrap(), large);
+        assert_eq!(
+            store.stage_output_digests("stage-query").unwrap(),
+            Some(vec![stage_digest.clone()])
+        );
+        assert_eq!(
+            indexed_object_locations(&store.connection),
+            locations_before
+        );
+        assert_eq!(
+            fs::read(store.active_storage_pack_path().unwrap()).unwrap(),
+            pack_before
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM retired_objects WHERE digest = ?1",
+                    [&orphan_digest],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM retired_objects
+                     WHERE digest IN (?1, ?2)",
+                    params![sha256_hex(&large), stage_digest],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn malformed_schema_seven_retention_state_fails_without_resetting_data() {
+        let manifest = manifest("schema-seven-conflict");
+        let value = vec![0x68; INLINE_VALUE_LIMIT + 1];
+        let (database, pack, pack_before) = {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            store
+                .put("preserved", "function", "inputs", &[], &value)
+                .unwrap();
+            store
+                .connection
+                .execute_batch("PRAGMA user_version=7;")
+                .unwrap();
+            let database = store.root.join("queries.sqlite3");
+            let pack = store.pack_path.clone();
+            let pack_before = fs::read(&pack).unwrap();
+            (database, pack, pack_before)
+        };
+
+        let error = QueryStore::open(&manifest)
+            .err()
+            .expect("conflicting schema-7 metadata must fail closed");
+
+        assert!(error.to_string().contains("refusing destructive migration"));
+        assert_eq!(fs::read(&pack).unwrap(), pack_before);
+        let connection = Connection::open_with_flags(
+            immutable_database_uri_for_path(&database).unwrap(),
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+                | OpenFlags::SQLITE_OPEN_URI,
+        )
+        .unwrap();
+        assert_eq!(
+            connection
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            7
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM query_results WHERE query_key = 'preserved'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
     }
 
     #[test]
@@ -4402,7 +5341,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn compaction_keeps_only_reachable_objects_and_switches_pack_atomically() {
+    fn ordinary_compaction_preserves_retired_objects_until_explicit_prune() {
         let manifest = manifest("compact");
         let mut store = QueryStore::open(&manifest).unwrap();
         let live = vec![0x31; INLINE_VALUE_LIMIT + 1];
@@ -4424,7 +5363,7 @@ mod tests {
         assert_ne!(store.pack_path, old_pack);
         assert!(!old_pack.exists());
         assert_eq!(store.get("live-function").unwrap().unwrap(), live);
-        assert!(store.open_object(&retired_digest).is_err());
+        assert!(store.open_object(&retired_digest).is_ok());
         assert_eq!(pack_files(&store.root).unwrap(), vec![store.pack_path]);
     }
 
@@ -4444,6 +5383,10 @@ mod tests {
                 .unwrap();
             store
                 .record_stage("linked-ir:old", "new-query", &[])
+                .unwrap();
+            store
+                .connection
+                .execute("DELETE FROM retired_objects", [])
                 .unwrap();
         }
 
@@ -4494,6 +5437,152 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn retention_plan_is_read_only_and_prune_removes_only_old_retired_objects() {
+        let manifest = manifest("retention-prune");
+        let live = vec![0x71; INLINE_VALUE_LIMIT + 1];
+        let retired = output(&manifest, "old/output.json", b"retired-output");
+        let retired_digest = retired.1.clone();
+        {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            store
+                .put("live-function", "function", "inputs", &[], &live)
+                .unwrap();
+            store
+                .record_stage("old-stage", "old-query", &[retired])
+                .unwrap();
+            store.record_stage("old-stage", "new-query", &[]).unwrap();
+            store
+                .connection
+                .execute("UPDATE retired_objects SET retired_unix_seconds = 1", [])
+                .unwrap();
+        }
+        let project_root = manifest.parent().unwrap();
+        let before = snapshot_tree(project_root);
+
+        let plan = QueryStore::retention_plan_at(&manifest, 1, 1, None).unwrap();
+
+        assert_eq!(snapshot_tree(project_root), before);
+        assert_eq!(plan.retired_objects, 1);
+        assert_eq!(plan.eligible_objects, 1);
+        assert_eq!(
+            plan.eligible_record_bytes,
+            PACK_HEADER_BYTES + b"retired-output".len() as u64
+        );
+        assert!(plan.ready_to_prune);
+
+        let result = QueryStore::prune_cache(&manifest, Duration::ZERO, None).unwrap();
+
+        assert!(result.compacted);
+        assert_eq!(result.pruned_objects, 1);
+        assert!(result.reclaimed_bytes > 0);
+        let store = QueryStore::open(&manifest).unwrap();
+        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+        assert!(store.open_object(&retired_digest).is_err());
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM retired_objects", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn retention_hard_quota_fails_before_mutation_and_preserves_live_results() {
+        let manifest = manifest("retention-hard-quota");
+        let live = vec![0x72; INLINE_VALUE_LIMIT + 1];
+        {
+            let mut store = QueryStore::open(&manifest).unwrap();
+            store
+                .put("live-function", "function", "inputs", &[], &live)
+                .unwrap();
+            let retired = output(&manifest, "old/output.json", b"retired-output");
+            store
+                .record_stage("old-stage", "old-query", &[retired])
+                .unwrap();
+            store.record_stage("old-stage", "new-query", &[]).unwrap();
+            store
+                .connection
+                .execute("UPDATE retired_objects SET retired_unix_seconds = 1", [])
+                .unwrap();
+        }
+        let project_root = manifest.parent().unwrap();
+        let before = snapshot_tree(project_root);
+
+        let error = QueryStore::prune_cache(&manifest, Duration::ZERO, Some(1)).unwrap_err();
+
+        assert!(error.to_string().contains("over --max-size"));
+        assert_eq!(snapshot_tree(project_root), before);
+        let store = QueryStore::open(&manifest).unwrap();
+        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+        assert_eq!(
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM retired_objects", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn retired_object_age_is_persisted_and_reactivation_clears_eligibility() {
+        let manifest = manifest("retention-reactivation");
+        let first = output(&manifest, "old/output.json", b"reusable-output");
+        let digest = first.1.clone();
+        let mut store = QueryStore::open(&manifest).unwrap();
+        store
+            .record_stage("old-stage", "old-query", &[first])
+            .unwrap();
+        store.record_stage("old-stage", "replacement", &[]).unwrap();
+        store
+            .connection
+            .execute("UPDATE retired_objects SET retired_unix_seconds = 100", [])
+            .unwrap();
+        let measurements = retention_measurements(
+            &store.connection,
+            99,
+            fs::metadata(store.active_storage_pack_path().unwrap())
+                .unwrap()
+                .len(),
+        )
+        .unwrap();
+        assert_eq!(measurements.eligible_objects, 0);
+        let measurements = retention_measurements(
+            &store.connection,
+            100,
+            fs::metadata(store.active_storage_pack_path().unwrap())
+                .unwrap()
+                .len(),
+        )
+        .unwrap();
+        assert_eq!(measurements.eligible_objects, 1);
+
+        let reused = output(&manifest, "new/output.json", b"reusable-output");
+        store
+            .record_stage("new-stage", "new-query", &[reused])
+            .unwrap();
+
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM retired_objects WHERE digest = ?1",
+                    [&digest],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+        assert!(store.open_object(&digest).is_ok());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn network_filesystem_magic_is_rejected_for_sqlite_wal() {
         for magic in [
             0x0000_6969,
@@ -4519,6 +5608,7 @@ mod tests {
         statistics.database_bytes = 100;
         statistics.pack_bytes = 800;
         statistics.live_record_bytes = 300;
+        statistics.preserved_record_bytes = 300;
         statistics.reclaimable_pack_bytes = 500;
         let required = COMPACT_FREE_SPACE_RESERVE_BYTES + 400;
         let filesystem = CacheFilesystemAssessment {

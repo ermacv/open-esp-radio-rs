@@ -1,12 +1,14 @@
 //! Inspection and explicit maintenance of the project-owned query cache.
 
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use crate::{
     Result,
     application::{
-        ProjectCacheCompactionResult, ProjectCacheMaintenancePlan, ProjectCacheStatistics,
-        compact_project_cache, project_cache_maintenance_plan, project_cache_statistics,
+        ProjectCacheCompactionResult, ProjectCacheMaintenancePlan, ProjectCachePruneResult,
+        ProjectCacheRetentionPlan, ProjectCacheStatistics, compact_project_cache,
+        project_cache_maintenance_plan, project_cache_retention_plan, project_cache_statistics,
+        prune_project_cache,
     },
     cli::{ProjectCacheCompactArgs, ProjectCacheGcArgs, output, table},
 };
@@ -36,10 +38,28 @@ struct CacheCompactDocument<'a> {
     result: &'a ProjectCacheCompactionResult,
 }
 
+#[derive(serde::Serialize)]
+struct CacheRetentionPlanDocument<'a> {
+    schema_version: u32,
+    command: &'static str,
+    dry_run: bool,
+    operation: &'static str,
+    plan: &'a ProjectCacheRetentionPlan,
+}
+
+#[derive(serde::Serialize)]
+struct CachePruneDocument<'a> {
+    schema_version: u32,
+    command: &'static str,
+    dry_run: bool,
+    operation: &'static str,
+    result: &'a ProjectCachePruneResult,
+}
+
 pub(super) fn stats(project_manifest: &Path) -> Result<bool> {
     let statistics = project_cache_statistics(project_manifest)?;
     let document = CacheStatsDocument {
-        schema_version: 2,
+        schema_version: 3,
         command: "project cache stats",
         statistics: &statistics,
     };
@@ -48,10 +68,41 @@ pub(super) fn stats(project_manifest: &Path) -> Result<bool> {
 }
 
 pub(super) fn gc(arguments: ProjectCacheGcArgs, project_manifest: &Path) -> Result<bool> {
-    if !arguments.dry_run {
+    if arguments.dry_run == arguments.apply {
         return Err(crate::Error::invalid(
-            "project cache gc currently requires --dry-run; use project cache compact for explicit derived-cache mutation",
+            "project cache gc requires exactly one of --dry-run or --apply",
         ));
+    }
+    if arguments.apply && arguments.retention_days.is_none() {
+        return Err(crate::Error::invalid(
+            "project cache gc --apply requires --retention-days; current/live results are never age-eviction candidates",
+        ));
+    }
+    if let Some(retention_days) = arguments.retention_days {
+        let retention = retention_duration(retention_days)?;
+        if arguments.apply {
+            let result = prune_project_cache(project_manifest, retention, arguments.max_size)?;
+            let document = CachePruneDocument {
+                schema_version: 1,
+                command: "project cache gc",
+                dry_run: false,
+                operation: "retention-prune",
+                result: &result,
+            };
+            output::render_report(&document, || render_prune_result(&result));
+        } else {
+            let plan =
+                project_cache_retention_plan(project_manifest, retention, arguments.max_size)?;
+            let document = CacheRetentionPlanDocument {
+                schema_version: 1,
+                command: "project cache gc",
+                dry_run: true,
+                operation: "retention-prune",
+                plan: &plan,
+            };
+            output::render_report(&document, || render_retention_plan(&plan));
+        }
+        return Ok(true);
     }
     let plan = project_cache_maintenance_plan(project_manifest, arguments.max_size)?;
     let document = CacheGcDocument {
@@ -62,6 +113,13 @@ pub(super) fn gc(arguments: ProjectCacheGcArgs, project_manifest: &Path) -> Resu
     };
     output::render_report(&document, || render_maintenance_plan(&plan));
     Ok(true)
+}
+
+fn retention_duration(days: u64) -> Result<Duration> {
+    let seconds = days
+        .checked_mul(24 * 60 * 60)
+        .ok_or_else(|| crate::Error::invalid("cache retention duration overflowed u64"))?;
+    Ok(Duration::from_secs(seconds))
 }
 
 pub(super) fn compact(arguments: ProjectCacheCompactArgs, project_manifest: &Path) -> Result<bool> {
@@ -241,6 +299,82 @@ fn render_compaction_result(result: &ProjectCacheCompactionResult) {
     }
 }
 
+fn render_retention_plan(plan: &ProjectCacheRetentionPlan) {
+    outputln!("{}", output::heading("Project cache retention dry run"));
+    let status = if plan.ready_to_prune {
+        output::success(format!(
+            "READY — {} retired objects are older than the cutoff; would reclaim {}",
+            plan.eligible_objects,
+            human_bytes(plan.maintenance.reclaimable_bytes),
+        ))
+    } else {
+        output::warning(format!(
+            "NO MUTATION — {}",
+            plan.reason
+                .as_deref()
+                .unwrap_or("no eligible retired objects")
+        ))
+    };
+    outputln!("\n{status}");
+    outputln!(
+        "\n{}",
+        table::render(["Metric", "Value"], retention_rows(plan))
+    );
+    outputln!(
+        "\nCurrent query results and stage outputs are hard roots; retention and --max-size never evict them."
+    );
+}
+
+fn render_prune_result(result: &ProjectCachePruneResult) {
+    outputln!("{}", output::heading("Project cache retention prune"));
+    if result.compacted {
+        outputln!(
+            "\n{}",
+            output::success(format!(
+                "PRUNED — removed {} retired objects, reclaimed {}, final size {}",
+                result.pruned_objects,
+                human_bytes(result.reclaimed_bytes),
+                human_bytes(result.final_root_bytes),
+            ))
+        );
+    } else {
+        outputln!(
+            "\n{}",
+            output::warning(format!(
+                "NO CHANGE — {}",
+                result
+                    .plan
+                    .reason
+                    .as_deref()
+                    .unwrap_or("no eligible retired objects")
+            ))
+        );
+    }
+}
+
+fn retention_rows(plan: &ProjectCacheRetentionPlan) -> Vec<[String; 2]> {
+    let mut rows = vec![
+        [
+            "Retention age".to_owned(),
+            format!("{} days", plan.retention_seconds / (24 * 60 * 60)),
+        ],
+        [
+            "Retired objects".to_owned(),
+            plan.retired_objects.to_string(),
+        ],
+        [
+            "Eligible objects".to_owned(),
+            plan.eligible_objects.to_string(),
+        ],
+        [
+            "Eligible payload".to_owned(),
+            human_bytes(plan.eligible_payload_bytes),
+        ],
+    ];
+    rows.extend(maintenance_rows(&plan.maintenance));
+    rows
+}
+
 fn maintenance_rows(plan: &ProjectCacheMaintenancePlan) -> Vec<[String; 2]> {
     let mut rows = vec![
         ["Filesystem".to_owned(), plan.filesystem.clone()],
@@ -305,6 +439,18 @@ fn detail_metric_rows(statistics: &ProjectCacheStatistics) -> Vec<[String; 2]> {
             "Live pack records".to_owned(),
             human_bytes(statistics.live_record_bytes),
         ],
+        [
+            "Retired CAS objects".to_owned(),
+            statistics.retired_objects.to_string(),
+        ],
+        [
+            "Retired CAS records".to_owned(),
+            human_bytes(statistics.retired_record_bytes),
+        ],
+        [
+            "Preserved pack records".to_owned(),
+            human_bytes(statistics.preserved_record_bytes),
+        ],
     ]
 }
 
@@ -347,17 +493,17 @@ mod tests {
             "generated/.blobray-cache/queries.sqlite3".into(),
         );
         let document = serde_json::to_value(CacheStatsDocument {
-            schema_version: 2,
+            schema_version: 3,
             command: "project cache stats",
             statistics: &statistics,
         })
         .unwrap();
-        assert_eq!(document["schema_version"], 2);
+        assert_eq!(document["schema_version"], 3);
         assert_eq!(document["command"], "project cache stats");
         assert_eq!(document["schema"], serde_json::Value::Null);
         assert_eq!(document["present"], false);
         assert_eq!(document["compaction"]["eligible_on_next_write"], false);
-        assert_eq!(detail_metric_rows(&statistics).len(), 7);
+        assert_eq!(detail_metric_rows(&statistics).len(), 10);
         assert_eq!(detail_metric_rows(&statistics)[0][0], "Store schema");
         assert_eq!(detail_metric_rows(&statistics)[5][0], "Live objects");
     }
@@ -396,5 +542,51 @@ mod tests {
         assert_eq!(document["projected_root_bytes"], 500);
         assert_eq!(document["max_size_bytes"], 600);
         assert_eq!(document["ready_to_compact"], true);
+    }
+
+    #[test]
+    fn retention_document_separates_obsolete_candidates_from_hard_roots() {
+        let plan = ProjectCacheRetentionPlan {
+            maintenance: ProjectCacheMaintenancePlan {
+                cache_root: "generated/.blobray-cache".into(),
+                present: true,
+                supported: true,
+                filesystem: "local".to_owned(),
+                filesystem_magic: Some("0xef53".to_owned()),
+                root_bytes: 900,
+                reclaimable_bytes: 300,
+                projected_root_bytes: 600,
+                temporary_bytes_required: 500,
+                available_bytes: Some(1_000),
+                enough_free_space: true,
+                max_size_bytes: Some(700),
+                over_max_size_bytes: 0,
+                would_compact: true,
+                ready_to_compact: true,
+                reason: None,
+            },
+            retention_seconds: 30 * 24 * 60 * 60,
+            cutoff_unix_seconds: 1_700_000_000,
+            retired_objects: 5,
+            eligible_objects: 3,
+            eligible_payload_bytes: 240,
+            eligible_record_bytes: 384,
+            would_prune: true,
+            ready_to_prune: true,
+            reason: None,
+        };
+        let document = serde_json::to_value(CacheRetentionPlanDocument {
+            schema_version: 1,
+            command: "project cache gc",
+            dry_run: true,
+            operation: "retention-prune",
+            plan: &plan,
+        })
+        .unwrap();
+
+        assert_eq!(document["dry_run"], true);
+        assert_eq!(document["operation"], "retention-prune");
+        assert_eq!(document["plan"]["eligible_objects"], 3);
+        assert_eq!(document["plan"]["maintenance"]["max_size_bytes"], 700);
     }
 }

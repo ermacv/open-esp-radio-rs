@@ -92,6 +92,38 @@ fn fresh_cache_gc_dry_run_is_actionable_and_read_only() {
     assert!(!project.root.join("generated/.blobray-cache").exists());
 }
 
+#[test]
+fn fresh_cache_retention_preview_is_typed_and_read_only() {
+    let project = TemporaryProject::from_public_fixture("fresh-retention");
+    let before = tree_snapshot(&project.root);
+
+    let output = project.cache_command(
+        &[
+            "gc",
+            "--dry-run",
+            "--retention-days",
+            "30",
+            "--max-size",
+            "1048576",
+        ],
+        Some("json"),
+    );
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["operation"], "retention-prune");
+    assert_eq!(report["dry_run"], true);
+    assert_eq!(report["plan"]["retention_seconds"], 30 * 24 * 60 * 60);
+    assert_eq!(report["plan"]["eligible_objects"], 0);
+    assert_eq!(report["plan"]["maintenance"]["present"], false);
+    assert_eq!(tree_snapshot(&project.root), before);
+    assert!(!project.root.join("generated/.blobray-cache").exists());
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn compacting_an_absent_cache_is_an_explicit_noop_without_creation() {
@@ -136,7 +168,7 @@ fn fresh_cache_stats_is_typed_and_does_not_create_or_modify_the_project_tree() {
     );
     let report: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("cache stats stdout is one JSON document");
-    assert_eq!(report["schema_version"], 2);
+    assert_eq!(report["schema_version"], 3);
     assert_eq!(report["command"], "project cache stats");
     assert_eq!(report["present"], false);
     assert_eq!(
@@ -169,10 +201,18 @@ fn fresh_cache_stats_is_typed_and_does_not_create_or_modify_the_project_tree() {
         "stage_outputs",
         "live_objects",
         "live_record_bytes",
+        "retired_objects",
+        "retired_payload_bytes",
+        "retired_record_bytes",
+        "preserved_record_bytes",
         "reclaimable_pack_bytes",
     ] {
         assert_eq!(report[field], 0, "unexpected fresh-cache field {field}");
     }
+    assert_eq!(
+        report["oldest_retired_unix_seconds"],
+        serde_json::Value::Null
+    );
     assert_eq!(report["query_kinds"], serde_json::json!([]));
     assert_eq!(report["compaction"]["eligible_on_next_write"], false);
     assert_eq!(report["compaction"]["minimum_reclaimable_percent"], 25);

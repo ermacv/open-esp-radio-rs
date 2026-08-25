@@ -32,6 +32,8 @@ pub use project_analysis::{
 pub(crate) use query_store::{
     QueryStoreCompactionResult as ProjectCacheCompactionResult,
     QueryStoreMaintenancePlan as ProjectCacheMaintenancePlan,
+    QueryStorePruneResult as ProjectCachePruneResult,
+    QueryStoreRetentionPlan as ProjectCacheRetentionPlan,
     QueryStoreStatistics as ProjectCacheStatistics,
 };
 pub(crate) use resolve::{
@@ -179,4 +181,22 @@ pub(crate) fn compact_project_cache(
     max_size_bytes: Option<u64>,
 ) -> crate::Result<ProjectCacheCompactionResult> {
     query_store::QueryStore::compact_cache(manifest, max_size_bytes)
+}
+
+/// Inspect persisted unreachable-object retention without mutating the cache.
+pub(crate) fn project_cache_retention_plan(
+    manifest: &Path,
+    retention: std::time::Duration,
+    max_size_bytes: Option<u64>,
+) -> crate::Result<ProjectCacheRetentionPlan> {
+    query_store::QueryStore::retention_plan(manifest, retention, max_size_bytes)
+}
+
+/// Prune only persisted unreachable objects older than the requested age.
+pub(crate) fn prune_project_cache(
+    manifest: &Path,
+    retention: std::time::Duration,
+    max_size_bytes: Option<u64>,
+) -> crate::Result<ProjectCachePruneResult> {
+    query_store::QueryStore::prune_cache(manifest, retention, max_size_bytes)
 }

@@ -1,7 +1,7 @@
 # Minimal portability fixture. A private run spec may bind an ESP32-C5 image;
 # generated observations remain local and cannot publish a PAC until a
 # reviewed memory map and register model are explicitly added.
-schema = 3
+schema = 4
 id = "esp32c5-review-bootstrap"
 target-spec = "target.toml"
 ecosystem-packs = ["../../knowledge/espressif/radio.toml"]

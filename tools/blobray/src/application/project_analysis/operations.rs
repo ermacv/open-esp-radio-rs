@@ -45,6 +45,7 @@ pub(crate) fn analyze_project(
         } else {
             ProjectAnalysisCache::deferred(&session.manifest)
         }
+        .with_active_applicability_fingerprint(session.active_applicability_identity())
         .with_compiled_knowledge_identity(compiled_knowledge_identity),
         check: request.check,
         functions: None,
@@ -69,6 +70,7 @@ pub(crate) fn plan_project(
     let mut operations = ResolvedProjectAnalysisOperations {
         session,
         cache: ProjectAnalysisCache::planning(&session.manifest)
+            .with_active_applicability_fingerprint(session.active_applicability_identity())
             .with_compiled_knowledge_identity(compiled_knowledge_identity),
         check: request.check,
         functions: None,
@@ -119,7 +121,12 @@ fn project_analysis_inputs(session: &ProjectSession) -> ProjectAnalysisInputs {
 fn pipeline_input_observation(
     session: &ProjectSession,
 ) -> (Option<PipelineInputObservation>, Option<String>) {
-    match pipeline_input_paths(session).and_then(PipelineInputObservation::capture) {
+    match pipeline_input_paths(session)
+        .and_then(PipelineInputObservation::capture)
+        .and_then(|observation| {
+            session.validate_active_artifacts()?;
+            Ok(observation)
+        }) {
         Ok(observation) => (Some(observation), None),
         Err(error) => (None, Some(error.to_string())),
     }

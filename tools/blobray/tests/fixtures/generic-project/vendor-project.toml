@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "generic-rv32-fixture"
 target-spec = "target.toml"
 chip-pack = "chip.toml"

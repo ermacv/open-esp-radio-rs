@@ -96,6 +96,7 @@ pub(crate) struct ProjectSessionOptions {
     pub(crate) run_spec: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) load_run_spec: bool,
+    pub(crate) authenticate_review_context: bool,
     pub(crate) load_memory_map: bool,
     pub(crate) load_register_catalog: bool,
     pub(crate) invocation_directory: Option<PathBuf>,
@@ -108,6 +109,7 @@ impl Default for ProjectSessionOptions {
             run_spec: None,
             svd_paths: Vec::new(),
             load_run_spec: true,
+            authenticate_review_context: true,
             load_memory_map: true,
             load_register_catalog: true,
             invocation_directory: None,
@@ -149,7 +151,7 @@ impl ProjectSession {
             .clone()
             .map_or_else(std::env::current_dir, Ok)?;
         let manifest = manifest.to_owned();
-        let project = ProjectSpec::load(&manifest)?;
+        let mut project = ProjectSpec::load(&manifest)?;
         let explicit_context = ExplicitProjectContext {
             target_spec: options.target_spec.clone(),
             run_spec: options.run_spec.clone(),
@@ -176,6 +178,33 @@ impl ProjectSession {
             })
             .flatten();
         let run_spec = run_spec_path.as_deref().map(RunSpec::load).transpose()?;
+        if options.authenticate_review_context {
+            let knowledge =
+                open_radio_vendor_review::ReviewKnowledge::load_all(&project.reviewed_knowledge)
+                    .map_err(|error| {
+                        crate::Error::invalid(format!("cannot load reviewed knowledge: {error}"))
+                    })?;
+            let sources = knowledge.constrained_artifact_sources();
+            if !sources.is_empty() {
+                let run_spec = run_spec.as_ref().ok_or_else(|| {
+                    crate::Error::invalid(
+                        "reviewed facts constrain exact artifact bytes, but this command has no active run spec to authenticate them",
+                    )
+                })?;
+                project.review_context.artifacts =
+                    run_spec.artifact_identities_for_sources(&sources)?;
+            }
+            if let Some(registers) = project.registers.as_mut() {
+                registers.review_context = project.review_context.clone();
+            }
+            knowledge
+                .select_for(&project.review_context)
+                .map_err(|error| {
+                    crate::Error::invalid(format!(
+                        "reviewed knowledge does not apply to the authenticated active inputs: {error}"
+                    ))
+                })?;
+        }
         let memory_map_path = project.memory_map.as_deref();
         let memory_map = if options.load_memory_map {
             memory_map_path.map(MemoryMap::load).transpose()?
@@ -233,6 +262,39 @@ impl ProjectSession {
             explicit_context: &self.explicit_context,
             invocation_directory: &self.invocation_directory,
         }
+    }
+
+    /// Canonical identity of the exact applicability context authenticated for
+    /// this session. Cache signatures bind this value even when the artifact
+    /// selecting a reviewed fact is not a stage-local input.
+    pub(crate) fn active_applicability_identity(&self) -> String {
+        serde_json::to_string(&self.project.review_context)
+            .expect("validated applicability context is JSON serializable")
+    }
+
+    /// Reauthenticate active artifact bytes after a long-lived generation
+    /// guard has been captured. This closes the window between opening a
+    /// session and starting a pipeline over caller-owned files.
+    pub(crate) fn validate_active_artifacts(&self) -> Result<()> {
+        let knowledge =
+            open_radio_vendor_review::ReviewKnowledge::load_all(&self.project.reviewed_knowledge)
+                .map_err(|error| {
+                crate::Error::invalid(format!("cannot reload reviewed knowledge: {error}"))
+            })?;
+        let sources = knowledge.constrained_artifact_sources();
+        if sources.is_empty() {
+            return Ok(());
+        }
+        let run_spec = self.run_spec.as_ref().ok_or_else(|| {
+            crate::Error::invalid("cannot reauthenticate reviewed facts without an active run spec")
+        })?;
+        let current = run_spec.artifact_identities_for_sources(&sources)?;
+        if current != self.project.review_context.artifacts {
+            return Err(crate::Error::invalid(
+                "active vendor inputs changed after reviewed-fact applicability was selected; reopen the project and rerun the command",
+            ));
+        }
+        Ok(())
     }
 
     pub(crate) fn function_workspace(

@@ -94,6 +94,9 @@ launcher below skips Cargo entirely.
      --bind source-artifact:vendor=/opt/vendor/libvendor.a
    ```
 
+   The schema-4 project manifest does not duplicate artifact digests. Blobray
+   hashes these live bindings to select exact applicability-bounded facts.
+
 3. Inspect the file map and follow its prerequisite-ordered `Next` actions.
    A fresh generic project uses these actions to create the reviewed code,
    interface, and function packs before whole-project analysis. Run `doctor`

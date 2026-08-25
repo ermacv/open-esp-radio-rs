@@ -67,9 +67,9 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
 
     let input = fs::read_to_string(manifest)?;
     let mut document = input.parse::<DocumentMut>()?;
-    if document.get("schema").and_then(Item::as_integer) != Some(3) {
+    if document.get("schema").and_then(Item::as_integer) != Some(4) {
         return Err(crate::Error::invalid(
-            "project manifest requires schema = 3",
+            "project manifest requires schema = 4",
         ));
     }
     match options.selection {

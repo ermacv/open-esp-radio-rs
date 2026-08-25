@@ -4,6 +4,18 @@ The Blobray is project-oriented. A `vendor-project.toml` names reviewed
 configuration and generated outputs; private binary paths belong in the
 ignored local run specification, never in the reviewed manifest.
 
+Project manifest schema 4 may declare a stable artifact lineage, but never an
+exact artifact digest. Blobray hashes the bytes bound by the active local run
+specification for every source referenced by exact reviewed facts and uses
+those live `{ source, sha256 }` identities during selection. Replacing a bound
+blob therefore changes the active context without editing reviewed project
+configuration; missing inputs cannot be replaced by a manifest-authored
+digest. Shallow `status` and diagnostic `doctor` remain able to report missing
+bindings without authenticating unrelated vendor inputs.
+For named roles, the exact-fact `source` is the role suffix: a
+`source-artifact:vendor` binding authenticates reviewed applicability with
+`source = "vendor"`.
+
 ## The normal loop
 
 For an existing project:

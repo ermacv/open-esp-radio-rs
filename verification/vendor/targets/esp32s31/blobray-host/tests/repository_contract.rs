@@ -1138,6 +1138,17 @@ fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
 
     let manifest = fs::read_to_string(target.join("vendor-project.toml"))
         .expect("read ESP32-S31 project manifest");
+    let project_document = manifest
+        .parse::<toml_edit::DocumentMut>()
+        .expect("parse ESP32-S31 project manifest");
+    assert_eq!(project_document["schema"].as_integer(), Some(4));
+    assert!(
+        project_document
+            .get("applicability")
+            .and_then(toml_edit::Item::as_table)
+            .is_none_or(|applicability| !applicability.contains_key("artifacts")),
+        "project manifest must derive exact artifact applicability from live run-spec inputs"
+    );
     assert!(manifest.contains("chip-pack = \"../../chips/esp32s31/chip.toml\""));
     assert!(manifest.contains("analysis-provider = \"esp32s31-radio-knowledge-v1\""));
     assert!(manifest.contains("packs = [\"reviewed/project-facts.toml\"]"));

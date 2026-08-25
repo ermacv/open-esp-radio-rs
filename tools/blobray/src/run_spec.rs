@@ -1,7 +1,7 @@
 //! Caller-owned artifact bindings for one blobray invocation.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt, fs, io,
     path::{Path, PathBuf},
 };
@@ -261,6 +261,52 @@ impl RunSpec {
     pub(crate) fn inputs(&self) -> &[RunInput] {
         &self.inputs
     }
+
+    /// Authenticate revision inputs whose sources can affect reviewed-fact
+    /// selection for the active project.
+    ///
+    /// The logical run-spec source is the stable artifact source. Repeated
+    /// bindings of the same path are hashed once, while the returned exact
+    /// identities remain sorted and deduplicated independently of input order.
+    pub(crate) fn artifact_identities_for_sources(
+        &self,
+        sources: &BTreeSet<String>,
+    ) -> crate::Result<Vec<open_radio_vendor_contracts::ArtifactIdentity>> {
+        self.artifact_identities_matching(|source| sources.contains(source))
+    }
+
+    fn artifact_identities_matching(
+        &self,
+        include: impl Fn(&str) -> bool,
+    ) -> crate::Result<Vec<open_radio_vendor_contracts::ArtifactIdentity>> {
+        let mut digests = BTreeMap::<PathBuf, String>::new();
+        let mut identities = BTreeSet::new();
+        for input in self
+            .inputs
+            .iter()
+            .filter(|input| input.role.is_revision_owned() && include(input.role.source_id()))
+        {
+            let source = input.role.source_id();
+            let sha256 = match digests.get(&input.path) {
+                Some(sha256) => sha256.clone(),
+                None => {
+                    let sha256 = crate::artifact_path_sha256(&input.path).map_err(|error| {
+                        crate::Error::invalid(format!(
+                            "cannot authenticate run input {} for reviewed artifact source {source:?}: {error}",
+                            input.path.display()
+                        ))
+                    })?;
+                    digests.insert(input.path.clone(), sha256.clone());
+                    sha256
+                }
+            };
+            identities.insert(
+                open_radio_vendor_contracts::ArtifactIdentity::new(source, sha256)
+                    .map_err(|error| crate::Error::invalid(error.to_string()))?,
+            );
+        }
+        Ok(identities.into_iter().collect())
+    }
 }
 
 fn invalid(path: &Path, input: &str, message: impl Into<String>) -> RunSpecError {
@@ -409,5 +455,75 @@ mod tests {
         assert!(run.inputs[1].role.is_revision_owned());
         assert!(!run.inputs[2].role.is_revision_owned());
         assert!(run.inputs[2].role.is_rust_lineage());
+    }
+
+    #[test]
+    fn artifact_identities_authenticate_selected_revision_sources_once_per_path() {
+        let directory = std::env::temp_dir().join(format!(
+            "open-radio-blobray-active-artifacts-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let shared = directory.join("shared.bin");
+        let vendor = directory.join("vendor.bin");
+        std::fs::write(&shared, b"shared revision bytes").unwrap();
+        std::fs::write(&vendor, b"vendor revision bytes").unwrap();
+        let path = directory.join("local.toml");
+        std::fs::write(
+            &path,
+            "schema = 1\n\n\
+[[inputs]]\nrole = \"source-inventory:zeta\"\npath = \"shared.bin\"\n\n\
+[[inputs]]\nrole = \"source-inventory:alpha\"\npath = \"shared.bin\"\n\n\
+[[inputs]]\nrole = \"source-companion:alpha\"\npath = \"shared.bin\"\n\n\
+[[inputs]]\nrole = \"source-inventory:alpha\"\npath = \"shared.bin\"\n\n\
+[[inputs]]\nrole = \"vendor-artifact\"\npath = \"vendor.bin\"\n\n\
+[[inputs]]\nrole = \"source-artifact:unused\"\npath = \"missing-unused.bin\"\n\n\
+[[inputs]]\nrole = \"rust-artifact\"\npath = \"missing-rust.elf\"\n\n\
+[[inputs]]\nrole = \"artifact\"\npath = \"missing-ambiguous.elf\"\n",
+        )
+        .unwrap();
+
+        let run = RunSpec::load(&path).unwrap();
+        let sources = BTreeSet::from(["alpha".to_owned(), "vendor".to_owned(), "zeta".to_owned()]);
+        let identities = run.artifact_identities_for_sources(&sources).unwrap();
+        let shared_sha256 = crate::artifact_path_sha256(&shared).unwrap();
+        let vendor_sha256 = crate::artifact_path_sha256(&vendor).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(identities.len(), 3);
+        assert_eq!(identities[0].source(), "alpha");
+        assert_eq!(identities[0].sha256(), shared_sha256);
+        assert_eq!(identities[1].source(), "vendor");
+        assert_eq!(identities[1].sha256(), vendor_sha256);
+        assert_eq!(identities[2].source(), "zeta");
+        assert_eq!(identities[2].sha256(), shared_sha256);
+    }
+
+    #[test]
+    fn artifact_identities_fail_closed_for_missing_revision_bytes() {
+        let directory = std::env::temp_dir().join(format!(
+            "open-radio-blobray-missing-active-artifact-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.toml");
+        std::fs::write(
+            &path,
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:radio\"\npath = \"missing.elf\"\n",
+        )
+        .unwrap();
+
+        let error = RunSpec::load(&path)
+            .unwrap()
+            .artifact_identities_for_sources(&BTreeSet::from(["radio".to_owned()]))
+            .unwrap_err();
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert!(error.to_string().contains("cannot authenticate run input"));
+        assert!(
+            error
+                .to_string()
+                .contains("reviewed artifact source \"radio\"")
+        );
     }
 }

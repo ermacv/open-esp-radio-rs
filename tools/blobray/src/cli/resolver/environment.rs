@@ -193,6 +193,7 @@ pub(super) fn resolve_from(
                 run_spec: requested_run_spec,
                 svd_paths,
                 load_run_spec: needs.run_spec,
+                authenticate_review_context: needs.review_context,
                 load_memory_map: needs.memory_map,
                 load_register_catalog: needs.register_catalog,
                 invocation_directory: Some(current_dir.to_owned()),

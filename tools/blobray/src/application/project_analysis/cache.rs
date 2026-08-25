@@ -16,6 +16,7 @@ use crate::Result;
 
 pub(super) struct ProjectAnalysisCache {
     store: PersistentStore,
+    active_applicability_fingerprint: String,
     compiled_knowledge_identity: String,
     digests: BTreeMap<PathBuf, DigestMemo>,
     observed_inputs: BTreeMap<String, ObservedInputs>,
@@ -361,6 +362,7 @@ impl ProjectAnalysisCache {
     pub(super) fn disabled() -> Self {
         Self {
             store: PersistentStore::Disabled,
+            active_applicability_fingerprint: String::new(),
             compiled_knowledge_identity: String::new(),
             digests: BTreeMap::new(),
             observed_inputs: BTreeMap::new(),
@@ -378,6 +380,7 @@ impl ProjectAnalysisCache {
     pub(super) fn deferred(project_manifest: &Path) -> Self {
         Self {
             store: PersistentStore::Deferred(project_manifest.to_owned()),
+            active_applicability_fingerprint: String::new(),
             compiled_knowledge_identity: String::new(),
             digests: BTreeMap::new(),
             observed_inputs: BTreeMap::new(),
@@ -398,6 +401,7 @@ impl ProjectAnalysisCache {
             };
         Self {
             store: PersistentStore::Disabled,
+            active_applicability_fingerprint: String::new(),
             compiled_knowledge_identity: String::new(),
             digests: BTreeMap::new(),
             observed_inputs: BTreeMap::new(),
@@ -411,6 +415,18 @@ impl ProjectAnalysisCache {
     /// predicts reuse that execution would reject.
     pub(super) fn with_compiled_knowledge_identity(mut self, identity: String) -> Self {
         self.compiled_knowledge_identity = identity;
+        self
+    }
+
+    /// Bind the exact applicability context selected for this invocation.
+    ///
+    /// Stage input paths authenticate the bytes consumed directly by a query,
+    /// but reviewed facts may also be selected by another active vendor input
+    /// that is not a stage-local filesystem dependency. Planner and executor
+    /// must therefore bind the same canonical context fingerprint so even a
+    /// zero-output validation cannot reuse a result from another blob set.
+    pub(super) fn with_active_applicability_fingerprint(mut self, fingerprint: String) -> Self {
+        self.active_applicability_fingerprint = fingerprint;
         self
     }
 
@@ -793,7 +809,7 @@ impl ProjectAnalysisCache {
         inputs.sort();
         inputs.dedup();
         let mut digest = Sha256::new();
-        digest.update(b"blobray-project-stage-v3\0");
+        digest.update(b"blobray-project-stage-v4\0");
         // A profile name is a project-local binding, not an analysis input.
         // Equivalent linked-IR profiles with different IDs/output paths must
         // address the same immutable query result.
@@ -807,6 +823,10 @@ impl ProjectAnalysisCache {
         digest.update(env!("CARGO_PKG_VERSION").as_bytes());
         digest.update([0]);
         digest.update(stage_revision(stage)?.to_le_bytes());
+        digest.update([0]);
+        digest.update(b"active-applicability");
+        digest.update([0]);
+        digest.update(self.active_applicability_fingerprint.as_bytes());
         if let Some(schema) = stage_artifact_schema(stage) {
             digest.update([0]);
             digest.update(b"output-schema");
@@ -1924,6 +1944,56 @@ mod tests {
                 .signature("symbol-inventory", "sources=a", inputs)
                 .unwrap()
         );
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn active_applicability_fingerprint_is_part_of_every_stage_query_key() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-applicability-query-key-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("reviewed-facts.toml");
+        fs::write(&manifest, "schema = 4\n").unwrap();
+        fs::write(&input, "same-reviewed-facts").unwrap();
+
+        let mut first = ProjectAnalysisCache::deferred(&manifest)
+            .with_active_applicability_fingerprint("context@artifact-a".to_owned());
+        let mut equivalent = ProjectAnalysisCache::deferred(&manifest)
+            .with_active_applicability_fingerprint("context@artifact-a".to_owned());
+        let mut second = ProjectAnalysisCache::deferred(&manifest)
+            .with_active_applicability_fingerprint("context@artifact-b".to_owned());
+        let inputs = std::slice::from_ref(&input);
+
+        for stage in [
+            "symbol-inventory",
+            "linked-ir:radio",
+            "register-validation:deny-unreviewed=true",
+        ] {
+            let first_signature = first
+                .signature(stage, "same-configuration", inputs)
+                .unwrap();
+            assert_eq!(
+                first_signature,
+                equivalent
+                    .signature(stage, "same-configuration", inputs)
+                    .unwrap(),
+                "equivalent active contexts diverged for {stage}"
+            );
+            assert_ne!(
+                first_signature,
+                second
+                    .signature(stage, "same-configuration", inputs)
+                    .unwrap(),
+                "active applicability did not invalidate {stage}"
+            );
+        }
 
         fs::remove_dir_all(directory).unwrap();
     }

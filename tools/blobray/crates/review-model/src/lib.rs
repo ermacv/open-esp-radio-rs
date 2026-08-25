@@ -372,6 +372,28 @@ impl ReviewKnowledge {
         &self.bindings
     }
 
+    /// Artifact sources that can affect selection of the loaded reviewed
+    /// records. Callers only need to authenticate revision inputs from this
+    /// set; unrelated stage bindings remain ordinary preflight inputs.
+    pub fn constrained_artifact_sources(&self) -> BTreeSet<String> {
+        self.assertions
+            .values()
+            .map(|record| &record.metadata.applies_to)
+            .chain(
+                self.vendor_bugs
+                    .values()
+                    .map(|record| &record.metadata.applies_to),
+            )
+            .chain(
+                self.bindings
+                    .values()
+                    .map(|record| &record.metadata.applies_to),
+            )
+            .flat_map(|applicability| applicability.artifacts.iter())
+            .map(|artifact| artifact.source().to_owned())
+            .collect()
+    }
+
     /// Select only facts compatible with one explicit project composition.
     ///
     /// A constrained fact cannot be selected when the corresponding context

@@ -19,15 +19,37 @@ fn invalid_project_span(input: &str, name: &str) -> (usize, usize, String) {
 }
 
 #[test]
+fn project_schema_four_rejects_legacy_static_artifact_applicability() {
+    let (_, _, schema_error) = invalid_project_span(
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n",
+        "schema-three.toml",
+    );
+    assert!(schema_error.contains("requires schema = 4"));
+
+    let (_, _, artifact_error) = invalid_project_span(
+        concat!(
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n",
+            "[applicability]\n",
+            "artifacts = [{ source = \"vendor\", sha256 = \"",
+            "0123456789abcdef0123456789abcdef",
+            "0123456789abcdef0123456789abcdef",
+            "\" }]\n",
+        ),
+        "static-artifacts.toml",
+    );
+    assert!(artifact_error.contains("unknown project applicability key \"artifacts\""));
+}
+
+#[test]
 fn register_workspace_requires_an_explicit_nonempty_publication_scope() {
     let (_, _, missing) = invalid_project_span(
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\n",
         "missing-owned-ranges.toml",
     );
     assert!(missing.contains("requires \"owned-ranges\""));
 
     let (_, _, duplicate) = invalid_project_span(
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\", \"radio\"]\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\", \"radio\"]\n",
         "duplicate-owned-ranges.toml",
     );
     assert!(duplicate.contains("duplicate project registers.owned-ranges"));
@@ -36,7 +58,7 @@ fn register_workspace_requires_an_explicit_nonempty_publication_scope() {
 #[test]
 fn review_scopes_require_explicit_canonical_protocols() {
     let (_, _, missing) = invalid_project_span(
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"vendor\"\nroots = \"all\"\noutput = \"vendor.ir\"\n[review]\noutput = \"review.json\"\npublication-scopes = [\"station-state\"]\n[[review.scopes]]\nid = \"station-state\"\nprofiles = [\"vendor\"]\nroots = [\"vendor:root\"]\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"vendor\"\nroots = \"all\"\noutput = \"vendor.ir\"\n[review]\noutput = \"review.json\"\npublication-scopes = [\"station-state\"]\n[[review.scopes]]\nid = \"station-state\"\nprofiles = [\"vendor\"]\nroots = [\"vendor:root\"]\n",
         "missing-review-protocols.toml",
     );
     assert!(missing.contains("requires \"protocols\""), "{missing}");
@@ -47,7 +69,7 @@ fn review_scopes_require_explicit_canonical_protocols() {
         ("unknown-radio.toml", "radio"),
     ] {
         let input = format!(
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"vendor\"\nroots = \"all\"\noutput = \"vendor.ir\"\n[review]\noutput = \"review.json\"\npublication-scopes = [\"feature\"]\n[[review.scopes]]\nid = \"feature\"\nprotocols = [\"{protocol}\"]\nprofiles = [\"vendor\"]\nroots = [\"vendor:root\"]\n"
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"vendor\"\nroots = \"all\"\noutput = \"vendor.ir\"\n[review]\noutput = \"review.json\"\npublication-scopes = [\"feature\"]\n[[review.scopes]]\nid = \"feature\"\nprotocols = [\"{protocol}\"]\nprofiles = [\"vendor\"]\nroots = [\"vendor:root\"]\n"
         );
         let (_, _, error) = invalid_project_span(&input, name);
         assert!(
@@ -83,7 +105,7 @@ fn reviewed_knowledge_requires_one_explicit_configured_default_pack() {
     ];
     for (name, section, expected) in cases {
         let input =
-            format!("schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n{section}");
+            format!("schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n{section}");
         let (_, _, error) = invalid_project_span(&input, name);
         assert!(error.contains(expected), "case {name}: {error}");
     }
@@ -92,7 +114,7 @@ fn reviewed_knowledge_requires_one_explicit_configured_default_pack() {
 #[test]
 fn project_manifest_rejects_misspelled_nested_configuration_tables() {
     let (_, _, error) = invalid_project_span(
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.toml]\ncatalogs = [\"evidence.toml\"]\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.toml]\ncatalogs = [\"evidence.toml\"]\n",
         "unknown-register-table.toml",
     );
     assert!(error.contains("unknown project registers key \"toml\""));
@@ -112,7 +134,7 @@ fn register_workspace_inherits_the_reusable_chip_model() {
     .unwrap();
     std::fs::write(
         directory.join(DEFAULT_PROJECT_MANIFEST),
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n\n[registers]\nfacts = \"generated/mmio.json\"\nowned-ranges = [\"radio\"]\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n\n[registers]\nfacts = \"generated/mmio.json\"\nowned-ranges = [\"radio\"]\n",
     )
     .unwrap();
 
@@ -127,15 +149,23 @@ fn register_workspace_inherits_the_reusable_chip_model() {
 
 #[test]
 fn project_composition_selects_one_reviewed_chip_revision_fail_closed() {
-    const ARTIFACT_SHA256: &str = concat!(
-        "0123456789abcdef0123456789abcdef",
-        "0123456789abcdef0123456789abcdef"
-    );
     let directory = std::env::temp_dir().join(format!(
         "open-radio-blobray-review-context-{}",
         std::process::id()
     ));
     std::fs::create_dir_all(directory.join("reviewed")).unwrap();
+    std::fs::write(directory.join("blob.bin"), b"vendor revision zero").unwrap();
+    let artifact_sha256 = crate::artifact_path_sha256(&directory.join("blob.bin")).unwrap();
+    std::fs::write(
+        directory.join("target.toml"),
+        "schema = 3\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("local.toml"),
+        "schema = 1\n[[inputs]]\nrole = \"source-artifact:fixture-blob\"\npath = \"blob.bin\"\n",
+    )
+    .unwrap();
     std::fs::write(
         directory.join("ecosystem.toml"),
         "schema = 3\nid = \"fixture-ecosystem\"\nknowledge-packs = []\ncapability-packs = []\ninterface-template-packs = []\n[applicability]\necosystems = [\"esp-idf\"]\n",
@@ -166,7 +196,7 @@ ecosystems = ["esp-idf"]
 chips = ["esp32s31"]
 chip-revisions = ["{revision}"]
 artifact-lineages = ["fixture-radio"]
-artifacts = [{{ source = "fixture-blob", sha256 = "{ARTIFACT_SHA256}" }}]
+artifacts = [{{ source = "fixture-blob", sha256 = "{artifact_sha256}" }}]
 [[assertions]]
 id = "{id}.identity"
 subject = "register:esp32s31/cpu/0x1000/32"
@@ -184,43 +214,65 @@ locator = "manual"
     make_pack("rev1", "rev1", "RADIO.CONTROL_REV1");
     std::fs::write(
         directory.join(DEFAULT_PROJECT_MANIFEST),
-        format!(
-            r#"schema = 3
+        r#"schema = 4
 id = "fixture"
 target-spec = "target.toml"
 ecosystem-packs = ["ecosystem.toml"]
 chip-pack = "chip.toml"
+run-spec = "local.toml"
 [applicability]
 artifact-lineages = ["fixture-radio"]
-artifacts = [{{ source = "fixture-blob", sha256 = "{ARTIFACT_SHA256}" }}]
 [reviewed-knowledge]
 packs = ["reviewed/rev0.toml", "reviewed/rev1.toml"]
 default-pack = "reviewed/rev0.toml"
 [registers]
 facts = "generated/mmio.json"
 owned-ranges = ["radio"]
-"#
-        ),
+"#,
     )
     .unwrap();
 
-    let project = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap();
-    let context = &project.registers.unwrap().review_context;
+    let open = || {
+        crate::application::ProjectSession::open_with(
+            &directory.join(DEFAULT_PROJECT_MANIFEST),
+            crate::application::ProjectSessionOptions {
+                load_register_catalog: false,
+                load_memory_map: false,
+                ..crate::application::ProjectSessionOptions::default()
+            },
+        )
+    };
+    let session = open().unwrap();
+    let context = &session.project.review_context;
     assert_eq!(context.ecosystems, ["esp-idf"]);
     assert_eq!(context.chips, ["esp32s31"]);
     assert_eq!(context.chip_revisions, ["rev0"]);
     assert_eq!(context.artifact_lineages, ["fixture-radio"]);
     assert_eq!(context.artifacts.len(), 1);
     assert_eq!(context.artifacts[0].source(), "fixture-blob");
-    assert_eq!(context.artifacts[0].sha256(), ARTIFACT_SHA256);
+    assert_eq!(context.artifacts[0].sha256(), artifact_sha256);
 
     write_chip("[\"rev0\", \"rev1\"]");
-    let ambiguous = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap_err();
+    let ambiguous = open().err().expect("ambiguous context must fail");
     assert!(ambiguous.to_string().contains("context is ambiguous"));
 
     write_chip("[]");
-    let missing = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap_err();
+    let missing = open().err().expect("missing context must fail");
     assert!(missing.to_string().contains("chip revisions"));
+
+    write_chip("[\"rev0\"]");
+    std::fs::write(directory.join("blob.bin"), b"vendor revision one").unwrap();
+    let changed = open().unwrap();
+    assert_ne!(
+        changed.project.review_context.artifacts[0].sha256(),
+        artifact_sha256
+    );
+    let selected =
+        open_radio_vendor_review::ReviewKnowledge::load_all(&changed.project.reviewed_knowledge)
+            .unwrap()
+            .select_for(&changed.project.review_context)
+            .unwrap();
+    assert!(selected.assertions().is_empty());
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -233,7 +285,7 @@ fn resolves_composed_specs_relative_to_the_project() {
     std::fs::write(
         &path,
         r#"
-schema = 3
+schema = 4
 id = "fixture"
 target-spec = "target.toml"
 verification-addon = "verification.toml"
@@ -530,43 +582,43 @@ fn nested_project_errors_retain_the_exact_manifest_value_span() {
     let cases = [
         (
             "wrong-run-spec-type.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nrun-spec = 7\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nrun-spec = 7\n",
             "7",
             "run-spec",
         ),
         (
             "wrong-analysis-shape.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nanalysis = \"wrong\"\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nanalysis = \"wrong\"\n",
             "\"wrong\"",
             "analysis must be a table",
         ),
         (
             "wrong-source-id.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"bad.source\"]\noutput = \"generated/fixture.json\"\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"bad.source\"]\noutput = \"generated/fixture.json\"\n",
             "\"bad.source\"",
             "invalid source id",
         ),
         (
             "wrong-pac-edition.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac-raw]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac-raw]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
             "\"2018\"",
             "edition must be",
         ),
         (
             "removed-pac-key.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac]\noutput = \"pac.rs\"\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac]\noutput = \"pac.rs\"\n",
             "[registers.pac]",
             "[registers.pac-raw]",
         ),
         (
             "removed-interface-key.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\nsemantic-catalogs = []\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\nsemantic-catalogs = []\n",
             "[]",
             "knowledge packs belong to ecosystem or chip packs",
         ),
         (
             "unknown-function-profile.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
             "[\"missing\"]",
             "unknown IR profile",
         ),
@@ -589,22 +641,22 @@ fn capability_context_is_an_exact_reviewed_interface_contract() {
     let cases = [
         (
             "missing-capability-context.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\npack = \"reviewed.toml\"\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\npack = \"reviewed.toml\"\n",
             "requires [interfaces.capability-context]",
         ),
         (
             "context-without-pack.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\n[interfaces.capability-context]\noutput = \"context.json\"\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\n[interfaces.capability-context]\noutput = \"context.json\"\n",
             "invalid without a reviewed interface pack",
         ),
         (
             "unknown-context-key.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\npack = \"reviewed.toml\"\n[interfaces.capability-context]\noutput = \"context.json\"\nlegacy = true\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\npack = \"reviewed.toml\"\n[interfaces.capability-context]\noutput = \"context.json\"\nlegacy = true\n",
             "unknown project interfaces.capability-context key",
         ),
         (
             "context-output-collision.toml",
-            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\npack = \"reviewed.toml\"\n[interfaces.capability-context]\noutput = \"interfaces.json\"\n",
+            "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\npack = \"reviewed.toml\"\n[interfaces.capability-context]\noutput = \"interfaces.json\"\n",
             "reuses interface facts path",
         ),
     ];
@@ -641,7 +693,7 @@ fn rejects_removed_workspace_configuration_keys() {
     let registers = directory.join("registers.toml");
     std::fs::write(
         &registers,
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\noverlay = \"reviewed.toml\"\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\noverlay = \"reviewed.toml\"\n",
     )
     .unwrap();
     assert!(
@@ -654,7 +706,7 @@ fn rejects_removed_workspace_configuration_keys() {
     let interfaces = directory.join("interfaces.toml");
     std::fs::write(
         &interfaces,
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"facts.json\"\nsemantic-catalogs = []\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"facts.json\"\nsemantic-catalogs = []\n",
     )
     .unwrap();
     assert!(
@@ -667,7 +719,7 @@ fn rejects_removed_workspace_configuration_keys() {
     let legacy_verification = directory.join("legacy-verification.toml");
     std::fs::write(
         &legacy_verification,
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[verification]\nprofiles = [\"profiles.toml\"]\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[verification]\nprofiles = [\"profiles.toml\"]\n",
     )
     .unwrap();
     assert!(
@@ -691,7 +743,7 @@ fn completion_suite_may_start_without_an_evidence_baseline() {
     std::fs::write(
         &manifest,
         r#"
-schema = 3
+schema = 4
 id = "fixture"
 target-spec = "target.toml"
 verification-addon = "verification.toml"
@@ -738,7 +790,7 @@ fn rejects_generic_analysis_output_collisions() {
     std::fs::write(
         &manifest,
         r#"
-schema = 3
+schema = 4
 id = "fixture"
 target-spec = "target.toml"
 
@@ -761,7 +813,7 @@ owned-ranges = ["radio"]
     std::fs::write(
         &manifest,
         r#"
-schema = 3
+schema = 4
 id = "fixture"
 target-spec = "target.toml"
 
@@ -796,7 +848,7 @@ fn reviewed_code_pack_and_review_own_distinct_paths() {
     std::fs::write(
         &manifest,
         r#"
-schema = 3
+schema = 4
 id = "fixture"
 target-spec = "target.toml"
 
@@ -817,7 +869,7 @@ pack = "generated/symbols.json"
     std::fs::write(
         &manifest,
         r#"
-schema = 3
+schema = 4
 id = "fixture"
 target-spec = "target.toml"
 
@@ -857,12 +909,12 @@ fn accepts_an_explicit_or_omitted_empty_chip_svd_catalog() {
     .unwrap();
     std::fs::write(
         &explicit,
-        "schema = 3\nid = \"explicit\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n",
+        "schema = 4\nid = \"explicit\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n",
     )
     .unwrap();
     std::fs::write(
         &omitted,
-        "schema = 3\nid = \"omitted\"\ntarget-spec = \"target.toml\"\n",
+        "schema = 4\nid = \"omitted\"\ntarget-spec = \"target.toml\"\n",
     )
     .unwrap();
 
@@ -889,7 +941,7 @@ fn one_chip_pack_is_reused_by_multiple_project_compositions() {
         std::fs::write(
             directory.join(format!("{id}.toml")),
             format!(
-                "schema = 3\nid = \"{id}\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n"
+                "schema = 4\nid = \"{id}\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n"
             ),
         )
         .unwrap();
@@ -920,7 +972,7 @@ fn project_local_analysis_provider_is_explicit_and_conflicts_fail_closed() {
     let manifest = directory.join(DEFAULT_PROJECT_MANIFEST);
     std::fs::write(
         &manifest,
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\nanalysis-provider = \"investigation-v1\"\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\nanalysis-provider = \"investigation-v1\"\n",
     )
     .unwrap();
     let project = ProjectSpec::load(&manifest).unwrap();
@@ -959,7 +1011,7 @@ fn project_local_analysis_provider_is_explicit_and_conflicts_fail_closed() {
 #[test]
 fn project_analysis_provider_must_be_one_token() {
     let (_, _, error) = invalid_project_span(
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nanalysis-provider = \"two tokens\"\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nanalysis-provider = \"two tokens\"\n",
         "invalid-analysis-provider.toml",
     );
     assert!(error.contains("analysis-provider must be one non-empty token"));

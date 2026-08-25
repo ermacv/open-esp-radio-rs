@@ -5,7 +5,7 @@ use super::options::Options;
 pub(super) fn render_manifest(options: &Options) -> String {
     let mut output = format!(
         r#"# Shareable project configuration. Keep local artifact paths in local.toml.
-schema = 3
+schema = 4
 id = "{}"
 target-spec = "target.toml"
 ecosystem-packs = ["ecosystem.toml"]

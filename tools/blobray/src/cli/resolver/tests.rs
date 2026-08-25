@@ -34,7 +34,7 @@ fn write_project(path: &std::path::Path, extra: &str) {
     std::fs::write(
         path,
         format!(
-            "schema = 3\n\
+            "schema = 4\n\
              id = \"fixture-project\"\n\
              target-spec = \"target.toml\"\n\
              {extra}"
@@ -67,24 +67,26 @@ fn command_resources_are_classified_by_one_positive_plan() {
     assert_eq!(
         ResolutionNeeds::for_command(&Command::ProjectAnalyze(Default::default())),
         ResolutionNeeds::new(true, true, false, false, true, true, true)
+            .with_review_context()
             .with_configured_knowledge_provider()
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::ProjectVerify(Default::default())),
         ResolutionNeeds::new(true, true, false, true, true, true, true)
+            .with_review_context()
             .with_configured_knowledge_provider()
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::RegisterValidate(Default::default())),
-        ResolutionNeeds::new(true, false, false, false, true, true, false)
+        ResolutionNeeds::new(true, false, false, false, true, true, true).with_review_context()
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::ExecuteRun(Default::default())),
-        ResolutionNeeds::new(false, true, false, true, true, true, true)
+        ResolutionNeeds::new(false, true, false, true, true, true, true).with_review_context()
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::GenerateReference(Default::default())),
-        ResolutionNeeds::new(true, true, true, true, true, true, true)
+        ResolutionNeeds::new(true, true, true, true, true, true, true).with_review_context()
     );
 }
 

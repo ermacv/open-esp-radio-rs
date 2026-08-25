@@ -4,7 +4,7 @@ Reviewed configuration is TOML; large generated analysis artifacts are JSON
 or JSONL. Persistent machine formats have explicit schema numbers and reject
 unknown fields.
 
-## Schema-3 composition inputs
+## Schema-4 project and schema-3 reusable composition inputs
 
 - `target.toml`: architecture, calling convention, endianness, pointer width,
   and Rust target only;
@@ -18,9 +18,10 @@ unknown fields.
 - `vendor-project.toml`: composition, reviewed workspaces, and generated
   output selection; its optional `analysis-provider` selects compiled logic
   that is valid only for this investigation, never reusable chip facts;
-  `[applicability].artifact-lineages` declares the selected blob lineage and
-  `[applicability].artifacts` may bind facts to exact `{ source, sha256 }`
-  identities for one vendor revision;
+  schema 4 `[applicability].artifact-lineages` declares the selected blob
+  lineage. Exact `{ source, sha256 }` identities are derived from the bytes
+  bound by the active local run specification; declaring `artifacts` in the
+  project manifest is invalid;
 - `[interfaces.capability-context].output`: the required generated destination
   whenever `[interfaces].pack` selects reviewed interface knowledge. Declaring
   either side without the other is invalid; no legacy implicit destination or
@@ -42,7 +43,9 @@ unknown fields.
 from edit ownership, so a reviewed file can still be identified as reusable
 ecosystem/chip knowledge or as investigation-local review.
 
-The schema-3 project, target, ecosystem, and chip formats are a clean break.
+The schema-4 project and schema-3 target, ecosystem, and chip formats are a
+clean break. Schema-3 project manifests are rejected without a compatibility
+reader.
 Old inline `memory-map`, `svd`, `platform-pack`, `harness`, and
 `semantic-catalogs` keys fail closed; no compatibility shim reinterprets them.
 A project-local `analysis-provider` and chip-pack `knowledge-provider` compose

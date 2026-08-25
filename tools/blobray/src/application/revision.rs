@@ -1408,6 +1408,7 @@ fn sync_parent_directory(_parent: &Path) -> Result<()> {
 
 pub(crate) fn snapshot(session: &ProjectSession, name: &str) -> Result<RevisionSnapshot> {
     validate_revision_name(name)?;
+    session.validate_active_artifacts()?;
     let run_spec = session.run_spec.as_ref().ok_or_else(|| {
         crate::Error::invalid("revision snapshot requires the current caller-owned run spec")
     })?;
@@ -1437,11 +1438,15 @@ pub(crate) fn snapshot(session: &ProjectSession, name: &str) -> Result<RevisionS
     }
     let registers = snapshot_registers(session, &artifacts, &vendor_sources)?;
     let (_, interfaces) = snapshot_interfaces(session, &artifacts, &vendor_sources, &rust_sources)?;
-    let knowledge =
-        open_radio_vendor_review::ReviewKnowledge::load_all(&session.project.reviewed_knowledge)
-            .map_err(|error| {
-                crate::Error::invalid(format!("cannot snapshot reviewed knowledge: {error}"))
-            })?;
+    let knowledge = open_radio_vendor_review::ReviewKnowledge::load_all(
+        &session.project.reviewed_knowledge,
+    )
+    .and_then(|knowledge| knowledge.select_for(&session.project.review_context))
+    .map_err(|error| {
+        crate::Error::invalid(format!(
+            "cannot snapshot reviewed knowledge for the authenticated active inputs: {error}"
+        ))
+    })?;
     let assertions = knowledge
         .assertions()
         .values()
@@ -2944,7 +2949,7 @@ fn applicability_matches(
     else {
         return true;
     };
-    artifacts.iter().all(|artifact| {
+    artifacts.iter().any(|artifact| {
         let source = artifact.get("source").and_then(serde_json::Value::as_str);
         let sha256 = artifact.get("sha256").and_then(serde_json::Value::as_str);
         source
@@ -3332,6 +3337,21 @@ mod tests {
 
         assert_eq!(report.summary.review_required, 1);
         assert!(report.records[0].reason.contains("artifact bytes absent"));
+    }
+
+    #[test]
+    fn artifact_applicability_is_an_allowed_identity_set() {
+        let first = "a".repeat(64);
+        let second = "b".repeat(64);
+        let record = serde_json::json!({
+            "applies-to": {"artifacts": [
+                {"source": "vendor-a", "sha256": first},
+                {"source": "vendor-b", "sha256": second.clone()}
+            ]}
+        });
+        let target = BTreeSet::from([("vendor-b", second.as_str())]);
+
+        assert!(applicability_matches(&record, &target));
     }
 
     #[test]

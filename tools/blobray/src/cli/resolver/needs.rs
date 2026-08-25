@@ -17,6 +17,7 @@ pub(super) struct ResolutionNeeds {
     pub(super) memory_map: bool,
     pub(super) register_catalog: bool,
     pub(super) run_spec: bool,
+    pub(super) review_context: bool,
 }
 
 impl ResolutionNeeds {
@@ -38,7 +39,14 @@ impl ResolutionNeeds {
             memory_map,
             register_catalog,
             run_spec,
+            review_context: false,
         }
+    }
+
+    pub(super) const fn with_review_context(mut self) -> Self {
+        self.run_spec = true;
+        self.review_context = true;
+        self
     }
 
     pub(super) const fn with_configured_knowledge_provider(mut self) -> Self {
@@ -62,47 +70,57 @@ impl ResolutionNeeds {
                 Self::new(false, false, false, false, false, false, false)
             }
 
-            Command::ProjectDoctor(_) => Self::new(true, false, false, false, true, true, true),
+            // Doctor must still open when an exact artifact is missing so it
+            // can report the broken binding. Register workspaces are loaded
+            // inside the report as fallible capabilities rather than during
+            // environment bootstrap.
+            Command::ProjectDoctor(_) => Self::new(true, false, false, false, true, false, true),
             Command::ProjectFiles(_)
             | Command::ProjectCacheStats(_)
             | Command::ProjectCacheGc(_)
             | Command::ProjectCacheCompact(_) => {
                 Self::new(true, false, false, false, false, false, false)
             }
-            Command::RevisionDiff(arguments) => Self::new(
-                true,
-                false,
-                false,
-                false,
-                false,
-                false,
-                revision_operands_need_live_bindings(&arguments.from, &arguments.to),
-            ),
-            Command::RevisionRebase(arguments) => Self::new(
-                true,
-                false,
-                false,
-                false,
-                false,
-                false,
-                revision_operands_need_live_bindings(&arguments.from, &arguments.to),
-            ),
-            Command::RevisionSnapshot(_) | Command::RevisionPrepareUpdate(_) => {
-                Self::new(true, false, false, false, false, false, true)
+            Command::RevisionDiff(arguments) => {
+                let live = revision_operands_need_live_bindings(&arguments.from, &arguments.to);
+                let needs = Self::new(true, false, false, false, false, false, live);
+                if live {
+                    needs.with_review_context()
+                } else {
+                    needs
+                }
             }
-            Command::ResearchNext(_) => Self::new(true, false, false, false, false, false, false)
+            Command::RevisionRebase(arguments) => {
+                let live = revision_operands_need_live_bindings(&arguments.from, &arguments.to);
+                let needs = Self::new(true, false, false, false, false, false, live);
+                if live {
+                    needs.with_review_context()
+                } else {
+                    needs
+                }
+            }
+            Command::RevisionSnapshot(_) | Command::RevisionPrepareUpdate(_) => {
+                Self::new(true, false, false, false, false, false, true).with_review_context()
+            }
+            Command::ResearchNext(_) => Self::new(true, false, false, false, false, false, true)
+                .with_review_context()
                 .with_configured_knowledge_provider(),
             Command::ProjectAuditBindings(_) => {
                 Self::new(true, false, true, false, false, false, false)
             }
             Command::ProjectStatus(_) => Self::new(true, false, false, false, true, false, true),
             Command::ProjectAnalyze(_) => Self::new(true, true, false, false, true, true, true)
+                .with_review_context()
                 .with_configured_knowledge_provider(),
             Command::ProjectVerify(_) => Self::new(true, true, false, true, true, true, true)
+                .with_review_context()
                 .with_configured_knowledge_provider(),
             Command::ProjectCheck(_) => Self::new(true, true, false, true, true, true, true)
+                .with_review_context()
                 .with_configured_knowledge_provider(),
-            Command::ProjectPublish(_) => Self::new(true, false, false, false, true, false, false),
+            Command::ProjectPublish(_) => {
+                Self::new(true, false, false, false, true, false, true).with_review_context()
+            }
 
             Command::FunctionInitPack(_)
             | Command::FunctionValidate(_)
@@ -110,12 +128,14 @@ impl ResolutionNeeds {
             | Command::CodeRebase(_)
             | Command::CodeValidate(_)
             | Command::CodeReview(_)
-            | Command::InterfaceInitPack(_)
-            | Command::RegisterReview(_)
+            | Command::InterfaceInitPack(_) => {
+                Self::new(true, false, false, false, false, false, false)
+            }
+            Command::RegisterReview(_)
             | Command::RegisterExportSvd(_)
             | Command::RegisterGeneratePacRaw(_)
             | Command::RegisterGenerateBindings(_) => {
-                Self::new(true, false, false, false, false, false, false)
+                Self::new(true, false, false, false, false, false, true).with_review_context()
             }
             Command::FunctionReview(_) | Command::InterfaceValidate(_) => {
                 Self::new(true, false, false, false, false, false, false)
@@ -124,17 +144,23 @@ impl ResolutionNeeds {
             Command::RegisterInitModel(_) | Command::RegisterImportSvd(_) => {
                 Self::new(true, false, false, false, true, false, false)
             }
-            Command::RegisterValidate(_) => Self::new(true, false, false, false, true, true, false),
+            Command::RegisterValidate(_) => {
+                Self::new(true, false, false, false, true, true, true).with_review_context()
+            }
 
             Command::SymbolInventory(_)
             | Command::InterfaceDiscover(_)
             | Command::AuditImageTargets(_) => {
                 Self::new(false, true, false, false, false, false, true)
             }
-            Command::DiscoverMmio(_) => Self::new(false, true, false, false, true, true, true),
+            Command::DiscoverMmio(_) => {
+                Self::new(false, true, false, false, true, true, true).with_review_context()
+            }
             Command::ExportIr(_) => Self::new(false, true, false, false, true, true, true)
+                .with_review_context()
                 .with_configured_knowledge_provider(),
             Command::BuildIr(_) => Self::new(true, true, false, false, true, true, true)
+                .with_review_context()
                 .with_configured_knowledge_provider(),
 
             Command::ExecuteRun(_)
@@ -142,17 +168,24 @@ impl ResolutionNeeds {
             | Command::ExecuteCompare(_)
             | Command::VerifyProfiles(_)
             | Command::InspectTrace(_)
-            | Command::InspectCompare(_) => Self::new(false, true, false, true, true, true, true),
+            | Command::InspectCompare(_) => {
+                Self::new(false, true, false, true, true, true, true).with_review_context()
+            }
             Command::InspectFunction(_) => Self::new(true, true, false, false, false, false, true),
             Command::InspectFlow(_) => Self::new(true, false, false, false, false, false, false),
             Command::InspectObject(_) => Self::new(true, false, false, false, false, false, false),
-            Command::InspectRegister(_) => Self::new(true, false, false, false, true, false, false),
+            Command::InspectRegister(_) => {
+                Self::new(true, false, false, false, true, false, true).with_review_context()
+            }
             Command::InspectScope(_) => Self::new(true, false, false, false, false, false, false),
             Command::GenerateReference(_)
             | Command::GenerateReferenceBatch(_)
-            | Command::InspectAnalyze(_) => Self::new(true, true, true, true, true, true, true),
+            | Command::InspectAnalyze(_) => {
+                Self::new(true, true, true, true, true, true, true).with_review_context()
+            }
             Command::VerifyInventory(_) | Command::VerifySource(_) => {
                 Self::new(true, true, false, true, true, true, true)
+                    .with_review_context()
                     .with_configured_knowledge_provider()
             }
         }

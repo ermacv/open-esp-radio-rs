@@ -1093,7 +1093,7 @@ fn project_manifest_diagnostics_highlight_the_nested_physical_value() {
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
     )
     .unwrap();
 
@@ -1139,7 +1139,7 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
     .unwrap();
     std::fs::write(
         &project,
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n",
     )
     .unwrap();
 
@@ -1169,7 +1169,7 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
     .unwrap();
     std::fs::write(
         &project,
-        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n",
+        "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n",
     )
     .unwrap();
     let memory_output = blobray()
@@ -1381,7 +1381,7 @@ fn project_verify_executes_typed_suites_and_reproduces_the_aggregate_report() {
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
-        r#"schema = 3
+        r#"schema = 4
 id = "project-verify-fixture"
 target-spec = "target.toml"
 chip-pack = "chip.toml"
@@ -1813,7 +1813,7 @@ fn project_analysis_plan_tracks_soft_symbol_materialization_for_linked_ir() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 3\nid = \"soft-symbol-plan\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            "schema = 4\nid = \"soft-symbol-plan\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
             target.display().to_string()
         ),
     )
@@ -1885,7 +1885,7 @@ fn project_analysis_plan_preflights_inputs_independent_of_generated_predecessors
     std::fs::write(
         &manifest,
         format!(
-            "schema = 3\nid = \"independent-plan-input\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[code]\npack = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            "schema = 4\nid = \"independent-plan-input\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[code]\npack = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
             target.display().to_string(),
             missing_code_pack.display().to_string(),
         ),
@@ -1944,7 +1944,7 @@ fn discovery_plan_ignores_missing_run_bindings_that_the_stage_does_not_consume()
     std::fs::write(
         &manifest,
         format!(
-            "schema = 3\nid = \"stage-input-plan\"\ntarget-spec = {:?}\nchip-pack = {:?}\n\n[registers]\nfacts = \"generated/mmio.json\"\nmodel = \"reviewed/registers.toml\"\nowned-ranges = [\"fixture-mmio\"]\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
+            "schema = 4\nid = \"stage-input-plan\"\ntarget-spec = {:?}\nchip-pack = {:?}\n\n[registers]\nfacts = \"generated/mmio.json\"\nmodel = \"reviewed/registers.toml\"\nowned-ranges = [\"fixture-mmio\"]\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
             fixture.join("target.toml").display().to_string(),
             fixture.join("chip.toml").display().to_string(),
         ),
@@ -2008,7 +2008,7 @@ fn project_analysis_plan_distinguishes_current_and_restorable_outputs_without_re
     std::fs::write(
         &manifest,
         format!(
-            "schema = 3\nid = \"analysis-plan-cache\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n",
+            "schema = 4\nid = \"analysis-plan-cache\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n",
             target.display().to_string()
         ),
     )
@@ -2114,7 +2114,7 @@ fn project_analysis_reports_nothing_configured_as_a_non_successful_noop() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 3\nid = \"nothing-configured\"\ntarget-spec = {:?}\n",
+            "schema = 4\nid = \"nothing-configured\"\ntarget-spec = {:?}\n",
             target.display().to_string()
         ),
     )
@@ -2181,7 +2181,7 @@ fn project_inputs_validate_elf_and_archive_roles_before_writing() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 3\nid = \"input-contract\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\noutput = \"generated/fixture.ir\"\n",
+            "schema = 4\nid = \"input-contract\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\noutput = \"generated/fixture.ir\"\n",
             target.display().to_string()
         ),
     )
@@ -2242,7 +2242,7 @@ fn project_analyze_check_does_not_create_persistent_query_store() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 3\nid = \"read-only-analysis\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            "schema = 4\nid = \"read-only-analysis\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
             target.display().to_string()
         ),
     )
@@ -2307,7 +2307,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 3\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
+            "schema = 4\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
             target.display().to_string()
         ),
     )
@@ -2908,7 +2908,7 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 3\nid = \"revision-ledger\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            "schema = 4\nid = \"revision-ledger\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
             target.display().to_string()
         ),
     )

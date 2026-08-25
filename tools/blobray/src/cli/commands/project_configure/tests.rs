@@ -13,7 +13,7 @@ fn invalid_pack_never_changes_the_manifest() {
     }
     fs::create_dir_all(&root).unwrap();
     let manifest = root.join("vendor-project.toml");
-    let original = "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n";
+    let original = "schema = 4\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n";
     fs::write(&manifest, original).unwrap();
     fs::write(
         root.join("target.toml"),

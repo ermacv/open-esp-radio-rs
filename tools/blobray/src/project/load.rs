@@ -35,10 +35,10 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         }
     })?;
     let source = ProjectSource::new(path, &input);
-    if document.get("schema").and_then(Item::as_integer) != Some(3) {
+    if document.get("schema").and_then(Item::as_integer) != Some(4) {
         return Err(source.item(
             document.get("schema"),
-            "project manifest requires schema = 3",
+            "project manifest requires schema = 4",
         ));
     }
     reject_unknown_keys(
@@ -168,7 +168,6 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     let (reviewed_knowledge, reviewed_knowledge_default) =
         load_reviewed_knowledge(&document, base, source)?;
     open_radio_vendor_review::ReviewKnowledge::load_all(&reviewed_knowledge)
-        .and_then(|knowledge| knowledge.select_for(&review_context))
         .map_err(|error| source.item(document.get("reviewed-knowledge"), error.to_string()))?;
     let ir_profiles = load_ir_profiles(&document, base, source)?;
     let analysis_symbol_families =
@@ -778,7 +777,7 @@ fn load_project_applicability(
         .ok_or_else(|| source.item(Some(item), "project manifest applicability must be a table"))?;
     reject_unknown_keys(
         table,
-        &["artifact-lineages", "artifacts"],
+        &["artifact-lineages"],
         "project applicability",
         source,
     )?;
@@ -790,70 +789,8 @@ fn load_project_applicability(
             source,
             false,
         )?,
-        artifacts: load_project_artifacts(table, source)?,
         ..open_radio_vendor_contracts::Applicability::default()
     })
-}
-
-fn load_project_artifacts(
-    table: &Table,
-    source: ProjectSource<'_>,
-) -> Result<Vec<open_radio_vendor_contracts::ArtifactIdentity>> {
-    let Some(item) = table.get("artifacts") else {
-        return Ok(Vec::new());
-    };
-    let values = item.as_array().ok_or_else(|| {
-        source.item(
-            Some(item),
-            "project applicability artifacts must be an array of inline tables",
-        )
-    })?;
-    let mut artifacts = Vec::with_capacity(values.len());
-    let mut unique = std::collections::BTreeSet::new();
-    for (index, value) in values.iter().enumerate() {
-        let artifact = value.as_inline_table().ok_or_else(|| {
-            source.error(
-                value.span(),
-                format!("project applicability artifacts[{index}] must be an inline table"),
-            )
-        })?;
-        for (key, value) in artifact.iter() {
-            if !matches!(key, "source" | "sha256") {
-                return Err(source.error(
-                    value.span(),
-                    format!("unknown project applicability artifacts[{index}] key {key:?}"),
-                ));
-            }
-        }
-        let required = |key: &str| -> Result<String> {
-            artifact
-                .get(key)
-                .and_then(toml_edit::Value::as_str)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-                .ok_or_else(|| {
-                    source.error(
-                        value.span(),
-                        format!(
-                            "project applicability artifacts[{index}] requires non-empty {key:?}"
-                        ),
-                    )
-                })
-        };
-        let artifact = open_radio_vendor_contracts::ArtifactIdentity::new(
-            required("source")?,
-            required("sha256")?,
-        )
-        .map_err(|error| source.error(value.span(), error.to_string()))?;
-        if !unique.insert(artifact.clone()) {
-            return Err(source.error(
-                value.span(),
-                format!("duplicate project applicability artifact at index {index}"),
-            ));
-        }
-        artifacts.push(artifact);
-    }
-    Ok(artifacts)
 }
 
 fn compose_review_context(
@@ -876,7 +813,7 @@ fn compose_review_context(
             .map(|pack| pack.applicability.chip_revisions.clone())
             .unwrap_or_default(),
         artifact_lineages: project.artifact_lineages.clone(),
-        artifacts: project.artifacts.clone(),
+        artifacts: Vec::new(),
     }
 }
 

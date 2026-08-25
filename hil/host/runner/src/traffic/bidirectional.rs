@@ -24,7 +24,6 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result, evidence,
     evidence::traffic_capture::{SerialCapture, SessionEvidence, await_udp_rx_ready},
-    invalidate_previous_report,
     traffic::paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
     traffic::tx_traffic::{Burst, describe_bursts, receive_bursts},
     transport::lab_config::{LabConfig, StationFixtureConfig},
@@ -1176,7 +1175,6 @@ pub(crate) fn run(
     } = policy;
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(output)?;
-    invalidate_previous_report(output)?;
     let tx_sink = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.tx_port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&tx_sink)?;
     tx_sink.set_read_timeout(Some(Duration::from_millis(100)))?;
@@ -1432,7 +1430,7 @@ pub(crate) fn run(
                 host_receive_buffer_bytes,
             },
         )?;
-        println!(
+        eprintln!(
             "OPENRADIOHOST result=PASS mode={}-bidirectional-performance offered_kbps={} host_kbps={} rx_kbps={rx_median} tx_kbps={tx_floor} host_tx_kbps={} combined_kbps={} report={}",
             options.phy.name(),
             options.rate_bps / 1_000,
@@ -1647,7 +1645,7 @@ pub(crate) fn run(
     if let Some(failure) = qualification_failure {
         return Err(failure.into());
     }
-    println!(
+    eprintln!(
         "OPENRADIOHOST result=PASS mode={}-bidirectional offered_kbps={} \
          host_kbps={} rx_median_kbps={rx_median} concurrent_tx_floor_kbps={tx_floor} \
          host_tx_kbps={} \

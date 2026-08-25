@@ -46,7 +46,7 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
             "boots": reports,
         }))?,
     )?;
-    println!("timebase=PASS boots={}", config.boots);
+    eprintln!("timebase=PASS boots={}", config.boots);
     Ok(())
 }
 

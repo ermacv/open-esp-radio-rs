@@ -14,7 +14,6 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result, evidence,
     evidence::traffic_capture::{SerialCapture, await_udp_rx_ready},
-    invalidate_previous_report,
     qualification::scenario::PhyExpectation,
     traffic::bidirectional::{
         RxQualification, assess_rx_log, rx_order_markdown, rx_reorder_markdown, task_poll_markdown,
@@ -54,7 +53,6 @@ pub(crate) fn run(
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(output)?;
-    invalidate_previous_report(output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_udp_rx_ready(
         &capture,
@@ -214,7 +212,7 @@ pub(crate) fn run(
         if let Some(failure) = failure {
             return Err(failure.into());
         }
-        println!(
+        eprintln!(
             "OPENRADIOHOST result=PASS mode={}-rx-performance offered_kbps={} host_kbps={} rx_kbps={typed_rx_kbps} report={}",
             options.phy.id(),
             options.rate_bps / 1_000,
@@ -532,7 +530,7 @@ pub(crate) fn run(
     if let Some(failure) = failure {
         return Err(failure.into());
     }
-    println!(
+    eprintln!(
         "OPENRADIOHOST result=PASS mode={}-rx offered_kbps={} host_kbps={} \
          rx_median_kbps={} enqueued={} dropped=0 report={}",
         options.phy.id(),

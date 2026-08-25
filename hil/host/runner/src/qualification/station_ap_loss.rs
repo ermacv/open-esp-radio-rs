@@ -37,8 +37,8 @@ pub(crate) fn run(
     drop(ap);
 
     result?;
-    println!("station_ap_loss=PASS");
-    println!("uart_log={}", output.join("uart.log").display());
+    eprintln!("station_ap_loss=PASS");
+    eprintln!("uart_log={}", output.join("uart.log").display());
     Ok(())
 }
 
@@ -62,7 +62,7 @@ fn qualify(
         StationLifecycleEvent::Connected { generation: 0 },
         "initial connection",
     )?;
-    println!(
+    eprintln!(
         "station_ap_loss_initial_connected_ms={}",
         initial_started.elapsed().as_millis()
     );
@@ -79,7 +79,7 @@ fn qualify(
         },
         "beacon-loss disconnect",
     )?;
-    println!(
+    eprintln!(
         "station_ap_loss_detected_ms={}",
         loss_started.elapsed().as_millis()
     );
@@ -93,7 +93,7 @@ fn qualify(
         StationLifecycleEvent::Connected { generation: 1 },
         "generation-one recovery",
     )?;
-    println!(
+    eprintln!(
         "station_ap_loss_recovered_ms={}",
         recovery_started.elapsed().as_millis()
     );

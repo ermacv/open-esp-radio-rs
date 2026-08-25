@@ -56,10 +56,10 @@ pub(crate) fn run(
         if let Some(result) = beacon_loss {
             result?;
         }
-        println!("station_cold_boot={boot}/{} status=PASS", options.boots);
+        eprintln!("station_cold_boot={boot}/{} status=PASS", options.boots);
     }
-    println!("station_reconnect=PASS boots={}", options.boots);
-    println!("uart_logs={}", output.display());
+    eprintln!("station_reconnect=PASS boots={}", options.boots);
+    eprintln!("uart_logs={}", output.display());
     Ok(())
 }
 
@@ -90,7 +90,7 @@ fn qualify(
     for cycle in 1..=cycles {
         generation = qualify_cycle(capture, timeout, cycle, generation)?;
         report_stack(capture, timeout, "reconnect-complete")?;
-        println!("station_reconnect_cycle={cycle}/{cycles} status=PASS");
+        eprintln!("station_reconnect_cycle={cycle}/{cycles} status=PASS");
     }
     Ok(())
 }
@@ -137,7 +137,7 @@ fn qualify_initial_hold(
         )
         .into());
     }
-    println!(
+    eprintln!(
         "station_initial_hold_generation={generation} seconds={} status=PASS",
         duration.as_secs()
     );
@@ -146,7 +146,7 @@ fn qualify_initial_hold(
 
 fn report_stack(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
     let usage = capture.query_stack_usage(timeout)?;
-    println!(
+    eprintln!(
         "stack_stage={stage} cpu0_free={}/{} cpu0_required={} cpu1_free={}/{} cpu1_required={}",
         usage.cpu0.free_bytes,
         usage.cpu0.capacity_bytes,

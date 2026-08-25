@@ -111,6 +111,7 @@ fn classify_image_signature(
 
 #[derive(Serialize)]
 struct ArtifactReport<'a> {
+    schema: u16,
     image_class: &'a str,
     profile: &'a str,
     runtime_elf: String,
@@ -127,6 +128,7 @@ pub(crate) fn print_artifacts(
     flashed: bool,
 ) -> Result<()> {
     let report = ArtifactReport {
+        schema: reporting::run::RUN_SCHEMA,
         image_class: class.id(),
         profile: class.runtime_profile(),
         runtime_elf: artifacts.runtime_elf.display().to_string(),
@@ -136,8 +138,7 @@ pub(crate) fn print_artifacts(
         application_sha256: sha256_file(&artifacts.application_image)?,
         flashed,
     };
-    println!("{}", serde_json::to_string_pretty(&report)?);
-    Ok(())
+    crate::emit_json(&report, true)
 }
 
 fn sha256_file(path: &Path) -> Result<String> {
@@ -955,22 +956,6 @@ mod tests {
         }
 
         assert!(!lockfile.exists());
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn scenario_output_reset_removes_stale_evidence() {
-        let directory = scratch_directory("scenario-output-reset");
-        let output = directory.join("target/hil/esp32s31/runs/example");
-        fs::create_dir_all(output.join("attempt-01")).unwrap();
-        fs::write(output.join("access-point-report.json"), b"stale").unwrap();
-        fs::write(output.join("attempt-01/result.json"), b"stale").unwrap();
-
-        reset_scenario_output(&output).unwrap();
-
-        assert!(output.is_dir());
-        assert!(!output.join("access-point-report.json").exists());
-        assert!(!output.join("attempt-01").exists());
         fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -30,9 +30,27 @@ chmod 0600 hil/local.toml
 cargo hil doctor
 ```
 
-`hil/local.toml` is the only source for the serial device, STA/AP credentials
-and addresses, startup artifact and OpenWrt fixture. It is ignored by Git;
-scenarios contain no lab secrets or machine-specific paths.
+`hil/local.toml` is the only source for the stable lab-cell and DUT identities,
+serial device, STA/AP credentials and addresses, startup artifact and OpenWrt
+fixture. It is ignored by Git; scenarios contain no lab secrets or
+machine-specific paths. The identities are written into every run manifest so
+results from different cells and boards cannot be silently mixed.
+
+`cargo hil run <scenario>` builds and flashes the required image before the
+scenario. `cargo hil run-all` reuses each image across its scenario group but
+does not fail fast. Every invocation retains an immutable evidence bundle in
+`target/hil/esp32s31/runs/<run-id>/`, including a canonical JSON suite, JUnit
+XML, a standalone HTML report and the exact application image flashed for each
+firmware class. The flash operation reads that archived copy, binding firmware
+provenance to the bytes sent to the DUT. Completed and interrupted bundles also
+carry a deterministic integrity inventory covering every retained file.
+
+The target-level `history.json` and `history.html` are deterministic derived
+views over those bundles. Rebuild them at any time with
+`cargo hil report rebuild`; no DUT or private lab configuration is required.
+Verify the structure and content digests of one bundle with
+`cargo hil report verify <run-id>`, or omit the ID to verify all bundles. This
+also runs without a DUT or private lab configuration.
 
 The controlled OpenWrt AP and the HIL host share its laboratory LAN; reverse
 flows use the local IPv4 route selected for the discovered target. The

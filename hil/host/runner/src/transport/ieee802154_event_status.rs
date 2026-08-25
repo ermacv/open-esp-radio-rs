@@ -69,7 +69,7 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
         output.join("ieee802154-event-status.json"),
         serde_json::to_vec_pretty(&report_document(&reports))?,
     )?;
-    println!(
+    eprintln!(
         "ieee802154_event_status=PASS result={RESULT} boots={}",
         config.boots
     );

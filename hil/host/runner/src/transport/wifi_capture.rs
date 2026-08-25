@@ -71,9 +71,9 @@ pub(crate) fn run(
         )
         .into());
     }
-    println!("wifi_capture=PASS");
-    println!("pcapng={}", options.output.display());
-    println!(
+    eprintln!("wifi_capture=PASS");
+    eprintln!("pcapng={}", options.output.display());
+    eprintln!(
         "generation={} frames={} bytes={} full_drops={} oversized_drops={} discarded={}",
         result.capture.summary.generation,
         result.capture.summary.exported_frames,
@@ -82,7 +82,7 @@ pub(crate) fn run(
         result.capture.summary.oversized_drops,
         result.capture.summary.discarded_frames,
     );
-    println!("uart_log={}", artifact_dir.join("uart.log").display());
+    eprintln!("uart_log={}", artifact_dir.join("uart.log").display());
     Ok(())
 }
 
@@ -137,7 +137,7 @@ fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result
         }
     };
     let stack = serial.query_stack_usage(options.timeout)?;
-    println!(
+    eprintln!(
         "stack_stage=monitor-capture cpu0_free={}/{} cpu0_required={} cpu1_free={}/{} cpu1_required={}",
         stack.cpu0.free_bytes,
         stack.cpu0.capacity_bytes,

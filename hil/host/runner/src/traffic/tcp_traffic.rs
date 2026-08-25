@@ -15,7 +15,6 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     evidence::traffic_capture::{SerialCapture, SessionEvidence, await_tcp_ready},
-    invalidate_previous_report,
     traffic::paced_tcp::{
         Config as PacedTcpConfig, HostReception, HostTransmission, exchange, receive, send,
     },
@@ -103,7 +102,6 @@ fn run(
     let mut options = parse_options(&arguments, lab, direction)?;
     let mode = direction_name(direction);
     fs::create_dir_all(output)?;
-    invalidate_previous_report(output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let ready = match await_tcp_ready(
         &capture,
@@ -193,7 +191,7 @@ fn run(
     if let Some(failure) = failure {
         return Err(failure.into());
     }
-    println!(
+    eprintln!(
         "OPENRADIOHOST result=PASS mode=tcp-{mode} rx_kbps={} tx_kbps={} rx_bytes={} tx_bytes={} pattern_errors=0 report={}",
         host_tx.map_or(0, |sample| sample.throughput_bps() / 1_000),
         host_rx.map_or(0, |sample| sample.throughput_bps() / 1_000),

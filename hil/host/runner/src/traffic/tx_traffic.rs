@@ -16,7 +16,6 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     evidence::traffic_capture::{SerialCapture, await_udp_tx_ready},
-    invalidate_previous_report,
     qualification::scenario::PhyExpectation,
     traffic::bidirectional::{
         AmpduEvidence, MIN_QUALIFIED_AGGREGATES, TxQualification,
@@ -186,7 +185,6 @@ pub(crate) fn run(
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(output)?;
-    invalidate_previous_report(output)?;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&socket)?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
@@ -348,7 +346,7 @@ pub(crate) fn run(
                 host_receive_buffer_bytes,
             },
         )?;
-        println!(
+        eprintln!(
             "OPENRADIOHOST result=PASS mode=tx-performance host_floor_kbps={host_floor} device_floor_kbps={device_floor_kbps} bursts={} host_receive_buffer_bytes={host_receive_buffer_bytes} report={}",
             qualified.len(),
             output.join("report.md").display(),
@@ -494,7 +492,7 @@ pub(crate) fn run(
             require_exact_delivery,
         },
     )?;
-    println!(
+    eprintln!(
         "OPENRADIOHOST result=PASS mode=tx host_floor_kbps={host_floor} \
          device_floor_kbps={} bursts={} missing={missing} reordered={reordered} duplicates={duplicates} \
          host_receive_buffer_bytes={} ampdu_avg_subframes={:.2} ampdu_31={} ampdu_32={} report={}",

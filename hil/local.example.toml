@@ -1,6 +1,12 @@
 # Copy to hil/local.toml and chmod 0600. The local file is never committed.
 
+[lab]
+# Stable physical cell identity recorded in every immutable run manifest.
+id = "berlin-esp32s31-01"
+
 [device]
+# Stable DUT identity; do not use a transient /dev path as the identity.
+id = "esp32s31-qfn80-01"
 serial = "/dev/ttyACM0"
 # Optional opaque calibration/startup state persisted by the HIL runner.
 startup_artifact = "target/hil/esp32s31/startup-artifact.bin"

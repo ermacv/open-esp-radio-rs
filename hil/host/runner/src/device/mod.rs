@@ -19,6 +19,7 @@ fn device_status_at(output: &Path, lab: &transport::lab_config::LabConfig) -> Re
         let operation = capture.query_operation_status(std::time::Duration::from_secs(10))?;
         let stack = capture.query_stack_usage(std::time::Duration::from_secs(10))?;
         Ok(serde_json::json!({
+            "schema": reporting::run::RUN_SCHEMA,
             "protocol_version": open_esp_radio_hil_protocol::PROTOCOL_VERSION,
             "capabilities": capabilities,
             "operation": operation,
@@ -29,8 +30,7 @@ fn device_status_at(output: &Path, lab: &transport::lab_config::LabConfig) -> Re
     let capture_result = capture.finish_to(output);
     let report = result?;
     capture_result?;
-    println!("{}", serde_json::to_string_pretty(&report)?);
-    Ok(())
+    crate::emit_json(&report, true)
 }
 
 pub(crate) fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {

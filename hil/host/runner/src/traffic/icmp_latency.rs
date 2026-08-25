@@ -11,6 +11,7 @@ use std::{
 use crate::Result;
 use crate::{
     evidence::traffic_capture::{SerialCapture, await_network_ready},
+    reporting::run::{Comparison, Measurement, MeasurementUnit},
     transport::lab_config::LabConfig,
 };
 
@@ -52,12 +53,17 @@ impl LatencySummary {
     }
 }
 
+pub(crate) struct RunEvidence {
+    pub(crate) measurements: Vec<Measurement>,
+    pub(crate) acceptance_failure: Option<String>,
+}
+
 pub(crate) fn run(
     arguments: Vec<String>,
     output: &Path,
     lab: &LabConfig,
     require_no_beacon_loss: bool,
-) -> Result<()> {
+) -> Result<RunEvidence> {
     let mut options = parse_options(&arguments)?;
     let capture = SerialCapture::start_with_reset(&lab.device.serial);
     options.device = match await_network_ready(&capture, lab, NETWORK_READY_TIMEOUT) {
@@ -104,25 +110,97 @@ pub(crate) fn run(
         &report_path,
         report(options, &summary, acceptance_failure.as_deref()),
     )?;
-    if let Some(failure) = acceptance_failure {
-        return Err(format!("{failure}; report={}", report_path.display()).into());
+    if acceptance_failure.is_none() {
+        eprintln!(
+            "OPENRADIOHOST result=PASS mode=icmp transmitted={} received={} loss_percent={:.3} \
+             readiness_attempts={} min_us={} avg_us={} p50_us={} p95_us={} p99_us={} max_us={} report={}",
+            summary.transmitted,
+            summary.received,
+            summary.loss_percent(),
+            summary.readiness_attempts,
+            summary.minimum_us,
+            summary.average_us,
+            summary.p50_us,
+            summary.p95_us,
+            summary.p99_us,
+            summary.maximum_us,
+            report_path.display(),
+        );
     }
-    println!(
-        "OPENRADIOHOST result=PASS mode=icmp transmitted={} received={} loss_percent={:.3} \
-         readiness_attempts={} min_us={} avg_us={} p50_us={} p95_us={} p99_us={} max_us={} report={}",
-        summary.transmitted,
-        summary.received,
-        summary.loss_percent(),
-        summary.readiness_attempts,
-        summary.minimum_us,
-        summary.average_us,
-        summary.p50_us,
-        summary.p95_us,
-        summary.p99_us,
-        summary.maximum_us,
-        report_path.display(),
-    );
-    Ok(())
+    Ok(RunEvidence {
+        measurements: measurements(options, &summary),
+        acceptance_failure: acceptance_failure
+            .map(|failure| format!("{failure}; report={}", report_path.display())),
+    })
+}
+
+fn measurements(options: Options, summary: &LatencySummary) -> Vec<Measurement> {
+    let lost = u64::from(summary.transmitted - summary.received);
+    let minimum_received = u64::from(options.count - options.maximum_lost);
+    let loss_basis_points = lost
+        .saturating_mul(10_000)
+        .checked_div(u64::from(summary.transmitted))
+        .unwrap_or(0);
+    let mut measurements = vec![
+        Measurement::observed(
+            "icmp.requests.transmitted",
+            u64::from(summary.transmitted),
+            MeasurementUnit::Count,
+        ),
+        Measurement::observed(
+            "icmp.replies.received",
+            u64::from(summary.received),
+            MeasurementUnit::Count,
+        )
+        .evaluated(Comparison::AtLeast, minimum_received),
+        Measurement::observed("icmp.replies.lost", lost, MeasurementUnit::Count)
+            .evaluated(Comparison::AtMost, u64::from(options.maximum_lost)),
+        Measurement::observed("icmp.loss", loss_basis_points, MeasurementUnit::BasisPoints),
+        Measurement::observed(
+            "icmp.readiness.attempts",
+            u64::from(summary.readiness_attempts),
+            MeasurementUnit::Count,
+        ),
+        Measurement::observed(
+            "icmp.rtt.minimum",
+            summary.minimum_us,
+            MeasurementUnit::Microseconds,
+        ),
+        Measurement::observed(
+            "icmp.rtt.average",
+            summary.average_us,
+            MeasurementUnit::Microseconds,
+        ),
+        Measurement::observed(
+            "icmp.rtt.p50",
+            summary.p50_us,
+            MeasurementUnit::Microseconds,
+        ),
+        Measurement::observed(
+            "icmp.rtt.p95",
+            summary.p95_us,
+            MeasurementUnit::Microseconds,
+        ),
+        Measurement::observed(
+            "icmp.rtt.p99",
+            summary.p99_us,
+            MeasurementUnit::Microseconds,
+        ),
+        Measurement::observed(
+            "icmp.rtt.maximum",
+            summary.maximum_us,
+            MeasurementUnit::Microseconds,
+        ),
+    ];
+    if let Some(maximum) = options.maximum_p95 {
+        let maximum = u64::try_from(maximum.as_micros()).unwrap_or(u64::MAX);
+        let p95 = measurements
+            .iter_mut()
+            .find(|measurement| measurement.name == "icmp.rtt.p95")
+            .expect("p95 measurement is present");
+        *p95 = p95.clone().evaluated(Comparison::AtMost, maximum);
+    }
+    measurements
 }
 
 fn measure(socket: &IcmpSocket, options: Options) -> Result<LatencySummary> {
@@ -417,7 +495,11 @@ fn checksum(bytes: &[u8]) -> u16 {
 
 #[cfg(test)]
 mod tests {
-    use super::{checksum, parse_options};
+    use std::{net::Ipv4Addr, time::Duration};
+
+    use crate::reporting::run::MeasurementVerdict;
+
+    use super::{LatencySummary, Options, checksum, measurements, parse_options};
 
     #[test]
     fn checksum_matches_an_even_and_odd_reference_packet() {
@@ -441,5 +523,46 @@ mod tests {
         let options = parse_options(&arguments).unwrap();
         assert_eq!(options.count, 20);
         assert_eq!(options.payload_bytes, 32);
+    }
+
+    #[test]
+    fn measurements_preserve_each_acceptance_verdict() {
+        let options = Options {
+            device: Ipv4Addr::LOCALHOST,
+            count: 10,
+            interval: Duration::from_millis(1),
+            timeout: Duration::from_millis(10),
+            payload_bytes: 32,
+            maximum_lost: 1,
+            maximum_p95: Some(Duration::from_millis(100)),
+        };
+        let summary = LatencySummary {
+            transmitted: 10,
+            received: 8,
+            readiness_attempts: 1,
+            lost_sequences: vec![2, 4],
+            minimum_us: 10,
+            average_us: 20,
+            p50_us: 15,
+            p95_us: 101_000,
+            p99_us: 110_000,
+            maximum_us: 110_000,
+        };
+        let measurements = measurements(options, &summary);
+        let verdict = |name| {
+            measurements
+                .iter()
+                .find(|measurement| measurement.name == name)
+                .and_then(|measurement| measurement.verdict)
+        };
+        assert_eq!(
+            verdict("icmp.replies.received"),
+            Some(MeasurementVerdict::Failed)
+        );
+        assert_eq!(
+            verdict("icmp.replies.lost"),
+            Some(MeasurementVerdict::Failed)
+        );
+        assert_eq!(verdict("icmp.rtt.p95"), Some(MeasurementVerdict::Failed));
     }
 }

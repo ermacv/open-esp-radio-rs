@@ -17,6 +17,7 @@ use crate::{Result, qualification::scenario::PhyExpectation, repository_root};
 
 pub(crate) struct LabConfig {
     path: PathBuf,
+    cell_id: String,
     pub(crate) device: DeviceConfig,
     pub(crate) station: StationConfig,
     pub(crate) access_point: AccessPointConfig,
@@ -27,6 +28,7 @@ pub(crate) struct LabConfig {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLabConfig {
+    lab: RawLabIdentity,
     device: RawDeviceConfig,
     station: RawStationConfig,
     access_point: RawAccessPointConfig,
@@ -35,13 +37,21 @@ struct RawLabConfig {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RawLabIdentity {
+    id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawDeviceConfig {
+    id: String,
     serial: PathBuf,
     startup_artifact: Option<PathBuf>,
 }
 
 #[derive(Debug)]
 pub(crate) struct DeviceConfig {
+    pub(crate) id: String,
     pub(crate) serial: PathBuf,
     pub(crate) startup_artifact: Option<PathBuf>,
 }
@@ -160,6 +170,8 @@ impl LabConfig {
             .map_err(|error| format!("cannot read HIL lab config `{}`: {error}", path.display()))?;
         let mut raw: RawLabConfig = toml::from_str(&source)
             .map_err(|error| format!("invalid HIL lab config `{}`: {error}", path.display()))?;
+        validate_identifier("lab.id", &raw.lab.id)?;
+        validate_identifier("device.id", &raw.device.id)?;
         if raw.device.serial.as_os_str().is_empty() {
             return Err("HIL lab config defines an empty serial device".into());
         }
@@ -285,7 +297,9 @@ impl LabConfig {
         };
         Ok(Self {
             path: path.to_owned(),
+            cell_id: raw.lab.id,
             device: DeviceConfig {
+                id: raw.device.id,
                 serial: raw.device.serial,
                 startup_artifact,
             },
@@ -322,11 +336,17 @@ impl LabConfig {
         &self.path
     }
 
+    pub(crate) fn cell_id(&self) -> &str {
+        &self.cell_id
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test() -> Self {
         Self {
             path: PathBuf::from("hil/local.toml"),
+            cell_id: String::from("test-cell"),
             device: DeviceConfig {
+                id: String::from("test-device"),
                 serial: PathBuf::from("/dev/ttyACM0"),
                 startup_artifact: None,
             },
@@ -552,6 +572,21 @@ fn validate_shell_token(name: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_identifier(name: &str, value: &str) -> Result<()> {
+    if value.is_empty()
+        || value.len() > 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err(format!(
+            "{name} must contain 1..=64 lowercase ASCII letters, digits or hyphens"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn require_private_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
@@ -615,5 +650,12 @@ mod tests {
     #[test]
     fn rejects_unsafe_fixture_tokens() {
         assert!(validate_shell_token("iface", "phy0-ap0; reboot").is_err());
+    }
+
+    #[test]
+    fn physical_identity_is_stable_and_path_safe() {
+        assert!(validate_identifier("lab.id", "berlin-s31-01").is_ok());
+        assert!(validate_identifier("lab.id", "Berlin/S31").is_err());
+        assert!(validate_identifier("device.id", "").is_err());
     }
 }

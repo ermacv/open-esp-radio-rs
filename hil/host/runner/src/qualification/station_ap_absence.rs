@@ -41,8 +41,8 @@ pub(crate) fn run(
     drop(ap);
 
     result?;
-    println!("station_ap_absence=PASS");
-    println!("uart_log={}", output.join("uart.log").display());
+    eprintln!("station_ap_absence=PASS");
+    eprintln!("uart_log={}", output.join("uart.log").display());
     Ok(())
 }
 
@@ -104,7 +104,7 @@ fn qualify(
         },
         "retry exhaustion",
     )?;
-    println!(
+    eprintln!(
         "station_ap_absence_exhausted_ms={}",
         absence_started.elapsed().as_millis()
     );

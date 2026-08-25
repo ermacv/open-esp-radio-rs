@@ -34,8 +34,8 @@ pub(crate) fn run(
     let capture_result = capture.finish_to(output);
     result?;
     capture_result?;
-    println!("wifi_sta_ap_reconnect=PASS");
-    println!("uart_log={}", output.join("uart.log").display());
+    eprintln!("wifi_sta_ap_reconnect=PASS");
+    eprintln!("uart_log={}", output.join("uart.log").display());
     Ok(())
 }
 

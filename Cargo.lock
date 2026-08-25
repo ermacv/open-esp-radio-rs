@@ -2502,6 +2502,7 @@ dependencies = [
  "open-esp-radio-hil-protocol",
  "open-esp-radio-ieee80211",
  "open-esp-radio-memory-report",
+ "roxmltree",
  "serde",
  "serde_json",
  "serialport",

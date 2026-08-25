@@ -94,8 +94,8 @@ pub(crate) fn run(
     let result = qualify(&capture, lab, operation, &options);
     capture.finish_to(output)?;
     result?;
-    println!("wifi_{}=PASS", operation.name());
-    println!("uart_log={}", output.join("uart.log").display());
+    eprintln!("wifi_{}=PASS", operation.name());
+    eprintln!("uart_log={}", output.join("uart.log").display());
     Ok(())
 }
 
@@ -113,7 +113,7 @@ fn qualify(
 
     let stopped = stop_station(capture, options.timeout)?;
     report_stack(capture, options.timeout, "station-stopped")?;
-    println!("wifi_station_stopped_generation={}", stopped.generation);
+    eprintln!("wifi_station_stopped_generation={}", stopped.generation);
     if operation == Operation::Stop {
         return Ok(());
     }
@@ -149,7 +149,7 @@ fn qualify(
         {
             return Err(format!("access point returned inconsistent evidence: {stopped:?}").into());
         }
-        println!(
+        eprintln!(
             "wifi_ap_generation={} channel={} bandwidth_mhz={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} auth_timeouts={} wpa2_windows={} wpa2_pending_on_stop={} wpa2_retries={} wpa2_failures={} wpa2_timeouts={} inactivity_timeouts={} disassoc_prepared={} disassoc_published={} disassoc_acked={} deauth_prepared={} deauth_published={} deauth_acked={} rx_units={} rx_descriptors={} recycled_rx_descriptors={} retained_rx_descriptors={} hardware_buffer_full={} hardware_fifo_overflow={} discarded_rx_units={} overload_dropped={} critical_reserve={} critical_blocked={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} data_tx_attempts={} data_tx_retried={} data_tx_max_attempts={} data_tx_min_rate_kbps={} data_tx_ack_snr={}/{}/{} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
             stopped.generation,
             stopped.channel,
@@ -229,8 +229,8 @@ fn qualify(
             let station = capture.observed_protocol_ipv4(WifiNetworkInterface::Station);
             let access_point = capture.observed_protocol_ipv4(WifiNetworkInterface::AccessPoint);
             if let (Some(station), Some(access_point)) = (station, access_point) {
-                println!("wifi_sta_ap_station_ipv4={station}");
-                println!("wifi_sta_ap_access_point_ipv4={access_point}");
+                eprintln!("wifi_sta_ap_station_ipv4={station}");
+                eprintln!("wifi_sta_ap_access_point_ipv4={access_point}");
                 break;
             }
             thread::sleep(Duration::from_millis(20));
@@ -257,7 +257,7 @@ fn qualify(
         if stopped.transition.generation != started.generation {
             return Err("paired start/stop generations differ".into());
         }
-        println!(
+        eprintln!(
             "wifi_sta_ap_beacons={} missed={} maximum_lateness_micros={} buffer_full={} fifo_overflow={}",
             stopped.access_point.beacons_transmitted,
             stopped.access_point.missed_beacon_intervals,
@@ -270,7 +270,7 @@ fn qualify(
 
     let scan = scan(capture, options.timeout)?;
     report_stack(capture, options.timeout, "scan-complete")?;
-    println!(
+    eprintln!(
         "wifi_scan_generation={} elapsed_micros={} observed_frames={} unique_bss={} configured_ssid_channel={} configured_ssid_rssi_dbm={}",
         scan.generation,
         scan.elapsed_micros,
@@ -318,7 +318,7 @@ fn qualify(
         options.monitor_duration,
         150,
     )?;
-    println!(
+    eprintln!(
         "wifi_monitor_generation={} elapsed_micros={} channel={} captured_frames={} captured_bytes={} channel_unavailable={} last_observed_channel={}",
         stopped.generation,
         stopped.elapsed_micros,
@@ -335,7 +335,7 @@ fn qualify(
 
 pub(crate) fn report_stack(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
     let usage = capture.query_stack_usage(timeout)?;
-    println!(
+    eprintln!(
         "stack_stage={stage} cpu0_free={}/{} cpu0_required={} cpu1_free={}/{} cpu1_required={}",
         usage.cpu0.free_bytes,
         usage.cpu0.capacity_bytes,

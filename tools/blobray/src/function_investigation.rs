@@ -86,8 +86,8 @@ pub(crate) fn investigate(
             ),
         }
     };
-    Ok(FunctionInvestigationReport {
-        schema_version: 14,
+    let report = FunctionInvestigationReport {
+        schema_version: 15,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -137,7 +137,23 @@ pub(crate) fn investigate(
         reviewed_paths,
         cfg_path,
         replacements,
-    })
+    };
+    validate_report(&report)?;
+    Ok(report)
+}
+
+fn validate_report(report: &FunctionInvestigationReport) -> Result<()> {
+    if report.schema_version != 15 || report.command != "inspect function" {
+        return Err(crate::Error::invalid(
+            "function investigation report uses an unsupported schema or command",
+        ));
+    }
+    for semantic in &report.semantics {
+        for blocker in &semantic.blockers {
+            blocker.resolution_route.validate(&blocker.root_id)?;
+        }
+    }
+    Ok(())
 }
 
 fn structural_cfg_path(
@@ -370,21 +386,28 @@ fn semantic_evidence(
             });
         let mut blockers = function
             .diagnostics()
-            .map(|(layer, diagnostic)| BlockerExplanationEvidence {
-                root_id: diagnostic.root_id.clone(),
-                layer: layer.to_owned(),
-                kind: diagnostic.kind.clone(),
-                site: diagnostic.site,
-                message: diagnostic.rendered.clone(),
-                required_model: blocker_requirement(&diagnostic.kind, &diagnostic.rendered)
-                    .to_owned(),
-                relocation_candidates: diagnostic
-                    .site
-                    .map(|site| relocation_candidates_at(runtime, origin, site))
-                    .unwrap_or_default(),
-                provenance: crate::FactProvenance::Derived,
-                accuracy: crate::FactAccuracy::Exact,
-                completeness: crate::FactCompleteness::Partial,
+            .map(|(layer, diagnostic)| {
+                let resolution_route = crate::blocker_resolution::blocker_resolution_route(
+                    project,
+                    &diagnostic.root_id,
+                    &diagnostic.kind,
+                    &diagnostic.rendered,
+                );
+                BlockerExplanationEvidence {
+                    root_id: diagnostic.root_id.clone(),
+                    layer: layer.to_owned(),
+                    kind: diagnostic.kind.clone(),
+                    site: diagnostic.site,
+                    message: diagnostic.rendered.clone(),
+                    resolution_route,
+                    relocation_candidates: diagnostic
+                        .site
+                        .map(|site| relocation_candidates_at(runtime, origin, site))
+                        .unwrap_or_default(),
+                    provenance: crate::FactProvenance::Derived,
+                    accuracy: crate::FactAccuracy::Exact,
+                    completeness: crate::FactCompleteness::Partial,
+                }
             })
             .collect::<Vec<_>>();
         let calls = function
@@ -412,14 +435,18 @@ fn semantic_evidence(
         )?;
         let graph_limit = graph_slice.limit.or(reachability.limit);
         if let Some(limit) = graph_limit.filter(|limit| *limit != "max-depth") {
+            let root_id = format!("inspect-graph-limit:{}", function.identity);
+            let message = format!("focused graph traversal reached {limit}");
+            let resolution_route = crate::blocker_resolution::blocker_resolution_route(
+                project, &root_id, limit, &message,
+            );
             blockers.push(BlockerExplanationEvidence {
-                root_id: format!("inspect-graph-limit:{}", function.identity),
+                root_id,
                 layer: "navigation".to_owned(),
                 kind: limit.to_owned(),
                 site: None,
-                message: format!("focused graph traversal reached {limit}"),
-                required_model: "narrow the root/depth or raise the explicit investigation budget"
-                    .to_owned(),
+                message,
+                resolution_route,
                 relocation_candidates: Vec::new(),
                 provenance: crate::FactProvenance::Derived,
                 accuracy: crate::FactAccuracy::Bounded,
@@ -1019,33 +1046,6 @@ fn reviewed_event_route(
         consumer_analysis,
         case_handler_analysis,
         blockers,
-    }
-}
-
-fn blocker_requirement(kind: &str, message: &str) -> &'static str {
-    if message.starts_with("call-summary-flattening:") {
-        return "close the listed callee cause blockers; the direct call and linked code are already known";
-    }
-    if message.starts_with("unmodeled-reviewed-external-call") {
-        return "add an executable return/output model for this already reviewed external call";
-    }
-    match kind {
-        "memory-load" | "memory-store" => {
-            "identify the memory object and add a reviewed global/context type or scenario seed"
-        }
-        "indirect-control-flow" | "call-shape" => {
-            "add a reviewed interface-table layout and a runtime table instance"
-        }
-        "unresolved-call" => "supply authoritative linked code or an explicit external-call model",
-        "call-boundary" => "inspect and close the selected callee's semantic blockers",
-        "call-result-model" => "add an executable return/output model for the external call",
-        "control-flow" => "add a scenario or reviewed precondition that selects this path",
-        "poll-model" => "add a bounded device-read sequence for the polling condition",
-        "analysis-budget" => {
-            "inspect the reported graph boundary and raise only the relevant budget"
-        }
-        "memory-intrinsic" => "add a bounded size and source/destination memory-object model",
-        _ => "inspect the associated instruction/basic block and add the missing reviewed model",
     }
 }
 

@@ -763,7 +763,31 @@ fn finding_lines(finding: &research::ResearchFinding, number: usize, details: bo
         ));
     }
     lines.push(format!("     Knowledge: {}", finding.knowledge_required));
-    if finding.consumers.is_empty() {
+    if let Some(route) = &finding.blocker_resolution_route {
+        lines.push(format!(
+            "     Resolution: owner {}, effect {}",
+            route.owner.label(),
+            route.producer_effect.label()
+        ));
+        if let Some(path) = &route.destination {
+            lines.push(format!(
+                "     Record: {} — {}",
+                path.display(),
+                route.record_action.as_deref().unwrap_or("typed consumer")
+            ));
+        } else {
+            lines.push("     Record: none — no writable project consumer".to_owned());
+        }
+        lines.push(format!(
+            "     Completion predicate: {} / {} / {}",
+            route.completion_predicate.producer,
+            route.completion_predicate.kind.label(),
+            route.completion_predicate.root_id
+        ));
+        if details {
+            lines.push(format!("     Route rationale: {}", route.rationale));
+        }
+    } else if finding.consumers.is_empty() {
         lines.push(
             "     Consumer: none [unavailable]; inspect evidence before selecting an edit target"
                 .to_owned(),
@@ -960,6 +984,7 @@ mod tests {
                 root_id: id.to_owned(),
             },
             consumers: Vec::new(),
+            blocker_resolution_route: None,
             actionability: research::ResearchActionability::InspectionOnly,
             prerequisite_ids: Vec::new(),
             evidence_sites: Vec::new(),

@@ -31,7 +31,7 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 13. It separates the complete backlog from the
+The machine report uses schema 14. It separates the complete backlog from the
 bounded recommendation:
 
 - `inventory.findings` contains every typed finding exactly once;
@@ -46,6 +46,17 @@ bounded recommendation:
   `not-present`. Correlated register states include typed current observation,
   ownership, scope, model and exact reviewed-assertion evidence. Every state
   has `completion_claim = false` and `historical_finding_claim = false`.
+
+Every linked-IR blocker also carries `blocker_resolution_route`. The route
+separates its real owner (`generic-backend`, `analysis-addon`,
+`interface-pack`, runtime verification, or an explicitly unsupported class)
+from the project files. `destination`, `record_kind`, and `record_action` are
+present only when Blobray already consumes that exact record. The
+`producer_effect` distinguishes direct closure, delegated child closure,
+downstream-only evidence, informational markers, and unsupported causes.
+`completion_predicate.root_id` is checked against the authenticated regenerated
+review-scope producer; editing a project file is never itself a completion
+claim.
 
 For an exact register lookup, interpret the states in this order:
 

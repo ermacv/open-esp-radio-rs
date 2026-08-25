@@ -6,6 +6,7 @@
 mod analysis;
 mod application;
 mod artifacts;
+mod blocker_resolution;
 mod chip_pack;
 mod cli;
 mod code_workspace;
@@ -41,6 +42,10 @@ mod verification;
 
 use analysis::*;
 pub use application::*;
+pub use blocker_resolution::{
+    BlockerCompletionKind, BlockerCompletionPredicate, BlockerProducerEffect,
+    BlockerResolutionOwner, BlockerResolutionRecordKind, BlockerResolutionRoute,
+};
 use cli::run;
 pub(crate) use digest::{artifact_path_sha256, artifact_sha256};
 use error::BlobrayError;

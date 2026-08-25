@@ -22,7 +22,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 13;
+pub(crate) const RESEARCH_SCHEMA: u32 = 14;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -353,6 +353,8 @@ pub(crate) struct ResearchFinding {
     pub(crate) severity: String,
     pub(crate) subject: ResearchSubject,
     pub(crate) consumers: Vec<ResearchConsumer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) blocker_resolution_route: Option<crate::BlockerResolutionRoute>,
     pub(crate) actionability: ResearchActionability,
     pub(crate) prerequisite_ids: Vec<String>,
     pub(crate) evidence_sites: Vec<u32>,
@@ -518,6 +520,7 @@ struct Accumulator {
     message: String,
     subject: ResearchSubject,
     consumers: Vec<ResearchConsumer>,
+    blocker_resolution_route: Option<crate::BlockerResolutionRoute>,
     evidence_sites: BTreeSet<u32>,
     evidence_channels: BTreeSet<String>,
     inspection: BTreeSet<String>,
@@ -538,6 +541,7 @@ struct Seed {
     message: String,
     subject: ResearchSubject,
     consumers: Vec<ResearchConsumer>,
+    blocker_resolution_route: Option<crate::BlockerResolutionRoute>,
     evidence_sites: BTreeSet<u32>,
     evidence_channels: BTreeSet<String>,
     inspection: BTreeSet<String>,
@@ -589,6 +593,7 @@ pub(crate) fn next(
     let mut candidates = BTreeMap::new();
     for scope in &scopes {
         add_blockers(
+            &session.project,
             scope,
             &graphs[&scope.id],
             &direct_diagnostic_owners,
@@ -966,6 +971,7 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
         )?;
     }
     for finding in &inventory.findings {
+        validate_blocker_resolution_route(finding)?;
         validate_executable_action("finding requery", &finding.requery_action)?;
         for action in &finding.revalidation_actions {
             validate_executable_action("finding revalidation", action)?;
@@ -1140,6 +1146,41 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
         return Err(crate::Error::invalid(format!(
             "research inventory digest mismatch: stored {}, computed {expected_sha256}",
             inventory.sha256
+        )));
+    }
+    Ok(())
+}
+
+fn validate_blocker_resolution_route(finding: &ResearchFinding) -> Result<()> {
+    let route = match (&finding.subject, &finding.blocker_resolution_route) {
+        (ResearchSubject::AnalysisRoot { root_id }, Some(route)) => {
+            route.validate(root_id)?;
+            route
+        }
+        (ResearchSubject::AnalysisRoot { .. }, None) => {
+            return Err(crate::Error::invalid(format!(
+                "research blocker {:?} has no typed resolution route",
+                finding.id
+            )));
+        }
+        (_, Some(_)) => {
+            return Err(crate::Error::invalid(format!(
+                "non-blocker research finding {:?} must not carry a blocker resolution route",
+                finding.id
+            )));
+        }
+        (_, None) => return Ok(()),
+    };
+    if route.required_model != finding.knowledge_required {
+        return Err(crate::Error::invalid(format!(
+            "research blocker {:?} knowledge requirement diverges from its typed route",
+            finding.id
+        )));
+    }
+    if route.evidence_required != finding.evidence_required {
+        return Err(crate::Error::invalid(format!(
+            "research blocker {:?} evidence requirement diverges from its typed route",
+            finding.id
         )));
     }
     Ok(())
@@ -2252,6 +2293,7 @@ fn blocker_inspection_targets(
 }
 
 fn add_blockers(
+    project: &crate::ProjectSpec,
     scope: &ReviewScopeReport,
     graph: &ScopeGraph,
     direct_diagnostic_owners: &DirectDiagnosticOwners,
@@ -2267,6 +2309,12 @@ fn add_blockers(
         }
     }
     for item in &scope.review_queue {
+        let blocker_resolution_route = crate::blocker_resolution::blocker_resolution_route(
+            project,
+            &item.id,
+            &item.kind,
+            &item.message,
+        );
         let direct = item.functions.iter().cloned().collect::<BTreeSet<_>>();
         let inspection = blocker_inspection_targets(graph, direct_diagnostic_owners, item);
         let optimistic = reverse_reachable(graph, &direct);
@@ -2302,6 +2350,7 @@ fn add_blockers(
                     root_id: item.id.clone(),
                 },
                 consumers: Vec::new(),
+                blocker_resolution_route: Some(blocker_resolution_route),
                 evidence_sites: item.sites.iter().copied().collect(),
                 evidence_channels: item.channels.iter().cloned().collect(),
                 inspection,
@@ -2503,6 +2552,7 @@ fn add_required_analysis_surface_findings(
                     message: diagnostic,
                     subject,
                     consumers: vec![consumer],
+                    blocker_resolution_route: None,
                     evidence_sites: BTreeSet::new(),
                     evidence_channels: ["project-analysis-surface".to_owned()].into(),
                     inspection: BTreeSet::new(),
@@ -2536,7 +2586,8 @@ fn merge(
         && (existing.kind != seed.kind
             || existing.severity != seed.severity
             || existing.subject != seed.subject
-            || existing.consumers != seed.consumers)
+            || existing.consumers != seed.consumers
+            || existing.blocker_resolution_route != seed.blocker_resolution_route)
     {
         return Err(crate::Error::invalid(format!(
             "research finding id {:?} resolves to conflicting typed subjects or consumers",
@@ -2553,6 +2604,7 @@ fn merge(
             message: seed.message,
             subject: seed.subject,
             consumers: seed.consumers,
+            blocker_resolution_route: seed.blocker_resolution_route,
             evidence_sites: BTreeSet::new(),
             evidence_channels: BTreeSet::new(),
             inspection: BTreeSet::new(),
@@ -2713,6 +2765,7 @@ fn add_register_seed(
                 message: template.message.clone(),
                 subject: template.subject.clone(),
                 consumers: template.consumers.clone(),
+                blocker_resolution_route: None,
                 evidence_sites: fact
                     .read_sites
                     .iter()
@@ -2880,6 +2933,7 @@ fn add_interfaces(
                         call_sites: observation.call_sites.clone(),
                     },
                     consumers: vec![interface_consumer(session, observation)],
+                    blocker_resolution_route: None,
                     evidence_sites: observation.call_sites.iter().copied().collect(),
                     evidence_channels: ["interface".to_owned()].into(),
                     inspection: direct.clone(),
@@ -4069,6 +4123,14 @@ fn finalize(
         .into_iter()
         .collect::<Vec<_>>();
     let kind = candidate.kind.clone();
+    let knowledge_required = candidate.blocker_resolution_route.as_ref().map_or_else(
+        || knowledge_required(&kind).to_owned(),
+        |route| route.required_model.clone(),
+    );
+    let evidence_required = candidate.blocker_resolution_route.as_ref().map_or_else(
+        || evidence_required(&kind),
+        |route| route.evidence_required.clone(),
+    );
     let actionability = finding_actionability(&candidate.consumers);
     let prerequisite_ids =
         finding_prerequisites(&candidate.id, &candidate.subject, &candidate.consumers)
@@ -4081,6 +4143,7 @@ fn finalize(
         severity: candidate.severity,
         subject: candidate.subject,
         consumers: candidate.consumers,
+        blocker_resolution_route: candidate.blocker_resolution_route,
         actionability,
         prerequisite_ids,
         evidence_sites: candidate.evidence_sites.into_iter().collect(),
@@ -4096,8 +4159,8 @@ fn finalize(
         capability_links,
         verification_links,
         publication_scopes: candidate.publication_scopes.into_iter().collect(),
-        knowledge_required: knowledge_required(&kind).to_owned(),
-        evidence_required: evidence_required(&kind),
+        knowledge_required,
+        evidence_required,
         revalidation_actions: vec![revalidation_action],
         requery_action,
         summary: candidate.message,
@@ -4486,6 +4549,22 @@ mod tests {
                 root_id: id.to_owned(),
             },
             consumers: Vec::new(),
+            blocker_resolution_route: Some(crate::BlockerResolutionRoute {
+                owner: crate::BlockerResolutionOwner::Unsupported,
+                required_model: format!("resolve {kind}"),
+                evidence_required: vec!["test evidence".to_owned()],
+                destination: None,
+                record_kind: None,
+                record_action: None,
+                producer_effect: crate::BlockerProducerEffect::Unsupported,
+                closes_producer: false,
+                completion_predicate: crate::BlockerCompletionPredicate {
+                    kind: crate::BlockerCompletionKind::Unsupported,
+                    producer: "authenticated-linked-ir-review-scopes".to_owned(),
+                    root_id: id.to_owned(),
+                },
+                rationale: "test fixture blocker".to_owned(),
+            }),
             evidence_sites: BTreeSet::new(),
             evidence_channels: BTreeSet::new(),
             inspection: BTreeSet::new(),
@@ -4515,6 +4594,7 @@ mod tests {
             profile: profile.map(str::to_owned),
             state,
         };
+        candidate.blocker_resolution_route = None;
         let output = match state {
             ResearchAnalysisSurfaceState::MissingProfileDefinition => None,
             ResearchAnalysisSurfaceState::MissingProfileOutput
@@ -5224,7 +5304,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 13);
+        assert_eq!(report.schema_version, 14);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -5321,7 +5401,7 @@ mod tests {
         assert_eq!(original.selection.steps, changed.selection.steps);
         assert_ne!(original.inventory.sha256, changed.inventory.sha256);
         let path = std::env::temp_dir().join(format!(
-            "blobray-research-schema13-check-{}.json",
+            "blobray-research-schema14-check-{}.json",
             std::process::id()
         ));
         if path.exists() {
@@ -6077,6 +6157,7 @@ locator = "RADIO.STATUS"
             width: 32,
             assertion: None,
         };
+        candidate.blocker_resolution_route = None;
         candidate.consumers = vec![ResearchConsumer::ReviewedKnowledgeAssertions {
             resolution: ResearchConsumerResolution::NeedsDestination,
             configured_paths: vec![PathBuf::from("facts.toml")],
@@ -6446,6 +6527,7 @@ locator = "RADIO.STATUS"
             width: 32,
             assertion: Some("write-semantics".to_owned()),
         };
+        candidate.blocker_resolution_route = None;
 
         assert_eq!(
             next_action_tokens(&candidate),
@@ -6558,7 +6640,7 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn schema_thirteen_serializes_query_and_executable_actions() {
+    fn schema_fourteen_serializes_routes_query_and_executable_actions() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -6566,6 +6648,7 @@ locator = "RADIO.STATUS"
             width: 32,
             assertion: None,
         };
+        candidate.blocker_resolution_route = None;
         candidate.consumers = vec![ResearchConsumer::ReviewedKnowledgeAssertions {
             resolution: ResearchConsumerResolution::NeedsDestination,
             configured_paths: vec![PathBuf::from("a.toml"), PathBuf::from("b.toml")],
@@ -6582,7 +6665,7 @@ locator = "RADIO.STATUS"
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 13);
+        assert_eq!(value["schema_version"], 14);
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);
         assert_eq!(
@@ -6633,6 +6716,43 @@ locator = "RADIO.STATUS"
         );
         assert!(value["inventory"]["prerequisites"][0].get("rank").is_none());
         assert_eq!(value["selection"]["steps"][0]["kind"], "prerequisite");
+    }
+
+    #[test]
+    fn report_validation_rejects_missing_and_forged_blocker_routes_after_resigning() {
+        let report = report_from_actions(
+            vec![ranked_candidate("typed-root", 10, 2, 1)],
+            ResearchRankingStrategy::Impact,
+            10,
+            None,
+        );
+
+        let mut missing = report.clone();
+        missing.inventory.findings[0].blocker_resolution_route = None;
+        refresh_inventory_digest(&mut missing);
+        assert!(
+            validate_report(&missing)
+                .unwrap_err()
+                .to_string()
+                .contains("has no typed resolution route")
+        );
+
+        let mut forged = report;
+        let route = forged.inventory.findings[0]
+            .blocker_resolution_route
+            .as_mut()
+            .unwrap();
+        route.owner = crate::BlockerResolutionOwner::GenericBackend;
+        route.destination = Some(PathBuf::from("reviewed.toml"));
+        route.record_kind = Some(crate::BlockerResolutionRecordKind::ReviewedFunctionFact);
+        route.record_action = Some("hide the producer diagnostic".to_owned());
+        refresh_inventory_digest(&mut forged);
+        assert!(
+            validate_report(&forged)
+                .unwrap_err()
+                .to_string()
+                .contains("owner without a declarative consumer")
+        );
     }
 
     #[test]

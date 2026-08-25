@@ -455,7 +455,10 @@ pub(super) fn human(report: &FunctionInvestigationReport, full: bool) {
                         .unwrap_or_default(),
                     blocker.message
                 ));
-                crate::cli::output::line(format_args!("      needs: {}", blocker.required_model));
+                crate::cli::output::line(format_args!(
+                    "      needs: {}",
+                    blocker.resolution_route.required_model
+                ));
                 if !blocker.relocation_candidates.is_empty() {
                     crate::cli::output::line(format_args!(
                         "      relocation candidates: {}",
@@ -724,16 +727,32 @@ fn render_summary(report: &FunctionInvestigationReport) {
         .collect::<Vec<_>>();
     if !blockers.is_empty() {
         outputln!("\n{}", output::heading("Problems"));
-        let mut grouped = BTreeMap::<(&str, &str), Vec<_>>::new();
+        let mut grouped = BTreeMap::<
+            (
+                &str,
+                &str,
+                crate::BlockerResolutionOwner,
+                crate::BlockerProducerEffect,
+            ),
+            Vec<_>,
+        >::new();
         for blocker in &blockers {
             grouped
-                .entry((&blocker.kind, &blocker.required_model))
+                .entry((
+                    &blocker.kind,
+                    &blocker.resolution_route.required_model,
+                    blocker.resolution_route.owner,
+                    blocker.resolution_route.producer_effect,
+                ))
                 .or_default()
                 .push(*blocker);
         }
         let mut grouped = grouped.into_iter().collect::<Vec<_>>();
-        grouped.sort_by_key(|((kind, _), _)| blocker_priority(kind));
-        for (index, ((kind, required_model), occurrences)) in grouped.iter().enumerate() {
+        grouped.sort_by_key(|((kind, ..), _)| blocker_priority(kind));
+        for (index, ((kind, required_model, owner, effect), occurrences)) in
+            grouped.iter().enumerate()
+        {
+            let route = &occurrences[0].resolution_route;
             outputln!(
                 "{}. {} — {} occurrence(s)",
                 index + 1,
@@ -742,7 +761,28 @@ fn render_summary(report: &FunctionInvestigationReport) {
             );
             outputln!("   First: {}", occurrences[0].message);
             outputln!("   Needs: {required_model}");
+            outputln!("   Evidence: {}", route.evidence_required.join("; "));
+            outputln!(
+                "   Owner: {}; producer effect: {}",
+                owner.label(),
+                effect.label()
+            );
+            if let Some(path) = &route.destination {
+                outputln!("   Record: {}", path.display());
+                if let Some(action) = &route.record_action {
+                    outputln!("   Edit: {action}");
+                }
+            } else {
+                outputln!("   Record: none — no writable project consumer");
+            }
+            outputln!(
+                "   Completion predicate: {} / {} / root {}",
+                route.completion_predicate.producer,
+                route.completion_predicate.kind.label(),
+                route.completion_predicate.root_id
+            );
             if output::details() {
+                outputln!("   Why: {}", route.rationale);
                 for blocker in occurrences.iter().skip(1) {
                     outputln!("   - {}", blocker.message);
                 }
@@ -753,7 +793,7 @@ fn render_summary(report: &FunctionInvestigationReport) {
     outputln!("\n{}", output::heading("Next"));
     outputln!("1. add --full for the lossless instruction/CFG view");
     if !blockers.is_empty() {
-        outputln!("2. review the named model requirements, then rerun project analyze");
+        outputln!("2. follow the typed owner/record route, then rerun project analyze");
     } else {
         outputln!("2. use inspect flow to follow arguments and constants across callees");
     }

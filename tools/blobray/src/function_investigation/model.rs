@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use super::ReplacementEvidence;
-use crate::{FactAccuracy, FactCompleteness, FactProvenance, Result, artifact, artifacts};
+use crate::{
+    BlockerResolutionRoute, FactAccuracy, FactCompleteness, FactProvenance, Result, artifact,
+    artifacts,
+};
 
 #[derive(Clone, Debug)]
 pub struct StoredLinkedIrRecord(Box<serde_json::value::RawValue>);
@@ -220,7 +223,7 @@ pub struct BlockerExplanationEvidence {
     pub kind: String,
     pub site: Option<u32>,
     pub message: String,
-    pub required_model: String,
+    pub resolution_route: BlockerResolutionRoute,
     pub relocation_candidates: Vec<String>,
     pub provenance: FactProvenance,
     pub accuracy: FactAccuracy,

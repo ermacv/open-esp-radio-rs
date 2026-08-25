@@ -216,7 +216,7 @@ fn inspect_register_schema_seven_exposes_typed_validation_actions() {
 }
 
 #[test]
-fn research_schema_thirteen_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
+fn research_schema_fourteen_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
     let lookup = |scope: &str, finding: &str| {
         let output = blobray()
             .args([
@@ -249,7 +249,7 @@ fn research_schema_thirteen_exact_finding_resolution_is_current_and_not_a_comple
     };
 
     let open = lookup("ieee802154-baseband-leaves", "register-0x20103100-32");
-    assert_eq!(open["schema_version"], 13);
+    assert_eq!(open["schema_version"], 14);
     assert_eq!(open["completion_claim"], false);
     assert_eq!(open["finding_query"]["state"], "open");
     assert_eq!(open["finding_query"]["completion_claim"], false);
@@ -303,7 +303,7 @@ fn research_schema_thirteen_exact_finding_resolution_is_current_and_not_a_comple
     );
 
     let missing = lookup("ieee802154-baseband-leaves", "register-not-current");
-    assert_eq!(missing["schema_version"], 13);
+    assert_eq!(missing["schema_version"], 14);
     assert_eq!(missing["completion_claim"], false);
     assert_eq!(missing["finding_query"]["state"], "not-present");
     assert_eq!(missing["finding_query"]["completion_claim"], false);
@@ -325,6 +325,60 @@ fn research_schema_thirteen_exact_finding_resolution_is_current_and_not_a_comple
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn inspect_function_schema_fifteen_has_one_fail_closed_blocker_route() {
+    let output = blobray()
+        .args([
+            "inspect",
+            "function",
+            "ble-controller:r_ble_controller_init",
+            "--project",
+        ])
+        .arg(project())
+        .args([
+            "--format",
+            "json",
+            "--color",
+            "never",
+            "--progress",
+            "never",
+        ])
+        .output()
+        .expect("inspect stable BLE controller entry");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["schema_version"], 15);
+    let blockers = document["semantics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|semantic| semantic["blockers"].as_array().unwrap())
+        .collect::<Vec<_>>();
+    assert!(!blockers.is_empty());
+    for blocker in blockers {
+        assert!(blocker.get("required_model").is_none());
+        let route = &blocker["resolution_route"];
+        assert!(!route["required_model"].as_str().unwrap().is_empty());
+        assert!(!route["evidence_required"].as_array().unwrap().is_empty());
+        assert_eq!(route["completion_predicate"]["root_id"], blocker["root_id"]);
+        assert_eq!(
+            route["closes_producer"].as_bool().unwrap(),
+            route["producer_effect"] == "closes"
+        );
+        if matches!(
+            route["owner"].as_str().unwrap(),
+            "generic-backend" | "analysis-addon" | "unsupported"
+        ) {
+            assert!(route.get("destination").is_none());
+            assert!(route.get("record_action").is_none());
+        }
+    }
 }
 
 #[test]
@@ -398,6 +452,22 @@ fn research_surfaces_are_protocol_exact_and_keep_inspection_visible() {
             .iter()
             .all(|finding| finding["kind"] != "analysis-surface")
     );
+    let ble_roots = ble["inventory"]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["subject"]["kind"] == "analysis-root")
+        .collect::<Vec<_>>();
+    assert!(!ble_roots.is_empty());
+    for finding in ble_roots {
+        let route = &finding["blocker_resolution_route"];
+        assert_eq!(route["required_model"], finding["knowledge_required"]);
+        assert_eq!(route["evidence_required"], finding["evidence_required"]);
+        assert_eq!(
+            route["completion_predicate"]["root_id"],
+            finding["subject"]["root_id"]
+        );
+    }
 
     let bluetooth = query(&["--protocol", "bluetooth"]);
     assert!(

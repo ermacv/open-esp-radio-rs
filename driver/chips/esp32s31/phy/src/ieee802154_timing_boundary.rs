@@ -1,7 +1,5 @@
 //! Narrow unsafe boundary coupling terminal common-PHY proof to PAC timing.
 
-#![allow(unsafe_code)]
-
 use open_esp_radio_esp32s31_hal::{Ieee802154Clocked, Ieee802154TimingPrerequisite};
 
 use crate::RegisteredPhyState;
@@ -13,6 +11,10 @@ use crate::RegisteredPhyState;
 /// terminal target execution, and the role stays mutably borrowed until the
 /// caller immediately consumes the prerequisite on that same owner. The gain
 /// byte is projected here from the terminal model and is never a caller input.
+#[allow(
+    unsafe_code,
+    reason = "this function is the affine terminal common-PHY proof boundary"
+)]
 pub(crate) fn from_terminal_registration<P>(
     _role: &mut Ieee802154Clocked<P>,
     registered: &RegisteredPhyState,

@@ -14,6 +14,8 @@ audited_unsafe_leaves=(
     "driver/chips/esp32s31/bluetooth"
     "driver/chips/esp32s31/pac"
     "driver/chips/esp32s31/ieee802154/dma"
+    "driver/chips/esp32s31/ieee802154/runtime"
+    "driver/chips/esp32s31/phy"
     "driver/chips/esp32s31/wifi/dma"
     "driver/adapters/esp-hal/esp32s31-radio-platform"
     "driver/adapters/embassy/esp32s31-platform"
@@ -59,7 +61,7 @@ done
 # either ordinary or dev dependencies.
 for manifest in "${manifests[@]}"; do
     case "$manifest" in
-        driver/chips/esp32s31/pac/Cargo.toml|driver/chips/esp32s31/pac-raw/Cargo.toml|driver/chips/esp32s31/hal/Cargo.toml|driver/chips/esp32s31/bluetooth/Cargo.toml|driver/chips/esp32s31/ieee802154/irq/Cargo.toml|driver/chips/esp32s31/ieee802154/runtime/Cargo.toml)
+        driver/chips/esp32s31/pac/Cargo.toml|driver/chips/esp32s31/pac-raw/Cargo.toml|driver/chips/esp32s31/hal/Cargo.toml|driver/chips/esp32s31/bluetooth/Cargo.toml|driver/chips/esp32s31/ieee802154/irq/Cargo.toml|driver/chips/esp32s31/ieee802154/runtime/Cargo.toml|driver/adapters/esp-hal/esp32s31-ieee802154/Cargo.toml)
             continue
             ;;
     esac
@@ -125,6 +127,72 @@ for source in "${all_allowing_sources[@]}"; do
         exit 1
     fi
 done
+
+# Rust has no cross-crate friend visibility. The affine runtime is the one
+# composition point which owns both the accepted terminal actor transition and
+# the exact retained DMA resources, so it mints the DMA terminal proof through
+# one audited unsafe SPI. Keep both the unsafe block and its call graph finite.
+terminal_evidence_spi="driver/chips/esp32s31/ieee802154/dma/src/terminal.rs"
+terminal_evidence_runtime="driver/chips/esp32s31/ieee802154/runtime/src/lib.rs"
+if ! rg -q 'pub unsafe fn from_accepted_terminal_batch\(' "$terminal_evidence_spi"
+then
+    echo "IEEE 802.15.4 DMA terminal proof SPI is no longer explicitly unsafe" >&2
+    exit 1
+fi
+mapfile -t terminal_evidence_callers < <(
+    rg -l 'DmaTerminalEvidence::from_accepted_terminal_batch[[:space:]]*\(' \
+        driver \
+        --glob '*.rs' \
+        | sort
+)
+if test "${#terminal_evidence_callers[@]}" -ne 1 \
+    || test "${terminal_evidence_callers[0]}" != "$terminal_evidence_runtime"
+then
+    echo "IEEE 802.15.4 DMA terminal proof escaped its affine runtime boundary" >&2
+    exit 1
+fi
+mapfile -t runtime_unsafe_blocks < <(
+    rg -n 'unsafe[[:space:]]*\{' "$terminal_evidence_runtime" || true
+)
+if test "${#runtime_unsafe_blocks[@]}" -ne 1 \
+    || [[ "${runtime_unsafe_blocks[0]}" != *'DmaTerminalEvidence::from_accepted_terminal_batch()'* ]]
+then
+    echo "IEEE 802.15.4 runtime unsafe surface is not the single terminal proof mint" >&2
+    exit 1
+fi
+
+# Terminal common-PHY registration and the retained IEEE hardware owner meet
+# at one affine PHY boundary. Audit the corresponding PAC prerequisite mint in
+# the same way as the terminal DMA proof above.
+ieee_timing_spi="driver/chips/esp32s31/pac/src/ieee802154_timing.rs"
+ieee_timing_boundary="driver/chips/esp32s31/phy/src/ieee802154_timing_boundary.rs"
+if ! rg -q 'pub unsafe fn from_terminal_common_phy\(' "$ieee_timing_spi"
+then
+    echo "IEEE 802.15.4 timing prerequisite SPI is no longer explicitly unsafe" >&2
+    exit 1
+fi
+mapfile -t ieee_timing_callers < <(
+    rg -l 'Ieee802154TimingPrerequisite::from_terminal_common_phy[[:space:]]*\(' \
+        driver \
+        --glob '*.rs' \
+        --glob '!driver/chips/esp32s31/pac/**' \
+        | sort
+)
+if test "${#ieee_timing_callers[@]}" -ne 1 \
+    || test "${ieee_timing_callers[0]}" != "$ieee_timing_boundary"
+then
+    echo "IEEE 802.15.4 timing prerequisite escaped its registered-PHY boundary" >&2
+    exit 1
+fi
+mapfile -t phy_unsafe_blocks < <(
+    rg -n 'unsafe[[:space:]]*\{' driver/chips/esp32s31/phy --glob '*.rs' || true
+)
+if test "${#phy_unsafe_blocks[@]}" -ne 1 \
+    || [[ "${phy_unsafe_blocks[0]}" != *'Ieee802154TimingPrerequisite::from_terminal_common_phy('* ]]
+then
+    echo "ESP32-S31 PHY unsafe surface is not the single IEEE timing proof mint" >&2
+    exit 1
+fi
 
 # PAC leaf-owner types are implementation details of the generated/restricted
 # PAC and the matching chip hardware backends. The protocol-neutral

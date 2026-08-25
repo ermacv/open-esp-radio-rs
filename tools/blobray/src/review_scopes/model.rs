@@ -82,6 +82,9 @@ pub(crate) enum ReplacementCoverage {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReviewScopeReport {
     pub(crate) id: String,
+    /// Explicit project-configured radio domains. This is persisted so every
+    /// consumer applies the same many-to-many scope membership.
+    pub(crate) protocols: Vec<String>,
     pub(crate) publication: bool,
     /// Current executable coverage joined when the structural document is
     /// loaded. It is deliberately absent from `review-scopes.json`: project

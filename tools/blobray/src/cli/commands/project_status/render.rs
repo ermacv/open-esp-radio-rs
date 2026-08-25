@@ -277,7 +277,7 @@ pub(super) fn document(
         })
         .collect();
     StatusDocument {
-        schema: 9,
+        schema: 10,
         command: "project status",
         scope: "blobray-pipeline",
         project: ProjectIdentity {
@@ -413,7 +413,7 @@ mod tests {
         );
         let document: serde_json::Value =
             serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
-        assert_eq!(document["schema"], 9);
+        assert_eq!(document["schema"], 10);
         assert_eq!(document["scope"], "blobray-pipeline");
         assert_eq!(document["validation"]["depth"], "shallow");
         assert_eq!(document["validation"]["freshness"], "unknown");

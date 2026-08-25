@@ -1872,6 +1872,7 @@ mod cache_domain_tests {
             publication_scopes: Vec::new(),
             scopes: vec![ReviewScopeSpec {
                 id: "all".to_owned(),
+                protocols: vec!["shared".to_owned()],
                 profiles: vec!["rom".to_owned(), "ram".to_owned()],
                 roots: Vec::new(),
                 include_reachable: true,

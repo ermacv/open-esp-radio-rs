@@ -103,6 +103,7 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                 .iter()
                 .map(|report| ReviewScopeDetail {
                     id: report.id.clone(),
+                    protocols: report.protocols.clone(),
                     publication: report.publication,
                     replacement_coverage: match report.replacement_coverage {
                         crate::review_scopes::ReplacementCoverage::Complete => "complete",

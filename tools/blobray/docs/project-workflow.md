@@ -24,7 +24,7 @@ cargo blobray project research next --project path/to/vendor-project.toml
 - `research next` ranks concrete human-review actions by downstream impact.
 
 `status` is deliberately shallow and reports generated freshness as unknown;
-it does not deserialize every large evidence record. Status schema 9 exposes
+it does not deserialize every large evidence record. Status schema 10 exposes
 three independent workflow dimensions: generated `freshness`, `research`
 completeness, and `verification`. Phase readiness only says that configured
 artifacts are present and structurally inspectable; an `open` research state
@@ -97,6 +97,19 @@ are explicit score penalties; the JSON report exposes every weighted term so
 the ranking is auditable rather than an opaque recommendation. Restrict the
 result to one radio area when needed:
 
+```toml
+[[review.scopes]]
+id = "shared-phy-init"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "shared"]
+profiles = ["radio-all"]
+roots = ["radio:phy_init"]
+```
+
+Every review scope must declare one or more canonical protocol memberships:
+`wifi`, `bluetooth`, `ble`, `ieee802154`, `coex`, or `shared`. Membership is
+many-to-many and is not inferred from the scope ID. Human CLI input additionally
+accepts `bt`, `802.15.4`, and `802154` aliases.
+
 ```console
 cargo blobray project research next --scope ieee802154-baseband-leaves \
   --project path/to/vendor-project.toml --limit 10
@@ -104,7 +117,7 @@ cargo blobray project research next --scope ieee802154-baseband-leaves \
 
 The command is read-only unless `--output` is supplied. Each candidate names
 the missing knowledge, confidence, affected scopes, expected impact and a
-copyable next inspection command. Report schema 3 ranks unique user actions:
+copyable next inspection command. Report schema 6 ranks unique user actions:
 independent findings that lead to the same inspection command remain listed as
 `related_findings` instead of consuming duplicate top-N slots. Impact is
 aggregated across the complete action before ranking, not inherited from the

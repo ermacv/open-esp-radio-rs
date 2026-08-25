@@ -12,7 +12,7 @@ use crate::{
     registers::RegisterFacts,
 };
 
-pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 11;
+pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 12;
 
 mod model;
 pub(crate) use model::{
@@ -168,7 +168,13 @@ pub(crate) fn load_structural_for_project(project: &ProjectSpec) -> Result<Revie
     let actual = document
         .scopes
         .iter()
-        .map(|scope| (scope.id.as_str(), scope.profiles.as_slice()))
+        .map(|scope| {
+            (
+                scope.id.as_str(),
+                scope.protocols.as_slice(),
+                scope.profiles.as_slice(),
+            )
+        })
         .collect::<Vec<_>>();
     let publication_scopes = workspace
         .publication_scopes
@@ -178,7 +184,13 @@ pub(crate) fn load_structural_for_project(project: &ProjectSpec) -> Result<Revie
     let expected = workspace
         .scopes
         .iter()
-        .map(|scope| (scope.id.as_str(), scope.profiles.as_slice()))
+        .map(|scope| {
+            (
+                scope.id.as_str(),
+                scope.protocols.as_slice(),
+                scope.profiles.as_slice(),
+            )
+        })
         .collect::<Vec<_>>();
     if actual != expected {
         return Err(crate::Error::invalid(format!(
@@ -407,6 +419,7 @@ fn analyze_scope(
         .collect::<Vec<_>>();
     let mut report = ReviewScopeReport {
         id: scope.id.clone(),
+        protocols: scope.protocols.clone(),
         publication,
         replacement_coverage: ReplacementCoverage::Gaps,
         analysis_inventory_complete: false,
@@ -1011,6 +1024,7 @@ mod tests {
         ]);
         let scope = ReviewScopeSpec {
             id: "feature".to_owned(),
+            protocols: vec!["shared".to_owned()],
             profiles: vec!["fixture".to_owned()],
             roots: vec!["vendor:root".to_owned()],
             include_reachable: true,
@@ -1120,6 +1134,7 @@ mod tests {
         let nodes = BTreeMap::from([("vendor::root".to_owned(), node("vendor", "root"))]);
         let scope = ReviewScopeSpec {
             id: "feature".to_owned(),
+            protocols: vec!["shared".to_owned()],
             profiles: vec!["fixture".to_owned()],
             roots: vec!["vendor:root".to_owned()],
             include_reachable: false,
@@ -1154,6 +1169,7 @@ mod tests {
         let nodes = BTreeMap::from([("vendor::root".to_owned(), node("vendor", "root"))]);
         let scope = ReviewScopeSpec {
             id: "feature".to_owned(),
+            protocols: vec!["shared".to_owned()],
             profiles: vec!["fixture".to_owned()],
             roots: vec!["vendor:root".to_owned()],
             include_reachable: false,
@@ -1199,6 +1215,7 @@ mod tests {
         let nodes = BTreeMap::from([("vendor::root".to_owned(), node("vendor", "root"))]);
         let scope = ReviewScopeSpec {
             id: "feature".to_owned(),
+            protocols: vec!["shared".to_owned()],
             profiles: vec!["fixture".to_owned()],
             roots: vec!["vendor:root".to_owned()],
             include_reachable: false,

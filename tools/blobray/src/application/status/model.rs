@@ -48,6 +48,7 @@ pub struct ArtifactDetail {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReviewScopeDetail {
     pub id: String,
+    pub protocols: Vec<String>,
     pub publication: bool,
     pub replacement_coverage: String,
     pub analysis_inventory_complete: bool,

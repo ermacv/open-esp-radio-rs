@@ -497,6 +497,7 @@ pub struct ReviewQueueSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReviewScopeSummary {
     pub id: String,
+    pub protocols: Vec<String>,
     pub publication: bool,
     pub replacement_coverage: String,
     pub replacement_policy_excluded: usize,

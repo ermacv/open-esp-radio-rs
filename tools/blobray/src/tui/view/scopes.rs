@@ -61,6 +61,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .map(|scope| {
             vec![
                 field("ID", &scope.id),
+                field("Protocols", scope.protocols.join(", ")),
                 field("Publication", scope.publication),
                 field("Replacement coverage", &scope.replacement_coverage),
                 field(

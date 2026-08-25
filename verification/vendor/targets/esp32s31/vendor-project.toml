@@ -325,12 +325,14 @@ publication-scopes = [
 
 [[review.scopes]]
 id = "phy-init"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
 profiles = ["archive-all"]
 roots = ["archive:phy_bb_init", "archive:register_chipv7_phy"]
 include-reachable = true
 
 [[review.scopes]]
 id = "wifi-rx"
+protocols = ["wifi"]
 profiles = ["libpp-all"]
 roots = [
     "libpp:hal_mac_rx_disable",
@@ -341,6 +343,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "wifi-tx"
+protocols = ["wifi"]
 profiles = ["libpp-all"]
 roots = [
     "libpp:hal_mac_txq_enable",
@@ -353,18 +356,21 @@ include-reachable = true
 
 [[review.scopes]]
 id = "wifi-interrupts"
+protocols = ["wifi"]
 profiles = ["libpp-all"]
 roots = ["libpp:wDev_ProcessFiq"]
 include-reachable = true
 
 [[review.scopes]]
 id = "station-state"
+protocols = ["wifi"]
 profiles = ["libnet80211-all", "libpp-all"]
 roots = ["libnet80211:ieee80211_sta_new_state"]
 include-reachable = true
 
 [[review.scopes]]
 id = "wifi-sta-connected"
+protocols = ["wifi"]
 profiles = ["wifi-sta-lifecycle"]
 roots = [
     "wifi-sta-lifecycle:ieee80211_sta_new_state",
@@ -379,6 +385,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "wifi-sta-beacon-filter-policy"
+protocols = ["wifi"]
 profiles = ["wifi-sta-lifecycle"]
 roots = [
     "wifi-sta-lifecycle:hal_set_sta_beacon_filter",
@@ -389,6 +396,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "wifi-key-role"
+protocols = ["wifi"]
 profiles = ["wifi-key-role"]
 roots = [
     "wifi-key-role:esp_wifi_set_ap_key_internal",
@@ -399,6 +407,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "wifi-ap-link-identity"
+protocols = ["wifi"]
 profiles = ["libpp-all"]
 roots = [
     "libpp:hal_mac_set_bssid",
@@ -410,6 +419,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "wifi-interface-context"
+protocols = ["wifi"]
 profiles = ["libpp-all"]
 roots = [
     "libpp:hal_mac_set_addr",
@@ -422,6 +432,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "wifi-ap-data-path"
+protocols = ["wifi"]
 profiles = ["wifi-ap-data-path"]
 roots = [
     "wifi-sta-ap-receive:lmacRxDone",
@@ -440,6 +451,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "wifi-coex-register-leaves"
+protocols = ["wifi", "coex"]
 profiles = ["libpp-all"]
 roots = [
     "libpp:hal_set_rx_beacon_pti",
@@ -452,24 +464,28 @@ include-reachable = true
 
 [[review.scopes]]
 id = "wifi-ap-tsf-stop"
+protocols = ["wifi"]
 profiles = ["libpp-all"]
 roots = ["libpp:hal_disable_softap_tsf"]
 include-reachable = true
 
 [[review.scopes]]
 id = "wifi-ap-tsf-start"
+protocols = ["wifi"]
 profiles = ["libpp-all"]
 roots = ["libpp:hal_mac_tsf_reset"]
 include-reachable = true
 
 [[review.scopes]]
 id = "wifi-tx-retry-rate"
+protocols = ["wifi"]
 profiles = ["libpp-all"]
 roots = ["libpp:rcGetRate"]
 include-reachable = false
 
 [[review.scopes]]
 id = "wifi-tx-completion-dispatch"
+protocols = ["wifi"]
 profiles = ["wifi-sta-lifecycle"]
 roots = [
     "wifi-sta-lifecycle:lmacPostTxComplete",
@@ -480,6 +496,7 @@ include-reachable = false
 
 [[review.scopes]]
 id = "wifi-rx-completion-dispatch"
+protocols = ["wifi"]
 profiles = ["wifi-sta-lifecycle"]
 roots = [
     "wifi-sta-lifecycle:lmacRxDone",
@@ -490,6 +507,7 @@ include-reachable = false
 
 [[review.scopes]]
 id = "coex-core"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
 profiles = ["coex-all"]
 roots = [
     "coex:coex_pre_init",
@@ -505,6 +523,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "coex-timer"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
 profiles = ["coex-all"]
 roots = [
     "coex:coex_hw_timer_set",
@@ -517,6 +536,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "coex-timer-control"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
 profiles = ["coex-all"]
 roots = [
     "coex:coex_hw_timer_enable",
@@ -528,6 +548,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "coex-external-register-leaves"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
 profiles = ["coex-all"]
 roots = [
     "coex:hal_enable_extern_coex",
@@ -543,6 +564,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "coex-scheduler"
+protocols = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
 profiles = ["coex-all"]
 roots = [
     "coex:coex_schm_interval_set",
@@ -554,12 +576,14 @@ include-reachable = true
 
 [[review.scopes]]
 id = "ble-coex-client"
+protocols = ["bluetooth", "ble", "coex"]
 profiles = ["btbb-all"]
 roots = ["btbb:coex_pti_v2"]
 include-reachable = true
 
 [[review.scopes]]
 id = "ble-controller-lifecycle"
+protocols = ["bluetooth", "ble"]
 profiles = [
     "ble-controller-lifecycle",
     "ble-npl-boundary",
@@ -574,6 +598,7 @@ include-reachable = false
 
 [[review.scopes]]
 id = "ble-host-controller-interface"
+protocols = ["bluetooth", "ble"]
 profiles = ["ble-hci-transport"]
 roots = [
     "ble-controller:r_ble_hci_trans_init",
@@ -585,6 +610,7 @@ include-reachable = false
 
 [[review.scopes]]
 id = "ble-runtime-lifecycle"
+protocols = ["bluetooth", "ble"]
 profiles = [
     "ble-stack-lifecycle",
     "ble-task-lifecycle",
@@ -610,6 +636,7 @@ include-reachable = false
 # classified explicitly.
 [[review.scopes]]
 id = "ble-standalone-runtime-hardware"
+protocols = ["bluetooth", "ble"]
 profiles = ["ble-controller-all"]
 roots = [
     # Reached by the pinned public S31 outer enable glue through
@@ -639,6 +666,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "ieee802154-baseband-leaves"
+protocols = ["ieee802154"]
 profiles = ["ieee802154-btbb", "ieee802154-zb"]
 roots = [
     "btbb:ieee802154_ed_trig_tx_rampup_get",
@@ -654,6 +682,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "ieee802154-coex-client"
+protocols = ["ieee802154", "coex"]
 profiles = ["ieee802154-coex"]
 roots = [
     "coex:esp_coex_ieee802154_ack_pti_set",

@@ -34,6 +34,30 @@ fn register_workspace_requires_an_explicit_nonempty_publication_scope() {
 }
 
 #[test]
+fn review_scopes_require_explicit_canonical_protocols() {
+    let (_, _, missing) = invalid_project_span(
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"vendor\"\nroots = \"all\"\noutput = \"vendor.ir\"\n[review]\noutput = \"review.json\"\npublication-scopes = [\"station-state\"]\n[[review.scopes]]\nid = \"station-state\"\nprofiles = [\"vendor\"]\nroots = [\"vendor:root\"]\n",
+        "missing-review-protocols.toml",
+    );
+    assert!(missing.contains("requires \"protocols\""), "{missing}");
+
+    for (name, protocol) in [
+        ("bt-alias.toml", "bt"),
+        ("dot-802154-alias.toml", "802.15.4"),
+        ("unknown-radio.toml", "radio"),
+    ] {
+        let input = format!(
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"vendor\"\nroots = \"all\"\noutput = \"vendor.ir\"\n[review]\noutput = \"review.json\"\npublication-scopes = [\"feature\"]\n[[review.scopes]]\nid = \"feature\"\nprotocols = [\"{protocol}\"]\nprofiles = [\"vendor\"]\nroots = [\"vendor:root\"]\n"
+        );
+        let (_, _, error) = invalid_project_span(&input, name);
+        assert!(
+            error.contains("unsupported protocol"),
+            "case {name}: {error}"
+        );
+    }
+}
+
+#[test]
 fn project_manifest_rejects_misspelled_nested_configuration_tables() {
     let (_, _, error) = invalid_project_span(
         "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.toml]\ncatalogs = [\"evidence.toml\"]\n",
@@ -254,6 +278,7 @@ publication-scopes = ["radio-init"]
 
 [[review.scopes]]
 id = "radio-init"
+protocols = ["shared"]
 profiles = ["vendor"]
 roots = ["archive:phy_init"]
 include-reachable = true
@@ -417,6 +442,7 @@ locator = "review"
             publication_scopes: vec!["radio-init".to_owned()],
             scopes: vec![ReviewScopeSpec {
                 id: "radio-init".to_owned(),
+                protocols: vec!["shared".to_owned()],
                 profiles: vec!["vendor".to_owned()],
                 roots: vec!["archive:phy_init".to_owned()],
                 include_reachable: true,

@@ -56,11 +56,13 @@ Scores are stable prioritization signals, not elapsed-time estimates.
 ## Filters, budget and limit
 
 `--scope ID` selects one exact configured review scope. `--protocol NAME`
-selects the leading namespace of configured scope IDs: for example `wifi-rx`
-belongs to `wifi`, and `ieee802154-baseband-leaves` belongs to `ieee802154`.
-This deliberately uses project configuration rather than guessing a protocol
-from symbols or incomplete capability evidence. Unknown names and an empty
-scope/protocol intersection fail with the configured alternatives.
+selects scopes by their mandatory, explicit `protocols` membership in
+`vendor-project.toml`; scope IDs and symbols are never interpreted as protocol
+names. Canonical names are `wifi`, `bluetooth`, `ble`, `ieee802154`, `coex`,
+and `shared`. The CLI also accepts `bt` for `bluetooth`, plus `802.15.4` and
+`802154` for `ieee802154`, and emits the canonical name in JSON. A shared PHY
+or coexistence scope can carry several protocol tags. Unknown names and an
+empty exact scope/protocol intersection fail with the configured alternatives.
 
 `--limit N` bounds the number of actions. `--budget UNITS` bounds their
 cumulative `estimated_cost_units`. Selection walks the chosen deterministic

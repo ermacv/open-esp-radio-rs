@@ -206,7 +206,7 @@ pub(crate) struct ResearchNextArgs {
     /// Rank by overall impact, low-cost quick wins, or the benefit/effort frontier.
     #[arg(long, value_enum, default_value_t)]
     pub(crate) strategy: ResearchRankingArg,
-    /// Restrict prioritization to the leading namespace of configured review-scope IDs.
+    /// Restrict prioritization to an explicit review-scope protocol tag.
     #[arg(long, value_name = "NAME")]
     pub(crate) protocol: Option<String>,
     /// Restrict prioritization to one configured review scope.

@@ -40,6 +40,7 @@ pub(super) fn run(arguments: InspectScopeArgs, project: &ProjectSpec) -> Result<
     crate::cli::output::render_report(&report, || {
         let scope = &report.scope;
         outputln!("SCOPE {}", scope.id);
+        outputln!("  protocols={}", scope.protocols.join(","));
         outputln!(
             "  analysis={} functions={} roots={} complete={} effects={}",
             if scope.analysis_inventory_complete {

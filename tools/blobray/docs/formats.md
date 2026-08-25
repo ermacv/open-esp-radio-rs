@@ -138,7 +138,9 @@ a fresh schema-2 baseline from the live typed vendor bindings.
   floating value-flow nodes whose operation and rounding mode remain explicit;
 - navigation and review-scope indexes; project-wide call associations retain
   source-qualified candidates and a unique/ambiguous/unresolved status without
-  claiming linker resolution;
+  claiming linker resolution. Review-scope schema 12 persists the mandatory
+  many-to-many `protocols` membership from project configuration; protocol
+  membership is never reconstructed from scope IDs;
 - pseudo-Rust and executable reference artifacts;
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output;
@@ -149,9 +151,10 @@ a fresh schema-2 baseline from the live typed vendor bindings.
   evidence, impact sets and revalidation commands. Capability matches and
   verification surfaces are context-only links with zero ranking weight, and
   the report makes no completion claim.
-- project-status reports (`schema = 9`) keep shallow artifact readiness
+- project-status reports (`schema = 10`) keep shallow artifact readiness
   separate from generated freshness, open research debt and verification
-  readiness; `ready` never means that a review scope has no remaining work.
+  readiness; review-scope details expose their explicit protocol memberships,
+  and `ready` never means that a review scope has no remaining work.
 
 Generated outputs are disposable and reproducible. They must preserve source
 artifact identity/provenance and must not contain proprietary payloads or full

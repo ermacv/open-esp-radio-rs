@@ -163,7 +163,7 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
-    assert_eq!(document["schema"], 9);
+    assert_eq!(document["schema"], 10);
     assert_eq!(document["scope"], "blobray-pipeline");
     assert_eq!(document["command"], "project status");
     assert_eq!(document["validation"]["depth"], "shallow");
@@ -768,6 +768,7 @@ publication-scopes = ["fixture"]
 
 [[review.scopes]]
 id = "fixture"
+protocols = ["shared"]
 profiles = ["vendor"]
 roots = ["vendor:fixture_entry"]
 include-reachable = true
@@ -2470,7 +2471,7 @@ fn project_publication_json_is_one_typed_report() {
         .open(&manifest)
         .unwrap()
         .write_all(
-            b"\n[review]\noutput = \"generated/findings/review-scopes.json\"\npublication-scopes = [\"publication\"]\n\n[[review.scopes]]\nid = \"publication\"\nprofiles = [\"vendor\"]\nroots = [\"vendor:fixture_entry\"]\ninclude-reachable = true\n",
+            b"\n[review]\noutput = \"generated/findings/review-scopes.json\"\npublication-scopes = [\"publication\"]\n\n[[review.scopes]]\nid = \"publication\"\nprotocols = [\"shared\"]\nprofiles = [\"vendor\"]\nroots = [\"vendor:fixture_entry\"]\ninclude-reachable = true\n",
         )
         .unwrap();
     let review_output = directory.join("generated/findings/review-scopes.json");
@@ -2478,11 +2479,12 @@ fn project_publication_json_is_one_typed_report() {
     std::fs::write(
         review_output,
         serde_json::to_vec_pretty(&serde_json::json!({
-            "schema_version": 11,
+            "schema_version": 12,
             "command": "project review scopes",
             "project": "publication-report",
             "scopes": [{
                 "id": "publication",
+                "protocols": ["shared"],
                 "publication": true,
                 "analysis_inventory_complete": true,
                 "profiles": ["vendor"],

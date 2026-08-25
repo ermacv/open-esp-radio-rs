@@ -1000,6 +1000,86 @@ fn ieee802154_vendor_scaffold_is_fail_closed_and_source_scoped() {
 }
 
 #[test]
+fn review_scopes_have_explicit_many_to_many_protocol_membership() {
+    let target = repository_root().join("verification/vendor/targets/esp32s31");
+    let project = toml_document(&target.join("vendor-project.toml"));
+    let scopes = project["review"]["scopes"]
+        .as_array_of_tables()
+        .expect("project review scopes");
+    assert_eq!(scopes.len(), 29);
+
+    let allowed = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let mut by_id = BTreeMap::<String, BTreeSet<String>>::new();
+    for scope in scopes {
+        let id = scope["id"].as_str().expect("review scope id");
+        let protocols = scope["protocols"]
+            .as_array()
+            .unwrap_or_else(|| panic!("review scope {id} has no protocols array"));
+        assert!(!protocols.is_empty(), "review scope {id} has no protocol");
+        let memberships = protocols
+            .iter()
+            .map(|protocol| {
+                let protocol = protocol
+                    .as_str()
+                    .unwrap_or_else(|| panic!("review scope {id} has a non-string protocol"));
+                assert!(
+                    allowed.contains(protocol),
+                    "review scope {id} uses non-canonical protocol {protocol}"
+                );
+                protocol.to_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(memberships.len(), protocols.len(), "duplicates in {id}");
+        assert!(by_id.insert(id.to_owned(), memberships).is_none());
+    }
+
+    let all_radios = allowed.iter().map(|value| (*value).to_owned()).collect();
+    assert_eq!(by_id["phy-init"], all_radios);
+    assert_eq!(by_id["station-state"], BTreeSet::from(["wifi".to_owned()]));
+    assert_eq!(
+        by_id["ble-controller-lifecycle"],
+        BTreeSet::from(["ble".to_owned(), "bluetooth".to_owned()])
+    );
+    assert_eq!(
+        by_id["ieee802154-coex-client"],
+        BTreeSet::from(["coex".to_owned(), "ieee802154".to_owned()])
+    );
+    for scope in [
+        "coex-core",
+        "coex-timer",
+        "coex-timer-control",
+        "coex-external-register-leaves",
+        "coex-scheduler",
+    ] {
+        assert_eq!(
+            by_id[scope],
+            allowed.iter().map(|value| (*value).to_owned()).collect()
+        );
+    }
+
+    let counts = allowed
+        .iter()
+        .map(|protocol| {
+            (
+                *protocol,
+                by_id
+                    .values()
+                    .filter(|memberships| memberships.contains(*protocol))
+                    .count(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(counts["wifi"], 22);
+    assert_eq!(counts["bluetooth"], 11);
+    assert_eq!(counts["ble"], 11);
+    assert_eq!(counts["ieee802154"], 8);
+    assert_eq!(counts["coex"], 9);
+    assert_eq!(counts["shared"], 6);
+}
+
+#[test]
 fn ecosystem_pack_composes_the_shared_espressif_family_knowledge() {
     let vendor = repository_root().join("verification/vendor");
     let target = vendor.join("targets/esp32s31");

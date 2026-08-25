@@ -217,9 +217,29 @@ pub(crate) struct VerificationWorkspacePaths {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ReviewScopeSpec {
     pub(crate) id: String,
+    /// Explicit radio domains that benefit from this scope. A scope may be
+    /// shared by several protocols; membership is never inferred from its id.
+    pub(crate) protocols: Vec<String>,
     pub(crate) profiles: Vec<String>,
     pub(crate) roots: Vec<String>,
     pub(crate) include_reachable: bool,
+}
+
+pub(crate) const REVIEW_PROTOCOLS: [&str; 6] =
+    ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"];
+
+pub(crate) fn canonical_review_protocol(value: &str) -> Option<&'static str> {
+    REVIEW_PROTOCOLS
+        .into_iter()
+        .find(|candidate| *candidate == value)
+}
+
+pub(crate) fn normalize_review_protocol_alias(value: &str) -> Option<&'static str> {
+    match value {
+        "bt" | "bluetooth" => Some("bluetooth"),
+        "802.15.4" | "802154" | "ieee802154" => Some("ieee802154"),
+        value => canonical_review_protocol(value),
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

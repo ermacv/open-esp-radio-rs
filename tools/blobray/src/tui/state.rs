@@ -570,6 +570,7 @@ mod tests {
         });
         workspace.review_scopes.push(ReviewScopeSummary {
             id: "radio-init".to_owned(),
+            protocols: vec!["shared".to_owned()],
             publication: true,
             replacement_coverage: "complete".to_owned(),
             replacement_policy_excluded: 0,

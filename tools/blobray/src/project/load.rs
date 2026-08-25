@@ -801,7 +801,13 @@ fn load_review_workspace(
             let context = format!("project review.scopes[{index}]");
             reject_unknown_keys(
                 scope,
-                &["id", "profiles", "roots", "include-reachable"],
+                &[
+                    "id",
+                    "protocols",
+                    "profiles",
+                    "roots",
+                    "include-reachable",
+                ],
                 &context,
                 source,
             )?;
@@ -814,6 +820,23 @@ fn load_review_workspace(
                     format!("duplicate project review scope {id:?}"),
                 ));
             }
+            let protocols = table_string_array(scope, "protocols", &context, source, false)?
+                .into_iter()
+                .map(|protocol| {
+                    canonical_review_protocol(&protocol)
+                        .map(str::to_owned)
+                        .ok_or_else(|| {
+                            source.table_key(
+                                scope,
+                                "protocols",
+                                format!(
+                                    "{context}.protocols contains unsupported protocol {protocol:?}; expected one of {}",
+                                    REVIEW_PROTOCOLS.join(", ")
+                                ),
+                            )
+                        })
+                })
+                .collect::<Result<Vec<_>>>()?;
             let profiles = if scope.get("profiles").is_some() {
                 table_string_array(scope, "profiles", &context, source, false)?
             } else {
@@ -843,6 +866,7 @@ fn load_review_workspace(
                 .unwrap_or(true);
             Ok(ReviewScopeSpec {
                 id,
+                protocols,
                 profiles,
                 roots,
                 include_reachable,

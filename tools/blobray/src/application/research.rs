@@ -312,7 +312,11 @@ pub(crate) fn next(
         ));
     }
     let document = crate::review_scopes::load_for_project(&session.project)?;
-    let scopes = select_scopes(&document, options.scope, options.protocol)?;
+    let selected_protocol = options
+        .protocol
+        .map(normalize_protocol_filter)
+        .transpose()?;
+    let scopes = select_scopes(&document, options.scope, selected_protocol)?;
     let analyzed_scopes = scopes.iter().map(|scope| scope.id.clone()).collect();
     let graphs = scopes
         .iter()
@@ -377,7 +381,7 @@ pub(crate) fn next(
         command: "research next".to_owned(),
         project: session.project.id.clone(),
         strategy: options.strategy,
-        protocol: options.protocol.map(str::to_owned),
+        protocol: selected_protocol.map(str::to_owned),
         scope: options.scope.map(str::to_owned),
         analyzed_scopes,
         total_findings,
@@ -399,12 +403,12 @@ fn select_scopes<'a>(
     selected_scope: Option<&str>,
     selected_protocol: Option<&str>,
 ) -> Result<Vec<&'a ReviewScopeReport>> {
-    let scope_ids = document
+    let configured_scopes = document
         .scopes
         .iter()
-        .map(|scope| scope.id.clone())
-        .collect::<Vec<_>>();
-    let selected_ids = select_scope_ids(&scope_ids, selected_scope, selected_protocol)?;
+        .map(|scope| (scope.id.clone(), scope.protocols.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let selected_ids = select_scope_ids(&configured_scopes, selected_scope, selected_protocol)?;
     Ok(document
         .scopes
         .iter()
@@ -413,51 +417,60 @@ fn select_scopes<'a>(
 }
 
 fn select_scope_ids(
-    scope_ids: &[String],
+    configured_scopes: &BTreeMap<String, Vec<String>>,
     selected_scope: Option<&str>,
     selected_protocol: Option<&str>,
 ) -> Result<BTreeSet<String>> {
     if let Some(selected) = selected_scope
-        && !scope_ids.iter().any(|scope| scope == selected)
+        && !configured_scopes.contains_key(selected)
     {
-        let available = scope_ids.join(", ");
+        let available = configured_scopes
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
         return Err(crate::Error::invalid(format!(
             "unknown review scope {selected:?}; configured scopes: {available}"
         )));
     }
-    let protocols = scope_ids
-        .iter()
-        .map(|scope| scope_protocol(scope))
+    let protocols = configured_scopes
+        .values()
+        .flatten()
+        .map(String::as_str)
         .collect::<BTreeSet<_>>();
     if let Some(selected) = selected_protocol
         && !protocols.contains(selected)
     {
         return Err(crate::Error::invalid(format!(
-            "unknown research protocol {selected:?}; configured scope namespaces: {}",
+            "research protocol {selected:?} has no configured review scopes; configured protocols: {}",
             protocols.into_iter().collect::<Vec<_>>().join(", ")
         )));
     }
-    let selected = scope_ids
+    let selected = configured_scopes
         .iter()
-        .filter(|scope| selected_scope.is_none_or(|selected| scope.as_str() == selected))
-        .filter(|scope| selected_protocol.is_none_or(|selected| scope_protocol(scope) == selected))
-        .cloned()
+        .filter(|(scope, _)| selected_scope.is_none_or(|selected| scope.as_str() == selected))
+        .filter(|(_, protocols)| {
+            selected_protocol.is_none_or(|selected| protocols.iter().any(|value| value == selected))
+        })
+        .map(|(scope, _)| scope.clone())
         .collect::<BTreeSet<_>>();
     if selected.is_empty()
         && let (Some(scope), Some(protocol)) = (selected_scope, selected_protocol)
     {
         return Err(crate::Error::invalid(format!(
-            "review scope {scope:?} is outside protocol namespace {protocol:?}; its namespace is {:?}",
-            scope_protocol(scope)
+            "review scope {scope:?} is not tagged with protocol {protocol:?}; configured scope protocols: {}",
+            configured_scopes[scope].join(", ")
         )));
     }
     Ok(selected)
 }
 
-fn scope_protocol(scope: &str) -> &str {
-    scope
-        .split_once('-')
-        .map_or(scope, |(protocol, _)| protocol)
+fn normalize_protocol_filter(value: &str) -> Result<&'static str> {
+    crate::project::normalize_review_protocol_alias(value).ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "unknown research protocol {value:?}; supported protocols: wifi, bluetooth (alias bt), ble, ieee802154 (aliases 802.15.4 and 802154), coex, shared"
+        ))
+    })
 }
 
 fn apply_ranking_strategy(candidates: &mut Vec<ResearchAction>, strategy: ResearchRankingStrategy) {
@@ -1872,22 +1885,54 @@ mod tests {
 
     #[test]
     fn scope_and_protocol_filters_are_exact_and_fail_closed() {
-        let scopes = ["ble-runtime", "ieee802154-baseband", "wifi-rx"]
-            .map(str::to_owned)
-            .to_vec();
+        let scopes = BTreeMap::from([
+            (
+                "ble-runtime".to_owned(),
+                vec!["bluetooth".to_owned(), "ble".to_owned()],
+            ),
+            (
+                "ieee802154-baseband".to_owned(),
+                vec!["ieee802154".to_owned()],
+            ),
+            ("station-state".to_owned(), vec!["wifi".to_owned()]),
+            (
+                "shared-phy".to_owned(),
+                vec![
+                    "wifi".to_owned(),
+                    "bluetooth".to_owned(),
+                    "ble".to_owned(),
+                    "ieee802154".to_owned(),
+                    "shared".to_owned(),
+                ],
+            ),
+        ]);
 
         assert_eq!(
             select_scope_ids(&scopes, None, Some("wifi")).unwrap(),
-            ["wifi-rx".to_owned()].into()
+            ["shared-phy".to_owned(), "station-state".to_owned()].into()
         );
         assert_eq!(
             select_scope_ids(&scopes, Some("ble-runtime"), Some("ble")).unwrap(),
             ["ble-runtime".to_owned()].into()
         );
         let unknown = select_scope_ids(&scopes, None, Some("radio")).unwrap_err();
-        assert!(unknown.to_string().contains("configured scope namespaces"));
+        assert!(unknown.to_string().contains("configured protocols"));
         let mismatch = select_scope_ids(&scopes, Some("ble-runtime"), Some("wifi")).unwrap_err();
-        assert!(mismatch.to_string().contains("outside protocol namespace"));
+        assert!(mismatch.to_string().contains("not tagged with protocol"));
+    }
+
+    #[test]
+    fn protocol_filter_normalizes_only_supported_cli_aliases() {
+        assert_eq!(normalize_protocol_filter("bt").unwrap(), "bluetooth");
+        assert_eq!(normalize_protocol_filter("bluetooth").unwrap(), "bluetooth");
+        for alias in ["802.15.4", "802154", "ieee802154"] {
+            assert_eq!(normalize_protocol_filter(alias).unwrap(), "ieee802154");
+        }
+        for canonical in ["wifi", "ble", "coex", "shared"] {
+            assert_eq!(normalize_protocol_filter(canonical).unwrap(), canonical);
+        }
+        assert!(normalize_protocol_filter("radio").is_err());
+        assert!(normalize_protocol_filter("Bluetooth").is_err());
     }
 
     #[test]

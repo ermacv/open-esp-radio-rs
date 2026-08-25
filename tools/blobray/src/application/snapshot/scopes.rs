@@ -29,6 +29,7 @@ pub(super) fn collect(
         .into_iter()
         .map(|scope| ReviewScopeSummary {
             id: scope.id,
+            protocols: scope.protocols,
             publication: scope.publication,
             replacement_coverage: match scope.replacement_coverage {
                 crate::review_scopes::ReplacementCoverage::Complete => "complete",

@@ -199,9 +199,6 @@ pub(crate) struct RevisionPrepareUpdateArgs {
     /// Verify an existing preflight marker without changing the ledger.
     #[arg(long)]
     pub(crate) check: bool,
-    /// Explicit schema-1 verification-source migration map, relative to the project.
-    #[arg(long, value_name = "PATH")]
-    pub(crate) migrate_legacy_scope: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Args)]

@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 project = "esp32s31-radio-rev0"
 baseline = "esp32s31-rev0-vendor-scope-2026-08-25"
 current = "esp32s31-rev0-vendor-scope-2026-08-25"
@@ -9,23 +9,7 @@ snapshot-sha256 = "a4ec2ac17a398a7548d52123e99a829d7c0af6b1e1ea64ad30a077849a028
 artifacts-sha256 = "e1a992e0cd770599b05cb2043662b3bebcf4ce3f3143d48bc86aa2ee3dc9cb26"
 
 [[revisions]]
-name = "esp32s31-rev0-2026-08-25"
-snapshot = "snapshots/esp32s31-rev0-2026-08-25.json.gz"
-snapshot-sha256 = "042052407bbf7287d824596fba71d585abbb324a21fb4f3a390854e37d00b151"
-artifacts-sha256 = "466956d2dcbeb8f1a31363d19a92a273670c716380a0e3a611c5eba3ca460068"
-
-[[revisions]]
 name = "esp32s31-rev0-vendor-scope-2026-08-25"
 snapshot = "snapshots/esp32s31-rev0-vendor-scope-2026-08-25.json.gz"
 snapshot-sha256 = "a4ec2ac17a398a7548d52123e99a829d7c0af6b1e1ea64ad30a077849a028ea7"
 artifacts-sha256 = "e1a992e0cd770599b05cb2043662b3bebcf4ce3f3143d48bc86aa2ee3dc9cb26"
-
-[revisions.scope-migration]
-from-snapshot-sha256 = "042052407bbf7287d824596fba71d585abbb324a21fb4f3a390854e37d00b151"
-map = "migrations/esp32s31-rev0-schema1.toml"
-map-sha256 = "6595867d1f6f35fbec4f70863d9b265238e730c53ef21d510756c00e9ba6d71b"
-verification-sources = [
-    "bluetooth",
-    "rust",
-    "wifi-registers",
-]

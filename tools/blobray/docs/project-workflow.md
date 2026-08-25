@@ -227,20 +227,10 @@ existing marker. A snapshot with changed artifact identities is rejected
 unless its predecessor has a matching marker, so cleanup or an accidental
 binding edit cannot silently erase the old correspondence map.
 While `baseline` and `current` differ, `project status` and deep doctor report
-`revision-review-pending` (or the more specific
-`migration-review-pending`) instead of `ready`; a captured snapshot is not an
-accepted review decision.
-
-For a legacy schema-1 current snapshot, `project status`/`doctor` report a
-scope migration. Keep the old immutable file, add an explicit map bound to its
-logical digest and listing the old Rust verification source IDs, then run
-`prepare-update --migrate-legacy-scope MAP`. Create a new name while the vendor
-inputs are unchanged, inspect the resulting diff/rebase, and finish with
-`prepare-update --accept-current`. Blobray refuses automatic source inference
-and requires every function, register, interface and reviewed record to remain
-identical during this one-time scope migration. The map must live below
-`revisions/migrations/`; its relative path and digest remain in the ledger and
-are revalidated by deep inspection.
+`revision-review-pending` instead of `ready`; a captured snapshot is not an
+accepted review decision. Blobray accepts only schema-2 snapshots and ledgers.
+Older state is not migrated or interpreted: archive or remove it, then capture
+a fresh current snapshot from the live typed vendor bindings.
 
 `source-artifact:*` may identify a locally linked analysis container around
 vendor objects. It is still part of exact analysis provenance: rebuilding or

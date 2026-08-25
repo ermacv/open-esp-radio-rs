@@ -96,12 +96,7 @@ fn prepare_update(
     arguments: RevisionPrepareUpdateArgs,
     session: &crate::application::ProjectSession,
 ) -> Result<bool> {
-    let report = revision::prepare_update(
-        session,
-        arguments.accept_current,
-        arguments.check,
-        arguments.migrate_legacy_scope.as_deref(),
-    )?;
+    let report = revision::prepare_update(session, arguments.accept_current, arguments.check)?;
     output::render_report(&report, || {
         outputln!("{}", output::heading("Revision update preflight"));
         outputln!(

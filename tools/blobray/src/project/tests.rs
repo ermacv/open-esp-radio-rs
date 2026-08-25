@@ -71,8 +71,10 @@ fn register_workspace_inherits_the_reusable_chip_model() {
 
 #[test]
 fn project_composition_selects_one_reviewed_chip_revision_fail_closed() {
-    const ARTIFACT_SHA256: &str =
-        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const ARTIFACT_SHA256: &str = concat!(
+        "0123456789abcdef0123456789abcdef",
+        "0123456789abcdef0123456789abcdef"
+    );
     let directory = std::env::temp_dir().join(format!(
         "open-radio-blobray-review-context-{}",
         std::process::id()

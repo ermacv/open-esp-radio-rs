@@ -512,6 +512,67 @@ fn project_doctor_json_is_one_complete_typed_report() {
 }
 
 #[test]
+fn obsolete_revision_state_is_a_hard_cutover_in_cli_status_and_doctor() {
+    let help = run(&["project", "revision", "prepare-update", "--help"]);
+    assert!(help.status.success());
+    assert!(!String::from_utf8_lossy(&help.stdout).contains("migrate-legacy-scope"));
+
+    let removed = run(&[
+        "project",
+        "revision",
+        "prepare-update",
+        "--migrate-legacy-scope",
+        "map.toml",
+    ]);
+    assert!(!removed.status.success());
+    assert!(String::from_utf8_lossy(&removed.stderr).contains("unexpected argument"));
+
+    let (directory, manifest) = init_temporary_project("revision-cutover");
+    let ledger = directory.join("revisions/ledger.toml");
+    std::fs::create_dir_all(ledger.parent().unwrap()).unwrap();
+    std::fs::write(
+        &ledger,
+        "schema = 1\nproject = \"revision-cutover\"\n",
+    )
+    .unwrap();
+
+    let status = run_project_command(&manifest, &["project", "status"]);
+    assert!(!status.status.success());
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    let revision = &status["phases"]["revision-workflow"]["components"][0];
+    assert_eq!(revision["status"], "invalid");
+    assert!(
+        revision["diagnostic"]
+            .as_str()
+            .unwrap()
+            .contains("create a new current state")
+    );
+    assert!(
+        revision["next_action"]
+            .as_str()
+            .unwrap()
+            .contains("project revision snapshot CURRENT")
+    );
+
+    let doctor = run_project_command(&manifest, &["project", "doctor"]);
+    let doctor: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    let revision = doctor["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["name"] == "revision-workflow")
+        .unwrap();
+    assert_eq!(revision["status"], "invalid");
+    assert!(
+        revision["details"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("create a new current state")
+    );
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn root_help_is_project_first_and_project_files_is_typed() {
     let help = run(&["--help"]);
     assert!(help.status.success());
@@ -2564,10 +2625,11 @@ fn revision_diff_is_a_typed_project_workflow() {
     let (directory, manifest) = init_temporary_project("revision-diff");
     let revision = |name: &str, function: &str| {
         serde_json::json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "command": "revision snapshot",
             "name": name,
             "project": "revision-diff",
+            "artifact_scope": "vendor-inputs",
             "artifacts": [],
             "functions": [{
                 "id": function,
@@ -2698,6 +2760,7 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
             .is_file()
     );
     let ledger = std::fs::read_to_string(directory.join("revisions/ledger.toml")).unwrap();
+    assert!(ledger.contains("schema = 2"));
     assert!(ledger.contains("baseline = \"vendor-1\""));
     assert!(ledger.contains("current = \"vendor-1\""));
     assert!(ledger.contains("snapshot-sha256"));

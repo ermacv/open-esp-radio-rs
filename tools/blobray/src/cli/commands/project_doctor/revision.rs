@@ -29,20 +29,15 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                     ),
             );
         }
-        Health::LegacyScope | Health::MigrationReviewPending | Health::RevisionReviewPending => {
-            let status = match inspection.health {
-                Health::MigrationReviewPending => "migration-review-pending",
-                Health::RevisionReviewPending => "revision-review-pending",
-                _ => "legacy-scope",
-            };
+        Health::RevisionReviewPending => {
             report.warning(
                 inspection
                     .diagnostic
                     .clone()
-                    .unwrap_or_else(|| "legacy revision scope requires migration".to_owned()),
+                    .unwrap_or_else(|| "revision review is pending".to_owned()),
             );
             report.capability(
-                CapabilityReport::new("revision-workflow", status)
+                CapabilityReport::new("revision-workflow", "revision-review-pending")
                     .field("ledger", inspection.path)
                     .field("revisions", inspection.revisions)
                     .field(

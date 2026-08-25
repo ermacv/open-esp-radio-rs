@@ -21,9 +21,10 @@ use crate::{
     registers::{RegisterFacts, load_effective_register_model},
 };
 
-const LEGACY_REVISION_SCHEMA: u32 = 1;
 pub(crate) const REVISION_SCHEMA: u32 = 2;
-pub(crate) const REVISION_LEDGER_SCHEMA: u32 = 1;
+pub(crate) const REVISION_LEDGER_SCHEMA: u32 = 2;
+
+const REVISION_CUTOVER_INSTRUCTION: &str = "archive or remove revisions/ledger.toml and create a new current state with `project revision snapshot CURRENT`";
 
 static LEDGER_STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -222,6 +223,11 @@ pub(crate) struct RevisionLedger {
     pub(crate) entries: Vec<RevisionLedgerEntry>,
 }
 
+#[derive(Deserialize)]
+struct RevisionLedgerEnvelope {
+    schema: u32,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub(crate) struct RevisionLedgerEntry {
@@ -229,8 +235,6 @@ pub(crate) struct RevisionLedgerEntry {
     pub(crate) snapshot: String,
     pub(crate) snapshot_sha256: String,
     pub(crate) artifacts_sha256: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) scope_migration: Option<RevisionScopeMigration>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -239,38 +243,6 @@ pub(crate) struct PreparedRevisionUpdate {
     pub(crate) from: String,
     pub(crate) snapshot_sha256: String,
     pub(crate) artifacts_sha256: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) legacy_scope_migration: Option<PreparedLegacyScopeMigration>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub(crate) struct RevisionScopeMigration {
-    pub(crate) from_snapshot_sha256: String,
-    pub(crate) map: String,
-    pub(crate) map_sha256: String,
-    pub(crate) verification_sources: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub(crate) struct PreparedLegacyScopeMigration {
-    pub(crate) map: String,
-    pub(crate) map_sha256: String,
-    pub(crate) verification_sources: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-struct LegacyScopeMigrationDocument {
-    schema: u32,
-    snapshot_sha256: String,
-    verification_sources: Vec<String>,
-}
-
-struct LoadedLegacyScopeMigration {
-    snapshot_sha256: String,
-    prepared: PreparedLegacyScopeMigration,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -278,8 +250,6 @@ struct LoadedLegacyScopeMigration {
 pub(crate) enum RevisionLedgerHealth {
     Missing,
     BaselineMissing,
-    LegacyScope,
-    MigrationReviewPending,
     RevisionReviewPending,
     Ready,
     Invalid,
@@ -347,26 +317,7 @@ pub(crate) fn resolve_path(manifest: &Path, value: &str) -> Result<PathBuf> {
     {
         return snapshot_path(manifest, &entry.snapshot);
     }
-    let durable = default_path(manifest, value)?;
-    let durable_json = manifest
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("revisions/snapshots")
-        .join(format!("{value}.json"));
-    let legacy = manifest
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("generated/revisions")
-        .join(format!("{value}.json"));
-    Ok(
-        if durable.is_file() || (!durable_json.is_file() && !legacy.is_file()) {
-            durable
-        } else if durable_json.is_file() {
-            durable_json
-        } else {
-            legacy
-        },
-    )
+    default_path(manifest, value)
 }
 
 pub(crate) fn load(path: &Path) -> Result<RevisionSnapshot> {
@@ -391,7 +342,20 @@ pub(crate) fn load(path: &Path) -> Result<RevisionSnapshot> {
             path.display()
         ))
     })?;
-    let snapshot: RevisionSnapshot = serde_json::from_str(&input).map_err(|error| {
+    let envelope: serde_json::Value = serde_json::from_str(&input).map_err(|error| {
+        crate::Error::manifest_source("revision snapshot", path, &input, error, None)
+    })?;
+    if envelope
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        != Some(u64::from(REVISION_SCHEMA))
+    {
+        return Err(crate::Error::invalid(format!(
+            "revision snapshot {} is not current schema {REVISION_SCHEMA}; {REVISION_CUTOVER_INSTRUCTION}",
+            path.display()
+        )));
+    }
+    let snapshot: RevisionSnapshot = serde_json::from_value(envelope).map_err(|error| {
         crate::Error::manifest_source("revision snapshot", path, &input, error, None)
     })?;
     validate_snapshot(&snapshot)?;
@@ -419,12 +383,11 @@ pub(crate) fn persist_snapshot(
     // leaving every reviewed fact unchanged.
     let snapshot_sha256 = logical_snapshot_sha256(snapshot)?;
     let artifacts_sha256 = artifacts_sha256(&snapshot.artifacts)?;
-    let mut entry = RevisionLedgerEntry {
+    let entry = RevisionLedgerEntry {
         name: snapshot.name.clone(),
         snapshot: location,
         snapshot_sha256,
         artifacts_sha256,
-        scope_migration: None,
     };
 
     let mut ledger =
@@ -450,7 +413,6 @@ pub(crate) fn persist_snapshot(
                     entry.name
                 ))
             })?;
-        entry.scope_migration = stored.scope_migration.clone();
         if stored != &entry {
             return Err(crate::Error::invalid(format!(
                 "revision ledger entry {:?} differs from the requested snapshot; revision names are immutable",
@@ -467,7 +429,6 @@ pub(crate) fn persist_snapshot(
         .iter()
         .find(|stored| stored.name == entry.name)
     {
-        entry.scope_migration = stored.scope_migration.clone();
         if stored != &entry {
             return Err(crate::Error::invalid(format!(
                 "revision {:?} is immutable and already names different snapshot content; choose a new revision name",
@@ -482,45 +443,6 @@ pub(crate) fn persist_snapshot(
     if let Some(current) = ledger.current.as_deref() {
         let previous = ledger_entry(&ledger, current)?;
         verify_ledger_entry(manifest, &ledger, previous)?;
-        let previous_snapshot = load(&snapshot_path(manifest, &previous.snapshot)?)?;
-        if previous_snapshot.schema_version == LEGACY_REVISION_SCHEMA
-            && snapshot.schema_version == REVISION_SCHEMA
-        {
-            let prepared = ledger.prepared_update.as_ref().ok_or_else(|| {
-                crate::Error::invalid(
-                    "schema-1 scope migration requires `project revision prepare-update --migrate-legacy-scope MAP` before capturing schema 2",
-                )
-            })?;
-            let migration = prepared.legacy_scope_migration.as_ref().ok_or_else(|| {
-                crate::Error::invalid(
-                    "schema-1 scope migration preflight has no explicit verification-source map",
-                )
-            })?;
-            if previous_snapshot.functions != snapshot.functions
-                || previous_snapshot.registers != snapshot.registers
-                || previous_snapshot.interfaces != snapshot.interfaces
-                || previous_snapshot.assertions != snapshot.assertions
-                || previous_snapshot.vendor_bugs != snapshot.vendor_bugs
-            {
-                return Err(crate::Error::invalid(
-                    "legacy scope migration changed a function, register, interface or reviewed record; regenerate exact vendor evidence or review a separate vendor revision transition",
-                ));
-            }
-            entry.scope_migration = Some(RevisionScopeMigration {
-                from_snapshot_sha256: previous.snapshot_sha256.clone(),
-                map: migration.map.clone(),
-                map_sha256: migration.map_sha256.clone(),
-                verification_sources: migration.verification_sources.clone(),
-            });
-        } else if ledger
-            .prepared_update
-            .as_ref()
-            .is_some_and(|prepared| prepared.legacy_scope_migration.is_some())
-        {
-            return Err(crate::Error::invalid(
-                "legacy scope migration map can only transition a schema-1 current snapshot to schema 2",
-            ));
-        }
         if previous.artifacts_sha256 != entry.artifacts_sha256 {
             let prepared = ledger.prepared_update.as_ref().ok_or_else(|| {
                 crate::Error::invalid(format!(
@@ -557,23 +479,18 @@ pub(crate) fn prepare_update(
     session: &ProjectSession,
     accept_current: bool,
     check: bool,
-    legacy_scope_path: Option<&Path>,
 ) -> Result<RevisionPrepareUpdateReport> {
     let run_spec = session.run_spec.as_ref().ok_or_else(|| {
         crate::Error::invalid(
             "revision update preflight requires the current caller-owned run spec",
         )
     })?;
-    let legacy_scope = legacy_scope_path
-        .map(|path| load_legacy_scope_migration(&session.manifest, path))
-        .transpose()?;
     prepare_update_with_bindings(
         &session.manifest,
         &session.project.id,
         run_spec,
         accept_current,
         check,
-        legacy_scope.as_ref(),
     )
 }
 
@@ -584,89 +501,7 @@ pub(crate) fn verify_snapshot_bindings(
     let run_spec = session.run_spec.as_ref().ok_or_else(|| {
         crate::Error::invalid("revision snapshot requires the current caller-owned run spec")
     })?;
-    verify_current_artifact_bindings(run_spec, snapshot, &[])
-}
-
-fn load_legacy_scope_migration(
-    manifest: &Path,
-    value: &Path,
-) -> Result<LoadedLegacyScopeMigration> {
-    let path = if value.is_absolute() {
-        value.to_owned()
-    } else {
-        manifest
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(value)
-    };
-    let input = fs::read_to_string(&path)
-        .map_err(|error| crate::Error::read("legacy revision scope migration", &path, error))?;
-    let document: LegacyScopeMigrationDocument =
-        toml_edit::de::from_str(&input).map_err(|error| {
-            crate::Error::manifest_source(
-                "legacy revision scope migration",
-                &path,
-                &input,
-                error,
-                None,
-            )
-        })?;
-    if document.schema != 1 {
-        return Err(crate::Error::invalid(format!(
-            "legacy revision scope migration {} requires schema = 1",
-            path.display()
-        )));
-    }
-    validate_sha256(
-        "legacy migration snapshot-sha256",
-        &document.snapshot_sha256,
-    )?;
-    if document.verification_sources.is_empty() {
-        return Err(crate::Error::invalid(
-            "legacy revision scope migration requires at least one verification source",
-        ));
-    }
-    for source in &document.verification_sources {
-        crate::source_id::validate_source_id(source).map_err(|_| {
-            crate::Error::invalid(format!(
-                "legacy revision scope migration has invalid source id {source:?}"
-            ))
-        })?;
-    }
-    if !document
-        .verification_sources
-        .windows(2)
-        .all(|pair| pair[0] < pair[1])
-    {
-        return Err(crate::Error::invalid(
-            "legacy revision scope migration verification-sources must be sorted and unique",
-        ));
-    }
-    let mut hash = Sha256::new();
-    hash.update(b"blobray/legacy-scope-migration/v1\0");
-    hash.update(input.as_bytes());
-    let map_sha256 = hash
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    let map = durable_migration_location(manifest, &path)?;
-    Ok(LoadedLegacyScopeMigration {
-        snapshot_sha256: document.snapshot_sha256,
-        prepared: PreparedLegacyScopeMigration {
-            map,
-            map_sha256,
-            verification_sources: document.verification_sources,
-        },
-    })
-}
-
-fn load_ledger_scope_migration(
-    manifest: &Path,
-    location: &str,
-) -> Result<LoadedLegacyScopeMigration> {
-    validate_relative_components(Path::new(location), "scope-migration map location")?;
-    load_legacy_scope_migration(manifest, &Path::new("revisions").join(location))
+    verify_current_artifact_bindings(run_spec, snapshot)
 }
 
 fn prepare_update_with_bindings(
@@ -675,7 +510,6 @@ fn prepare_update_with_bindings(
     run_spec: &crate::run_spec::RunSpec,
     accept_current: bool,
     check: bool,
-    legacy_scope: Option<&LoadedLegacyScopeMigration>,
 ) -> Result<RevisionPrepareUpdateReport> {
     let mut ledger = load_ledger_optional(manifest, Some(project))?
         .ok_or_else(|| {
@@ -702,32 +536,11 @@ fn prepare_update_with_bindings(
     }
     let entry = ledger_entry(&ledger, &current)?.clone();
     let snapshot = load(&snapshot_path(manifest, &entry.snapshot)?)?;
-    if let Some(migration) = legacy_scope {
-        if snapshot.schema_version != LEGACY_REVISION_SCHEMA {
-            return Err(crate::Error::invalid(
-                "--migrate-legacy-scope requires a schema-1 current snapshot",
-            ));
-        }
-        if migration.snapshot_sha256 != entry.snapshot_sha256 {
-            return Err(crate::Error::invalid(format!(
-                "legacy scope migration map names snapshot digest {}, but current revision {:?} has {}",
-                migration.snapshot_sha256, current, entry.snapshot_sha256
-            )));
-        }
-    } else if snapshot.schema_version == LEGACY_REVISION_SCHEMA {
-        return Err(crate::Error::invalid(
-            "schema-1 current snapshot requires an explicit `--migrate-legacy-scope MAP`; automatic vendor/Rust classification is not fail-closed",
-        ));
-    }
-    let verification_sources = legacy_scope
-        .map(|migration| migration.prepared.verification_sources.as_slice())
-        .unwrap_or_default();
-    let verified = verify_current_artifact_bindings(run_spec, &snapshot, verification_sources)?;
+    let verified = verify_current_artifact_bindings(run_spec, &snapshot)?;
     let prepared = PreparedRevisionUpdate {
         from: current.clone(),
         snapshot_sha256: entry.snapshot_sha256.clone(),
         artifacts_sha256: entry.artifacts_sha256.clone(),
-        legacy_scope_migration: legacy_scope.map(|migration| migration.prepared.clone()),
     };
     if check {
         if accept_current && ledger.baseline.as_deref() != Some(current.as_str()) {
@@ -799,15 +612,9 @@ pub(crate) fn inspect_ledger(
                 .as_deref()
                 .expect("current checked before snapshot scope inspection");
             let entry = ledger_entry(&ledger, current)?;
-            let snapshot = load(&snapshot_path(manifest, &entry.snapshot)?)?;
-            if snapshot.schema_version == LEGACY_REVISION_SCHEMA {
-                RevisionLedgerHealth::LegacyScope
-            } else if ledger.baseline.as_deref() != Some(current) {
-                if entry.scope_migration.is_some() {
-                    RevisionLedgerHealth::MigrationReviewPending
-                } else {
-                    RevisionLedgerHealth::RevisionReviewPending
-                }
+            load(&snapshot_path(manifest, &entry.snapshot)?)?;
+            if ledger.baseline.as_deref() != Some(current) {
+                RevisionLedgerHealth::RevisionReviewPending
             } else {
                 RevisionLedgerHealth::Ready
             }
@@ -815,14 +622,6 @@ pub(crate) fn inspect_ledger(
         let diagnostic = match health {
             RevisionLedgerHealth::BaselineMissing => Some(
                 "revision ledger has no baseline/current snapshot; run `project revision snapshot BASELINE` before replacing artifact bindings"
-                    .to_owned(),
-            ),
-            RevisionLedgerHealth::LegacyScope => Some(
-                "current revision snapshot uses legacy schema 1 and may include local Rust verification artifacts; create a digest-bound migration map, run `project revision prepare-update --migrate-legacy-scope MAP`, capture a new named snapshot, review the one-time scope diff/rebase, then run `project revision prepare-update --accept-current`"
-                    .to_owned(),
-            ),
-            RevisionLedgerHealth::MigrationReviewPending => Some(
-                "schema-2 vendor-scope migration is current but not accepted; review the legacy/current diff and rebase, then run `project revision prepare-update --accept-current`"
                     .to_owned(),
             ),
             RevisionLedgerHealth::RevisionReviewPending => Some(
@@ -864,7 +663,7 @@ pub(crate) fn verify_ledger_bindings_from_context(context: &ProjectContext<'_>) 
     let run_spec = context
         .run_spec
         .ok_or_else(|| crate::Error::invalid("current run spec is missing"))?;
-    verify_current_artifact_bindings(run_spec, &snapshot, &[])
+    verify_current_artifact_bindings(run_spec, &snapshot)
 }
 
 fn load_ledger_optional(
@@ -877,6 +676,16 @@ fn load_ledger_optional(
     }
     let input = fs::read_to_string(&path)
         .map_err(|error| crate::Error::read("revision ledger", &path, error))?;
+    let envelope: RevisionLedgerEnvelope = toml_edit::de::from_str(&input).map_err(|error| {
+        crate::Error::manifest_source("revision ledger", &path, &input, error, None)
+    })?;
+    if envelope.schema != REVISION_LEDGER_SCHEMA {
+        return Err(crate::Error::invalid(format!(
+            "revision ledger {} uses unsupported schema {}; {REVISION_CUTOVER_INSTRUCTION}",
+            path.display(),
+            envelope.schema
+        )));
+    }
     let ledger: RevisionLedger = toml_edit::de::from_str(&input).map_err(|error| {
         crate::Error::manifest_source("revision ledger", &path, &input, error, None)
     })?;
@@ -887,7 +696,7 @@ fn load_ledger_optional(
 fn validate_ledger(ledger: &RevisionLedger, expected_project: Option<&str>) -> Result<()> {
     if ledger.schema != REVISION_LEDGER_SCHEMA {
         return Err(crate::Error::invalid(format!(
-            "revision ledger requires schema = {REVISION_LEDGER_SCHEMA}"
+            "revision ledger requires schema = {REVISION_LEDGER_SCHEMA}; {REVISION_CUTOVER_INSTRUCTION}"
         )));
     }
     if ledger.project.is_empty() {
@@ -914,21 +723,6 @@ fn validate_ledger(ledger: &RevisionLedger, expected_project: Option<&str>) -> R
         validate_snapshot_location(&entry.snapshot)?;
         validate_sha256("snapshot-sha256", &entry.snapshot_sha256)?;
         validate_sha256("artifacts-sha256", &entry.artifacts_sha256)?;
-        if let Some(migration) = &entry.scope_migration {
-            validate_sha256(
-                "scope-migration.from-snapshot-sha256",
-                &migration.from_snapshot_sha256,
-            )?;
-            validate_sha256("scope-migration.map-sha256", &migration.map_sha256)?;
-            validate_relative_components(
-                Path::new(&migration.map),
-                "scope-migration map location",
-            )?;
-            validate_source_list(
-                "scope-migration.verification-sources",
-                &migration.verification_sources,
-            )?;
-        }
     }
     for (label, name) in [
         ("baseline", ledger.baseline.as_deref()),
@@ -966,36 +760,6 @@ fn validate_ledger(ledger: &RevisionLedger, expected_project: Option<&str>) -> R
                 "revision ledger prepared-update digests do not match the current immutable revision",
             ));
         }
-        if let Some(migration) = &prepared.legacy_scope_migration {
-            validate_sha256(
-                "prepared-update.legacy-scope-migration.map-sha256",
-                &migration.map_sha256,
-            )?;
-            validate_relative_components(
-                Path::new(&migration.map),
-                "prepared-update legacy map location",
-            )?;
-            validate_source_list(
-                "prepared-update.legacy-scope-migration.verification-sources",
-                &migration.verification_sources,
-            )?;
-        }
-    }
-    Ok(())
-}
-
-fn validate_source_list(label: &str, sources: &[String]) -> Result<()> {
-    if sources.is_empty() {
-        return Err(crate::Error::invalid(format!("{label} must not be empty")));
-    }
-    for source in sources {
-        crate::source_id::validate_source_id(source)
-            .map_err(|_| crate::Error::invalid(format!("{label} contains invalid {source:?}")))?;
-    }
-    if !sources.windows(2).all(|pair| pair[0] < pair[1]) {
-        return Err(crate::Error::invalid(format!(
-            "{label} must be sorted and unique"
-        )));
     }
     Ok(())
 }
@@ -1034,81 +798,20 @@ fn verify_ledger_entry(
             path.display()
         )));
     }
-    if let Some(migration) = &entry.scope_migration {
-        let loaded = load_ledger_scope_migration(manifest, &migration.map)?;
-        if loaded.snapshot_sha256 != migration.from_snapshot_sha256
-            || loaded.prepared.map != migration.map
-            || loaded.prepared.map_sha256 != migration.map_sha256
-            || loaded.prepared.verification_sources != migration.verification_sources
-        {
-            return Err(crate::Error::invalid(format!(
-                "revision {:?} scope-migration map no longer matches its ledger record",
-                entry.name
-            )));
-        }
-    }
     Ok(())
 }
 
 fn verify_current_artifact_bindings(
     run_spec: &crate::run_spec::RunSpec,
     snapshot: &RevisionSnapshot,
-    legacy_verification_sources: &[String],
 ) -> Result<usize> {
     if snapshot.artifacts.is_empty() {
         return Err(crate::Error::invalid(
             "current revision snapshot contains no vendor artifact identities",
         ));
     }
-    let (_, rust_sources) = revision_source_sets(run_spec)?;
-    let exclusions = legacy_verification_sources
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    if exclusions.len() != legacy_verification_sources.len() {
-        return Err(crate::Error::invalid(
-            "legacy verification source exclusions must be unique",
-        ));
-    }
-    if snapshot.schema_version != LEGACY_REVISION_SCHEMA && !exclusions.is_empty() {
-        return Err(crate::Error::invalid(
-            "legacy verification source exclusions are valid only for a schema-1 current snapshot",
-        ));
-    }
-    if snapshot.schema_version == LEGACY_REVISION_SCHEMA {
-        let absent = exclusions
-            .iter()
-            .filter(|source| {
-                !snapshot
-                    .artifacts
-                    .iter()
-                    .any(|artifact| artifact.source.as_str() == source.as_str())
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let not_rust = exclusions
-            .difference(&rust_sources)
-            .cloned()
-            .collect::<Vec<_>>();
-        if !absent.is_empty() || !not_rust.is_empty() {
-            return Err(crate::Error::invalid(format!(
-                "legacy verification exclusions must name old snapshot sources currently bound only as typed Rust inputs (absent: {}; not-rust: {})",
-                absent.join(", "),
-                not_rust.join(", ")
-            )));
-        }
-    }
-    let expected_owned = snapshot
-        .artifacts
-        .iter()
-        .filter(|artifact| !exclusions.contains(&artifact.source))
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let actual_owned = if snapshot.schema_version == LEGACY_REVISION_SCHEMA {
-        current_legacy_revision_artifacts(run_spec, &exclusions)?
-    } else {
-        current_revision_artifacts(run_spec)?
-    };
+    let expected_owned = snapshot.artifacts.iter().cloned().collect::<BTreeSet<_>>();
+    let actual_owned = current_revision_artifacts(run_spec)?;
     let missing = expected_owned
         .difference(&actual_owned)
         .cloned()
@@ -1145,7 +848,7 @@ fn verify_current_artifact_bindings(
 fn revision_artifact_summary(artifact: &RevisionArtifact) -> String {
     format!(
         "{}:{}@{}",
-        artifact.role.as_deref().unwrap_or("legacy"),
+        artifact.role.as_deref().unwrap_or("projection"),
         artifact.source,
         artifact.sha256.get(..12).unwrap_or(&artifact.sha256)
     )
@@ -1189,26 +892,6 @@ fn revision_source_sets(
         )));
     }
     Ok((vendor_sources, rust_sources))
-}
-
-fn current_legacy_revision_artifacts(
-    run_spec: &crate::run_spec::RunSpec,
-    exclusions: &BTreeSet<String>,
-) -> Result<BTreeSet<RevisionArtifact>> {
-    revision_source_sets(run_spec)?;
-    run_spec
-        .inputs()
-        .iter()
-        .filter(|input| input.role.is_scannable() && input.role.is_revision_owned())
-        .filter(|input| !exclusions.contains(input.role.source_id()))
-        .map(|input| {
-            Ok(RevisionArtifact {
-                role: None,
-                source: input.role.source_id().to_owned(),
-                sha256: hash_revision_input(input)?,
-            })
-        })
-        .collect()
 }
 
 fn current_revision_artifacts(
@@ -1475,35 +1158,6 @@ fn durable_snapshot_location(manifest: &Path, path: &Path) -> Result<String> {
         return Err(crate::Error::invalid(
             "revision snapshot path cannot overwrite revisions/ledger.toml",
         ));
-    }
-    Ok(relative.to_string_lossy().into_owned())
-}
-
-fn durable_migration_location(manifest: &Path, path: &Path) -> Result<String> {
-    let root = manifest
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("revisions");
-    let relative = path.strip_prefix(&root).map_err(|_| {
-        crate::Error::invalid(format!(
-            "legacy scope migration map {} must be stored below {}",
-            path.display(),
-            root.join("migrations").display()
-        ))
-    })?;
-    validate_relative_components(relative, "scope-migration map path")?;
-    if relative
-        .extension()
-        .is_none_or(|extension| extension != "toml")
-        || relative
-            .parent()
-            .and_then(|parent| parent.components().next())
-            != Some(Component::Normal("migrations".as_ref()))
-    {
-        return Err(crate::Error::invalid(format!(
-            "legacy scope migration map {} must be a TOML file below revisions/migrations/",
-            path.display()
-        )));
     }
     Ok(relative.to_string_lossy().into_owned())
 }
@@ -2134,25 +1788,23 @@ fn validate_revision_name(name: &str) -> Result<()> {
 }
 
 fn validate_snapshot(snapshot: &RevisionSnapshot) -> Result<()> {
-    if !matches!(
-        snapshot.schema_version,
-        LEGACY_REVISION_SCHEMA | REVISION_SCHEMA
-    ) || snapshot.command != "revision snapshot"
-    {
+    if snapshot.schema_version != REVISION_SCHEMA {
+        return Err(crate::Error::invalid(format!(
+            "revision snapshot {:?} uses unsupported schema {}; {REVISION_CUTOVER_INSTRUCTION}",
+            snapshot.name, snapshot.schema_version
+        )));
+    }
+    if snapshot.command != "revision snapshot" {
         return Err(crate::Error::invalid(format!(
             "unsupported revision snapshot schema/command for {:?}",
             snapshot.name
         )));
     }
-    match (snapshot.schema_version, snapshot.artifact_scope) {
-        (LEGACY_REVISION_SCHEMA, None)
-        | (REVISION_SCHEMA, Some(RevisionArtifactScope::VendorInputs)) => {}
-        _ => {
-            return Err(crate::Error::invalid(format!(
-                "revision snapshot {:?} has an invalid artifact scope for schema {}",
-                snapshot.name, snapshot.schema_version
-            )));
-        }
+    if snapshot.artifact_scope != Some(RevisionArtifactScope::VendorInputs) {
+        return Err(crate::Error::invalid(format!(
+            "revision snapshot {:?} must declare vendor-inputs artifact scope",
+            snapshot.name
+        )));
     }
     validate_revision_name(&snapshot.name)?;
     let mut artifact_identities = BTreeSet::new();
@@ -2164,9 +1816,8 @@ fn validate_snapshot(snapshot: &RevisionSnapshot) -> Result<()> {
             ))
         })?;
         validate_sha256("revision artifact sha256", &artifact.sha256)?;
-        match (snapshot.schema_version, artifact.role.as_deref()) {
-            (LEGACY_REVISION_SCHEMA, None) => {}
-            (REVISION_SCHEMA, Some(role_text)) => {
+        match artifact.role.as_deref() {
+            Some(role_text) => {
                 let role = crate::run_spec::InputRole::parse(role_text).ok_or_else(|| {
                     crate::Error::invalid(format!(
                         "revision snapshot {:?} has invalid artifact role {role_text:?}",
@@ -2184,10 +1835,10 @@ fn validate_snapshot(snapshot: &RevisionSnapshot) -> Result<()> {
                     )));
                 }
             }
-            _ => {
+            None => {
                 return Err(crate::Error::invalid(format!(
-                    "revision snapshot {:?} artifact roles do not match schema {}",
-                    snapshot.name, snapshot.schema_version
+                    "revision snapshot {:?} requires a canonical role for every artifact",
+                    snapshot.name
                 )));
             }
         }
@@ -3035,7 +2686,6 @@ mod tests {
             from: current.name.clone(),
             snapshot_sha256: current.snapshot_sha256,
             artifacts_sha256: current.artifacts_sha256,
-            legacy_scope_migration: None,
         });
         write_ledger_atomic(&manifest, &ledger).unwrap();
         persist_snapshot(&manifest, &new, &output, false).unwrap();
@@ -3091,16 +2741,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            verify_current_artifact_bindings(&run_spec, &current_snapshot, &[]).unwrap(),
+            verify_current_artifact_bindings(&run_spec, &current_snapshot).unwrap(),
             1
         );
         let report =
-            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false, None)
-                .unwrap();
+            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false).unwrap();
         assert_eq!(report.status, "prepared");
         assert_eq!(report.artifact_bindings_verified, 1);
         assert_eq!(
-            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, true, None)
+            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, true)
                 .unwrap()
                 .status,
             "verified"
@@ -3115,14 +2764,13 @@ mod tests {
         )
         .unwrap();
         assert!(
-            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false, None)
+            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false)
                 .unwrap_err()
                 .to_string()
                 .contains("--accept-current")
         );
         let accepted =
-            prepare_update_with_bindings(&manifest, "fixture", &run_spec, true, false, None)
-                .unwrap();
+            prepare_update_with_bindings(&manifest, "fixture", &run_spec, true, false).unwrap();
         assert_eq!(accepted.baseline, "vendor-2");
 
         let unexpected_artifact = directory.join("unexpected.elf");
@@ -3137,7 +2785,7 @@ mod tests {
         .unwrap();
         let run_spec_with_unexpected = crate::run_spec::RunSpec::load(&run_path).unwrap();
         let unexpected =
-            verify_current_artifact_bindings(&run_spec_with_unexpected, &current_snapshot, &[])
+            verify_current_artifact_bindings(&run_spec_with_unexpected, &current_snapshot)
                 .unwrap_err()
                 .to_string();
         assert!(unexpected.contains("unexpected scannable"));
@@ -3145,7 +2793,7 @@ mod tests {
 
         std::fs::write(&artifact, b"new vendor bytes").unwrap();
         assert!(
-            verify_current_artifact_bindings(&run_spec, &current_snapshot, &[])
+            verify_current_artifact_bindings(&run_spec, &current_snapshot)
                 .unwrap_err()
                 .to_string()
                 .contains("no longer reproduce")
@@ -3154,109 +2802,36 @@ mod tests {
     }
 
     #[test]
-    fn legacy_snapshot_ignores_changed_local_rust_artifacts_during_migration() {
-        let (directory, manifest) = temporary_manifest("legacy-vendor-scope");
-        let vendor = directory.join("vendor.elf");
-        let rust = directory.join("rust.elf");
-        std::fs::write(&vendor, b"stable vendor bytes").unwrap();
-        std::fs::write(&rust, b"new local verification bytes").unwrap();
-        let run_path = directory.join("local.toml");
+    fn obsolete_snapshot_and_ledger_require_a_new_current_state() {
+        let (directory, manifest) = temporary_manifest("revision-cutover");
+        let obsolete_snapshot_path = directory.join("obsolete.json");
+        let mut obsolete_snapshot = serde_json::to_value(snapshot("obsolete", Vec::new())).unwrap();
+        obsolete_snapshot["schema_version"] = serde_json::json!(1);
+        obsolete_snapshot
+            .as_object_mut()
+            .unwrap()
+            .remove("artifact_scope");
         std::fs::write(
-            &run_path,
-            format!(
-                "schema = 1\n\n[[inputs]]\nrole = \"vendor-artifact\"\npath = {:?}\n\n[[inputs]]\nrole = \"rust-artifact\"\npath = {:?}\n",
-                vendor, rust
-            ),
-        )
-        .unwrap();
-        let run_spec = crate::run_spec::RunSpec::load(&run_path).unwrap();
-        let mut legacy = snapshot("legacy", Vec::new());
-        legacy.schema_version = LEGACY_REVISION_SCHEMA;
-        legacy.artifact_scope = None;
-        legacy.artifacts = vec![
-            RevisionArtifact {
-                role: None,
-                source: "vendor".to_owned(),
-                sha256: crate::artifact_path_sha256(&vendor).unwrap(),
-            },
-            RevisionArtifact {
-                role: None,
-                source: "rust".to_owned(),
-                sha256: "11".repeat(32),
-            },
-        ];
-        persist_snapshot(
-            &manifest,
-            &legacy,
-            &default_path(&manifest, "legacy").unwrap(),
-            false,
+            &obsolete_snapshot_path,
+            serde_json::to_vec_pretty(&obsolete_snapshot).unwrap(),
         )
         .unwrap();
 
-        assert_eq!(
-            verify_current_artifact_bindings(&run_spec, &legacy, &["rust".to_owned()],).unwrap(),
-            1
-        );
-        assert_eq!(
-            inspect_ledger(&manifest, "fixture", true).health,
-            RevisionLedgerHealth::LegacyScope
-        );
+        let snapshot_error = load(&obsolete_snapshot_path).unwrap_err().to_string();
+        assert!(snapshot_error.contains("not current schema 2"));
+        assert!(snapshot_error.contains("create a new current state"));
+        assert!(snapshot_error.contains("project revision snapshot CURRENT"));
 
-        let entry = load_ledger_optional(&manifest, Some("fixture"))
-            .unwrap()
-            .unwrap()
-            .entries
-            .remove(0);
-        let migration_path = directory.join("revisions/migrations/legacy.toml");
-        std::fs::create_dir_all(migration_path.parent().unwrap()).unwrap();
-        std::fs::write(
-            &migration_path,
-            format!(
-                "schema = 1\nsnapshot-sha256 = {:?}\nverification-sources = [\"rust\"]\n",
-                entry.snapshot_sha256
-            ),
-        )
-        .unwrap();
-        let migration = load_legacy_scope_migration(&manifest, &migration_path).unwrap();
-        assert!(
-            prepare_update_with_bindings(&manifest, "fixture", &run_spec, false, false, None,)
-                .unwrap_err()
-                .to_string()
-                .contains("explicit")
-        );
-        prepare_update_with_bindings(
-            &manifest,
-            "fixture",
-            &run_spec,
-            false,
-            false,
-            Some(&migration),
-        )
-        .unwrap();
-        let mut migrated = snapshot("vendor-scope", Vec::new());
-        migrated.artifacts = current_revision_artifacts(&run_spec)
-            .unwrap()
-            .into_iter()
-            .collect();
-        persist_snapshot(
-            &manifest,
-            &migrated,
-            &default_path(&manifest, "vendor-scope").unwrap(),
-            false,
-        )
-        .unwrap();
-        assert_eq!(
-            inspect_ledger(&manifest, "fixture", true).health,
-            RevisionLedgerHealth::MigrationReviewPending
-        );
-        let report = diff(&legacy, &migrated);
-        assert!(report.artifacts_changed);
-        assert_eq!(report.summary, RevisionDiffSummary::default());
-        prepare_update_with_bindings(&manifest, "fixture", &run_spec, true, false, None).unwrap();
-        assert_eq!(
-            inspect_ledger(&manifest, "fixture", true).health,
-            RevisionLedgerHealth::Ready
-        );
+        let ledger = ledger_path(&manifest);
+        std::fs::create_dir_all(ledger.parent().unwrap()).unwrap();
+        std::fs::write(&ledger, "schema = 1\nproject = \"fixture\"\n").unwrap();
+        let inspection = inspect_ledger(&manifest, "fixture", true);
+        assert_eq!(inspection.health, RevisionLedgerHealth::Invalid);
+        let diagnostic = inspection.diagnostic.unwrap();
+        assert!(diagnostic.contains("unsupported schema 1"));
+        assert!(diagnostic.contains("create a new current state"));
+        assert!(diagnostic.contains("project revision snapshot CURRENT"));
+
         std::fs::remove_dir_all(directory).unwrap();
     }
 

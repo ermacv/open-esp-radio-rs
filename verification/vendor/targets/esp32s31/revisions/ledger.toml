@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 project = "esp32s31-radio-rev0"
 baseline = "esp32s31-rev0-vendor-scope-2026-08-25"
 current = "esp32s31-rev0-vendor-scope-2026-08-25"
@@ -6,5 +6,5 @@ current = "esp32s31-rev0-vendor-scope-2026-08-25"
 [[revisions]]
 name = "esp32s31-rev0-vendor-scope-2026-08-25"
 snapshot = "snapshots/esp32s31-rev0-vendor-scope-2026-08-25.json.gz"
-snapshot-sha256 = "de9ae949ba4531664ca6b809a93c709bd27d2290690d5cd468c3a15b6c553c91"
+snapshot-sha256 = "720e124f4d37000c2159b801d1669c14fdd1270026244ebabb4e4f7196a7ee3a"
 artifacts-sha256 = "e1a992e0cd770599b05cb2043662b3bebcf4ce3f3143d48bc86aa2ee3dc9cb26"

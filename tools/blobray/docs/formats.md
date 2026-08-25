@@ -127,11 +127,12 @@ provenance, never executable semantics.
 
 ## Durable revision state
 
-- immutable schema-3 revision snapshots (`revisions/snapshots/NAME.json.gz`)
+- immutable schema-4 revision snapshots (`revisions/snapshots/NAME.json.gz`)
   contain only typed vendor artifact/inventory/companion digests and normalized
   vendor-derived features, never vendor payloads, disassembly, or local Rust
-  verification ELF identities;
-- `revisions/ledger.toml` is the tracked schema-3 index for those snapshots.
+  verification ELF identities. They also bind every reviewed record to the
+  full authenticated ecosystem/chip/revision/lineage/artifact context;
+- `revisions/ledger.toml` is the tracked schema-4 index for those snapshots.
   It stores only project/revision names, relative snapshot locations, SHA-256
   identities, `baseline`/`current` pointers and an optional update-preflight
   marker. `snapshot-sha256` identifies normalized logical snapshot content,
@@ -147,9 +148,9 @@ companions that affected each generated bundle. Revision capture compares all
 three dependency classes with the current typed run-spec and rejects stale
 generated evidence.
 
-Only schema-3 snapshots and ledgers are accepted. Older state and migration
+Only schema-4 snapshots and ledgers are accepted. Older state and migration
 maps are not parsed or upgraded. Archive or remove an older ledger and capture
-a fresh schema-3 baseline from the live typed vendor bindings.
+a fresh schema-4 baseline from the live typed vendor bindings.
 
 ## Generated outputs
 

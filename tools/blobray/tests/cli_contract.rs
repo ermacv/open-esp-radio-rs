@@ -2807,12 +2807,13 @@ fn revision_diff_is_a_typed_project_workflow() {
     };
     let revision = |name: &str, function: &str| {
         serde_json::json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "command": "revision snapshot",
             "name": name,
             "project": "revision-diff",
             "artifact_scope": "vendor-inputs",
             "artifacts": [],
+            "applicability": {},
             "functions": [{
                 "id": function,
                 "source": "vendor",
@@ -2973,7 +2974,7 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
             .is_file()
     );
     let ledger = std::fs::read_to_string(directory.join("revisions/ledger.toml")).unwrap();
-    assert!(ledger.contains("schema = 3"));
+    assert!(ledger.contains("schema = 4"));
     assert!(ledger.contains("baseline = \"vendor-1\""));
     assert!(ledger.contains("current = \"vendor-1\""));
     assert!(ledger.contains("snapshot-sha256"));

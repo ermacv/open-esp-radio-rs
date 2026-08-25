@@ -209,6 +209,15 @@ pub struct EffectiveEntityBinding {
     pub note: Option<String>,
 }
 
+impl EffectiveEntityBinding {
+    /// Whether one evidence locator cryptographically derives the declared
+    /// blob-local occurrence from the exact applicability artifact set.
+    pub fn has_authentic_occurrence_evidence(&self) -> bool {
+        self.occurrence.domain() == self.semantic.domain()
+            && has_authentic_occurrence_evidence(&self.occurrence, &self.metadata)
+    }
+}
+
 /// Deterministically merged, fail-closed reviewed knowledge.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -579,21 +588,33 @@ fn validate_pack(pack: &ReviewPack) -> Result<()> {
                 ),
             );
         }
-        if !metadata
-            .evidence
-            .iter()
-            .any(|evidence| evidence.occurrence.as_ref() == Some(&binding.occurrence))
-        {
+        if !has_authentic_occurrence_evidence(&binding.occurrence, &metadata) {
             return invalid(
                 &pack.id,
                 format!(
-                    "entity binding {:?} evidence must reference its occurrence {}",
+                    "entity binding {:?} evidence must derive its occurrence {} from the exact artifact identity and locator",
                     binding.id, binding.occurrence
                 ),
             );
         }
     }
     Ok(())
+}
+
+fn has_authentic_occurrence_evidence(
+    occurrence: &RevisionOccurrenceId,
+    metadata: &EffectiveFactMetadata,
+) -> bool {
+    metadata.applies_to.artifacts.len() == 1
+        && metadata.evidence.iter().any(|evidence| {
+            evidence.occurrence.as_ref() == Some(occurrence)
+                && RevisionOccurrenceId::derive(
+                    occurrence.domain(),
+                    &metadata.applies_to.artifacts,
+                    &evidence.locator,
+                )
+                .is_ok_and(|derived| derived == *occurrence)
+        })
 }
 
 fn effective_metadata(
@@ -1016,7 +1037,7 @@ semantic = "function:esp-idf/wifi/rx"
 artifacts = [{{ source = "esp-idf/lib/radio.a", sha256 = "{}" }}]
 [[bindings.evidence]]
 source = "manual-review"
-locator = "radio.o::wifi-rx"
+locator = "radio.o:text+0x18"
 occurrence = "{occurrence}"
 "#,
             artifact.sha256()
@@ -1052,8 +1073,9 @@ occurrence = "{occurrence}"
             "radio.o:text+0x30",
         )
         .unwrap();
-        let same_semantic =
-            same_occurrence.replace(&occurrence.to_string(), &second_occurrence.to_string());
+        let same_semantic = same_occurrence
+            .replace(&occurrence.to_string(), &second_occurrence.to_string())
+            .replace("radio.o:text+0x18", "radio.o:text+0x30");
         let one_to_many = ReviewKnowledge::merge([
             ReviewPack::from_toml(&binding).unwrap(),
             ReviewPack::from_toml(&same_semantic).unwrap(),
@@ -1087,14 +1109,30 @@ occurrence = "{occurrence}"
         );
 
         let missing_occurrence_evidence = binding.replace(
-            &format!("locator = \"radio.o::wifi-rx\"\noccurrence = \"{occurrence}\"\n"),
-            "locator = \"radio.o::wifi-rx\"\n",
+            &format!("locator = \"radio.o:text+0x18\"\noccurrence = \"{occurrence}\"\n"),
+            "locator = \"radio.o:text+0x18\"\n",
         );
         assert!(
             ReviewPack::from_toml(&missing_occurrence_evidence)
                 .unwrap_err()
                 .to_string()
-                .contains("evidence must reference its occurrence")
+                .contains("evidence must derive its occurrence")
+        );
+
+        let forged_locator = binding.replace("radio.o:text+0x18", "radio.o:text+0x19");
+        assert!(
+            ReviewPack::from_toml(&forged_locator)
+                .unwrap_err()
+                .to_string()
+                .contains("evidence must derive its occurrence")
+        );
+
+        let forged_occurrence = binding.replace(&occurrence.sha256()[..8], "deadbeef");
+        assert!(
+            ReviewPack::from_toml(&forged_occurrence)
+                .unwrap_err()
+                .to_string()
+                .contains("evidence must derive its occurrence")
         );
 
         let unbounded = binding.replace(

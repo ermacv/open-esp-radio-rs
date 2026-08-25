@@ -138,7 +138,7 @@ fn rebase(
     let from = revision::load_operand(session, &arguments.from)?;
     let to = revision::load_operand(session, &arguments.to)?;
     revision::validate_operand_pair(&session.project.id, &from, &to)?;
-    let report = revision::rebase(&from, &to);
+    let report = revision::rebase(&from, &to)?;
     if let Some(path) = arguments.output.as_deref() {
         generated_file::write_or_check_json(
             path,

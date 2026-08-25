@@ -332,7 +332,7 @@ unless its predecessor has a matching marker, so cleanup or an accidental
 binding edit cannot silently erase the old correspondence map.
 While `baseline` and `current` differ, `project status` and deep doctor report
 `revision-review-pending` instead of `ready`; a captured snapshot is not an
-accepted review decision. Blobray accepts only schema-3 snapshots and ledgers.
+accepted review decision. Blobray accepts only schema-4 snapshots and ledgers.
 Older state is not migrated or interpreted: archive or remove it, then capture
 a fresh current snapshot from the live typed vendor bindings.
 

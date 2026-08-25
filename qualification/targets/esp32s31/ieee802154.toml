@@ -96,16 +96,18 @@ scope = "Registered common PHY RFPLL BTBB and protocol-specific channel transiti
 depends-on = ["clock-reset-foundation"]
 owners = [
   { path = "driver/chips/esp32s31/phy/src/registered_ieee802154.rs", token = "RegisteredIeee802154TimingReady" },
+  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "PhyClientState" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/phy/src/registered_ieee802154.rs", token = "registered_full_chain_and_typed_recovery_surface_connects" },
+  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "immediate_tracking_preserves_short_circuit_and_refresh_sample_order" },
+  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "periodic_tracking_samples_each_active_class_once_without_due_samples" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md", token = "BTBB" },
 ]
 gaps = [
-  { axis = "implementation", id = "protocol-specific-rf-btbb-channel-transition-missing" },
-  { axis = "host", id = "rf-readiness-model-and-composition-tests-missing" },
+  { axis = "implementation", id = "shared-phy-client-timer-lock-rf-wakeup-track-binding-missing" },
   { axis = "vendor", id = "rf-client-btbb-and-channel-composed-trace-missing" },
   { axis = "hil", id = "calibrated-ed-and-channel-retune-cell-missing" },
   { axis = "async", id = "rf-transition-executor-contract-missing" },

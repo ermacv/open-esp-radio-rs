@@ -10,10 +10,10 @@
 //! Timer arm/stop and the PHY lock are represented only as atomic model facts.
 //! There is no fallible timer executor, rollback protocol, or target lock in
 //! this module, so the model is deliberately not connectable to hardware yet.
-//! The public source samples its timer separately during the due checks and
-//! timestamp refreshes; this pure model intentionally accepts one atomic
-//! `now_micros` snapshot. It therefore models ordering and client-set decisions,
-//! not instruction-level timing equivalence at a period boundary.
+//! Clock sampling is nevertheless exact: immediate evaluation preserves the
+//! public source's short-circuit due checks and then samples each active class
+//! again while refreshing timestamps; the periodic callback performs only the
+//! per-class refresh samples.
 
 #![allow(
     dead_code,
@@ -29,6 +29,15 @@ const VALID_CLIENT_BITS: u8 = WIFI_BIT | BLUETOOTH_BIT | IEEE802154_BIT;
 
 /// Source-reviewed default periodic PLL-tracking interval.
 pub const DEFAULT_PLL_TRACK_PERIOD_MICROS: u64 = 1_000_000;
+
+/// Monotonic microsecond clock sampled by the shared-PHY scheduler.
+///
+/// The source reads its timer at several distinct points. Accepting a port
+/// instead of one caller-supplied timestamp prevents those reads from being
+/// collapsed into an atomic snapshot at a tracking-period boundary.
+pub trait PhyPllTrackClock {
+    fn now_micros(&mut self) -> u64;
+}
 
 /// One typed user of the shared PHY software client set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -150,7 +159,7 @@ impl PhyClientState {
     pub fn acquire(
         mut self,
         client: PhyModemClient,
-        now_micros: u64,
+        clock: &mut impl PhyPllTrackClock,
     ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure> {
         let bit = client.bit();
         if self.bits & bit != 0 {
@@ -162,7 +171,7 @@ impl PhyClientState {
 
         let was_empty = self.bits == 0;
         let prospective_bits = self.bits | bit;
-        let evaluation = match self.evaluate_for_bits(prospective_bits, now_micros) {
+        let evaluation = match self.evaluate_for_bits(prospective_bits, clock) {
             Ok(evaluation) => evaluation,
             Err(error) => {
                 return Err(PhyClientAcquireFailure {
@@ -232,9 +241,9 @@ impl PhyClientState {
     /// hardware work.
     pub fn evaluate_immediate_tracking(
         mut self,
-        now_micros: u64,
+        clock: &mut impl PhyPllTrackClock,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
-        let evaluation = match self.evaluate_for_bits(self.bits, now_micros) {
+        let evaluation = match self.evaluate_for_bits(self.bits, clock) {
             Ok(evaluation) => evaluation,
             Err(error) => {
                 return Err(PhyTrackEvaluationFailure { owner: self, error });
@@ -254,19 +263,18 @@ impl PhyClientState {
     /// a request and refreshes its timestamp on every callback.
     pub fn evaluate_periodic_tracking(
         mut self,
-        now_micros: u64,
+        clock: &mut impl PhyPllTrackClock,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
-        if let Err(error) = self.validate_active_timestamps(self.bits, now_micros) {
-            return Err(PhyTrackEvaluationFailure { owner: self, error });
-        }
-
         let wifi_active = self.bits & WIFI_BIT != 0;
         let bluetooth_ieee802154_active = self.bits & (BLUETOOTH_BIT | IEEE802154_BIT) != 0;
-        let evaluation = TrackEvaluation {
+        let evaluation = match self.build_evaluation(
             wifi_active,
             bluetooth_ieee802154_active,
-            request_due: wifi_active || bluetooth_ieee802154_active,
-            now_micros,
+            wifi_active || bluetooth_ieee802154_active,
+            clock,
+        ) {
+            Ok(evaluation) => evaluation,
+            Err(error) => return Err(PhyTrackEvaluationFailure { owner: self, error }),
         };
         self.apply_evaluation(evaluation);
         Ok(PhyTrackEvaluation {
@@ -277,59 +285,107 @@ impl PhyClientState {
     fn evaluate_for_bits(
         &self,
         bits: u8,
-        now_micros: u64,
+        clock: &mut impl PhyPllTrackClock,
     ) -> Result<TrackEvaluation, PhyTrackTimeError> {
         let wifi_active = bits & WIFI_BIT != 0;
         let bluetooth_ieee802154_active = bits & (BLUETOOTH_BIT | IEEE802154_BIT) != 0;
 
-        self.validate_active_timestamps(bits, now_micros)?;
+        let mut request_due = false;
+        if wifi_active {
+            let now_micros = clock.now_micros();
+            self.validate_timestamp(
+                PhyPllTrackClass::Wifi,
+                self.wifi_previous_micros,
+                now_micros,
+            )?;
+            request_due = now_micros - self.wifi_previous_micros > self.period_micros;
+        }
+        // Preserve the two source assignments containing `need_track_pll ||`.
+        // Once Wi-Fi is due, C short-circuiting skips the BT/154 due sample.
+        if bluetooth_ieee802154_active && !request_due {
+            let now_micros = clock.now_micros();
+            self.validate_timestamp(
+                PhyPllTrackClass::BluetoothIeee802154,
+                self.bluetooth_ieee802154_previous_micros,
+                now_micros,
+            )?;
+            request_due =
+                now_micros - self.bluetooth_ieee802154_previous_micros > self.period_micros;
+        }
 
-        let wifi_due = wifi_active && now_micros - self.wifi_previous_micros > self.period_micros;
-        let bluetooth_ieee802154_due = bluetooth_ieee802154_active
-            && now_micros - self.bluetooth_ieee802154_previous_micros > self.period_micros;
+        self.build_evaluation(wifi_active, bluetooth_ieee802154_active, request_due, clock)
+    }
+
+    fn build_evaluation(
+        &self,
+        wifi_active: bool,
+        bluetooth_ieee802154_active: bool,
+        request_due: bool,
+        clock: &mut impl PhyPllTrackClock,
+    ) -> Result<TrackEvaluation, PhyTrackTimeError> {
+        if !request_due {
+            return Ok(TrackEvaluation {
+                wifi_active,
+                bluetooth_ieee802154_active,
+                wifi_refresh_micros: None,
+                bluetooth_ieee802154_refresh_micros: None,
+            });
+        }
+
+        let wifi_refresh_micros = if wifi_active {
+            let now_micros = clock.now_micros();
+            self.validate_timestamp(
+                PhyPllTrackClass::Wifi,
+                self.wifi_previous_micros,
+                now_micros,
+            )?;
+            Some(now_micros)
+        } else {
+            None
+        };
+        let bluetooth_ieee802154_refresh_micros = if bluetooth_ieee802154_active {
+            let now_micros = clock.now_micros();
+            self.validate_timestamp(
+                PhyPllTrackClass::BluetoothIeee802154,
+                self.bluetooth_ieee802154_previous_micros,
+                now_micros,
+            )?;
+            Some(now_micros)
+        } else {
+            None
+        };
 
         Ok(TrackEvaluation {
             wifi_active,
             bluetooth_ieee802154_active,
-            request_due: wifi_due || bluetooth_ieee802154_due,
-            now_micros,
+            wifi_refresh_micros,
+            bluetooth_ieee802154_refresh_micros,
         })
     }
 
-    fn validate_active_timestamps(
+    fn validate_timestamp(
         &self,
-        bits: u8,
+        class: PhyPllTrackClass,
+        previous_micros: u64,
         now_micros: u64,
     ) -> Result<(), PhyTrackTimeError> {
-        let wifi_active = bits & WIFI_BIT != 0;
-        let bluetooth_ieee802154_active = bits & (BLUETOOTH_BIT | IEEE802154_BIT) != 0;
-
-        if wifi_active && now_micros < self.wifi_previous_micros {
-            return Err(PhyTrackTimeError::TimeReversed {
-                class: PhyPllTrackClass::Wifi,
-                previous_micros: self.wifi_previous_micros,
+        if now_micros < previous_micros {
+            Err(PhyTrackTimeError::TimeReversed {
+                class,
+                previous_micros,
                 now_micros,
-            });
+            })
+        } else {
+            Ok(())
         }
-        if bluetooth_ieee802154_active && now_micros < self.bluetooth_ieee802154_previous_micros {
-            return Err(PhyTrackTimeError::TimeReversed {
-                class: PhyPllTrackClass::BluetoothIeee802154,
-                previous_micros: self.bluetooth_ieee802154_previous_micros,
-                now_micros,
-            });
-        }
-        Ok(())
     }
 
     fn apply_evaluation(&mut self, evaluation: TrackEvaluation) {
-        if !evaluation.request_due {
-            return;
+        if let Some(now_micros) = evaluation.wifi_refresh_micros {
+            self.wifi_previous_micros = now_micros;
         }
-        if evaluation.wifi_active {
-            self.wifi_previous_micros = evaluation.now_micros;
-        }
-        if evaluation.bluetooth_ieee802154_active {
-            self.bluetooth_ieee802154_previous_micros = evaluation.now_micros;
+        if let Some(now_micros) = evaluation.bluetooth_ieee802154_refresh_micros {
+            self.bluetooth_ieee802154_previous_micros = now_micros;
         }
     }
 }
@@ -338,16 +394,17 @@ impl PhyClientState {
 struct TrackEvaluation {
     wifi_active: bool,
     bluetooth_ieee802154_active: bool,
-    request_due: bool,
-    now_micros: u64,
+    wifi_refresh_micros: Option<u64>,
+    bluetooth_ieee802154_refresh_micros: Option<u64>,
 }
 
 impl TrackEvaluation {
     fn request(self) -> Option<PhyParamTrackRequest> {
-        self.request_due.then_some(PhyParamTrackRequest {
-            wifi: self.wifi_active,
-            bluetooth_ieee802154: self.bluetooth_ieee802154_active,
-        })
+        (self.wifi_refresh_micros.is_some() || self.bluetooth_ieee802154_refresh_micros.is_some())
+            .then_some(PhyParamTrackRequest {
+                wifi: self.wifi_active,
+                bluetooth_ieee802154: self.bluetooth_ieee802154_active,
+            })
     }
 }
 
@@ -717,6 +774,79 @@ mod tests {
         PhyModemClient::Ieee802154,
     ];
 
+    struct FixedClock(u64);
+
+    impl PhyPllTrackClock for FixedClock {
+        fn now_micros(&mut self) -> u64 {
+            self.0
+        }
+    }
+
+    struct ScriptedClock<const COUNT: usize> {
+        samples: [u64; COUNT],
+        next: usize,
+    }
+
+    impl<const COUNT: usize> ScriptedClock<COUNT> {
+        const fn new(samples: [u64; COUNT]) -> Self {
+            Self { samples, next: 0 }
+        }
+
+        const fn samples_consumed(&self) -> usize {
+            self.next
+        }
+    }
+
+    impl<const COUNT: usize> PhyPllTrackClock for ScriptedClock<COUNT> {
+        fn now_micros(&mut self) -> u64 {
+            let sample = self.samples[self.next];
+            self.next += 1;
+            sample
+        }
+    }
+
+    trait PhyClientStateTestExt: Sized {
+        fn acquire_at(
+            self,
+            client: PhyModemClient,
+            now_micros: u64,
+        ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure>;
+
+        fn evaluate_immediate_at(
+            self,
+            now_micros: u64,
+        ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure>;
+
+        fn evaluate_periodic_at(
+            self,
+            now_micros: u64,
+        ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure>;
+    }
+
+    impl PhyClientStateTestExt for PhyClientState {
+        fn acquire_at(
+            self,
+            client: PhyModemClient,
+            now_micros: u64,
+        ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure> {
+            self.acquire(client, &mut FixedClock(now_micros))
+        }
+
+        fn evaluate_immediate_at(
+            self,
+            now_micros: u64,
+        ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
+            self.evaluate_immediate_tracking(&mut FixedClock(now_micros))
+        }
+
+        fn evaluate_periodic_at(
+            self,
+            now_micros: u64,
+        ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
+            self.evaluate_periodic_tracking(&mut FixedClock(now_micros))
+        }
+    }
+
     fn complete_acquire_for_test(outcome: PhyClientAcquireOutcome) -> PhyClientState {
         match outcome.into_owner() {
             Ok(owner) => owner,
@@ -729,7 +859,7 @@ mod tests {
         let mut state = PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS);
         for client in CLIENTS {
             if mask & client.bit() != 0 {
-                state = complete_acquire_for_test(state.acquire(client, now_micros).unwrap());
+                state = complete_acquire_for_test(state.acquire_at(client, now_micros).unwrap());
             }
         }
         state
@@ -752,7 +882,7 @@ mod tests {
                 let state = state_for_mask(mask, 0);
                 let before = state.snapshot();
                 if mask & client.bit() != 0 {
-                    let failure = state.acquire(client, 0).unwrap_err();
+                    let failure = state.acquire_at(client, 0).unwrap_err();
                     assert_eq!(
                         failure.error(),
                         PhyClientAcquireError::AlreadyAcquired(client)
@@ -761,7 +891,7 @@ mod tests {
                     continue;
                 }
 
-                let outcome = state.acquire(client, 0).unwrap();
+                let outcome = state.acquire_at(client, 0).unwrap();
                 assert_eq!(outcome.was_empty(), mask == 0);
                 assert_eq!(
                     outcome.ordering(),
@@ -811,18 +941,18 @@ mod tests {
     fn strict_threshold_equality_does_not_request_but_greater_does() {
         let state = complete_acquire_for_test(
             PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-                .acquire(PhyModemClient::Ieee802154, DEFAULT_PLL_TRACK_PERIOD_MICROS)
+                .acquire_at(PhyModemClient::Ieee802154, DEFAULT_PLL_TRACK_PERIOD_MICROS)
                 .unwrap(),
         );
         let equal = state
-            .evaluate_immediate_tracking(DEFAULT_PLL_TRACK_PERIOD_MICROS)
+            .evaluate_immediate_at(DEFAULT_PLL_TRACK_PERIOD_MICROS)
             .unwrap();
         assert!(equal.request().is_none());
 
         let greater = equal
             .into_owner()
             .unwrap()
-            .evaluate_immediate_tracking(DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
+            .evaluate_immediate_at(DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
             .unwrap();
         let request = greater.request().unwrap();
         assert!(!request.wifi());
@@ -833,7 +963,7 @@ mod tests {
     fn bluetooth_and_ieee_share_timestamp_and_request_class() {
         let state = complete_acquire_for_test(
             PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-                .acquire(
+                .acquire_at(
                     PhyModemClient::Bluetooth,
                     DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
                 )
@@ -847,7 +977,7 @@ mod tests {
         );
 
         let outcome = state
-            .acquire(
+            .acquire_at(
                 PhyModemClient::Ieee802154,
                 DEFAULT_PLL_TRACK_PERIOD_MICROS + 2,
             )
@@ -866,7 +996,7 @@ mod tests {
     fn request_booleans_describe_every_active_class() {
         for mask in 1..=VALID_CLIENT_BITS {
             let evaluation = state_for_mask(mask, 0)
-                .evaluate_immediate_tracking(DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
+                .evaluate_immediate_at(DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
                 .unwrap();
             let request = evaluation.request().unwrap();
             assert_eq!(request.wifi(), mask & WIFI_BIT != 0);
@@ -881,13 +1011,13 @@ mod tests {
     fn one_due_class_refreshes_and_requests_all_active_classes() {
         let state = complete_acquire_for_test(
             PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-                .acquire(PhyModemClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
+                .acquire_at(PhyModemClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
                 .unwrap(),
         );
         let state = state.release(PhyModemClient::Wifi).unwrap().into_owner();
         let state = complete_acquire_for_test(
             state
-                .acquire(
+                .acquire_at(
                     PhyModemClient::Ieee802154,
                     DEFAULT_PLL_TRACK_PERIOD_MICROS + 2,
                 )
@@ -895,11 +1025,11 @@ mod tests {
         );
         let state = complete_acquire_for_test(
             state
-                .acquire(PhyModemClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 2)
+                .acquire_at(PhyModemClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 2)
                 .unwrap(),
         );
         let evaluation = state
-            .evaluate_immediate_tracking(2 * DEFAULT_PLL_TRACK_PERIOD_MICROS + 2)
+            .evaluate_immediate_at(2 * DEFAULT_PLL_TRACK_PERIOD_MICROS + 2)
             .unwrap();
         let request = evaluation.request().unwrap();
         assert!(request.wifi());
@@ -916,9 +1046,56 @@ mod tests {
     }
 
     #[test]
+    fn immediate_tracking_preserves_short_circuit_and_refresh_sample_order() {
+        let state = state_for_mask(WIFI_BIT | IEEE802154_BIT, 0);
+        let mut wifi_due = ScriptedClock::new([
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 2,
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 3,
+        ]);
+        let evaluation = state.evaluate_immediate_tracking(&mut wifi_due).unwrap();
+
+        assert_eq!(wifi_due.samples_consumed(), 3);
+        let request = evaluation.request().unwrap();
+        assert!(request.wifi());
+        assert!(request.bluetooth_ieee802154());
+        let snapshot = evaluation.owner().snapshot();
+        assert_eq!(
+            snapshot.previous_micros(PhyPllTrackClass::Wifi),
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 2
+        );
+        assert_eq!(
+            snapshot.previous_micros(PhyPllTrackClass::BluetoothIeee802154),
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 3
+        );
+
+        let state = state_for_mask(WIFI_BIT | IEEE802154_BIT, 0);
+        let mut bluetooth_ieee_due = ScriptedClock::new([
+            DEFAULT_PLL_TRACK_PERIOD_MICROS,
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 2,
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 3,
+        ]);
+        let evaluation = state
+            .evaluate_immediate_tracking(&mut bluetooth_ieee_due)
+            .unwrap();
+
+        assert_eq!(bluetooth_ieee_due.samples_consumed(), 4);
+        let snapshot = evaluation.owner().snapshot();
+        assert_eq!(
+            snapshot.previous_micros(PhyPllTrackClass::Wifi),
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 2
+        );
+        assert_eq!(
+            snapshot.previous_micros(PhyPllTrackClass::BluetoothIeee802154),
+            DEFAULT_PLL_TRACK_PERIOD_MICROS + 3
+        );
+    }
+
+    #[test]
     fn periodic_callback_requests_active_classes_without_due_check() {
         let state = state_for_mask(IEEE802154_BIT, 0);
-        let evaluation = state.evaluate_periodic_tracking(1).unwrap();
+        let evaluation = state.evaluate_periodic_at(1).unwrap();
         let request = evaluation.request().unwrap();
         assert!(!request.wifi());
         assert!(request.bluetooth_ieee802154());
@@ -932,9 +1109,24 @@ mod tests {
     }
 
     #[test]
+    fn periodic_tracking_samples_each_active_class_once_without_due_samples() {
+        let state = state_for_mask(WIFI_BIT | IEEE802154_BIT, 0);
+        let mut clock = ScriptedClock::new([17, 23]);
+        let evaluation = state.evaluate_periodic_tracking(&mut clock).unwrap();
+
+        assert_eq!(clock.samples_consumed(), 2);
+        let snapshot = evaluation.owner().snapshot();
+        assert_eq!(snapshot.previous_micros(PhyPllTrackClass::Wifi), 17);
+        assert_eq!(
+            snapshot.previous_micros(PhyPllTrackClass::BluetoothIeee802154),
+            23
+        );
+    }
+
+    #[test]
     fn pending_request_cannot_release_owner_without_explicit_resolution() {
         let outcome = PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-            .acquire(
+            .acquire_at(
                 PhyModemClient::Ieee802154,
                 DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
             )
@@ -954,7 +1146,7 @@ mod tests {
     #[test]
     fn pending_periodic_request_cannot_release_owner() {
         let evaluation = state_for_mask(IEEE802154_BIT, 0)
-            .evaluate_periodic_tracking(1)
+            .evaluate_periodic_at(1)
             .unwrap();
         let pending = match evaluation.into_owner() {
             Ok(_) => panic!("periodic hardware work released the owner"),
@@ -971,11 +1163,11 @@ mod tests {
     fn time_reversal_rejects_acquire_and_restores_exact_owner() {
         let state = complete_acquire_for_test(
             PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-                .acquire(PhyModemClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
+                .acquire_at(PhyModemClient::Wifi, DEFAULT_PLL_TRACK_PERIOD_MICROS + 1)
                 .unwrap(),
         );
         let before = state.snapshot();
-        let failure = state.acquire(PhyModemClient::Ieee802154, 0).unwrap_err();
+        let failure = state.acquire_at(PhyModemClient::Ieee802154, 0).unwrap_err();
         assert_eq!(
             failure.error(),
             PhyClientAcquireError::TrackingTime(PhyTrackTimeError::TimeReversed {
@@ -991,14 +1183,14 @@ mod tests {
     fn time_reversal_rejects_immediate_evaluation_and_restores_exact_owner() {
         let state = complete_acquire_for_test(
             PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-                .acquire(
+                .acquire_at(
                     PhyModemClient::Ieee802154,
                     DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
                 )
                 .unwrap(),
         );
         let before = state.snapshot();
-        let failure = state.evaluate_immediate_tracking(0).unwrap_err();
+        let failure = state.evaluate_immediate_at(0).unwrap_err();
         assert_eq!(
             failure.error(),
             PhyTrackTimeError::TimeReversed {
@@ -1014,14 +1206,14 @@ mod tests {
     fn time_reversal_rejects_periodic_callback_and_restores_exact_owner() {
         let state = complete_acquire_for_test(
             PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS)
-                .acquire(
+                .acquire_at(
                     PhyModemClient::Ieee802154,
                     DEFAULT_PLL_TRACK_PERIOD_MICROS + 1,
                 )
                 .unwrap(),
         );
         let before = state.snapshot();
-        let failure = state.evaluate_periodic_tracking(0).unwrap_err();
+        let failure = state.evaluate_periodic_at(0).unwrap_err();
         assert_eq!(
             failure.error(),
             PhyTrackTimeError::TimeReversed {

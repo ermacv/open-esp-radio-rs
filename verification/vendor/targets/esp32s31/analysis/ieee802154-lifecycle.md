@@ -412,10 +412,11 @@ client bit establishes that the opaque PLL adjustment, RF wakeup, or shutdown
 effects completed.
 
 The source obtains time separately for each enabled-class due check and again
-for each timestamp refresh. A host model driven by one supplied time snapshot
-can preserve the client-set and ordering rules, but it is not instruction-level
-timing evidence at a tracking-period boundary; target execution and HIL must
-cover that distinction.
+for each timestamp refresh. The host model now accepts a monotonic clock port,
+preserves the short-circuit that skips the Bluetooth/IEEE due sample after an
+already-due Wi-Fi check, and samples each active class again in refresh order.
+Host tests cover both immediate branches and the periodic callback. A target
+timer/lock executor and the opaque tracking leaf remain separate obligations.
 
 Until the opaque effects above are replaced with reviewed source logic or
 bounded hardware contracts, the strongest honest RF-lifecycle endpoint is:

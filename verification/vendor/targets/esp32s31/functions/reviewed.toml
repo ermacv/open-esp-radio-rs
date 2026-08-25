@@ -209,6 +209,38 @@ abi = "u32"
 role = "bluetooth-ieee802154-enabled"
 
 [[functions]]
+profile = "rom-all"
+source = "rom"
+identity = "rom::phy_temp_to_power"
+status = "reviewed"
+name = "temperature_to_tracking_power"
+role = "phy.periodic-power-tracking"
+summary = "Converts a wrapping signed 16-bit temperature delta to a signed 8-bit power adjustment using the exact Wi-Fi or Bluetooth/IEEE divisor branches."
+accept-incomplete = true
+
+[functions.signature]
+return-abi = "i8"
+return-role = "power-adjustment"
+
+[[functions.signature.arguments]]
+index = 0
+name = "current_temperature"
+abi = "i16"
+role = "current-temperature"
+
+[[functions.signature.arguments]]
+index = 1
+name = "reference_temperature"
+abi = "i16"
+role = "reference-temperature"
+
+[[functions.signature.arguments]]
+index = 2
+name = "bluetooth_ieee802154"
+abi = "bool"
+role = "tracking-class"
+
+[[functions]]
 profile = "libpp-all"
 source = "libpp"
 identity = "libpp::wdev_record_rx_linked_list"

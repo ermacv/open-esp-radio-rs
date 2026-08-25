@@ -67,6 +67,27 @@ impl PhyCalibrationTrackClass {
     }
 }
 
+/// Exact non-I/O arithmetic of rev0 ROM `phy_temp_to_power` at
+/// `0x2f82_5f80`.
+///
+/// The ROM first truncates the temperature subtraction to a signed 16-bit
+/// delta. Positive deltas use divisor five for both classes; zero and negative
+/// deltas use divisor three for Wi-Fi and four for Bluetooth/IEEE 802.15.4.
+/// The quotient is finally truncated and sign-extended from eight bits.
+pub const fn temperature_to_tracking_power(
+    current_temperature: i16,
+    reference_temperature: i16,
+    class: PhyCalibrationTrackClass,
+) -> i8 {
+    let delta = current_temperature.wrapping_sub(reference_temperature);
+    let divisor = match (class, delta > 0) {
+        (_, true) => 5,
+        (PhyCalibrationTrackClass::Wifi, false) => 3,
+        (PhyCalibrationTrackClass::BluetoothIeee802154, false) => 4,
+    };
+    (delta / divisor) as i8
+}
+
 /// One externally executed child of `phy_param_track_tot`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyParamTrackingAction {
@@ -495,6 +516,50 @@ mod tests {
         assert_eq!(
             transition.advance(PhyParamTrackingCompletion::ExitedCritical),
             Err(PhyParamTrackingTransitionError::AlreadyComplete)
+        );
+    }
+
+    #[test]
+    fn temperature_to_power_matches_all_signed_16_bit_deltas() {
+        for raw_delta in 0..=u16::MAX {
+            let delta = raw_delta as i16;
+            let expected_wifi = ((i32::from(delta) / 3) as u8) as i8;
+            let expected_bluetooth_ieee802154 = ((i32::from(delta) / 4) as u8) as i8;
+            let expected_positive = ((i32::from(delta) / 5) as u8) as i8;
+
+            assert_eq!(
+                temperature_to_tracking_power(
+                    0,
+                    0_i16.wrapping_sub(delta),
+                    PhyCalibrationTrackClass::Wifi
+                ),
+                if delta > 0 {
+                    expected_positive
+                } else {
+                    expected_wifi
+                },
+            );
+            assert_eq!(
+                temperature_to_tracking_power(
+                    0,
+                    0_i16.wrapping_sub(delta),
+                    PhyCalibrationTrackClass::BluetoothIeee802154,
+                ),
+                if delta > 0 {
+                    expected_positive
+                } else {
+                    expected_bluetooth_ieee802154
+                },
+            );
+        }
+
+        assert_eq!(
+            temperature_to_tracking_power(
+                i16::MIN,
+                1,
+                PhyCalibrationTrackClass::BluetoothIeee802154,
+            ),
+            (32_767_i16 / 5) as i8,
         );
     }
 }

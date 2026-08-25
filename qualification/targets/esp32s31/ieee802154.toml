@@ -106,6 +106,7 @@ tests = [
   { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "pending_request_runs_outer_tracking_before_owner_recovery" },
   { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "ieee802154_only_preserves_exact_child_order" },
   { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "guard_exits_critical_section_without_running_children" },
+  { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "temperature_to_power_matches_all_signed_16_bit_deltas" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md", token = "BTBB" },

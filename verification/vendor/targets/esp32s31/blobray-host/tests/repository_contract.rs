@@ -1480,6 +1480,7 @@ fn compiled_probe_operations_do_not_call_pac_validation_directly() {
             "mac_power_interrupt_registers",
             "bluetooth_interrupt_registers",
             "initialize_bluetooth_baseband_v2",
+            "initialize_bluetooth_controller_hal",
             "program_bluetooth_memory_list_pointer",
             "initialize_bluetooth_phy_registers",
         ],

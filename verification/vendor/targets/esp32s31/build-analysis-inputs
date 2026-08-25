@@ -19,8 +19,10 @@ produced_roles=(
     source-artifact:coex
     source-artifact:btbb
     source-artifact:ble-controller
+    source-artifact:bredr-controller
     rust-artifact
     rust-artifact:wifi-registers
+    rust-artifact:bluetooth
 )
 
 if [[ ${1:-} == "--list-roles" ]]; then
@@ -45,6 +47,7 @@ required_oracles=(
     libcoexist.a
     libbtbb.a
     libble_app.a
+    libbredr_app.a
     libbtdm_common.a
 )
 for artifact in "${required_oracles[@]}"; do
@@ -82,6 +85,7 @@ build_link_unit vendor-linked-wifi-key-role linked-oracle-wifi-key-role.toml
 build_link_unit vendor-linked-coex linked-oracle-coex.toml
 build_link_unit vendor-linked-btbb linked-oracle-btbb.toml
 build_link_unit vendor-linked-ble-controller linked-oracle-ble-controller.toml
+build_link_unit vendor-linked-bredr-controller linked-oracle-bredr-controller.toml
 
 echo "Building ESP32-S31 Rust comparison probes" >&2
 CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-probes" \

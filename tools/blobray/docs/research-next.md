@@ -192,19 +192,20 @@ re-query action.
 ## ESP32-S31 measurement
 
 Measured on 2026-08-25 against the repository's current ESP32-S31 generated
-review inputs. All 30 configured scopes produced 1,923 findings, coalesced into
-490 distinct next actions and 163 deduplicated prerequisite actions.
-Two findings are required missing public surfaces: BR/EDR and IEEE 802.15.4.
+review inputs. All 32 configured scopes produced 2,143 findings, coalesced into
+559 distinct next actions and 196 deduplicated prerequisite actions. The
+authenticated BR/EDR controller is analyzed; IEEE 802.15.4 is the one required
+missing public controller surface.
 
 | Strategy | Eligible prerequisites/actions | Returned prerequisites/actions at limit 20 | Cost units | Leading step |
 | --- | ---: | ---: | ---: | --- |
-| `impact` | 163 / 490 | 10 / 10 | 66 | acquire required BR/EDR surface |
-| `quick-wins` | 163 / 490 | 10 / 10 | 66 | acquire required BR/EDR surface |
-| `frontier` | 3 / 16 | 3 / 16 | 72 | acquire required BR/EDR surface |
+| `impact` | 196 / 559 | 10 / 10 | 68 | acquire required IEEE 802.15.4 surface |
+| `quick-wins` | 196 / 559 | 10 / 10 | 68 | acquire required IEEE 802.15.4 surface |
+| `frontier` | 2 / 16 | 2 / 3 | 16 | acquire required IEEE 802.15.4 surface |
 
-The measured all-scope baseline report is 7,616,660 bytes as pretty JSON and
-5,052,483 bytes in compact form. The compact catalogs account for 4,511,170
-bytes of findings, 392,612 bytes of actions and 146,255 bytes of prerequisites.
+The measured all-scope baseline report is 8,779,755 bytes as pretty JSON and
+5,837,609 bytes in compact form. The compact catalogs account for 5,183,032
+bytes of findings, 480,258 bytes of actions and 171,810 bytes of prerequisites.
 
 Reproduce the measurements with `--format json` and inspect
 `inventory.sha256`, the three inventory catalog lengths,

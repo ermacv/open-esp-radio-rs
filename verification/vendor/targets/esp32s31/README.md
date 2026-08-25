@@ -81,7 +81,7 @@ prefixes. It recovers calls, indexed dispatch, event values, memory/MMIO
 effects and blockers. This target project reviews the reusable Espressif and
 ESP32-S31 meaning attached to those facts.
 
-## BLE research boundary
+## Bluetooth controller research boundary
 
 BLE starts as a standalone controller investigation. The authenticated
 `libble_app.a`, `libbtdm_common.a`, `libbtbb.a` and `libphy.a` archives remain
@@ -95,10 +95,13 @@ hardware truth.
 Research protocol tags now preserve that ownership boundary. BLE controller,
 HCI, base-stack and standalone-runtime scopes are `ble`-only; the
 `r_btdm_task_*` lifecycle is a separate shared Bluetooth/BLE scope, and the
-BTBB coexistence client is named neutrally. The authenticated inputs contain
-no linked `libbredr_app` controller, so Blobray records
-`bredr-public-controller` as a required missing Bluetooth Classic surface
-instead of presenting BLE evidence as BR/EDR coverage.
+BTBB coexistence client is named neutrally. Bluetooth Classic remains a
+distinct controller surface backed by the authenticated `libbredr_app.a`.
+Its focused `bredr-controller` linked unit composes that archive with the
+shared BTDM, baseband and PHY inputs, preserving cross-archive lifecycle and
+HCI call identity without presenting BLE evidence as BR/EDR coverage. The
+linked ELF is generated locally and remains disposable; the raw archives
+retain provenance and navigation authority.
 
 The cold ownership slice is lossless: one neutral radio root can enter either
 the exclusive Wi-Fi or Bluetooth route and return before power-up. The public

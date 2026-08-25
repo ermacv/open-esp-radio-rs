@@ -143,6 +143,33 @@ path = "/path/to/libphy.a"
 role = "source-companion:ble-controller"
 path = "/path/to/esp32s31_rev0_rom.elf"
 
+# Bluetooth Classic uses an independent controller archive with the shared
+# BTDM/baseband/PHY closure. The linked ELF is disposable; these raw archive
+# bindings retain origin and navigation provenance.
+[[inputs]]
+role = "source-artifact:bredr-controller"
+path = "/path/to/linked-bredr-controller.elf"
+
+[[inputs]]
+role = "source-inventory:bredr-controller"
+path = "/path/to/libbredr_app.a"
+
+[[inputs]]
+role = "source-inventory:bredr-controller"
+path = "/path/to/libbtdm_common.a"
+
+[[inputs]]
+role = "source-inventory:bredr-controller"
+path = "/path/to/libbtbb.a"
+
+[[inputs]]
+role = "source-inventory:bredr-controller"
+path = "/path/to/libphy.a"
+
+[[inputs]]
+role = "source-companion:bredr-controller"
+path = "/path/to/esp32s31_rev0_rom.elf"
+
 # Exact archive inventories also remain independently addressable for source
 # classification and navigation outside the linked lifecycle unit.
 [[inputs]]
@@ -152,3 +179,7 @@ path = "/path/to/libble_app.a"
 [[inputs]]
 role = "source-inventory:btdm"
 path = "/path/to/libbtdm_common.a"
+
+[[inputs]]
+role = "source-inventory:bredr"
+path = "/path/to/libbredr_app.a"

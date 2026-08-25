@@ -118,6 +118,17 @@ include-reachable = true
 entry-contract = "none"
 output = "generated/findings/ble-controller-all.ir"
 
+# Canonical BR/EDR controller image. The authenticated Classic controller,
+# shared BTDM, baseband and PHY archives remain the provenance authority; this
+# linked view only restores cross-archive call identity for generated analysis.
+[[analysis.ir]]
+id = "bredr-controller-all"
+sources = ["bredr-controller"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/bredr-controller-all.ir"
+
 # Small lifecycle and interface views remain cheap navigation slices.  They do
 # not claim register coverage; ble-controller-all owns the complete lazy pass
 # used to derive controller MMIO shapes and candidate field partitions.
@@ -194,7 +205,7 @@ protocols = ["bluetooth"]
 source = "bredr-controller"
 symbol-prefix = "bredr_controller_"
 disposition = "required"
-profile = "bredr-controller-lifecycle"
+profile = "bredr-controller-all"
 
 [[analysis.public-symbol-families]]
 id = "ieee802154-public-controller"
@@ -252,6 +263,7 @@ linked-ir = [
     "generated/findings/coex-all.ir",
     "generated/findings/btbb-all.ir",
     "generated/findings/ble-controller-all.ir",
+    "generated/findings/bredr-controller-all.ir",
     "generated/findings/ble-controller-lifecycle.ir",
     "generated/findings/ble-hci-transport.ir",
     "generated/findings/ble-npl-boundary.ir",
@@ -660,6 +672,28 @@ roots = [
     "ble-controller:r_btdm_task_deinit",
 ]
 include-reachable = false
+
+[[review.scopes]]
+id = "bredr-controller-lifecycle"
+protocols = ["bluetooth"]
+profiles = ["bredr-controller-all"]
+roots = [
+    "bredr-controller:bredr_controller_init",
+    "bredr-controller:bredr_controller_deinit",
+    "bredr-controller:bredr_controller_state_get",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "bredr-host-controller-interface"
+protocols = ["bluetooth"]
+profiles = ["bredr-controller-all"]
+roots = [
+    "bredr-controller:bredr_hci_trans_register_tx",
+    "bredr-controller:bredr_hci_trans_acl_rx",
+    "bredr-controller:bredr_hci_trans_sync_rx",
+]
+include-reachable = true
 
 # Operational lifecycle coverage is intentionally separate from the cheap
 # navigation slices above.  The canonical linked profile follows every direct

@@ -48,6 +48,34 @@ source = "bluetooth"
 artifact-sha256 = "a08e9fc347aaf59f6e42521ef0cca6c27313c1d4db3cea6f6659ceaf177f929b"
 
 [[inputs]]
+source = "bredr"
+artifact-sha256 = "d3ea92e80bb60805d86a7bc831d52cb8b4c408d0ba9fe4425c88b6f03dca2093"
+
+[[inputs]]
+source = "bredr-controller"
+artifact-sha256 = "4b69a37511c53d20f2736a601d111d5dceb492300c95dddc6cf2b6910a1dc18a"
+
+[[inputs]]
+source = "bredr-controller"
+artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[inputs]]
+source = "bredr-controller"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[inputs]]
+source = "bredr-controller"
+artifact-sha256 = "d3ea92e80bb60805d86a7bc831d52cb8b4c408d0ba9fe4425c88b6f03dca2093"
+
+[[inputs]]
+source = "bredr-controller"
+artifact-sha256 = "ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df"
+
+[[inputs]]
+source = "bredr-controller"
+artifact-sha256 = "fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099"
+
+[[inputs]]
 source = "btbb"
 artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
 

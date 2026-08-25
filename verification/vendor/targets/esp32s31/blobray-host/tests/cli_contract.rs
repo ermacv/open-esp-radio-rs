@@ -400,17 +400,22 @@ fn research_surfaces_are_protocol_exact_and_keep_inspection_visible() {
     );
 
     let bluetooth = query(&["--protocol", "bluetooth"]);
-    let classic_surfaces = bluetooth["inventory"]["findings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|finding| finding["kind"] == "analysis-surface")
-        .collect::<Vec<_>>();
-    assert_eq!(classic_surfaces.len(), 1);
-    assert_eq!(
-        classic_surfaces[0]["subject"]["surface"],
-        "bredr-public-controller"
+    assert!(
+        bluetooth["inventory"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|finding| finding["kind"] != "analysis-surface"),
+        "the authenticated BR/EDR controller must not remain a missing analysis surface"
     );
+    let analyzed_bluetooth = bluetooth["analyzed_scopes"]
+        .as_array()
+        .expect("Bluetooth analyzed scopes")
+        .iter()
+        .filter_map(|scope| scope.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(analyzed_bluetooth.contains("bredr-controller-lifecycle"));
+    assert!(analyzed_bluetooth.contains("bredr-host-controller-interface"));
 
     let exact_scope = query(&["--scope", "ieee802154-baseband-leaves"]);
     assert!(

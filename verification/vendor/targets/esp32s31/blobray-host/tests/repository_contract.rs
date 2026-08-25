@@ -818,13 +818,72 @@ fn analysis_input_builder_owns_every_generated_project_role() {
         "source-artifact:coex",
         "source-artifact:btbb",
         "source-artifact:ble-controller",
+        "source-artifact:bredr-controller",
         "rust-artifact",
         "rust-artifact:wifi-registers",
+        "rust-artifact:bluetooth",
     ]
     .into_iter()
     .map(str::to_owned)
     .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn bredr_controller_input_preserves_source_qualified_provenance() {
+    let target = repository_root().join("verification/vendor/targets/esp32s31");
+    let spec = toml_document(
+        &target.join("oracle-firmware/trace-elf/linked-oracle-bredr-controller.toml"),
+    );
+    assert_eq!(spec["schema"].as_integer(), Some(1));
+    assert_eq!(spec["source"].as_str(), Some("bredr-controller"));
+
+    let archives = spec["archives"]
+        .as_array()
+        .expect("BR/EDR linked archives")
+        .iter()
+        .map(|archive| archive.as_str().expect("archive path"))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        archives,
+        BTreeSet::from([
+            "../../../../../../_oracles/libbredr_app.a",
+            "../../../../../../_oracles/libbtdm_common.a",
+            "../../../../../../_oracles/libbtbb.a",
+            "../../../../../../_oracles/libphy.a",
+        ])
+    );
+    let entries = spec["entry-symbols"]
+        .as_array()
+        .expect("BR/EDR entry symbols")
+        .iter()
+        .map(|entry| entry.as_str().expect("entry symbol"))
+        .collect::<BTreeSet<_>>();
+    for required in [
+        "bredr_controller_init",
+        "bredr_controller_deinit",
+        "bredr_hci_trans_register_tx",
+        "r_btdm_task_init",
+        "bt_bb_v2_init_cmplx",
+    ] {
+        assert!(entries.contains(required), "missing BR/EDR root {required}");
+    }
+
+    let example =
+        fs::read_to_string(target.join("local.example.toml")).expect("read local input example");
+    assert_eq!(
+        example.matches("source-artifact:bredr-controller").count(),
+        1
+    );
+    assert_eq!(
+        example.matches("source-inventory:bredr-controller").count(),
+        4
+    );
+    assert_eq!(
+        example.matches("source-companion:bredr-controller").count(),
+        1
+    );
+    assert!(example.contains("source-inventory:bredr"));
 }
 
 #[test]
@@ -981,7 +1040,19 @@ fn ieee802154_vendor_scaffold_is_fail_closed_and_source_scoped() {
     );
     assert_eq!(
         bredr_controller["profile"].as_str(),
-        Some("bredr-controller-lifecycle")
+        Some("bredr-controller-all")
+    );
+    let bredr_profile = ir_profiles
+        .iter()
+        .find(|profile| profile["id"].as_str() == Some("bredr-controller-all"))
+        .expect("BR/EDR controller IR profile");
+    assert_eq!(bredr_profile["roots"].as_str(), Some("all"));
+    assert_eq!(
+        bredr_profile["sources"]
+            .as_array()
+            .and_then(|sources| sources.get(0))
+            .and_then(|source| source.as_str()),
+        Some("bredr-controller")
     );
     let controller = public_families
         .iter()
@@ -1045,7 +1116,7 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
     let scopes = project["review"]["scopes"]
         .as_array_of_tables()
         .expect("project review scopes");
-    assert_eq!(scopes.len(), 30);
+    assert_eq!(scopes.len(), 32);
 
     let allowed = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
         .into_iter()
@@ -1090,6 +1161,14 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
         BTreeSet::from(["ble".to_owned(), "bluetooth".to_owned()])
     );
     assert_eq!(
+        by_id["bredr-controller-lifecycle"],
+        BTreeSet::from(["bluetooth".to_owned()])
+    );
+    assert_eq!(
+        by_id["bredr-host-controller-interface"],
+        BTreeSet::from(["bluetooth".to_owned()])
+    );
+    assert_eq!(
         by_id["btbb-coex-client"],
         BTreeSet::from(["ble".to_owned(), "bluetooth".to_owned(), "coex".to_owned()])
     );
@@ -1125,7 +1204,7 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
         })
         .collect::<BTreeMap<_, _>>();
     assert_eq!(counts["wifi"], 22);
-    assert_eq!(counts["bluetooth"], 8);
+    assert_eq!(counts["bluetooth"], 10);
     assert_eq!(counts["ble"], 12);
     assert_eq!(counts["ieee802154"], 8);
     assert_eq!(counts["coex"], 9);

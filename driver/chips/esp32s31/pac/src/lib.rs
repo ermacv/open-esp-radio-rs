@@ -130,8 +130,10 @@ pub use ieee802154::{
     Ieee802154MultipanIndex, Ieee802154OperationEventEnableObservation,
     Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154Pti,
     Ieee802154RxAbortEnableMask, Ieee802154RxStateCode, Ieee802154RxStatusObservation,
-    Ieee802154SecurityPayloadOffset, Ieee802154StateSnapshot, Ieee802154TransmitSecurityControl,
-    Ieee802154TxPowerCode, Ieee802154TxStateCode,
+    Ieee802154SecurityPayloadOffset, Ieee802154StateSnapshot, Ieee802154Timer0ThresholdWord,
+    Ieee802154Timer0ValueWord, Ieee802154Timer1ThresholdWord, Ieee802154Timer1ValueWord,
+    Ieee802154TimerLease, Ieee802154TransmitSecurityControl, Ieee802154TxPowerCode,
+    Ieee802154TxStateCode,
 };
 #[doc(hidden)]
 pub use ieee802154::{Ieee802154PolledRegisterLease, Ieee802154RegisterLease};

@@ -19678,6 +19678,12 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               <name>THRESHOLD</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -19706,6 +19712,12 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               <name>THRESHOLD</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

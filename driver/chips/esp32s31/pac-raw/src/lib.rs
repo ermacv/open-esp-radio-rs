@@ -48320,7 +48320,7 @@ pub mod ieee802154_mac {
         #[doc = "Register `TIMER0_THRESHOLD` writer"]
         pub type W = crate::W<Timer0ThresholdSpec>;
         #[doc = "Field `THRESHOLD` writer - "]
-        pub type ThresholdW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ThresholdW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -48335,7 +48335,7 @@ pub mod ieee802154_mac {
         }
         #[doc = "`write(|w| ..)` method takes [`timer0_threshold::W`](W) writer structure"]
         impl crate::Writable for Timer0ThresholdSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "TIMER0_VALUE (r) register accessor: Complete timer-zero value word read by the public common LL.\n\nYou can [`read`](crate::Reg::read) this register and get [`timer0_value::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@timer0_value`] module"]
@@ -48370,7 +48370,7 @@ pub mod ieee802154_mac {
         #[doc = "Register `TIMER1_THRESHOLD` writer"]
         pub type W = crate::W<Timer1ThresholdSpec>;
         #[doc = "Field `THRESHOLD` writer - "]
-        pub type ThresholdW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ThresholdW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -48385,7 +48385,7 @@ pub mod ieee802154_mac {
         }
         #[doc = "`write(|w| ..)` method takes [`timer1_threshold::W`](W) writer structure"]
         impl crate::Writable for Timer1ThresholdSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "TIMER1_VALUE (r) register accessor: Complete timer-one value word read by the public common LL.\n\nYou can [`read`](crate::Reg::read) this register and get [`timer1_value::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@timer1_value`] module"]
@@ -50349,6 +50349,48 @@ pub mod full_register_write {
                 .write_with_zero(|writer| writer.address().set(value));
         }
     }
+
+    /// Write every bit of `IEEE802154_MAC`.`TIMER0_THRESHOLD` through its full-width field.
+    #[inline]
+    pub fn publish_ieee802154_timer0_threshold(registers: &crate::Ieee802154Mac, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .timer0_threshold()
+                .write_with_zero(|writer| writer.threshold().set(value));
+        }
+    }
+
+    /// Write every bit of `IEEE802154_MAC`.`TIMER1_THRESHOLD` through its full-width field.
+    #[inline]
+    pub fn publish_ieee802154_timer1_threshold(registers: &crate::Ieee802154Mac, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .timer1_threshold()
+                .write_with_zero(|writer| writer.threshold().set(value));
+        }
+    }
+}
+
+/// Safe, SVD-declared observations which cover a complete register.
+pub mod full_register_read {
+
+    /// Read every bit of `IEEE802154_MAC`.`TIMER0_VALUE` through its full-width field.
+    #[inline]
+    pub fn observe_ieee802154_timer0_value(registers: &crate::Ieee802154Mac) -> u32 {
+        registers.timer0_value().read().value().bits()
+    }
+
+    /// Read every bit of `IEEE802154_MAC`.`TIMER1_VALUE` through its full-width field.
+    #[inline]
+    pub fn observe_ieee802154_timer1_value(registers: &crate::Ieee802154Mac) -> u32 {
+        registers.timer1_value().read().value().bits()
+    }
 }
 
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.
@@ -50493,6 +50535,58 @@ pub mod fixed_register_image {
             registers
                 .command()
                 .write_with_zero(|writer| writer.bits(0x00000045));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0000004c` to `IEEE802154_MAC`.`COMMAND`.
+    #[inline]
+    pub fn issue_ieee802154_timer0_start(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .command()
+                .write_with_zero(|writer| writer.bits(0x0000004c));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0000004d` to `IEEE802154_MAC`.`COMMAND`.
+    #[inline]
+    pub fn issue_ieee802154_timer0_stop(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .command()
+                .write_with_zero(|writer| writer.bits(0x0000004d));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0000004e` to `IEEE802154_MAC`.`COMMAND`.
+    #[inline]
+    pub fn issue_ieee802154_timer1_start(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .command()
+                .write_with_zero(|writer| writer.bits(0x0000004e));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0000004f` to `IEEE802154_MAC`.`COMMAND`.
+    #[inline]
+    pub fn issue_ieee802154_timer1_stop(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .command()
+                .write_with_zero(|writer| writer.bits(0x0000004f));
         }
     }
 

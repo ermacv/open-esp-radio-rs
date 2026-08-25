@@ -470,6 +470,70 @@ impl Ieee802154TxPowerCode {
     }
 }
 
+/// Register-specific complete TIMER0 threshold word accepted by the public common LL; no clock source, unit, or deadline policy is assigned at the PAC boundary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154Timer0ThresholdWord(u32);
+
+impl Ieee802154Timer0ThresholdWord {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific complete TIMER0 counter observation returned by the public common LL; no clock source or unit is assigned at the PAC boundary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154Timer0ValueWord(u32);
+
+impl Ieee802154Timer0ValueWord {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific complete TIMER1 threshold word accepted by the public common LL; no clock source, unit, or deadline policy is assigned at the PAC boundary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154Timer1ThresholdWord(u32);
+
+impl Ieee802154Timer1ThresholdWord {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific complete TIMER1 counter observation returned by the public common LL; no clock source or unit is assigned at the PAC boundary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154Timer1ValueWord(u32);
+
+impl Ieee802154Timer1ValueWord {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete transmit frame-buffer address. Buffer provenance, alignment and lifetime remain HAL obligations.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154TxDmaAddress(u32);

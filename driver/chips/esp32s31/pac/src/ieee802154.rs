@@ -10,7 +10,10 @@
 use core::ops::{Deref, DerefMut};
 
 use super::{Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154TaskRegisters};
-pub use crate::generated::{Ieee802154EdDurationUnits, Ieee802154TxPowerCode};
+pub use crate::generated::{
+    Ieee802154EdDurationUnits, Ieee802154Timer0ThresholdWord, Ieee802154Timer0ValueWord,
+    Ieee802154Timer1ThresholdWord, Ieee802154Timer1ValueWord, Ieee802154TxPowerCode,
+};
 
 /// Opaque eight-bit value accepted by the MAC frequency-code register.
 ///
@@ -1168,7 +1171,86 @@ pub struct Ieee802154RegisterLease<'registers> {
     registers: &'registers mut crate::svd::ieee802154_mac_ownership::TaskRegisters,
 }
 
+/// Exclusive task-side lease for the two reviewed MAC timers.
+///
+/// The lease exposes complete register-specific timer words and fixed command
+/// images only. It cannot sample or acknowledge interrupt status:
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::Ieee802154TimerLease;
+///
+/// fn sample_irq(timer: &Ieee802154TimerLease<'_>) {
+///     let _ = timer.event_status_observation();
+/// }
+/// ```
+///
+/// The parent task lease cannot be mutably borrowed twice while a timer lease
+/// is alive:
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::Ieee802154RegisterLease;
+///
+/// fn overlap(task: &mut Ieee802154RegisterLease<'_>) {
+///     let first = task.timer_lease();
+///     let second = task.timer_lease();
+///     let _ = (first, second);
+/// }
+/// ```
+#[must_use = "dropping the timer lease releases its exclusive task-register borrow"]
+pub struct Ieee802154TimerLease<'registers> {
+    registers: &'registers mut crate::svd::ieee802154_mac_ownership::TaskRegisters,
+}
+
+impl Ieee802154TimerLease<'_> {
+    /// Publish one complete TIMER0 threshold without assigning clock units.
+    pub fn set_timer0_threshold(&mut self, threshold: Ieee802154Timer0ThresholdWord) {
+        self.registers.publish_timer0_threshold(threshold.get());
+    }
+
+    /// Observe one complete TIMER0 counter word without assigning clock units.
+    pub fn timer0_value(&self) -> Ieee802154Timer0ValueWord {
+        Ieee802154Timer0ValueWord::new(self.registers.observe_timer0_value())
+    }
+
+    /// Issue exactly the reviewed TIMER0-start command image.
+    pub fn start_timer0(&mut self) {
+        self.registers.issue_timer0_start();
+    }
+
+    /// Issue exactly the reviewed TIMER0-stop command image.
+    pub fn stop_timer0(&mut self) {
+        self.registers.issue_timer0_stop();
+    }
+
+    /// Publish one complete TIMER1 threshold without assigning clock units.
+    pub fn set_timer1_threshold(&mut self, threshold: Ieee802154Timer1ThresholdWord) {
+        self.registers.publish_timer1_threshold(threshold.get());
+    }
+
+    /// Observe one complete TIMER1 counter word without assigning clock units.
+    pub fn timer1_value(&self) -> Ieee802154Timer1ValueWord {
+        Ieee802154Timer1ValueWord::new(self.registers.observe_timer1_value())
+    }
+
+    /// Issue exactly the reviewed TIMER1-start command image.
+    pub fn start_timer1(&mut self) {
+        self.registers.issue_timer1_start();
+    }
+
+    /// Issue exactly the reviewed TIMER1-stop command image.
+    pub fn stop_timer1(&mut self) {
+        self.registers.issue_timer1_stop();
+    }
+}
+
 impl Ieee802154RegisterLease<'_> {
+    /// Exclusively borrow both reviewed MAC timers from the task owner.
+    pub fn timer_lease(&mut self) -> Ieee802154TimerLease<'_> {
+        Ieee802154TimerLease {
+            registers: self.registers,
+        }
+    }
+
     /// Replace the source-confirmed sixteen-bit ED-duration subset.
     ///
     /// The generated masked transaction clears unused bits 23:16 exactly as
@@ -1806,6 +1888,9 @@ impl Ieee802154PolledRegisterLease<'_> {
 trait Ieee802154InterruptTransitionPort {
     type EventSnapshot;
 
+    fn stop_operation(&mut self);
+    fn stop_timer0(&mut self);
+    fn stop_timer1(&mut self);
     fn replace_event_enable(&mut self, events: Ieee802154EventEnableMask);
     fn replace_tx_abort_enable(&mut self, aborts: Ieee802154InterruptTxAbortEnableMask);
     fn replace_rx_abort_enable(&mut self, aborts: Ieee802154InterruptRxAbortEnableMask);
@@ -1837,13 +1922,17 @@ where
 
 /// Execute the complete teardown after the platform CPU route is disabled.
 ///
-/// All three enable fields are replaced with their closed zero images before
-/// one final affine W1C sample is consumed. Both ordering boundaries precede
-/// transfer back to inactive setup ownership.
+/// The operation and both MAC timers are stopped before all three enable
+/// fields are replaced with their closed zero images. One final affine W1C
+/// sample is then consumed. Both ordering boundaries precede transfer back to
+/// inactive setup ownership.
 fn execute_interrupt_deactivation<Port>(port: &mut Port)
 where
     Port: Ieee802154InterruptTransitionPort,
 {
+    port.stop_operation();
+    port.stop_timer0();
+    port.stop_timer1();
     port.replace_event_enable(Ieee802154EventEnableMask::NONE);
     port.replace_tx_abort_enable(Ieee802154InterruptTxAbortEnableMask::NONE);
     port.replace_rx_abort_enable(Ieee802154InterruptRxAbortEnableMask::NONE);
@@ -1863,6 +1952,18 @@ struct Ieee802154PacInterruptTransitionPort<'task> {
 
 impl Ieee802154InterruptTransitionPort for Ieee802154PacInterruptTransitionPort<'_> {
     type EventSnapshot = crate::svd::w1c_register_snapshot::Ieee802154EventStatusSnapshot;
+
+    fn stop_operation(&mut self) {
+        self.task.peripherals.ieee802154_mac.issue_stop();
+    }
+
+    fn stop_timer0(&mut self) {
+        self.task.peripherals.ieee802154_mac.issue_timer0_stop();
+    }
+
+    fn stop_timer1(&mut self) {
+        self.task.peripherals.ieee802154_mac.issue_timer1_stop();
+    }
 
     fn replace_event_enable(&mut self, events: Ieee802154EventEnableMask) {
         self.task
@@ -1977,9 +2078,10 @@ impl Ieee802154InterruptRegisters {
     /// Close one finite hard-IRQ epoch and return inactive setup ownership.
     ///
     /// The caller must disable the platform CPU route before this method. The
-    /// transition replaces event, transmit-abort, and receive-abort enables
-    /// with exact zero images, consumes one final complete affine W1C snapshot,
-    /// and orders both phases before returning task-side setup authority.
+    /// transition stops the active operation and both MAC timers, replaces
+    /// event, transmit-abort, and receive-abort enables with exact zero images,
+    /// consumes one final complete affine W1C snapshot, and orders both phases
+    /// before returning task-side setup authority.
     pub fn deactivate(self, task: &mut Ieee802154TaskRegisters) -> Ieee802154InterruptSetup {
         let mut port = Ieee802154PacInterruptTransitionPort {
             task,
@@ -2021,8 +2123,9 @@ mod tests {
         Ieee802154PolledRegisterLease, Ieee802154Pti, Ieee802154RegisterLease,
         Ieee802154RxAbortEnableMask, Ieee802154RxStateCode, Ieee802154RxStatusObservation,
         Ieee802154SecurityPayloadOffset, Ieee802154StateSnapshot, Ieee802154TaskRegisters,
-        Ieee802154TxPowerCode, Ieee802154TxStateCode, execute_interrupt_activation,
-        execute_interrupt_deactivation,
+        Ieee802154Timer0ThresholdWord, Ieee802154Timer0ValueWord, Ieee802154Timer1ThresholdWord,
+        Ieee802154Timer1ValueWord, Ieee802154TimerLease, Ieee802154TxPowerCode,
+        Ieee802154TxStateCode, execute_interrupt_activation, execute_interrupt_deactivation,
     };
     use crate::RadioHardware;
     use std::vec::Vec;
@@ -2031,6 +2134,26 @@ mod tests {
     fn frequency_code_does_not_claim_an_ieee_channel_mapping() {
         assert_eq!(Ieee802154FrequencyCode::new(0).value(), 0);
         assert_eq!(Ieee802154FrequencyCode::new(u8::MAX).value(), u8::MAX);
+    }
+
+    #[test]
+    fn timer_words_remain_register_specific_and_unit_free() {
+        assert_eq!(
+            Ieee802154Timer0ThresholdWord::new(0x0123_4567).get(),
+            0x0123_4567
+        );
+        assert_eq!(
+            Ieee802154Timer0ValueWord::new(0x89ab_cdef).get(),
+            0x89ab_cdef
+        );
+        assert_eq!(
+            Ieee802154Timer1ThresholdWord::new(0xfedc_ba98).get(),
+            0xfedc_ba98
+        );
+        assert_eq!(
+            Ieee802154Timer1ValueWord::new(0x7654_3210).get(),
+            0x7654_3210
+        );
     }
 
     #[test]
@@ -2439,6 +2562,9 @@ mod tests {
 
     #[derive(Debug, Eq, PartialEq)]
     enum InterruptTransitionOperation {
+        StopOperation,
+        StopTimer0,
+        StopTimer1,
         ReplaceEvents(u16),
         ReplaceTxAborts(u32),
         ReplaceRxAborts(u32),
@@ -2457,6 +2583,21 @@ mod tests {
 
     impl Ieee802154InterruptTransitionPort for RecordingInterruptTransitionPort {
         type EventSnapshot = RecordingEventSnapshot;
+
+        fn stop_operation(&mut self) {
+            self.operations
+                .push(InterruptTransitionOperation::StopOperation);
+        }
+
+        fn stop_timer0(&mut self) {
+            self.operations
+                .push(InterruptTransitionOperation::StopTimer0);
+        }
+
+        fn stop_timer1(&mut self) {
+            self.operations
+                .push(InterruptTransitionOperation::StopTimer1);
+        }
 
         fn replace_event_enable(&mut self, events: Ieee802154EventEnableMask) {
             self.operations
@@ -2521,7 +2662,7 @@ mod tests {
     }
 
     #[test]
-    fn production_deactivation_executor_clears_every_mask_before_final_affine_ack() {
+    fn production_deactivation_stops_every_engine_before_final_affine_ack() {
         let mut port = RecordingInterruptTransitionPort {
             event_identity: 0x3c,
             operations: Vec::new(),
@@ -2531,6 +2672,9 @@ mod tests {
         assert_eq!(
             port.operations,
             [
+                InterruptTransitionOperation::StopOperation,
+                InterruptTransitionOperation::StopTimer0,
+                InterruptTransitionOperation::StopTimer1,
                 InterruptTransitionOperation::ReplaceEvents(0),
                 InterruptTransitionOperation::ReplaceTxAborts(0),
                 InterruptTransitionOperation::ReplaceRxAborts(0),
@@ -2564,6 +2708,9 @@ mod tests {
             Ieee802154RegisterLease::publish_receive_dma_address;
         let _tx_power: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154TxPowerCode) =
             Ieee802154RegisterLease::set_tx_power_code;
+        let _timer_lease: for<'lease> fn(
+            &'lease mut Ieee802154RegisterLease<'static>,
+        ) -> Ieee802154TimerLease<'lease> = Ieee802154RegisterLease::timer_lease;
         let _ed_rate: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154EdSampleRate) =
             Ieee802154RegisterLease::set_ed_sample_rate;
         let _multipan_identity: fn(

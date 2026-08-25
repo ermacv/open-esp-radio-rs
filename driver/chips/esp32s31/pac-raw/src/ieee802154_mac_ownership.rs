@@ -561,6 +561,54 @@ impl TaskRegisters {
         crate::fixed_register_image::issue_ieee802154_stop(&self.registers);
     }
 
+    /// Publish one complete TIMER0 threshold word.
+    #[doc(hidden)]
+    pub fn publish_timer0_threshold(&mut self, threshold: u32) {
+        crate::full_register_write::publish_ieee802154_timer0_threshold(&self.registers, threshold);
+    }
+
+    /// Observe one complete TIMER0 counter word.
+    #[doc(hidden)]
+    pub fn observe_timer0_value(&self) -> u32 {
+        crate::full_register_read::observe_ieee802154_timer0_value(&self.registers)
+    }
+
+    /// Issue the fixed TIMER0-start image.
+    #[doc(hidden)]
+    pub fn issue_timer0_start(&mut self) {
+        crate::fixed_register_image::issue_ieee802154_timer0_start(&self.registers);
+    }
+
+    /// Issue the fixed TIMER0-stop image.
+    #[doc(hidden)]
+    pub fn issue_timer0_stop(&mut self) {
+        crate::fixed_register_image::issue_ieee802154_timer0_stop(&self.registers);
+    }
+
+    /// Publish one complete TIMER1 threshold word.
+    #[doc(hidden)]
+    pub fn publish_timer1_threshold(&mut self, threshold: u32) {
+        crate::full_register_write::publish_ieee802154_timer1_threshold(&self.registers, threshold);
+    }
+
+    /// Observe one complete TIMER1 counter word.
+    #[doc(hidden)]
+    pub fn observe_timer1_value(&self) -> u32 {
+        crate::full_register_read::observe_ieee802154_timer1_value(&self.registers)
+    }
+
+    /// Issue the fixed TIMER1-start image.
+    #[doc(hidden)]
+    pub fn issue_timer1_start(&mut self) {
+        crate::fixed_register_image::issue_ieee802154_timer1_start(&self.registers);
+    }
+
+    /// Issue the fixed TIMER1-stop image.
+    #[doc(hidden)]
+    pub fn issue_timer1_stop(&mut self) {
+        crate::fixed_register_image::issue_ieee802154_timer1_stop(&self.registers);
+    }
+
     /// Replace only the recovered eight-bit channel/frequency field.
     #[doc(hidden)]
     pub fn set_frequency_code(&mut self, code: u8) {

@@ -741,6 +741,12 @@ name = "THRESHOLD"
 bitOffset = 0
 bitWidth = 32
 
+[peripherals.registers.register.fields.writeConstraint]
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xffff_ffff
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -768,6 +774,12 @@ access = "write-only"
 name = "THRESHOLD"
 bitOffset = 0
 bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint]
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xffff_ffff
 
 [[peripherals.registers]]
 

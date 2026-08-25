@@ -1,5 +1,6 @@
 #![no_std]
-#![forbid(unsafe_code)]
+// The private `ieee802154_timing_boundary` module is the sole scoped override.
+#![deny(unsafe_code)]
 #![doc = "Source-only ESP32-S31 radio frontier."]
 #![doc = ""]
 #![doc = "This crate deliberately has no dependency on"]
@@ -14,6 +15,7 @@ pub mod target_executor;
 #[cfg(target_arch = "riscv32")]
 pub mod target_port;
 
+mod ieee802154_timing_boundary;
 pub mod phy_bb;
 pub mod phy_bluetooth;
 pub mod phy_channel;
@@ -64,7 +66,8 @@ pub use registered_radio::{
     RegisteredIeee802154FoundationTransitionFailure, RegisteredIeee802154MacPolicyConfigured,
     RegisteredIeee802154MacPolicyRecovery, RegisteredIeee802154MacPolicyTransitionFailure,
     RegisteredIeee802154OperationCompleted, RegisteredIeee802154OperationFailed,
-    RegisteredIeee802154Reset, RegisteredIeee802154ResetTransitionFailure, RegisteredPhyRadio,
+    RegisteredIeee802154Reset, RegisteredIeee802154ResetTransitionFailure,
+    RegisteredIeee802154TimingReady, RegisteredPhyRadio,
 };
 /// Shared one-microsecond sampling bound used by every target executor and by
 /// host-side qualification of the same typed timeout contract.

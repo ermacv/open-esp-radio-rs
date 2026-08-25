@@ -118,15 +118,6 @@ pub enum TxMode {
     },
 }
 
-/// Whether transmission completion requires an acknowledgement.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum AcknowledgementPolicy {
-    /// `TX_DONE` is sufficient for success.
-    NotRequested,
-    /// Success requires an acknowledgement within backend policy bounds.
-    Required,
-}
-
 /// Borrowed portable transmission request.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TxRequest<'frame> {
@@ -138,8 +129,6 @@ pub struct TxRequest<'frame> {
     pub channel: Channel,
     /// Channel access mode.
     pub mode: TxMode,
-    /// Acknowledgement requirement.
-    pub acknowledgement: AcknowledgementPolicy,
     /// Optional requested power in dBm; `None` retains backend configuration.
     pub transmit_power_dbm: Option<i8>,
 }

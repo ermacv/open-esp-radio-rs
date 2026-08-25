@@ -13,7 +13,7 @@ use core::fmt;
 
 use open_esp_radio_esp32s31_pac::{
     Ieee802154FoundationSnapshot, Ieee802154InterruptSetup, Ieee802154Pti, Ieee802154TaskRegisters,
-    RadioHardware,
+    Ieee802154TimingPrerequisite, Ieee802154TimingReady, RadioHardware,
 };
 
 #[cfg(feature = "validation-probes")]
@@ -615,6 +615,25 @@ impl<P: Ieee802154PlatformControl> Ieee802154Clocked<P> {
     /// Borrow the integration token without releasing whole-radio ownership.
     pub fn peripheral(&self) -> &P {
         &self.inner.backend().platform
+    }
+}
+
+impl<P> Ieee802154Clocked<P> {
+    /// Consume a terminal common-PHY prerequisite on the retained task owner.
+    ///
+    /// This narrow bridge neither exposes nor releases the PAC task partition.
+    /// The prerequisite is affine and can only be minted at the higher-layer
+    /// terminal common-PHY proof boundary; the returned marker must remain
+    /// coupled to every production lifecycle state that follows.
+    #[doc(hidden)]
+    pub fn initialize_baseband_and_ieee802154_timing(
+        &mut self,
+        prerequisite: Ieee802154TimingPrerequisite,
+    ) -> Ieee802154TimingReady {
+        self.inner
+            .backend_mut()
+            .task
+            .initialize_baseband_and_ieee802154_timing(prerequisite)
     }
 }
 

@@ -13,6 +13,7 @@ pub use ieee802154::{
     RegisteredIeee802154MacPolicyRecovery, RegisteredIeee802154MacPolicyTransitionFailure,
     RegisteredIeee802154OperationCompleted, RegisteredIeee802154OperationFailed,
     RegisteredIeee802154Reset, RegisteredIeee802154ResetTransitionFailure,
+    RegisteredIeee802154TimingReady,
 };
 
 /// Unique powered-radio owner carrying proof of target PHY registration.

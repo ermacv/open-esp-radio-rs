@@ -4,7 +4,8 @@ use core::fmt;
 
 use open_esp_radio_esp32s31_ieee802154_dma::{
     DmaTerminalEvidence, RxArm, RxCompletion, RxCompletionKind, RxDmaAddress, RxFrameError,
-    RxFrameView, RxLifecycleFailure, RxPoolError, TxArmed, TxCompleted, TxDmaAddress,
+    RxFrameView, RxLifecycleFailure, RxPoolError, TxAckNotRequested, TxAckRequested, TxArmed,
+    TxCompleted, TxDmaAddress,
 };
 use open_esp_radio_esp32s31_ieee802154_irq::{
     Ieee802154Event, Ieee802154RxAbortReason, Ieee802154TxAbortReason,
@@ -264,7 +265,7 @@ pub struct MacNoDmaResources {
 
 /// Paired DMA ownership for a transmit request that expects an ACK.
 pub struct MacTxWithAckResources<'tx, 'rx, const COUNT: usize> {
-    transmit: TxArmed<'tx>,
+    transmit: TxArmed<'tx, TxAckRequested>,
     acknowledgement_receive: RxArm<'rx, COUNT>,
 }
 
@@ -423,32 +424,23 @@ impl MacReady {
 
     /// Retain one TX DMA token in a no-ACK transmit request.
     ///
-    /// The caller chooses the logical access path explicitly. This pure actor
-    /// does not parse the frame-control field or execute either command.
+    /// The caller chooses only the logical access path. The DMA token already
+    /// proves that the immutable copied FCF does not request an ACK.
     ///
     /// ```compile_fail
-    /// use open_esp_radio_esp32s31_ieee802154_dma::{
-    ///     DMA_LOW, DmaFrameAddress, TxStorage,
-    /// };
+    /// use open_esp_radio_esp32s31_ieee802154_dma::{TxAckRequested, TxArmed};
     /// use open_esp_radio_esp32s31_ieee802154_mac::{MacReady, MacTransmitAccess};
     ///
-    /// let storage = Box::leak(Box::new(TxStorage::new()));
-    /// let mut owner = TxStorage::pin_static_model(
-    ///     storage,
-    ///     DmaFrameAddress::try_new(DMA_LOW).unwrap(),
-    /// );
-    /// let armed = owner.prepare(&[0x01]).unwrap().arm();
-    /// let _active = MacReady::new().request_transmit_without_ack(
-    ///     armed,
-    ///     MacTransmitAccess::Direct,
-    /// );
-    /// let _address = armed.dma_address();
+    /// fn wrong<'tx>(armed: TxArmed<'tx, TxAckRequested>) {
+    ///     let _ = MacReady::new()
+    ///         .request_transmit_without_ack(armed, MacTransmitAccess::Direct);
+    /// }
     /// ```
     pub fn request_transmit_without_ack(
         self,
-        armed: TxArmed<'_>,
+        armed: TxArmed<'_, TxAckNotRequested>,
         access: MacTransmitAccess,
-    ) -> MacActive<TxArmed<'_>> {
+    ) -> MacActive<TxArmed<'_, TxAckNotRequested>> {
         MacActive {
             ready: self,
             resources: armed,
@@ -459,10 +451,28 @@ impl MacReady {
         }
     }
 
-    /// Retain one TX and one ACK-RX token in a transmit-with-ACK request.
+    /// Retain one ACK-requesting TX and one ACK-RX token.
+    ///
+    /// ```compile_fail
+    /// use open_esp_radio_esp32s31_ieee802154_dma::{
+    ///     RxArm, TxAckNotRequested, TxArmed,
+    /// };
+    /// use open_esp_radio_esp32s31_ieee802154_mac::{MacReady, MacTransmitAccess};
+    ///
+    /// fn wrong<'tx, 'rx>(
+    ///     transmit: TxArmed<'tx, TxAckNotRequested>,
+    ///     acknowledgement_receive: RxArm<'rx, 1>,
+    /// ) {
+    ///     let _ = MacReady::new().request_transmit_with_ack(
+    ///         transmit,
+    ///         acknowledgement_receive,
+    ///         MacTransmitAccess::Direct,
+    ///     );
+    /// }
+    /// ```
     pub fn request_transmit_with_ack<'tx, 'rx, const COUNT: usize>(
         self,
-        transmit: TxArmed<'tx>,
+        transmit: TxArmed<'tx, TxAckRequested>,
         acknowledgement_receive: RxArm<'rx, COUNT>,
         access: MacTransmitAccess,
     ) -> MacActive<MacTxWithAckResources<'tx, 'rx, COUNT>> {
@@ -593,7 +603,7 @@ impl<'pool, const COUNT: usize> MacActive<RxArm<'pool, COUNT>> {
     }
 }
 
-impl MacActive<TxArmed<'_>> {
+impl MacActive<TxArmed<'_, TxAckNotRequested>> {
     /// Borrow the transmit start intent and its lifetime-bound address token.
     pub fn start_plan(&self) -> Option<MacStartPlan<'_>> {
         self.plan(MacDmaPublication::Transmit(self.resources.dma_address()))
@@ -855,7 +865,7 @@ impl<const COUNT: usize> fmt::Debug for MacRxResolutionFailure<'_, COUNT> {
 #[must_use = "a failed terminal ACK transition quarantines every paired owner"]
 pub struct MacTxWithAckResolutionFailure<'tx, 'rx, const COUNT: usize> {
     _ready: MacReady,
-    _transmit: TxArmed<'tx>,
+    _transmit: TxArmed<'tx, TxAckRequested>,
     _failure: RxLifecycleFailure<RxArm<'rx, COUNT>>,
     error: RxPoolError,
     completion: MacCompletion,
@@ -937,7 +947,7 @@ impl<'pool, const COUNT: usize> MacDeferred<RxArm<'pool, COUNT>> {
     }
 }
 
-impl<'owner> MacDeferred<TxArmed<'owner>> {
+impl<'owner> MacDeferred<TxArmed<'owner, TxAckNotRequested>> {
     /// Reclaim the exact TX resource retained by one accepted terminal batch.
     #[doc(hidden)]
     pub fn resolve_with_terminal_evidence(
@@ -1332,13 +1342,34 @@ const fn is_terminal_measurement_abort(reason: Ieee802154RxAbortReason) -> bool 
 mod tests {
     use super::*;
     use open_esp_radio_esp32s31_ieee802154_dma::{
-        DMA_LOW, DmaFrameAddress, PinnedRxPool, PinnedTxBuffer, RxPoolStorage, TxStorage,
+        DMA_LOW, DmaFrameAddress, PinnedRxPool, PinnedTxBuffer, PreparedTx, RxPoolStorage,
+        TxStorage,
     };
     use open_esp_radio_esp32s31_ieee802154_irq::Ieee802154EventMask;
 
     fn tx_owner(address: u32) -> PinnedTxBuffer {
         let storage = std::boxed::Box::leak(std::boxed::Box::new(TxStorage::new()));
         TxStorage::pin_static_model(storage, DmaFrameAddress::try_new(address).unwrap())
+    }
+
+    fn arm_no_ack<'owner>(
+        owner: &'owner mut PinnedTxBuffer,
+        frame: &[u8],
+    ) -> TxArmed<'owner, TxAckNotRequested> {
+        let PreparedTx::AckNotRequested(prepared) = owner.prepare(frame).unwrap() else {
+            panic!("fixture must not request an ACK");
+        };
+        prepared.arm()
+    }
+
+    fn arm_with_ack<'owner>(
+        owner: &'owner mut PinnedTxBuffer,
+        frame: &[u8],
+    ) -> TxArmed<'owner, TxAckRequested> {
+        let PreparedTx::AckRequested(prepared) = owner.prepare(frame).unwrap() else {
+            panic!("fixture must request an ACK");
+        };
+        prepared.arm()
     }
 
     fn rx_pool<const COUNT: usize>(address: u32) -> PinnedRxPool<COUNT> {
@@ -1421,7 +1452,7 @@ mod tests {
         assert!(plan.step(4).is_none());
 
         let mut tx_owner = tx_owner(DMA_LOW + 128);
-        let tx = tx_owner.prepare(&[1]).unwrap().arm();
+        let tx = arm_no_ack(&mut tx_owner, &[1]);
         let tx_active = MacReady::new()
             .request_transmit_without_ack(tx, MacTransmitAccess::ClearChannelAssessment);
         let tx_plan = tx_active.start_plan().unwrap();
@@ -1455,7 +1486,7 @@ mod tests {
     #[test]
     fn transmit_with_ack_plan_publishes_tx_before_rx() {
         let mut tx_owner = tx_owner(DMA_LOW);
-        let tx = tx_owner.prepare(&[1]).unwrap().arm();
+        let tx = arm_with_ack(&mut tx_owner, &[0x21]);
         let pool = rx_pool::<1>(DMA_LOW + 128);
         let rx = pool.arm_next().unwrap();
         let active = MacReady::new().request_transmit_with_ack(tx, rx, MacTransmitAccess::Direct);
@@ -1521,7 +1552,7 @@ mod tests {
             MacTransmitAccess::ClearChannelAssessment,
         ] {
             let mut owner = tx_owner(DMA_LOW);
-            let armed = owner.prepare(&[1]).unwrap().arm();
+            let armed = arm_no_ack(&mut owner, &[1]);
             let active = MacReady::new().request_transmit_without_ack(armed, access);
             let completion = deferred(
                 active
@@ -1544,7 +1575,7 @@ mod tests {
     #[test]
     fn ack_transmit_advances_then_defers_once_for_terminal_batch() {
         let mut owner = tx_owner(DMA_LOW);
-        let tx = owner.prepare(&[1]).unwrap().arm();
+        let tx = arm_with_ack(&mut owner, &[0x21]);
         let pool = rx_pool::<1>(DMA_LOW + 128);
         let rx = pool.arm_next().unwrap();
         let active = MacReady::new().request_transmit_with_ack(tx, rx, MacTransmitAccess::Direct);
@@ -1587,7 +1618,7 @@ mod tests {
     #[test]
     fn tx_done_and_ack_done_can_share_one_reviewed_order_batch() {
         let mut owner = tx_owner(DMA_LOW);
-        let tx = owner.prepare(&[1]).unwrap().arm();
+        let tx = arm_with_ack(&mut owner, &[0x21]);
         let pool = rx_pool::<1>(DMA_LOW + 128);
         let rx = pool.arm_next().unwrap();
         let active = MacReady::new().request_transmit_with_ack(
@@ -1605,7 +1636,7 @@ mod tests {
     #[test]
     fn delayed_ack_is_legal_in_tx_but_multiple_terminals_fail_closed() {
         let mut owner = tx_owner(DMA_LOW);
-        let tx = owner.prepare(&[1]).unwrap().arm();
+        let tx = arm_with_ack(&mut owner, &[0x21]);
         let pool = rx_pool::<1>(DMA_LOW + 128);
         let rx = pool.arm_next().unwrap();
         let active = MacReady::new().request_transmit_with_ack(tx, rx, MacTransmitAccess::Direct);
@@ -1617,7 +1648,7 @@ mod tests {
         assert_eq!(completion.completion(), MacCompletion::TransmitAcknowledged);
 
         let mut owner = tx_owner(DMA_LOW + 256);
-        let tx = owner.prepare(&[1]).unwrap().arm();
+        let tx = arm_with_ack(&mut owner, &[0x21]);
         let pool = rx_pool::<1>(DMA_LOW + 384);
         let active = MacReady::new().request_transmit_with_ack(
             tx,
@@ -1646,7 +1677,7 @@ mod tests {
     fn ack_timeout_sources_are_terminal_only_after_tx_done() {
         for by_timer in [false, true] {
             let mut owner = tx_owner(DMA_LOW);
-            let tx = owner.prepare(&[1]).unwrap().arm();
+            let tx = arm_with_ack(&mut owner, &[0x21]);
             let pool = rx_pool::<1>(DMA_LOW + 128);
             let rx = pool.arm_next().unwrap();
             let active =
@@ -1689,7 +1720,7 @@ mod tests {
 
         for reason in REASONS {
             let mut owner = tx_owner(DMA_LOW);
-            let tx = owner.prepare(&[1]).unwrap().arm();
+            let tx = arm_with_ack(&mut owner, &[0x21]);
             let pool = rx_pool::<1>(DMA_LOW + 128);
             let active = MacReady::new().request_transmit_with_ack(
                 tx,
@@ -1734,7 +1765,7 @@ mod tests {
             Ieee802154TxAbortReason::TxSecurityError,
         ] {
             let mut owner = tx_owner(DMA_LOW);
-            let armed = owner.prepare(&[1]).unwrap().arm();
+            let armed = arm_no_ack(&mut owner, &[1]);
             let completion = deferred(
                 MacReady::new()
                     .request_transmit_without_ack(armed, MacTransmitAccess::Direct)
@@ -1748,7 +1779,7 @@ mod tests {
         }
 
         let mut owner = tx_owner(DMA_LOW);
-        let armed = owner.prepare(&[1]).unwrap().arm();
+        let armed = arm_no_ack(&mut owner, &[1]);
         let active = MacReady::new().request_transmit_without_ack(armed, MacTransmitAccess::Direct);
         let rejected = active
             .process_batch(tx_abort(Ieee802154TxAbortReason::CcaBusy))

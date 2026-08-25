@@ -16,5 +16,8 @@ open-esp-radio-esp32s31-ieee802154-irq = { path = "../irq" }
 open-esp-radio-esp32s31-ieee802154-mac = { path = "../mac" }
 open-esp-radio-esp32s31-pac = { path = "../../pac" }
 
+[dev-dependencies]
+open-esp-radio-esp32s31-ieee802154-irq = { path = "../irq", features = ["validation-probes"] }
+
 [lints]
 workspace = true

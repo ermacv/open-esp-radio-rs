@@ -28,7 +28,6 @@ pub use contract::{
 };
 pub use frame::{Frame, FrameError, FrameView, MAX_MAC_FRAME_LEN, MIN_MAC_FRAME_LEN};
 pub use types::{
-    AcknowledgementPolicy, Configuration, EnergyScanRequest, FcsStatus, FramePending, RadioFault,
-    RadioTimestamp, ReceivedFrame, RequestId, RxMetadata, SecurityStatus, TxMode, TxRequest,
-    TxStatus,
+    Configuration, EnergyScanRequest, FcsStatus, FramePending, RadioFault, RadioTimestamp,
+    ReceivedFrame, RequestId, RxMetadata, SecurityStatus, TxMode, TxRequest, TxStatus,
 };

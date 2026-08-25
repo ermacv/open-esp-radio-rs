@@ -1,6 +1,6 @@
 use crate::{
-    AcknowledgementPolicy, Channel, Configuration, EnergyScanRequest, RadioCapabilities,
-    RadioFault, ReceivedFrame, RequestId, TxMode, TxRequest, TxStatus,
+    Channel, Configuration, EnergyScanRequest, RadioCapabilities, RadioFault, ReceivedFrame,
+    RequestId, TxMode, TxRequest, TxStatus,
 };
 
 /// Stable state to which an asynchronous operation returns.
@@ -339,7 +339,7 @@ impl RadioStateMachine {
                         required: required_tx_capability(request.mode),
                     });
                 }
-                if request.acknowledgement == AcknowledgementPolicy::Required
+                if request.frame.acknowledgement_requested()
                     && !self
                         .capabilities
                         .contains(RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT)
@@ -617,7 +617,6 @@ mod tests {
             frame: FrameView::new(&bytes).unwrap(),
             channel: channel(20),
             mode: TxMode::CsmaCa { max_backoffs: 4 },
-            acknowledgement: AcknowledgementPolicy::Required,
             transmit_power_dbm: Some(3),
         };
         machine.admit(RadioCommand::Transmit(request)).unwrap();
@@ -671,6 +670,37 @@ mod tests {
             })
         );
         assert_eq!(machine.state(), before);
+    }
+
+    #[test]
+    fn acknowledgement_capability_is_derived_only_from_the_fcf() {
+        let no_ack_bytes = [0x01];
+        let mut no_ack_machine = enabled(RadioCapabilities::NONE);
+        no_ack_machine
+            .admit(RadioCommand::Transmit(TxRequest {
+                id: ID,
+                frame: FrameView::new(&no_ack_bytes).unwrap(),
+                channel: channel(15),
+                mode: TxMode::Direct,
+                transmit_power_dbm: None,
+            }))
+            .unwrap();
+
+        let ack_bytes = [0x21];
+        let mut ack_machine = enabled(RadioCapabilities::NONE);
+        assert_eq!(
+            ack_machine.admit(RadioCommand::Transmit(TxRequest {
+                id: ID,
+                frame: FrameView::new(&ack_bytes).unwrap(),
+                channel: channel(15),
+                mode: TxMode::Direct,
+                transmit_power_dbm: None,
+            })),
+            Err(CommandError::Unsupported {
+                command: CommandKind::Transmit,
+                required: RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT,
+            })
+        );
     }
 
     #[test]
@@ -736,14 +766,13 @@ mod tests {
     fn failed_transmit_cannot_publish_an_acknowledgement() {
         let capabilities = RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT;
         let mut machine = enabled(capabilities);
-        let frame_bytes = [1];
+        let frame_bytes = [0x21];
         machine
             .admit(RadioCommand::Transmit(TxRequest {
                 id: ID,
                 frame: FrameView::new(&frame_bytes).unwrap(),
                 channel: channel(15),
                 mode: TxMode::Direct,
-                acknowledgement: AcknowledgementPolicy::Required,
                 transmit_power_dbm: None,
             }))
             .unwrap();

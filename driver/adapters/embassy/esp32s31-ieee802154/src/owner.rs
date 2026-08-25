@@ -1,9 +1,8 @@
 //! Affine Embassy task and hard-IRQ owners.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_esp32s31_ieee802154_dma::{RxArm, TxArmed, TxCompleted};
-use open_esp_radio_esp32s31_ieee802154_irq::{
-    Ieee802154InterruptDisposition, Ieee802154InterruptPort, handle_ieee802154_interrupt,
+use open_esp_radio_esp32s31_ieee802154_dma::{
+    RxArm, TxAckNotRequested, TxAckRequested, TxArmed, TxCompleted,
 };
 use open_esp_radio_esp32s31_ieee802154_mac::{
     MacActive, MacCompletion, MacDeferredNext, MacEnergyDetectionDuration, MacNoDmaResources,
@@ -21,48 +20,13 @@ use crate::{
     EmbassyIeee802154OperationProgress,
 };
 
-/// Sole hard-IRQ-side owner of one status port and its bounded task handoff.
-///
-/// A target interrupt binding keeps this value in interrupt-owned storage and
-/// invokes [`Self::on_interrupt`] from the MODEM_ZB_MAC handler. The method
-/// samples and acknowledges the complete opaque PAC snapshot before the value
-/// enters the Embassy queue; the task never receives the status port itself.
-pub struct EmbassyIeee802154InterruptHandler<'irq, Port, M: RawMutex, const DEPTH: usize> {
-    port: Port,
-    handoff: &'irq EmbassyIeee802154IrqRuntime<M, DEPTH>,
-}
-
-impl<'irq, Port, M: RawMutex, const DEPTH: usize>
-    EmbassyIeee802154InterruptHandler<'irq, Port, M, DEPTH>
-where
-    Port: Ieee802154InterruptPort,
-{
-    /// Bind the unique interrupt-status port to one static task handoff.
-    ///
-    /// This does not install or enable a CPU interrupt route. The caller must
-    /// obtain `port` from the target's reviewed quiesced-to-routed transition.
-    pub const fn new(port: Port, handoff: &'irq EmbassyIeee802154IrqRuntime<M, DEPTH>) -> Self {
-        Self { port, handoff }
-    }
-
-    /// Sample, acknowledge, and publish one complete interrupt epoch.
-    pub fn on_interrupt(&mut self) -> Ieee802154InterruptDisposition {
-        handle_ieee802154_interrupt(&mut self.port, self.handoff)
-    }
-
-    /// Recover the status port and handoff after the CPU route is quiesced.
-    pub fn into_parts(self) -> (Port, &'irq EmbassyIeee802154IrqRuntime<M, DEPTH>) {
-        (self.port, self.handoff)
-    }
-}
-
 /// Ready owner for one genuine ESP32-S31 MAC command epoch.
 ///
 /// This is the Embassy equivalent of the neighboring Wi-Fi composition's
 /// owner boundary: the executor-neutral [`MacReady`] token and a sealed
 /// task-side command runtime move together, while the hard-IRQ PAC port stays
-/// in [`EmbassyIeee802154InterruptHandler`]. [`MacReady`] is a pure logical
-/// token, but application code cannot manufacture the sealed executor. The
+/// in the ESP-HAL route owner. [`MacReady`] is a pure logical token, but
+/// application code cannot manufacture the sealed executor. The
 /// whole-radio transition must return that runtime only after PHY, BTBB,
 /// coexistence, interrupt masks, and the CPU route are ready.
 pub struct EmbassyIeee802154Ready<
@@ -126,13 +90,17 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
     }
 
     /// Start transmit without waiting for an acknowledgement.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the return type retains the exact FCF-derived marker and affine owners"
+    )]
     pub fn transmit_without_ack<'owner>(
         self,
-        armed: TxArmed<'owner>,
+        armed: TxArmed<'owner, TxAckNotRequested>,
         access: MacTransmitAccess,
     ) -> Result<
-        EmbassyIeee802154Active<'irq, M, DEPTH, TxArmed<'owner>, Executor>,
-        MacRuntimeStartFailure<TxArmed<'owner>, Executor>,
+        EmbassyIeee802154Active<'irq, M, DEPTH, TxArmed<'owner, TxAckNotRequested>, Executor>,
+        MacRuntimeStartFailure<TxArmed<'owner, TxAckNotRequested>, Executor>,
     > {
         let Self {
             runtime,
@@ -146,7 +114,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
     /// Start transmit and retain one armed receive slot for the expected ACK.
     pub fn transmit_with_ack<'tx, 'rx, const COUNT: usize>(
         self,
-        transmit: TxArmed<'tx>,
+        transmit: TxArmed<'tx, TxAckRequested>,
         acknowledgement_receive: RxArm<'rx, COUNT>,
         access: MacTransmitAccess,
     ) -> Result<
@@ -374,7 +342,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Resources, Executor: MacCommandExecu
 }
 
 impl<'irq, 'owner, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
-    EmbassyIeee802154Active<'irq, M, DEPTH, TxArmed<'owner>, Executor>
+    EmbassyIeee802154Active<'irq, M, DEPTH, TxArmed<'owner, TxAckNotRequested>, Executor>
 {
     /// Drive a no-ACK transmit through its accepted terminal IRQ batch,
     /// reclaim the TX image, and return an owner ready for another command.
@@ -503,98 +471,5 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
             completion,
             next,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-    use open_esp_radio_esp32s31_ieee802154_irq::{Ieee802154Event, Ieee802154InterruptSnapshot};
-
-    use super::*;
-
-    struct Snapshot(u16);
-
-    impl Ieee802154InterruptSnapshot for Snapshot {
-        fn raw_event_bits(&self) -> u16 {
-            self.0
-        }
-
-        fn raw_rx_abort_reason_code(&self) -> u8 {
-            0
-        }
-
-        fn raw_tx_abort_reason_code(&self) -> u8 {
-            0
-        }
-
-        fn ed_rss_code(&self) -> i8 {
-            -37
-        }
-
-        fn cca_busy(&self) -> bool {
-            false
-        }
-    }
-
-    struct Port {
-        snapshot: Option<Snapshot>,
-        acknowledged: usize,
-    }
-
-    impl Ieee802154InterruptPort for Port {
-        type Snapshot = Snapshot;
-
-        fn status(&mut self) -> Self::Snapshot {
-            self.snapshot.take().unwrap()
-        }
-
-        fn acknowledge(&mut self, _snapshot: Self::Snapshot) {
-            self.acknowledged += 1;
-        }
-    }
-
-    #[test]
-    fn interrupt_owner_keeps_port_out_of_the_task_handoff() {
-        let handoff = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        let mut handler = EmbassyIeee802154InterruptHandler::new(
-            Port {
-                snapshot: Some(Snapshot(Ieee802154Event::RxDone.bit())),
-                acknowledged: 0,
-            },
-            &handoff,
-        );
-
-        assert_eq!(
-            handler.on_interrupt(),
-            Ieee802154InterruptDisposition::Posted
-        );
-        let posted = handoff.try_take().unwrap().unwrap();
-        assert_eq!(posted.raw_event_bits(), Ieee802154Event::RxDone.bit());
-        assert_eq!(posted.ed_rss_code(), -37);
-
-        let (port, returned_handoff) = handler.into_parts();
-        assert_eq!(port.acknowledged, 1);
-        assert!(core::ptr::eq(returned_handoff, &handoff));
-    }
-
-    #[test]
-    fn interrupt_owner_does_not_publish_or_acknowledge_a_zero_snapshot() {
-        let handoff = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        let mut handler = EmbassyIeee802154InterruptHandler::new(
-            Port {
-                snapshot: Some(Snapshot(0)),
-                acknowledged: 0,
-            },
-            &handoff,
-        );
-
-        assert_eq!(
-            handler.on_interrupt(),
-            Ieee802154InterruptDisposition::Spurious
-        );
-        assert!(handoff.try_take().is_none());
-        let (port, _) = handler.into_parts();
-        assert_eq!(port.acknowledged, 0);
     }
 }

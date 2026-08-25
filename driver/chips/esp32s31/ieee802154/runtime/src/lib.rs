@@ -20,7 +20,7 @@ extern crate std;
 use core::fmt;
 
 use open_esp_radio_esp32s31_ieee802154_dma::{
-    DmaTerminalEvidence, RxArm, RxDmaAddress, TxArmed, TxCompleted, TxDmaAddress,
+    DmaTerminalEvidence, RxArm, RxDmaAddress, TxAckNotRequested, TxArmed, TxCompleted, TxDmaAddress,
 };
 use open_esp_radio_esp32s31_ieee802154_irq::{
     Ieee802154AcknowledgedInterrupt, Ieee802154Event, Ieee802154EventMask,
@@ -93,13 +93,9 @@ pub enum MacRuntimePolicyError {
         /// Hardware enhanced ACK transmission is enabled.
         enhanced_ack_tx: bool,
     },
-    /// Transmit ACK-wait policy disagrees with the actor's requested mode.
-    TransmitAcknowledgementModeMismatch {
-        /// Whether the actor retains a paired ACK receive destination.
-        expected: bool,
-        /// Whether hardware automatic ACK reception is enabled.
-        rx_auto_ack: bool,
-    },
+    /// An ACK-requesting frame cannot enter `RX_ACK` because automatic ACK
+    /// reception is disabled in the retained hardware policy.
+    AcknowledgementReceptionDisabled,
 }
 
 /// Explicit authority to execute one MAC runtime chain.
@@ -192,9 +188,9 @@ impl<'pool, const COUNT: usize> MacRuntimeResources for RxArm<'pool, COUNT> {
     }
 }
 
-impl sealed::RuntimeResources for TxArmed<'_> {}
+impl sealed::RuntimeResources for TxArmed<'_, TxAckNotRequested> {}
 
-impl MacRuntimeResources for TxArmed<'_> {
+impl MacRuntimeResources for TxArmed<'_, TxAckNotRequested> {
     fn start_plan(active: &MacActive<Self>) -> Option<MacStartPlan<'_>> {
         active.start_plan()
     }
@@ -671,7 +667,7 @@ impl<E: MacCommandExecutor> MacRuntimeCompletion<MacNoDmaResources, E> {
     }
 }
 
-impl<'owner, E: MacCommandExecutor> MacRuntimeCompletion<TxArmed<'owner>, E> {
+impl<'owner, E: MacCommandExecutor> MacRuntimeCompletion<TxArmed<'owner, TxAckNotRequested>, E> {
     /// Reclaim a no-ACK TX buffer after the accepted terminal batch and return
     /// a runtime ready for another operation.
     pub fn resolve(self, next: MacDeferredNext) -> MacRuntimeResolved<TxCompleted<'owner>, E> {
@@ -792,15 +788,14 @@ fn execute_start_plan<R: MacRuntimeResources, E: MacCommandExecutor>(
 mod tests {
     use super::*;
     use open_esp_radio_esp32s31_ieee802154_dma::{
-        DMA_LOW, DmaFrameAddress, DmaTerminalEvidence, PinnedRxPool, PinnedTxBuffer, RxArm,
-        RxCompletionKind, RxPoolStorage, RxSlotState, TxState, TxStorage,
+        DMA_LOW, DmaFrameAddress, DmaTerminalEvidence, PinnedRxPool, PinnedTxBuffer, PreparedTx,
+        RxArm, RxCompletionKind, RxPoolStorage, RxSlotState, TxAckRequested, TxState, TxStorage,
     };
     use open_esp_radio_esp32s31_ieee802154_irq::{
-        Ieee802154AcknowledgedInterrupt, Ieee802154AcknowledgedInterruptSink,
-        Ieee802154InterruptPort, Ieee802154InterruptSnapshot, handle_ieee802154_interrupt,
+        Ieee802154AcknowledgedInterrupt, acknowledged_interrupt_for_validation,
     };
     use open_esp_radio_esp32s31_ieee802154_mac::{MacMeasurementSample, MacTransmitAccess};
-    use std::{boxed::Box, cell::RefCell, vec::Vec};
+    use std::{boxed::Box, vec::Vec};
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum FakeError {
@@ -903,6 +898,26 @@ mod tests {
         TxStorage::pin_static_model(storage, DmaFrameAddress::try_new(address).unwrap())
     }
 
+    fn arm_no_ack<'owner>(
+        owner: &'owner mut PinnedTxBuffer,
+        frame: &[u8],
+    ) -> TxArmed<'owner, TxAckNotRequested> {
+        let PreparedTx::AckNotRequested(prepared) = owner.prepare(frame).unwrap() else {
+            panic!("fixture must not request an ACK");
+        };
+        prepared.arm()
+    }
+
+    fn arm_with_ack<'owner>(
+        owner: &'owner mut PinnedTxBuffer,
+        frame: &[u8],
+    ) -> TxArmed<'owner, TxAckRequested> {
+        let PreparedTx::AckRequested(prepared) = owner.prepare(frame).unwrap() else {
+            panic!("fixture must request an ACK");
+        };
+        prepared.arm()
+    }
+
     fn rx_pool<const COUNT: usize>(address: u32) -> PinnedRxPool<COUNT> {
         let storage = Box::leak(Box::new(RxPoolStorage::new()));
         RxPoolStorage::pin_static_model(storage, DmaFrameAddress::try_new(address).unwrap())
@@ -917,57 +932,6 @@ mod tests {
         AcknowledgedMacEventBatch { batch }
     }
 
-    struct InterruptSnapshot {
-        events: u16,
-        rx_abort: u8,
-        tx_abort: u8,
-        ed_rss: i8,
-        cca_busy: bool,
-    }
-
-    impl Ieee802154InterruptSnapshot for InterruptSnapshot {
-        fn raw_event_bits(&self) -> u16 {
-            self.events
-        }
-
-        fn raw_rx_abort_reason_code(&self) -> u8 {
-            self.rx_abort
-        }
-
-        fn raw_tx_abort_reason_code(&self) -> u8 {
-            self.tx_abort
-        }
-
-        fn ed_rss_code(&self) -> i8 {
-            self.ed_rss
-        }
-
-        fn cca_busy(&self) -> bool {
-            self.cca_busy
-        }
-    }
-
-    struct InterruptPort(Option<InterruptSnapshot>);
-
-    impl Ieee802154InterruptPort for InterruptPort {
-        type Snapshot = InterruptSnapshot;
-
-        fn status(&mut self) -> Self::Snapshot {
-            self.0.take().unwrap()
-        }
-
-        fn acknowledge(&mut self, _snapshot: Self::Snapshot) {}
-    }
-
-    #[derive(Default)]
-    struct InterruptSink(RefCell<Option<Ieee802154AcknowledgedInterrupt>>);
-
-    impl Ieee802154AcknowledgedInterruptSink for InterruptSink {
-        fn post(&self, acknowledged: Ieee802154AcknowledgedInterrupt) {
-            self.0.replace(Some(acknowledged));
-        }
-    }
-
     fn interrupt(
         events: u16,
         rx_abort: u8,
@@ -975,19 +939,7 @@ mod tests {
         ed_rss: i8,
         cca_busy: bool,
     ) -> Ieee802154AcknowledgedInterrupt {
-        let mut port = InterruptPort(Some(InterruptSnapshot {
-            events,
-            rx_abort,
-            tx_abort,
-            ed_rss,
-            cca_busy,
-        }));
-        let sink = InterruptSink::default();
-        assert_eq!(
-            handle_ieee802154_interrupt(&mut port, &sink),
-            open_esp_radio_esp32s31_ieee802154_irq::Ieee802154InterruptDisposition::Posted
-        );
-        sink.0.into_inner().unwrap()
+        acknowledged_interrupt_for_validation(events, rx_abort, tx_abort, ed_rss, cca_busy)
     }
 
     #[test]
@@ -1042,7 +994,7 @@ mod tests {
     #[test]
     fn transmit_with_ack_executes_the_complete_plan_in_exact_order() {
         let mut tx = tx_owner(DMA_LOW);
-        let armed_tx = tx.prepare(&[1]).unwrap().arm();
+        let armed_tx = arm_with_ack(&mut tx, &[0x21]);
         let rx = rx_pool::<1>(DMA_LOW + 128);
         let armed_rx = rx.arm_next().unwrap();
         let actor = MacReady::new().request_transmit_with_ack(
@@ -1108,10 +1060,7 @@ mod tests {
     #[test]
     fn incompatible_policy_is_quarantined_before_any_executor_step() {
         let mut fake = FakeExecutor::new();
-        let policy_error = MacRuntimePolicyError::TransmitAcknowledgementModeMismatch {
-            expected: false,
-            rx_auto_ack: true,
-        };
+        let policy_error = MacRuntimePolicyError::AcknowledgementReceptionDisabled;
         fake.policy_error = Some(policy_error);
         let actor = MacReady::new().request_clear_channel_assessment();
 
@@ -1129,7 +1078,7 @@ mod tests {
         let first = batch(Ieee802154Event::TxDone.mask());
         let second = batch(Ieee802154Event::AckRxDone.mask());
         let mut tx = tx_owner(DMA_LOW);
-        let armed_tx = tx.prepare(&[1]).unwrap().arm();
+        let armed_tx = arm_with_ack(&mut tx, &[0x21]);
         let rx = rx_pool::<1>(DMA_LOW + 128);
         let armed_rx = rx.arm_next().unwrap();
         let actor = MacReady::new().request_transmit_with_ack(
@@ -1187,7 +1136,7 @@ mod tests {
     #[test]
     fn accepted_tx_done_returns_the_exact_transmit_buffer() {
         let mut tx = tx_owner(DMA_LOW);
-        let armed = tx.prepare(&[0x61, 0x88, 0x01]).unwrap().arm();
+        let armed = arm_no_ack(&mut tx, &[0x41, 0x88, 0x01]);
         let actor = MacReady::new().request_transmit_without_ack(armed, MacTransmitAccess::Direct);
         let active = runtime(FakeExecutor::new()).start(actor).unwrap();
         let sampled = AcknowledgedMacEventBatch::from_interrupt(
@@ -1203,7 +1152,7 @@ mod tests {
         let resolved = completed.resolve(MacDeferredNext::IdlePolicy);
         let (_runtime, _ready, completed, result, _) = resolved.into_parts();
         assert_eq!(result, MacCompletion::TransmitComplete);
-        assert_eq!(completed.frame().mac_bytes(), &[0x61, 0x88, 0x01]);
+        assert_eq!(completed.frame().mac_bytes(), &[0x41, 0x88, 0x01]);
         completed.release();
         assert_eq!(tx.state(), TxState::Free);
     }
@@ -1296,7 +1245,7 @@ mod tests {
     #[test]
     fn acknowledgement_timeout_returns_non_frame_rx_ownership() {
         let mut tx = tx_owner(DMA_LOW);
-        let armed_tx = tx.prepare(&[0x21]).unwrap().arm();
+        let armed_tx = arm_with_ack(&mut tx, &[0x21]);
         let rx = rx_pool::<1>(DMA_LOW + 128);
         let armed_rx = rx.arm_next().unwrap();
         let actor = MacReady::new().request_transmit_with_ack(

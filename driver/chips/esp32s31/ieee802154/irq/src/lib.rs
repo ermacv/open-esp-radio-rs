@@ -471,44 +471,17 @@ impl Ieee802154TxAbortReason {
     }
 }
 
-/// Opaque status sample consumed by one hard-IRQ transaction.
-///
-/// A concrete port may use an affine PAC snapshot which cannot be recreated by
-/// callers. All sideband getters must describe the same observation epoch as
-/// [`Self::raw_event_bits`]. A concrete port may return the neutral value zero
-/// (or `false`) when the corresponding event bit is absent. The bottom half
-/// must associate a sideband with an operation only when its event bit is
-/// present.
-pub trait Ieee802154InterruptSnapshot {
-    /// Return the complete raw `EVENT_STATUS` field image.
+trait InterruptSnapshot {
     fn raw_event_bits(&self) -> u16;
-
-    /// Return the raw `RX_STATUS[8:4]` receive-abort reason code.
     fn raw_rx_abort_reason_code(&self) -> u8;
-
-    /// Return the raw `TX_STATUS[8:4]` transmit-abort reason code.
     fn raw_tx_abort_reason_code(&self) -> u8;
-
-    /// Return the uncalibrated signed energy-detection RSS code.
     fn ed_rss_code(&self) -> i8;
-
-    /// Return the separately sampled clear-channel busy indication.
     fn cca_busy(&self) -> bool;
 }
 
-/// Finite interrupt-status capability lent to the active hard IRQ.
-///
-/// [`Self::Snapshot`] is deliberately opaque to this crate. A target adapter
-/// is responsible for making `status` sample one internally consistent epoch
-/// and for making `acknowledge` consume exactly the supplied snapshot.
-pub trait Ieee802154InterruptPort {
-    /// Opaque, single-use status snapshot owned by this port.
-    type Snapshot: Ieee802154InterruptSnapshot;
-
-    /// Sample one complete event image and all required sidebands.
+trait InterruptPort {
+    type Snapshot: InterruptSnapshot;
     fn status(&mut self) -> Self::Snapshot;
-
-    /// Acknowledge the exact opaque snapshot returned by [`Self::status`].
     fn acknowledge(&mut self, snapshot: Self::Snapshot);
 }
 
@@ -518,6 +491,19 @@ pub trait Ieee802154InterruptPort {
 /// The constructor is private and this type is neither [`Clone`] nor [`Copy`].
 /// Moving it into [`Ieee802154AcknowledgedInterruptSink::post`] is the only
 /// public way to cross the hard-IRQ boundary with acknowledgement evidence.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_ieee802154_irq::Ieee802154AcknowledgedInterrupt;
+///
+/// let fabricated = Ieee802154AcknowledgedInterrupt::new(1, 0, 0, 0, false);
+/// ```
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_ieee802154_irq::Ieee802154AcknowledgedInterrupt;
+///
+/// fn require_replayable<T: Clone>() {}
+/// require_replayable::<Ieee802154AcknowledgedInterrupt>();
+/// ```
 #[derive(Debug, Eq, PartialEq)]
 pub struct Ieee802154AcknowledgedInterrupt {
     raw_event_bits: u16,
@@ -586,6 +572,25 @@ pub trait Ieee802154AcknowledgedInterruptSink {
     fn post(&self, acknowledged: Ieee802154AcknowledgedInterrupt);
 }
 
+/// Construct acknowledged evidence for explicit non-target validation probes.
+#[cfg(all(feature = "validation-probes", not(target_arch = "riscv32")))]
+#[doc(hidden)]
+pub const fn acknowledged_interrupt_for_validation(
+    raw_event_bits: u16,
+    raw_rx_abort_reason_code: u8,
+    raw_tx_abort_reason_code: u8,
+    ed_rss_code: i8,
+    cca_busy: bool,
+) -> Ieee802154AcknowledgedInterrupt {
+    Ieee802154AcknowledgedInterrupt::new(
+        raw_event_bits,
+        raw_rx_abort_reason_code,
+        raw_tx_abort_reason_code,
+        ed_rss_code,
+        cca_busy,
+    )
+}
+
 /// Outcome of one finite hard-IRQ invocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ieee802154InterruptDisposition {
@@ -596,17 +601,54 @@ pub enum Ieee802154InterruptDisposition {
     Spurious,
 }
 
-/// Handle one status epoch without depending on a concrete executor.
+/// Handle one status epoch from the restricted ESP32-S31 PAC owner.
 ///
 /// A zero event image is treated as spurious. For every nonzero image, all raw
 /// sidebands are copied before the exact opaque snapshot is acknowledged. The
 /// acknowledged value is posted only afterwards. Unsupported raw event bits
 /// are deliberately posted unchanged so bottom-half validation can fail closed
 /// without leaving their hardware status latched.
-pub fn handle_ieee802154_interrupt<
-    Port: Ieee802154InterruptPort,
-    Sink: Ieee802154AcknowledgedInterruptSink + ?Sized,
->(
+///
+/// A downstream fake port with a no-op acknowledgement cannot mint evidence:
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_ieee802154_irq::{
+///     Ieee802154AcknowledgedInterrupt, Ieee802154AcknowledgedInterruptSink,
+///     Ieee802154InterruptPort, Ieee802154InterruptSnapshot,
+///     handle_ieee802154_interrupt,
+/// };
+///
+/// struct FakeSnapshot;
+/// impl Ieee802154InterruptSnapshot for FakeSnapshot {
+///     fn raw_event_bits(&self) -> u16 { 1 }
+///     fn raw_rx_abort_reason_code(&self) -> u8 { 0 }
+///     fn raw_tx_abort_reason_code(&self) -> u8 { 0 }
+///     fn ed_rss_code(&self) -> i8 { 0 }
+///     fn cca_busy(&self) -> bool { false }
+/// }
+///
+/// struct FakePort;
+/// impl Ieee802154InterruptPort for FakePort {
+///     type Snapshot = FakeSnapshot;
+///     fn status(&mut self) -> Self::Snapshot { FakeSnapshot }
+///     fn acknowledge(&mut self, _: Self::Snapshot) {}
+/// }
+///
+/// struct Sink;
+/// impl Ieee802154AcknowledgedInterruptSink for Sink {
+///     fn post(&self, _: Ieee802154AcknowledgedInterrupt) {}
+/// }
+///
+/// let _ = handle_ieee802154_interrupt(&mut FakePort, &Sink);
+/// ```
+pub fn handle_ieee802154_interrupt<Sink: Ieee802154AcknowledgedInterruptSink + ?Sized>(
+    port: &mut open_esp_radio_esp32s31_pac::Ieee802154InterruptRegisters,
+    sink: &Sink,
+) -> Ieee802154InterruptDisposition {
+    handle_interrupt(port, sink)
+}
+
+fn handle_interrupt<Port: InterruptPort, Sink: Ieee802154AcknowledgedInterruptSink + ?Sized>(
     port: &mut Port,
     sink: &Sink,
 ) -> Ieee802154InterruptDisposition {
@@ -1643,7 +1685,7 @@ mod tests {
         operations: Rc<RefCell<Vec<HardIrqOperation>>>,
     }
 
-    impl Ieee802154InterruptSnapshot for ModelInterruptSnapshot {
+    impl InterruptSnapshot for ModelInterruptSnapshot {
         fn raw_event_bits(&self) -> u16 {
             self.operations
                 .borrow_mut()
@@ -1685,7 +1727,7 @@ mod tests {
         operations: Rc<RefCell<Vec<HardIrqOperation>>>,
     }
 
-    impl Ieee802154InterruptPort for ModelInterruptPort {
+    impl InterruptPort for ModelInterruptPort {
         type Snapshot = ModelInterruptSnapshot;
 
         fn status(&mut self) -> Self::Snapshot {
@@ -1756,7 +1798,7 @@ mod tests {
         );
 
         assert_eq!(
-            handle_ieee802154_interrupt(&mut port, &sink),
+            handle_interrupt(&mut port, &sink),
             Ieee802154InterruptDisposition::Posted
         );
         assert_eq!(
@@ -1789,7 +1831,7 @@ mod tests {
         );
 
         assert_eq!(
-            handle_ieee802154_interrupt(&mut port, &sink),
+            handle_interrupt(&mut port, &sink),
             Ieee802154InterruptDisposition::Posted
         );
         let acknowledged = sink
@@ -1823,7 +1865,7 @@ mod tests {
         let (mut port, sink) = hard_irq_fixture(3, 0, 31, 31, i8::MIN, true);
 
         assert_eq!(
-            handle_ieee802154_interrupt(&mut port, &sink),
+            handle_interrupt(&mut port, &sink),
             Ieee802154InterruptDisposition::Spurious
         );
         assert_eq!(
@@ -1839,7 +1881,7 @@ mod tests {
         let (mut port, sink) = hard_irq_fixture(9, unsupported_events, 10, 26, -1, true);
 
         assert_eq!(
-            handle_ieee802154_interrupt(&mut port, &sink),
+            handle_interrupt(&mut port, &sink),
             Ieee802154InterruptDisposition::Posted
         );
         let acknowledged = sink

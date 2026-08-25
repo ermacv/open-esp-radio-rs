@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 description = "Quiesced ESP32-S31 IEEE 802.15.4 interrupt identities, masks, and pure dispatch"
 
+[features]
+validation-probes = []
+
 [dependencies]
 open-esp-radio-esp32s31-pac = { path = "../../pac" }
 

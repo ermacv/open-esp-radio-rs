@@ -16,6 +16,7 @@ open-esp-radio-esp32s31-ieee802154-runtime = { path = "../../../chips/esp32s31/i
 
 [dev-dependencies]
 embassy-futures = "0.1.2"
+open-esp-radio-esp32s31-ieee802154-irq = { path = "../../../chips/esp32s31/ieee802154/irq", features = ["validation-probes"] }
 open-esp-radio-esp32s31-ieee802154-runtime = { path = "../../../chips/esp32s31/ieee802154/runtime", features = ["validation-probes"] }
 
 [lints]

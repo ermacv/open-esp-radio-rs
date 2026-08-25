@@ -5,9 +5,9 @@ use open_esp_radio_esp32s31_pac::{
     Ieee802154InterruptSnapshot as PacInterruptSnapshot,
 };
 
-use crate::{Ieee802154InterruptPort, Ieee802154InterruptSnapshot};
+use crate::{InterruptPort, InterruptSnapshot};
 
-impl Ieee802154InterruptSnapshot for PacInterruptSnapshot {
+impl InterruptSnapshot for PacInterruptSnapshot {
     #[inline]
     fn raw_event_bits(&self) -> u16 {
         self.events().bits()
@@ -34,7 +34,7 @@ impl Ieee802154InterruptSnapshot for PacInterruptSnapshot {
     }
 }
 
-impl Ieee802154InterruptPort for PacInterruptRegisters {
+impl InterruptPort for PacInterruptRegisters {
     type Snapshot = PacInterruptSnapshot;
 
     #[inline]
@@ -52,13 +52,13 @@ impl Ieee802154InterruptPort for PacInterruptRegisters {
 mod tests {
     use open_esp_radio_esp32s31_pac::Ieee802154InterruptRegisters;
 
-    use crate::{Ieee802154InterruptPort, Ieee802154InterruptSnapshot};
+    use crate::{InterruptPort, InterruptSnapshot};
 
     #[test]
     fn restricted_pac_owner_satisfies_the_production_port_contract() {
-        fn require_port<Port: Ieee802154InterruptPort>()
+        fn require_port<Port: InterruptPort>()
         where
-            Port::Snapshot: Ieee802154InterruptSnapshot,
+            Port::Snapshot: InterruptSnapshot,
         {
         }
 

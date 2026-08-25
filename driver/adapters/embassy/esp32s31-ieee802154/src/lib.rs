@@ -31,7 +31,7 @@ mod owner;
 
 pub use owner::{
     EmbassyIeee802154Active, EmbassyIeee802154DmaResolved, EmbassyIeee802154DmaRunToReadyError,
-    EmbassyIeee802154InterruptHandler, EmbassyIeee802154NoDmaResolved, EmbassyIeee802154Ready,
+    EmbassyIeee802154NoDmaResolved, EmbassyIeee802154Ready,
 };
 
 /// The hard IRQ acknowledged more snapshots than the bounded handoff retained.
@@ -272,72 +272,21 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_esp32s31_ieee802154_irq::{
-        Ieee802154Event, Ieee802154InterruptDisposition, Ieee802154InterruptPort,
-        Ieee802154InterruptSnapshot, handle_ieee802154_interrupt,
+        Ieee802154Event, acknowledged_interrupt_for_validation,
     };
     use open_esp_radio_esp32s31_ieee802154_mac::{MacNoDmaResources, MacReady};
     use open_esp_radio_esp32s31_ieee802154_runtime::{MacRuntime, ValidationMacCommandExecutor};
 
     use super::*;
 
-    struct Snapshot {
-        events: u16,
-        rx_abort: u8,
-        tx_abort: u8,
-        ed_rss: i8,
-        cca_busy: bool,
-    }
-
-    impl Ieee802154InterruptSnapshot for Snapshot {
-        fn raw_event_bits(&self) -> u16 {
-            self.events
-        }
-
-        fn raw_rx_abort_reason_code(&self) -> u8 {
-            self.rx_abort
-        }
-
-        fn raw_tx_abort_reason_code(&self) -> u8 {
-            self.tx_abort
-        }
-
-        fn ed_rss_code(&self) -> i8 {
-            self.ed_rss
-        }
-
-        fn cca_busy(&self) -> bool {
-            self.cca_busy
-        }
-    }
-
-    struct Port(Option<Snapshot>);
-
-    impl Ieee802154InterruptPort for Port {
-        type Snapshot = Snapshot;
-
-        fn status(&mut self) -> Self::Snapshot {
-            self.0.take().unwrap()
-        }
-
-        fn acknowledge(&mut self, _snapshot: Self::Snapshot) {}
-    }
-
     fn publish<M: RawMutex, const DEPTH: usize>(
         irq: &EmbassyIeee802154IrqRuntime<M, DEPTH>,
         events: u16,
         ed_rss: i8,
     ) {
-        let mut port = Port(Some(Snapshot {
-            events,
-            rx_abort: 0,
-            tx_abort: 0,
-            ed_rss,
-            cca_busy: false,
-        }));
-        assert_eq!(
-            handle_ieee802154_interrupt(&mut port, irq),
-            Ieee802154InterruptDisposition::Posted
-        );
+        irq.post(acknowledged_interrupt_for_validation(
+            events, 0, 0, ed_rss, false,
+        ));
     }
 
     fn active_cca() -> MacRuntimeActive<MacNoDmaResources, ValidationMacCommandExecutor> {

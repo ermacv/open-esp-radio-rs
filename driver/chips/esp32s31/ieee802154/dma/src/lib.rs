@@ -30,6 +30,6 @@ pub use rx::{
 };
 pub use terminal::DmaTerminalEvidence;
 pub use tx::{
-    PinnedTxBuffer, TxArmed, TxBindFailure, TxCompleted, TxDmaAddress, TxPrepared, TxState,
-    TxStorage, TxStorageError,
+    PinnedTxBuffer, PreparedTx, TxAckNotRequested, TxAckRequested, TxArmed, TxBindFailure,
+    TxCompleted, TxDmaAddress, TxPrepared, TxState, TxStorage, TxStorageError,
 };

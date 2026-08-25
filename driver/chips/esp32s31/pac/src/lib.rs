@@ -124,7 +124,7 @@ pub use ieee802154::{
     Ieee802154PanIdentity, Ieee802154Pti, Ieee802154RxAbortEnableMask, Ieee802154RxStateCode,
     Ieee802154RxStatusObservation, Ieee802154StateSnapshot, Ieee802154TxStateCode,
 };
-pub use ieee802154_timing::Ieee802154TimingReady;
+pub use ieee802154_timing::{Ieee802154TimingPrerequisite, Ieee802154TimingReady};
 pub use mac_block_ack::{
     ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, RxBlockAckEntrySnapshot,
     TxBlockAckDiagnosticSnapshot, TxBlockAckPayload, TxBlockAckRegisterImage,

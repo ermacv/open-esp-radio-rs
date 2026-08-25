@@ -6,9 +6,14 @@ pub const MAX_PHR_LENGTH: u8 = 127;
 pub const MIN_MAC_FRAME_SIZE: usize = MIN_PHR_LENGTH as usize - 2;
 pub const MAX_MAC_FRAME_SIZE: usize = MAX_PHR_LENGTH as usize - 2;
 
+const FRAME_TYPE_MASK: u8 = 0x07;
+const MAX_SUPPORTED_FRAME_TYPE: u8 = 0x03;
+const ACKNOWLEDGEMENT_REQUEST_BIT: u8 = 0x20;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TxFrameError {
     MacLengthOutOfRange { length: usize },
+    UnsupportedFrameType { frame_type: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,6 +52,16 @@ impl<'buffer> TxFrameView<'buffer> {
 
     pub const fn buffer(self) -> &'buffer [u8; FRAME_BUFFER_SIZE] {
         self.bytes
+    }
+
+    /// Return the ACK-request bit from the immutable DMA-visible FCF image.
+    ///
+    /// Construction is possible only after the ESP32-S31-supported frame-type
+    /// check, so this value is the complete source-driver ACK predicate for the
+    /// prepared image before the retained global `rx_auto_ack` policy is
+    /// applied.
+    pub const fn acknowledgement_requested(self) -> bool {
+        self.bytes[1] & ACKNOWLEDGEMENT_REQUEST_BIT != 0
     }
 }
 
@@ -98,6 +113,11 @@ pub(crate) fn prepare_tx(
         });
     }
 
+    let frame_type = mac_frame[0] & FRAME_TYPE_MASK;
+    if frame_type > MAX_SUPPORTED_FRAME_TYPE {
+        return Err(TxFrameError::UnsupportedFrameType { frame_type });
+    }
+
     bytes.fill(0);
     let phr_length = u8::try_from(mac_frame.len() + 2)
         .expect("the checked IEEE 802.15.4 MAC length always fits in u8");
@@ -146,6 +166,34 @@ mod tests {
             })
         );
         assert_eq!(bytes, original);
+    }
+
+    #[test]
+    fn every_fcf_octet_is_classified_before_destination_mutation() {
+        for fcf in u8::MIN..=u8::MAX {
+            let mut bytes = [0xa5; FRAME_BUFFER_SIZE];
+            let original = bytes;
+            let frame_type = fcf & FRAME_TYPE_MASK;
+            let result = prepare_tx(&mut bytes, &[fcf]);
+
+            if frame_type <= MAX_SUPPORTED_FRAME_TYPE {
+                let phr = result.unwrap();
+                let view = TxFrameView::new(&bytes, phr);
+                assert_eq!(
+                    view.acknowledgement_requested(),
+                    fcf & ACKNOWLEDGEMENT_REQUEST_BIT != 0,
+                    "FCF 0x{fcf:02x}",
+                );
+                assert_eq!(view.mac_bytes(), &[fcf]);
+            } else {
+                assert_eq!(
+                    result,
+                    Err(TxFrameError::UnsupportedFrameType { frame_type }),
+                    "FCF 0x{fcf:02x}",
+                );
+                assert_eq!(bytes, original, "FCF 0x{fcf:02x}");
+            }
+        }
     }
 
     #[test]

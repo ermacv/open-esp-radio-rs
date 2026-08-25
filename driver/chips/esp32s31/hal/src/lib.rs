@@ -89,9 +89,10 @@ pub use ieee802154_role::{
 pub use ieee802154_role::{Ieee802154EdEventProbeFinished, Ieee802154EventStatusProbeFinished};
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
-    BluetoothMemoryListSelector, MacPowerWakeCause, MacTsfTimerIndex, StaBeaconMissLimit,
-    StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig, StaModemWakePrepareError,
-    StaModemWakeRestore, StaModemWakeRestoreError, StaModemWakeRestoreFailure, StaTbttAutoPeriod,
+    BluetoothMemoryListSelector, Ieee802154TimingPrerequisite, Ieee802154TimingReady,
+    MacPowerWakeCause, MacTsfTimerIndex, StaBeaconMissLimit, StaBeaconMissTimeoutRaw,
+    StaModemSleepLimit, StaModemWakeConfig, StaModemWakePrepareError, StaModemWakeRestore,
+    StaModemWakeRestoreError, StaModemWakeRestoreFailure, StaTbttAutoPeriod,
     StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError,
     StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw,
 };

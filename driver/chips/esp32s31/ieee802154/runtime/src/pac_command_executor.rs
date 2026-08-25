@@ -198,24 +198,18 @@ impl<Backend: TaskCommandBackend> TaskCommandExecutorCore<Backend> {
             MacActivePhase::Transmit {
                 acknowledgement, ..
             } => {
-                let expected = acknowledgement == MacTransmitAcknowledgement::Expected;
-                if control.rx_auto_ack() == expected {
-                    Ok(())
+                if acknowledgement == MacTransmitAcknowledgement::Expected && !control.rx_auto_ack()
+                {
+                    Err(MacRuntimePolicyError::AcknowledgementReceptionDisabled)
                 } else {
-                    Err(MacRuntimePolicyError::TransmitAcknowledgementModeMismatch {
-                        expected,
-                        rx_auto_ack: control.rx_auto_ack(),
-                    })
+                    Ok(())
                 }
             }
             MacActivePhase::AwaitingAcknowledgement { .. } => {
                 if control.rx_auto_ack() {
                     Ok(())
                 } else {
-                    Err(MacRuntimePolicyError::TransmitAcknowledgementModeMismatch {
-                        expected: true,
-                        rx_auto_ack: false,
-                    })
+                    Err(MacRuntimePolicyError::AcknowledgementReceptionDisabled)
                 }
             }
             MacActivePhase::ClearChannelAssessment | MacActivePhase::EnergyDetection { .. } => {
@@ -456,7 +450,7 @@ impl MacRuntime<Esp32s31Ieee802154CommandExecutor> {
 mod tests {
     use super::*;
     use open_esp_radio_esp32s31_ieee802154_dma::{
-        DMA_LOW, DmaFrameAddress, RxArm, RxPoolStorage, TxStorage,
+        DMA_LOW, DmaFrameAddress, PreparedTx, RxArm, RxPoolStorage, TxStorage,
     };
     use std::boxed::Box;
     use std::vec::Vec;
@@ -607,22 +601,12 @@ mod tests {
         };
         for (phase, rx_auto_ack, expected) in [
             (no_ack, false, Ok(())),
-            (
-                no_ack,
-                true,
-                Err(MacRuntimePolicyError::TransmitAcknowledgementModeMismatch {
-                    expected: false,
-                    rx_auto_ack: true,
-                }),
-            ),
+            (no_ack, true, Ok(())),
             (expects_ack, true, Ok(())),
             (
                 expects_ack,
                 false,
-                Err(MacRuntimePolicyError::TransmitAcknowledgementModeMismatch {
-                    expected: true,
-                    rx_auto_ack: false,
-                }),
+                Err(MacRuntimePolicyError::AcknowledgementReceptionDisabled),
             ),
         ] {
             let control = Ieee802154MacControl::new(false, rx_auto_ack, false, false, false, false);
@@ -740,7 +724,10 @@ mod tests {
         let tx_storage = Box::leak(Box::new(TxStorage::new()));
         let mut tx =
             TxStorage::pin_static_model(tx_storage, DmaFrameAddress::try_new(DMA_LOW).unwrap());
-        let tx = tx.prepare(&[0x01]).unwrap().arm();
+        let PreparedTx::AckNotRequested(tx) = tx.prepare(&[0x01]).unwrap() else {
+            panic!("fixture must not request an ACK");
+        };
+        let tx = tx.arm();
         let rx_storage = Box::leak(Box::new(RxPoolStorage::<1>::new()));
         let rx = RxPoolStorage::pin_static_model(
             rx_storage,

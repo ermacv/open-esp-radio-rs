@@ -5,10 +5,11 @@
 //! MAC-policy transitions. None of the types in this module can be decomposed
 //! into an independently reusable proof and hardware owner.
 //!
-//! This lifecycle is deliberately incomplete. It does not establish PHY or RF
-//! qualification, BTBB readiness, ownership of the shared 160 MHz PLL gate, a
-//! multi-client clock bit/refcount, IRQ routing, DMA ownership, or an
-//! operational IEEE 802.15.4 MAC.
+//! This lifecycle is deliberately incomplete. Its timing-ready transition
+//! establishes the recovered common BTBB body and protocol timing after
+//! terminal common-PHY registration, but does not claim RF qualification,
+//! ownership of a shared 160 MHz PLL refcount, IRQ routing, DMA ownership, or
+//! an operational IEEE 802.15.4 MAC.
 //!
 //! The dedicated HAL route establishes IEEE clocks before common-PHY client
 //! registration, matching the public enable order. The target-only PHY runner
@@ -56,6 +57,27 @@
 //!     owner.into_parts()
 //! }
 //! ```
+//!
+//! A registered common-PHY owner cannot skip the protocol timing transition:
+//!
+//! ```compile_fail
+//! use open_esp_radio_esp32s31_hal::Ieee802154PlatformControl;
+//! use open_esp_radio_esp32s31_phy::RegisteredIeee802154Clocked;
+//!
+//! fn skip_timing<P: Ieee802154PlatformControl>(owner: RegisteredIeee802154Clocked<P>) {
+//!     let _reset = owner.reset_mac();
+//! }
+//! ```
+//!
+//! Reset failure cannot erase timing evidence and recover the pre-timing type:
+//!
+//! ```compile_fail
+//! use open_esp_radio_esp32s31_phy::RegisteredIeee802154ResetTransitionFailure;
+//!
+//! fn erase_timing<P>(failure: RegisteredIeee802154ResetTransitionFailure<P>) {
+//!     let _clocked = failure.into_clocked();
+//! }
+//! ```
 
 use core::fmt;
 
@@ -67,6 +89,7 @@ use open_esp_radio_esp32s31_hal::{
     Ieee802154OperationPollBudget, Ieee802154PlatformControl, Ieee802154PolledOperationEvidence,
     Ieee802154PolledOperationFailure, Ieee802154ReadbackError, Ieee802154Reset,
     Ieee802154ResetCheckpoint, Ieee802154ResetTransitionFailure,
+    Ieee802154TimingReady as HalIeee802154TimingReady,
 };
 
 use crate::{PhyState, RegisteredPhyState};
@@ -104,10 +127,99 @@ impl<P> RegisteredIeee802154Clocked<P> {
     pub const fn phy_state(&self) -> &PhyState {
         self.registered.state()
     }
+
+    /// Initialize the source-owned common BTBB body and IEEE timing overrides.
+    ///
+    /// The gain parameter is projected only from this owner's terminal
+    /// common-PHY state. There is deliberately no caller argument and no
+    /// intermediate owner from which MAC reset or runtime ownership can be
+    /// acquired.
+    pub fn initialize_baseband_and_ieee802154_timing(self) -> RegisteredIeee802154TimingReady<P> {
+        let parts = establish_registered_timing(self, |role, registered| {
+            let prerequisite =
+                crate::ieee802154_timing_boundary::from_terminal_registration(role, registered);
+            role.initialize_baseband_and_ieee802154_timing(prerequisite)
+        });
+
+        RegisteredIeee802154TimingReady {
+            role: parts.role,
+            prerequisites: RegisteredIeee802154Prerequisites {
+                registered: parts.registered,
+                timing: parts.timing,
+            },
+        }
+    }
 }
 
 impl<P: Ieee802154PlatformControl> RegisteredIeee802154Clocked<P> {
     /// Borrow the integration token without separating it from the proof.
+    pub fn peripheral(&self) -> &P {
+        self.role.peripheral()
+    }
+}
+
+struct RegisteredIeee802154TimingParts<P, Timing> {
+    role: Ieee802154Clocked<P>,
+    registered: RegisteredPhyState,
+    timing: Timing,
+}
+
+fn establish_registered_timing<P, Timing>(
+    owner: RegisteredIeee802154Clocked<P>,
+    transition: impl FnOnce(&mut Ieee802154Clocked<P>, &RegisteredPhyState) -> Timing,
+) -> RegisteredIeee802154TimingParts<P, Timing> {
+    let RegisteredIeee802154Clocked {
+        mut role,
+        registered,
+    } = owner;
+    let timing = transition(&mut role, &registered);
+    RegisteredIeee802154TimingParts {
+        role,
+        registered,
+        timing,
+    }
+}
+
+struct RegisteredIeee802154Prerequisites {
+    registered: RegisteredPhyState,
+    timing: HalIeee802154TimingReady,
+}
+
+impl RegisteredIeee802154Prerequisites {
+    const fn phy_state(&self) -> &PhyState {
+        self.registered.state()
+    }
+
+    const fn timing_gain_parameter(&self) -> u8 {
+        self.timing.gain_parameter()
+    }
+}
+
+/// Registered whole-radio owner after common BTBB and IEEE timing completed.
+///
+/// This is the first production registered state allowed to pulse the MAC
+/// reset. It retains both the terminal common-PHY proof and the affine PAC
+/// timing marker; neither can be separated from the exact HAL route.
+#[must_use = "the registered IEEE 802.15.4 timing-ready owner is unique"]
+pub struct RegisteredIeee802154TimingReady<P> {
+    role: Ieee802154Clocked<P>,
+    prerequisites: RegisteredIeee802154Prerequisites,
+}
+
+impl<P> RegisteredIeee802154TimingReady<P> {
+    /// Borrow the target-registered PHY state without exposing mutable state.
+    pub const fn phy_state(&self) -> &PhyState {
+        self.prerequisites.phy_state()
+    }
+
+    /// Inspect the gain byte projected from the terminal common-PHY state.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        self.prerequisites.timing_gain_parameter()
+    }
+}
+
+impl<P: Ieee802154PlatformControl> RegisteredIeee802154TimingReady<P> {
+    /// Borrow the integration token without separating it from either proof.
     pub fn peripheral(&self) -> &P {
         self.role.peripheral()
     }
@@ -120,12 +232,18 @@ impl<P: Ieee802154PlatformControl> RegisteredIeee802154Clocked<P> {
     pub fn reset_mac(
         self,
     ) -> Result<RegisteredIeee802154Reset<P>, RegisteredIeee802154ResetTransitionFailure<P>> {
-        let Self { role, registered } = self;
-        match preserve_registration(role, registered, Ieee802154Clocked::reset_mac) {
-            Ok((role, registered)) => Ok(RegisteredIeee802154Reset { role, registered }),
-            Err((failure, registered)) => Err(RegisteredIeee802154ResetTransitionFailure {
+        let Self {
+            role,
+            prerequisites,
+        } = self;
+        match preserve_prerequisites(role, prerequisites, Ieee802154Clocked::reset_mac) {
+            Ok((role, prerequisites)) => Ok(RegisteredIeee802154Reset {
+                role,
+                prerequisites,
+            }),
+            Err((failure, prerequisites)) => Err(RegisteredIeee802154ResetTransitionFailure {
                 failure,
-                registered,
+                prerequisites,
             }),
         }
     }
@@ -133,18 +251,24 @@ impl<P: Ieee802154PlatformControl> RegisteredIeee802154Clocked<P> {
 
 /// Registered whole-radio owner after the private reset sequence read back.
 ///
-/// Reset completion is not PHY/RF qualification and establishes no BTBB/PLL
-/// client ownership, interrupt route, DMA frontier, or operational MAC state.
+/// Reset completion retains common-PHY and protocol timing evidence but is not
+/// RF qualification and establishes no shared PLL refcount, interrupt route,
+/// DMA frontier, or operational MAC state.
 #[must_use = "the registered IEEE 802.15.4 reset owner is unique"]
 pub struct RegisteredIeee802154Reset<P> {
     role: Ieee802154Reset<P>,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
 }
 
 impl<P> RegisteredIeee802154Reset<P> {
     /// Borrow the target-registered PHY state without exposing mutable state.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.prerequisites.phy_state()
+    }
+
+    /// Inspect the retained terminal common-PHY gain projection.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        self.prerequisites.timing_gain_parameter()
     }
 }
 
@@ -165,14 +289,18 @@ impl<P: Ieee802154PlatformControl> RegisteredIeee802154Reset<P> {
         RegisteredIeee802154FoundationConfigured<P>,
         RegisteredIeee802154FoundationTransitionFailure<P>,
     > {
-        let Self { role, registered } = self;
-        match preserve_registration(role, registered, Ieee802154Reset::configure_foundation) {
-            Ok((role, registered)) => {
-                Ok(RegisteredIeee802154FoundationConfigured { role, registered })
-            }
-            Err((failure, registered)) => Err(RegisteredIeee802154FoundationTransitionFailure {
+        let Self {
+            role,
+            prerequisites,
+        } = self;
+        match preserve_prerequisites(role, prerequisites, Ieee802154Reset::configure_foundation) {
+            Ok((role, prerequisites)) => Ok(RegisteredIeee802154FoundationConfigured {
+                role,
+                prerequisites,
+            }),
+            Err((failure, prerequisites)) => Err(RegisteredIeee802154FoundationTransitionFailure {
                 failure,
-                registered,
+                prerequisites,
             }),
         }
     }
@@ -180,18 +308,24 @@ impl<P: Ieee802154PlatformControl> RegisteredIeee802154Reset<P> {
 
 /// Registered whole-radio owner with an interrupt-masked MAC foundation.
 ///
-/// The foundation is non-operational. It proves neither PHY/RF qualification
-/// nor BTBB/PLL client ownership and provides no IRQ route or DMA owner.
+/// The foundation retains common-PHY and protocol timing evidence but remains
+/// non-operational. It proves no RF qualification or shared PLL refcount and
+/// provides no IRQ route or DMA owner.
 #[must_use = "the registered IEEE 802.15.4 foundation owner is unique"]
 pub struct RegisteredIeee802154FoundationConfigured<P> {
     role: Ieee802154FoundationConfigured<P>,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
 }
 
 impl<P> RegisteredIeee802154FoundationConfigured<P> {
     /// Borrow the target-registered PHY state without exposing mutable state.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.prerequisites.phy_state()
+    }
+
+    /// Inspect the retained terminal common-PHY gain projection.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        self.prerequisites.timing_gain_parameter()
     }
 
     /// Borrow the integration token without separating it from the proof.
@@ -214,14 +348,20 @@ impl<P> RegisteredIeee802154FoundationConfigured<P> {
         RegisteredIeee802154MacPolicyConfigured<P>,
         RegisteredIeee802154MacPolicyTransitionFailure<P>,
     > {
-        let Self { role, registered } = self;
-        match preserve_registration(role, registered, |role| role.configure_mac_policy(policy)) {
-            Ok((role, registered)) => {
-                Ok(RegisteredIeee802154MacPolicyConfigured { role, registered })
-            }
-            Err((failure, registered)) => Err(RegisteredIeee802154MacPolicyTransitionFailure {
+        let Self {
+            role,
+            prerequisites,
+        } = self;
+        match preserve_prerequisites(role, prerequisites, |role| {
+            role.configure_mac_policy(policy)
+        }) {
+            Ok((role, prerequisites)) => Ok(RegisteredIeee802154MacPolicyConfigured {
+                role,
+                prerequisites,
+            }),
+            Err((failure, prerequisites)) => Err(RegisteredIeee802154MacPolicyTransitionFailure {
                 failure,
-                registered,
+                prerequisites,
             }),
         }
     }
@@ -230,14 +370,15 @@ impl<P> RegisteredIeee802154FoundationConfigured<P> {
 /// Registered whole-radio owner after static MAC-policy readback.
 ///
 /// Events and aborts remain masked between finite polled ED/CCA operations.
-/// This is not PHY/RF qualification, BTBB or PLL client ownership, IRQ routing,
-/// DMA readiness, or an operational RX/TX IEEE 802.15.4 MAC. In particular,
-/// the policy channel proves only the ZBMAC frequency-code field; it is not
-/// evidence of an RFPLL/PHY retune.
+/// This retains common-PHY and protocol timing evidence but is not RF
+/// qualification, shared PLL client accounting, IRQ routing, DMA readiness, or
+/// an operational RX/TX IEEE 802.15.4 MAC. In particular, the policy channel
+/// proves only the ZBMAC frequency-code field; it is not evidence of an
+/// RFPLL/PHY retune.
 #[must_use = "the registered IEEE 802.15.4 policy owner is unique"]
 pub struct RegisteredIeee802154MacPolicyConfigured<P> {
     role: Ieee802154MacPolicyConfigured<P>,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
 }
 
 /// Successful finite ED/CCA result retaining both the reusable radio owner and
@@ -245,7 +386,7 @@ pub struct RegisteredIeee802154MacPolicyConfigured<P> {
 #[must_use = "a completed registered IEEE 802.15.4 operation retains its reusable owner"]
 pub struct RegisteredIeee802154OperationCompleted<P> {
     operation: Ieee802154OperationCompleted<P>,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
 }
 
 impl<P> RegisteredIeee802154OperationCompleted<P> {
@@ -256,7 +397,12 @@ impl<P> RegisteredIeee802154OperationCompleted<P> {
 
     /// Borrow the target-registered PHY state without separating its proof.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.prerequisites.phy_state()
+    }
+
+    /// Inspect the retained terminal common-PHY gain projection.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        self.prerequisites.timing_gain_parameter()
     }
 
     /// Recover the same registered static-policy owner for another serialized
@@ -264,7 +410,7 @@ impl<P> RegisteredIeee802154OperationCompleted<P> {
     pub fn into_owner(self) -> RegisteredIeee802154MacPolicyConfigured<P> {
         RegisteredIeee802154MacPolicyConfigured {
             role: self.operation.into_owner(),
-            registered: self.registered,
+            prerequisites: self.prerequisites,
         }
     }
 }
@@ -274,7 +420,7 @@ impl<P> RegisteredIeee802154OperationCompleted<P> {
 #[must_use = "a failed registered IEEE 802.15.4 operation retains a terminal owner"]
 pub struct RegisteredIeee802154OperationFailed<P> {
     operation: Ieee802154OperationFailed<P>,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
 }
 
 impl<P> RegisteredIeee802154OperationFailed<P> {
@@ -285,7 +431,12 @@ impl<P> RegisteredIeee802154OperationFailed<P> {
 
     /// Borrow the target-registered PHY state without separating its proof.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.prerequisites.phy_state()
+    }
+
+    /// Inspect the retained terminal common-PHY gain projection.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        self.prerequisites.timing_gain_parameter()
     }
 
     /// Borrow the integration token for terminal diagnostics only.
@@ -297,7 +448,12 @@ impl<P> RegisteredIeee802154OperationFailed<P> {
 impl<P> RegisteredIeee802154MacPolicyConfigured<P> {
     /// Borrow the target-registered PHY state without exposing mutable state.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.prerequisites.phy_state()
+    }
+
+    /// Inspect the retained terminal common-PHY gain projection.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        self.prerequisites.timing_gain_parameter()
     }
 
     /// Borrow the integration token without separating it from the proof.
@@ -319,15 +475,18 @@ impl<P> RegisteredIeee802154MacPolicyConfigured<P> {
         budget: Ieee802154OperationPollBudget,
     ) -> Result<RegisteredIeee802154OperationCompleted<P>, RegisteredIeee802154OperationFailed<P>>
     {
-        let Self { role, registered } = self;
+        let Self {
+            role,
+            prerequisites,
+        } = self;
         match role.energy_detection_raw(duration, budget) {
             Ok(operation) => Ok(RegisteredIeee802154OperationCompleted {
                 operation,
-                registered,
+                prerequisites,
             }),
             Err(operation) => Err(RegisteredIeee802154OperationFailed {
                 operation,
-                registered,
+                prerequisites,
             }),
         }
     }
@@ -343,15 +502,18 @@ impl<P> RegisteredIeee802154MacPolicyConfigured<P> {
         budget: Ieee802154OperationPollBudget,
     ) -> Result<RegisteredIeee802154OperationCompleted<P>, RegisteredIeee802154OperationFailed<P>>
     {
-        let Self { role, registered } = self;
+        let Self {
+            role,
+            prerequisites,
+        } = self;
         match role.clear_channel_assessment(budget) {
             Ok(operation) => Ok(RegisteredIeee802154OperationCompleted {
                 operation,
-                registered,
+                prerequisites,
             }),
             Err(operation) => Err(RegisteredIeee802154OperationFailed {
                 operation,
-                registered,
+                prerequisites,
             }),
         }
     }
@@ -365,11 +527,11 @@ impl<P> RegisteredIeee802154MacPolicyConfigured<P> {
     }
 }
 
-/// Failed reset readback retaining the exact registered clocked owner.
+/// Failed reset readback retaining the exact registered timing-ready owner.
 #[must_use = "a failed registered reset transition retains its previous owner"]
 pub struct RegisteredIeee802154ResetTransitionFailure<P> {
     failure: Ieee802154ResetTransitionFailure<P>,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
 }
 
 impl<P> RegisteredIeee802154ResetTransitionFailure<P> {
@@ -380,17 +542,25 @@ impl<P> RegisteredIeee802154ResetTransitionFailure<P> {
 
     /// Borrow the retained target-registered PHY state immutably.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.prerequisites.phy_state()
     }
 
-    /// Recover the exact preceding registered clocked owner for a reset retry.
-    pub fn into_clocked(self) -> RegisteredIeee802154Clocked<P> {
-        let (role, registered) = map_registration(
+    /// Inspect the retained terminal common-PHY gain projection.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        self.prerequisites.timing_gain_parameter()
+    }
+
+    /// Recover the exact preceding timing-ready owner for a reset retry.
+    pub fn into_timing_ready(self) -> RegisteredIeee802154TimingReady<P> {
+        let (role, prerequisites) = map_prerequisites(
             self.failure,
-            self.registered,
+            self.prerequisites,
             Ieee802154ResetTransitionFailure::into_clocked,
         );
-        RegisteredIeee802154Clocked { role, registered }
+        RegisteredIeee802154TimingReady {
+            role,
+            prerequisites,
+        }
     }
 }
 
@@ -407,7 +577,7 @@ impl<P> fmt::Debug for RegisteredIeee802154ResetTransitionFailure<P> {
 #[must_use = "a failed registered foundation transition retains its previous owner"]
 pub struct RegisteredIeee802154FoundationTransitionFailure<P> {
     failure: Ieee802154FoundationTransitionFailure<P>,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
 }
 
 impl<P> RegisteredIeee802154FoundationTransitionFailure<P> {
@@ -418,17 +588,25 @@ impl<P> RegisteredIeee802154FoundationTransitionFailure<P> {
 
     /// Borrow the retained target-registered PHY state immutably.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.prerequisites.phy_state()
+    }
+
+    /// Inspect the retained terminal common-PHY gain projection.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        self.prerequisites.timing_gain_parameter()
     }
 
     /// Recover the exact preceding registered reset owner for a retry.
     pub fn into_reset(self) -> RegisteredIeee802154Reset<P> {
-        let (role, registered) = map_registration(
+        let (role, prerequisites) = map_prerequisites(
             self.failure,
-            self.registered,
+            self.prerequisites,
             Ieee802154FoundationTransitionFailure::into_reset,
         );
-        RegisteredIeee802154Reset { role, registered }
+        RegisteredIeee802154Reset {
+            role,
+            prerequisites,
+        }
     }
 }
 
@@ -445,7 +623,7 @@ impl<P> fmt::Debug for RegisteredIeee802154FoundationTransitionFailure<P> {
 #[must_use = "a failed registered policy transition retains its radio and proof"]
 pub struct RegisteredIeee802154MacPolicyTransitionFailure<P> {
     failure: Ieee802154MacPolicyTransitionFailure<P>,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
 }
 
 impl<P> RegisteredIeee802154MacPolicyTransitionFailure<P> {
@@ -456,28 +634,36 @@ impl<P> RegisteredIeee802154MacPolicyTransitionFailure<P> {
 
     /// Borrow the retained target-registered PHY state immutably.
     pub const fn phy_state(&self) -> &PhyState {
-        self.registered.state()
+        self.prerequisites.phy_state()
+    }
+
+    /// Inspect the retained terminal common-PHY gain projection.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        self.prerequisites.timing_gain_parameter()
     }
 
     /// Recover the strongest still-proved registered owner.
     pub fn into_recovery(self) -> RegisteredIeee802154MacPolicyRecovery<P> {
         let Self {
             failure,
-            registered,
+            prerequisites,
         } = self;
-        match preserve_registration(failure, registered, |failure| {
+        match preserve_prerequisites(failure, prerequisites, |failure| {
             match failure.into_recovery() {
                 Ieee802154MacPolicyRecovery::Foundation(role) => Ok(role),
                 Ieee802154MacPolicyRecovery::Reset(role) => Err(role),
             }
         }) {
-            Ok((role, registered)) => RegisteredIeee802154MacPolicyRecovery::Foundation(
-                RegisteredIeee802154FoundationConfigured { role, registered },
+            Ok((role, prerequisites)) => RegisteredIeee802154MacPolicyRecovery::Foundation(
+                RegisteredIeee802154FoundationConfigured {
+                    role,
+                    prerequisites,
+                },
             ),
-            Err((role, registered)) => {
+            Err((role, prerequisites)) => {
                 RegisteredIeee802154MacPolicyRecovery::Reset(RegisteredIeee802154Reset {
                     role,
-                    registered,
+                    prerequisites,
                 })
             }
         }
@@ -495,9 +681,9 @@ impl<P> fmt::Debug for RegisteredIeee802154MacPolicyTransitionFailure<P> {
 
 /// Strongest registered owner recovered after static-policy readback failure.
 ///
-/// Both variants retain the same target-issued proof and exact HAL owner. No
-/// recovery variant implies PHY/RF qualification, shared PLL/client ownership,
-/// IRQ, DMA, or operational readiness.
+/// Both variants retain the same target-issued proof, timing marker and exact
+/// HAL owner. No recovery variant implies RF qualification, shared PLL/client
+/// accounting, IRQ, DMA, or operational readiness.
 #[must_use = "registered policy recovery retains the unique radio owner"]
 pub enum RegisteredIeee802154MacPolicyRecovery<P> {
     /// Only requested policy fields mismatched; the foundation remains proved.
@@ -514,6 +700,14 @@ impl<P> RegisteredIeee802154MacPolicyRecovery<P> {
             Self::Reset(owner) => owner.phy_state(),
         }
     }
+
+    /// Inspect the retained terminal common-PHY gain projection.
+    pub const fn timing_gain_parameter(&self) -> u8 {
+        match self {
+            Self::Foundation(owner) => owner.timing_gain_parameter(),
+            Self::Reset(owner) => owner.timing_gain_parameter(),
+        }
+    }
 }
 
 impl<P: Ieee802154PlatformControl> RegisteredIeee802154MacPolicyRecovery<P> {
@@ -526,7 +720,7 @@ impl<P: Ieee802154PlatformControl> RegisteredIeee802154MacPolicyRecovery<P> {
     }
 }
 
-/// Move one registration proof through the exact result of a role transition.
+/// Move all registered timing prerequisites through one role transition.
 ///
 /// Keeping this combinator in production code makes success and failure use
 /// the same single-owner move. Host tests can exercise both branches without
@@ -534,26 +728,27 @@ impl<P: Ieee802154PlatformControl> RegisteredIeee802154MacPolicyRecovery<P> {
 /// HAL lifecycle engine.
 #[allow(
     clippy::result_large_err,
-    reason = "the allocation-free branch must move the exact failure owner and registration proof"
+    reason = "the allocation-free branch must move the exact failure owner and prerequisites"
 )]
-fn preserve_registration<Before, After, Failure>(
+fn preserve_prerequisites<Before, After, Failure>(
     before: Before,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
     transition: impl FnOnce(Before) -> Result<After, Failure>,
-) -> Result<(After, RegisteredPhyState), (Failure, RegisteredPhyState)> {
+) -> Result<(After, RegisteredIeee802154Prerequisites), (Failure, RegisteredIeee802154Prerequisites)>
+{
     match transition(before) {
-        Ok(after) => Ok((after, registered)),
-        Err(failure) => Err((failure, registered)),
+        Ok(after) => Ok((after, prerequisites)),
+        Err(failure) => Err((failure, prerequisites)),
     }
 }
 
-/// Move one registration proof through an infallible typed recovery.
-fn map_registration<Before, After>(
+/// Move all registered timing prerequisites through an infallible recovery.
+fn map_prerequisites<Before, After>(
     before: Before,
-    registered: RegisteredPhyState,
+    prerequisites: RegisteredIeee802154Prerequisites,
     transition: impl FnOnce(Before) -> After,
-) -> (After, RegisteredPhyState) {
-    (transition(before), registered)
+) -> (After, RegisteredIeee802154Prerequisites) {
+    (transition(before), prerequisites)
 }
 
 #[cfg(test)]
@@ -561,7 +756,7 @@ mod tests {
     use open_esp_radio_esp32s31_hal::{
         Ieee802154ClockImages, Ieee802154MacPolicy, Ieee802154Owned, Ieee802154PlatformControl,
         Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetImages,
-        PowerClockControl, PowerClockImages,
+        Ieee802154TimingReady as HalIeee802154TimingReady, PowerClockControl, PowerClockImages,
     };
 
     use crate::{PhyConfig, PhyState, RegisteredPhyState};
@@ -569,8 +764,10 @@ mod tests {
     use super::{
         RegisteredIeee802154Clocked, RegisteredIeee802154FoundationTransitionFailure,
         RegisteredIeee802154MacPolicyConfigured, RegisteredIeee802154MacPolicyRecovery,
-        RegisteredIeee802154MacPolicyTransitionFailure, RegisteredIeee802154Reset,
-        RegisteredIeee802154ResetTransitionFailure, map_registration, preserve_registration,
+        RegisteredIeee802154MacPolicyTransitionFailure, RegisteredIeee802154Prerequisites,
+        RegisteredIeee802154Reset, RegisteredIeee802154ResetTransitionFailure,
+        RegisteredIeee802154TimingReady, establish_registered_timing, map_prerequisites,
+        preserve_prerequisites,
     };
 
     #[derive(Debug)]
@@ -701,35 +898,86 @@ mod tests {
         RegisteredPhyState::from_wrapper_test_model(PhyState::new(PhyConfig::production()))
     }
 
+    fn model_prerequisites() -> RegisteredIeee802154Prerequisites {
+        let registered = registered_state();
+        let gain_parameter = registered.state().register_init_parameters().parameter_120;
+        RegisteredIeee802154Prerequisites {
+            registered,
+            timing: HalIeee802154TimingReady::for_host_ownership_model(gain_parameter),
+        }
+    }
+
+    fn timing_ready_owner(platform: FakePlatform) -> RegisteredIeee802154TimingReady<FakePlatform> {
+        let parts = establish_registered_timing(owner(platform), |_, registered| {
+            let gain_parameter = registered.state().register_init_parameters().parameter_120;
+            HalIeee802154TimingReady::for_host_ownership_model(gain_parameter)
+        });
+        RegisteredIeee802154TimingReady {
+            role: parts.role,
+            prerequisites: RegisteredIeee802154Prerequisites {
+                registered: parts.registered,
+                timing: parts.timing,
+            },
+        }
+    }
+
     #[test]
-    fn production_registration_combinators_cover_success_failure_and_recovery_moves() {
-        let (after, registered) = match preserve_registration(41_u8, registered_state(), |before| {
-            Ok::<_, &'static str>(before + 1)
-        }) {
-            Ok(success) => success,
-            Err(_) => panic!("success branch must retain the proof"),
-        };
+    fn production_prerequisite_combinators_cover_success_failure_and_recovery_moves() {
+        let (after, prerequisites) =
+            match preserve_prerequisites(41_u8, model_prerequisites(), |before| {
+                Ok::<_, &'static str>(before + 1)
+            }) {
+                Ok(success) => success,
+                Err(_) => panic!("success branch must retain all prerequisites"),
+            };
         assert_eq!(after, 42);
-        assert!(registered.state().phy_registered());
+        assert!(prerequisites.phy_state().phy_registered());
+        assert_eq!(
+            prerequisites.timing_gain_parameter(),
+            prerequisites
+                .phy_state()
+                .register_init_parameters()
+                .parameter_120
+        );
 
-        let (failure, registered) = match preserve_registration(7_u8, registered_state(), |_| {
-            Err::<u8, _>("typed failure")
-        }) {
-            Ok(_) => panic!("failure branch must retain the proof"),
-            Err(failure) => failure,
-        };
+        let (failure, prerequisites) =
+            match preserve_prerequisites(7_u8, model_prerequisites(), |_| {
+                Err::<u8, _>("typed failure")
+            }) {
+                Ok(_) => panic!("failure branch must retain all prerequisites"),
+                Err(failure) => failure,
+            };
         assert_eq!(failure, "typed failure");
-        assert!(registered.state().phy_registered());
+        assert!(prerequisites.phy_state().phy_registered());
 
-        let (after, registered) = map_registration(3_u8, registered_state(), |before| before + 2);
+        let (after, prerequisites) =
+            map_prerequisites(3_u8, model_prerequisites(), |before| before + 2);
         assert_eq!(after, 5);
-        assert!(registered.state().phy_registered());
+        assert!(prerequisites.phy_state().phy_registered());
+    }
+
+    #[test]
+    fn registered_timing_projection_has_no_caller_gain_argument() {
+        let clocked = owner(FakePlatform::ready());
+        let expected_gain = clocked.phy_state().register_init_parameters().parameter_120;
+        let parts = establish_registered_timing(clocked, |_, registered| {
+            registered.state().register_init_parameters().parameter_120
+        });
+
+        assert_eq!(parts.timing, expected_gain);
+        assert!(parts.registered.state().phy_registered());
+        assert_eq!(parts.role.peripheral().clock_sequences, 1);
+
+        let _: fn(
+            RegisteredIeee802154Clocked<FakePlatform>,
+        ) -> RegisteredIeee802154TimingReady<FakePlatform> =
+            RegisteredIeee802154Clocked::initialize_baseband_and_ieee802154_timing;
     }
 
     #[test]
     fn registered_full_chain_and_typed_recovery_surface_connects() {
         fn full_success_chain<P: Ieee802154PlatformControl>(
-            owner: RegisteredIeee802154Clocked<P>,
+            owner: RegisteredIeee802154TimingReady<P>,
             policy: Ieee802154MacPolicy,
         ) -> Option<RegisteredIeee802154MacPolicyConfigured<P>> {
             let reset = owner.reset_mac().ok()?;
@@ -756,14 +1004,16 @@ mod tests {
 
     #[test]
     fn registered_clock_and_reset_transitions_retain_one_proof_owner() {
-        let clocked = owner(FakePlatform::ready());
-        assert!(clocked.phy_state().phy_registered());
-        assert_eq!(clocked.peripheral().clock_sequences, 1);
+        let timing_ready = timing_ready_owner(FakePlatform::ready());
+        assert!(timing_ready.phy_state().phy_registered());
+        assert_eq!(timing_ready.peripheral().clock_sequences, 1);
+        let gain_parameter = timing_ready.timing_gain_parameter();
 
-        let reset = clocked
+        let reset = timing_ready
             .reset_mac()
             .unwrap_or_else(|_| panic!("reset readback must pass"));
         assert!(reset.phy_state().phy_registered());
+        assert_eq!(reset.timing_gain_parameter(), gain_parameter);
         assert_eq!(reset.peripheral().clock_sequences, 1);
         assert_eq!(reset.peripheral().reset_edges, 4);
     }
@@ -772,12 +1022,13 @@ mod tests {
     fn registered_failures_retain_proof_and_only_typed_recovery() {
         let mut reset_platform = FakePlatform::ready();
         reset_platform.resets.mac_reset_released = false;
-        let clocked = owner(reset_platform);
-        let reset_failure: RegisteredIeee802154ResetTransitionFailure<_> = match clocked.reset_mac()
-        {
-            Ok(_) => panic!("invalid reset readback must fail"),
-            Err(failure) => failure,
-        };
+        let timing_ready = timing_ready_owner(reset_platform);
+        let gain_parameter = timing_ready.timing_gain_parameter();
+        let reset_failure: RegisteredIeee802154ResetTransitionFailure<_> =
+            match timing_ready.reset_mac() {
+                Ok(_) => panic!("invalid reset readback must fail"),
+                Err(failure) => failure,
+            };
         assert_eq!(
             reset_failure.error(),
             Ieee802154ReadbackError {
@@ -786,8 +1037,10 @@ mod tests {
                 observed: false,
             }
         );
-        let clocked = reset_failure.into_clocked();
-        assert!(clocked.phy_state().phy_registered());
-        assert_eq!(clocked.peripheral().reset_edges, 4);
+        assert_eq!(reset_failure.timing_gain_parameter(), gain_parameter);
+        let timing_ready = reset_failure.into_timing_ready();
+        assert!(timing_ready.phy_state().phy_registered());
+        assert_eq!(timing_ready.timing_gain_parameter(), gain_parameter);
+        assert_eq!(timing_ready.peripheral().reset_edges, 4);
     }
 }

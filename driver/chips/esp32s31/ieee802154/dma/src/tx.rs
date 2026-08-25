@@ -170,6 +170,27 @@ pub struct PinnedTxBuffer {
     address: DmaFrameAddress,
 }
 
+/// Type-level proof that the immutable prepared FCF requests an ACK.
+///
+/// The type is uninhabited and the DMA owner is the only code that can mint a
+/// token carrying it.
+pub enum TxAckRequested {}
+
+/// Type-level proof that the immutable prepared FCF does not request an ACK.
+///
+/// The type is uninhabited and the DMA owner is the only code that can mint a
+/// token carrying it.
+pub enum TxAckNotRequested {}
+
+/// ACK classification of one successfully prepared immutable DMA image.
+///
+/// Callers must handle the FCF-derived variant; there is no caller-selected ACK
+/// argument and no conversion between the two proof modes.
+pub enum PreparedTx<'owner> {
+    AckRequested(TxPrepared<'owner, TxAckRequested>),
+    AckNotRequested(TxPrepared<'owner, TxAckNotRequested>),
+}
+
 impl PinnedTxBuffer {
     pub fn state(&self) -> TxState {
         self.storage.as_ref().get_ref().state
@@ -190,7 +211,7 @@ impl PinnedTxBuffer {
     /// let _second = owner.prepare(&[0x02]).unwrap();
     /// drop(first);
     /// ```
-    pub fn prepare(&mut self, mac_frame: &[u8]) -> Result<TxPrepared<'_>, TxStorageError> {
+    pub fn prepare(&mut self, mac_frame: &[u8]) -> Result<PreparedTx<'_>, TxStorageError> {
         let observed = self.state();
         if observed != TxState::Free {
             return Err(TxStorageError::State {
@@ -209,11 +230,22 @@ impl PinnedTxBuffer {
 
         let storage = self.storage_mut();
         let phr_length = prepare_tx(&mut storage.frame.0, mac_frame)?;
+        let acknowledgement_requested =
+            TxFrameView::new(&storage.frame.0, phr_length).acknowledgement_requested();
         storage.state = TxState::Prepared;
-        Ok(TxPrepared {
-            owner: self,
-            phr_length,
-        })
+        if acknowledgement_requested {
+            Ok(PreparedTx::AckRequested(TxPrepared {
+                owner: self,
+                phr_length,
+                _mode: PhantomData,
+            }))
+        } else {
+            Ok(PreparedTx::AckNotRequested(TxPrepared {
+                owner: self,
+                phr_length,
+                _mode: PhantomData,
+            }))
+        }
     }
 
     #[allow(
@@ -228,12 +260,13 @@ impl PinnedTxBuffer {
 }
 
 /// CPU-owned, immutable prepared transmit image.
-pub struct TxPrepared<'owner> {
+pub struct TxPrepared<'owner, Mode> {
     owner: &'owner mut PinnedTxBuffer,
     phr_length: u8,
+    _mode: PhantomData<Mode>,
 }
 
-impl<'owner> TxPrepared<'owner> {
+impl<'owner, Mode> TxPrepared<'owner, Mode> {
     pub fn frame(&self) -> TxFrameView<'_> {
         TxFrameView::new(
             &self.owner.storage.as_ref().get_ref().frame.0,
@@ -242,12 +275,13 @@ impl<'owner> TxPrepared<'owner> {
     }
 
     /// Publish all buffer writes before a later MMIO address/command write.
-    pub fn arm(self) -> TxArmed<'owner> {
+    pub fn arm(self) -> TxArmed<'owner, Mode> {
         device_fence();
         self.owner.storage_mut().state = TxState::Armed;
         TxArmed {
             owner: self.owner,
             phr_length: self.phr_length,
+            _mode: PhantomData,
         }
     }
 
@@ -257,10 +291,28 @@ impl<'owner> TxPrepared<'owner> {
 }
 
 /// Borrowed address authority for one currently hardware-owned TX image.
+///
+/// Copies remain bounded by the borrow of the exact armed owner and cannot be
+/// replayed after that owner crosses its terminal boundary:
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_ieee802154_dma::{
+///     DmaTerminalEvidence, TxAckNotRequested, TxArmed,
+/// };
+///
+/// fn replay_after_completion<'owner>(
+///     armed: TxArmed<'owner, TxAckNotRequested>,
+///     terminal: &DmaTerminalEvidence,
+/// ) {
+///     let address = armed.dma_address();
+///     let _completed = armed.complete(terminal);
+///     let _ = address.as_u32();
+/// }
+/// ```
 #[derive(Clone, Copy)]
 pub struct TxDmaAddress<'armed> {
     address: DmaFrameAddress,
-    _armed: PhantomData<&'armed TxArmed<'armed>>,
+    _armed: PhantomData<&'armed PinnedTxBuffer>,
 }
 
 impl TxDmaAddress<'_> {
@@ -271,12 +323,13 @@ impl TxDmaAddress<'_> {
 
 /// Hardware-owned TX image. The token is deliberately neither `Clone` nor
 /// `Copy` and retains exclusive access to its pinned allocation.
-pub struct TxArmed<'owner> {
+pub struct TxArmed<'owner, Mode> {
     owner: &'owner mut PinnedTxBuffer,
     phr_length: u8,
+    _mode: PhantomData<Mode>,
 }
 
-impl<'owner> TxArmed<'owner> {
+impl<'owner, Mode> TxArmed<'owner, Mode> {
     pub fn dma_address(&self) -> TxDmaAddress<'_> {
         TxDmaAddress {
             address: self.owner.address,
@@ -343,7 +396,9 @@ mod tests {
     #[test]
     fn prepared_armed_completed_release_is_linear() {
         let mut owner = owner(DMA_LOW);
-        let prepared = owner.prepare(&[0x61, 0x88, 0x01]).unwrap();
+        let PreparedTx::AckRequested(prepared) = owner.prepare(&[0x61, 0x88, 0x01]).unwrap() else {
+            panic!("FCF requests an ACK");
+        };
         assert_eq!(prepared.frame().phr_length(), 5);
         assert_eq!(prepared.frame().reserved_fcs(), &[0, 0]);
         let armed = prepared.arm();
@@ -358,9 +413,66 @@ mod tests {
     #[test]
     fn cancel_returns_prepared_buffer_to_free() {
         let mut owner = owner(DMA_LOW);
-        owner.prepare(&[1]).unwrap().cancel();
+        let PreparedTx::AckNotRequested(prepared) = owner.prepare(&[1]).unwrap() else {
+            panic!("FCF does not request an ACK");
+        };
+        prepared.cancel();
         assert_eq!(owner.state(), TxState::Free);
         assert!(owner.prepare(&[2]).is_ok());
+    }
+
+    #[test]
+    fn every_fcf_octet_mints_only_its_immutable_image_mode() {
+        let mut owner = owner(DMA_LOW);
+        for fcf in u8::MIN..=u8::MAX {
+            let original = owner.storage.as_ref().get_ref().frame.0;
+            let frame_type = fcf & 0x07;
+            match owner.prepare(&[fcf]) {
+                Ok(PreparedTx::AckRequested(prepared)) => {
+                    assert!(frame_type <= 3, "FCF 0x{fcf:02x}");
+                    assert_ne!(fcf & 0x20, 0, "FCF 0x{fcf:02x}");
+                    assert_eq!(prepared.frame().buffer()[1], fcf);
+                    assert!(prepared.frame().acknowledgement_requested());
+                    prepared.cancel();
+                }
+                Ok(PreparedTx::AckNotRequested(prepared)) => {
+                    assert!(frame_type <= 3, "FCF 0x{fcf:02x}");
+                    assert_eq!(fcf & 0x20, 0, "FCF 0x{fcf:02x}");
+                    assert_eq!(prepared.frame().buffer()[1], fcf);
+                    assert!(!prepared.frame().acknowledgement_requested());
+                    prepared.cancel();
+                }
+                Err(TxStorageError::Frame(TxFrameError::UnsupportedFrameType {
+                    frame_type: rejected,
+                })) => {
+                    assert!(frame_type > 3, "FCF 0x{fcf:02x}");
+                    assert_eq!(rejected, frame_type);
+                    assert_eq!(owner.state(), TxState::Free);
+                    assert_eq!(owner.storage.as_ref().get_ref().frame.0, original);
+                }
+                Err(error) => panic!("unexpected FCF 0x{fcf:02x} error: {error:?}"),
+            }
+            assert_eq!(owner.state(), TxState::Free);
+        }
+    }
+
+    #[test]
+    fn mode_is_bound_to_the_copy_not_the_caller_slice() {
+        let mut owner = owner(DMA_LOW);
+        let mut source = [0x21, 0x88, 0x01];
+        let PreparedTx::AckRequested(prepared) = owner.prepare(&source).unwrap() else {
+            panic!("fixture requests an ACK");
+        };
+
+        source[0] = 0x01;
+        assert_eq!(source[0], 0x01);
+        assert_eq!(prepared.frame().mac_bytes(), &[0x21, 0x88, 0x01]);
+        assert!(prepared.frame().acknowledgement_requested());
+
+        let armed = prepared.arm();
+        let completed = armed.complete(&DmaTerminalEvidence::for_native_model());
+        completed.release();
+        assert_eq!(owner.state(), TxState::Free);
     }
 
     #[test]

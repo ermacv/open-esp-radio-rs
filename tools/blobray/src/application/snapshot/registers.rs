@@ -10,8 +10,9 @@ use crate::{
         RegisterWorkspaceReport, RegisterWritePatternSummary,
     },
     registers::{
-        RegisterFacts, RegisterModel, RegisterPublicationOwnership, RegisterReviewIr,
+        RegisterFacts, RegisterPublicationOwnership, RegisterReviewIr,
         classify_register_publication, load_effective_register_model, physical_register_identity,
+        register_identity_maps,
     },
 };
 
@@ -82,11 +83,14 @@ pub(crate) fn detail(
         .is_file()
         .then(|| load_effective_register_model(paths))
         .transpose()?;
-    let identities = model
+    let identity_maps = model
         .as_ref()
-        .map(RegisterModel::register_identities)
+        .map(register_identity_maps)
         .transpose()?
         .unwrap_or_default();
+    let identities = &identity_maps.identities;
+    let reviewed_identities = &identity_maps.reviewed;
+    let review_annotations = &identity_maps.annotations;
     let ir_paths = paths
         .review_ir_reports
         .iter()
@@ -121,10 +125,20 @@ pub(crate) fn detail(
     });
     let identity = width
         .and_then(|width| {
-            physical_register_identity(&identities, u64::from(address), u32::from(width))
+            physical_register_identity(identities, u64::from(address), u32::from(width))
         })
         .or_else(|| {
             identities
+                .iter()
+                .find(|((candidate, _), _)| *candidate == u64::from(address))
+        })
+        .map(|(_, identity)| identity);
+    let reviewed_identity = width
+        .and_then(|width| {
+            physical_register_identity(reviewed_identities, u64::from(address), u32::from(width))
+        })
+        .or_else(|| {
+            reviewed_identities
                 .iter()
                 .find(|((candidate, _), _)| *candidate == u64::from(address))
         })
@@ -151,11 +165,11 @@ pub(crate) fn detail(
     } else {
         (format!("MMIO_{address:08X}"), RegisterNameSource::Address)
     };
-    let annotation = identity.and_then(|identity| {
-        model
-            .as_ref()
-            .and_then(|model| model.review().iter().find(|item| item.entity == *identity))
-    });
+    let annotation = width
+        .and_then(|width| {
+            physical_register_identity(reviewed_identities, u64::from(address), u32::from(width))
+        })
+        .and_then(|(key, _)| review_annotations.get(key));
     let publication_ownership = fact
         .zip(facts.as_ref())
         .map(|(fact, facts)| {
@@ -198,7 +212,7 @@ pub(crate) fn detail(
     };
     let review_status = match (
         outside_publication_scope,
-        identity.is_some(),
+        reviewed_identity.is_some(),
         non_operational_only,
         fact.is_some(),
     ) {
@@ -322,7 +336,7 @@ pub(crate) fn detail(
         name_source,
         review_status,
         publication_debt: !publication_scopes.is_empty()
-            && identity.is_none()
+            && reviewed_identity.is_none()
             && !non_operational_only
             && !outside_publication_scope,
         publication_scopes,

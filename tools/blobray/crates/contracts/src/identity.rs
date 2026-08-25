@@ -714,13 +714,13 @@ mod tests {
                 "function:esp-idf/wifi/rx",
             ),
             (
-                SemanticEntityId::register("esp32s31", "radio", 0x600a_0034, 32).unwrap(),
-                "register:esp32s31/radio/0x600a0034/32",
+                SemanticEntityId::register("chip-alpha", "radio", 0x600a_0034, 32).unwrap(),
+                "register:chip-alpha/radio/0x600a0034/32",
             ),
             (
-                SemanticEntityId::register_field("esp32s31", "radio", 0x600a_0034, 32, 8, 3)
+                SemanticEntityId::register_field("chip-alpha", "radio", 0x600a_0034, 32, 8, 3)
                     .unwrap(),
-                "register-field:esp32s31/radio/0x600a0034/32/8/3",
+                "register-field:chip-alpha/radio/0x600a0034/32/8/3",
             ),
             (
                 SemanticEntityId::interface("esp-idf/wifi-osi-v9").unwrap(),
@@ -735,8 +735,8 @@ mod tests {
                 "logical-type:esp-idf/wifi-buffer",
             ),
             (
-                SemanticEntityId::event_route("esp32s31/radio/rx-done").unwrap(),
-                "event-route:esp32s31/radio/rx-done",
+                SemanticEntityId::event_route("chip-alpha/radio/rx-done").unwrap(),
+                "event-route:chip-alpha/radio/rx-done",
             ),
         ];
         for (value, expected) in values {
@@ -769,9 +769,9 @@ mod tests {
             assert!(SemanticEntityId::function(invalid).is_err(), "{invalid}");
         }
         for invalid in [
-            "register:esp32s31/radio/0x0600a0034/32",
-            "register:esp32s31/radio/0x600A0034/32",
-            "register:esp32s31/radio/0x600a0034/032",
+            "register:chip-alpha/radio/0x0600a0034/32",
+            "register:chip-alpha/radio/0x600A0034/32",
+            "register:chip-alpha/radio/0x600a0034/032",
             "function:wifi/rx@0x1",
             "function:WiFi/rx",
         ] {
@@ -781,8 +781,8 @@ mod tests {
 
     #[test]
     fn typed_ranges_fail_closed() {
-        assert!(SemanticEntityId::register("esp32s31", "radio", 0, 0).is_err());
-        assert!(SemanticEntityId::register_field("esp32s31", "radio", 0, 32, 31, 2).is_err());
+        assert!(SemanticEntityId::register("chip-alpha", "radio", 0, 0).is_err());
+        assert!(SemanticEntityId::register_field("chip-alpha", "radio", 0, 32, 31, 2).is_err());
         assert!(SemanticEntityId::interface_slot("sdk/interface", 0, 0).is_err());
     }
 
@@ -825,7 +825,10 @@ mod tests {
         assert_eq!(first, reversed);
         assert_eq!(
             first.sha256(),
-            "f26a87113f30a110f0f75fd9e229cac2ff7feb9ed6878b3dfbbbc15dfb225c15"
+            concat!(
+                "f26a87113f30a110f0f75fd9e229cac2",
+                "ff7feb9ed6878b3dfbbbc15dfb225c15"
+            )
         );
         assert_eq!(
             first.to_string().parse::<RevisionOccurrenceId>().unwrap(),

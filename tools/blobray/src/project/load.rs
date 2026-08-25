@@ -769,9 +769,9 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
 fn load_project_applicability(
     document: &Table,
     source: ProjectSource<'_>,
-) -> Result<open_radio_vendor_review::Applicability> {
+) -> Result<open_radio_vendor_contracts::Applicability> {
     let Some(item) = document.get("applicability") else {
-        return Ok(open_radio_vendor_review::Applicability::default());
+        return Ok(open_radio_vendor_contracts::Applicability::default());
     };
     let table = item
         .as_table()
@@ -782,7 +782,7 @@ fn load_project_applicability(
         "project applicability",
         source,
     )?;
-    Ok(open_radio_vendor_review::Applicability {
+    Ok(open_radio_vendor_contracts::Applicability {
         artifact_lineages: table_string_array(
             table,
             "artifact-lineages",
@@ -791,14 +791,14 @@ fn load_project_applicability(
             false,
         )?,
         artifacts: load_project_artifacts(table, source)?,
-        ..open_radio_vendor_review::Applicability::default()
+        ..open_radio_vendor_contracts::Applicability::default()
     })
 }
 
 fn load_project_artifacts(
     table: &Table,
     source: ProjectSource<'_>,
-) -> Result<Vec<open_radio_vendor_review::ArtifactApplicability>> {
+) -> Result<Vec<open_radio_vendor_contracts::ArtifactIdentity>> {
     let Some(item) = table.get("artifacts") else {
         return Ok(Vec::new());
     };
@@ -840,10 +840,11 @@ fn load_project_artifacts(
                     )
                 })
         };
-        let artifact = open_radio_vendor_review::ArtifactApplicability {
-            source: required("source")?,
-            sha256: required("sha256")?,
-        };
+        let artifact = open_radio_vendor_contracts::ArtifactIdentity::new(
+            required("source")?,
+            required("sha256")?,
+        )
+        .map_err(|error| source.error(value.span(), error.to_string()))?;
         if !unique.insert(artifact.clone()) {
             return Err(source.error(
                 value.span(),
@@ -858,15 +859,15 @@ fn load_project_artifacts(
 fn compose_review_context(
     ecosystem_packs: &[EcosystemPack],
     chip_pack: Option<&ChipPack>,
-    project: &open_radio_vendor_review::Applicability,
-) -> open_radio_vendor_review::ApplicabilityContext {
+    project: &open_radio_vendor_contracts::Applicability,
+) -> open_radio_vendor_contracts::ApplicabilityContext {
     let ecosystems = ecosystem_packs
         .iter()
         .flat_map(|pack| pack.applicability.ecosystems.iter().cloned())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    open_radio_vendor_review::ApplicabilityContext {
+    open_radio_vendor_contracts::ApplicabilityContext {
         ecosystems,
         chips: chip_pack
             .map(|pack| pack.applicability.chips.clone())

@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use open_radio_vendor_contracts::SemanticEntityId;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -16,11 +17,12 @@ use crate::{
     Result,
     registers::{
         ProjectRegisterWorkspace, RegisterPublicationOwnership, classify_register_publication,
+        reviewed_register_identities,
     },
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 11;
+pub(crate) const RESEARCH_SCHEMA: u32 = 12;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -64,6 +66,7 @@ pub(crate) enum ResearchFindingQueryState {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct ResearchRegisterResolutionSubject {
+    pub(crate) chip: String,
     pub(crate) address_space: String,
     pub(crate) address: u32,
     pub(crate) width: u8,
@@ -1190,10 +1193,13 @@ fn assertions_match_register_subject(
     assertions: &[open_radio_vendor_review::EffectiveAssertion],
     subject: &ResearchRegisterResolutionSubject,
 ) -> bool {
-    let expected = format!(
-        "mmio:{}:{:#010x}/{}",
-        subject.address_space, subject.address, subject.width
-    );
+    let expected = SemanticEntityId::register(
+        subject.chip.clone(),
+        subject.address_space.clone(),
+        u64::from(subject.address),
+        u32::from(subject.width),
+    )
+    .expect("persisted research register subjects are canonical");
     assertions
         .iter()
         .all(|assertion| assertion.subject == expected)
@@ -1208,7 +1214,7 @@ fn semantic_assertion_matches(
         && applied_assertions.first().is_some_and(|assertion| {
             assertion.id == assertion_id
                 && assertion.kind == "hardware-write-semantics"
-                && !assertion.evidence.is_empty()
+                && !assertion.metadata.evidence.is_empty()
                 && normalize_write_semantics(&assertion.value).as_deref()
                     == Some(effective_write_semantics)
         })
@@ -1221,7 +1227,7 @@ fn register_identity_assertion_matches(
     applied_assertions.len() == 1
         && applied_assertions.first().is_some_and(|assertion| {
             assertion.kind == "register-identity"
-                && !assertion.evidence.is_empty()
+                && !assertion.metadata.evidence.is_empty()
                 && matches!(
                     &assertion.value,
                     open_radio_vendor_review::AssertionValue::String(value)
@@ -1809,9 +1815,9 @@ fn add_registers(
     let facts = workspace.required_facts()?;
     let model = workspace.model();
     let address_space = model.address_space().to_owned();
-    let identities = model.register_identities()?;
+    let reviewed_identities = reviewed_register_identities(model)?;
     for fact in &facts.registers {
-        if identities.contains_key(&(u64::from(fact.address), u32::from(fact.width))) {
+        if reviewed_identities.contains_key(&(u64::from(fact.address), u32::from(fact.width))) {
             continue;
         }
         let ownership =
@@ -1974,10 +1980,10 @@ fn add_unknown_semantics(
         assertion.kind == "hardware-write-semantics"
             && matches!(&assertion.value, open_radio_vendor_review::AssertionValue::String(value) if value == "unknown")
     }) {
-        let Some((address_space, address, width)) = parse_register(&assertion.subject) else {
+        let Some((chip, address_space, address, width)) = register_entity(&assertion.subject) else {
             continue;
         };
-        if address_space != model_address_space {
+        if chip != workspace.model().chip() || address_space != model_address_space {
             continue;
         }
         let Some(fact) = facts
@@ -2013,7 +2019,7 @@ fn add_unknown_semantics(
                 severity: "warning".to_owned(),
                 message,
                 subject: ResearchSubject::MmioRegister {
-                    address_space,
+                    address_space: address_space.to_owned(),
                     address,
                     width,
                     assertion: Some(assertion.id.clone()),
@@ -2037,18 +2043,21 @@ fn selected_review_knowledge(
         })
 }
 
-fn parse_register(subject: &str) -> Option<(String, u32, u8)> {
-    let value = subject.strip_prefix("mmio:")?;
-    let (address_space, physical) = value.split_once(':')?;
-    if address_space.is_empty() {
+fn register_entity(subject: &SemanticEntityId) -> Option<(&str, &str, u32, u8)> {
+    let SemanticEntityId::Register {
+        chip,
+        address_space,
+        address,
+        width,
+    } = subject
+    else {
         return None;
-    }
-    let physical = physical.split('#').next()?;
-    let (address, width) = physical.split_once('/')?;
+    };
     Some((
-        address_space.to_owned(),
-        u32::from_str_radix(address.strip_prefix("0x")?, 16).ok()?,
-        width.parse().ok()?,
+        chip,
+        address_space,
+        (*address).try_into().ok()?,
+        (*width).try_into().ok()?,
     ))
 }
 
@@ -2238,20 +2247,21 @@ fn resolve_exact_register_finding(
     let Some(assertion) = knowledge.assertions().get(assertion_id) else {
         return Ok(None);
     };
-    if assertion.kind != "hardware-write-semantics" || assertion.evidence.is_empty() {
+    if assertion.kind != "hardware-write-semantics" || assertion.metadata.evidence.is_empty() {
         return Ok(None);
     }
     let Some(effective_write_semantics) = normalize_write_semantics(&assertion.value) else {
         return Ok(None);
     };
-    let Some((address_space, address, width)) = parse_register(&assertion.subject) else {
+    let Some((chip, address_space, address, width)) = register_entity(&assertion.subject) else {
         return Ok(None);
     };
-    if address_space != workspace.model().address_space() {
+    if chip != workspace.model().chip() || address_space != workspace.model().address_space() {
         return Ok(None);
     }
     let subject = ResearchRegisterResolutionSubject {
-        address_space,
+        chip: chip.to_owned(),
+        address_space: address_space.to_owned(),
         address,
         width,
     };
@@ -2320,10 +2330,7 @@ fn resolve_exact_register_finding(
     let current_identity = identities
         .get(&(u64::from(address), u32::from(width)))
         .cloned();
-    let model_sources = current_identity
-        .as_deref()
-        .map(|identity| model_sources(workspace, identity))
-        .unwrap_or_default();
+    let model_sources = model_sources(workspace, address, width)?;
     let is_unknown = effective_write_semantics == "unknown";
     let state = semantic_resolution_state(
         &effective_write_semantics,
@@ -2368,6 +2375,7 @@ fn resolve_register_model_finding(
         graphs,
     } = context;
     let subject = ResearchRegisterResolutionSubject {
+        chip: workspace.model().chip().to_owned(),
         address_space: workspace.model().address_space().to_owned(),
         address,
         width,
@@ -2428,10 +2436,7 @@ fn resolve_register_model_finding(
     let current_identity = identities
         .get(&(u64::from(address), u32::from(width)))
         .cloned();
-    let model_sources = current_identity
-        .as_deref()
-        .map(|identity| model_sources(workspace, identity))
-        .unwrap_or_default();
+    let model_sources = model_sources(workspace, address, width)?;
     if current_identity.is_none() {
         return Ok(register_resolution(
             ExactRegisterPredicate::AbsentRegisterModel,
@@ -2449,19 +2454,29 @@ fn resolve_register_model_finding(
     }
     let retained = workspace
         .model()
-        .reviewed_register_identities()
+        .reviewed_register_facts()
         .iter()
-        .find(|identity| {
-            identity.address_space == workspace.model().address_space()
-                && identity.address == u64::from(address)
-                && identity.width == u32::from(width)
-                && current_identity.as_deref() == Some(identity.identity.as_str())
+        .find(|assertion| {
+            assertion.kind == "register-identity"
+                && register_entity(&assertion.subject).is_some_and(
+                    |(chip, address_space, assertion_address, assertion_width)| {
+                        chip == workspace.model().chip()
+                            && address_space == workspace.model().address_space()
+                            && assertion_address == address
+                            && assertion_width == width
+                    },
+                )
+                && matches!(
+                    &assertion.value,
+                    open_radio_vendor_review::AssertionValue::String(identity)
+                        if current_identity.as_deref() == Some(identity)
+                )
         })
-        .and_then(|identity| {
-            let configured = knowledge.assertions().get(&identity.assertion.id)?;
-            (configured == &identity.assertion
+        .and_then(|retained| {
+            let configured = knowledge.assertions().get(&retained.id)?;
+            (configured == retained
                 && register_identity_assertion_matches(
-                    &identity.identity,
+                    current_identity.as_deref()?,
                     std::slice::from_ref(configured),
                 ))
             .then(|| vec![configured.clone()])
@@ -2552,16 +2567,20 @@ fn selected_scope_intersects(
         .any(|scope| selected.contains(scope.as_str()))
 }
 
-fn model_sources(workspace: &ProjectRegisterWorkspace, identity: &str) -> Vec<String> {
-    workspace
+fn model_sources(
+    workspace: &ProjectRegisterWorkspace,
+    address: u32,
+    width: u8,
+) -> Result<Vec<String>> {
+    Ok(workspace
         .model()
-        .review()
-        .iter()
-        .filter(|annotation| annotation.entity == identity)
+        .register_review_annotations()?
+        .get(&(u64::from(address), u32::from(width)))
+        .into_iter()
         .flat_map(|annotation| annotation.sources.iter().cloned())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .collect()
+        .collect())
 }
 
 fn register_observation_evidence(
@@ -4202,7 +4221,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 11);
+        assert_eq!(report.schema_version, 12);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -4373,6 +4392,7 @@ mod tests {
             interpretation: "fixture filtered query".to_owned(),
             resolution_evidence: Some(ResearchFindingResolutionEvidence::AbsentRegisterModel {
                 subject: ResearchRegisterResolutionSubject {
+                    chip: "fixture-chip".to_owned(),
                     address_space: "cpu".to_owned(),
                     address: 0x1000_0000,
                     width: 32,
@@ -4419,7 +4439,7 @@ mod tests {
     fn satisfied_register_resolution_requires_one_exact_identity_assertion() {
         let pack = open_radio_vendor_review::ReviewPack::from_toml(
             r#"
-schema = 1
+schema = 2
 id = "fixture"
 [classification]
 provenance = "reviewed"
@@ -4427,11 +4447,11 @@ accuracy = "exact"
 completeness = "partial"
 [[assertions]]
 id = "radio.status.identity"
-subject = "mmio:cpu:0x10000000/32"
+subject = "register:fixture-chip/cpu/0x10000000/32"
 kind = "register-identity"
 value = "RADIO.STATUS"
 [[assertions.evidence]]
-source = "MANUAL"
+source = "manual"
 locator = "RADIO.STATUS"
 "#,
         )
@@ -4464,6 +4484,7 @@ locator = "RADIO.STATUS"
             interpretation: "fixture satisfied query".to_owned(),
             resolution_evidence: Some(ResearchFindingResolutionEvidence::AbsentRegisterModel {
                 subject: ResearchRegisterResolutionSubject {
+                    chip: "fixture-chip".to_owned(),
                     address_space: "cpu".to_owned(),
                     address: 0x1000_0000,
                     width: 32,
@@ -4875,7 +4896,7 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn schema_eleven_serializes_query_and_executable_actions() {
+    fn schema_twelve_serializes_query_and_executable_actions() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -4899,7 +4920,7 @@ locator = "RADIO.STATUS"
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 11);
+        assert_eq!(value["schema_version"], 12);
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);
         assert_eq!(
@@ -4954,9 +4975,12 @@ locator = "RADIO.STATUS"
 
     #[test]
     fn register_subject_parser_preserves_non_cpu_address_space() {
+        let subject = "register:esp32s31/radio/0x60001000/32"
+            .parse::<SemanticEntityId>()
+            .unwrap();
         assert_eq!(
-            parse_register("mmio:radio:0x60001000/32#write-semantics"),
-            Some(("radio".to_owned(), 0x6000_1000, 32))
+            register_entity(&subject),
+            Some(("esp32s31", "radio", 0x6000_1000, 32))
         );
     }
 

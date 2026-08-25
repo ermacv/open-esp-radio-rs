@@ -4,18 +4,27 @@ use std::fmt::Write as _;
 
 use super::{RegisterFact, review_ir::ReviewIrRegister};
 
-pub(super) fn write_draft(output: &mut String, fact: &RegisterFact, address_space: &str) {
+pub(super) fn write_draft(
+    output: &mut String,
+    fact: &RegisterFact,
+    chip: &str,
+    address_space: &str,
+) {
     output.push_str(
         "\nSparse reviewed-knowledge template. Copy only facts proven by manual review; replace every `REVIEW_REQUIRED` value and keep exact applicability/evidence:\n\n```toml\n",
     );
-    output.push_str(&render_sparse_review_draft(fact, address_space));
+    output.push_str(&render_sparse_review_draft(fact, chip, address_space));
     output.push_str("```\n");
 }
 
 /// Render a copyable assertion fragment without Markdown framing. Every
 /// semantic value remains explicitly unresolved until a human supplies exact
 /// applicability and durable evidence.
-pub(crate) fn render_sparse_review_draft(fact: &RegisterFact, address_space: &str) -> String {
+pub(crate) fn render_sparse_review_draft(
+    fact: &RegisterFact,
+    chip: &str,
+    address_space: &str,
+) -> String {
     let mut output = String::new();
     if fact.catalog_name != "UNMAPPED" {
         let catalog_name = fact.catalog_name.replace(['\r', '\n'], " ");
@@ -34,13 +43,15 @@ pub(crate) fn render_sparse_review_draft(fact: &RegisterFact, address_space: &st
     .expect("writing to String cannot fail");
     writeln!(
         output,
-        "[[assertions]]\nid = \"REVIEW_REQUIRED.register-identity\"\nsubject = \"mmio:{address_space}:{:#010x}/{}\"\nkind = \"register-identity\"\nvalue = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\"\nnote = \"Identifies geometry only; observed accesses do not prove hardware semantics.\"\n",
+        "[[assertions]]\nid = \"REVIEW_REQUIRED.register-identity\"\nsubject = \"register:{chip}/{address_space}/{:#x}/{}\"\nkind = \"register-identity\"\nvalue = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\"\nnote = \"Identifies geometry only; observed accesses do not prove hardware semantics.\"\n",
         fact.address, fact.width
     )
     .expect("writing to String cannot fail");
-    output.push_str(
-        "[assertions.applies-to]\nchips = [\"REVIEW_REQUIRED_CHIP\"]\nchip-revisions = [\"REVIEW_REQUIRED_REVISION\"]\n\n[[assertions.evidence]]\nsource = \"REVIEW_REQUIRED_EVIDENCE_ID\"\nlocator = \"REVIEW_REQUIRED_IDENTITY_LOCATOR\"\n",
-    );
+    writeln!(
+        output,
+        "[assertions.applies-to]\nchips = [\"{chip}\"]\nchip-revisions = [\"REVIEW_REQUIRED_REVISION\"]\n\n[[assertions.evidence]]\nsource = \"review-required-evidence-id\"\nlocator = \"REVIEW_REQUIRED_IDENTITY_LOCATOR\""
+    )
+    .expect("writing to String cannot fail");
     output
 }
 
@@ -121,11 +132,11 @@ mod tests {
             candidate_masks: Vec::new(),
         };
 
-        let draft = render_sparse_review_draft(&fact, "cpu");
+        let draft = render_sparse_review_draft(&fact, "esp32s31", "cpu");
         let parsed = draft.parse::<toml_edit::DocumentMut>().unwrap();
 
         assert_eq!(parsed["assertions"].as_array_of_tables().unwrap().len(), 1);
-        assert!(draft.contains("subject = \"mmio:cpu:0x20103100/32\""));
+        assert!(draft.contains("subject = \"register:esp32s31/cpu/0x20103100/32\""));
         assert!(draft.contains("REVIEW_REQUIRED.register-identity"));
         assert!(draft.contains("kind = \"register-identity\""));
         assert!(draft.contains("value = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\""));

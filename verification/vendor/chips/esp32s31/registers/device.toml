@@ -1,4 +1,5 @@
-schema = 2
+schema = 3
+chip = "esp32s31"
 address-space = "cpu"
 fragments = [
     "peripherals/wifi-mac-internal-tx-block-ack.toml",

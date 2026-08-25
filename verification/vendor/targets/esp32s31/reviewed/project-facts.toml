@@ -2,7 +2,7 @@
 # coexistence, and shared radio logic. Generated MMIO geometry and access
 # observations stay under generated/; this file grows only when a reviewer
 # accepts new investigation-specific meaning.
-schema = 1
+schema = 2
 id = "esp32s31-radio-rev0-project-facts"
 
 [classification]
@@ -18,21 +18,21 @@ artifact-lineages = ["esp32s31-radio"]
 
 [[assertions]]
 id = "ieee802154.event-status.identity"
-subject = "mmio:cpu:0x20103064/32"
+subject = "register:esp32s31/cpu/0x20103064/32"
 kind = "register-identity"
 value = "IEEE802154_MAC.EVENT_STATUS"
 
 [[assertions.evidence]]
-source = "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"
+source = "esp-idf-7b9cc1ac-ieee802154-common-ll"
 locator = "ieee802154_ll_get_events"
 
 [[assertions]]
 id = "ieee802154.event-status.write-semantics"
-subject = "mmio:cpu:0x20103064/32"
+subject = "register:esp32s31/cpu/0x20103064/32"
 kind = "hardware-write-semantics"
 value = "unknown"
 note = "The vendor accessor performs a masked self-write; W1C or another clear contract is not proven."
 
 [[assertions.evidence]]
-source = "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"
+source = "esp-idf-7b9cc1ac-ieee802154-common-ll"
 locator = "ieee802154_ll_clear_events"

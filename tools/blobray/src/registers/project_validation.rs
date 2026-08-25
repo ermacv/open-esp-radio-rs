@@ -113,11 +113,11 @@ pub(crate) fn validate_register_evidence(
             .flat_map(|annotation| annotation.sources.iter().map(String::as_str))
             .chain(
                 model
-                    .reviewed_register_identities()
+                    .reviewed_register_facts()
                     .iter()
-                    .flat_map(|identity| {
-                        identity
-                            .assertion
+                    .flat_map(|assertion| {
+                        assertion
+                            .metadata
                             .evidence
                             .iter()
                             .map(|reference| reference.source.as_str())
@@ -186,7 +186,8 @@ access = "read-write"
         let memory_map = directory.join("memory-map.toml");
         std::fs::write(
             &model,
-            r#"schema = 2
+            r#"schema = 3
+chip = "fixture-chip"
 address-space = "cpu"
 fragments = ["radio.toml"]
 
@@ -214,7 +215,7 @@ baseAddress = 0x1000
         std::fs::write(
             &reviewed,
             format!(
-                r#"schema = 1
+                r#"schema = 2
 id = "fixture.identity"
 
 [classification]
@@ -224,11 +225,11 @@ completeness = "partial"
 
 [[assertions]]
 id = "fixture.identity.{case}"
-subject = "mmio:cpu:{address:#x}/32"
+subject = "register:fixture-chip/cpu/{address:#x}/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "IDENTITY_SOURCE"
+source = "identity-source"
 locator = "manual"
 "#
             ),
@@ -262,7 +263,7 @@ permissions = "rw"
         assert!(
             error
                 .to_string()
-                .contains("undefined evidence source \"IDENTITY_SOURCE\""),
+                .contains("undefined evidence source \"identity-source\""),
             "{case}: {error}"
         );
 
@@ -271,7 +272,7 @@ permissions = "rw"
             r#"schema = 1
 
 [[sources]]
-id = "IDENTITY_SOURCE"
+id = "identity-source"
 description = "manually reviewed register identity"
 "#,
         )
@@ -296,7 +297,7 @@ description = "manually reviewed register identity"
             lint_pack: None,
             evidence_catalogs: vec![catalog.to_owned()],
             reviewed_knowledge: vec![reviewed.to_owned()],
-            review_context: open_radio_vendor_review::ApplicabilityContext::default(),
+            review_context: open_radio_vendor_contracts::ApplicabilityContext::default(),
         }
     }
 }

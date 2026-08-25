@@ -80,6 +80,14 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
     );
     assert!(project.functions.is_some());
     assert!(project.code.is_some());
+    assert_eq!(project.reviewed_knowledge.len(), 1);
+    assert_eq!(
+        project.reviewed_knowledge_default.as_deref(),
+        Some(directory.join("reviewed/project-facts.toml").as_path())
+    );
+    let sparse_review = fs::read_to_string(directory.join("reviewed/project-facts.toml")).unwrap();
+    assert!(sparse_review.contains("schema = 2"));
+    assert!(!sparse_review.contains("[[assertions]]"));
     assert_eq!(project.registers.as_ref().unwrap().owned_ranges, ["radio"]);
     assert_eq!(
         project

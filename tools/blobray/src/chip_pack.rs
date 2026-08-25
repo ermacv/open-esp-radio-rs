@@ -19,7 +19,7 @@ use crate::{
 pub(crate) struct ChipPack {
     pub(crate) path: PathBuf,
     pub(crate) id: String,
-    pub(crate) applicability: open_radio_vendor_review::Applicability,
+    pub(crate) applicability: open_radio_vendor_contracts::Applicability,
     pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) register_model: Option<PathBuf>,
@@ -37,7 +37,7 @@ struct ChipDocument {
     schema: u32,
     id: String,
     #[serde(default)]
-    applicability: open_radio_vendor_review::Applicability,
+    applicability: open_radio_vendor_contracts::Applicability,
     #[serde(default)]
     memory_map: Option<String>,
     #[serde(default)]
@@ -141,7 +141,7 @@ impl ChipPack {
 
 fn validate_applicability(
     path: &Path,
-    applicability: &open_radio_vendor_review::Applicability,
+    applicability: &open_radio_vendor_contracts::Applicability,
 ) -> Result<()> {
     if !applicability.ecosystems.is_empty()
         || !applicability.artifact_lineages.is_empty()
@@ -224,7 +224,11 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("memory.toml"), "schema = 1\n").unwrap();
         fs::write(root.join("chip.svd"), "<device/>").unwrap();
-        fs::write(root.join("registers.toml"), "schema = 2\n").unwrap();
+        fs::write(
+            root.join("registers.toml"),
+            "schema = 3\nchip = \"fixture-chip\"\naddress-space = \"cpu\"\nfragments = []\n",
+        )
+        .unwrap();
         fs::write(
             root.join("capabilities.toml"),
             "schema = 1\nid = \"fixture.capabilities\"\n[[rules]]\nid = \"fixture.radio.ready\"\nprotocol = \"radio\"\nscope = \"runtime\"\nsummary = \"Reviewed radio boundary\"\n[[rules.requirements]]\nkind = \"operation\"\nvalue = \"radio.ready\"\n",

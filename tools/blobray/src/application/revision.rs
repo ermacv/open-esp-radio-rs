@@ -10,6 +10,7 @@ use std::{
 };
 
 use flate2::{Compression, GzBuilder, read::GzDecoder};
+use open_radio_vendor_contracts::{FactProvenance, RevisionOccurrenceId, SemanticEntityId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -21,9 +22,12 @@ use crate::{
     registers::{RegisterFacts, load_effective_register_model},
 };
 
-pub(crate) const REVISION_SCHEMA: u32 = 2;
-pub(crate) const REVISION_LEDGER_SCHEMA: u32 = 2;
-pub(crate) const REVISION_DIFF_REPORT_SCHEMA: u32 = 1;
+pub(crate) const REVISION_SCHEMA: u32 = 3;
+pub(crate) const REVISION_LEDGER_SCHEMA: u32 = 3;
+pub(crate) const REVISION_DIFF_REPORT_SCHEMA: u32 = 2;
+pub(crate) const REVISION_REBASE_REPORT_SCHEMA: u32 = 2;
+pub(crate) const REVISION_PREPARE_UPDATE_REPORT_SCHEMA: u32 = 2;
+pub(crate) const REVISION_SNAPSHOT_REPORT_SCHEMA: u32 = 2;
 pub(crate) const LIVE_REVISION_SELECTOR: &str = "@live";
 
 const REVISION_CUTOVER_INSTRUCTION: &str = "archive or remove revisions/ledger.toml and create a new current state with `project revision snapshot CURRENT`";
@@ -45,6 +49,7 @@ pub(crate) struct RevisionSnapshot {
     pub(crate) interfaces: Vec<RevisionInterface>,
     pub(crate) assertions: Vec<RevisionReviewedRecord>,
     pub(crate) vendor_bugs: Vec<RevisionReviewedRecord>,
+    pub(crate) bindings: Vec<RevisionReviewedRecord>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -111,8 +116,44 @@ pub(crate) struct RevisionInterface {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RevisionReviewedRecord {
     pub(crate) id: String,
-    pub(crate) subject: Option<String>,
+    pub(crate) anchor: RevisionReviewedAnchor,
     pub(crate) record: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub(crate) enum RevisionReviewedAnchor {
+    Assertion {
+        subject: SemanticEntityId,
+    },
+    VendorBug {
+        function: SemanticEntityId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        register: Option<SemanticEntityId>,
+    },
+    EntityBinding {
+        occurrence: RevisionOccurrenceId,
+        semantic: SemanticEntityId,
+    },
+}
+
+impl RevisionReviewedAnchor {
+    fn primary_semantic(&self) -> &SemanticEntityId {
+        match self {
+            Self::Assertion { subject } => subject,
+            Self::VendorBug { function, .. } => function,
+            Self::EntityBinding { semantic, .. } => semantic,
+        }
+    }
+
+    fn semantic_entities(&self) -> impl Iterator<Item = &SemanticEntityId> {
+        let (primary, secondary) = match self {
+            Self::Assertion { subject } => (subject, None),
+            Self::VendorBug { function, register } => (function, register.as_ref()),
+            Self::EntityBinding { semantic, .. } => (semantic, None),
+        };
+        std::iter::once(primary).chain(secondary)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -607,7 +648,7 @@ fn prepare_update_with_bindings(
         write_ledger_atomic(manifest, &ledger)?;
     }
     Ok(RevisionPrepareUpdateReport {
-        schema_version: REVISION_LEDGER_SCHEMA,
+        schema_version: REVISION_PREPARE_UPDATE_REPORT_SCHEMA,
         command: "revision prepare-update".to_owned(),
         status: if check { "verified" } else { "prepared" }.to_owned(),
         ledger: ledger_path(manifest).display().to_string(),
@@ -1407,7 +1448,9 @@ pub(crate) fn snapshot(session: &ProjectSession, name: &str) -> Result<RevisionS
         .map(|assertion| {
             Ok(RevisionReviewedRecord {
                 id: assertion.id.clone(),
-                subject: Some(assertion.subject.clone()),
+                anchor: RevisionReviewedAnchor::Assertion {
+                    subject: assertion.subject.clone(),
+                },
                 record: serde_json::to_value(assertion)?,
             })
         })
@@ -1418,8 +1461,25 @@ pub(crate) fn snapshot(session: &ProjectSession, name: &str) -> Result<RevisionS
         .map(|bug| {
             Ok(RevisionReviewedRecord {
                 id: bug.id.clone(),
-                subject: Some(bug.function.clone()),
+                anchor: RevisionReviewedAnchor::VendorBug {
+                    function: bug.function.clone(),
+                    register: bug.register.clone(),
+                },
                 record: serde_json::to_value(bug)?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let bindings = knowledge
+        .bindings()
+        .values()
+        .map(|binding| {
+            Ok(RevisionReviewedRecord {
+                id: binding.id.clone(),
+                anchor: RevisionReviewedAnchor::EntityBinding {
+                    occurrence: binding.occurrence.clone(),
+                    semantic: binding.semantic.clone(),
+                },
+                record: serde_json::to_value(binding)?,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -1435,6 +1495,7 @@ pub(crate) fn snapshot(session: &ProjectSession, name: &str) -> Result<RevisionS
         interfaces,
         assertions,
         vendor_bugs,
+        bindings,
     };
     validate_snapshot(&snapshot)?;
     Ok(snapshot)
@@ -1605,52 +1666,130 @@ fn snapshot_registers(
         vendor_sources,
         true,
     )?;
-    let identities = load_effective_register_model(paths)?.register_identities()?;
-    facts
-        .registers
-        .into_iter()
-        .map(|register| {
-            let mut features = vec![
-                format!("reads:{}", register.reads),
-                format!("writes:{}", register.writes),
-            ];
-            features.extend(
-                register
-                    .read_functions
-                    .iter()
-                    .map(|function| format!("read:{function}")),
-            );
-            features.extend(
-                register
-                    .write_functions
-                    .iter()
-                    .map(|function| format!("write:{function}")),
-            );
-            features.extend(register.write_patterns.iter().map(|pattern| {
-                format!(
-                    "pattern:{:#010x}:{:#010x}:{:#010x}:{:#010x}:{:#010x}:{:#010x}",
-                    pattern.modified_mask,
-                    pattern.preserved_mask,
-                    pattern.inverted_mask,
-                    pattern.forced_zero_mask,
-                    pattern.forced_one_mask,
-                    pattern.dynamic_mask
-                )
-            }));
-            features.sort();
-            features.dedup();
-            Ok(RevisionRegister {
-                id: format!("mmio:cpu:{:#010x}/{}", register.address, register.width),
+    let model = load_effective_register_model(paths)?;
+    let projections = model.register_projections()?;
+    let identities = projections
+        .iter()
+        .map(|(key, projection)| (*key, projection.identity.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut reviewed_features = BTreeMap::<(u64, u32), Vec<String>>::new();
+    for (key, projection) in projections {
+        if let Some(annotation) = projection.review {
+            let encoded = serde_json::to_string(&annotation)?;
+            reviewed_features
+                .entry(key)
+                .or_default()
+                .push(format!("reviewed-model:{}", fingerprint(&[encoded])?));
+        }
+    }
+    for assertion in model.reviewed_register_facts() {
+        let key = match &assertion.subject {
+            SemanticEntityId::Register { address, width, .. } => (*address, *width),
+            SemanticEntityId::RegisterField {
+                address,
+                register_width,
+                ..
+            } => (*address, *register_width),
+            _ => continue,
+        };
+        let encoded = serde_json::to_string(assertion)?;
+        reviewed_features
+            .entry(key)
+            .or_default()
+            .push(format!("reviewed:{}", fingerprint(&[encoded])?));
+    }
+    let encode_id = |address: u64, width: u32| {
+        SemanticEntityId::register(model.chip(), model.address_space(), address, width)
+            .map(|identity| identity.to_string())
+            .map_err(|error| {
+                crate::Error::invalid(format!(
+                    "cannot encode revision register identity at {address:#010x}: {error}"
+                ))
+            })
+    };
+    let mut registers = BTreeMap::<(u64, u32), RevisionRegister>::new();
+    for register in facts.registers {
+        let key = (u64::from(register.address), u32::from(register.width));
+        let name = identities.get(&key).cloned();
+        let mut features = vec![
+            "observed".to_owned(),
+            format!("reads:{}", register.reads),
+            format!("writes:{}", register.writes),
+        ];
+        if let Some(name) = &name {
+            features.push(format!("name:{name}"));
+        }
+        features.extend(reviewed_features.get(&key).into_iter().flatten().cloned());
+        features.extend(
+            register
+                .read_functions
+                .iter()
+                .map(|function| format!("read:{function}")),
+        );
+        features.extend(
+            register
+                .write_functions
+                .iter()
+                .map(|function| format!("write:{function}")),
+        );
+        features.extend(register.write_patterns.iter().map(|pattern| {
+            format!(
+                "pattern:{:#010x}:{:#010x}:{:#010x}:{:#010x}:{:#010x}:{:#010x}",
+                pattern.modified_mask,
+                pattern.preserved_mask,
+                pattern.inverted_mask,
+                pattern.forced_zero_mask,
+                pattern.forced_one_mask,
+                pattern.dynamic_mask
+            )
+        }));
+        features.sort();
+        features.dedup();
+        registers.insert(
+            key,
+            RevisionRegister {
+                id: encode_id(key.0, key.1)?,
                 address: register.address,
                 width: register.width,
-                name: identities
-                    .get(&(u64::from(register.address), u32::from(register.width)))
-                    .cloned(),
+                name,
                 fingerprint: fingerprint(&features)?,
                 features,
-            })
-        })
-        .collect()
+            },
+        );
+    }
+    for (key, name) in identities {
+        if registers.contains_key(&key) {
+            continue;
+        }
+        let address = u32::try_from(key.0).map_err(|_| {
+            crate::Error::invalid(format!(
+                "model-only revision register address {:#x} exceeds the snapshot address domain",
+                key.0
+            ))
+        })?;
+        let width = u8::try_from(key.1).map_err(|_| {
+            crate::Error::invalid(format!(
+                "model-only revision register width {} exceeds the snapshot width domain",
+                key.1
+            ))
+        })?;
+        let mut features = vec!["model-only".to_owned(), format!("name:{name}")];
+        features.extend(reviewed_features.get(&key).into_iter().flatten().cloned());
+        features.sort();
+        features.dedup();
+        registers.insert(
+            key,
+            RevisionRegister {
+                id: encode_id(key.0, key.1)?,
+                address,
+                width,
+                name: Some(name),
+                fingerprint: fingerprint(&features)?,
+                features,
+            },
+        );
+    }
+    Ok(registers.into_values().collect())
 }
 
 fn snapshot_interfaces(
@@ -1804,7 +1943,7 @@ fn interface_step(step: &InterfaceFactStep) -> String {
     )
 }
 
-fn fingerprint(value: &impl Serialize) -> Result<String> {
+fn fingerprint(value: &(impl Serialize + ?Sized)) -> Result<String> {
     let encoded = serde_json::to_vec(value)?;
     let mut hash = Sha256::new();
     hash.update(b"blobray/revision-feature/v1\0");
@@ -1896,22 +2035,208 @@ fn validate_snapshot(snapshot: &RevisionSnapshot) -> Result<()> {
         "function",
         snapshot.functions.iter().map(|entity| &entity.id),
     )?;
+    for function in &snapshot.functions {
+        validate_revision_features(
+            "function",
+            &function.id,
+            &function.features,
+            &function.fingerprint,
+        )?;
+    }
     validate_unique(
         "register",
         snapshot.registers.iter().map(|entity| &entity.id),
     )?;
+    for register in &snapshot.registers {
+        validate_revision_features(
+            "register",
+            &register.id,
+            &register.features,
+            &register.fingerprint,
+        )?;
+        let identity = register.id.parse::<SemanticEntityId>().map_err(|error| {
+            crate::Error::invalid(format!(
+                "revision register {:?} is not a canonical semantic identity: {error}",
+                register.id
+            ))
+        })?;
+        let SemanticEntityId::Register { address, width, .. } = &identity else {
+            return Err(crate::Error::invalid(format!(
+                "revision register {:?} does not use the register semantic domain",
+                register.id
+            )));
+        };
+        if identity.to_string() != register.id
+            || *address != u64::from(register.address)
+            || *width != u32::from(register.width)
+        {
+            return Err(crate::Error::invalid(format!(
+                "revision register {:?} does not match its canonical address {:#010x}/{}",
+                register.id, register.address, register.width
+            )));
+        }
+    }
     validate_unique(
         "interface",
         snapshot.interfaces.iter().map(|entity| &entity.id),
     )?;
+    for interface in &snapshot.interfaces {
+        validate_revision_features(
+            "interface",
+            &interface.id,
+            &interface.features,
+            &interface.fingerprint,
+        )?;
+    }
+    if snapshot
+        .assertions
+        .iter()
+        .any(|record| !matches!(&record.anchor, RevisionReviewedAnchor::Assertion { .. }))
+    {
+        return Err(crate::Error::invalid(
+            "revision snapshot assertions require assertion anchors",
+        ));
+    }
+    if snapshot
+        .vendor_bugs
+        .iter()
+        .any(|record| !matches!(&record.anchor, RevisionReviewedAnchor::VendorBug { .. }))
+    {
+        return Err(crate::Error::invalid(
+            "revision snapshot vendor bugs require vendor-bug anchors",
+        ));
+    }
+    if snapshot
+        .bindings
+        .iter()
+        .any(|record| !matches!(&record.anchor, RevisionReviewedAnchor::EntityBinding { .. }))
+    {
+        return Err(crate::Error::invalid(
+            "revision snapshot entity bindings require entity-binding anchors",
+        ));
+    }
     validate_unique(
-        "assertion",
-        snapshot.assertions.iter().map(|record| &record.id),
+        "reviewed record",
+        snapshot
+            .assertions
+            .iter()
+            .chain(&snapshot.vendor_bugs)
+            .chain(&snapshot.bindings)
+            .map(|record| &record.id),
     )?;
-    validate_unique(
-        "vendor bug",
-        snapshot.vendor_bugs.iter().map(|record| &record.id),
-    )?;
+    for record in snapshot
+        .assertions
+        .iter()
+        .chain(&snapshot.vendor_bugs)
+        .chain(&snapshot.bindings)
+    {
+        validate_reviewed_record_anchor(record)?;
+    }
+    Ok(())
+}
+
+fn validate_reviewed_record_anchor(record: &RevisionReviewedRecord) -> Result<()> {
+    let field = |name: &str| record.record.get(name).and_then(serde_json::Value::as_str);
+    if field("id") != Some(record.id.as_str()) {
+        return Err(crate::Error::invalid(format!(
+            "revision reviewed record {:?} payload id does not match its typed record id",
+            record.id
+        )));
+    }
+    let classification = match &record.anchor {
+        RevisionReviewedAnchor::Assertion { subject } => {
+            let value: open_radio_vendor_review::EffectiveAssertion =
+                serde_json::from_value(record.record.clone()).map_err(|error| {
+                    crate::Error::invalid(format!(
+                        "revision reviewed assertion {:?} has invalid payload: {error}",
+                        record.id
+                    ))
+                })?;
+            if value.subject != *subject {
+                return Err(crate::Error::invalid(format!(
+                    "revision reviewed assertion {:?} payload does not match its typed anchor",
+                    record.id
+                )));
+            }
+            value.metadata.classification
+        }
+        RevisionReviewedAnchor::VendorBug { function, register } => {
+            let value: open_radio_vendor_review::EffectiveVendorBug =
+                serde_json::from_value(record.record.clone()).map_err(|error| {
+                    crate::Error::invalid(format!(
+                        "revision vendor bug {:?} has invalid payload: {error}",
+                        record.id
+                    ))
+                })?;
+            if value.function != *function || value.register != *register {
+                return Err(crate::Error::invalid(format!(
+                    "revision vendor bug {:?} payload does not match its typed anchor",
+                    record.id
+                )));
+            }
+            value.metadata.classification
+        }
+        RevisionReviewedAnchor::EntityBinding {
+            occurrence,
+            semantic,
+        } => {
+            let value: open_radio_vendor_review::EffectiveEntityBinding =
+                serde_json::from_value(record.record.clone()).map_err(|error| {
+                    crate::Error::invalid(format!(
+                        "revision entity binding {:?} has invalid payload: {error}",
+                        record.id
+                    ))
+                })?;
+            if value.occurrence != *occurrence || value.semantic != *semantic {
+                return Err(crate::Error::invalid(format!(
+                    "revision entity binding {:?} payload does not match its typed anchor",
+                    record.id
+                )));
+            }
+            value.metadata.classification
+        }
+    };
+    if classification.provenance == FactProvenance::Hint {
+        return Err(crate::Error::invalid(format!(
+            "revision reviewed record {:?} is a hint, not accepted knowledge",
+            record.id
+        )));
+    }
+    Ok(())
+}
+
+fn validate_revision_features(
+    domain: &str,
+    id: &str,
+    features: &[String],
+    actual_fingerprint: &str,
+) -> Result<()> {
+    if features.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(crate::Error::invalid(format!(
+            "revision {domain} {id:?} features must be sorted and unique"
+        )));
+    }
+    validate_sha256("revision entity fingerprint", actual_fingerprint)?;
+    let expected = fingerprint(features)?;
+    if actual_fingerprint != expected {
+        return Err(crate::Error::invalid(format!(
+            "revision {domain} {id:?} fingerprint does not match its canonical features"
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_operand_pair(
+    project: &str,
+    from: &RevisionSnapshot,
+    to: &RevisionSnapshot,
+) -> Result<()> {
+    if from.project != project || to.project != project {
+        return Err(crate::Error::invalid(format!(
+            "revision operands must belong to active project {project:?}, got {:?} and {:?}",
+            from.project, to.project
+        )));
+    }
     Ok(())
 }
 
@@ -2141,14 +2466,15 @@ fn research_invalidations(
         .assertions
         .iter()
         .chain(&from.vendor_bugs)
+        .chain(&from.bindings)
         .collect::<Vec<_>>();
     for area in areas.values_mut() {
         for record in &reviewed {
-            let subject_matches = record
-                .subject
-                .as_deref()
-                .map(split_subject_suffix)
-                .is_some_and(|(subject, _)| area.subjects.contains(subject));
+            let subject_matches = record.anchor.semantic_entities().any(|subject| {
+                let encoded = subject.to_string();
+                let (subject, _) = split_subject_suffix(&encoded);
+                area.subjects.contains(subject)
+            });
             let artifact_bounded = area.subjects.iter().any(|subject| {
                 record
                     .record
@@ -2342,6 +2668,11 @@ pub(crate) fn rebase(from: &RevisionSnapshot, to: &RevisionSnapshot) -> Revision
         .chain(&to.vendor_bugs)
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
+    let current_bindings = to
+        .bindings
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
     let target_artifacts = to
         .artifacts
         .iter()
@@ -2372,6 +2703,11 @@ pub(crate) fn rebase(from: &RevisionSnapshot, to: &RevisionSnapshot) -> Revision
                 &mappings,
             )
         }))
+        .chain(
+            from.bindings
+                .iter()
+                .map(|record| rebase_binding(record, &current_bindings, &target_artifacts)),
+        )
         .collect::<Vec<_>>();
     records.sort_by(|left, right| left.id.cmp(&right.id));
     let mut summary = RevisionRebaseSummary::default();
@@ -2384,7 +2720,7 @@ pub(crate) fn rebase(from: &RevisionSnapshot, to: &RevisionSnapshot) -> Revision
         }
     }
     RevisionRebaseReport {
-        schema_version: REVISION_SCHEMA,
+        schema_version: REVISION_REBASE_REPORT_SCHEMA,
         command: "revision rebase".to_owned(),
         from: from.name.clone(),
         to: to.name.clone(),
@@ -2458,21 +2794,35 @@ fn rebase_record(
     target_artifacts: &BTreeSet<(&str, &str)>,
     mappings: &BTreeMap<&str, &str>,
 ) -> RevisionRebaseRecord {
-    let old_subject = record.subject.clone();
-    let subject_prefix = old_subject
-        .as_deref()
-        .filter(|subject| subject.starts_with("function:"))
-        .map_or("", |_| "function:");
-    let (base, suffix) = old_subject
-        .as_deref()
-        .map(split_subject_suffix)
-        .unwrap_or(("", ""));
-    let exact_target = target_subjects.contains(base);
-    let exact_unchanged = unchanged_subjects.contains(base);
-    let mapped = mappings.get(base).copied();
+    let semantic = record.anchor.primary_semantic();
+    let old_subject = semantic.to_string();
+    let subject_prefix = if old_subject.starts_with("function:") {
+        "function:"
+    } else {
+        ""
+    };
+    let base = rebase_subject_base(semantic);
+    let dependent_bases = record
+        .anchor
+        .semantic_entities()
+        .skip(1)
+        .map(rebase_subject_base)
+        .collect::<Vec<_>>();
+    let dependents_target = dependent_bases
+        .iter()
+        .all(|subject| target_subjects.contains(subject.as_str()));
+    let dependents_unchanged = dependent_bases
+        .iter()
+        .all(|subject| unchanged_subjects.contains(subject.as_str()));
+    let exact_target = target_subjects.contains(base.as_str()) && dependents_target;
+    let exact_unchanged = unchanged_subjects.contains(base.as_str()) && dependents_unchanged;
+    let mapped = (!matches!(semantic, SemanticEntityId::RegisterField { .. })
+        && dependents_unchanged)
+        .then(|| mappings.get(base.as_str()).copied())
+        .flatten();
     let proposed_subject = mapped
-        .map(|target| format!("{subject_prefix}{target}{suffix}"))
-        .or_else(|| exact_target.then(|| old_subject.clone()).flatten());
+        .map(|target| format!("{subject_prefix}{target}"))
+        .or_else(|| exact_target.then(|| old_subject.clone()));
     let applicability_current = applicability_matches(&record.record, target_artifacts);
     let (status, reason) = if !applicability_current {
         (
@@ -2513,7 +2863,63 @@ fn rebase_record(
         id: record.id.clone(),
         kind: kind.to_owned(),
         status,
-        old_subject,
+        old_subject: Some(old_subject),
+        proposed_subject,
+        reason: reason.to_owned(),
+        record: record.record.clone(),
+    }
+}
+
+fn rebase_subject_base(subject: &SemanticEntityId) -> String {
+    match subject {
+        SemanticEntityId::Function(path) => path.to_string(),
+        SemanticEntityId::RegisterField {
+            chip,
+            address_space,
+            address,
+            register_width,
+            ..
+        } => SemanticEntityId::register(chip, address_space, *address, *register_width)
+            .expect("a validated register-field identity has a valid parent register")
+            .to_string(),
+        _ => subject.to_string(),
+    }
+}
+
+fn rebase_binding(
+    record: &RevisionReviewedRecord,
+    current: &BTreeMap<&str, &RevisionReviewedRecord>,
+    target_artifacts: &BTreeSet<(&str, &str)>,
+) -> RevisionRebaseRecord {
+    let old_subject = record.anchor.primary_semantic().to_string();
+    let applicability_current = applicability_matches(&record.record, target_artifacts);
+    let already_present = current
+        .get(record.id.as_str())
+        .is_some_and(|current| *current == record);
+    let (status, proposed_subject, reason) = if !applicability_current {
+        (
+            RevisionRebaseStatus::ReviewRequired,
+            None,
+            "binding applicability names artifact bytes absent from the target revision",
+        )
+    } else if already_present {
+        (
+            RevisionRebaseStatus::AlreadyPresent,
+            Some(old_subject.clone()),
+            "the target snapshot already contains the identical occurrence-to-semantic binding",
+        )
+    } else {
+        (
+            RevisionRebaseStatus::ReviewRequired,
+            None,
+            "occurrence correspondence is not proven; revalidate the binding against the target revision",
+        )
+    };
+    RevisionRebaseRecord {
+        id: record.id.clone(),
+        kind: "entity-binding".to_owned(),
+        status,
+        old_subject: Some(old_subject),
         proposed_subject,
         reason: reason.to_owned(),
         record: record.record.clone(),
@@ -2551,15 +2957,16 @@ fn applicability_matches(
 mod tests {
     use super::*;
 
-    fn function(id: &str, fingerprint: &str) -> RevisionFunction {
+    fn function(id: &str, feature: &str) -> RevisionFunction {
+        let features = vec![format!("fixture:{feature}")];
         RevisionFunction {
             id: id.to_owned(),
             source: "vendor".to_owned(),
             member: None,
             symbol: id.to_owned(),
             profiles: vec!["all".to_owned()],
-            fingerprint: fingerprint.to_owned(),
-            features: Vec::new(),
+            fingerprint: fingerprint(&features).unwrap(),
+            features,
             completeness: RevisionCompleteness {
                 body: true,
                 call_targets: true,
@@ -2583,6 +2990,116 @@ mod tests {
             interfaces: Vec::new(),
             assertions: Vec::new(),
             vendor_bugs: Vec::new(),
+            bindings: Vec::new(),
+        }
+    }
+
+    fn assertion_record(
+        id: &str,
+        function: &str,
+        record: serde_json::Value,
+    ) -> RevisionReviewedRecord {
+        let subject = SemanticEntityId::function(function).unwrap();
+        let mut payload = serde_json::json!({
+            "pack": "fixture",
+            "id": id,
+            "subject": subject.to_string(),
+            "kind": "fixture-fact",
+            "value": true,
+            "classification": {
+                "provenance": "reviewed",
+                "accuracy": "exact",
+                "completeness": "partial"
+            },
+            "evidence": [{"source": "fixture", "locator": "manual"}]
+        });
+        if let (Some(payload), Some(overrides)) = (payload.as_object_mut(), record.as_object()) {
+            payload.extend(overrides.clone());
+        }
+        RevisionReviewedRecord {
+            id: id.to_owned(),
+            anchor: RevisionReviewedAnchor::Assertion { subject },
+            record: payload,
+        }
+    }
+
+    fn binding_record(id: &str, function: &str, digest: char) -> RevisionReviewedRecord {
+        let semantic = SemanticEntityId::function(function).unwrap();
+        let occurrence = format!(
+            "occurrence:function:sha256:{}",
+            digest.to_string().repeat(64)
+        )
+        .parse::<RevisionOccurrenceId>()
+        .unwrap();
+        RevisionReviewedRecord {
+            id: id.to_owned(),
+            anchor: RevisionReviewedAnchor::EntityBinding {
+                occurrence: occurrence.clone(),
+                semantic: semantic.clone(),
+            },
+            record: serde_json::json!({
+                "pack": "fixture",
+                "id": id,
+                "occurrence": occurrence.to_string(),
+                "semantic": semantic.to_string(),
+                "classification": {
+                    "provenance": "reviewed",
+                    "accuracy": "exact",
+                    "completeness": "partial"
+                },
+                "applies-to": {"artifacts": [{
+                    "source": "fixture",
+                    "sha256": digest.to_string().repeat(64)
+                }]},
+                "evidence": [{
+                    "source": "fixture",
+                    "locator": "manual",
+                    "occurrence": occurrence.to_string()
+                }]
+            }),
+        }
+    }
+
+    fn vendor_bug_record(
+        id: &str,
+        function: &str,
+        register: SemanticEntityId,
+    ) -> RevisionReviewedRecord {
+        let function = SemanticEntityId::function(function).unwrap();
+        RevisionReviewedRecord {
+            id: id.to_owned(),
+            anchor: RevisionReviewedAnchor::VendorBug {
+                function: function.clone(),
+                register: Some(register.clone()),
+            },
+            record: serde_json::json!({
+                "pack": "fixture",
+                "id": id,
+                "function": function.to_string(),
+                "register": register.to_string(),
+                "kind": "incorrect-register-access",
+                "status": "reviewed",
+                "observed": "fixture observed behavior",
+                "expected": "fixture expected behavior",
+                "classification": {
+                    "provenance": "reviewed",
+                    "accuracy": "exact",
+                    "completeness": "partial"
+                },
+                "evidence": [{"source": "fixture", "locator": "manual"}]
+            }),
+        }
+    }
+
+    fn register(id: &str, address: u32, width: u8) -> RevisionRegister {
+        let features = vec!["fixture:register".to_owned()];
+        RevisionRegister {
+            id: id.to_owned(),
+            address,
+            width,
+            name: None,
+            fingerprint: fingerprint(&features).unwrap(),
+            features,
         }
     }
 
@@ -2627,6 +3144,9 @@ mod tests {
 
         assert_eq!(before.schema_version, REVISION_SCHEMA);
         assert_eq!(report.schema_version, REVISION_DIFF_REPORT_SCHEMA);
+        assert_eq!(REVISION_REBASE_REPORT_SCHEMA, 2);
+        assert_eq!(REVISION_PREPARE_UPDATE_REPORT_SCHEMA, 2);
+        assert_eq!(REVISION_SNAPSHOT_REPORT_SCHEMA, 2);
         assert_ne!(report.schema_version, before.schema_version);
         assert_eq!(report.summary.unchanged, 1);
         assert_eq!(report.summary.modified, 1);
@@ -2659,11 +3179,11 @@ mod tests {
     #[test]
     fn research_invalidation_ignores_unchanged_entities_and_tracks_blocker_drift() {
         let mut before = snapshot("old", vec![function("stable", "same")]);
-        before.assertions.push(RevisionReviewedRecord {
-            id: "fact.stable".to_owned(),
-            subject: Some("stable".to_owned()),
-            record: serde_json::json!({"id":"fact.stable","subject":"stable"}),
-        });
+        before.assertions.push(assertion_record(
+            "fact.stable",
+            "stable",
+            serde_json::json!({"id":"fact.stable","subject":"function:stable"}),
+        ));
         let mut after = snapshot("new", vec![function("stable", "same")]);
         after.functions[0].blocker_roots = vec!["decode:unsupported:16".to_owned()];
         let unchanged = ["register", "interface"].map(|domain| RevisionEntityChange {
@@ -2691,16 +3211,16 @@ mod tests {
     fn rebase_carries_only_exact_or_uniquely_moved_subjects() {
         let mut before = snapshot("old", vec![function("old", "a"), function("gone", "b")]);
         before.assertions = vec![
-            RevisionReviewedRecord {
-                id: "fact.moved".to_owned(),
-                subject: Some("old".to_owned()),
-                record: serde_json::json!({"id":"fact.moved","subject":"old"}),
-            },
-            RevisionReviewedRecord {
-                id: "fact.gone".to_owned(),
-                subject: Some("gone".to_owned()),
-                record: serde_json::json!({"id":"fact.gone","subject":"gone"}),
-            },
+            assertion_record(
+                "fact.moved",
+                "old",
+                serde_json::json!({"id":"fact.moved","subject":"function:old"}),
+            ),
+            assertion_record(
+                "fact.gone",
+                "gone",
+                serde_json::json!({"id":"fact.gone","subject":"function:gone"}),
+            ),
         ];
         let after = snapshot("new", vec![function("new", "a")]);
 
@@ -2708,16 +3228,19 @@ mod tests {
 
         assert_eq!(report.summary.carry_remapped, 1);
         assert_eq!(report.summary.review_required, 1);
-        assert_eq!(report.records[1].proposed_subject.as_deref(), Some("new"));
+        assert_eq!(
+            report.records[1].proposed_subject.as_deref(),
+            Some("function:new")
+        );
     }
 
     #[test]
     fn rebase_requires_review_when_an_identical_fact_targets_modified_semantics() {
-        let record = RevisionReviewedRecord {
-            id: "fact.modified".to_owned(),
-            subject: Some("stable".to_owned()),
-            record: serde_json::json!({"id":"fact.modified","subject":"stable"}),
-        };
+        let record = assertion_record(
+            "fact.modified",
+            "stable",
+            serde_json::json!({"id":"fact.modified","subject":"function:stable"}),
+        );
         let mut before = snapshot("old", vec![function("stable", "a")]);
         before.assertions = vec![record.clone()];
         let mut after = snapshot("new", vec![function("stable", "changed")]);
@@ -2730,7 +3253,7 @@ mod tests {
         assert_eq!(report.summary.review_required, 1);
         assert_eq!(
             report.records[0].proposed_subject.as_deref(),
-            Some("stable")
+            Some("function:stable")
         );
         assert!(
             report.records[0]
@@ -2741,11 +3264,11 @@ mod tests {
 
     #[test]
     fn rebase_requires_review_when_an_identical_fact_targets_a_removed_subject() {
-        let record = RevisionReviewedRecord {
-            id: "fact.removed".to_owned(),
-            subject: Some("removed".to_owned()),
-            record: serde_json::json!({"id":"fact.removed","subject":"removed"}),
-        };
+        let record = assertion_record(
+            "fact.removed",
+            "removed",
+            serde_json::json!({"id":"fact.removed","subject":"function:removed"}),
+        );
         let mut before = snapshot("old", vec![function("removed", "a")]);
         before.assertions = vec![record.clone()];
         let mut after = snapshot("new", Vec::new());
@@ -2759,6 +3282,24 @@ mod tests {
     }
 
     #[test]
+    fn vendor_bug_rebase_requires_unchanged_function_and_register() {
+        let register_id = SemanticEntityId::register("fixture-chip", "cpu", 0x1000, 32).unwrap();
+        let record = vendor_bug_record("bug.register", "stable", register_id.clone());
+        let mut before = snapshot("old", vec![function("stable", "a")]);
+        before.registers = vec![register(&register_id.to_string(), 0x1000, 32)];
+        before.vendor_bugs = vec![record.clone()];
+        let mut after = snapshot("new", vec![function("stable", "a")]);
+        after.vendor_bugs = vec![record];
+
+        let report = rebase(&before, &after);
+
+        assert_eq!(report.summary.already_present, 0);
+        assert_eq!(report.summary.carry_exact, 0);
+        assert_eq!(report.summary.review_required, 1);
+        assert!(report.records[0].reason.contains("target subject"));
+    }
+
+    #[test]
     fn rebase_rejects_an_artifact_guard_from_the_old_revision() {
         let old_digest = "aa".repeat(32);
         let new_digest = "bb".repeat(32);
@@ -2768,18 +3309,18 @@ mod tests {
             source: "vendor".to_owned(),
             sha256: old_digest.clone(),
         }];
-        before.assertions = vec![RevisionReviewedRecord {
-            id: "fact.guarded".to_owned(),
-            subject: Some("stable".to_owned()),
-            record: serde_json::json!({
+        before.assertions = vec![assertion_record(
+            "fact.guarded",
+            "stable",
+            serde_json::json!({
                 "id": "fact.guarded",
-                "subject": "stable",
+                "subject": "function:stable",
                 "applies-to": {"artifacts": [{
                     "source": "vendor",
                     "sha256": old_digest
                 }]}
             }),
-        }];
+        )];
         let mut after = snapshot("new", vec![function("stable", "a")]);
         after.artifacts = vec![RevisionArtifact {
             role: Some("vendor-artifact".to_owned()),
@@ -2791,6 +3332,154 @@ mod tests {
 
         assert_eq!(report.summary.review_required, 1);
         assert!(report.records[0].reason.contains("artifact bytes absent"));
+    }
+
+    #[test]
+    fn entity_bindings_are_never_carried_without_occurrence_correspondence() {
+        let binding = binding_record("binding.radio", "radio/status", 'a');
+        let mut before = snapshot("old", Vec::new());
+        before.artifacts = vec![RevisionArtifact {
+            role: Some("vendor-artifact".to_owned()),
+            source: "fixture".to_owned(),
+            sha256: "a".repeat(64),
+        }];
+        before.bindings = vec![binding.clone()];
+        let mut identical = snapshot("identical", Vec::new());
+        identical.artifacts = before.artifacts.clone();
+        identical.bindings = vec![binding];
+
+        let present = rebase(&before, &identical);
+        assert_eq!(present.schema_version, REVISION_REBASE_REPORT_SCHEMA);
+        assert_eq!(present.summary.already_present, 1);
+        assert_eq!(present.records[0].kind, "entity-binding");
+
+        let mut changed_snapshot = snapshot("changed", Vec::new());
+        changed_snapshot.artifacts = before.artifacts.clone();
+        let changed = rebase(&before, &changed_snapshot);
+        assert_eq!(changed.summary.review_required, 1);
+        assert_eq!(changed.summary.carry_exact, 0);
+        assert_eq!(changed.summary.carry_remapped, 0);
+        assert!(changed.records[0].reason.contains("not proven"));
+    }
+
+    #[test]
+    fn snapshot_rejects_cross_kind_ids_and_anchor_payload_mismatches() {
+        let mut duplicate = snapshot("duplicate", Vec::new());
+        duplicate.assertions = vec![assertion_record(
+            "shared.id",
+            "radio/status",
+            serde_json::json!({"id":"shared.id","subject":"function:radio/status"}),
+        )];
+        duplicate.bindings = vec![binding_record("shared.id", "radio/status", 'a')];
+        assert!(
+            validate_snapshot(&duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate reviewed record")
+        );
+
+        let mut mismatched = snapshot("mismatched", Vec::new());
+        mismatched.assertions = vec![assertion_record(
+            "fact.anchor",
+            "radio/status",
+            serde_json::json!({"id":"fact.anchor","subject":"function:radio/other"}),
+        )];
+        assert!(
+            validate_snapshot(&mismatched)
+                .unwrap_err()
+                .to_string()
+                .contains("payload does not match its typed anchor")
+        );
+
+        let mut malformed = snapshot("malformed-payload", Vec::new());
+        let mut record = assertion_record("fact.malformed", "radio/status", serde_json::json!({}));
+        record.record["applies-to"] = serde_json::json!("not-an-applicability-object");
+        malformed.assertions = vec![record];
+        assert!(
+            validate_snapshot(&malformed)
+                .unwrap_err()
+                .to_string()
+                .contains("invalid payload")
+        );
+    }
+
+    #[test]
+    fn snapshot_rejects_forged_feature_fingerprints_and_cross_project_operands() {
+        let mut forged = snapshot("forged", vec![function("stable", "a")]);
+        forged.functions[0]
+            .features
+            .push("fixture:tampered".to_owned());
+        assert!(
+            validate_snapshot(&forged)
+                .unwrap_err()
+                .to_string()
+                .contains("fingerprint does not match")
+        );
+
+        let from = snapshot("from", Vec::new());
+        let mut to = snapshot("to", Vec::new());
+        to.project = "other-project".to_owned();
+        assert!(
+            validate_operand_pair("fixture", &from, &to)
+                .unwrap_err()
+                .to_string()
+                .contains("must belong to active project")
+        );
+    }
+
+    #[test]
+    fn schema_three_registers_require_canonical_matching_coordinates() {
+        let mut valid = snapshot("valid-register", Vec::new());
+        valid.registers = vec![register(
+            "register:esp32s31/cpu/0x20103064/32",
+            0x2010_3064,
+            32,
+        )];
+        validate_snapshot(&valid).unwrap();
+
+        let mut legacy = valid.clone();
+        legacy.registers[0].id = "mmio:cpu:0x20103064/32".to_owned();
+        assert!(
+            validate_snapshot(&legacy)
+                .unwrap_err()
+                .to_string()
+                .contains("not a canonical semantic identity")
+        );
+
+        let mut mismatched = valid;
+        mismatched.registers[0].address = 0x2010_3068;
+        assert!(
+            validate_snapshot(&mismatched)
+                .unwrap_err()
+                .to_string()
+                .contains("does not match its canonical address")
+        );
+    }
+
+    #[test]
+    fn register_field_fact_uses_unchanged_parent_geometry() {
+        let register_id = "register:esp32s31/cpu/0x20103064/32";
+        let field =
+            SemanticEntityId::register_field("esp32s31", "cpu", 0x2010_3064, 32, 3, 1).unwrap();
+        let record = RevisionReviewedRecord {
+            id: "field.pending".to_owned(),
+            anchor: RevisionReviewedAnchor::Assertion {
+                subject: field.clone(),
+            },
+            record: serde_json::json!({
+                "id":"field.pending",
+                "subject":field.to_string()
+            }),
+        };
+        let mut before = snapshot("field-old", Vec::new());
+        before.registers = vec![register(register_id, 0x2010_3064, 32)];
+        before.assertions = vec![record];
+        let mut after = snapshot("field-new", Vec::new());
+        after.registers = vec![register(register_id, 0x2010_3064, 32)];
+
+        let report = rebase(&before, &after);
+        assert_eq!(report.summary.carry_exact, 1);
+        assert_eq!(report.records[0].proposed_subject, Some(field.to_string()));
     }
 
     #[test]
@@ -3100,7 +3789,7 @@ mod tests {
         .unwrap();
 
         let snapshot_error = load(&obsolete_snapshot_path).unwrap_err().to_string();
-        assert!(snapshot_error.contains("not current schema 2"));
+        assert!(snapshot_error.contains(&format!("not current schema {REVISION_SCHEMA}")));
         assert!(snapshot_error.contains("create a new current state"));
         assert!(snapshot_error.contains("project revision snapshot CURRENT"));
 
@@ -3118,7 +3807,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_two_artifacts_require_canonical_vendor_roles() {
+    fn revision_artifacts_require_canonical_vendor_roles() {
         let mut value = snapshot("vendor", Vec::new());
         value.artifacts.push(RevisionArtifact {
             role: Some("rust-artifact".to_owned()),

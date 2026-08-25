@@ -18,7 +18,7 @@ use crate::{
 pub(crate) struct EcosystemPack {
     pub(crate) path: PathBuf,
     pub(crate) id: String,
-    pub(crate) applicability: open_radio_vendor_review::Applicability,
+    pub(crate) applicability: open_radio_vendor_contracts::Applicability,
     pub(crate) knowledge_packs: Vec<PathBuf>,
     pub(crate) knowledge_operations: usize,
     pub(crate) capability_packs: Vec<PathBuf>,
@@ -155,9 +155,9 @@ fn reject_unknown_keys(document: &Table, source: ManifestContext<'_>) -> Result<
 fn load_applicability(
     document: &Table,
     source: ManifestContext<'_>,
-) -> Result<open_radio_vendor_review::Applicability> {
+) -> Result<open_radio_vendor_contracts::Applicability> {
     let Some(item) = document.get("applicability") else {
-        return Ok(open_radio_vendor_review::Applicability::default());
+        return Ok(open_radio_vendor_contracts::Applicability::default());
     };
     let table = item
         .as_table()
@@ -181,9 +181,9 @@ fn load_applicability(
             "ecosystem pack applicability ecosystems must be non-empty and unique",
         ));
     }
-    Ok(open_radio_vendor_review::Applicability {
+    Ok(open_radio_vendor_contracts::Applicability {
         ecosystems,
-        ..open_radio_vendor_review::Applicability::default()
+        ..open_radio_vendor_contracts::Applicability::default()
     })
 }
 

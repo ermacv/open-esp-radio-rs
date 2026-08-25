@@ -1182,7 +1182,7 @@ sources = [
     "S31_REG_BASE",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_LL",
 ]
 provenance = "imported"
@@ -1194,7 +1194,7 @@ entity = "IEEE802154_MAC.COMMAND"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1205,7 +1205,7 @@ entity = "IEEE802154_MAC.COMMAND.OPCODE"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1216,7 +1216,7 @@ entity = "IEEE802154_MAC.CONTROL"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1227,7 +1227,7 @@ entity = "IEEE802154_MAC.MULTIPAN%s_SHORT_ADDRESS"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1238,7 +1238,7 @@ entity = "IEEE802154_MAC.MULTIPAN%s_PAN_ID"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1249,7 +1249,7 @@ entity = "IEEE802154_MAC.MULTIPAN%s_EXTENDED_ADDRESS_LOW"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1260,7 +1260,7 @@ entity = "IEEE802154_MAC.MULTIPAN%s_EXTENDED_ADDRESS_HIGH"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1271,7 +1271,7 @@ entity = "IEEE802154_MAC.CHANNEL"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1282,7 +1282,7 @@ entity = "IEEE802154_MAC.TX_POWER"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1293,7 +1293,7 @@ entity = "IEEE802154_MAC.ED_DURATION"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1304,7 +1304,7 @@ entity = "IEEE802154_MAC.ED_CONFIG"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1315,7 +1315,7 @@ entity = "IEEE802154_MAC.ACK_TIMEOUT"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1326,7 +1326,7 @@ entity = "IEEE802154_MAC.EVENT_ENABLE"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1337,7 +1337,7 @@ entity = "IEEE802154_MAC.WORD_064_BASE"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1348,7 +1348,7 @@ entity = "IEEE802154_MAC.RX_ABORT_ENABLE"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1359,7 +1359,7 @@ entity = "IEEE802154_MAC.PENDING_CONFIG"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1370,7 +1370,7 @@ entity = "IEEE802154_MAC.COEX_PTI"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1381,7 +1381,7 @@ entity = "IEEE802154_MAC.TX_ABORT_ENABLE"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1392,7 +1392,7 @@ entity = "IEEE802154_MAC.ENHANCED_ACK_NOTIFY"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1403,7 +1403,7 @@ entity = "IEEE802154_MAC.RX_STATUS"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1414,7 +1414,7 @@ entity = "IEEE802154_MAC.TX_STATUS"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
-    "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL",
+    "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]
 provenance = "imported"
 accuracy = "exact"
@@ -1422,182 +1422,182 @@ completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.TIMER0_THRESHOLD"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.TIMER0_VALUE"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.TIMER1_THRESHOLD"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.TIMER1_VALUE"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.TX_DMA_ADDRESS"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.RX_DMA_ADDRESS"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.SECURITY_CONTROL"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.SECURITY_ADDRESS_LOW"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.SECURITY_ADDRESS_HIGH"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.SECURITY_KEY%s"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.SFD_TIMEOUT_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL", "ESP_IDF_7B9CC1AC_S31_IEEE802154_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll", "ESP_IDF_7B9CC1AC_S31_IEEE802154_LL"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.CRC_ERROR_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL", "ESP_IDF_7B9CC1AC_S31_IEEE802154_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll", "ESP_IDF_7B9CC1AC_S31_IEEE802154_LL"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.ED_ABORT_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.CCA_FAIL_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.RX_FILTER_FAIL_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.NO_RSS_DETECT_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.RX_ABORT_COEX_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.RX_RESTART_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.TX_ACK_ABORT_COEX_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.ED_SCAN_BREAK_COEX_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.RX_ACK_ABORT_COEX_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.RX_ACK_TIMEOUT_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.TX_BREAK_COEX_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.TX_SECURITY_ERROR_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.CCA_BUSY_COUNTER"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "IEEE802154_MAC.DIAGNOSTIC_COUNTER_CLEAR"
-sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "ESP_IDF_7B9CC1AC_IEEE802154_COMMON_LL"]
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT", "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG", "esp-idf-7b9cc1ac-ieee802154-common-ll"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"

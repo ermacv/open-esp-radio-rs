@@ -6,11 +6,13 @@
 - CMSIS-SVD data structures, arrays, clusters, fields and enumerations;
 - structured review records kept outside exported hardware descriptions;
 - deterministic clean SVD materialization and expanded register identities;
-- deterministic sparse reviewed-assertion overlays keyed by address and bit
-  range;
+- deterministic sparse reviewed-assertion overlays keyed by canonical typed
+  chip/address-space/register and register-field identities;
 - one explicit sparse `register-identity = "REGION.NAME"` fact for renaming,
   no-op confirmation or materialization in a concrete singular peripheral,
   with retained evidence and applicability;
+- retained effective classification, applicability and evidence for every
+  applied register, field, access, description and write-semantics claim;
 - generic physical-layout and write-semantics invariants;
 - reviewed PAC transaction, binding-index and evidence-catalog schemas.
 
@@ -24,10 +26,19 @@ The format and editing workflow are documented in
 An absent physical register is created only by one reviewed
 `register-identity = "REGION.NAME"` assertion. The removed
 `register-declaration` and `register-name` kinds are explicit errors. The
-subject must match this model's address space, have a supported aligned width,
-fit the named concrete region (and its register address blocks when present),
-and not alias or overlap existing geometry. Identity application is atomic and
-rejects arrays, clusters, derived regions, placeholders and noncanonical SVD
-identifiers. Generated observations are never consulted for access or
-modified-write semantics; those require their own explicit reviewed
-assertions.
+top-level manifest is schema 3 and declares the stable chip ID and address
+space. Assertion subjects use only canonical `register:<chip>/<space>/...` or
+`register-field:<chip>/<space>/...` semantic IDs; legacy MMIO strings have no
+compatibility parser. The subject must match this model's chip and address
+space, have a supported aligned width, fit the named concrete region (and its
+register address blocks when present), and not alias or overlap existing
+geometry. Identity application is atomic and rejects arrays, clusters,
+derived regions, placeholders and noncanonical SVD identifiers. Generated
+observations are never consulted for access or modified-write semantics; those
+require their own explicit reviewed assertions.
+
+Reusable `[[review]]` metadata is accepted as reviewed coverage only with a
+non-empty source list, all three classification fields, and non-`hint`
+provenance. Incomplete metadata remains a navigation hint and cannot close a
+publication gate. Array coverage is resolved from the structural SVD template,
+not by wildcard-matching expanded names.

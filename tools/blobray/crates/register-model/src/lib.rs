@@ -9,6 +9,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use open_radio_vendor_contracts::SemanticEntityId;
 use open_radio_vendor_review::{AssertionValue, EffectiveAssertion, ReviewKnowledge};
 use serde::{Deserialize, Serialize};
 use svd_rs::{
@@ -115,6 +116,7 @@ pub struct SvdExportSummary {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RegisterModelManifest {
     pub schema: u32,
+    pub chip: String,
     #[serde(default = "default_address_space")]
     pub address_space: String,
     pub device: ModelDevice,
@@ -174,12 +176,19 @@ pub struct ReviewAnnotation {
     pub completeness: Option<open_radio_vendor_contracts::FactCompleteness>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegisterProjection {
+    pub identity: String,
+    pub review: Option<ReviewAnnotation>,
+}
+
 #[derive(Clone, Debug)]
 pub struct RegisterModel {
+    chip: String,
     address_space: String,
     device: Device,
     review: Vec<ReviewAnnotation>,
-    reviewed_register_identities: Vec<ReviewedRegisterIdentity>,
+    reviewed_register_facts: Vec<EffectiveAssertion>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -188,22 +197,6 @@ pub struct ReviewApplicationSummary {
     pub changed: usize,
     pub ignored: usize,
     pub materialized: usize,
-}
-
-/// Provenance retained for a register identity applied to the effective model.
-///
-/// The effective assertions include their pack, evidence, classification and
-/// applicability. Keeping them beside the effective in-memory model prevents
-/// SVD materialization from erasing the review boundary that authorized new
-/// geometry.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReviewedRegisterIdentity {
-    pub address_space: String,
-    pub address: u64,
-    pub width: u32,
-    pub region: String,
-    pub identity: String,
-    pub assertion: EffectiveAssertion,
 }
 
 impl RegisterModel {
@@ -225,11 +218,11 @@ impl RegisterModel {
             let span = error.span();
             Error::manifest_span("register model manifest", path, error, span)
         })?;
-        if manifest.schema != 2 {
+        if manifest.schema != 3 {
             return Err(Error::manifest_span(
                 "register model manifest",
                 path,
-                "requires schema = 2",
+                "requires schema = 3",
                 document.get("schema").and_then(toml_edit::Item::span),
             ));
         }
@@ -267,7 +260,7 @@ impl RegisterModel {
             let span = error.span();
             Error::manifest_span("register model manifest", path, error, span)
         })?;
-        Ok(document.get("schema").and_then(toml_edit::Item::as_integer) == Some(2))
+        Ok(document.get("schema").and_then(toml_edit::Item::as_integer) == Some(3))
     }
 
     pub fn load(path: &Path) -> Result<Self> {
@@ -282,11 +275,11 @@ impl RegisterModel {
             let span = error.span();
             Error::manifest_span("register model manifest", path, error, span)
         })?;
-        if manifest.schema != 2 {
+        if manifest.schema != 3 {
             return Err(Error::manifest_span(
                 "register model manifest",
                 path,
-                "requires schema = 2",
+                "requires schema = 3",
                 document.get("schema").and_then(toml_edit::Item::span),
             ));
         }
@@ -308,6 +301,8 @@ impl RegisterModel {
                     .and_then(toml_edit::Item::span),
             ));
         }
+        SemanticEntityId::register(&manifest.chip, &manifest.address_space, 0, 1)
+            .map_err(|error| Error::manifest("register model manifest", path, error))?;
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         let mut seen_paths = BTreeSet::new();
         let mut fragments = Vec::with_capacity(manifest.fragments.len());
@@ -367,10 +362,11 @@ impl RegisterModel {
         model_validation::validate_device(&device)
             .map_err(|error| Error::manifest("register model", path, error))?;
         let model = Self {
+            chip: manifest.chip,
             address_space: manifest.address_space,
             device,
             review,
-            reviewed_register_identities: Vec::new(),
+            reviewed_register_facts: Vec::new(),
         };
         model
             .register_identities()
@@ -403,9 +399,69 @@ impl RegisterModel {
     }
 
     pub fn register_identities(&self) -> Result<BTreeMap<(u64, u32), String>> {
+        let output = self
+            .register_projections()?
+            .into_iter()
+            .map(|(key, projection)| (key, projection.identity))
+            .collect::<BTreeMap<_, _>>();
+        validate_expanded_register_layout(&output)?;
+        Ok(output)
+    }
+
+    /// Reviewed reusable annotations keyed by the physical register instance
+    /// produced by the SVD model.
+    ///
+    /// Array instances are associated with their structural template entity,
+    /// rather than inferred with string wildcards. This prevents an unrelated
+    /// singular register such as `STATUS_META` from matching `STATUS%s`.
+    pub fn register_review_annotations(&self) -> Result<BTreeMap<(u64, u32), ReviewAnnotation>> {
+        Ok(self
+            .register_projections()?
+            .into_iter()
+            .filter_map(|(key, projection)| projection.review.map(|review| (key, review)))
+            .collect())
+    }
+
+    /// Expanded identities and accepted reusable review annotations produced
+    /// together in one structural traversal.
+    pub fn register_projections(&self) -> Result<BTreeMap<(u64, u32), RegisterProjection>> {
+        let annotations = self
+            .review
+            .iter()
+            .map(|annotation| (annotation.entity.as_str(), annotation))
+            .collect::<BTreeMap<_, _>>();
+        Ok(self
+            .register_identity_projections()?
+            .into_iter()
+            .map(|(key, projection)| {
+                let review = annotations
+                    .get(projection.template.as_str())
+                    .filter(|annotation| review_annotation_is_assertion(annotation))
+                    .map(|annotation| (*annotation).clone());
+                (
+                    key,
+                    RegisterProjection {
+                        identity: projection.identity,
+                        review,
+                    },
+                )
+            })
+            .collect())
+    }
+
+    fn register_identity_projections(
+        &self,
+    ) -> Result<BTreeMap<(u64, u32), RegisterIdentityProjection>> {
         let mut output = BTreeMap::new();
         for peripheral in &self.device.peripherals {
-            for peripheral in expand_peripheral(peripheral) {
+            let (template, peripherals) = match peripheral {
+                MaybeArray::Single(info) => (info.name.as_str(), vec![info.clone()]),
+                MaybeArray::Array(info, dim) => (
+                    info.name.as_str(),
+                    svd_rs::peripheral::expand(info, dim).collect(),
+                ),
+            };
+            for peripheral in peripherals {
                 let inherited = merge_properties(
                     self.device.default_register_properties,
                     peripheral.default_register_properties,
@@ -417,12 +473,12 @@ impl RegisterModel {
                         0,
                         inherited,
                         &peripheral.name,
+                        template,
                         children,
                     )?;
                 }
             }
         }
-        validate_expanded_register_layout(&output)?;
         Ok(output)
     }
 
@@ -430,9 +486,18 @@ impl RegisterModel {
         &self.review
     }
 
-    /// Sparse reviewed identities applied to existing or materialized registers.
-    pub fn reviewed_register_identities(&self) -> &[ReviewedRegisterIdentity] {
-        &self.reviewed_register_identities
+    /// Every reviewed register fact applied to this effective model.
+    ///
+    /// The retained assertion carries its effective classification,
+    /// applicability and evidence. This keeps SVD projection from erasing the
+    /// provenance of descriptions, access, field and write-semantics claims.
+    pub fn reviewed_register_facts(&self) -> &[EffectiveAssertion] {
+        &self.reviewed_register_facts
+    }
+
+    /// Stable chip identifier used by typed reviewed register assertions.
+    pub fn chip(&self) -> &str {
+        &self.chip
     }
 
     /// Stable address-space identifier used by sparse reviewed assertions.
@@ -472,9 +537,9 @@ impl RegisterModel {
                 removed.id, removed.kind
             )));
         }
-        ensure_single_applicable_register_fact(&assertions, &self.address_space)?;
+        ensure_single_applicable_register_fact(&assertions, &self.chip, &self.address_space)?;
         assertions.sort_by_key(|assertion| (assertion_priority(&assertion.kind), &assertion.id));
-        let identities = prepare_register_identities(&assertions, &self.address_space)?;
+        let identities = prepare_register_identities(&assertions, &self.chip, &self.address_space)?;
         let mut summary = ReviewApplicationSummary::default();
         for identity in &identities {
             let outcome = self.apply_reviewed_register_identity(identity)?;
@@ -487,13 +552,11 @@ impl RegisterModel {
                 summary.ignored += 1;
                 continue;
             }
-            let subject = RegisterSubject::parse(&assertion.subject).map_err(|reason| {
-                Error::message(format!(
-                    "reviewed assertion {:?} has invalid register subject: {reason}",
-                    assertion.id
-                ))
-            })?;
-            if subject.address_space != self.address_space {
+            let Some(subject) = RegisterSubject::from_entity(&assertion.subject) else {
+                summary.ignored += 1;
+                continue;
+            };
+            if !subject.belongs_to(&self.chip, &self.address_space) {
                 summary.ignored += 1;
                 continue;
             }
@@ -542,6 +605,7 @@ impl RegisterModel {
                 }
             }
             summary.matched += 1;
+            self.retain_reviewed_register_fact(assertion)?;
             if changed {
                 summary.changed += 1;
                 if assertion.kind == "field-name"
@@ -768,26 +832,17 @@ impl RegisterModel {
     }
 
     fn retain_reviewed_register_identity(&mut self, plan: &RegisterIdentityPlan) -> Result<()> {
-        if let Some(existing) = self.reviewed_register_identities.iter().find(|existing| {
-            existing.address == plan.subject.address && existing.width == plan.subject.width
-                || existing.assertion.id == plan.assertion.id
-        }) {
-            if existing.address_space == plan.subject.address_space
-                && existing.address == plan.subject.address
-                && existing.width == plan.subject.width
-                && existing.region == plan.region
-                && existing.identity == plan.identity
-                && existing.assertion == plan.assertion
-            {
-                return Ok(());
-            }
-            return Err(Error::message(format!(
-                "reviewed assertion {:?} conflicts with retained register identity {:?} at {:#010x}/{}",
-                plan.assertion.id, existing.identity, existing.address, existing.width
-            )));
+        let already_retained = self
+            .reviewed_register_facts
+            .iter()
+            .any(|assertion| assertion == &plan.assertion);
+        self.retain_reviewed_register_fact(&plan.assertion)?;
+        if already_retained {
+            return Ok(());
         }
         let mut sources = plan
             .assertion
+            .metadata
             .evidence
             .iter()
             .map(|evidence| evidence.source.clone())
@@ -797,19 +852,27 @@ impl RegisterModel {
         self.review.push(ReviewAnnotation {
             entity: plan.identity.clone(),
             sources,
-            provenance: Some(plan.assertion.classification.provenance),
-            accuracy: Some(plan.assertion.classification.accuracy),
-            completeness: Some(plan.assertion.classification.completeness),
+            provenance: Some(plan.assertion.metadata.classification.provenance),
+            accuracy: Some(plan.assertion.metadata.classification.accuracy),
+            completeness: Some(plan.assertion.metadata.classification.completeness),
         });
-        self.reviewed_register_identities
-            .push(ReviewedRegisterIdentity {
-                address_space: plan.subject.address_space.clone(),
-                address: plan.subject.address,
-                width: plan.subject.width,
-                region: plan.region.clone(),
-                identity: plan.identity.clone(),
-                assertion: plan.assertion.clone(),
-            });
+        Ok(())
+    }
+
+    fn retain_reviewed_register_fact(&mut self, assertion: &EffectiveAssertion) -> Result<()> {
+        if let Some(existing) = self.reviewed_register_facts.iter().find(|existing| {
+            existing.id == assertion.id
+                || (existing.subject == assertion.subject && existing.kind == assertion.kind)
+        }) {
+            if existing == assertion {
+                return Ok(());
+            }
+            return Err(Error::message(format!(
+                "reviewed assertion {:?} conflicts with retained assertion {:?} for {}/{}",
+                assertion.id, existing.id, assertion.subject, assertion.kind
+            )));
+        }
+        self.reviewed_register_facts.push(assertion.clone());
         Ok(())
     }
 
@@ -820,24 +883,20 @@ impl RegisterModel {
 
 fn ensure_single_applicable_register_fact(
     assertions: &[&EffectiveAssertion],
+    chip: &str,
     address_space: &str,
 ) -> Result<()> {
-    let mut selected = BTreeMap::<(&str, &str), &str>::new();
+    let mut selected = BTreeMap::<(&SemanticEntityId, &str), &str>::new();
     for assertion in assertions
         .iter()
         .copied()
         .filter(|assertion| is_register_assertion(&assertion.kind))
     {
-        let subject = RegisterSubject::parse(&assertion.subject).map_err(|reason| {
-            Error::message(format!(
-                "reviewed assertion {:?} has invalid register subject: {reason}",
-                assertion.id
-            ))
-        })?;
-        if subject.address_space != address_space {
+        let subject = register_subject(assertion)?;
+        if !subject.belongs_to(chip, address_space) {
             continue;
         }
-        let key = (assertion.subject.as_str(), assertion.kind.as_str());
+        let key = (&assertion.subject, assertion.kind.as_str());
         if let Some(previous) = selected.insert(key, &assertion.id) {
             return Err(Error::message(format!(
                 "reviewed assertions {previous:?} and {:?} both target {}/{}; select reviewed knowledge for one explicit applicability context before applying it",
@@ -850,6 +909,7 @@ fn ensure_single_applicable_register_fact(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct RegisterSubject {
+    chip: String,
     address_space: String,
     address: u64,
     width: u32,
@@ -857,61 +917,40 @@ struct RegisterSubject {
 }
 
 impl RegisterSubject {
-    fn parse(value: &str) -> std::result::Result<Self, String> {
-        let value = value
-            .strip_prefix("mmio:")
-            .ok_or_else(|| "expected mmio:<space>:0x<address>/<width>".to_owned())?;
-        let (address_space, physical) = value
-            .split_once(':')
-            .ok_or_else(|| "missing MMIO address space".to_owned())?;
-        if address_space.is_empty() {
-            return Err("empty MMIO address space".to_owned());
+    fn from_entity(value: &SemanticEntityId) -> Option<Self> {
+        match value {
+            SemanticEntityId::Register {
+                chip,
+                address_space,
+                address,
+                width,
+            } => Some(Self {
+                chip: chip.clone(),
+                address_space: address_space.clone(),
+                address: *address,
+                width: *width,
+                field: None,
+            }),
+            SemanticEntityId::RegisterField {
+                chip,
+                address_space,
+                address,
+                register_width,
+                bit_offset,
+                bit_width,
+            } => Some(Self {
+                chip: chip.clone(),
+                address_space: address_space.clone(),
+                address: *address,
+                width: *register_width,
+                field: Some((*bit_offset, *bit_width)),
+            }),
+            _ => None,
         }
-        let (physical, field) = physical
-            .split_once('#')
-            .map_or((physical, None), |(physical, field)| {
-                (physical, Some(field))
-            });
-        let (address, width) = physical
-            .split_once('/')
-            .ok_or_else(|| "missing physical register width".to_owned())?;
-        let address = address
-            .strip_prefix("0x")
-            .ok_or_else(|| "address must use a 0x prefix".to_owned())?;
-        let address = u64::from_str_radix(address, 16)
-            .map_err(|_| "invalid hexadecimal register address".to_owned())?;
-        let width = width
-            .parse::<u32>()
-            .map_err(|_| "invalid register width".to_owned())?;
-        if width == 0 {
-            return Err("register width must be non-zero".to_owned());
-        }
-        let field = field
-            .map(|field| {
-                let field = field
-                    .strip_prefix("bits:")
-                    .ok_or_else(|| "field suffix must be #bits:<offset>/<width>".to_owned())?;
-                let (offset, width) = field
-                    .split_once('/')
-                    .ok_or_else(|| "field suffix is missing width".to_owned())?;
-                let offset = offset
-                    .parse::<u32>()
-                    .map_err(|_| "invalid field bit offset".to_owned())?;
-                let width = width
-                    .parse::<u32>()
-                    .map_err(|_| "invalid field bit width".to_owned())?;
-                if width == 0 || offset.checked_add(width).is_none_or(|end| end > 128) {
-                    return Err("invalid field bit range".to_owned());
-                }
-                Ok((offset, width))
-            })
-            .transpose()?;
-        Ok(Self {
-            address_space: address_space.to_owned(),
-            address,
-            width,
-            field,
-        })
+    }
+
+    fn belongs_to(&self, chip: &str, address_space: &str) -> bool {
+        self.chip == chip && self.address_space == address_space
     }
 }
 
@@ -933,6 +972,7 @@ struct RegisterIdentityOutcome {
 
 fn prepare_register_identities(
     assertions: &[&EffectiveAssertion],
+    chip: &str,
     address_space: &str,
 ) -> Result<Vec<RegisterIdentityPlan>> {
     let mut plans = Vec::new();
@@ -942,13 +982,13 @@ fn prepare_register_identities(
         .copied()
         .filter(|assertion| assertion.kind == "register-identity")
     {
-        let subject = parse_assertion_subject(assertion)?;
-        if subject.address_space != address_space {
+        let subject = register_subject(assertion)?;
+        if !subject.belongs_to(chip, address_space) {
             continue;
         }
         if subject.field.is_some() {
             return Err(Error::message(format!(
-                "reviewed assertion {:?} register-identity requires a physical register subject without #bits",
+                "reviewed assertion {:?} register-identity requires a physical register subject, not register-field",
                 assertion.id
             )));
         }
@@ -963,11 +1003,12 @@ fn prepare_register_identities(
         for companion in assertions.iter().copied().filter(|candidate| {
             is_register_assertion(&candidate.kind) && candidate.id != assertion.id
         }) {
-            let candidate = parse_assertion_subject(companion)?;
-            if candidate.address_space == subject.address_space
+            let candidate = register_subject(companion)?;
+            if candidate.chip == subject.chip
+                && candidate.address_space == subject.address_space
                 && candidate.address == subject.address
                 && candidate.width == subject.width
-                && companion.applies_to != assertion.applies_to
+                && companion.metadata.applies_to != assertion.metadata.applies_to
             {
                 return Err(Error::message(format!(
                     "reviewed assertion {:?} cannot contribute to register identity {:?}: effective applicability differs for physical register {:#010x}/{}",
@@ -1001,7 +1042,7 @@ fn find_companion_assertion<'a>(
         .copied()
         .filter(|assertion| assertion.kind == kind)
     {
-        let candidate = parse_assertion_subject(assertion)?;
+        let candidate = register_subject(assertion)?;
         if candidate == *subject {
             physical_matches.push(assertion);
         }
@@ -1009,7 +1050,7 @@ fn find_companion_assertion<'a>(
     let matching = physical_matches
         .iter()
         .copied()
-        .filter(|assertion| assertion.applies_to == identity.applies_to)
+        .filter(|assertion| assertion.metadata.applies_to == identity.metadata.applies_to)
         .collect::<Vec<_>>();
     match matching.as_slice() {
         [assertion] => Ok(Some(*assertion)),
@@ -1062,11 +1103,11 @@ fn is_canonical_svd_identifier(value: &str) -> bool {
         && has_alphanumeric
 }
 
-fn parse_assertion_subject(assertion: &EffectiveAssertion) -> Result<RegisterSubject> {
-    RegisterSubject::parse(&assertion.subject).map_err(|reason| {
+fn register_subject(assertion: &EffectiveAssertion) -> Result<RegisterSubject> {
+    RegisterSubject::from_entity(&assertion.subject).ok_or_else(|| {
         Error::message(format!(
-            "reviewed assertion {:?} has invalid register subject: {reason}",
-            assertion.id
+            "reviewed assertion {:?} kind {:?} requires a register or register-field semantic entity, got {}",
+            assertion.id, assertion.kind, assertion.subject
         ))
     })
 }
@@ -1554,6 +1595,15 @@ fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()
     Ok(())
 }
 
+fn review_annotation_is_assertion(annotation: &ReviewAnnotation) -> bool {
+    !annotation.sources.is_empty()
+        && annotation.provenance.is_some_and(|provenance| {
+            provenance != open_radio_vendor_contracts::FactProvenance::Hint
+        })
+        && annotation.accuracy.is_some()
+        && annotation.completeness.is_some()
+}
+
 fn collect_review_entities(peripheral: &Peripheral, entities: &mut BTreeSet<String>) {
     entities.insert(peripheral.name.clone());
     for interrupt in &peripheral.interrupt {
@@ -1655,27 +1705,30 @@ fn build_device(metadata: &ModelDevice, peripherals: Vec<Peripheral>) -> Result<
         .build(ValidateLevel::Strict)?)
 }
 
-fn expand_peripheral(peripheral: &Peripheral) -> Vec<svd_rs::PeripheralInfo> {
-    match peripheral {
-        MaybeArray::Single(info) => vec![info.clone()],
-        MaybeArray::Array(info, dim) => svd_rs::peripheral::expand(info, dim).collect(),
-    }
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RegisterIdentityProjection {
+    identity: String,
+    template: String,
 }
 
 fn collect_registers(
-    output: &mut BTreeMap<(u64, u32), String>,
+    output: &mut BTreeMap<(u64, u32), RegisterIdentityProjection>,
     peripheral_base: u64,
     parent_offset: u64,
     inherited: RegisterProperties,
     path: &str,
+    template_path: &str,
     children: &[RegisterCluster],
 ) -> Result<()> {
     for child in children {
         match child {
             RegisterCluster::Register(register) => {
-                let registers = match register {
-                    MaybeArray::Single(info) => vec![info.clone()],
-                    MaybeArray::Array(info, dim) => svd_rs::register::expand(info, dim).collect(),
+                let (template_name, registers) = match register {
+                    MaybeArray::Single(info) => (info.name.as_str(), vec![info.clone()]),
+                    MaybeArray::Array(info, dim) => (
+                        info.name.as_str(),
+                        svd_rs::register::expand(info, dim).collect(),
+                    ),
                 };
                 for register in registers {
                     let properties = merge_properties(inherited, register.properties);
@@ -1690,17 +1743,28 @@ fn collect_registers(
                         .and_then(|address| address.checked_add(u64::from(register.address_offset)))
                         .ok_or_else(|| Error::message("register model address overflow"))?;
                     let identity = format!("{path}.{}", register.name);
-                    if let Some(previous) = output.insert((address, width), identity.clone()) {
+                    let template = format!("{template_path}.{template_name}");
+                    if let Some(previous) = output.insert(
+                        (address, width),
+                        RegisterIdentityProjection {
+                            identity: identity.clone(),
+                            template,
+                        },
+                    ) {
                         return Err(Error::message(format!(
-                            "register model aliases {previous} and {identity} at {address:#010x}/{width}; explicit alias support is required"
+                            "register model aliases {} and {identity} at {address:#010x}/{width}; explicit alias support is required",
+                            previous.identity
                         )));
                     }
                 }
             }
             RegisterCluster::Cluster(cluster) => {
-                let clusters = match cluster {
-                    MaybeArray::Single(info) => vec![info.clone()],
-                    MaybeArray::Array(info, dim) => svd_rs::cluster::expand(info, dim).collect(),
+                let (template_name, clusters) = match cluster {
+                    MaybeArray::Single(info) => (info.name.as_str(), vec![info.clone()]),
+                    MaybeArray::Array(info, dim) => (
+                        info.name.as_str(),
+                        svd_rs::cluster::expand(info, dim).collect(),
+                    ),
                 };
                 for cluster in clusters {
                     let offset = parent_offset
@@ -1714,6 +1778,7 @@ fn collect_registers(
                         offset,
                         properties,
                         &format!("{path}.{}", cluster.name),
+                        &format!("{template_path}.{template_name}"),
                         &cluster.children,
                     )?;
                 }
@@ -1836,7 +1901,7 @@ mod tests {
         let manifest = directory.join("device.toml");
         fs::write(
             &manifest,
-            "schema = 2\naddress-space = \"cpu\"\nfragments = [\"radio.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n",
+            "schema = 3\nchip = \"fixture-chip\"\naddress-space = \"cpu\"\nfragments = [\"radio.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n",
         )
         .unwrap();
         let semantics = modified_write_values.map_or_else(String::new, |value| {
@@ -1845,7 +1910,7 @@ mod tests {
         fs::write(
             directory.join("radio.toml"),
             format!(
-                "schema = 2\n\n[[peripherals]]\nname = \"RADIO\"\nbaseAddress = 0x1000\n\n[[peripherals.registers]]\n[peripherals.registers.register]\nname = \"STATUS\"\naddressOffset = 0\nsize = 32\naccess = \"read-write\"\n{semantics}\n[[peripherals.registers.register.fields]]\nname = \"FLAG\"\nbitOffset = 3\nbitWidth = 1\n\n[[review]]\nentity = \"RADIO.STATUS\"\nsources = [\"fixture\"]\n\n[[review]]\nentity = \"RADIO.STATUS.FLAG\"\nsources = [\"fixture\"]\n"
+                "schema = 2\n\n[[peripherals]]\nname = \"RADIO\"\nbaseAddress = 0x1000\n\n[[peripherals.registers]]\n[peripherals.registers.register]\nname = \"STATUS\"\naddressOffset = 0\nsize = 32\naccess = \"read-write\"\n{semantics}\n[[peripherals.registers.register.fields]]\nname = \"FLAG\"\nbitOffset = 3\nbitWidth = 1\n\n[[review]]\nentity = \"RADIO.STATUS\"\nsources = [\"fixture\"]\nprovenance = \"reviewed\"\naccuracy = \"exact\"\ncompleteness = \"complete\"\n\n[[review]]\nentity = \"RADIO.STATUS.FLAG\"\nsources = [\"fixture\"]\nprovenance = \"reviewed\"\naccuracy = \"exact\"\ncompleteness = \"complete\"\n"
             ),
         )
         .unwrap();
@@ -1855,10 +1920,43 @@ mod tests {
 
     fn knowledge(assertions: &str) -> ReviewKnowledge {
         let pack = ReviewPack::from_toml(&format!(
-            "schema = 1\nid = \"fixture.overlay\"\n[classification]\nprovenance = \"reviewed\"\naccuracy = \"exact\"\ncompleteness = \"partial\"\n{assertions}"
+            "schema = 2\nid = \"fixture.overlay\"\n[classification]\nprovenance = \"reviewed\"\naccuracy = \"exact\"\ncompleteness = \"partial\"\n{assertions}"
         ))
         .unwrap();
         ReviewKnowledge::merge([pack]).unwrap()
+    }
+
+    #[test]
+    fn review_subjects_require_one_canonical_typed_spelling() {
+        for subject in [
+            "mmio:cpu:0x1000/32",
+            "register:fixture-chip/cpu/0x01000/32",
+            "register-field:fixture-chip/cpu/0x1000/32/03/1",
+        ] {
+            let input = format!(
+                r#"schema = 2
+id = "fixture.canonical-subject"
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+[[assertions]]
+id = "fixture.canonical-subject.fact"
+subject = "{subject}"
+kind = "register-access"
+value = "read-write"
+[[assertions.evidence]]
+source = "fixture"
+locator = "manual"
+"#,
+            );
+            let error = ReviewPack::from_toml(&input).unwrap_err();
+            assert!(
+                error.to_string().contains("semantic entity")
+                    || error.to_string().contains("canonical"),
+                "subject {subject:?}: {error}"
+            );
+        }
     }
 
     #[test]
@@ -1868,29 +1966,29 @@ mod tests {
             r#"
 [[assertions]]
 id = "overlay.register.name"
-subject = "mmio:cpu:0x1000/32"
+subject = "register:fixture-chip/cpu/0x1000/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "register"
 
 [[assertions]]
 id = "overlay.field.name"
-subject = "mmio:cpu:0x1000/32#bits:3/1"
+subject = "register-field:fixture-chip/cpu/0x1000/32/3/1"
 kind = "field-name"
 value = "PENDING"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "field"
 
 [[assertions]]
 id = "overlay.field.write"
-subject = "mmio:cpu:0x1000/32#bits:3/1"
+subject = "register-field:fixture-chip/cpu/0x1000/32/3/1"
 kind = "field-write-semantics"
 value = "w1c"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "write"
 
 [[assertions]]
@@ -1899,7 +1997,7 @@ subject = "function:radio_start"
 kind = "function-name"
 value = "RADIO_START"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "function"
 "#,
         );
@@ -1920,6 +2018,20 @@ locator = "function"
         assert!(svd.contains("<name>EVENT_STATUS</name>"));
         assert!(svd.contains("<name>PENDING</name>"));
         assert!(svd.contains("<modifiedWriteValues>oneToClear</modifiedWriteValues>"));
+        assert_eq!(model.reviewed_register_facts().len(), 3);
+        assert_eq!(
+            model
+                .reviewed_register_facts()
+                .iter()
+                .map(|assertion| assertion.kind.as_str())
+                .collect::<Vec<_>>(),
+            ["register-identity", "field-name", "field-write-semantics"]
+        );
+        assert!(model.reviewed_register_facts().iter().all(|assertion| {
+            assertion.metadata.classification.provenance
+                == open_radio_vendor_contracts::FactProvenance::Reviewed
+                && assertion.metadata.evidence.len() == 1
+        }));
         assert_eq!(
             model
                 .review()
@@ -1935,11 +2047,81 @@ locator = "function"
     }
 
     #[test]
+    fn reviewed_array_instances_are_bound_to_the_structural_template() {
+        let (directory, mut model) = fixture_model("reviewed-array-template", None);
+        let MaybeArray::Single(peripheral) = &mut model.device.peripherals[0] else {
+            panic!("fixture peripheral must be singular")
+        };
+        let RegisterCluster::Register(MaybeArray::Single(mut register)) =
+            peripheral.registers.as_mut().unwrap().remove(0)
+        else {
+            panic!("fixture register must be singular")
+        };
+        let mut collision = register.clone();
+        collision.name = "STATUS_META".to_owned();
+        collision.address_offset = 8;
+        register.name = "STATUS%s".to_owned();
+        let dim = svd_rs::DimElement::builder()
+            .dim(2)
+            .dim_increment(4)
+            .build(ValidateLevel::Disabled)
+            .unwrap();
+        peripheral.registers.as_mut().unwrap().extend([
+            RegisterCluster::Register(MaybeArray::Array(register, dim)),
+            RegisterCluster::Register(MaybeArray::Single(collision)),
+        ]);
+        model.review = vec![ReviewAnnotation {
+            entity: "RADIO.STATUS%s".to_owned(),
+            sources: vec!["fixture-array".to_owned()],
+            provenance: Some(open_radio_vendor_contracts::FactProvenance::Reviewed),
+            accuracy: Some(open_radio_vendor_contracts::FactAccuracy::Exact),
+            completeness: Some(open_radio_vendor_contracts::FactCompleteness::Complete),
+        }];
+
+        let identities = model.register_identities().unwrap();
+        let annotations = model.register_review_annotations().unwrap();
+        fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(identities[&(0x1000, 32)], "RADIO.STATUS0");
+        assert_eq!(identities[&(0x1004, 32)], "RADIO.STATUS1");
+        assert_eq!(identities[&(0x1008, 32)], "RADIO.STATUS_META");
+        assert_eq!(annotations[&(0x1000, 32)].entity, "RADIO.STATUS%s");
+        assert_eq!(annotations[&(0x1004, 32)].entity, "RADIO.STATUS%s");
+        assert!(!annotations.contains_key(&(0x1008, 32)));
+    }
+
+    #[test]
+    fn incomplete_and_hint_annotations_never_become_reviewed_assertions() {
+        let (directory, _) = fixture_model("review-annotation-metadata", None);
+        let fragment = directory.join("radio.toml");
+        let input = fs::read_to_string(&fragment).unwrap();
+        let input = input
+            .replace("sources = [\"fixture\"]\n", "")
+            .replace("provenance = \"reviewed\"\n", "")
+            .replace("accuracy = \"exact\"\n", "")
+            .replace("completeness = \"complete\"\n", "");
+        fs::write(&fragment, input).unwrap();
+
+        let model = RegisterModel::load(&directory.join("device.toml")).unwrap();
+        assert!(model.register_review_annotations().unwrap().is_empty());
+
+        let input = fs::read_to_string(&fragment).unwrap().replace(
+            "entity = \"RADIO.STATUS\"\n",
+            "entity = \"RADIO.STATUS\"\nsources = [\"fixture\"]\nprovenance = \"hint\"\naccuracy = \"exact\"\ncompleteness = \"complete\"\n",
+        );
+        fs::write(&fragment, input).unwrap();
+        let model = RegisterModel::load(&directory.join("device.toml")).unwrap();
+        fs::remove_dir_all(directory).unwrap();
+
+        assert!(model.register_review_annotations().unwrap().is_empty());
+    }
+
+    #[test]
     fn unselected_revision_facts_cannot_override_each_other() {
         let (directory, mut model) = fixture_model("revision-selection", None);
         let make = |id: &str, revision: &str, value: &str| {
             ReviewPack::from_toml(&format!(
-                r#"schema = 1
+                r#"schema = 2
 id = "{id}"
 [classification]
 provenance = "reviewed"
@@ -1949,11 +2131,11 @@ completeness = "partial"
 chip-revisions = ["{revision}"]
 [[assertions]]
 id = "{id}.name"
-subject = "mmio:cpu:0x1000/32"
+subject = "register:fixture-chip/cpu/0x1000/32"
 kind = "register-identity"
 value = "RADIO.{value}"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "manual"
 "#
             ))
@@ -1969,9 +2151,9 @@ locator = "manual"
         assert!(error.to_string().contains("explicit applicability context"));
 
         let selected = knowledge
-            .select_for(&open_radio_vendor_review::ApplicabilityContext {
+            .select_for(&open_radio_vendor_contracts::ApplicabilityContext {
                 chip_revisions: vec!["rev0".to_owned()],
-                ..open_radio_vendor_review::ApplicabilityContext::default()
+                ..open_radio_vendor_contracts::ApplicabilityContext::default()
             })
             .unwrap();
         model.apply_review_knowledge(&selected).unwrap();
@@ -1988,11 +2170,11 @@ locator = "manual"
             r#"
 [[assertions]]
 id = "overlay.register.write"
-subject = "mmio:cpu:0x1000/32"
+subject = "register:fixture-chip/cpu/0x1000/32"
 kind = "hardware-write-semantics"
 value = "unknown"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "write"
 "#,
         );
@@ -2013,14 +2195,14 @@ locator = "write"
             r#"
 [[assertions]]
 id = "overlay.register.identity"
-subject = "mmio:cpu:0x1004/32"
+subject = "register:fixture-chip/cpu/0x1004/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [assertions.applies-to]
 chips = ["fixture-chip"]
 chip-revisions = ["rev-a"]
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "identity"
 "#,
         );
@@ -2028,7 +2210,7 @@ locator = "identity"
         let summary = model.apply_review_knowledge(&knowledge).unwrap();
         let identities = model.register_identities().unwrap();
         let (svd, export) = model.render_svd().unwrap();
-        let retained = &model.reviewed_register_identities()[0];
+        let retained = &model.reviewed_register_facts()[0];
         let MaybeArray::Single(peripheral) = &model.device.peripherals[0] else {
             panic!("fixture peripheral must be singular")
         };
@@ -2057,22 +2239,23 @@ locator = "identity"
         assert_eq!(register.properties.size, Some(32));
         assert_eq!(register.properties.access, None);
         assert_eq!(register.modified_write_values, None);
-        assert_eq!(retained.address_space, "cpu");
-        assert_eq!(retained.region, "RADIO");
-        assert_eq!(retained.identity, "RADIO.EVENT_STATUS");
-        assert_eq!(retained.assertion.pack, "fixture.overlay");
-        assert_eq!(retained.assertion.evidence[0].locator, "identity");
         assert_eq!(
-            retained.assertion.applies_to.chips,
+            retained.subject.to_string(),
+            "register:fixture-chip/cpu/0x1004/32"
+        );
+        assert_eq!(retained.pack, "fixture.overlay");
+        assert_eq!(retained.metadata.evidence[0].locator, "identity");
+        assert_eq!(
+            retained.metadata.applies_to.chips,
             ["fixture-chip".to_owned()]
         );
-        assert_eq!(retained.assertion.id, "overlay.register.identity");
+        assert_eq!(retained.id, "overlay.register.identity");
         let annotation = model
             .review()
             .iter()
             .find(|annotation| annotation.entity == "RADIO.EVENT_STATUS")
             .unwrap();
-        assert_eq!(annotation.sources, ["FIXTURE"]);
+        assert_eq!(annotation.sources, ["fixture"]);
         assert_eq!(
             annotation.provenance,
             Some(open_radio_vendor_contracts::FactProvenance::Reviewed)
@@ -2086,11 +2269,11 @@ locator = "identity"
             r#"
 [[assertions]]
 id = "overlay.register.identity"
-subject = "mmio:cpu:0x1000/32"
+subject = "register:fixture-chip/cpu/0x1000/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "identity"
 "#,
         );
@@ -2103,7 +2286,7 @@ locator = "identity"
         assert_eq!(renamed.materialized, 0);
         assert_eq!(noop.matched, 1);
         assert_eq!(noop.changed, 0);
-        assert_eq!(model.reviewed_register_identities().len(), 1);
+        assert_eq!(model.reviewed_register_facts().len(), 1);
         assert_eq!(
             model
                 .review()
@@ -2123,11 +2306,11 @@ locator = "identity"
                 r#"
 [[assertions]]
 id = "overlay.removed"
-subject = "mmio:cpu:0x1004/32"
+subject = "register:fixture-chip/cpu/0x1004/32"
 kind = "{kind}"
 value = "RADIO"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "removed"
 "#
             ));
@@ -2136,7 +2319,7 @@ locator = "removed"
             assert!(error.to_string().contains("uses removed kind"));
             assert!(error.to_string().contains("register-identity"));
             assert_eq!(model.register_identities().unwrap(), before);
-            assert!(model.reviewed_register_identities().is_empty());
+            assert!(model.reviewed_register_facts().is_empty());
         }
     }
 
@@ -2145,79 +2328,73 @@ locator = "removed"
         let cases = [
             (
                 "field",
-                "mmio:cpu:0x1004/32#bits:0/1",
+                "register-field:fixture-chip/cpu/0x1004/32/0/1",
                 "RADIO.NEW_REGISTER",
-                "without #bits",
-            ),
-            (
-                "width",
-                "mmio:cpu:0x1020/129",
-                "RADIO.NEW_REGISTER",
-                "unsupported register width",
+                "requires a physical register subject",
             ),
             (
                 "alignment",
-                "mmio:cpu:0x1002/32",
+                "register:fixture-chip/cpu/0x1002/32",
                 "RADIO.NEW_REGISTER",
                 "not aligned",
             ),
             (
                 "before",
-                "mmio:cpu:0x0ffc/32",
+                "register:fixture-chip/cpu/0xffc/32",
                 "RADIO.NEW_REGISTER",
                 "precedes region",
             ),
             (
                 "region",
-                "mmio:cpu:0x1004/32",
+                "register:fixture-chip/cpu/0x1004/32",
                 "MISSING.NEW_REGISTER",
                 "absent peripheral/region",
             ),
             (
                 "overlap",
-                "mmio:cpu:0x1002/16",
+                "register:fixture-chip/cpu/0x1002/16",
                 "RADIO.NEW_REGISTER",
                 "physical register ranges overlap",
             ),
             (
                 "identity-collision",
-                "mmio:cpu:0x1004/32",
+                "register:fixture-chip/cpu/0x1004/32",
                 "RADIO.STATUS",
                 "identity \"RADIO.STATUS\" collides",
             ),
             (
                 "missing-dot",
-                "mmio:cpu:0x1004/32",
+                "register:fixture-chip/cpu/0x1004/32",
                 "RADIO",
                 "exactly one dot",
             ),
             (
                 "extra-dot",
-                "mmio:cpu:0x1004/32",
+                "register:fixture-chip/cpu/0x1004/32",
                 "RADIO.BLOCK.STATUS",
                 "exactly one dot",
             ),
             (
                 "placeholder",
-                "mmio:cpu:0x1004/32",
+                "register:fixture-chip/cpu/0x1004/32",
                 "RADIO.REG%s",
                 "canonical singular SVD identifier",
             ),
             (
                 "whitespace",
-                "mmio:cpu:0x1004/32",
+                "register:fixture-chip/cpu/0x1004/32",
                 "RADIO.EVENT STATUS",
                 "canonical singular SVD identifier",
             ),
             (
                 "underscore-only-region",
-                "mmio:cpu:0x1004/32",
+                "register:fixture-chip/cpu/0x1004/32",
                 "_.STATUS",
                 "canonical singular SVD identifier",
             ),
             (
                 "underscore-only-register",
-                "mmio:cpu:0x1004/32",
+                "register:fixture-chip/cpu/0x1004/32",
                 "RADIO._",
                 "canonical singular SVD identifier",
             ),
@@ -2232,7 +2409,7 @@ subject = "{subject}"
 kind = "register-identity"
 value = "{identity}"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "identity"
 "#
             ));
@@ -2248,8 +2425,10 @@ locator = "identity"
     }
 
     #[test]
-    fn register_identity_respects_address_blocks_and_does_not_cross_address_spaces() {
+    fn register_identity_respects_address_blocks_and_model_identity() {
         let (directory, mut model) = fixture_model("declare-region", None);
+        assert_eq!(model.chip(), "fixture-chip");
+        assert_eq!(model.address_space(), "cpu");
         let MaybeArray::Single(peripheral) = &mut model.device.peripherals[0] else {
             panic!("fixture peripheral must be singular")
         };
@@ -2265,11 +2444,11 @@ locator = "identity"
             r#"
 [[assertions]]
 id = "overlay.register.identity"
-subject = "mmio:cpu:0x1004/32"
+subject = "register:fixture-chip/cpu/0x1004/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "identity"
 "#,
         );
@@ -2285,19 +2464,35 @@ locator = "identity"
             r#"
 [[assertions]]
 id = "overlay.register.identity"
-subject = "mmio:other:0x1004/32"
+subject = "register:fixture-chip/other/0x1004/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "identity"
 "#,
         );
         let summary = model.apply_review_knowledge(&foreign).unwrap();
+        let foreign_chip = knowledge(
+            r#"
+[[assertions]]
+id = "overlay.foreign-chip.identity"
+subject = "register:other-chip/cpu/0x1004/32"
+kind = "register-identity"
+value = "RADIO.EVENT_STATUS"
+[[assertions.evidence]]
+source = "fixture"
+locator = "identity"
+"#,
+        );
+        let chip_summary = model.apply_review_knowledge(&foreign_chip).unwrap();
         fs::remove_dir_all(directory).unwrap();
 
         assert_eq!(summary.ignored, 1);
         assert_eq!(summary.materialized, 0);
+        assert_eq!(chip_summary.ignored, 1);
+        assert_eq!(chip_summary.materialized, 0);
+        assert!(model.reviewed_register_facts().is_empty());
         assert_eq!(model.register_identities().unwrap().len(), 1);
     }
 
@@ -2308,11 +2503,11 @@ locator = "identity"
                 r#"
 [[assertions]]
 id = "overlay.register.identity"
-subject = "mmio:cpu:0x1004/32"
+subject = "register:fixture-chip/cpu/0x1004/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "identity"
 "#,
             )
@@ -2380,20 +2575,20 @@ locator = "identity"
             r#"
 [[assertions]]
 id = "overlay.register.identity"
-subject = "mmio:cpu:0x1004/32"
+subject = "register:fixture-chip/cpu/0x1004/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "identity"
 
 [[assertions]]
 id = "overlay.register.access"
-subject = "mmio:cpu:0x1004/32"
+subject = "register:fixture-chip/cpu/0x1004/32"
 kind = "register-access"
 value = "read-write"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "access"
 "#,
         );
@@ -2409,11 +2604,11 @@ locator = "access"
                 r#"
 [[assertions]]
 id = "overlay.register.identity"
-subject = "mmio:cpu:0x1000/32"
+subject = "register:fixture-chip/cpu/0x1000/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "identity"
 "#,
             )
@@ -2536,7 +2731,7 @@ locator = "identity"
             "open-radio-register-model-schema-{}.toml",
             std::process::id()
         ));
-        let input = "schema = 1\nfragments = [\"peripherals.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n";
+        let input = "schema = 2\nchip = \"fixture-chip\"\nfragments = [\"peripherals.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n";
         fs::write(&path, input).unwrap();
         let error = RegisterModel::load(&path).unwrap_err();
         fs::remove_file(&path).unwrap();
@@ -2544,7 +2739,7 @@ locator = "identity"
         let (_, _, _, span) = error.manifest_diagnostic().unwrap();
         assert_eq!(
             span.unwrap(),
-            input.find('1').unwrap()..input.find('1').unwrap() + 1
+            input.find('2').unwrap()..input.find('2').unwrap() + 1
         );
     }
 
@@ -2558,7 +2753,7 @@ locator = "identity"
         fs::create_dir_all(directory.join("peripherals")).unwrap();
         fs::write(
             &path,
-            "schema = 2\nfragments = [\"peripherals/baseband.toml\", \"peripherals/agc.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n",
+            "schema = 3\nchip = \"fixture-chip\"\nfragments = [\"peripherals/baseband.toml\", \"peripherals/agc.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n",
         )
         .unwrap();
 

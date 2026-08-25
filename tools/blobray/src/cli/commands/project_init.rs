@@ -24,7 +24,7 @@ mod tests;
 use options::{Options, resolve_options};
 use render::{
     render_chip, render_ecosystem, render_manifest, render_memory, render_readme,
-    render_register_api, render_run_spec, render_target,
+    render_register_api, render_reviewed_knowledge, render_run_spec, render_target,
 };
 
 #[derive(Serialize)]
@@ -174,10 +174,16 @@ fn write_project(root: &Path, options: &Options) -> Result<()> {
     fs::write(root.join(".gitignore"), "/generated/\n/local.toml\n")?;
     fs::create_dir_all(root.join("registers"))?;
     fs::write(root.join("registers/api.toml"), render_register_api())?;
+    fs::create_dir_all(root.join("reviewed"))?;
+    fs::write(
+        root.join("reviewed/project-facts.toml"),
+        render_reviewed_knowledge(options),
+    )?;
 
     let model = root.join("registers/device.toml");
+    let chip = format!("{}-chip", options.id);
     if let Some(input) = options.import_svd.as_deref() {
-        import_svd_model(input, &model, "cpu")?;
+        import_svd_model(input, &model, &chip, "cpu")?;
     } else {
         let facts = RegisterFacts {
             artifacts: Vec::new(),
@@ -192,7 +198,7 @@ fn write_project(root: &Path, options: &Options) -> Result<()> {
                 .collect(),
             registers: Vec::new(),
         };
-        init_register_model(&facts, &model, "cpu", &options.id)?;
+        init_register_model(&facts, &model, &chip, "cpu", &options.id)?;
     }
 
     validate_project(root)

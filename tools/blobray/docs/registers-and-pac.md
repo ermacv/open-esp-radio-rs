@@ -9,7 +9,10 @@ Binary analysis can discover addresses, access widths, masks, calling
 functions and instruction provenance. It cannot reliably invent peripheral,
 register or field names. Generated MMIO facts therefore remain review input.
 
-The reviewed register workspace owns accepted assertions: names, blocks,
+The top-level register manifest uses schema 3 and requires an explicit `chip`
+alongside its `address-space`; top-level schema-2 manifests are rejected,
+while reusable peripheral fragments remain schema 2. The reviewed
+register workspace owns accepted assertions: names, blocks,
 access rules, reset facts, fields, enums, and links to supporting evidence. It
 does not own or rewrite the underlying observations. Validation rejects
 overlapping definitions, unreviewed access, missing evidence and unsafe API
@@ -18,7 +21,7 @@ exposure.
 New human conclusions belong in the project manifest's explicit
 `[reviewed-knowledge].default-pack`; Blobray never guesses a destination from
 pack order or protocol naming. A stable
-physical subject such as `mmio:cpu:0x20103064/32` can independently acquire a
+physical subject such as `register:esp32s31/cpu/0x20103064/32` can independently acquire a
 `register-identity` or `hardware-write-semantics` assertion. The identity is
 one scalar `REGION.NAME`; it atomically names the existing concrete non-array
 peripheral/region and the register. If the physical register is absent from
@@ -27,11 +30,11 @@ the reusable model, that same assertion authorizes materializing it:
 ```toml
 [[assertions]]
 id = "radio.event-status.identity"
-subject = "mmio:cpu:0x20103064/32"
+subject = "register:esp32s31/cpu/0x20103064/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "REVIEWED_REGISTER_HEADER"
+source = "reviewed-register-header"
 locator = "RADIO event-status identity and offset"
 ```
 
@@ -40,9 +43,9 @@ space differs, the width or
 alignment is invalid, the extent falls outside a published register address
 block, the region is absent/array/derived, or the new extent aliases existing
 geometry. The retired `register-declaration` and `register-name` kinds are
-rejected; there is no compatibility or pair-merging path. The effective
-identity assertion (pack, classification, applicability and
-evidence) remains attached to the in-memory effective model. If a region has
+rejected; there is no compatibility or pair-merging path. Every applied
+register or field assertion remains attached to the in-memory effective model
+with its pack, classification, applicability and evidence. If a region has
 no address blocks, the explicit reviewed region assertion is the ownership
 boundary and the offset must still fit the SVD representation.
 
@@ -63,6 +66,11 @@ revision context and a context that selects multiple values for one
 subject/kind also fail closed. Complete SVD-shaped geometry is
 generated/reusable input, not the normal unit of a human change.
 
+A reusable fragment `[[review]]` entry closes review debt only when it has at
+least one source, a complete provenance/accuracy/completeness classification,
+and non-`hint` provenance. Incomplete entries and hints remain navigation
+metadata; they never make generated geometry publishable.
+
 ## Normal workflow
 
 ```console
@@ -74,7 +82,7 @@ cargo blobray project publish --project path/to/vendor-project.toml
 ```
 
 `research next` ranks blockers by transitive benefit and co-blocking structure.
-`inspect register` schema 6 prints the stable sparse-fact subject, configured
+`inspect register` schema 7 prints the stable sparse-fact subject, configured
 review pack and supported assertion kinds. It also lists every selected
 reviewed assertion for the exact physical subject, including its pack, ID,
 kind, value and evidence; that list has `completion_claim = false`. For an owned, unreviewed discovery

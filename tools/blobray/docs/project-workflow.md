@@ -187,7 +187,7 @@ cargo blobray project research next --scope ieee802154-baseband-leaves \
 
 The command is read-only unless `--output` is supplied. Each candidate names
 the missing knowledge, confidence, affected scopes, expected impact and a
-copyable next inspection command. Report schema 6 ranks unique user actions:
+typed next inspection action. Report schema 12 ranks unique user actions:
 independent findings that lead to the same inspection command remain listed as
 `related_findings` instead of consuming duplicate top-N slots. Impact is
 aggregated across the complete action before ranking, not inherited from the
@@ -301,7 +301,7 @@ status` and `project doctor` warn when no baseline exists; deep doctor also
 checks immutable snapshot digests and reports current binding drift.
 Snapshot creation hashes the live caller-owned bindings and rejects stale
 analysis evidence whose recorded artifact identities are no longer present.
-Schema 2 deliberately hashes only typed `vendor-*` and
+Schema 3 deliberately hashes only typed `vendor-*` and
 `source-artifact:*`/`source-inventory:*`/`source-companion:*` roles. Ambiguous
 generic `artifact`/`companion` roles fail closed in the revision workflow.
 Local `rust-artifact` probes remain freshness-checked verification inputs, but
@@ -320,7 +320,7 @@ unless its predecessor has a matching marker, so cleanup or an accidental
 binding edit cannot silently erase the old correspondence map.
 While `baseline` and `current` differ, `project status` and deep doctor report
 `revision-review-pending` instead of `ready`; a captured snapshot is not an
-accepted review decision. Blobray accepts only schema-2 snapshots and ledgers.
+accepted review decision. Blobray accepts only schema-3 snapshots and ledgers.
 Older state is not migrated or interpreted: archive or remove it, then capture
 a fresh current snapshot from the live typed vendor bindings.
 
@@ -340,9 +340,11 @@ replaces the address-bound evidence/cache identity.
 Diff classifies stable identities, unique moves, modifications, additions,
 removals, split/merge candidates and ambiguity. Only an unchanged stable
 subject or a one-to-one exact normalized-feature move is automatically
-carryable. Split, merge, ambiguity, removal, modified semantics and stale
+carryable. Entity bindings additionally require exact occurrence
+correspondence: a stable semantic name alone never carries a blob-local
+binding. Split, merge, ambiguity, removal, modified semantics and stale
 artifact applicability remain `review-required`. A rebase plan retains every
-old assertion/vendor-bug record with its provenance even when it cannot be
+old assertion, vendor-bug and entity-binding record with its provenance even when it cannot be
 carried, so an upgrade cannot silently discard research progress.
 
 Inspect the store before deciding whether cache growth needs investigation:

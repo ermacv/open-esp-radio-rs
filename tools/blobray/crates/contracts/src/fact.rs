@@ -596,13 +596,13 @@ mod tests {
     fn applicability_normalizes_order_and_rejects_duplicates() {
         let value = Applicability::new(
             vec!["esp-idf".to_owned()],
-            vec!["esp32s31".to_owned(), "esp32c6".to_owned()],
+            vec!["chip-beta".to_owned(), "chip-alpha".to_owned()],
             Vec::new(),
             Vec::new(),
             vec![artifact("sdk/b.a", 'b'), artifact("sdk/a.a", 'a')],
         )
         .unwrap();
-        assert_eq!(value.chips, ["esp32c6", "esp32s31"]);
+        assert_eq!(value.chips, ["chip-alpha", "chip-beta"]);
         assert_eq!(value.artifacts[0].source(), "sdk/a.a");
         assert!(
             Applicability::new(
@@ -618,28 +618,29 @@ mod tests {
 
     #[test]
     fn applicability_serde_is_strict_and_canonical() {
-        let decoded: Applicability =
-            serde_json::from_str(r#"{"chips":["esp32s31","esp32c6"],"ecosystems":["esp-idf"]}"#)
-                .unwrap();
-        assert_eq!(decoded.chips, ["esp32c6", "esp32s31"]);
+        let decoded: Applicability = serde_json::from_str(
+            r#"{"chips":["chip-beta","chip-alpha"],"ecosystems":["vendor-sdk"]}"#,
+        )
+        .unwrap();
+        assert_eq!(decoded.chips, ["chip-alpha", "chip-beta"]);
         assert_eq!(
             serde_json::to_string(&decoded).unwrap(),
-            r#"{"ecosystems":["esp-idf"],"chips":["esp32c6","esp32s31"]}"#
+            r#"{"ecosystems":["vendor-sdk"],"chips":["chip-alpha","chip-beta"]}"#
         );
         assert!(
             serde_json::from_str::<Applicability>(
-                r#"{"chips":["esp32s31"],"legacy-chip":"esp32"}"#
+                r#"{"chips":["chip-alpha"],"legacy-chip":"old-chip"}"#
             )
             .is_err()
         );
-        assert!(serde_json::from_str::<Applicability>(r#"{"chips":["ESP32S31"]}"#).is_err());
+        assert!(serde_json::from_str::<Applicability>(r#"{"chips":["CHIP-ALPHA"]}"#).is_err());
     }
 
     #[test]
     fn applicability_intersection_and_context_are_fail_closed() {
         let fact = Applicability::new(
             vec!["esp-idf".to_owned()],
-            vec!["esp32s31".to_owned()],
+            vec!["chip-alpha".to_owned()],
             Vec::new(),
             Vec::new(),
             vec![artifact("sdk/radio.a", 'a')],
@@ -651,7 +652,7 @@ mod tests {
         );
         let wrong = ApplicabilityContext::new(
             vec!["esp-idf".to_owned()],
-            vec!["esp32c6".to_owned()],
+            vec!["chip-beta".to_owned()],
             Vec::new(),
             Vec::new(),
             vec![artifact("sdk/radio.a", 'a')],
@@ -660,7 +661,7 @@ mod tests {
         assert!(!fact.matches_context(&wrong).unwrap());
         let exact = ApplicabilityContext::new(
             vec!["esp-idf".to_owned()],
-            vec!["esp32s31".to_owned()],
+            vec!["chip-alpha".to_owned()],
             Vec::new(),
             Vec::new(),
             vec![artifact("sdk/radio.a", 'a')],
@@ -691,7 +692,7 @@ mod tests {
     fn metadata_inherits_classification_and_intersects_applicability() {
         let inherited = Applicability::new(
             vec!["esp-idf".to_owned()],
-            vec!["esp32s31".to_owned(), "esp32c6".to_owned()],
+            vec!["chip-beta".to_owned(), "chip-alpha".to_owned()],
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -701,7 +702,7 @@ mod tests {
             None,
             Applicability::new(
                 Vec::new(),
-                vec!["esp32s31".to_owned()],
+                vec!["chip-alpha".to_owned()],
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
@@ -713,7 +714,7 @@ mod tests {
         let effective = record.effective(classification(), &inherited).unwrap();
         assert_eq!(effective.classification, classification());
         assert_eq!(effective.applies_to.ecosystems, ["esp-idf"]);
-        assert_eq!(effective.applies_to.chips, ["esp32s31"]);
+        assert_eq!(effective.applies_to.chips, ["chip-alpha"]);
     }
 
     #[test]

@@ -8,6 +8,52 @@ use super::{
 };
 use crate::{Result, project::RegisterWorkspacePaths};
 
+#[derive(Default)]
+pub(crate) struct RegisterIdentityMaps {
+    pub(crate) identities: std::collections::BTreeMap<(u64, u32), String>,
+    pub(crate) reviewed: std::collections::BTreeMap<(u64, u32), String>,
+    pub(crate) annotations: std::collections::BTreeMap<(u64, u32), super::ReviewAnnotation>,
+}
+
+pub(crate) fn register_identity_maps(model: &RegisterModel) -> Result<RegisterIdentityMaps> {
+    let projections = model.register_projections()?;
+    let mut identities = std::collections::BTreeMap::new();
+    let mut reviewed = std::collections::BTreeMap::new();
+    let mut annotations = std::collections::BTreeMap::new();
+    for (key, projection) in projections {
+        if let Some(annotation) = projection.review {
+            reviewed.insert(key, projection.identity.clone());
+            annotations.insert(key, annotation);
+        }
+        identities.insert(key, projection.identity);
+    }
+    for assertion in model
+        .reviewed_register_facts()
+        .iter()
+        .filter(|assertion| assertion.kind == "register-identity")
+    {
+        let open_radio_vendor_contracts::SemanticEntityId::Register { address, width, .. } =
+            &assertion.subject
+        else {
+            continue;
+        };
+        if let Some(name) = identities.get(&(*address, *width)) {
+            reviewed.insert((*address, *width), name.clone());
+        }
+    }
+    Ok(RegisterIdentityMaps {
+        identities,
+        reviewed,
+        annotations,
+    })
+}
+
+pub(crate) fn reviewed_register_identities(
+    model: &RegisterModel,
+) -> Result<std::collections::BTreeMap<(u64, u32), String>> {
+    Ok(register_identity_maps(model)?.reviewed)
+}
+
 /// Load reusable chip register geometry and apply only the sparse facts
 /// selected by the project. Project-aware consumers use this function so
 /// inspection, validation and publication all see the same effective model.
@@ -15,6 +61,15 @@ pub(crate) fn load_effective_register_model(
     paths: &RegisterWorkspacePaths,
 ) -> Result<RegisterModel> {
     let mut model = RegisterModel::load(&paths.model)?;
+    if !paths.review_context.chips.is_empty()
+        && !matches!(paths.review_context.chips.as_slice(), [chip] if chip == model.chip())
+    {
+        return Err(crate::Error::invalid(format!(
+            "register model chip {:?} does not match the active project chips {:?}",
+            model.chip(),
+            paths.review_context.chips
+        )));
+    }
     if !paths.reviewed_knowledge.is_empty() {
         let knowledge =
             open_radio_vendor_review::ReviewKnowledge::load_all(&paths.reviewed_knowledge)
@@ -120,7 +175,7 @@ impl ProjectRegisterWorkspace {
     pub(crate) fn load(paths: &RegisterWorkspacePaths) -> Result<Self> {
         if !RegisterModel::is_model_file(&paths.model)? {
             return Err(crate::Error::invalid(format!(
-                "register workspace {} is not a register-model-v2 manifest",
+                "register workspace {} is not a register-model-v3 manifest",
                 paths.model.display()
             )));
         }
@@ -149,6 +204,7 @@ impl ProjectRegisterWorkspace {
 
     pub(crate) fn summary(&self) -> Result<RegisterWorkspaceSummary> {
         let identities = self.model.register_identities()?;
+        let reviewed_identities = reviewed_register_identities(&self.model)?;
         let observations = self.facts.as_ref().map_or_else(
             || Ok(ObservationKeys::default()),
             |facts| observation_keys(facts, &self.owned_ranges, &self.non_operational_functions),
@@ -179,13 +235,13 @@ impl ProjectRegisterWorkspace {
             reviewed: observations
                 .owned
                 .iter()
-                .filter(|observation| observation_is_reviewed(&identities, observation))
+                .filter(|observation| observation_is_reviewed(&reviewed_identities, observation))
                 .count(),
             ignored: observations.outside_scope.len(),
             non_operational: observations
                 .non_operational
                 .iter()
-                .filter(|observation| !observation_is_reviewed(&identities, observation))
+                .filter(|observation| !observation_is_reviewed(&reviewed_identities, observation))
                 .count(),
             manual: model_keys
                 .iter()
@@ -194,7 +250,7 @@ impl ProjectRegisterWorkspace {
             unreviewed: observations
                 .owned
                 .iter()
-                .filter(|observation| !observation_is_reviewed(&identities, observation))
+                .filter(|observation| !observation_is_reviewed(&reviewed_identities, observation))
                 .filter(|key| !observations.non_operational.contains(key))
                 .count(),
             fields: self.model.render_svd()?.1.fields,
@@ -212,7 +268,7 @@ impl ProjectRegisterWorkspace {
         if scope.is_empty() {
             return Ok(BTreeSet::new());
         }
-        let identities = self.model.register_identities()?;
+        let reviewed_identities = reviewed_register_identities(&self.model)?;
         let facts = self.facts.as_ref().ok_or_else(|| {
             crate::Error::invalid(
                 "release-scoped register validation requires MMIO discovery facts",
@@ -236,7 +292,7 @@ impl ProjectRegisterWorkspace {
                 continue;
             }
             let key = (u64::from(address), u32::from(width));
-            if observation_is_reviewed(&identities, &key) {
+            if observation_is_reviewed(&reviewed_identities, &key) {
                 continue;
             }
             let non_operational = facts
@@ -256,7 +312,7 @@ impl ProjectRegisterWorkspace {
     }
 
     pub(crate) const fn format_label(&self) -> &'static str {
-        "register-model-v2"
+        "register-model-v3"
     }
 }
 
@@ -547,7 +603,8 @@ mod tests {
         let reviewed = directory.join("reviewed.toml");
         std::fs::write(
             &model,
-            r#"schema = 2
+            r#"schema = 3
+chip = "fixture-chip"
 address-space = "cpu"
 fragments = ["radio.toml"]
 
@@ -610,7 +667,7 @@ baseAddress = 0x1000
         .unwrap();
         std::fs::write(
             &reviewed,
-            r#"schema = 1
+            r#"schema = 2
 id = "fixture.register-review"
 
 [classification]
@@ -623,16 +680,16 @@ chips = ["fixture-chip"]
 
 [[assertions]]
 id = "fixture.status.identity"
-subject = "mmio:cpu:0x1010/32"
+subject = "register:fixture-chip/cpu/0x1010/32"
 kind = "register-identity"
 value = "RADIO.EVENT_STATUS"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "region-and-name"
 "#,
         )
         .unwrap();
-        let paths = RegisterWorkspacePaths {
+        let mut paths = RegisterWorkspacePaths {
             facts,
             model,
             owned_ranges: vec!["radio".to_owned()],
@@ -647,12 +704,20 @@ locator = "region-and-name"
             lint_pack: None,
             evidence_catalogs: Vec::new(),
             reviewed_knowledge: vec![reviewed],
-            review_context: open_radio_vendor_review::ApplicabilityContext {
+            review_context: open_radio_vendor_contracts::ApplicabilityContext {
                 chips: vec!["fixture-chip".to_owned()],
-                ..open_radio_vendor_review::ApplicabilityContext::default()
+                ..open_radio_vendor_contracts::ApplicabilityContext::default()
             },
         };
 
+        paths.review_context.chips = vec!["other-chip".to_owned()];
+        let error = ProjectRegisterWorkspace::load(&paths).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("does not match the active project chips")
+        );
+        paths.review_context.chips = vec!["fixture-chip".to_owned()];
         let workspace = ProjectRegisterWorkspace::load(&paths).unwrap();
         let loaded_facts = workspace.required_facts().unwrap();
         assert!(std::ptr::eq(
@@ -676,7 +741,7 @@ locator = "region-and-name"
         );
         let summary = workspace.summary().unwrap();
         let (svd, export) = workspace.render_svd().unwrap();
-        let identity = &workspace.model().reviewed_register_identities()[0];
+        let identity = &workspace.model().reviewed_register_facts()[0];
         std::fs::remove_dir_all(directory).unwrap();
 
         assert_eq!(summary.observed, 1);
@@ -687,7 +752,7 @@ locator = "region-and-name"
         assert!(svd.contains("<name>EVENT_STATUS</name>"));
         assert!(!svd.contains("<access>"));
         assert!(!svd.contains("modifiedWriteValues"));
-        assert_eq!(identity.assertion.id, "fixture.status.identity");
-        assert_eq!(identity.assertion.applies_to.chips, ["fixture-chip"]);
+        assert_eq!(identity.id, "fixture.status.identity");
+        assert_eq!(identity.metadata.applies_to.chips, ["fixture-chip"]);
     }
 }

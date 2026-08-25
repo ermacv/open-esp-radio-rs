@@ -1151,9 +1151,12 @@ fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
 
     let reviewed = fs::read_to_string(target.join("reviewed/project-facts.toml"))
         .expect("read sparse reviewed facts");
+    let register_model = fs::read_to_string(chip.join("registers/device.toml"))
+        .expect("read reusable register model");
     assert!(!target.join("reviewed/ieee802154.toml").exists());
     assert!(reviewed.contains("id = \"esp32s31-radio-rev0-project-facts\""));
-    assert!(reviewed.contains("subject = \"mmio:cpu:0x20103064/32\""));
+    assert!(reviewed.contains("schema = 2"));
+    assert!(reviewed.contains("subject = \"register:esp32s31/cpu/0x20103064/32\""));
     assert!(reviewed.contains("id = \"ieee802154.event-status.identity\""));
     assert!(reviewed.contains("kind = \"register-identity\""));
     assert!(reviewed.contains("value = \"IEEE802154_MAC.EVENT_STATUS\""));
@@ -1161,6 +1164,8 @@ fn chip_geometry_is_reusable_and_project_facts_stay_sparse() {
     assert!(!reviewed.contains("kind = \"register-declaration\""));
     assert!(!reviewed.contains("kind = \"register-name\""));
     assert!(!reviewed.contains("[[peripherals]]"));
+    assert!(register_model.contains("schema = 3"));
+    assert!(register_model.contains("chip = \"esp32s31\""));
 }
 
 #[test]

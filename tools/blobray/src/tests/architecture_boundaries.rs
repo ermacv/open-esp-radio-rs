@@ -155,9 +155,9 @@ fn neutral_contracts_have_no_architecture_or_platform_identity() {
     assert!(
         dependencies.lines().all(|line| {
             let line = line.trim();
-            line.is_empty() || line.starts_with("serde =")
+            line.is_empty() || line.starts_with("serde =") || line.starts_with("sha2 =")
         }),
-        "neutral contracts may depend only on serialization, got:\n{dependencies}"
+        "neutral contracts may depend only on serialization and digest primitives, got:\n{dependencies}"
     );
 }
 

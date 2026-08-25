@@ -2,8 +2,9 @@
 //!
 //! Generated observations remain outside this crate. A [`ReviewPack`] records
 //! only accepted human decisions and the evidence/applicability that bounds
-//! them. Consumers own the vocabulary carried by `subject`, `kind` and
-//! `value`; this crate owns fail-closed composition.
+//! them. Contracts own canonical semantic and revision-occurrence identities;
+//! consumers own the vocabulary carried by `kind` and `value`; this crate owns
+//! fail-closed composition.
 
 #![forbid(unsafe_code)]
 
@@ -13,7 +14,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use open_radio_vendor_contracts::{FactAccuracy, FactCompleteness, FactProvenance};
+use open_radio_vendor_contracts::{
+    Applicability, ApplicabilityContext, EffectiveFactMetadata, FactClassification, RecordMetadata,
+    RevisionOccurrenceId, SemanticEntityId,
+};
+use open_radio_vendor_contracts::{EntityDomain, FactProvenance};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -37,11 +42,20 @@ pub enum Error {
     Invalid { pack: String, reason: String },
 
     #[error(
-        "reviewed assertion conflict for {subject:?}/{kind:?}: {left:?} and {right:?} have overlapping applicability"
+        "reviewed assertion conflict for {subject}/{kind:?}: {left:?} and {right:?} have overlapping applicability"
     )]
     Conflict {
-        subject: String,
+        subject: Box<SemanticEntityId>,
         kind: String,
+        left: String,
+        right: String,
+    },
+
+    #[error(
+        "reviewed entity-binding conflict for {occurrence}: {left:?} and {right:?} have overlapping applicability"
+    )]
+    BindingConflict {
+        occurrence: RevisionOccurrenceId,
         left: String,
         right: String,
     },
@@ -51,101 +65,6 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct FactClassification {
-    pub provenance: FactProvenance,
-    pub accuracy: FactAccuracy,
-    pub completeness: FactCompleteness,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ArtifactApplicability {
-    pub source: String,
-    pub sha256: String,
-}
-
-/// Bounds one fact to reusable ecosystem, chip and artifact identities.
-///
-/// An empty dimension is a wildcard. Pack and record applicability are
-/// intersected, never overridden.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct Applicability {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub ecosystems: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub chips: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub chip_revisions: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub artifact_lineages: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub artifacts: Vec<ArtifactApplicability>,
-}
-
-/// Concrete identities selected by a project composition.
-///
-/// Unlike [`Applicability`], an empty context dimension is not a wildcard when
-/// a reviewed fact constrains that dimension. Selection fails closed instead
-/// of guessing which revision or artifact the caller intended.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ApplicabilityContext {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub ecosystems: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub chips: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub chip_revisions: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub artifact_lineages: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub artifacts: Vec<ArtifactApplicability>,
-}
-
-impl Applicability {
-    pub fn intersection(&self, other: &Self) -> Option<Self> {
-        Some(Self {
-            ecosystems: intersect_dimension(&self.ecosystems, &other.ecosystems)?,
-            chips: intersect_dimension(&self.chips, &other.chips)?,
-            chip_revisions: intersect_dimension(&self.chip_revisions, &other.chip_revisions)?,
-            artifact_lineages: intersect_dimension(
-                &self.artifact_lineages,
-                &other.artifact_lineages,
-            )?,
-            artifacts: intersect_dimension(&self.artifacts, &other.artifacts)?,
-        })
-    }
-
-    pub fn overlaps(&self, other: &Self) -> bool {
-        self.intersection(other).is_some()
-    }
-
-    pub fn is_unbounded(&self) -> bool {
-        self.ecosystems.is_empty()
-            && self.chips.is_empty()
-            && self.chip_revisions.is_empty()
-            && self.artifact_lineages.is_empty()
-            && self.artifacts.is_empty()
-    }
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct EvidenceReference {
-    /// Stable ID of a reviewed evidence catalog entry.
-    pub source: String,
-    /// Location within that source, such as a function-relative site, header
-    /// declaration or HIL observation ID.
-    pub locator: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sha256: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-}
 
 /// Scalar/list values keep reviewed diffs small and deterministic. Structured
 /// domain-specific data belongs in several independently identified facts.
@@ -162,18 +81,13 @@ pub enum AssertionValue {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReviewedAssertion {
     pub id: String,
-    /// Stable entity reference, for example `mmio:cpu:0x20103128/32` or a
-    /// revision-independent function identity.
-    pub subject: String,
+    pub subject: SemanticEntityId,
     /// Consumer-owned fact vocabulary, for example `register-identity` or
     /// `hardware-write-semantics`.
     pub kind: String,
     pub value: AssertionValue,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub classification: Option<FactClassification>,
-    #[serde(default, skip_serializing_if = "Applicability::is_unbounded")]
-    pub applies_to: Applicability,
-    pub evidence: Vec<EvidenceReference>,
+    #[serde(flatten)]
+    pub metadata: RecordMetadata,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -191,20 +105,28 @@ pub enum VendorBugStatus {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct VendorBug {
     pub id: String,
-    /// Stable function identity; absolute instruction addresses belong in
-    /// evidence locators instead.
-    pub function: String,
+    pub function: SemanticEntityId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub register: Option<String>,
+    pub register: Option<SemanticEntityId>,
     pub kind: String,
     pub status: VendorBugStatus,
     pub observed: String,
     pub expected: String,
+    #[serde(flatten)]
+    pub metadata: RecordMetadata,
+}
+
+/// A reviewed mapping from one blob-local observation to one stable entity.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ReviewedEntityBinding {
+    pub id: String,
+    pub occurrence: RevisionOccurrenceId,
+    pub semantic: SemanticEntityId,
+    #[serde(flatten)]
+    pub metadata: RecordMetadata,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub classification: Option<FactClassification>,
-    #[serde(default, skip_serializing_if = "Applicability::is_unbounded")]
-    pub applies_to: Applicability,
-    pub evidence: Vec<EvidenceReference>,
+    pub note: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -219,6 +141,8 @@ pub struct ReviewPack {
     pub assertions: Vec<ReviewedAssertion>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vendor_bugs: Vec<VendorBug>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bindings: Vec<ReviewedEntityBinding>,
 }
 
 impl ReviewPack {
@@ -245,34 +169,44 @@ impl ReviewPack {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct EffectiveAssertion {
     pub pack: String,
     pub id: String,
-    pub subject: String,
+    pub subject: SemanticEntityId,
     pub kind: String,
     pub value: AssertionValue,
-    pub classification: FactClassification,
-    pub applies_to: Applicability,
-    pub evidence: Vec<EvidenceReference>,
+    #[serde(flatten)]
+    pub metadata: EffectiveFactMetadata,
     pub note: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct EffectiveVendorBug {
     pub pack: String,
     pub id: String,
-    pub function: String,
-    pub register: Option<String>,
+    pub function: SemanticEntityId,
+    pub register: Option<SemanticEntityId>,
     pub kind: String,
     pub status: VendorBugStatus,
     pub observed: String,
     pub expected: String,
-    pub classification: FactClassification,
-    pub applies_to: Applicability,
-    pub evidence: Vec<EvidenceReference>,
+    #[serde(flatten)]
+    pub metadata: EffectiveFactMetadata,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct EffectiveEntityBinding {
+    pub pack: String,
+    pub id: String,
+    pub occurrence: RevisionOccurrenceId,
+    pub semantic: SemanticEntityId,
+    #[serde(flatten)]
+    pub metadata: EffectiveFactMetadata,
+    pub note: Option<String>,
 }
 
 /// Deterministically merged, fail-closed reviewed knowledge.
@@ -281,6 +215,7 @@ pub struct EffectiveVendorBug {
 pub struct ReviewKnowledge {
     assertions: BTreeMap<String, EffectiveAssertion>,
     vendor_bugs: BTreeMap<String, EffectiveVendorBug>,
+    bindings: BTreeMap<String, EffectiveEntityBinding>,
 }
 
 impl ReviewKnowledge {
@@ -299,8 +234,11 @@ impl ReviewKnowledge {
         let mut record_ids = BTreeSet::new();
         let mut assertions = BTreeMap::new();
         let mut vendor_bugs = BTreeMap::new();
+        let mut bindings = BTreeMap::new();
         let mut semantic_assertions =
-            BTreeMap::<(String, String), Vec<(String, Applicability)>>::new();
+            BTreeMap::<(SemanticEntityId, String), Vec<(String, Applicability)>>::new();
+        let mut occurrence_bindings =
+            BTreeMap::<RevisionOccurrenceId, Vec<(String, Applicability)>>::new();
 
         for pack in packs {
             validate_pack(&pack)?;
@@ -311,21 +249,22 @@ impl ReviewKnowledge {
                 if !record_ids.insert(assertion.id.clone()) {
                     return invalid(&pack.id, format!("duplicate record id {:?}", assertion.id));
                 }
-                let applies_to = effective_applicability(
+                let metadata = effective_metadata(
                     &pack.id,
                     &assertion.id,
+                    pack.classification,
                     &pack.applies_to,
-                    &assertion.applies_to,
+                    &assertion.metadata,
                 )?;
                 let key = (assertion.subject.clone(), assertion.kind.clone());
                 if let Some((previous, _)) = semantic_assertions
                     .get(&key)
                     .into_iter()
                     .flatten()
-                    .find(|(_, previous)| previous.overlaps(&applies_to))
+                    .find(|(_, previous)| previous.overlaps(&metadata.applies_to))
                 {
                     return Err(Error::Conflict {
-                        subject: assertion.subject,
+                        subject: Box::new(assertion.subject),
                         kind: assertion.kind,
                         left: previous.clone(),
                         right: assertion.id,
@@ -334,7 +273,7 @@ impl ReviewKnowledge {
                 semantic_assertions
                     .entry(key)
                     .or_default()
-                    .push((assertion.id.clone(), applies_to.clone()));
+                    .push((assertion.id.clone(), metadata.applies_to.clone()));
                 assertions.insert(
                     assertion.id.clone(),
                     EffectiveAssertion {
@@ -343,9 +282,7 @@ impl ReviewKnowledge {
                         subject: assertion.subject,
                         kind: assertion.kind,
                         value: assertion.value,
-                        classification: assertion.classification.unwrap_or(pack.classification),
-                        applies_to,
-                        evidence: assertion.evidence,
+                        metadata,
                         note: assertion.note,
                     },
                 );
@@ -354,8 +291,13 @@ impl ReviewKnowledge {
                 if !record_ids.insert(bug.id.clone()) {
                     return invalid(&pack.id, format!("duplicate record id {:?}", bug.id));
                 }
-                let applies_to =
-                    effective_applicability(&pack.id, &bug.id, &pack.applies_to, &bug.applies_to)?;
+                let metadata = effective_metadata(
+                    &pack.id,
+                    &bug.id,
+                    pack.classification,
+                    &pack.applies_to,
+                    &bug.metadata,
+                )?;
                 vendor_bugs.insert(
                     bug.id.clone(),
                     EffectiveVendorBug {
@@ -367,9 +309,46 @@ impl ReviewKnowledge {
                         status: bug.status,
                         observed: bug.observed,
                         expected: bug.expected,
-                        classification: bug.classification.unwrap_or(pack.classification),
-                        applies_to,
-                        evidence: bug.evidence,
+                        metadata,
+                    },
+                );
+            }
+            for binding in pack.bindings {
+                if !record_ids.insert(binding.id.clone()) {
+                    return invalid(&pack.id, format!("duplicate record id {:?}", binding.id));
+                }
+                let metadata = effective_metadata(
+                    &pack.id,
+                    &binding.id,
+                    pack.classification,
+                    &pack.applies_to,
+                    &binding.metadata,
+                )?;
+                if let Some((previous, _)) = occurrence_bindings
+                    .get(&binding.occurrence)
+                    .into_iter()
+                    .flatten()
+                    .find(|(_, previous)| previous.overlaps(&metadata.applies_to))
+                {
+                    return Err(Error::BindingConflict {
+                        occurrence: binding.occurrence,
+                        left: previous.clone(),
+                        right: binding.id,
+                    });
+                }
+                occurrence_bindings
+                    .entry(binding.occurrence.clone())
+                    .or_default()
+                    .push((binding.id.clone(), metadata.applies_to.clone()));
+                bindings.insert(
+                    binding.id.clone(),
+                    EffectiveEntityBinding {
+                        pack: pack.id.clone(),
+                        id: binding.id,
+                        occurrence: binding.occurrence,
+                        semantic: binding.semantic,
+                        metadata,
+                        note: binding.note,
                     },
                 );
             }
@@ -377,6 +356,7 @@ impl ReviewKnowledge {
         Ok(Self {
             assertions,
             vendor_bugs,
+            bindings,
         })
     }
 
@@ -388,6 +368,10 @@ impl ReviewKnowledge {
         &self.vendor_bugs
     }
 
+    pub fn bindings(&self) -> &BTreeMap<String, EffectiveEntityBinding> {
+        &self.bindings
+    }
+
     /// Select only facts compatible with one explicit project composition.
     ///
     /// A constrained fact cannot be selected when the corresponding context
@@ -396,9 +380,9 @@ impl ReviewKnowledge {
     pub fn select_for(&self, context: &ApplicabilityContext) -> Result<Self> {
         validate_context(context)?;
         let mut assertions = BTreeMap::new();
-        let mut semantic = BTreeMap::<(String, String), String>::new();
+        let mut semantic = BTreeMap::<(SemanticEntityId, String), String>::new();
         for assertion in self.assertions.values() {
-            if !matches_context(&assertion.id, &assertion.applies_to, context)? {
+            if !matches_context(&assertion.id, &assertion.metadata.applies_to, context)? {
                 continue;
             }
             let key = (assertion.subject.clone(), assertion.kind.clone());
@@ -414,20 +398,39 @@ impl ReviewKnowledge {
         }
         let mut vendor_bugs = BTreeMap::new();
         for bug in self.vendor_bugs.values() {
-            if matches_context(&bug.id, &bug.applies_to, context)? {
+            if matches_context(&bug.id, &bug.metadata.applies_to, context)? {
                 vendor_bugs.insert(bug.id.clone(), bug.clone());
             }
+        }
+        let mut bindings = BTreeMap::new();
+        let mut occurrences = BTreeMap::<RevisionOccurrenceId, String>::new();
+        for binding in self.bindings.values() {
+            if !matches_context(&binding.id, &binding.metadata.applies_to, context)? {
+                continue;
+            }
+            if let Some(previous) =
+                occurrences.insert(binding.occurrence.clone(), binding.id.clone())
+            {
+                return Err(Error::Selection {
+                    reason: format!(
+                        "entity bindings {previous:?} and {:?} both match {}, so the context is ambiguous",
+                        binding.id, binding.occurrence
+                    ),
+                });
+            }
+            bindings.insert(binding.id.clone(), binding.clone());
         }
         Ok(Self {
             assertions,
             vendor_bugs,
+            bindings,
         })
     }
 
     pub fn semantic_fingerprint(&self) -> String {
         let encoded = serde_json::to_vec(self).expect("review knowledge is JSON serializable");
         let mut hash = Sha256::new();
-        hash.update(b"blobray/review-knowledge/v1\0");
+        hash.update(b"blobray/review-knowledge/v2\0");
         hash.update(encoded);
         hash.finalize()
             .iter()
@@ -437,14 +440,9 @@ impl ReviewKnowledge {
 }
 
 fn validate_context(context: &ApplicabilityContext) -> Result<()> {
-    let applicability = Applicability {
-        ecosystems: context.ecosystems.clone(),
-        chips: context.chips.clone(),
-        chip_revisions: context.chip_revisions.clone(),
-        artifact_lineages: context.artifact_lineages.clone(),
-        artifacts: context.artifacts.clone(),
-    };
-    validate_applicability("<selection>", "context", &applicability)
+    context.validate().map_err(|error| Error::Selection {
+        reason: format!("invalid active applicability context: {error}"),
+    })
 }
 
 fn matches_context(
@@ -452,58 +450,18 @@ fn matches_context(
     applicability: &Applicability,
     context: &ApplicabilityContext,
 ) -> Result<bool> {
-    let dimensions = [
-        ("ecosystems", &applicability.ecosystems, &context.ecosystems),
-        ("chips", &applicability.chips, &context.chips),
-        (
-            "chip-revisions",
-            &applicability.chip_revisions,
-            &context.chip_revisions,
-        ),
-        (
-            "artifact-lineages",
-            &applicability.artifact_lineages,
-            &context.artifact_lineages,
-        ),
-    ];
-    let mut missing = Vec::new();
-    for (name, constraint, active) in dimensions {
-        if constraint.is_empty() {
-            continue;
-        }
-        if active.is_empty() {
-            missing.push(name);
-        } else if !constraint.iter().any(|value| active.contains(value)) {
-            return Ok(false);
-        }
-    }
-    if !applicability.artifacts.is_empty() {
-        if context.artifacts.is_empty() {
-            missing.push("artifacts");
-        } else if !applicability
-            .artifacts
-            .iter()
-            .any(|artifact| context.artifacts.contains(artifact))
-        {
-            return Ok(false);
-        }
-    }
-    if !missing.is_empty() {
-        return Err(Error::Selection {
-            reason: format!(
-                "assertion or vendor bug {record:?} constrains {}, but the project composition does not provide that context",
-                missing.join(", ")
-            ),
-        });
-    }
-    Ok(true)
+    applicability
+        .matches_context(context)
+        .map_err(|error| Error::Selection {
+            reason: format!("record {record:?} cannot be selected: {error}"),
+        })
 }
 
 fn validate_pack(pack: &ReviewPack) -> Result<()> {
-    if pack.schema != 1 {
+    if pack.schema != 2 {
         return invalid(
             &pack.id,
-            format!("requires schema = 1, got {}", pack.schema),
+            format!("requires schema = 2, got {}", pack.schema),
         );
     }
     validate_stable_id(&pack.id).map_err(|reason| Error::Invalid {
@@ -511,14 +469,10 @@ fn validate_pack(pack: &ReviewPack) -> Result<()> {
         reason,
     })?;
     validate_classification(&pack.id, "pack", pack.classification)?;
-    validate_applicability(&pack.id, "pack", &pack.applies_to)?;
-    if pack.assertions.is_empty() && pack.vendor_bugs.is_empty() {
-        return invalid(&pack.id, "contains no assertions or vendor bugs");
-    }
+    validate_common_applicability(&pack.id, "pack", &pack.applies_to)?;
     let mut ids = BTreeSet::new();
     for assertion in &pack.assertions {
         validate_record_id(&pack.id, &assertion.id, &mut ids)?;
-        validate_text(&pack.id, &assertion.id, "subject", &assertion.subject)?;
         validate_token(&pack.id, &assertion.id, "kind", &assertion.kind)?;
         if let AssertionValue::Strings(values) = &assertion.value
             && (values.is_empty() || !all_unique_nonempty(values))
@@ -531,42 +485,110 @@ fn validate_pack(pack: &ReviewPack) -> Result<()> {
                 ),
             );
         }
-        if let Some(classification) = assertion.classification {
-            validate_classification(&pack.id, &assertion.id, classification)?;
-        }
-        validate_applicability(&pack.id, &assertion.id, &assertion.applies_to)?;
-        validate_evidence(&pack.id, &assertion.id, &assertion.evidence)?;
+        effective_metadata(
+            &pack.id,
+            &assertion.id,
+            pack.classification,
+            &pack.applies_to,
+            &assertion.metadata,
+        )?;
     }
     for bug in &pack.vendor_bugs {
         validate_record_id(&pack.id, &bug.id, &mut ids)?;
-        validate_text(&pack.id, &bug.id, "function", &bug.function)?;
-        if let Some(register) = &bug.register {
-            validate_text(&pack.id, &bug.id, "register", register)?;
+        if bug.function.domain() != EntityDomain::Function {
+            return invalid(
+                &pack.id,
+                format!(
+                    "vendor bug {:?} function must be a function entity, got {}",
+                    bug.id,
+                    bug.function.domain()
+                ),
+            );
+        }
+        if let Some(register) = &bug.register
+            && register.domain() != EntityDomain::Register
+        {
+            return invalid(
+                &pack.id,
+                format!(
+                    "vendor bug {:?} register must be a register entity, got {}",
+                    bug.id,
+                    register.domain()
+                ),
+            );
         }
         validate_token(&pack.id, &bug.id, "kind", &bug.kind)?;
         validate_text(&pack.id, &bug.id, "observed", &bug.observed)?;
         validate_text(&pack.id, &bug.id, "expected", &bug.expected)?;
-        if let Some(classification) = bug.classification {
-            validate_classification(&pack.id, &bug.id, classification)?;
+        effective_metadata(
+            &pack.id,
+            &bug.id,
+            pack.classification,
+            &pack.applies_to,
+            &bug.metadata,
+        )?;
+    }
+    for binding in &pack.bindings {
+        validate_record_id(&pack.id, &binding.id, &mut ids)?;
+        if binding.occurrence.domain() != binding.semantic.domain() {
+            return invalid(
+                &pack.id,
+                format!(
+                    "entity binding {:?} maps {} occurrence to {} semantic entity",
+                    binding.id,
+                    binding.occurrence.domain(),
+                    binding.semantic.domain()
+                ),
+            );
         }
-        validate_applicability(&pack.id, &bug.id, &bug.applies_to)?;
-        validate_evidence(&pack.id, &bug.id, &bug.evidence)?;
+        let metadata = effective_metadata(
+            &pack.id,
+            &binding.id,
+            pack.classification,
+            &pack.applies_to,
+            &binding.metadata,
+        )?;
+        if metadata.applies_to.artifacts.len() != 1 {
+            return invalid(
+                &pack.id,
+                format!(
+                    "entity binding {:?} requires exactly one artifact identity until artifact-set occurrences are supported",
+                    binding.id
+                ),
+            );
+        }
+        if !metadata
+            .evidence
+            .iter()
+            .any(|evidence| evidence.occurrence.as_ref() == Some(&binding.occurrence))
+        {
+            return invalid(
+                &pack.id,
+                format!(
+                    "entity binding {:?} evidence must reference its occurrence {}",
+                    binding.id, binding.occurrence
+                ),
+            );
+        }
     }
     Ok(())
 }
 
-fn effective_applicability(
+fn effective_metadata(
     pack: &str,
     record: &str,
+    pack_classification: FactClassification,
     pack_applicability: &Applicability,
-    record_applicability: &Applicability,
-) -> Result<Applicability> {
-    pack_applicability
-        .intersection(record_applicability)
-        .ok_or_else(|| Error::Invalid {
+    metadata: &RecordMetadata,
+) -> Result<EffectiveFactMetadata> {
+    let metadata = metadata
+        .effective(pack_classification, pack_applicability)
+        .map_err(|error| Error::Invalid {
             pack: pack.to_owned(),
-            reason: format!("record {record:?} has applicability disjoint from its pack"),
-        })
+            reason: format!("record {record:?} has invalid metadata: {error}"),
+        })?;
+    validate_classification(pack, record, metadata.classification)?;
+    Ok(metadata)
 }
 
 fn validate_record_id(pack: &str, id: &str, ids: &mut BTreeSet<String>) -> Result<()> {
@@ -626,62 +648,15 @@ fn validate_classification(
     Ok(())
 }
 
-fn validate_applicability(pack: &str, record: &str, value: &Applicability) -> Result<()> {
-    for (name, values) in [
-        ("ecosystems", &value.ecosystems),
-        ("chips", &value.chips),
-        ("chip-revisions", &value.chip_revisions),
-        ("artifact-lineages", &value.artifact_lineages),
-    ] {
-        if !all_unique_nonempty(values) {
-            return invalid(
-                pack,
-                format!("record {record:?} has empty or duplicate {name}"),
-            );
-        }
-    }
-    let mut artifacts = BTreeSet::new();
-    for artifact in &value.artifacts {
-        if artifact.source.trim().is_empty()
-            || !is_sha256(&artifact.sha256)
-            || !artifacts.insert(artifact)
-        {
-            return invalid(
-                pack,
-                format!("record {record:?} has invalid or duplicate artifact applicability"),
-            );
-        }
-    }
-    Ok(())
-}
-
-fn validate_evidence(pack: &str, record: &str, evidence: &[EvidenceReference]) -> Result<()> {
-    if evidence.is_empty() {
-        return invalid(pack, format!("record {record:?} requires evidence"));
-    }
-    let mut seen = BTreeSet::new();
-    for item in evidence {
-        if item.source.trim().is_empty()
-            || item.locator.trim().is_empty()
-            || item.source.chars().any(char::is_control)
-            || item.locator.chars().any(char::is_control)
-            || item
-                .sha256
-                .as_deref()
-                .is_some_and(|digest| !is_sha256(digest))
-            || !seen.insert((
-                item.source.as_str(),
-                item.locator.as_str(),
-                item.sha256.as_deref(),
-            ))
-        {
-            return invalid(
-                pack,
-                format!("record {record:?} has invalid or duplicate evidence"),
-            );
-        }
-    }
-    Ok(())
+fn validate_common_applicability(
+    pack: &str,
+    record: &str,
+    applicability: &Applicability,
+) -> Result<()> {
+    applicability.validate().map_err(|error| Error::Invalid {
+        pack: pack.to_owned(),
+        reason: format!("record {record:?} has invalid applicability: {error}"),
+    })
 }
 
 fn all_unique_nonempty(values: &[String]) -> bool {
@@ -689,38 +664,6 @@ fn all_unique_nonempty(values: &[String]) -> bool {
     values
         .iter()
         .all(|value| !value.trim().is_empty() && seen.insert(value))
-}
-
-fn is_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-}
-
-fn intersect_dimension<T: Clone + Ord>(left: &[T], right: &[T]) -> Option<Vec<T>> {
-    if left.is_empty() {
-        return Some(sorted_unique(right));
-    }
-    if right.is_empty() {
-        return Some(sorted_unique(left));
-    }
-    let left = left.iter().collect::<BTreeSet<_>>();
-    let right = right.iter().collect::<BTreeSet<_>>();
-    let values = left
-        .intersection(&right)
-        .map(|value| (*value).clone())
-        .collect::<Vec<_>>();
-    (!values.is_empty()).then_some(values)
-}
-
-fn sorted_unique<T: Clone + Ord>(values: &[T]) -> Vec<T> {
-    values
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
 }
 
 fn invalid<T>(pack: &str, reason: impl Into<String>) -> Result<T> {
@@ -733,9 +676,10 @@ fn invalid<T>(pack: &str, reason: impl Into<String>) -> Result<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use open_radio_vendor_contracts::{ArtifactIdentity, EntityDomain, RevisionOccurrenceId};
 
     const BASE: &str = r#"
-schema = 1
+schema = 2
 id = "esp32s31-radio"
 
 [classification]
@@ -749,36 +693,36 @@ chip-revisions = ["rev0"]
 
 [[assertions]]
 id = "ieee802154.event-status.identity"
-subject = "mmio:cpu:0x20103128/32"
+subject = "register:esp32s31/cpu/0x20103128/32"
 kind = "register-identity"
 value = "IEEE802154_MAC.EVENT_STATUS"
 
 [[assertions.evidence]]
-source = "ESP_IDF_IEEE802154_COMMON_LL"
+source = "esp-idf-ieee802154-common-ll"
 locator = "ieee802154_ll_get_events"
 
 [[assertions]]
 id = "ieee802154.event-status.access"
-subject = "mmio:cpu:0x20103128/32"
+subject = "register:esp32s31/cpu/0x20103128/32"
 kind = "hardware-write-semantics"
 value = "unknown"
 note = "Masked self-write observed; W1C is not proven."
 
 [[assertions.evidence]]
-source = "ESP_IDF_IEEE802154_COMMON_LL"
+source = "esp-idf-ieee802154-common-ll"
 locator = "ieee802154_ll_clear_events"
 
 [[vendor-bugs]]
 id = "vendor.ieee802154.event-clear-rmw"
-function = "function:esp-idf:ieee802154_ll_clear_events"
-register = "mmio:cpu:0x20103128/32"
+function = "function:esp-idf/ieee802154-ll-clear-events"
+register = "register:esp32s31/cpu/0x20103128/32"
 kind = "suspect-rmw-on-status"
 status = "suspected"
 observed = "The accessor performs a masked self-write."
 expected = "Confirm the hardware clear contract before using the accessor."
 
 [[vendor-bugs.evidence]]
-source = "ESP_IDF_IEEE802154_COMMON_LL"
+source = "esp-idf-ieee802154-common-ll"
 locator = "ieee802154_ll_clear_events"
 "#;
 
@@ -793,17 +737,40 @@ locator = "ieee802154_ll_clear_events"
     }
 
     #[test]
+    fn empty_sparse_pack_is_a_valid_review_destination() {
+        let pack = ReviewPack::from_toml(
+            r#"
+schema = 2
+id = "project-facts"
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+[applies-to]
+chips = ["chip-alpha"]
+"#,
+        )
+        .unwrap();
+        let knowledge = ReviewKnowledge::merge([pack]).unwrap();
+        assert!(knowledge.assertions().is_empty());
+        assert!(knowledge.vendor_bugs().is_empty());
+        assert!(knowledge.bindings().is_empty());
+    }
+
+    #[test]
     fn applicability_is_intersection_not_override() {
         let pack = ReviewPack::from_toml(BASE).unwrap();
         let effective = ReviewKnowledge::merge([pack]).unwrap();
         assert_eq!(
             effective.assertions()["ieee802154.event-status.identity"]
+                .metadata
                 .applies_to
                 .chips,
             ["esp32s31"]
         );
         assert_eq!(
             effective.assertions()["ieee802154.event-status.identity"]
+                .metadata
                 .applies_to
                 .chip_revisions,
             ["rev0"]
@@ -814,7 +781,7 @@ locator = "ieee802154_ll_clear_events"
     fn consumer_owned_identity_keeps_provenance_and_applicability() {
         let pack = ReviewPack::from_toml(
             r#"
-schema = 1
+schema = 2
 id = "esp32s31-register-identity"
 
 [classification]
@@ -827,13 +794,13 @@ chips = ["esp32s31"]
 
 [[assertions]]
 id = "ieee802154.new-status.identity"
-subject = "mmio:cpu:0x2010312c/32"
+subject = "register:esp32s31/cpu/0x2010312c/32"
 kind = "register-identity"
 value = "IEEE802154_MAC.NEW_STATUS"
 [assertions.applies-to]
 chip-revisions = ["rev0"]
 [[assertions.evidence]]
-source = "ESP_IDF_IEEE802154_REG"
+source = "esp-idf-ieee802154-reg"
 locator = "status register offset"
 "#,
         )
@@ -846,10 +813,16 @@ locator = "status register offset"
             identity.value,
             AssertionValue::String("IEEE802154_MAC.NEW_STATUS".to_owned())
         );
-        assert_eq!(identity.applies_to.chips, ["esp32s31"]);
-        assert_eq!(identity.applies_to.chip_revisions, ["rev0"]);
-        assert_eq!(identity.classification.provenance, FactProvenance::Reviewed);
-        assert_eq!(identity.evidence[0].source, "ESP_IDF_IEEE802154_REG");
+        assert_eq!(identity.metadata.applies_to.chips, ["esp32s31"]);
+        assert_eq!(identity.metadata.applies_to.chip_revisions, ["rev0"]);
+        assert_eq!(
+            identity.metadata.classification.provenance,
+            FactProvenance::Reviewed
+        );
+        assert_eq!(
+            identity.metadata.evidence[0].source,
+            "esp-idf-ieee802154-reg"
+        );
     }
 
     #[test]
@@ -884,7 +857,7 @@ locator = "status register offset"
         let make = |id: &str, revision: &str, value: &str| {
             ReviewPack::from_toml(&format!(
                 r#"
-schema = 1
+schema = 2
 id = "{id}"
 [classification]
 provenance = "reviewed"
@@ -894,11 +867,11 @@ completeness = "partial"
 chip-revisions = ["{revision}"]
 [[assertions]]
 id = "{id}.fact"
-subject = "mmio:cpu:0x1000/32"
+subject = "register:esp32s31/cpu/0x1000/32"
 kind = "register-identity"
 value = "{value}"
 [[assertions.evidence]]
-source = "MANUAL"
+source = "manual"
 locator = "review"
 "#
             ))
@@ -934,7 +907,7 @@ locator = "review"
         let missing = merged
             .select_for(&ApplicabilityContext::default())
             .unwrap_err();
-        assert!(missing.to_string().contains("chip-revisions"));
+        assert!(missing.to_string().contains("chip revisions"));
     }
 
     #[test]
@@ -943,22 +916,13 @@ locator = "review"
         let digest_b = "b".repeat(64);
         let applicability = Applicability {
             artifacts: vec![
-                ArtifactApplicability {
-                    source: "blob".to_owned(),
-                    sha256: digest_a.clone(),
-                },
-                ArtifactApplicability {
-                    source: "blob".to_owned(),
-                    sha256: digest_b,
-                },
+                ArtifactIdentity::new("blob", digest_a.clone()).unwrap(),
+                ArtifactIdentity::new("blob", digest_b).unwrap(),
             ],
             ..Applicability::default()
         };
         let selected = ApplicabilityContext {
-            artifacts: vec![ArtifactApplicability {
-                source: "blob".to_owned(),
-                sha256: digest_a,
-            }],
+            artifacts: vec![ArtifactIdentity::new("blob", digest_a).unwrap()],
             ..ApplicabilityContext::default()
         };
 
@@ -983,7 +947,189 @@ locator = "review"
             ReviewPack::from_toml(&invalid_hash)
                 .unwrap_err()
                 .to_string()
-                .contains("artifact applicability")
+                .contains("SHA-256")
+        );
+    }
+
+    #[test]
+    fn schema_one_and_untyped_subjects_are_rejected() {
+        let legacy_schema = BASE.replacen("schema = 2", "schema = 1", 1);
+        assert!(
+            ReviewPack::from_toml(&legacy_schema)
+                .unwrap_err()
+                .to_string()
+                .contains("requires schema = 2")
+        );
+
+        let legacy_subject = BASE.replace(
+            "register:esp32s31/cpu/0x20103128/32",
+            "mmio:cpu:0x20103128/32",
+        );
+        assert!(ReviewPack::from_toml(&legacy_subject).is_err());
+    }
+
+    #[test]
+    fn reviewed_binding_requires_matching_domains_artifacts_and_occurrence_evidence() {
+        let artifact = ArtifactIdentity::new("esp-idf/lib/radio.a", "a".repeat(64)).unwrap();
+        let occurrence = RevisionOccurrenceId::derive(
+            EntityDomain::Function,
+            std::slice::from_ref(&artifact),
+            "radio.o:text+0x18",
+        )
+        .unwrap();
+        let binding = format!(
+            r#"
+schema = 2
+id = "radio-bindings"
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+
+[[bindings]]
+id = "wifi.rx.binding"
+occurrence = "{occurrence}"
+semantic = "function:esp-idf/wifi/rx"
+[bindings.applies-to]
+artifacts = [{{ source = "esp-idf/lib/radio.a", sha256 = "{}" }}]
+[[bindings.evidence]]
+source = "manual-review"
+locator = "radio.o::wifi-rx"
+occurrence = "{occurrence}"
+"#,
+            artifact.sha256()
+        );
+
+        let knowledge = ReviewKnowledge::merge([ReviewPack::from_toml(&binding).unwrap()]).unwrap();
+        assert_eq!(knowledge.bindings().len(), 1);
+        let effective = &knowledge.bindings()["wifi.rx.binding"];
+        assert_eq!(effective.occurrence, occurrence);
+        assert_eq!(
+            effective.semantic,
+            SemanticEntityId::function("esp-idf/wifi/rx").unwrap()
+        );
+        assert_eq!(
+            effective.metadata.applies_to.artifacts.as_slice(),
+            std::slice::from_ref(&artifact)
+        );
+
+        let same_occurrence = binding
+            .replace("id = \"radio-bindings\"", "id = \"radio-bindings-copy\"")
+            .replace("id = \"wifi.rx.binding\"", "id = \"wifi.rx.binding-copy\"");
+        assert!(matches!(
+            ReviewKnowledge::merge([
+                ReviewPack::from_toml(&binding).unwrap(),
+                ReviewPack::from_toml(&same_occurrence).unwrap()
+            ]),
+            Err(Error::BindingConflict { .. })
+        ));
+
+        let second_occurrence = RevisionOccurrenceId::derive(
+            EntityDomain::Function,
+            std::slice::from_ref(&artifact),
+            "radio.o:text+0x30",
+        )
+        .unwrap();
+        let same_semantic =
+            same_occurrence.replace(&occurrence.to_string(), &second_occurrence.to_string());
+        let one_to_many = ReviewKnowledge::merge([
+            ReviewPack::from_toml(&binding).unwrap(),
+            ReviewPack::from_toml(&same_semantic).unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(one_to_many.bindings().len(), 2);
+        assert!(
+            one_to_many
+                .bindings()
+                .values()
+                .all(|binding| binding.semantic
+                    == SemanticEntityId::function("esp-idf/wifi/rx").unwrap())
+        );
+        let selected = one_to_many
+            .select_for(&ApplicabilityContext {
+                artifacts: vec![artifact.clone()],
+                ..ApplicabilityContext::default()
+            })
+            .unwrap();
+        assert_eq!(selected.bindings().len(), 2);
+
+        let wrong_domain = binding.replace(
+            "semantic = \"function:esp-idf/wifi/rx\"",
+            "semantic = \"interface:esp-idf/wifi-osi\"",
+        );
+        assert!(
+            ReviewPack::from_toml(&wrong_domain)
+                .unwrap_err()
+                .to_string()
+                .contains("maps function occurrence to interface semantic entity")
+        );
+
+        let missing_occurrence_evidence = binding.replace(
+            &format!("locator = \"radio.o::wifi-rx\"\noccurrence = \"{occurrence}\"\n"),
+            "locator = \"radio.o::wifi-rx\"\n",
+        );
+        assert!(
+            ReviewPack::from_toml(&missing_occurrence_evidence)
+                .unwrap_err()
+                .to_string()
+                .contains("evidence must reference its occurrence")
+        );
+
+        let unbounded = binding.replace(
+            &format!(
+                "[bindings.applies-to]\nartifacts = [{{ source = \"esp-idf/lib/radio.a\", sha256 = \"{}\" }}]\n",
+                artifact.sha256()
+            ),
+            "",
+        );
+        assert!(
+            ReviewPack::from_toml(&unbounded)
+                .unwrap_err()
+                .to_string()
+                .contains("requires exactly one artifact identity")
+        );
+
+        let multiple_artifacts = binding.replace(
+            &format!(
+                "artifacts = [{{ source = \"esp-idf/lib/radio.a\", sha256 = \"{}\" }}]",
+                artifact.sha256()
+            ),
+            &format!(
+                "artifacts = [{{ source = \"esp-idf/lib/radio.a\", sha256 = \"{}\" }}, {{ source = \"esp-idf/lib/companion.a\", sha256 = \"{}\" }}]",
+                artifact.sha256(),
+                "b".repeat(64)
+            ),
+        );
+        assert!(
+            ReviewPack::from_toml(&multiple_artifacts)
+                .unwrap_err()
+                .to_string()
+                .contains("requires exactly one artifact identity")
+        );
+    }
+
+    #[test]
+    fn vendor_bug_entities_are_domain_typed() {
+        let wrong_function = BASE.replace(
+            "function:esp-idf/ieee802154-ll-clear-events",
+            "interface:esp-idf/ieee802154-ll",
+        );
+        assert!(
+            ReviewPack::from_toml(&wrong_function)
+                .unwrap_err()
+                .to_string()
+                .contains("function must be a function entity")
+        );
+
+        let wrong_register = BASE.replace(
+            "register = \"register:esp32s31/cpu/0x20103128/32\"",
+            "register = \"register-field:esp32s31/cpu/0x20103128/32/0/1\"",
+        );
+        assert!(
+            ReviewPack::from_toml(&wrong_register)
+                .unwrap_err()
+                .to_string()
+                .contains("register must be a register entity")
         );
     }
 }

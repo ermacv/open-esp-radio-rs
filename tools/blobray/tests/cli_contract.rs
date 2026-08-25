@@ -902,30 +902,22 @@ return = "void"
     ));
     std::fs::write(interface_pack, interfaces).unwrap();
 
-    std::fs::write(
-        directory.join("registers/peripherals/device.toml"),
-        r#"schema = 2
+    let reviewed_path = directory.join("reviewed/project-facts.toml");
+    let mut reviewed = std::fs::read_to_string(&reviewed_path).unwrap();
+    reviewed.push_str(
+        r#"
 
-[[peripherals]]
-name = "DEVICE"
-baseAddress = 0x40000000
-
-[[peripherals.registers]]
-
-[peripherals.registers.register]
-name = "CONTROL"
-description = "Synthetic read-modify-write control register."
-addressOffset = 0
-size = 32
-access = "read-write"
-
-[[peripherals.registers.register.fields]]
-name = "ENABLE"
-bitOffset = 0
-bitWidth = 1
+[[assertions]]
+id = "device.control.identity"
+subject = "register:generic-e2e-chip/cpu/0x40000000/32"
+kind = "register-identity"
+value = "DEVICE.CONTROL"
+[[assertions.evidence]]
+source = "fixture"
+locator = "synthetic control register"
 "#,
-    )
-    .unwrap();
+    );
+    std::fs::write(reviewed_path, reviewed).unwrap();
 
     let mut project = std::fs::read_to_string(&manifest).unwrap();
     project.push_str(
@@ -1972,7 +1964,7 @@ fn discovery_plan_ignores_missing_run_bindings_that_the_stage_does_not_consume()
     std::fs::create_dir_all(directory.join("reviewed/peripherals")).unwrap();
     std::fs::write(
         directory.join("reviewed/registers.toml"),
-        "schema = 2\nfragments = [\"peripherals/fixture.toml\"]\n\n[device]\nname = \"fixture\"\nversion = \"1\"\ndescription = \"fixture\"\naddress-unit-bits = 8\nwidth = 32\n",
+        "schema = 3\nchip = \"fixture-chip\"\nfragments = [\"peripherals/fixture.toml\"]\n\n[device]\nname = \"fixture\"\nversion = \"1\"\ndescription = \"fixture\"\naddress-unit-bits = 8\nwidth = 32\n",
     )
     .unwrap();
     std::fs::write(
@@ -2806,9 +2798,16 @@ fn tooling_assets_come_from_the_canonical_cli_without_a_project() {
 #[test]
 fn revision_diff_is_a_typed_project_workflow() {
     let (directory, manifest) = init_temporary_project("revision-diff");
+    let features = ["mmio:0x1000/32"];
+    let fingerprint = {
+        let mut hash = Sha256::new();
+        hash.update(b"blobray/revision-feature/v1\0");
+        hash.update(serde_json::to_vec(&features).unwrap());
+        format!("{:x}", hash.finalize())
+    };
     let revision = |name: &str, function: &str| {
         serde_json::json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "command": "revision snapshot",
             "name": name,
             "project": "revision-diff",
@@ -2820,8 +2819,8 @@ fn revision_diff_is_a_typed_project_workflow() {
                 "member": null,
                 "symbol": function,
                 "profiles": ["all"],
-                "fingerprint": "same-normalized-features",
-                "features": ["mmio:0x1000/32"],
+                "fingerprint": fingerprint.clone(),
+                "features": features,
                 "completeness": {
                     "body": true,
                     "call_targets": true,
@@ -2833,7 +2832,8 @@ fn revision_diff_is_a_typed_project_workflow() {
             "registers": [],
             "interfaces": [],
             "assertions": [],
-            "vendor_bugs": []
+            "vendor_bugs": [],
+            "bindings": []
         })
     };
     let old = directory.join("old.json");
@@ -2857,7 +2857,7 @@ fn revision_diff_is_a_typed_project_workflow() {
         String::from_utf8_lossy(&output.stderr)
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(document["schema_version"], 1);
+    assert_eq!(document["schema_version"], 2);
     assert_eq!(document["command"], "revision diff");
     assert_eq!(document["summary"]["moved"], 1);
     assert_eq!(
@@ -2973,7 +2973,7 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
             .is_file()
     );
     let ledger = std::fs::read_to_string(directory.join("revisions/ledger.toml")).unwrap();
-    assert!(ledger.contains("schema = 2"));
+    assert!(ledger.contains("schema = 3"));
     assert!(ledger.contains("baseline = \"vendor-1\""));
     assert!(ledger.contains("current = \"vendor-1\""));
     assert!(ledger.contains("snapshot-sha256"));
@@ -2999,7 +2999,7 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
         String::from_utf8_lossy(&live_diff.stderr)
     );
     let live_diff: serde_json::Value = serde_json::from_slice(&live_diff.stdout).unwrap();
-    assert_eq!(live_diff["schema_version"], 1);
+    assert_eq!(live_diff["schema_version"], 2);
     assert_eq!(live_diff["from"], "vendor-1");
     assert_eq!(live_diff["to"], "@live");
     assert_eq!(live_diff["artifacts_changed"], false);

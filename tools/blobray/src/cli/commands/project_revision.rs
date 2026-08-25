@@ -26,6 +26,7 @@ struct SnapshotReport<'a> {
     interfaces: usize,
     assertions: usize,
     vendor_bugs: usize,
+    bindings: usize,
     artifact_bindings_verified: usize,
 }
 
@@ -56,7 +57,7 @@ fn snapshot(
     let artifact_bindings_verified = revision::verify_snapshot_bindings(session, &snapshot)?;
     revision::persist_snapshot(&session.manifest, &snapshot, &path, arguments.check)?;
     let report = SnapshotReport {
-        schema_version: revision::REVISION_SCHEMA,
+        schema_version: revision::REVISION_SNAPSHOT_REPORT_SCHEMA,
         command: "revision snapshot",
         status: if arguments.check {
             "verified"
@@ -71,6 +72,7 @@ fn snapshot(
         interfaces: snapshot.interfaces.len(),
         assertions: snapshot.assertions.len(),
         vendor_bugs: snapshot.vendor_bugs.len(),
+        bindings: snapshot.bindings.len(),
         artifact_bindings_verified,
     };
     output::render_report(&report, || {
@@ -83,7 +85,7 @@ fn snapshot(
                 report.functions,
                 report.registers,
                 report.interfaces,
-                report.assertions + report.vendor_bugs,
+                report.assertions + report.vendor_bugs + report.bindings,
                 report.artifact_bindings_verified,
             ))
         );
@@ -120,6 +122,7 @@ fn prepare_update(
 fn diff(arguments: RevisionDiffArgs, session: &crate::application::ProjectSession) -> Result<bool> {
     let from = revision::load_operand(session, &arguments.from)?;
     let to = revision::load_operand(session, &arguments.to)?;
+    revision::validate_operand_pair(&session.project.id, &from, &to)?;
     let report = revision::diff(&from, &to);
     if let Some(path) = arguments.output.as_deref() {
         generated_file::write_or_check_json(path, &report, arguments.check, "revision diff", true)?;
@@ -134,6 +137,7 @@ fn rebase(
 ) -> Result<bool> {
     let from = revision::load_operand(session, &arguments.from)?;
     let to = revision::load_operand(session, &arguments.to)?;
+    revision::validate_operand_pair(&session.project.id, &from, &to)?;
     let report = revision::rebase(&from, &to);
     if let Some(path) = arguments.output.as_deref() {
         generated_file::write_or_check_json(

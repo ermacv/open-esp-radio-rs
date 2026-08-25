@@ -1315,6 +1315,9 @@ sources = [
     "ROM_REV0_PHY_BLOBRAY_GAPS",
     "BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE",
 ]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE"
@@ -1322,6 +1325,9 @@ sources = [
     "ROM_REV0_PHY_BLOBRAY_GAPS",
     "BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE",
 ]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE"
@@ -1329,6 +1335,9 @@ sources = [
     "ROM_REV0_PHY_BLOBRAY_GAPS",
     "BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE",
 ]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.RX_CONFIG_004C"

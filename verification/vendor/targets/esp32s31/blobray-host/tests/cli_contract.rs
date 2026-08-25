@@ -77,7 +77,7 @@ fn checked_register_publications_are_typed_reports() {
 }
 
 #[test]
-fn inspect_register_schema_six_exposes_typed_validation_actions() {
+fn inspect_register_schema_seven_exposes_typed_validation_actions() {
     let inspect = |address: &str| {
         let output = blobray()
             .args(["inspect", "register", address, "--project"])
@@ -94,7 +94,7 @@ fn inspect_register_schema_six_exposes_typed_validation_actions() {
     };
 
     let owned = inspect("0x20103100");
-    assert_eq!(owned["schema_version"], 6);
+    assert_eq!(owned["schema_version"], 7);
     assert_eq!(owned["register"]["review_status"], "unreviewed");
     assert_eq!(owned["review_draft"]["state"], "review-required");
     assert_eq!(owned["review_draft"]["completion_claim"], false);
@@ -111,6 +111,7 @@ fn inspect_register_schema_six_exposes_typed_validation_actions() {
     let raw = owned["review_draft"]["raw_toml"].as_str().unwrap();
     assert!(raw.parse::<toml_edit::DocumentMut>().is_ok());
     assert!(raw.contains("REVIEW_REQUIRED.register-identity"));
+    assert!(raw.contains("subject = \"register:esp32s31/cpu/0x20103100/32\""));
     assert!(raw.contains("kind = \"register-identity\""));
     assert!(raw.contains("value = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\""));
     assert_eq!(raw.matches("[[assertions]]").count(), 1);
@@ -169,16 +170,16 @@ fn inspect_register_schema_six_exposes_typed_validation_actions() {
         ("0x2010fcb0", "manual"),
     ] {
         let report = inspect(address);
-        assert_eq!(report["schema_version"], 6);
+        assert_eq!(report["schema_version"], 7);
         assert_eq!(report["register"]["review_status"], expected_state);
         assert!(report["review_draft"].is_null());
     }
 
     let event_status = inspect("0x20103064");
-    assert_eq!(event_status["schema_version"], 6);
+    assert_eq!(event_status["schema_version"], 7);
     assert_eq!(
         event_status["reviewed_assertions"]["subject"],
-        "mmio:cpu:0x20103064/32"
+        "register:esp32s31/cpu/0x20103064/32"
     );
     assert_eq!(
         event_status["reviewed_assertions"]["completion_claim"],
@@ -201,7 +202,7 @@ fn inspect_register_schema_six_exposes_typed_validation_actions() {
     );
     assert!(assertions.iter().all(|assertion| {
         assertion["pack"] == "esp32s31-radio-rev0-project-facts"
-            && assertion["subject"] == "mmio:cpu:0x20103064/32"
+            && assertion["subject"] == "register:esp32s31/cpu/0x20103064/32"
             && !assertion["kind"].as_str().unwrap().is_empty()
             && !assertion["evidence"].as_array().unwrap().is_empty()
     }));
@@ -215,7 +216,7 @@ fn inspect_register_schema_six_exposes_typed_validation_actions() {
 }
 
 #[test]
-fn research_schema_eleven_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
+fn research_schema_twelve_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
     let lookup = |scope: &str, finding: &str| {
         let output = blobray()
             .args([
@@ -248,7 +249,7 @@ fn research_schema_eleven_exact_finding_resolution_is_current_and_not_a_completi
     };
 
     let open = lookup("ieee802154-baseband-leaves", "register-0x20103100-32");
-    assert_eq!(open["schema_version"], 11);
+    assert_eq!(open["schema_version"], 12);
     assert_eq!(open["completion_claim"], false);
     assert_eq!(open["finding_query"]["state"], "open");
     assert_eq!(open["finding_query"]["completion_claim"], false);
@@ -302,7 +303,7 @@ fn research_schema_eleven_exact_finding_resolution_is_current_and_not_a_completi
     );
 
     let missing = lookup("ieee802154-baseband-leaves", "register-not-current");
-    assert_eq!(missing["schema_version"], 11);
+    assert_eq!(missing["schema_version"], 12);
     assert_eq!(missing["completion_claim"], false);
     assert_eq!(missing["finding_query"]["state"], "not-present");
     assert_eq!(missing["finding_query"]["completion_claim"], false);

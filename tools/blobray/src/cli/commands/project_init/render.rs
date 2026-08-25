@@ -4,13 +4,17 @@ use super::options::Options;
 
 pub(super) fn render_manifest(options: &Options) -> String {
     let mut output = format!(
-        "# Shareable project configuration. Keep local artifact paths in local.toml.\n\
-schema = 3\n\
-id = \"{}\"\n\
-target-spec = \"target.toml\"\n\
-ecosystem-packs = [\"ecosystem.toml\"]\n\
-chip-pack = \"chip.toml\"\n\
-",
+        r#"# Shareable project configuration. Keep local artifact paths in local.toml.
+schema = 3
+id = "{}"
+target-spec = "target.toml"
+ecosystem-packs = ["ecosystem.toml"]
+chip-pack = "chip.toml"
+
+[reviewed-knowledge]
+packs = ["reviewed/project-facts.toml"]
+default-pack = "reviewed/project-facts.toml"
+"#,
         options.id
     );
     output.push_str(
@@ -91,6 +95,24 @@ allow-clippy-empty-docs = false\n"
         .to_owned()
 }
 
+pub(super) fn render_reviewed_knowledge(options: &Options) -> String {
+    format!(
+        r#"# Add only manually verified facts; generated observations stay under generated/.
+schema = 2
+id = "{}-project-facts"
+
+[classification]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "partial"
+
+[applies-to]
+chips = ["{}-chip"]
+"#,
+        options.id, options.id
+    )
+}
+
 pub(super) fn render_ecosystem(options: &Options) -> String {
     format!(
         "# Reusable vendor/ecosystem semantics; no chip addresses belong here.\n\
@@ -108,8 +130,11 @@ schema = 3\n\
 id = \"{}-chip\"\n\
 memory-map = \"memory.toml\"\n\
 svd = []\n\
-knowledge-packs = []\n",
-        options.id
+knowledge-packs = []\n\
+\n\
+[applicability]\n\
+chips = [\"{}-chip\"]\n",
+        options.id, options.id
     )
 }
 
@@ -163,7 +188,8 @@ pub(super) fn render_readme(options: &Options) -> String {
     format!(
         "# {} vendor analysis project\n\n\
 This directory is a generic Blobray project. `chip.toml` owns the\n\
-reusable address inputs; reviewed register names and fields live under `registers/`.\n\
+reusable address inputs; investigation-specific register names and semantics\n\
+live as sparse facts in `reviewed/project-facts.toml`.\n\
 Generated findings and reports are ignored.\n\n\
 ## Bootstrap\n\n\
 ```console\n\
@@ -180,7 +206,7 @@ cargo blobray advanced functions init-pack --project vendor-project.toml\n\
 cargo blobray project analyze --project vendor-project.toml\n\
 cargo blobray registers review --project vendor-project.toml\n\
 ```\n\n\
-Review `code/boundaries.toml`, `registers/peripherals/*.toml`,\n\
+Review `code/boundaries.toml`, `reviewed/project-facts.toml`,\n\
 `interfaces/reviewed.toml` and `functions/reviewed.toml`. Then use `project analyze` to refresh evidence,\n\
 and `project analyze --check` in analysis CI. Publication is a separate reviewed boundary: configure\n\
 `[review]` and exact `publication-scopes` after inspecting the generated analysis, then run\n\

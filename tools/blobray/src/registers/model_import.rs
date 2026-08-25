@@ -44,6 +44,7 @@ fn identifier_from(value: &str) -> String {
 pub(crate) fn init_register_model(
     facts: &RegisterFacts,
     output_path: &Path,
+    chip: &str,
     address_space: &str,
     project_id: &str,
 ) -> Result<RegisterModelImportSummary> {
@@ -92,7 +93,8 @@ pub(crate) fn init_register_model(
         ));
     }
     let manifest = RegisterModelManifest {
-        schema: 2,
+        schema: 3,
+        chip: chip.to_owned(),
         address_space: address_space.to_owned(),
         device: ModelDevice {
             name: identifier_from(project_id).to_ascii_uppercase(),
@@ -124,6 +126,7 @@ pub(crate) fn init_register_model(
 pub(crate) fn import_svd_model(
     input_path: &Path,
     output_path: &Path,
+    chip: &str,
     address_space: &str,
 ) -> Result<RegisterModelImportSummary> {
     if output_path.exists() {
@@ -184,7 +187,8 @@ pub(crate) fn import_svd_model(
         svd_schema_location: device.no_namespace_schema_location,
     };
     let manifest = RegisterModelManifest {
-        schema: 2,
+        schema: 3,
+        chip: chip.to_owned(),
         address_space: address_space.to_owned(),
         device: metadata,
         fragments: fragment_paths,
@@ -370,7 +374,19 @@ fn clean_description(
         .transpose()?;
     let cleaned = strip_leading_annotations(&current);
     *description = (!cleaned.is_empty()).then_some(cleaned);
-    if !sources.is_empty() || provenance.is_some() || accuracy.is_some() || completeness.is_some() {
+    let has_review_metadata =
+        !sources.is_empty() || provenance.is_some() || accuracy.is_some() || completeness.is_some();
+    if has_review_metadata
+        && (sources.is_empty()
+            || provenance.is_none()
+            || accuracy.is_none()
+            || completeness.is_none())
+    {
+        return Err(crate::Error::invalid(format!(
+            "SVD review annotation for {entity:?} requires SOURCE, PROVENANCE, ACCURACY and COMPLETENESS together"
+        )));
+    }
+    if has_review_metadata {
         review.push(ReviewAnnotation {
             entity: entity.to_owned(),
             sources,
@@ -488,12 +504,16 @@ mod tests {
             registers: Vec::new(),
         };
 
-        let summary = init_register_model(&facts, &output, "cpu", "fixture").unwrap();
+        let summary =
+            init_register_model(&facts, &output, "fixture-chip", "cpu", "fixture").unwrap();
         let model = super::super::RegisterModel::load(&output).unwrap();
+        let manifest = std::fs::read_to_string(&output).unwrap();
         let (_, svd_summary) = model.render_svd().unwrap();
         std::fs::remove_dir_all(directory).unwrap();
         assert_eq!(summary.peripherals, 2);
         assert_eq!(summary.annotations, 0);
+        assert_eq!(model.chip(), "fixture-chip");
+        assert!(manifest.starts_with("schema = 3\nchip = \"fixture-chip\"\n"));
         assert_eq!(svd_summary.peripherals, 2);
         assert_eq!(svd_summary.registers, 0);
     }
@@ -522,7 +542,8 @@ mod tests {
             registers: Vec::new(),
         };
 
-        let error = init_register_model(&facts, &output, "cpu", "fixture").unwrap_err();
+        let error =
+            init_register_model(&facts, &output, "fixture-chip", "cpu", "fixture").unwrap_err();
         assert!(error.to_string().contains("duplicate peripheral name"));
         assert!(!output.exists());
     }
@@ -544,6 +565,17 @@ mod tests {
             review[0].completeness,
             Some(crate::FactCompleteness::Complete)
         );
+    }
+
+    #[test]
+    fn rejects_partial_svd_review_metadata_before_model_generation() {
+        let mut description = Some("SOURCE[ROM_FN]. Enable radio".to_owned());
+        let mut review = Vec::new();
+
+        let error = clean_description("RADIO.CONTROL", &mut description, &mut review).unwrap_err();
+
+        assert!(error.to_string().contains("requires SOURCE"));
+        assert!(review.is_empty());
     }
 
     #[test]

@@ -627,7 +627,7 @@ mod tests {
             svd_paths: Vec::new(),
             reviewed_knowledge: Vec::new(),
             reviewed_knowledge_default: None,
-            review_context: open_radio_vendor_review::ApplicabilityContext::default(),
+            review_context: open_radio_vendor_contracts::ApplicabilityContext::default(),
             symbol_inventory: None,
             navigation_index: None,
             code: None,

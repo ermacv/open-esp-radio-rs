@@ -89,7 +89,8 @@ fn fixture_project(name: &str, svd: bool, pac: bool, bindings: bool) -> (PathBuf
     fs::create_dir_all(directory.join("registers/peripherals")).unwrap();
     fs::write(
         directory.join("registers/device.toml"),
-        r#"schema = 2
+        r#"schema = 3
+chip = "fixture-chip"
 address-space = "cpu"
 fragments = ["peripherals/radio.toml"]
 
@@ -154,7 +155,7 @@ bitWidth = 1
         lint_pack: None,
         evidence_catalogs: Vec::new(),
         reviewed_knowledge: Vec::new(),
-        review_context: open_radio_vendor_review::ApplicabilityContext::default(),
+        review_context: open_radio_vendor_contracts::ApplicabilityContext::default(),
     };
     let project_id = format!("publication-{name}");
     let review_output = directory.join("generated/review-scopes.json");
@@ -181,7 +182,7 @@ bitWidth = 1
         svd_paths: Vec::new(),
         reviewed_knowledge: Vec::new(),
         reviewed_knowledge_default: None,
-        review_context: open_radio_vendor_review::ApplicabilityContext::default(),
+        review_context: open_radio_vendor_contracts::ApplicabilityContext::default(),
         symbol_inventory: None,
         navigation_index: None,
         code: None,

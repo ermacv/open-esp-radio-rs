@@ -58,12 +58,17 @@ closed instead of using manifest order as executable precedence.
   comparison inputs, declarations, and report paths; it has no executable
   verdict provider and grants no analysis knowledge;
 - register/interface/function packs: reviewed assertions and evidence links;
-- sparse reviewed-knowledge packs (`schema = 1`): opaque subject/kind/value
-  facts and vendor bugs. Empty evidence, hints, duplicate IDs, invalid artifact
-  hashes and overlapping assertions fail closed; pack and record applicability
-  are intersected rather than overridden. The effective project composition
-  selects facts before use. A missing context dimension or two same-subject,
-  same-kind facts selected by an ambiguous context is an error;
+- sparse reviewed-knowledge packs (`schema = 2`): canonically typed semantic
+  subjects, consumer-owned kind/value facts, entity bindings and vendor bugs.
+  Empty evidence, hints, duplicate IDs, invalid artifact hashes and overlapping
+  assertions fail closed; pack and record applicability are intersected rather
+  than overridden. Blob-local occurrences can bind to stable semantic entities
+  only with exact artifact applicability and occurrence-linked evidence. The
+  same occurrence cannot bind to two semantics in overlapping applicability,
+  while one semantic may intentionally collect multiple blob occurrences. The
+  effective project composition selects facts before use. A missing context
+  dimension or two same-subject, same-kind facts selected by an ambiguous
+  context is an error. Schema 1 is rejected without a compatibility reader;
 - disposition manifests: reviewed vendor-to-production binding and claim
   declarations, never execution truth;
 - verification policy: required comparisons and bounded properties;
@@ -119,11 +124,11 @@ provenance, never executable semantics.
 
 ## Durable revision state
 
-- immutable schema-2 revision snapshots (`revisions/snapshots/NAME.json.gz`)
+- immutable schema-3 revision snapshots (`revisions/snapshots/NAME.json.gz`)
   contain only typed vendor artifact/inventory/companion digests and normalized
   vendor-derived features, never vendor payloads, disassembly, or local Rust
   verification ELF identities;
-- `revisions/ledger.toml` is the tracked schema-2 index for those snapshots.
+- `revisions/ledger.toml` is the tracked schema-3 index for those snapshots.
   It stores only project/revision names, relative snapshot locations, SHA-256
   identities, `baseline`/`current` pointers and an optional update-preflight
   marker. `snapshot-sha256` identifies normalized logical snapshot content,
@@ -139,9 +144,9 @@ companions that affected each generated bundle. Revision capture compares all
 three dependency classes with the current typed run-spec and rejects stale
 generated evidence.
 
-Only schema-2 snapshots and ledgers are accepted. Schema-1 state and migration
+Only schema-3 snapshots and ledgers are accepted. Older state and migration
 maps are not parsed or upgraded. Archive or remove an older ledger and capture
-a fresh schema-2 baseline from the live typed vendor bindings.
+a fresh schema-3 baseline from the live typed vendor bindings.
 
 ## Generated outputs
 
@@ -168,14 +173,14 @@ a fresh schema-2 baseline from the live typed vendor bindings.
 - pseudo-Rust and executable reference artifacts;
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output;
-- revision diff and rebase plans. Diff reports use their own schema 1,
-  independently of schema-2 stored snapshots, and include a typed function
+- revision diff and rebase plans. Diff reports use their own schema 2,
+  independently of schema-3 stored snapshots, and include a typed function
   delta (`changed`, `added`, `removed`, `{ before, after }` remaps and uncertain
   identities) plus research invalidation areas with affected subjects and
   reviewed-record IDs. `@live` is a read-only operand for validating and
   comparing current analyzed bindings before publishing a new immutable
   snapshot;
-- research-next reports (`schema_version = 11`) contain one deterministic,
+- research-next reports (`schema_version = 12`) contain one deterministic,
   SHA-256-identified full inventory of findings, actions and prerequisites.
   Actions refer to the single typed finding catalog by ID and prerequisites
   carry no rank; the bounded `selection.steps` list contains only ordered typed

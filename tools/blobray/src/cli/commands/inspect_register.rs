@@ -7,7 +7,7 @@ use serde::Serialize;
 use super::super::*;
 use crate::registers::{
     RegisterFacts, RegisterPublicationOwnership, classify_register_publication,
-    load_effective_register_model, render_sparse_review_draft,
+    load_effective_register_model, render_sparse_review_draft, reviewed_register_identities,
 };
 
 #[derive(Serialize)]
@@ -24,7 +24,7 @@ struct RegisterInvestigationReport {
 
 #[derive(Serialize)]
 struct RegisterReviewedAssertions {
-    subject: String,
+    subject: open_radio_vendor_contracts::SemanticEntityId,
     completion_claim: bool,
     assertions: Vec<open_radio_vendor_review::EffectiveAssertion>,
 }
@@ -49,11 +49,11 @@ struct RegisterNeighbor {
 
 #[derive(Serialize)]
 struct RegisterRecordingGuide {
-    subject: String,
+    subject: open_radio_vendor_contracts::SemanticEntityId,
     reviewed_knowledge_destination: Option<String>,
     supported_register_facts: Vec<&'static str>,
     supported_field_facts: Vec<&'static str>,
-    field_subject_suffix: &'static str,
+    field_subject_template: String,
     evidence_rule: &'static str,
     reuse_rule: &'static str,
 }
@@ -79,7 +79,7 @@ pub(super) fn run(
         reviewed_assertions: reviewed_assertions(session, &detail)?,
         review_draft: review_draft(session, &detail)?,
         conclusion: conclusion(&detail),
-        schema_version: 6,
+        schema_version: 7,
         command: "inspect register",
         register: detail,
     };
@@ -98,11 +98,13 @@ fn reviewed_assertions(
         return Ok(None);
     };
     let model = load_effective_register_model(paths)?;
-    let subject = format!(
-        "mmio:{}:{:#010x}/{width}",
+    let subject = open_radio_vendor_contracts::SemanticEntityId::register(
+        model.chip(),
         model.address_space(),
-        detail.address
-    );
+        u64::from(detail.address),
+        u32::from(width),
+    )
+    .map_err(|error| crate::Error::invalid(error.to_string()))?;
     let knowledge =
         open_radio_vendor_review::ReviewKnowledge::load_all(&session.project.reviewed_knowledge)
             .and_then(|knowledge| knowledge.select_for(&session.project.review_context))
@@ -158,7 +160,7 @@ fn review_draft(
         completion_claim: false,
         finding_id: finding_id.clone(),
         destination: destination.display().to_string(),
-        raw_toml: render_sparse_review_draft(fact, model.address_space()),
+        raw_toml: render_sparse_review_draft(fact, model.chip(), model.address_space()),
         validation_actions: vec![
             context.follow_up_action(
                 ["registers", "validate"],
@@ -202,11 +204,13 @@ fn recording_guide(
     };
     let model = crate::registers::load_effective_register_model(paths)?;
     Ok(Some(RegisterRecordingGuide {
-        subject: format!(
-            "mmio:{}:{:#010x}/{width}",
+        subject: open_radio_vendor_contracts::SemanticEntityId::register(
+            model.chip(),
             model.address_space(),
-            detail.address
-        ),
+            u64::from(detail.address),
+            u32::from(width),
+        )
+        .map_err(|error| crate::Error::invalid(error.to_string()))?,
         reviewed_knowledge_destination: project
             .reviewed_knowledge_default
             .as_ref()
@@ -223,7 +227,12 @@ fn recording_guide(
             "field-access",
             "field-write-semantics",
         ],
-        field_subject_suffix: "#bits:<offset>/<width>",
+        field_subject_template: format!(
+            "register-field:{}/{}/{:#x}/{width}/<offset>/<width>",
+            model.chip(),
+            model.address_space(),
+            detail.address
+        ),
         evidence_rule: "Add an assertion only after manual review and link it to durable evidence; generated reads, writes, masks, names and neighboring addresses are candidates, not hardware truth.",
         reuse_rule: "Keep a blob-specific conclusion in a project reviewed-knowledge pack; promote it to the chip baseline only when independently reviewed and reusable across investigations.",
     }))
@@ -243,12 +252,19 @@ fn neighbors(
     let Some(paths) = project.registers.as_ref() else {
         return Ok(Vec::new());
     };
-    let identities = paths
+    let model = paths
         .model
         .is_file()
         .then(|| crate::registers::load_effective_register_model(paths))
+        .transpose()?;
+    let identities = model
+        .as_ref()
+        .map(crate::registers::RegisterModel::register_identities)
         .transpose()?
-        .map(|model| model.register_identities())
+        .unwrap_or_default();
+    let reviewed_identities = model
+        .as_ref()
+        .map(reviewed_register_identities)
         .transpose()?
         .unwrap_or_default();
     let facts = paths
@@ -282,7 +298,7 @@ fn neighbors(
             width,
             name,
             reviewed: crate::registers::physical_register_identity(
-                &identities,
+                &reviewed_identities,
                 u64::from(address),
                 u32::from(width),
             )
@@ -294,7 +310,7 @@ fn neighbors(
 fn conclusion(detail: &crate::RegisterDetailSummary) -> String {
     match detail.review_status {
         crate::RegisterReviewState::Reviewed | crate::RegisterReviewState::Manual => {
-            "The register has an explicit reviewed project identity; consult its provenance, accuracy, completeness, and evidence before relying on field semantics.".to_owned()
+            "The register has an explicit reviewed identity; consult its provenance, accuracy, completeness, and evidence before relying on field semantics.".to_owned()
         }
         crate::RegisterReviewState::NonOperational => {
             "The address is observed exclusively in reviewed non-operational code. Evidence is retained, but it does not control the driver and does not block publication.".to_owned()
@@ -369,9 +385,9 @@ fn render_human(report: &RegisterInvestigationReport) {
             recording.supported_register_facts.join(", ")
         );
         outputln!(
-            "Field facts:    {} (append {})",
+            "Field facts:    {} (use {})",
             recording.supported_field_facts.join(", "),
-            recording.field_subject_suffix
+            recording.field_subject_template
         );
         outputln!("Evidence:     {}", recording.evidence_rule);
         outputln!("Reuse:        {}", recording.reuse_rule);
@@ -397,6 +413,7 @@ fn render_human(report: &RegisterInvestigationReport) {
                         serde_json::to_string(&assertion.value)
                             .unwrap_or_else(|_| "<unrenderable>".to_owned()),
                         assertion
+                            .metadata
                             .evidence
                             .iter()
                             .map(|evidence| format!("{}:{}", evidence.source, evidence.locator))

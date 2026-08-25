@@ -58,8 +58,9 @@ The schema-3 composition is deliberately layered:
    only compiled knowledge that is valid across investigations of that chip;
 4. `vendor-project.toml` references these inputs and owns composition plus an
    optional investigation-local `analysis-provider`;
-5. sparse reviewed-knowledge packs own investigation-specific assertions and
-   vendor bugs with stable IDs, evidence and bounded applicability;
+5. sparse reviewed-knowledge packs own investigation-specific assertions,
+   vendor bugs and blob-occurrence-to-semantic bindings with stable IDs,
+   evidence and bounded applicability;
 6. reviewed project workspaces own the remaining investigation-specific
    contracts while their generated candidates remain disposable.
 

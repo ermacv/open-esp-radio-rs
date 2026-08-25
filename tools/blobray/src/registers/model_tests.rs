@@ -9,7 +9,8 @@ fn stale_review_entity_is_rejected() {
     std::fs::create_dir_all(directory.join("peripherals")).unwrap();
     std::fs::write(
         directory.join("device.toml"),
-        r#"schema = 2
+        r#"schema = 3
+chip = "test-chip"
 address-space = "cpu"
 fragments = ["peripherals/radio.toml"]
 

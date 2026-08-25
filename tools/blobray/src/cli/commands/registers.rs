@@ -23,7 +23,9 @@ pub(super) fn run(
         RegisterWorkspaceCommand::InitModel(arguments) => {
             init_model(arguments, project, memory_map, paths)
         }
-        RegisterWorkspaceCommand::ImportSvd(arguments) => import_svd(arguments, memory_map, paths),
+        RegisterWorkspaceCommand::ImportSvd(arguments) => {
+            import_svd(arguments, project, memory_map, paths)
+        }
         RegisterWorkspaceCommand::Validate(arguments) => validate(arguments, memory_map, paths),
         RegisterWorkspaceCommand::Review(arguments) => review(arguments, paths),
         RegisterWorkspaceCommand::ExportSvd(arguments) => export_svd(arguments, paths),
@@ -48,7 +50,7 @@ fn review(
         .map_err(crate::Error::invalid)?;
     if !RegisterModel::is_model_file(&paths.model)? {
         return Err(crate::Error::invalid(
-            "registers review requires a register-model-v2 manifest",
+            "registers review requires a register-model-v3 manifest",
         ));
     }
     let facts = RegisterFacts::load(&paths.facts)?;
@@ -112,12 +114,13 @@ fn init_model(
     };
     let facts = RegisterFacts::load(&paths.facts)?;
     let owned_facts = facts.select_ranges(&paths.owned_ranges)?;
-    let summary = init_register_model(&owned_facts, output, &address_space, &project.id)?;
+    let chip = register_chip(project)?;
+    let summary = init_register_model(&owned_facts, output, chip, &address_space, &project.id)?;
     let report = RegisterModelDocument {
         schema: 1,
         command: "registers init-model",
         status: "created",
-        model_schema: 2,
+        model_schema: 3,
         peripherals: summary.peripherals,
         fragments: summary.fragments,
         observed_registers: owned_facts.registers.len(),
@@ -133,6 +136,7 @@ fn init_model(
 #[tracing::instrument(name = "import_svd", skip_all, fields(input = %arguments.input.display()))]
 fn import_svd(
     arguments: RegisterImportArgs,
+    project: &ProjectSpec,
     memory_map: Option<&MemoryMap>,
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
@@ -144,12 +148,12 @@ fn import_svd(
             .map(|memory| memory.default_address_space.clone())
             .unwrap_or_else(|| "cpu".to_owned()),
     };
-    let summary = import_svd_model(&input, output, &address_space)?;
+    let summary = import_svd_model(&input, output, register_chip(project)?, &address_space)?;
     let report = RegisterModelDocument {
         schema: 1,
         command: "registers import-svd",
         status: "imported",
-        model_schema: 2,
+        model_schema: 3,
         peripherals: summary.peripherals,
         fragments: summary.fragments,
         observed_registers: 0,
@@ -160,6 +164,20 @@ fn import_svd(
     };
     crate::cli::output::render_report(&report, || print_model_human(&report));
     Ok(true)
+}
+
+fn register_chip(project: &ProjectSpec) -> Result<&str> {
+    let chips = project
+        .chip_pack
+        .as_ref()
+        .map(|pack| pack.applicability.chips.as_slice())
+        .unwrap_or_default();
+    match chips {
+        [chip] => Ok(chip),
+        _ => Err(crate::Error::invalid(
+            "register model creation requires a chip pack with exactly one applicability.chips entry",
+        )),
+    }
 }
 
 fn validate(

@@ -155,7 +155,7 @@ fn project_composition_selects_one_reviewed_chip_revision_fail_closed() {
         std::fs::write(
             directory.join(format!("reviewed/{id}.toml")),
             format!(
-                r#"schema = 1
+                r#"schema = 2
 id = "{id}"
 [classification]
 provenance = "reviewed"
@@ -169,11 +169,11 @@ artifact-lineages = ["fixture-radio"]
 artifacts = [{{ source = "fixture-blob", sha256 = "{ARTIFACT_SHA256}" }}]
 [[assertions]]
 id = "{id}.identity"
-subject = "mmio:cpu:0x1000/32"
+subject = "register:esp32s31/cpu/0x1000/32"
 kind = "register-identity"
 value = "{name}"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "manual"
 "#
             ),
@@ -211,8 +211,8 @@ owned-ranges = ["radio"]
     assert_eq!(context.chip_revisions, ["rev0"]);
     assert_eq!(context.artifact_lineages, ["fixture-radio"]);
     assert_eq!(context.artifacts.len(), 1);
-    assert_eq!(context.artifacts[0].source, "fixture-blob");
-    assert_eq!(context.artifacts[0].sha256, ARTIFACT_SHA256);
+    assert_eq!(context.artifacts[0].source(), "fixture-blob");
+    assert_eq!(context.artifacts[0].sha256(), ARTIFACT_SHA256);
 
     write_chip("[\"rev0\", \"rev1\"]");
     let ambiguous = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap_err();
@@ -220,7 +220,7 @@ owned-ranges = ["radio"]
 
     write_chip("[]");
     let missing = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap_err();
-    assert!(missing.to_string().contains("chip-revisions"));
+    assert!(missing.to_string().contains("chip revisions"));
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -364,7 +364,7 @@ all = true
     std::fs::create_dir_all(directory.join("reviewed")).unwrap();
     std::fs::write(
         directory.join("reviewed/radio.toml"),
-        r#"schema = 1
+        r#"schema = 2
 id = "fixture-radio"
 [classification]
 provenance = "reviewed"
@@ -372,11 +372,11 @@ accuracy = "exact"
 completeness = "partial"
 [[assertions]]
 id = "radio.control.identity"
-subject = "mmio:cpu:0x1000/32"
+subject = "register:fixture-chip/cpu/0x1000/32"
 kind = "register-identity"
 value = "RADIO.CONTROL"
 [[assertions.evidence]]
-source = "FIXTURE"
+source = "fixture"
 locator = "review"
 "#,
     )
@@ -451,7 +451,7 @@ locator = "review"
             lint_pack: Some(directory.join("registers/lints.toml")),
             evidence_catalogs: vec![directory.join("registers/evidence.toml")],
             reviewed_knowledge: vec![directory.join("reviewed/radio.toml")],
-            review_context: open_radio_vendor_review::ApplicabilityContext::default(),
+            review_context: open_radio_vendor_contracts::ApplicabilityContext::default(),
         })
     );
     assert_eq!(

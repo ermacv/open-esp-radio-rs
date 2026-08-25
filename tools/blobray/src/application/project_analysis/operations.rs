@@ -1746,7 +1746,7 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
         .ok_or_else(|| crate::Error::invalid("[registers.review] is absent"))?;
     if !RegisterModel::is_model_file(&paths.model)? {
         return Err(crate::Error::invalid(
-            "registers review requires a register-model-v2 manifest",
+            "registers review requires a register-model-v3 manifest",
         ));
     }
     let facts = RegisterFacts::load(&paths.facts)?;
@@ -1792,7 +1792,7 @@ mod cache_domain_tests {
             svd_paths: Vec::new(),
             reviewed_knowledge: Vec::new(),
             reviewed_knowledge_default: None,
-            review_context: open_radio_vendor_review::ApplicabilityContext::default(),
+            review_context: open_radio_vendor_contracts::ApplicabilityContext::default(),
             symbol_inventory: None,
             navigation_index: None,
             code: None,
@@ -1972,7 +1972,7 @@ mod cache_domain_tests {
         std::fs::create_dir_all(fragment.parent().unwrap()).unwrap();
         std::fs::write(
             &model,
-            "schema = 2\nfragments = [\"peripherals/baseband.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n",
+            "schema = 3\nchip = \"fixture-chip\"\nfragments = [\"peripherals/baseband.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n",
         )
         .unwrap();
         let svd = directory.join("public.svd");
@@ -1992,7 +1992,7 @@ mod cache_domain_tests {
             lint_pack: None,
             evidence_catalogs: Vec::new(),
             reviewed_knowledge: vec![reviewed.clone()],
-            review_context: open_radio_vendor_review::ApplicabilityContext::default(),
+            review_context: open_radio_vendor_contracts::ApplicabilityContext::default(),
         };
 
         let inputs =

@@ -11,7 +11,7 @@ use std::{
 
 use super::{
     RegisterFacts, RegisterModel, ReviewAnnotation, observation_is_reviewed,
-    physical_register_identity, physical_register_is_observed,
+    physical_register_identity, physical_register_is_observed, register_identity_maps,
     review_draft::{candidate_fields, inferred_access, write_draft},
     review_ir::RegisterReviewIr,
     review_ir_markdown::write_ir_evidence,
@@ -59,13 +59,15 @@ pub(crate) fn render_register_review(
     model_path: &Path,
 ) -> Result<(String, RegisterReviewSummary)> {
     let ir = RegisterReviewIr::load_all(ir_paths)?;
-    let identities = model.register_identities()?;
+    let identity_maps = register_identity_maps(model)?;
     render_report(
         facts,
         RegisterReviewContext {
+            chip: model.chip(),
             address_space: model.address_space(),
-            identities: &identities,
-            annotations: model.review(),
+            identities: &identity_maps.identities,
+            reviewed_identities: &identity_maps.reviewed,
+            review_annotations: &identity_maps.annotations,
             ir: &ir,
             owned_ranges,
             non_operational_functions,
@@ -76,9 +78,11 @@ pub(crate) fn render_register_review(
 }
 
 struct RegisterReviewContext<'a> {
+    chip: &'a str,
     address_space: &'a str,
     identities: &'a BTreeMap<(u64, u32), String>,
-    annotations: &'a [ReviewAnnotation],
+    reviewed_identities: &'a BTreeMap<(u64, u32), String>,
+    review_annotations: &'a BTreeMap<(u64, u32), ReviewAnnotation>,
     ir: &'a RegisterReviewIr,
     owned_ranges: &'a [String],
     non_operational_functions: &'a [String],
@@ -91,9 +95,11 @@ fn render_report(
     context: RegisterReviewContext<'_>,
 ) -> Result<(String, RegisterReviewSummary)> {
     let RegisterReviewContext {
+        chip,
         address_space,
         identities,
-        annotations,
+        reviewed_identities,
+        review_annotations,
         ir,
         owned_ranges,
         non_operational_functions,
@@ -133,7 +139,7 @@ fn render_report(
         .collect::<BTreeSet<_>>();
     let reviewed_fact_keys = owned_fact_keys
         .iter()
-        .filter(|observation| observation_is_reviewed(identities, observation))
+        .filter(|observation| observation_is_reviewed(reviewed_identities, observation))
         .copied()
         .collect::<BTreeSet<_>>();
     let reviewed = reviewed_fact_keys.len();
@@ -255,10 +261,6 @@ fn render_report(
     )
     .expect("writing to String cannot fail");
 
-    let annotation_map = annotations
-        .iter()
-        .map(|annotation| (annotation.entity.as_str(), annotation))
-        .collect::<BTreeMap<_, _>>();
     let mut ranges = facts.ranges.iter().collect::<Vec<_>>();
     ranges.sort_by_key(|range| (range.start, range.end, range.name.as_str()));
     for range in ranges {
@@ -291,6 +293,12 @@ fn render_report(
                 u32::from(fact.width),
             )
             .map(|(_, identity)| identity);
+            let reviewed_identity = physical_register_identity(
+                reviewed_identities,
+                u64::from(fact.address),
+                u32::from(fact.width),
+            )
+            .map(|(_, identity)| identity);
             let non_operational = non_operational_fact_keys
                 .contains(&(u64::from(fact.address), u32::from(fact.width)));
             let masks = fact
@@ -307,7 +315,7 @@ fn render_report(
                 fact.width,
                 if !owned {
                     "ignored"
-                } else if identity.is_some() {
+                } else if reviewed_identity.is_some() {
                     "reviewed"
                 } else if non_operational {
                     "non-operational-only"
@@ -327,8 +335,8 @@ fn render_report(
         }
 
         for fact in registers {
-            let identity = physical_register_identity(
-                identities,
+            let reviewed_identity = physical_register_identity(
+                reviewed_identities,
                 u64::from(fact.address),
                 u32::from(fact.width),
             )
@@ -343,14 +351,14 @@ fn render_report(
                 fact.width,
                 if !owned {
                     "outside publication scope"
-                } else if non_operational && identity.is_none() {
+                } else if non_operational && reviewed_identity.is_none() {
                     "non-operational-only"
                 } else {
-                    identity.map_or("unreviewed", String::as_str)
+                    reviewed_identity.map_or("unreviewed", String::as_str)
                 }
             )
             .expect("writing to String cannot fail");
-            if non_operational && identity.is_none() {
+            if non_operational && reviewed_identity.is_none() {
                 output.push_str(
                     "This observation is produced exclusively by a function explicitly classified as non-operational in the project review policy. Raw evidence is retained, but it does not create publication review debt.\n\n",
                 );
@@ -394,8 +402,11 @@ fn render_report(
                 )
                 .expect("writing to String cannot fail");
             }
-            if let Some(identity) = identity
-                && let Some(annotation) = annotation_map.get(identity.as_str())
+            if let Some((key, _)) = physical_register_identity(
+                reviewed_identities,
+                u64::from(fact.address),
+                u32::from(fact.width),
+            ) && let Some(annotation) = review_annotations.get(key)
             {
                 if let (Some(provenance), Some(accuracy), Some(completeness)) = (
                     annotation.provenance,
@@ -444,8 +455,8 @@ fn render_report(
                 output.push('\n');
                 write_ir_evidence(&mut output, ir_register);
             }
-            if owned && identity.is_none() && !non_operational {
-                write_draft(&mut output, fact, address_space);
+            if owned && reviewed_identity.is_none() && !non_operational {
+                write_draft(&mut output, fact, chip, address_space);
             }
         }
     }
@@ -544,9 +555,11 @@ mod tests {
         let (report, summary) = render_report(
             &facts,
             RegisterReviewContext {
+                chip: "fixture-chip",
                 address_space: "cpu",
                 identities: &BTreeMap::new(),
-                annotations: &[],
+                reviewed_identities: &BTreeMap::new(),
+                review_annotations: &BTreeMap::new(),
                 ir: &RegisterReviewIr::default(),
                 owned_ranges: &["radio".to_owned()],
                 non_operational_functions: &[],
@@ -558,7 +571,7 @@ mod tests {
         assert_eq!(summary.unreviewed, 1);
         assert_eq!(summary.field_candidates, 2);
         assert!(report.contains("`rom:read_status`"));
-        assert!(report.contains("subject = \"mmio:cpu:0x00001010/32\""));
+        assert!(report.contains("subject = \"register:fixture-chip/cpu/0x1010/32\""));
         assert!(report.contains("kind = \"register-identity\""));
         assert!(
             report.contains("value = \"REVIEW_REQUIRED_REGION.REVIEW_REQUIRED_REGISTER_NAME\"")
@@ -600,9 +613,11 @@ mod tests {
         let (report, summary) = render_report(
             &facts,
             RegisterReviewContext {
+                chip: "fixture-chip",
                 address_space: "cpu",
                 identities: &identities,
-                annotations: &[],
+                reviewed_identities: &identities,
+                review_annotations: &BTreeMap::new(),
                 ir: &RegisterReviewIr::default(),
                 owned_ranges: &["radio".to_owned()],
                 non_operational_functions: &[],

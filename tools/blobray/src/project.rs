@@ -122,7 +122,7 @@ pub(crate) struct RegisterWorkspacePaths {
     pub(crate) lint_pack: Option<PathBuf>,
     pub(crate) evidence_catalogs: Vec<PathBuf>,
     pub(crate) reviewed_knowledge: Vec<PathBuf>,
-    pub(crate) review_context: open_radio_vendor_review::ApplicabilityContext,
+    pub(crate) review_context: open_radio_vendor_contracts::ApplicabilityContext,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -286,7 +286,7 @@ pub(crate) struct ProjectSpec {
     /// Exact project-local destination for newly accepted sparse facts.
     /// Selection is explicit even when only one pack is configured.
     pub(crate) reviewed_knowledge_default: Option<PathBuf>,
-    pub(crate) review_context: open_radio_vendor_review::ApplicabilityContext,
+    pub(crate) review_context: open_radio_vendor_contracts::ApplicabilityContext,
     pub(crate) symbol_inventory: Option<SymbolInventorySpec>,
     pub(crate) navigation_index: Option<NavigationIndexSpec>,
     pub(crate) code: Option<CodeWorkspacePaths>,

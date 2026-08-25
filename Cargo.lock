@@ -230,6 +230,7 @@ dependencies = [
  "open-esp-radio-register-model",
  "open-radio-vendor-analysis-model",
  "open-radio-vendor-backend-riscv",
+ "open-radio-vendor-contracts",
  "open-radio-vendor-execution-model",
  "open-radio-vendor-review",
  "open-radio-vendor-semantics",

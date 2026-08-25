@@ -108,6 +108,8 @@ tests = [
   { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "guard_exits_critical_section_without_running_children" },
   { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "temperature_to_power_matches_all_signed_16_bit_deltas" },
   { path = "driver/chips/esp32s31/phy/src/phy_math.rs", token = "signed_saturation_preserves_rom_comparison_order" },
+  { path = "driver/chips/esp32s31/phy/src/phy_power_tracking.rs", token = "bluetooth_ieee802154_update_owns_bbpll_and_gain_order" },
+  { path = "driver/chips/esp32s31/phy/src/phy_power_tracking.rs", token = "disabled_or_equal_adjustment_commits_nothing" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md", token = "BTBB" },

@@ -159,6 +159,20 @@ protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_param_tracking::PhyParamTrackingTransition"
 
 [[functions]]
+source = "archive"
+symbol = "phy_txpwr_cal_track_new"
+disposition = "replaced-by-composition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_power_tracking::PhyTxPowerTrackingTransition"
+
+[[functions]]
+source = "archive"
+symbol = "phy_bt_track_tx_power_new"
+disposition = "replaced-by-composition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_power_tracking::PhyTxPowerTrackingTransition"
+
+[[functions]]
 source = "rom"
 symbol = "phy_temp_to_power"
 disposition = "direct"

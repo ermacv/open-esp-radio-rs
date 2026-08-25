@@ -293,6 +293,60 @@ abi = "i32"
 role = "lower-bound"
 
 [[functions]]
+profile = "archive-all"
+source = "archive"
+identity = "archive::phy_txpwr_cal_track_new"
+status = "reviewed"
+name = "track_tx_power"
+role = "phy.periodic-power-tracking"
+summary = "Applies the exact temperature hysteresis, retained correction decision, BBPLL boundary and protocol-specific TX-gain publication order; diagnostic formatting is omitted."
+accept-incomplete = true
+
+[functions.signature]
+
+[[functions.signature.arguments]]
+index = 0
+name = "bluetooth_ieee802154"
+abi = "bool"
+role = "tracking-class"
+
+[[functions.signature.arguments]]
+index = 1
+name = "enabled"
+abi = "bool"
+role = "power-tracking-enabled"
+
+[[functions.signature.arguments]]
+index = 2
+name = "diagnostics"
+abi = "bool"
+role = "diagnostic-print-enabled"
+
+[[functions]]
+profile = "archive-all"
+source = "archive"
+identity = "archive::phy_bt_track_tx_power_new"
+status = "reviewed"
+name = "track_bluetooth_ieee802154_tx_power"
+role = "phy.periodic-power-tracking"
+summary = "Tail wrapper that selects the Bluetooth/IEEE 802.15.4 class before entering the shared TX-power tracking parent."
+accept-incomplete = true
+
+[functions.signature]
+
+[[functions.signature.arguments]]
+index = 0
+name = "enabled"
+abi = "bool"
+role = "power-tracking-enabled"
+
+[[functions.signature.arguments]]
+index = 1
+name = "diagnostics"
+abi = "bool"
+role = "diagnostic-print-enabled"
+
+[[functions]]
 profile = "libpp-all"
 source = "libpp"
 identity = "libpp::wdev_record_rx_linked_list"

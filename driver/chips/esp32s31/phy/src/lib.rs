@@ -30,6 +30,7 @@ pub mod phy_math;
 pub mod phy_param_tracking;
 pub mod phy_pbus;
 pub mod phy_pbus_memory;
+pub mod phy_power_tracking;
 pub mod phy_pwdet;
 pub mod phy_register;
 pub mod phy_rfpll;

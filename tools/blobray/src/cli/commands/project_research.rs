@@ -1,5 +1,7 @@
 //! Explainable prioritization of the next project research action.
 
+use std::collections::BTreeSet;
+
 use crate::{
     Result,
     application::{generated_file, research},
@@ -33,24 +35,30 @@ pub(super) fn run(
 }
 
 fn render(report: &research::ResearchNextReport) {
+    let prerequisites = selected_prerequisites(report);
+    let actions = selected_actions(report);
     outputln!("{}", output::heading("Research next"));
     outputln!(
-        "\nReturned {} prerequisites and {} actions within the shared limit ({} prerequisites, {} {} actions from {} findings before selection) across {} review scopes.",
-        report.returned_prerequisites,
-        report.returned_actions,
-        report.strategy_prerequisites,
-        report.strategy_actions,
-        report.strategy.label(),
-        report.total_findings,
+        "\nSelected {} prerequisites and {} actions within limit {}. Complete inventory: {} prerequisites, {} actions and {} findings; {} prerequisites and {} {} actions are strategy-eligible across {} review scopes.",
+        prerequisites.len(),
+        actions.len(),
+        report.selection.limit,
+        report.inventory.prerequisites.len(),
+        report.inventory.actions.len(),
+        report.inventory.findings.len(),
+        report.selection.eligible_prerequisites,
+        report.selection.eligible_actions,
+        report.selection.strategy.label(),
         report.analyzed_scopes.len()
     );
+    outputln!("Inventory: {}", report.inventory.sha256);
     outputln!(
         "Filter: protocol {}; scope {}; budget {}.",
         report.protocol.as_deref().unwrap_or("all"),
         report.scope.as_deref().unwrap_or("all"),
-        report.budget.map_or_else(
+        report.selection.budget.map_or_else(
             || "unbounded".to_owned(),
-            |budget| format!("{}/{} cost units", report.consumed_budget, budget)
+            |budget| format!("{}/{} cost units", report.selection.consumed_budget, budget)
         )
     );
     if let Some(diagnostic) = &report.verification_diagnostic {
@@ -67,15 +75,23 @@ fn render(report: &research::ResearchNextReport) {
             diagnostic
         );
     }
-    if let Some(diagnostic) = &report.selection_diagnostic {
+    if let Some(diagnostic) = &report.selection.diagnostic {
         outputln!("\n{}: {diagnostic}", output::warning("NO STEP FITS"));
     }
-    render_prerequisites(&report.prerequisites);
-    if report.actions.is_empty() {
-        if report.total_actions == 0 {
+    render_prerequisites(&prerequisites);
+    if actions.is_empty() {
+        if report.inventory.actions.is_empty() {
             outputln!(
                 "\n{}",
                 output::warning("NO CANDIDATES DERIVED FROM CURRENT INPUTS")
+            );
+        } else {
+            outputln!(
+                "\n{}",
+                output::warning(format!(
+                    "NO ACTION SELECTED — {} eligible action(s) remain after the prerequisite lane; increase --limit or use --strategy frontier",
+                    report.selection.eligible_actions
+                ))
             );
         }
         return;
@@ -90,85 +106,100 @@ fn render(report: &research::ResearchNextReport) {
                 "Score B/E",
                 "G/O/M · Co · Cost",
             ],
-            report.actions.iter().map(|candidate| [
+            actions.iter().map(|candidate| [
                 candidate.rank.to_string(),
-                compact_middle(&action_label(&candidate.inspect_command), 34),
+                compact_middle(&action_label(&candidate.action.inspect_command), 34),
                 format!(
                     "{} · {} ({})",
-                    action_lane_label(candidate),
-                    compact_middle(&candidate.kinds.join(","), 12),
+                    action_lane_label(&candidate.findings),
+                    compact_middle(&candidate.action.kinds.join(","), 12),
                     candidate.findings.len()
                 ),
                 format!(
                     "{} {}/{}",
-                    candidate.score,
-                    candidate.score_explanation.benefit_points,
-                    candidate.score_explanation.effort_points
+                    candidate.action.score,
+                    candidate.action.score_explanation.benefit_points,
+                    candidate.action.score_explanation.effort_points
                 ),
                 format!(
                     "{}/{}/{} · {} · {}",
-                    candidate.guaranteed_unlock,
-                    candidate.optimistic_unlock,
-                    candidate.marginal_unlock_after_co_blockers,
-                    candidate.co_blockers,
-                    candidate.estimated_cost,
+                    union_finding_ids(&candidate.findings, |finding| &finding
+                        .guaranteed_function_ids)
+                    .len(),
+                    union_finding_ids(&candidate.findings, |finding| &finding
+                        .optimistic_function_ids)
+                    .len(),
+                    union_finding_ids(&candidate.findings, |finding| &finding
+                        .marginal_function_ids)
+                    .len(),
+                    co_blocker_ids(candidate).len(),
+                    candidate.action.estimated_cost,
                 ),
             ]),
         )
     );
-    let first = &report.actions[0];
+    let first = &actions[0];
     outputln!(
         "\n{}",
-        output::heading(format!("Top {} action", report.strategy.label()))
+        output::heading(format!("Top {} action", report.selection.strategy.label()))
     );
-    outputln!("Confidence: {}", first.confidence);
+    outputln!("Confidence: {}", first.action.confidence);
     outputln!(
         "Score: {} = 100 × {} benefit / {} effort ({} cost units)",
-        first.score,
-        first.score_explanation.benefit_points,
-        first.score_explanation.effort_points,
-        first.score_explanation.estimated_cost_units,
+        first.action.score,
+        first.action.score_explanation.benefit_points,
+        first.action.score_explanation.effort_points,
+        first.action.score_explanation.estimated_cost_units,
     );
+    let direct = union_finding_ids(&first.findings, |finding| &finding.direct_function_ids);
+    let guaranteed = union_finding_ids(&first.findings, |finding| &finding.guaranteed_function_ids);
+    let optimistic = union_finding_ids(&first.findings, |finding| &finding.optimistic_function_ids);
+    let marginal = union_finding_ids(&first.findings, |finding| &finding.marginal_function_ids);
     outputln!(
         "Impact: {} direct; {} guaranteed / {} optimistic / {} marginal",
-        first.direct_functions,
-        first.guaranteed_unlock,
-        first.optimistic_unlock,
-        first.marginal_unlock_after_co_blockers,
+        direct.len(),
+        guaranteed.len(),
+        optimistic.len(),
+        marginal.len(),
     );
-    if !first.co_blocker_ids.is_empty() {
-        outputln!("Co-blockers: {}", first.co_blocker_ids.join(", "));
+    let co_blockers = co_blocker_ids(first);
+    if !co_blockers.is_empty() {
+        outputln!("Co-blockers: {}", co_blockers.join(", "));
     }
-    outputln!("Actionability: {}", actionability_summary_label(first));
-    if !first.prerequisite_ids.is_empty() {
-        outputln!(
-            "Blocked by prerequisites: {}",
-            first.prerequisite_ids.join(", ")
-        );
+    outputln!(
+        "Actionability: {}",
+        actionability_summary_label(&first.findings)
+    );
+    let prerequisite_ids = union_finding_ids(&first.findings, |finding| &finding.prerequisite_ids);
+    if !prerequisite_ids.is_empty() {
+        outputln!("Blocked by prerequisites: {}", prerequisite_ids.join(", "));
     }
     render_findings(&first.findings);
-    outputln!("Next inspection: {}", first.inspect_command);
-    for command in revalidation_commands(first) {
+    outputln!("Next inspection: {}", first.action.inspect_command);
+    for command in revalidation_commands(&first.findings) {
         outputln!("Revalidate after human review: {command}");
     }
 
     if output::details() {
-        for candidate in report.actions.iter().skip(1) {
+        for candidate in actions.iter().skip(1) {
+            let direct =
+                union_finding_ids(&candidate.findings, |finding| &finding.direct_function_ids);
+            let co_blockers = co_blocker_ids(candidate);
             outputln!(
                 "\n#{} {}\n  Kinds: {}\n  Direct functions: {}\n  Co-blockers: {}\n  Next inspection: {}",
                 candidate.rank,
-                candidate.id,
-                candidate.kinds.join(", "),
-                candidate.direct_function_ids.join(", "),
-                candidate.co_blocker_ids.join(", "),
-                candidate.inspect_command
+                candidate.action.id,
+                candidate.action.kinds.join(", "),
+                direct.join(", "),
+                co_blockers.join(", "),
+                candidate.action.inspect_command
             );
             render_findings(&candidate.findings);
         }
     }
 }
 
-fn render_prerequisites(prerequisites: &[research::ResearchPrerequisiteAction]) {
+fn render_prerequisites(prerequisites: &[SelectedPrerequisite<'_>]) {
     if prerequisites.is_empty() {
         return;
     }
@@ -187,13 +218,18 @@ fn render_prerequisites(prerequisites: &[research::ResearchPrerequisiteAction]) 
             ["#", "Kind", "Benefit/cost", "Findings", "Required action"],
             visible.iter().map(|prerequisite| [
                 prerequisite.rank.to_string(),
-                prerequisite_kind_label(prerequisite.kind).to_owned(),
+                prerequisite_kind_label(prerequisite.prerequisite.kind).to_owned(),
                 format!(
                     "{}/{}",
-                    prerequisite.benefit_points, prerequisite.estimated_cost_units
+                    prerequisite.prerequisite.benefit_points,
+                    prerequisite.prerequisite.estimated_cost_units
                 ),
-                prerequisite.satisfies_finding_ids.len().to_string(),
-                table::compact(&prerequisite.manual_action, 72),
+                prerequisite
+                    .prerequisite
+                    .satisfies_finding_ids
+                    .len()
+                    .to_string(),
+                table::compact(&prerequisite.prerequisite.manual_action, 72),
             ]),
         )
     );
@@ -218,31 +254,136 @@ fn prerequisite_kind_label(kind: research::ResearchPrerequisiteKind) -> &'static
     }
 }
 
-fn action_lane_label(action: &research::ResearchAction) -> &'static str {
-    if action.actionability.ready.count != 0 {
+struct SelectedPrerequisite<'a> {
+    rank: usize,
+    prerequisite: &'a research::ResearchPrerequisiteCatalogEntry,
+}
+
+struct SelectedAction<'a> {
+    rank: usize,
+    action: &'a research::ResearchActionCatalogEntry,
+    findings: Vec<&'a research::ResearchFinding>,
+}
+
+fn selected_prerequisites(report: &research::ResearchNextReport) -> Vec<SelectedPrerequisite<'_>> {
+    report
+        .selection
+        .steps
+        .iter()
+        .enumerate()
+        .filter(|(_, step)| step.kind == research::ResearchStepKind::Prerequisite)
+        .map(|(index, step)| SelectedPrerequisite {
+            rank: index + 1,
+            prerequisite: report
+                .inventory
+                .prerequisites
+                .binary_search_by(|candidate| candidate.id.cmp(&step.id))
+                .map(|index| &report.inventory.prerequisites[index])
+                .expect("validated prerequisite selection reference"),
+        })
+        .collect()
+}
+
+fn selected_actions(report: &research::ResearchNextReport) -> Vec<SelectedAction<'_>> {
+    report
+        .selection
+        .steps
+        .iter()
+        .enumerate()
+        .filter(|(_, step)| step.kind == research::ResearchStepKind::Action)
+        .map(|(index, step)| {
+            let action = report
+                .inventory
+                .actions
+                .binary_search_by(|candidate| candidate.id.cmp(&step.id))
+                .map(|index| &report.inventory.actions[index])
+                .expect("validated action selection reference");
+            let findings = action
+                .finding_ids
+                .iter()
+                .map(|id| {
+                    report
+                        .inventory
+                        .findings
+                        .binary_search_by(|candidate| candidate.id.cmp(id))
+                        .map(|index| &report.inventory.findings[index])
+                        .expect("validated action finding reference")
+                })
+                .collect();
+            SelectedAction {
+                rank: index + 1,
+                action,
+                findings,
+            }
+        })
+        .collect()
+}
+
+fn union_finding_ids<'a>(
+    findings: &[&'a research::ResearchFinding],
+    values: impl Fn(&'a research::ResearchFinding) -> &'a [String],
+) -> Vec<&'a str> {
+    findings
+        .iter()
+        .flat_map(|finding| values(finding).iter().map(String::as_str))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn co_blocker_ids<'a>(action: &'a SelectedAction<'a>) -> Vec<&'a str> {
+    let internal = action
+        .action
+        .finding_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    union_finding_ids(&action.findings, |finding| &finding.co_blocker_ids)
+        .into_iter()
+        .filter(|id| !internal.contains(id))
+        .collect()
+}
+
+fn action_lane_label(findings: &[&research::ResearchFinding]) -> &'static str {
+    if findings
+        .iter()
+        .any(|finding| finding.actionability == research::ResearchActionability::Ready)
+    {
         "ready"
-    } else if action.actionability.inspection_only.count != 0 {
+    } else if findings
+        .iter()
+        .any(|finding| finding.actionability == research::ResearchActionability::InspectionOnly)
+    {
         "inspect"
     } else {
         "blocked"
     }
 }
 
-fn actionability_summary_label(action: &research::ResearchAction) -> String {
+fn actionability_summary_label(findings: &[&research::ResearchFinding]) -> String {
+    let count = |expected| {
+        findings
+            .iter()
+            .filter(|finding| finding.actionability == expected)
+            .count()
+    };
     [
-        ("ready", action.actionability.ready.count),
-        ("needs-anchor", action.actionability.needs_anchor.count),
+        ("ready", count(research::ResearchActionability::Ready)),
+        (
+            "needs-anchor",
+            count(research::ResearchActionability::NeedsAnchor),
+        ),
         (
             "needs-destination",
-            action.actionability.needs_destination.count,
+            count(research::ResearchActionability::NeedsDestination),
         ),
         (
             "coverage-blocked",
-            action.actionability.coverage_blocked.count,
+            count(research::ResearchActionability::CoverageBlocked),
         ),
         (
             "inspection-only",
-            action.actionability.inspection_only.count,
+            count(research::ResearchActionability::InspectionOnly),
         ),
     ]
     .into_iter()
@@ -252,7 +393,7 @@ fn actionability_summary_label(action: &research::ResearchAction) -> String {
     .join(", ")
 }
 
-fn render_findings(findings: &[research::ResearchFinding]) {
+fn render_findings(findings: &[&research::ResearchFinding]) {
     outputln!("Findings ({}):", findings.len());
     let (visible, hidden) = visible_findings(findings, output::details());
     for (index, finding) in visible.iter().enumerate() {
@@ -267,10 +408,10 @@ fn render_findings(findings: &[research::ResearchFinding]) {
     }
 }
 
-fn visible_findings(
-    findings: &[research::ResearchFinding],
+fn visible_findings<'a, 'finding>(
+    findings: &'a [&'finding research::ResearchFinding],
     details: bool,
-) -> (&[research::ResearchFinding], usize) {
+) -> (&'a [&'finding research::ResearchFinding], usize) {
     const COMPACT_LIMIT: usize = 8;
     let visible = if details {
         findings
@@ -413,9 +554,8 @@ fn consumer_label(consumer: &research::ResearchConsumer) -> String {
     }
 }
 
-fn revalidation_commands(action: &research::ResearchAction) -> Vec<&str> {
-    let mut commands = action
-        .findings
+fn revalidation_commands<'a>(findings: &[&'a research::ResearchFinding]) -> Vec<&'a str> {
+    let mut commands = findings
         .iter()
         .flat_map(|finding| finding.revalidation_commands.iter().map(String::as_str))
         .collect::<Vec<_>>();
@@ -566,12 +706,13 @@ mod tests {
         let findings = (0..12)
             .map(|index| finding(&format!("finding-{index}"), "analysis", "review"))
             .collect::<Vec<_>>();
+        let finding_refs = findings.iter().collect::<Vec<_>>();
 
-        let (compact, hidden) = visible_findings(&findings, false);
+        let (compact, hidden) = visible_findings(&finding_refs, false);
         assert_eq!(compact.len(), 8);
         assert_eq!(hidden, 4);
 
-        let (detailed, hidden) = visible_findings(&findings, true);
+        let (detailed, hidden) = visible_findings(&finding_refs, true);
         assert_eq!(detailed.len(), 12);
         assert_eq!(hidden, 0);
     }

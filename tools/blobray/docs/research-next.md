@@ -23,18 +23,32 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 7. It separates three levels:
+The machine report uses schema 8. It separates the complete backlog from the
+bounded recommendation:
 
-- a `prerequisite` is a deduplicated destination or anchor action that must be
-  completed before its blocked findings can land;
+- `inventory.findings` contains every typed finding exactly once;
+- `inventory.actions` contains every coalesced inspection action and refers to
+  its findings only through `finding_ids`;
+- `inventory.prerequisites` contains every deduplicated destination or anchor
+  action without a selection-specific rank;
+- `selection.steps` is the only ranked list. Its typed prerequisite/action
+  references are bounded by `--limit` and `--budget`.
 
-- an `action` is one copyable `inspect_command` and may coalesce several
-  findings without losing any finding fields; its `actionability` groups keep
-  counts and exact finding IDs for mixed actions;
-- a `finding` retains its typed `subject`, typed executable `consumers`, exact
-  evidence sites/channels, causal inspection functions, impacted functions,
-  context links, required knowledge, finding-level `actionability`, prerequisite
-  IDs and post-review revalidation commands.
+An action is one copyable `inspect_command` and may coalesce several findings
+without duplicating them. A finding retains its typed `subject`, typed
+executable `consumers`, exact evidence sites/channels, causal inspection
+functions, impacted functions, context links, required knowledge,
+finding-level `actionability`, prerequisite IDs and post-review revalidation
+commands.
+
+`inventory.sha256` hashes the project ID, analyzed scope IDs and canonical
+ID-sorted catalogs. It is independent of strategy, limit and budget, so two
+selections over the same backlog share one identity. The digest is currently
+invocation-path-bound: action IDs hash copyable commands and findings retain
+copyable revalidation commands, both of which include the caller's resolved
+project path. Use the same project-path spelling for reproducible `--check`
+output. The digest identifies inventory content; it never replaces full report
+validation or byte comparison.
 
 Reviewed-knowledge consumers are `ready` only through the explicit
 `[reviewed-knowledge].default-pack`; the number of configured packs is never a
@@ -83,8 +97,9 @@ UNITS` likewise uses one cumulative cost across both. Selection exhausts the
 ranked prerequisite lane before ready and inspection lanes, skips steps that do
 not fit the remaining budget, and never silently reorders them. A budget too
 small for every eligible step produces an empty report with the minimum
-required cost in `selection_diagnostic`. Separate total/strategy/returned
-prerequisite counts make the bounded selection auditable.
+required cost in `selection.diagnostic`. Complete inventory lengths,
+strategy-eligible counts and ordered typed step references make the bounded
+selection auditable without dropping hidden findings.
 
 ```console
 cargo blobray project research next \
@@ -101,36 +116,42 @@ Every returned `inspect_command` includes the resolved `--project` path and
 remains directly actionable. Finding-level `revalidation_commands` describe
 what to rerun after human review; they do not assert that the work is done.
 `--output PATH --check` retains the normal generated-file contract for
-reproducible machine plans.
+reproducible machine plans. File generation and checking stream serialization
+against the destination and do not allocate a second full JSON document.
 
 The human summary keeps the inspect target near the left edge of the ranking
 table so it remains readable in an ordinary terminal. The top action then
 lists up to eight coalesced findings separately, including kind, summary,
 knowledge gap, typed consumer resolution, causal inspection functions, linked
 evidence sites/channels and required evidence. The compact view states exactly
-how many findings remain; `--details` expands them. JSON output is unchanged
-and always retains every finding and evidence field.
+how many findings remain; `--details` expands them. When prerequisites consume
+the entire shared limit, the default view still discloses complete and eligible
+action counts and points to `--strategy frontier` or a larger limit. JSON and
+`--output` always retain the complete inventory, even when no action is
+selected.
 
 ## ESP32-S31 measurement
 
 Measured on 2026-08-25 against the repository's current ESP32-S31 generated
 review inputs. All 29 configured scopes produced 1,918 findings, coalesced into
-476 distinct inspection actions and 161 deduplicated prerequisite actions:
+485 distinct inspection actions and 161 deduplicated prerequisite actions:
 
 | Strategy | Eligible prerequisites/actions | Returned prerequisites/actions at limit 20 | Cost units | Leading step |
 | --- | ---: | ---: | ---: | --- |
-| `impact` | 161 / 476 | 20 / 0 | 60 | create interface anchor, downstream benefit 375 |
-| `quick-wins` | 161 / 476 | 20 / 0 | 60 | same cost-3 interface-anchor lane |
-| `frontier` | 1 / 12 | 1 / 12 | 57 | interface anchor, then ready register-model action |
+| `impact` | 161 / 485 | 20 / 0 | 60 | create interface anchor, downstream benefit 375 |
+| `quick-wins` | 161 / 485 | 20 / 0 | 60 | same cost-3 interface-anchor lane |
+| `frontier` | 1 / 13 | 1 / 13 | 60 | interface anchor, then the nondominated action frontier |
 
-With `--limit 200`, the explicit protocol filters measured 136 prerequisites
-and 327 actions for Wi-Fi, 37 and 206 for BLE, and 16 and 104 for IEEE 802.15.4.
-Shared/coexistence scopes intentionally participate in every protocol listed
-by their manifest `protocols` membership, so these sets overlap rather than
-partitioning the all-scope total.
+The schema-8 all-scope report is 6,213,213 bytes as pretty generated JSON and
+4,318,279 bytes in compact form. The compact catalogs account for 3,829,455
+bytes of findings, 341,630 bytes of actions and 144,935 bytes of prerequisites.
+An impact run with `--limit 20` measured 10.68 seconds and 223,100 KiB peak RSS;
+a streaming `--check` measured 11.45 seconds and 223,712 KiB. Measurements
+include loading and ranking the real project, not only JSON serialization.
 
 Reproduce the measurements with `--format json` and inspect
-`total_findings`, `total_prerequisites`, `total_actions`, the corresponding
-`strategy_*` and `returned_*` counts, `consumed_budget`, prerequisite benefit
-objects and action `score_explanation` objects. Results intentionally change
-when the project's generated analysis or reviewed facts change.
+`inventory.sha256`, the three inventory catalog lengths,
+`selection.eligible_prerequisites`, `selection.eligible_actions`,
+`selection.steps`, `selection.consumed_budget`, prerequisite benefit objects
+and action `score_explanation` objects. Results intentionally change when the
+project's generated analysis or reviewed facts change.

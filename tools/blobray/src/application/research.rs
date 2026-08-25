@@ -4,7 +4,7 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, VecDeque},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use serde::Serialize;
@@ -13,7 +13,6 @@ use sha2::{Digest, Sha256};
 use super::ProjectSession;
 use crate::{
     Result,
-    artifacts::LinkedIrReader,
     registers::{
         RegisterFacts, RegisterPublicationOwnership, classify_register_publication,
         load_effective_register_model,
@@ -388,7 +387,7 @@ struct GraphNode {
     complete: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Eq, PartialEq)]
 struct ScopeGraph {
     nodes: BTreeMap<String, GraphNode>,
     outgoing: BTreeMap<String, BTreeSet<String>>,
@@ -465,11 +464,7 @@ pub(crate) fn next(
         .collect::<Vec<_>>();
     analyzed_scopes.sort();
     analyzed_scopes.dedup();
-    let direct_diagnostic_owners = load_direct_diagnostic_owners(session)?;
-    let graphs = scopes
-        .iter()
-        .map(|scope| Ok((scope.id.clone(), load_graph(session, scope)?)))
-        .collect::<Result<BTreeMap<_, _>>>()?;
+    let (direct_diagnostic_owners, graphs) = load_research_graphs(session, &scopes)?;
     let mut candidates = BTreeMap::new();
     for scope in &scopes {
         add_blockers(
@@ -1012,72 +1007,188 @@ fn select_ranked_steps(
     (selected, consumed_budget)
 }
 
-fn load_graph(session: &ProjectSession, scope: &ReviewScopeReport) -> Result<ScopeGraph> {
-    let selected = scope
-        .function_identities
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ResearchGraphFunction {
+    identity: String,
+    node: GraphNode,
+}
+
+#[derive(Clone, Copy)]
+struct ResearchProfileInput<'a> {
+    id: &'a str,
+    output: &'a Path,
+}
+
+struct ResearchScopeInput<'a> {
+    id: &'a str,
+    profiles: &'a [String],
+    function_identities: BTreeSet<&'a str>,
+}
+
+fn load_research_graphs(
+    session: &ProjectSession,
+    scopes: &[&ReviewScopeReport],
+) -> Result<(DirectDiagnosticOwners, BTreeMap<String, ScopeGraph>)> {
+    let profiles = session
+        .project
+        .ir_profiles
         .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
-    let mut nodes = BTreeMap::<String, GraphNode>::new();
-    for profile_id in &scope.profiles {
-        let profile = session
-            .project
-            .ir_profiles
-            .iter()
-            .find(|profile| profile.id == *profile_id)
-            .ok_or_else(|| crate::Error::invalid(format!("unknown IR profile {profile_id:?}")))?;
-        for function in LinkedIrReader::open(&profile.output)?
-            .read_review_projection()?
-            .functions
+        .map(|profile| ResearchProfileInput {
+            id: &profile.id,
+            output: &profile.output,
+        })
+        .collect::<Vec<_>>();
+    let scopes = scopes
+        .iter()
+        .map(|scope| ResearchScopeInput {
+            id: &scope.id,
+            profiles: &scope.profiles,
+            function_identities: scope
+                .function_identities
+                .iter()
+                .map(String::as_str)
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+    load_research_graphs_with(&profiles, &scopes, |output, visit| {
+        let projection = session.linked_ir(output)?.read_review_projection()?;
+        for function in projection.functions {
+            let direct_diagnostic_roots = function
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.channel == "direct")
+                .map(|diagnostic| diagnostic.root_id.clone())
+                .collect();
+            let complete = function.completeness.body_complete
+                && function.completeness.call_targets_complete
+                && function.completeness.transitive_effects_complete
+                && function.completeness.executable_complete
+                && function.diagnostics.is_empty()
+                && function.decode_blockers.is_empty();
+            visit(ResearchGraphFunction {
+                identity: function.identity,
+                node: GraphNode {
+                    source: function.source,
+                    symbol: function.symbol,
+                    dependencies: function.dependencies.into_iter().collect(),
+                    direct_diagnostic_roots,
+                    complete,
+                },
+            })?;
+        }
+        Ok(())
+    })
+}
+
+fn load_research_graphs_with(
+    profiles: &[ResearchProfileInput<'_>],
+    scopes: &[ResearchScopeInput<'_>],
+    mut load: impl FnMut(&Path, &mut dyn FnMut(ResearchGraphFunction) -> Result<()>) -> Result<()>,
+) -> Result<(DirectDiagnosticOwners, BTreeMap<String, ScopeGraph>)> {
+    let mut profile_outputs = BTreeMap::new();
+    let mut scopes_by_output = BTreeMap::<&Path, BTreeSet<usize>>::new();
+    for profile in profiles {
+        if profile_outputs.insert(profile.id, profile.output).is_some() {
+            return Err(crate::Error::invalid(format!(
+                "duplicate IR profile {:?} in research graph inputs",
+                profile.id
+            )));
+        }
+        // Every project profile contributes exact direct-diagnostic ownership,
+        // even when no selected scope contains one of its functions.
+        scopes_by_output.entry(profile.output).or_default();
+    }
+
+    let mut graphs = BTreeMap::new();
+    for (scope_index, scope) in scopes.iter().enumerate() {
+        if graphs
+            .insert(scope.id.to_owned(), ScopeGraph::default())
+            .is_some()
         {
-            if !selected.contains(function.identity.as_str()) {
-                continue;
-            }
-            let node = GraphNode {
-                source: function.source,
-                symbol: function.symbol,
-                dependencies: function.dependencies.into_iter().collect(),
-                direct_diagnostic_roots: function
-                    .diagnostics
-                    .iter()
-                    .filter(|diagnostic| diagnostic.channel == "direct")
-                    .map(|diagnostic| diagnostic.root_id.clone())
-                    .collect(),
-                complete: function.completeness.body_complete
-                    && function.completeness.call_targets_complete
-                    && function.completeness.transitive_effects_complete
-                    && function.completeness.executable_complete
-                    && function.diagnostics.is_empty()
-                    && function.decode_blockers.is_empty(),
-            };
-            match nodes.entry(function.identity.clone()) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(node);
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let existing = entry.get_mut();
-                    if existing.source != node.source
-                        || existing.symbol != node.symbol
-                        || existing.dependencies != node.dependencies
-                        || existing.direct_diagnostic_roots != node.direct_diagnostic_roots
-                    {
-                        return Err(crate::Error::invalid(format!(
-                            "scope {:?} has inconsistent projections for {:?}",
-                            scope.id, function.identity
-                        )));
-                    }
-                    existing.complete &= node.complete;
-                }
-            }
+            return Err(crate::Error::invalid(format!(
+                "duplicate research scope {:?}",
+                scope.id
+            )));
+        }
+        for profile_id in scope.profiles {
+            let output = profile_outputs.get(profile_id.as_str()).ok_or_else(|| {
+                crate::Error::invalid(format!("unknown IR profile {profile_id:?}"))
+            })?;
+            scopes_by_output
+                .entry(*output)
+                .or_default()
+                .insert(scope_index);
         }
     }
-    let mut graph = ScopeGraph {
-        nodes,
-        ..ScopeGraph::default()
-    };
+
+    let mut owners = DirectDiagnosticOwners::new();
+    for (output, scope_indices) in scopes_by_output {
+        load(output, &mut |function| {
+            for root_id in &function.node.direct_diagnostic_roots {
+                owners
+                    .entry(root_id.clone())
+                    .or_default()
+                    .insert(function.identity.clone());
+            }
+            for scope_index in &scope_indices {
+                let scope = &scopes[*scope_index];
+                if !scope
+                    .function_identities
+                    .contains(function.identity.as_str())
+                {
+                    continue;
+                }
+                let graph = graphs
+                    .get_mut(scope.id)
+                    .expect("every research scope has an initialized graph");
+                merge_graph_node(
+                    scope.id,
+                    &mut graph.nodes,
+                    &function.identity,
+                    &function.node,
+                )?;
+            }
+            Ok(())
+        })?;
+    }
+
+    for graph in graphs.values_mut() {
+        build_graph_edges(graph);
+    }
+    Ok((owners, graphs))
+}
+
+fn merge_graph_node(
+    scope_id: &str,
+    nodes: &mut BTreeMap<String, GraphNode>,
+    identity: &str,
+    node: &GraphNode,
+) -> Result<()> {
+    match nodes.entry(identity.to_owned()) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(node.clone());
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            let existing = entry.get_mut();
+            if existing.source != node.source
+                || existing.symbol != node.symbol
+                || existing.dependencies != node.dependencies
+                || existing.direct_diagnostic_roots != node.direct_diagnostic_roots
+            {
+                return Err(crate::Error::invalid(format!(
+                    "scope {scope_id:?} has inconsistent projections for {identity:?}"
+                )));
+            }
+            existing.complete &= node.complete;
+        }
+    }
+    Ok(())
+}
+
+fn build_graph_edges(graph: &mut ScopeGraph) {
     for identity in graph.nodes.keys().cloned().collect::<Vec<_>>() {
         for dependency in graph.nodes[&identity].dependencies.clone() {
-            if let Some(target) = resolve_function(&graph, &dependency) {
+            if let Some(target) = resolve_function(graph, &dependency) {
                 graph
                     .outgoing
                     .entry(identity.clone())
@@ -1091,35 +1202,6 @@ fn load_graph(session: &ProjectSession, scope: &ReviewScopeReport) -> Result<Sco
             }
         }
     }
-    Ok(graph)
-}
-
-fn load_direct_diagnostic_owners(session: &ProjectSession) -> Result<DirectDiagnosticOwners> {
-    let mut owners = DirectDiagnosticOwners::new();
-    let reports = session
-        .project
-        .ir_profiles
-        .iter()
-        .map(|profile| profile.output.as_path())
-        .collect::<BTreeSet<_>>();
-    for report in reports {
-        for function in LinkedIrReader::open(report)?
-            .read_review_projection()?
-            .functions
-        {
-            for diagnostic in function
-                .diagnostics
-                .iter()
-                .filter(|diagnostic| diagnostic.channel == "direct")
-            {
-                owners
-                    .entry(diagnostic.root_id.clone())
-                    .or_default()
-                    .insert(function.identity.clone());
-            }
-        }
-    }
-    Ok(owners)
 }
 
 fn resolve_function(graph: &ScopeGraph, selector: &str) -> Option<String> {
@@ -2552,6 +2634,231 @@ mod tests {
         };
         validate_report(&report).unwrap();
         report
+    }
+
+    fn graph_function(
+        identity: &str,
+        dependencies: &[&str],
+        direct_diagnostic_roots: &[&str],
+    ) -> ResearchGraphFunction {
+        let (source, symbol) = identity.split_once("::").unwrap_or(("vendor", identity));
+        ResearchGraphFunction {
+            identity: identity.to_owned(),
+            node: GraphNode {
+                source: source.to_owned(),
+                symbol: symbol.to_owned(),
+                dependencies: dependencies
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
+                direct_diagnostic_roots: direct_diagnostic_roots
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
+                complete: direct_diagnostic_roots.is_empty(),
+            },
+        }
+    }
+
+    #[test]
+    fn shared_profile_output_is_loaded_once_and_scattered_to_all_scopes() {
+        let shared = Path::new("shared.ir");
+        let profiles = [
+            ResearchProfileInput {
+                id: "profile-a",
+                output: shared,
+            },
+            ResearchProfileInput {
+                id: "profile-b",
+                output: shared,
+            },
+        ];
+        let profiles_a = vec!["profile-a".to_owned()];
+        let profiles_b = vec!["profile-b".to_owned()];
+        let scopes = [
+            ResearchScopeInput {
+                id: "scope-a",
+                profiles: &profiles_a,
+                function_identities: ["vendor::a"].into(),
+            },
+            ResearchScopeInput {
+                id: "scope-b",
+                profiles: &profiles_b,
+                function_identities: ["vendor::b"].into(),
+            },
+        ];
+        let functions = [
+            graph_function("vendor::a", &[], &[]),
+            graph_function("vendor::b", &[], &[]),
+        ];
+        let mut loads = 0;
+
+        let (_, graphs) = load_research_graphs_with(&profiles, &scopes, |output, visit| {
+            assert_eq!(output, shared);
+            loads += 1;
+            for function in functions.iter().cloned() {
+                visit(function)?;
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(loads, 1);
+        assert_eq!(
+            graphs["scope-a"]
+                .nodes
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["vendor::a"]
+        );
+        assert_eq!(
+            graphs["scope-b"]
+                .nodes
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["vendor::b"]
+        );
+    }
+
+    #[test]
+    fn unselected_functions_still_populate_global_direct_diagnostic_owners() {
+        let output = Path::new("all.ir");
+        let profiles = [ResearchProfileInput { id: "all", output }];
+        let scope_profiles = vec!["all".to_owned()];
+        let scopes = [ResearchScopeInput {
+            id: "selected",
+            profiles: &scope_profiles,
+            function_identities: ["vendor::selected"].into(),
+        }];
+
+        let (owners, graphs) = load_research_graphs_with(&profiles, &scopes, |_, visit| {
+            visit(graph_function("vendor::selected", &[], &[]))?;
+            visit(graph_function(
+                "vendor::outside-scope",
+                &[],
+                &["cause:direct@1000"],
+            ))?;
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(
+            owners["cause:direct@1000"],
+            ["vendor::outside-scope".to_owned()].into()
+        );
+        assert!(graphs["selected"].nodes.contains_key("vendor::selected"));
+        assert!(
+            !graphs["selected"]
+                .nodes
+                .contains_key("vendor::outside-scope")
+        );
+    }
+
+    #[test]
+    fn conflicting_function_identity_across_outputs_fails_closed() {
+        let profiles = [
+            ResearchProfileInput {
+                id: "first",
+                output: Path::new("first.ir"),
+            },
+            ResearchProfileInput {
+                id: "second",
+                output: Path::new("second.ir"),
+            },
+        ];
+        let scope_profiles = vec!["first".to_owned(), "second".to_owned()];
+        let scopes = [ResearchScopeInput {
+            id: "radio",
+            profiles: &scope_profiles,
+            function_identities: ["vendor::same"].into(),
+        }];
+
+        let error = load_research_graphs_with(&profiles, &scopes, |output, visit| {
+            let mut function = graph_function("vendor::same", &[], &[]);
+            if output == Path::new("second.ir") {
+                function.node.symbol = "conflicting-symbol".to_owned();
+            }
+            visit(function)
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("inconsistent projections"));
+        assert!(error.to_string().contains("vendor::same"));
+    }
+
+    #[test]
+    fn one_pass_graph_scatter_is_deterministic_and_preserves_edges() {
+        fn build(reverse: bool) -> (DirectDiagnosticOwners, BTreeMap<String, ScopeGraph>) {
+            let mut profiles = vec![
+                ResearchProfileInput {
+                    id: "caller",
+                    output: Path::new("caller.ir"),
+                },
+                ResearchProfileInput {
+                    id: "leaf",
+                    output: Path::new("leaf.ir"),
+                },
+            ];
+            let mut main_profiles = vec!["caller".to_owned(), "leaf".to_owned()];
+            let leaf_profiles = vec!["leaf".to_owned()];
+            if reverse {
+                profiles.reverse();
+                main_profiles.reverse();
+            }
+            let mut scopes = vec![
+                ResearchScopeInput {
+                    id: "main",
+                    profiles: &main_profiles,
+                    function_identities: ["vendor::caller", "vendor::leaf"].into(),
+                },
+                ResearchScopeInput {
+                    id: "leaf-only",
+                    profiles: &leaf_profiles,
+                    function_identities: ["vendor::leaf"].into(),
+                },
+            ];
+            if reverse {
+                scopes.reverse();
+            }
+            load_research_graphs_with(&profiles, &scopes, |output, visit| {
+                let mut functions = if output == Path::new("caller.ir") {
+                    vec![graph_function(
+                        "vendor::caller",
+                        &["vendor::leaf"],
+                        &["cause:caller"],
+                    )]
+                } else {
+                    vec![graph_function("vendor::leaf", &[], &[])]
+                };
+                if reverse {
+                    functions.reverse();
+                }
+                for function in functions {
+                    visit(function)?;
+                }
+                Ok(())
+            })
+            .unwrap()
+        }
+
+        let forward = build(false);
+        let reverse = build(true);
+
+        assert_eq!(forward, reverse);
+        assert_eq!(
+            forward.1["main"].outgoing["vendor::caller"],
+            ["vendor::leaf".to_owned()].into()
+        );
+        assert_eq!(
+            forward.1["main"].incoming["vendor::leaf"],
+            ["vendor::caller".to_owned()].into()
+        );
+        assert_eq!(
+            forward.0["cause:caller"],
+            ["vendor::caller".to_owned()].into()
+        );
     }
 
     #[test]

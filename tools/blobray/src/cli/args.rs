@@ -786,8 +786,14 @@ mod tests {
             "project".to_owned(),
             "research".to_owned(),
             "next".to_owned(),
+            "--strategy".to_owned(),
+            "quick-wins".to_owned(),
+            "--protocol".to_owned(),
+            "ieee802154".to_owned(),
             "--scope".to_owned(),
             "ieee802154".to_owned(),
+            "--budget".to_owned(),
+            "12".to_owned(),
             "--limit".to_owned(),
             "7".to_owned(),
             "--project".to_owned(),
@@ -797,7 +803,10 @@ mod tests {
         let Command::ResearchNext(arguments) = invocation.command else {
             panic!("unexpected argument type")
         };
+        assert_eq!(arguments.strategy, ResearchRankingArg::QuickWins);
+        assert_eq!(arguments.protocol.as_deref(), Some("ieee802154"));
         assert_eq!(arguments.scope.as_deref(), Some("ieee802154"));
+        assert_eq!(arguments.budget, Some(12));
         assert_eq!(arguments.limit, 7);
         assert_eq!(
             invocation.project,
@@ -814,6 +823,29 @@ mod tests {
             ])
             .is_err()
         );
+        assert!(
+            ParsedInvocation::parse([
+                "project".to_owned(),
+                "research".to_owned(),
+                "next".to_owned(),
+                "--budget".to_owned(),
+                "0".to_owned(),
+            ])
+            .is_err()
+        );
+
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "research".to_owned(),
+            "next".to_owned(),
+            "--strategy".to_owned(),
+            "pareto".to_owned(),
+        ])
+        .unwrap();
+        let Command::ResearchNext(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.strategy, ResearchRankingArg::Frontier);
     }
 
     #[test]

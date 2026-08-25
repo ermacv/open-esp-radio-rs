@@ -1,6 +1,9 @@
 //! Explainable, scope-aware prioritization of the next research action.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet, VecDeque},
+};
 
 use serde::Serialize;
 
@@ -12,7 +15,35 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 3;
+pub(crate) const RESEARCH_SCHEMA: u32 = 4;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ResearchRankingStrategy {
+    #[default]
+    Impact,
+    QuickWins,
+    Frontier,
+}
+
+impl ResearchRankingStrategy {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Impact => "impact",
+            Self::QuickWins => "quick-wins",
+            Self::Frontier => "frontier",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ResearchNextOptions<'a> {
+    pub(crate) scope: Option<&'a str>,
+    pub(crate) protocol: Option<&'a str>,
+    pub(crate) strategy: ResearchRankingStrategy,
+    pub(crate) budget: Option<u64>,
+    pub(crate) limit: usize,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct ResearchScoreBreakdown {
@@ -24,6 +55,13 @@ pub(crate) struct ResearchScoreBreakdown {
     pub(crate) publication_weight: u64,
     pub(crate) cost_penalty: u64,
     pub(crate) co_blocker_penalty: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ResearchScoreExplanation {
+    pub(crate) benefit_points: u64,
+    pub(crate) effort_points: u64,
+    pub(crate) estimated_cost_units: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -67,6 +105,7 @@ pub(crate) struct ResearchCandidate {
     /// They remain visible rather than consuming duplicate ranked slots.
     pub(crate) related_findings: Vec<RelatedResearchFinding>,
     pub(crate) score_breakdown: ResearchScoreBreakdown,
+    pub(crate) score_explanation: ResearchScoreExplanation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -74,12 +113,18 @@ pub(crate) struct ResearchNextReport {
     pub(crate) schema_version: u32,
     pub(crate) command: String,
     pub(crate) project: String,
+    pub(crate) strategy: ResearchRankingStrategy,
+    pub(crate) protocol: Option<String>,
     pub(crate) scope: Option<String>,
     pub(crate) analyzed_scopes: Vec<String>,
     /// Count before grouping findings that lead to the same user action.
     pub(crate) total_candidates: usize,
     pub(crate) total_actions: usize,
+    pub(crate) strategy_actions: usize,
     pub(crate) returned_candidates: usize,
+    pub(crate) budget: Option<u64>,
+    pub(crate) consumed_budget: u64,
+    pub(crate) selection_diagnostic: Option<String>,
     pub(crate) verification_diagnostic: Option<String>,
     pub(crate) candidates: Vec<ResearchCandidate>,
 }
@@ -130,16 +175,20 @@ struct Seed {
 
 pub(crate) fn next(
     session: &ProjectSession,
-    scope_filter: Option<&str>,
-    limit: usize,
+    options: ResearchNextOptions<'_>,
 ) -> Result<ResearchNextReport> {
-    if limit == 0 {
+    if options.limit == 0 {
         return Err(crate::Error::invalid(
             "research next limit must be non-zero",
         ));
     }
+    if options.budget == Some(0) {
+        return Err(crate::Error::invalid(
+            "research next budget must be non-zero",
+        ));
+    }
     let document = crate::review_scopes::load_for_project(&session.project)?;
-    let scopes = select_scopes(&document, scope_filter)?;
+    let scopes = select_scopes(&document, options.scope, options.protocol)?;
     let analyzed_scopes = scopes.iter().map(|scope| scope.id.clone()).collect();
     let graphs = scopes
         .iter()
@@ -167,28 +216,44 @@ pub(crate) fn next(
         .collect::<Vec<_>>();
     let total_candidates = ranked.len();
     let mut ranked = coalesce_actions(ranked);
-    ranked.sort_by(|left, right| {
-        right
-            .score
-            .cmp(&left.score)
-            .then_with(|| right.guaranteed_unlock.cmp(&left.guaranteed_unlock))
-            .then_with(|| right.optimistic_unlock.cmp(&left.optimistic_unlock))
-            .then_with(|| left.id.cmp(&right.id))
-    });
     let total_actions = ranked.len();
-    ranked.truncate(limit);
+    apply_ranking_strategy(&mut ranked, options.strategy);
+    let strategy_actions = ranked.len();
+    let minimum_cost = ranked
+        .iter()
+        .map(|candidate| candidate.score_explanation.estimated_cost_units)
+        .min();
+    let (mut ranked, consumed_budget) =
+        select_ranked_actions(ranked, options.limit, options.budget);
     for (index, candidate) in ranked.iter_mut().enumerate() {
         candidate.rank = index + 1;
     }
+    let selection_diagnostic = if ranked.is_empty()
+        && strategy_actions != 0
+        && let (Some(budget), Some(minimum_cost)) = (options.budget, minimum_cost)
+    {
+        Some(format!(
+            "no {} action fits budget {budget}; the minimum estimated action cost is {minimum_cost}",
+            options.strategy.label()
+        ))
+    } else {
+        None
+    };
     Ok(ResearchNextReport {
         schema_version: RESEARCH_SCHEMA,
         command: "research next".to_owned(),
         project: session.project.id.clone(),
-        scope: scope_filter.map(str::to_owned),
+        strategy: options.strategy,
+        protocol: options.protocol.map(str::to_owned),
+        scope: options.scope.map(str::to_owned),
         analyzed_scopes,
         total_candidates,
         total_actions,
+        strategy_actions,
         returned_candidates: ranked.len(),
+        budget: options.budget,
+        consumed_budget,
+        selection_diagnostic,
         verification_diagnostic,
         candidates: ranked,
     })
@@ -196,20 +261,137 @@ pub(crate) fn next(
 
 fn select_scopes<'a>(
     document: &'a ReviewScopesDocument,
-    selected: Option<&str>,
+    selected_scope: Option<&str>,
+    selected_protocol: Option<&str>,
 ) -> Result<Vec<&'a ReviewScopeReport>> {
-    if let Some(selected) = selected
-        && !document.scopes.iter().any(|scope| scope.id == selected)
-    {
-        return Err(crate::Error::invalid(format!(
-            "unknown review scope {selected:?}"
-        )));
-    }
+    let scope_ids = document
+        .scopes
+        .iter()
+        .map(|scope| scope.id.clone())
+        .collect::<Vec<_>>();
+    let selected_ids = select_scope_ids(&scope_ids, selected_scope, selected_protocol)?;
     Ok(document
         .scopes
         .iter()
-        .filter(|scope| selected.is_none_or(|selected| scope.id == selected))
+        .filter(|scope| selected_ids.contains(&scope.id))
         .collect())
+}
+
+fn select_scope_ids(
+    scope_ids: &[String],
+    selected_scope: Option<&str>,
+    selected_protocol: Option<&str>,
+) -> Result<BTreeSet<String>> {
+    if let Some(selected) = selected_scope
+        && !scope_ids.iter().any(|scope| scope == selected)
+    {
+        let available = scope_ids.join(", ");
+        return Err(crate::Error::invalid(format!(
+            "unknown review scope {selected:?}; configured scopes: {available}"
+        )));
+    }
+    let protocols = scope_ids
+        .iter()
+        .map(|scope| scope_protocol(scope))
+        .collect::<BTreeSet<_>>();
+    if let Some(selected) = selected_protocol
+        && !protocols.contains(selected)
+    {
+        return Err(crate::Error::invalid(format!(
+            "unknown research protocol {selected:?}; configured scope namespaces: {}",
+            protocols.into_iter().collect::<Vec<_>>().join(", ")
+        )));
+    }
+    let selected = scope_ids
+        .iter()
+        .filter(|scope| selected_scope.is_none_or(|selected| scope.as_str() == selected))
+        .filter(|scope| selected_protocol.is_none_or(|selected| scope_protocol(scope) == selected))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if selected.is_empty()
+        && let (Some(scope), Some(protocol)) = (selected_scope, selected_protocol)
+    {
+        return Err(crate::Error::invalid(format!(
+            "review scope {scope:?} is outside protocol namespace {protocol:?}; its namespace is {:?}",
+            scope_protocol(scope)
+        )));
+    }
+    Ok(selected)
+}
+
+fn scope_protocol(scope: &str) -> &str {
+    scope
+        .split_once('-')
+        .map_or(scope, |(protocol, _)| protocol)
+}
+
+fn apply_ranking_strategy(
+    candidates: &mut Vec<ResearchCandidate>,
+    strategy: ResearchRankingStrategy,
+) {
+    if strategy == ResearchRankingStrategy::Frontier {
+        let frontier = candidates
+            .iter()
+            .enumerate()
+            .filter(|(index, candidate)| {
+                !candidates.iter().enumerate().any(|(other_index, other)| {
+                    other_index != *index && dominates(other, candidate)
+                })
+            })
+            .map(|(_, candidate)| candidate.clone())
+            .collect();
+        *candidates = frontier;
+    }
+    candidates.sort_by(|left, right| match strategy {
+        ResearchRankingStrategy::Impact | ResearchRankingStrategy::Frontier => {
+            impact_order(left, right)
+        }
+        ResearchRankingStrategy::QuickWins => left
+            .score_explanation
+            .estimated_cost_units
+            .cmp(&right.score_explanation.estimated_cost_units)
+            .then_with(|| left.co_blockers.cmp(&right.co_blockers))
+            .then_with(|| impact_order(left, right)),
+    });
+}
+
+fn impact_order(left: &ResearchCandidate, right: &ResearchCandidate) -> Ordering {
+    right
+        .score
+        .cmp(&left.score)
+        .then_with(|| right.guaranteed_unlock.cmp(&left.guaranteed_unlock))
+        .then_with(|| right.optimistic_unlock.cmp(&left.optimistic_unlock))
+        .then_with(|| left.id.cmp(&right.id))
+}
+
+fn dominates(left: &ResearchCandidate, right: &ResearchCandidate) -> bool {
+    let left_score = &left.score_explanation;
+    let right_score = &right.score_explanation;
+    left_score.benefit_points >= right_score.benefit_points
+        && left_score.effort_points <= right_score.effort_points
+        && (left_score.benefit_points > right_score.benefit_points
+            || left_score.effort_points < right_score.effort_points)
+}
+
+fn select_ranked_actions(
+    candidates: Vec<ResearchCandidate>,
+    limit: usize,
+    budget: Option<u64>,
+) -> (Vec<ResearchCandidate>, u64) {
+    let mut selected = Vec::new();
+    let mut consumed_budget = 0_u64;
+    for candidate in candidates {
+        if selected.len() == limit {
+            break;
+        }
+        let cost = candidate.score_explanation.estimated_cost_units;
+        if budget.is_some_and(|budget| consumed_budget.saturating_add(cost) > budget) {
+            continue;
+        }
+        consumed_budget = consumed_budget.saturating_add(cost);
+        selected.push(candidate);
+    }
+    (selected, consumed_budget)
 }
 
 fn load_graph(session: &ProjectSession, scope: &ReviewScopeReport) -> Result<ScopeGraph> {
@@ -713,6 +895,11 @@ fn finalize(
             cost_penalty: 0,
             co_blocker_penalty: 0,
         },
+        score_explanation: ResearchScoreExplanation {
+            benefit_points: 0,
+            effort_points: 0,
+            estimated_cost_units: 0,
+        },
     };
     refresh_action_score(&mut result);
     result
@@ -801,10 +988,14 @@ fn refresh_action_score(candidate: &mut ResearchCandidate) {
         + candidate.score_breakdown.root_weight
         + candidate.score_breakdown.verification_weight
         + candidate.score_breakdown.publication_weight;
-    candidate.score = benefit.saturating_mul(100)
-        / (candidate.score_breakdown.cost_penalty
-            + candidate.score_breakdown.co_blocker_penalty
-            + 1);
+    let effort =
+        candidate.score_breakdown.cost_penalty + candidate.score_breakdown.co_blocker_penalty + 1;
+    candidate.score_explanation = ResearchScoreExplanation {
+        benefit_points: benefit,
+        effort_points: effort,
+        estimated_cost_units: cost,
+    };
+    candidate.score = benefit.saturating_mul(100) / effort;
 }
 
 fn merge_strings(target: &mut Vec<String>, source: Vec<String>) {
@@ -975,6 +1166,35 @@ fn next_command(candidate: &Accumulator) -> String {
 mod tests {
     use super::*;
 
+    fn ranked_candidate(id: &str, benefit: u64, effort: u64, cost: u64) -> ResearchCandidate {
+        let candidate = Accumulator {
+            id: id.to_owned(),
+            kind: "unresolved-call".to_owned(),
+            severity: "error".to_owned(),
+            message: format!("resolve {id}"),
+            direct: [id.to_owned()].into(),
+            guaranteed: BTreeSet::new(),
+            optimistic: BTreeSet::new(),
+            marginal: BTreeSet::new(),
+            co_blockers: BTreeSet::new(),
+            roots: BTreeSet::new(),
+            scopes: ["radio".to_owned()].into(),
+            publication_scopes: BTreeSet::new(),
+        };
+        let mut candidate = finalize(
+            candidate,
+            &BTreeMap::new(),
+            format!("blobray inspect function {id} --project project.toml"),
+        );
+        candidate.score = benefit.saturating_mul(100) / effort;
+        candidate.score_explanation = ResearchScoreExplanation {
+            benefit_points: benefit,
+            effort_points: effort,
+            estimated_cost_units: cost,
+        };
+        candidate
+    }
+
     #[test]
     fn reverse_impact_reaches_callers_but_not_unrelated_functions() {
         let graph = ScopeGraph {
@@ -1030,11 +1250,95 @@ mod tests {
         assert_eq!(result.direct_function_ids, ["leaf"]);
         assert_eq!(result.co_blocker_ids, ["other-cause"]);
         assert_eq!(result.score_breakdown.cost_penalty, 20);
+        assert_eq!(result.score_explanation.benefit_points, 76);
+        assert_eq!(result.score_explanation.effort_points, 26);
+        assert_eq!(result.score_explanation.estimated_cost_units, 2);
+        assert_eq!(result.score, 292);
         assert!(result.score > 100);
         assert_eq!(
             result.next_command,
             "blobray inspect function leaf --project project.toml"
         );
+    }
+
+    #[test]
+    fn ranking_strategies_are_deterministic_and_frontier_is_nondominated() {
+        let candidates = vec![
+            ranked_candidate("high-ratio", 100, 21, 4),
+            ranked_candidate("quick", 30, 11, 1),
+            ranked_candidate("high-benefit", 200, 61, 6),
+            ranked_candidate("dominated", 20, 31, 3),
+        ];
+
+        let mut impact = candidates.clone();
+        apply_ranking_strategy(&mut impact, ResearchRankingStrategy::Impact);
+        assert_eq!(
+            impact
+                .iter()
+                .map(|candidate| candidate.id.as_str())
+                .collect::<Vec<_>>(),
+            ["high-ratio", "high-benefit", "quick", "dominated"]
+        );
+
+        let mut quick_wins = candidates.clone();
+        apply_ranking_strategy(&mut quick_wins, ResearchRankingStrategy::QuickWins);
+        assert_eq!(
+            quick_wins
+                .iter()
+                .map(|candidate| candidate.id.as_str())
+                .collect::<Vec<_>>(),
+            ["quick", "dominated", "high-ratio", "high-benefit"]
+        );
+
+        let mut frontier = candidates;
+        apply_ranking_strategy(&mut frontier, ResearchRankingStrategy::Frontier);
+        assert_eq!(
+            frontier
+                .iter()
+                .map(|candidate| candidate.id.as_str())
+                .collect::<Vec<_>>(),
+            ["high-ratio", "high-benefit", "quick"]
+        );
+    }
+
+    #[test]
+    fn budget_selection_skips_actions_that_do_not_fit_without_reordering() {
+        let candidates = vec![
+            ranked_candidate("first", 60, 20, 3),
+            ranked_candidate("too-large", 100, 30, 4),
+            ranked_candidate("fills-budget", 10, 10, 1),
+        ];
+
+        let (selected, consumed) = select_ranked_actions(candidates, 10, Some(4));
+
+        assert_eq!(consumed, 4);
+        assert_eq!(
+            selected
+                .iter()
+                .map(|candidate| candidate.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "fills-budget"]
+        );
+    }
+
+    #[test]
+    fn scope_and_protocol_filters_are_exact_and_fail_closed() {
+        let scopes = ["ble-runtime", "ieee802154-baseband", "wifi-rx"]
+            .map(str::to_owned)
+            .to_vec();
+
+        assert_eq!(
+            select_scope_ids(&scopes, None, Some("wifi")).unwrap(),
+            ["wifi-rx".to_owned()].into()
+        );
+        assert_eq!(
+            select_scope_ids(&scopes, Some("ble-runtime"), Some("ble")).unwrap(),
+            ["ble-runtime".to_owned()].into()
+        );
+        let unknown = select_scope_ids(&scopes, None, Some("radio")).unwrap_err();
+        assert!(unknown.to_string().contains("configured scope namespaces"));
+        let mismatch = select_scope_ids(&scopes, Some("ble-runtime"), Some("wifi")).unwrap_err();
+        assert!(mismatch.to_string().contains("outside protocol namespace"));
     }
 
     #[test]

@@ -3,17 +3,27 @@
 use crate::{
     Result,
     application::{generated_file, research},
-    cli::{ResearchNextArgs, output, table},
+    cli::{ResearchNextArgs, ResearchRankingArg, output, table},
 };
 
 pub(super) fn run(
     arguments: ResearchNextArgs,
     session: &crate::application::ProjectSession,
 ) -> Result<bool> {
+    let strategy = match arguments.strategy {
+        ResearchRankingArg::Impact => research::ResearchRankingStrategy::Impact,
+        ResearchRankingArg::QuickWins => research::ResearchRankingStrategy::QuickWins,
+        ResearchRankingArg::Frontier => research::ResearchRankingStrategy::Frontier,
+    };
     let report = research::next(
         session,
-        arguments.scope.as_deref(),
-        usize::from(arguments.limit),
+        research::ResearchNextOptions {
+            scope: arguments.scope.as_deref(),
+            protocol: arguments.protocol.as_deref(),
+            strategy,
+            budget: arguments.budget,
+            limit: usize::from(arguments.limit),
+        },
     )?;
     if let Some(path) = arguments.output.as_deref() {
         generated_file::write_or_check_json(path, &report, arguments.check, "research plan", true)?;
@@ -25,11 +35,22 @@ pub(super) fn run(
 fn render(report: &research::ResearchNextReport) {
     outputln!("{}", output::heading("Research next"));
     outputln!(
-        "\nRanked {} of {} actions from {} findings across {} review scopes.",
+        "\nReturned {} of {} {} actions ({} total actions from {} findings) across {} review scopes.",
         report.returned_candidates,
+        report.strategy_actions,
+        report.strategy.label(),
         report.total_actions,
         report.total_candidates,
         report.analyzed_scopes.len()
+    );
+    outputln!(
+        "Filter: protocol {}; scope {}; budget {}.",
+        report.protocol.as_deref().unwrap_or("all"),
+        report.scope.as_deref().unwrap_or("all"),
+        report.budget.map_or_else(
+            || "unbounded".to_owned(),
+            |budget| format!("{}/{} cost units", report.consumed_budget, budget)
+        )
     );
     if let Some(diagnostic) = &report.verification_diagnostic {
         outputln!(
@@ -38,8 +59,13 @@ fn render(report: &research::ResearchNextReport) {
             diagnostic
         );
     }
+    if let Some(diagnostic) = &report.selection_diagnostic {
+        outputln!("\n{}: {diagnostic}", output::warning("NO ACTION FITS"));
+    }
     if report.candidates.is_empty() {
-        outputln!("\n{}", output::success("NO OPEN RESEARCH CANDIDATES"));
+        if report.total_actions == 0 {
+            outputln!("\n{}", output::success("NO OPEN RESEARCH CANDIDATES"));
+        }
         return;
     }
     outputln!(
@@ -48,7 +74,7 @@ fn render(report: &research::ResearchNextReport) {
             [
                 "#",
                 "Kind",
-                "Score",
+                "Score B/E",
                 "Unlock G/O/M",
                 "Co",
                 "Cost",
@@ -58,7 +84,12 @@ fn render(report: &research::ResearchNextReport) {
             report.candidates.iter().map(|candidate| [
                 candidate.rank.to_string(),
                 candidate.kind.clone(),
-                candidate.score.to_string(),
+                format!(
+                    "{} {}/{}",
+                    candidate.score,
+                    candidate.score_explanation.benefit_points,
+                    candidate.score_explanation.effort_points
+                ),
                 format!(
                     "{}/{}/{}",
                     candidate.guaranteed_unlock,
@@ -73,7 +104,10 @@ fn render(report: &research::ResearchNextReport) {
         )
     );
     let first = &report.candidates[0];
-    outputln!("\n{}", output::heading("Highest-impact action"));
+    outputln!(
+        "\n{}",
+        output::heading(format!("Top {} action", report.strategy.label()))
+    );
     outputln!(
         "Why: {}",
         if output::details() {
@@ -84,6 +118,13 @@ fn render(report: &research::ResearchNextReport) {
     );
     outputln!("Knowledge: {}", first.knowledge_required);
     outputln!("Confidence: {}", first.confidence);
+    outputln!(
+        "Score: {} = 100 × {} benefit / {} effort ({} cost units)",
+        first.score,
+        first.score_explanation.benefit_points,
+        first.score_explanation.effort_points,
+        first.score_explanation.estimated_cost_units,
+    );
     outputln!(
         "Impact: {} direct; {} guaranteed / {} optimistic / {} marginal",
         first.direct_functions,

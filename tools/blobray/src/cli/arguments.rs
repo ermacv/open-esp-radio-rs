@@ -203,9 +203,18 @@ pub(crate) struct RevisionPrepareUpdateArgs {
 
 #[derive(Clone, Debug, Args)]
 pub(crate) struct ResearchNextArgs {
+    /// Rank by overall impact, low-cost quick wins, or the benefit/effort frontier.
+    #[arg(long, value_enum, default_value_t)]
+    pub(crate) strategy: ResearchRankingArg,
+    /// Restrict prioritization to the leading namespace of configured review-scope IDs.
+    #[arg(long, value_name = "NAME")]
+    pub(crate) protocol: Option<String>,
     /// Restrict prioritization to one configured review scope.
     #[arg(long)]
     pub(crate) scope: Option<String>,
+    /// Maximum cumulative estimated research-cost units returned.
+    #[arg(long, value_name = "UNITS", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) budget: Option<u64>,
     /// Maximum number of ranked actions returned.
     #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u16).range(1..=200), value_name = "N")]
     pub(crate) limit: u16,
@@ -215,6 +224,18 @@ pub(crate) struct ResearchNextArgs {
     /// Verify the configured output instead of writing it.
     #[arg(long, requires = "output")]
     pub(crate) check: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub(crate) enum ResearchRankingArg {
+    /// Preserve the established impact-per-effort ranking.
+    #[default]
+    Impact,
+    /// Prefer the least expensive, least co-blocked actionable reviews.
+    QuickWins,
+    /// Return only actions not dominated on both benefit and effort.
+    #[value(alias = "pareto")]
+    Frontier,
 }
 
 #[derive(Clone, Debug, Default, Args)]

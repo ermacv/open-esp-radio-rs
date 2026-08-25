@@ -16,7 +16,10 @@ use crate::{
         PhyBluetoothTxGainInitTransition, PhyBluetoothTxGainParameters, PhyBluetoothTxPowerOutcome,
         PhyBluetoothTxPowerParameters, PhyBluetoothTxPowerTransition, calculate_bluetooth_tx_gain,
     },
-    phy_channel::{PhyChipChannelOutcome, PhyChipChannelParameters},
+    phy_channel::{
+        PhyChipChannelOutcome, PhyChipChannelParameters, PhyWifiTxGainImage, PhyWifiTxGainRequest,
+        calculate_wifi_tx_gain,
+    },
     phy_dcode::{PhyDcodeOutcome, PhyDcodeParameters},
     phy_frequency::PhyChannelFrequencyInitControl,
     phy_i2c::{FilterDcapParameters, PhyRfInitPrefixOutcome},
@@ -580,6 +583,17 @@ impl PhyState {
         calculate_bluetooth_tx_gain(self.bluetooth_tx_gain_parameters())
     }
 
+    /// Regenerate the shared Bluetooth/IEEE 802.15.4 gain bank from the live
+    /// calibration state and one temperature-tracked base value.
+    pub const fn bluetooth_ieee802154_tracking_gain_image(
+        &self,
+        gain_base: i8,
+    ) -> PhyBluetoothTxGainImage {
+        let mut parameters = self.bluetooth_tx_gain_parameters();
+        parameters.base = gain_base as u8;
+        calculate_bluetooth_tx_gain(parameters)
+    }
+
     pub fn bluetooth_tx_gain_init_transition(&self) -> PhyBluetoothTxGainInitTransition {
         PhyBluetoothTxGainInitTransition::new(PhyBluetoothTxGainInitParameters {
             crystal_selector: self.common.crystal_selector,
@@ -973,6 +987,30 @@ impl PhyState {
         }
     }
 
+    /// Regenerate the Wi-Fi gain bank from live calibration state.
+    ///
+    /// `None` preserves the vendor's explicit skip-publication configuration;
+    /// the surrounding tracking child still completes normally in that case.
+    pub const fn wifi_tracking_gain_image(
+        &self,
+        channel: u16,
+        gain_base: i8,
+    ) -> Option<PhyWifiTxGainImage> {
+        let parameters = self.channel_parameters();
+        if parameters.tx_gain_skip_publication {
+            return None;
+        }
+        let mut image = calculate_wifi_tx_gain(PhyWifiTxGainRequest {
+            channel,
+            calibration_curve: parameters.tx_gain_curve,
+            correction: parameters.tx_gain_correction,
+            base_and_delta: (gain_base as u8).wrapping_sub(parameters.tx_gain_attenuation) as i8,
+        });
+        image.seed = parameters.tx_gain_seed;
+        image.config = parameters.tx_gain_config;
+        Some(image)
+    }
+
     pub fn apply_channel_outcome(&mut self, outcome: PhyChipChannelOutcome) {
         self.wifi.current_channel = outcome.channel;
         self.wifi.channel_initialized = outcome.init_complete;
@@ -1276,6 +1314,31 @@ mod tests {
         });
         assert_eq!(state.bluetooth_tx_gain_parameters().base, 5);
         assert_eq!(state.channel_parameters().tx_gain_base, 0);
+    }
+
+    #[test]
+    fn tracking_gain_regeneration_uses_live_typed_state_and_honors_wifi_skip() {
+        let mut state = PhyState::new(PhyConfig::production());
+        let mut bluetooth = state.bluetooth_tx_gain_parameters();
+        bluetooth.base = (-7_i8) as u8;
+        assert_eq!(
+            state.bluetooth_ieee802154_tracking_gain_image(-7),
+            calculate_bluetooth_tx_gain(bluetooth)
+        );
+
+        let parameters = state.channel_parameters();
+        let mut wifi = calculate_wifi_tx_gain(PhyWifiTxGainRequest {
+            channel: 11,
+            calibration_curve: parameters.tx_gain_curve,
+            correction: parameters.tx_gain_correction,
+            base_and_delta: (5_u8).wrapping_sub(parameters.tx_gain_attenuation) as i8,
+        });
+        wifi.seed = parameters.tx_gain_seed;
+        wifi.config = parameters.tx_gain_config;
+        assert_eq!(state.wifi_tracking_gain_image(11, 5), Some(wifi));
+
+        state.config.tx_gain_skip_publication = true;
+        assert_eq!(state.wifi_tracking_gain_image(11, 5), None);
     }
 
     #[test]

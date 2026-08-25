@@ -103,16 +103,16 @@ pub struct PhyTxPowerTrackingOutcome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxPowerTrackingAction {
     SetBbpllCalibration { enabled: bool },
-    PublishWifiGain { channel: u16, gain_base: i8 },
-    PublishBluetoothIeee802154Gain { gain_base: i8 },
+    RegenerateWifiGain { channel: u16, gain_base: i8 },
+    RegenerateBluetoothIeee802154Gain { gain_base: i8 },
     Complete(PhyTxPowerTrackingOutcome),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxPowerTrackingCompletion {
     BbpllCalibrationSet { enabled: bool },
-    WifiGainPublished { channel: u16, gain_base: i8 },
-    BluetoothIeee802154GainPublished { gain_base: i8 },
+    WifiGainRegenerated { channel: u16, gain_base: i8 },
+    BluetoothIeee802154GainRegenerated { gain_base: i8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,7 +124,7 @@ pub enum PhyTxPowerTrackingTransitionError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PhyTxPowerTrackingStep {
     BbpllOn,
-    PublishGain,
+    RegenerateGain,
     BbpllOff,
     Complete,
 }
@@ -185,13 +185,13 @@ impl PhyTxPowerTrackingTransition {
             PhyTxPowerTrackingStep::BbpllOn => {
                 PhyTxPowerTrackingAction::SetBbpllCalibration { enabled: true }
             }
-            PhyTxPowerTrackingStep::PublishGain => match self.request.class {
-                PhyCalibrationTrackClass::Wifi => PhyTxPowerTrackingAction::PublishWifiGain {
+            PhyTxPowerTrackingStep::RegenerateGain => match self.request.class {
+                PhyCalibrationTrackClass::Wifi => PhyTxPowerTrackingAction::RegenerateWifiGain {
                     channel: self.request.wifi_channel,
                     gain_base: self.decision.gain_base,
                 },
                 PhyCalibrationTrackClass::BluetoothIeee802154 => {
-                    PhyTxPowerTrackingAction::PublishBluetoothIeee802154Gain {
+                    PhyTxPowerTrackingAction::RegenerateBluetoothIeee802154Gain {
                         gain_base: self.decision.gain_base,
                     }
                 }
@@ -211,10 +211,10 @@ impl PhyTxPowerTrackingTransition {
             (
                 PhyTxPowerTrackingStep::BbpllOn,
                 PhyTxPowerTrackingCompletion::BbpllCalibrationSet { enabled: true },
-            ) => PhyTxPowerTrackingStep::PublishGain,
+            ) => PhyTxPowerTrackingStep::RegenerateGain,
             (
-                PhyTxPowerTrackingStep::PublishGain,
-                PhyTxPowerTrackingCompletion::WifiGainPublished { channel, gain_base },
+                PhyTxPowerTrackingStep::RegenerateGain,
+                PhyTxPowerTrackingCompletion::WifiGainRegenerated { channel, gain_base },
             ) if self.request.class == PhyCalibrationTrackClass::Wifi
                 && channel == self.request.wifi_channel
                 && gain_base == self.decision.gain_base =>
@@ -222,8 +222,8 @@ impl PhyTxPowerTrackingTransition {
                 PhyTxPowerTrackingStep::BbpllOff
             }
             (
-                PhyTxPowerTrackingStep::PublishGain,
-                PhyTxPowerTrackingCompletion::BluetoothIeee802154GainPublished { gain_base },
+                PhyTxPowerTrackingStep::RegenerateGain,
+                PhyTxPowerTrackingCompletion::BluetoothIeee802154GainRegenerated { gain_base },
             ) if self.request.class == PhyCalibrationTrackClass::BluetoothIeee802154
                 && gain_base == self.decision.gain_base =>
             {
@@ -239,6 +239,116 @@ impl PhyTxPowerTrackingTransition {
             _ => return Err(PhyTxPowerTrackingTransitionError::WrongCompletion),
         };
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyTxPowerTrackingBindingError {
+    UnsupportedAction,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum PhyTxPowerTrackingExternalOperation {
+    SetBbpllCalibration {
+        enabled: bool,
+    },
+    RegenerateWifiGain {
+        channel: u16,
+        gain_base: i8,
+        image: Option<crate::phy_channel::PhyWifiTxGainImage>,
+    },
+    RegenerateBluetoothIeee802154Gain {
+        gain_base: i8,
+        image: crate::phy_bluetooth::PhyBluetoothTxGainImage,
+    },
+}
+
+/// Non-cloneable owner of one external power-tracking edge.
+///
+/// Lowering captures a gain image from the live typed state before MMIO. This
+/// prevents a later state change from separating the completion identity from
+/// the bytes actually published. A missing Wi-Fi image is the reviewed vendor
+/// `tx_gain_skip_publication` path and still completes the regeneration child.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyTxPowerTrackingExternalBinding {
+    operation: PhyTxPowerTrackingExternalOperation,
+}
+
+impl PhyTxPowerTrackingExternalBinding {
+    pub fn lower(
+        action: PhyTxPowerTrackingAction,
+        state: &crate::phy_state::PhyState,
+    ) -> Result<Self, PhyTxPowerTrackingBindingError> {
+        let operation = match action {
+            PhyTxPowerTrackingAction::SetBbpllCalibration { enabled } => {
+                PhyTxPowerTrackingExternalOperation::SetBbpllCalibration { enabled }
+            }
+            PhyTxPowerTrackingAction::RegenerateWifiGain { channel, gain_base } => {
+                PhyTxPowerTrackingExternalOperation::RegenerateWifiGain {
+                    channel,
+                    gain_base,
+                    image: state.wifi_tracking_gain_image(channel, gain_base),
+                }
+            }
+            PhyTxPowerTrackingAction::RegenerateBluetoothIeee802154Gain { gain_base } => {
+                PhyTxPowerTrackingExternalOperation::RegenerateBluetoothIeee802154Gain {
+                    gain_base,
+                    image: state.bluetooth_ieee802154_tracking_gain_image(gain_base),
+                }
+            }
+            PhyTxPowerTrackingAction::Complete(_) => {
+                return Err(PhyTxPowerTrackingBindingError::UnsupportedAction);
+            }
+        };
+        Ok(Self { operation })
+    }
+
+    pub const fn action(&self) -> PhyTxPowerTrackingAction {
+        match self.operation {
+            PhyTxPowerTrackingExternalOperation::SetBbpllCalibration { enabled } => {
+                PhyTxPowerTrackingAction::SetBbpllCalibration { enabled }
+            }
+            PhyTxPowerTrackingExternalOperation::RegenerateWifiGain {
+                channel, gain_base, ..
+            } => PhyTxPowerTrackingAction::RegenerateWifiGain { channel, gain_base },
+            PhyTxPowerTrackingExternalOperation::RegenerateBluetoothIeee802154Gain {
+                gain_base,
+                ..
+            } => PhyTxPowerTrackingAction::RegenerateBluetoothIeee802154Gain { gain_base },
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+        self,
+        platform: &mut P,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
+    ) -> PhyTxPowerTrackingCompletion {
+        match self.operation {
+            PhyTxPowerTrackingExternalOperation::SetBbpllCalibration { enabled } => {
+                open_esp_radio_esp32s31_hal::phy_i2c::configure_bbpll_calibration(
+                    platform, enabled,
+                );
+                PhyTxPowerTrackingCompletion::BbpllCalibrationSet { enabled }
+            }
+            PhyTxPowerTrackingExternalOperation::RegenerateWifiGain {
+                channel,
+                gain_base,
+                image,
+            } => {
+                if let Some(image) = image {
+                    crate::phy_hardware::publish_phy_tx_gain_memory(registers, false, image);
+                }
+                PhyTxPowerTrackingCompletion::WifiGainRegenerated { channel, gain_base }
+            }
+            PhyTxPowerTrackingExternalOperation::RegenerateBluetoothIeee802154Gain {
+                gain_base,
+                image,
+            } => {
+                crate::phy_hardware::publish_bluetooth_tx_gain_memory(registers, image);
+                PhyTxPowerTrackingCompletion::BluetoothIeee802154GainRegenerated { gain_base }
+            }
+        }
     }
 }
 
@@ -362,11 +472,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             transition.action(),
-            PhyTxPowerTrackingAction::PublishBluetoothIeee802154Gain { gain_base: 5 }
+            PhyTxPowerTrackingAction::RegenerateBluetoothIeee802154Gain { gain_base: 5 }
         );
         transition
             .advance(
-                PhyTxPowerTrackingCompletion::BluetoothIeee802154GainPublished { gain_base: 5 },
+                PhyTxPowerTrackingCompletion::BluetoothIeee802154GainRegenerated { gain_base: 5 },
             )
             .unwrap();
         assert_eq!(
@@ -397,7 +507,7 @@ mod tests {
             .advance(PhyTxPowerTrackingCompletion::BbpllCalibrationSet { enabled: true })
             .unwrap();
         assert_eq!(
-            transition.advance(PhyTxPowerTrackingCompletion::WifiGainPublished {
+            transition.advance(PhyTxPowerTrackingCompletion::WifiGainRegenerated {
                 channel: 6,
                 gain_base: 5,
             }),
@@ -405,10 +515,56 @@ mod tests {
         );
         assert_eq!(
             transition.action(),
-            PhyTxPowerTrackingAction::PublishWifiGain {
+            PhyTxPowerTrackingAction::RegenerateWifiGain {
                 channel: 11,
                 gain_base: 5,
             }
+        );
+    }
+
+    #[test]
+    fn external_binding_captures_live_typed_gain_images_and_rejects_terminal() {
+        let state = crate::phy_state::PhyState::new(crate::phy_state::PhyConfig::production());
+        let wifi_action = PhyTxPowerTrackingAction::RegenerateWifiGain {
+            channel: 11,
+            gain_base: 5,
+        };
+        let wifi = PhyTxPowerTrackingExternalBinding::lower(wifi_action, &state).unwrap();
+        assert_eq!(wifi.action(), wifi_action);
+        assert_eq!(
+            wifi.operation,
+            PhyTxPowerTrackingExternalOperation::RegenerateWifiGain {
+                channel: 11,
+                gain_base: 5,
+                image: state.wifi_tracking_gain_image(11, 5),
+            }
+        );
+
+        let bluetooth_action =
+            PhyTxPowerTrackingAction::RegenerateBluetoothIeee802154Gain { gain_base: -7 };
+        let bluetooth = PhyTxPowerTrackingExternalBinding::lower(bluetooth_action, &state).unwrap();
+        assert_eq!(bluetooth.action(), bluetooth_action);
+        assert_eq!(
+            bluetooth.operation,
+            PhyTxPowerTrackingExternalOperation::RegenerateBluetoothIeee802154Gain {
+                gain_base: -7,
+                image: state.bluetooth_ieee802154_tracking_gain_image(-7),
+            }
+        );
+
+        assert_eq!(
+            PhyTxPowerTrackingExternalBinding::lower(
+                PhyTxPowerTrackingAction::Complete(PhyTxPowerTrackingOutcome {
+                    class: PhyCalibrationTrackClass::Wifi,
+                    gain_updated: false,
+                    tracking_temperature: 0,
+                    tracking_gain_base: 0,
+                    wifi_gain_base: 0,
+                    bluetooth_ieee802154_gain_base: 0,
+                }),
+                &state,
+            ),
+            Err(PhyTxPowerTrackingBindingError::UnsupportedAction)
         );
     }
 }

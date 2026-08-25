@@ -25,8 +25,9 @@ use open_esp_radio_esp32s31_pac::{
     Ieee802154PanIdentity as PacPanIdentity, Ieee802154RxAbortEnableMask as PacRxAbortEnableMask,
 };
 pub(crate) use open_esp_radio_esp32s31_pac::{
-    Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154Pti, Ieee802154RegisterLease,
-    Ieee802154StateSnapshot, Ieee802154TaskRegisters,
+    Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154InterruptSetup,
+    Ieee802154PolledRegisterLease, Ieee802154Pti, Ieee802154RegisterLease, Ieee802154StateSnapshot,
+    Ieee802154TaskRegisters,
 };
 
 use crate::ieee802154_operation::{
@@ -41,7 +42,7 @@ use crate::ieee802154_policy::{
 /// Typed register operations required by the first IEEE 802.15.4 foundation.
 ///
 /// The trait is crate-private and its production implementation is sealed to
-/// [`Ieee802154RegisterLease`]. A host fake can still prove HAL delegation and
+/// [`Ieee802154PolledRegisterLease`]. A host fake can still prove HAL delegation and
 /// state predicates inside this module's unit tests.
 pub(crate) trait Ieee802154RegisterBackend {
     /// Mask every MAC event before an ISR owner exists.
@@ -93,21 +94,21 @@ pub(crate) trait Ieee802154RegisterBackend {
     fn order_device_accesses(&mut self);
 }
 
-impl Ieee802154RegisterBackend for Ieee802154RegisterLease<'_> {
+impl Ieee802154RegisterBackend for Ieee802154PolledRegisterLease<'_> {
     fn mask_all_events(&mut self) {
-        Ieee802154RegisterLease::mask_all_events(self);
+        Ieee802154PolledRegisterLease::mask_all_events(self);
     }
 
     fn mask_all_rx_aborts(&mut self) {
-        Ieee802154RegisterLease::mask_all_rx_aborts(self);
+        Ieee802154PolledRegisterLease::mask_all_rx_aborts(self);
     }
 
     fn mask_all_tx_aborts(&mut self) {
-        Ieee802154RegisterLease::mask_all_tx_aborts(self);
+        Ieee802154PolledRegisterLease::mask_all_tx_aborts(self);
     }
 
     fn select_average_ed_sampling(&mut self) {
-        Ieee802154RegisterLease::select_average_ed_sampling(self);
+        Ieee802154PolledRegisterLease::select_average_ed_sampling(self);
     }
 
     fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode) {
@@ -143,7 +144,7 @@ impl Ieee802154RegisterBackend for Ieee802154RegisterLease<'_> {
     }
 
     fn foundation_snapshot(&mut self) -> Ieee802154FoundationSnapshot {
-        Ieee802154RegisterLease::foundation_snapshot(self)
+        Ieee802154PolledRegisterLease::foundation_snapshot(self)
     }
 
     fn mac_policy_snapshot(&mut self) -> PacMacPolicySnapshot {
@@ -169,7 +170,8 @@ pub(crate) struct Ieee802154Hal<B: Ieee802154RegisterBackend> {
 }
 
 /// Concrete closed HAL capability backed by the generated ESP32-S31 PAC.
-pub(crate) type Ieee802154PacHal<'registers> = Ieee802154Hal<Ieee802154RegisterLease<'registers>>;
+pub(crate) type Ieee802154PacHal<'registers> =
+    Ieee802154Hal<Ieee802154PolledRegisterLease<'registers>>;
 
 const fn decode_interrupt_route_readback(
     core0_bits: u32,
@@ -183,8 +185,11 @@ const fn decode_interrupt_route_readback(
 
 impl<'registers> Ieee802154PacHal<'registers> {
     /// Borrow the IEEE 802.15.4 leaf from the unique task-side radio owner.
-    pub(crate) fn from_owned(registers: &'registers mut Ieee802154TaskRegisters) -> Self {
-        Self::from_register_backend(registers.ieee802154_register_lease())
+    pub(crate) fn from_owned(
+        registers: &'registers mut Ieee802154TaskRegisters,
+        interrupts: &'registers mut Ieee802154InterruptSetup,
+    ) -> Self {
+        Self::from_register_backend(interrupts.polled_register_lease(registers))
     }
 
     #[cfg(feature = "validation-probes")]
@@ -818,17 +823,17 @@ mod tests {
     #[test]
     fn production_hal_borrows_the_dedicated_ieee802154_task_partition() {
         let cold = RadioHardware::for_validation().into_ieee802154();
-        let (mut task, interrupts) = cold.separate_interrupt_owner();
+        let (mut task, mut interrupts) = cold.separate_interrupt_owner();
         {
-            let mut hal = Ieee802154PacHal::from_owned(&mut task);
+            let mut hal = Ieee802154PacHal::from_owned(&mut task, &mut interrupts);
 
             // Construct the real closed backend and exercise only its
             // portable ordering boundary; host tests must not perform MMIO.
             hal.order_device_accesses();
         }
 
-        // Reuniting proves the HAL borrow did not consume or alias the
-        // inactive interrupt owner.
+        // Reuniting proves the combined borrow consumed neither disjoint
+        // ownership half.
         let _hardware = task.into_cold(interrupts).release();
     }
 

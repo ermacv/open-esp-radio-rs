@@ -48564,7 +48564,7 @@ pub mod ieee802154_mac {
         #[doc = "Register `SECURITY_ADDRESS_LOW` writer"]
         pub type W = crate::W<SecurityAddressLowSpec>;
         #[doc = "Field `ADDRESS_WORD` writer - "]
-        pub type AddressWordW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type AddressWordW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -48579,7 +48579,7 @@ pub mod ieee802154_mac {
         }
         #[doc = "`write(|w| ..)` method takes [`security_address_low::W`](W) writer structure"]
         impl crate::Writable for SecurityAddressLowSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "SECURITY_ADDRESS_HIGH (w) register accessor: Security extended-address bytes four through seven packed little-endian by the public common LL.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`security_address_high::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@security_address_high`] module"]
@@ -48590,7 +48590,7 @@ pub mod ieee802154_mac {
         #[doc = "Register `SECURITY_ADDRESS_HIGH` writer"]
         pub type W = crate::W<SecurityAddressHighSpec>;
         #[doc = "Field `ADDRESS_WORD` writer - "]
-        pub type AddressWordW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type AddressWordW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -48605,7 +48605,7 @@ pub mod ieee802154_mac {
         }
         #[doc = "`write(|w| ..)` method takes [`security_address_high::W`](W) writer structure"]
         impl crate::Writable for SecurityAddressHighSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "SECURITY_KEY (w) register accessor: One little-endian four-byte word of the sixteen-byte transmit-security key written by the public common LL. Key lifecycle and zeroization remain HAL obligations.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`security_key::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@security_key`] module"]
@@ -48616,7 +48616,7 @@ pub mod ieee802154_mac {
         #[doc = "Register `SECURITY_KEY%s` writer"]
         pub type W = crate::W<SecurityKeySpec>;
         #[doc = "Field `KEY_WORD` writer - "]
-        pub type KeyWordW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type KeyWordW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -48631,7 +48631,7 @@ pub mod ieee802154_mac {
         }
         #[doc = "`write(|w| ..)` method takes [`security_key::W`](W) writer structure"]
         impl crate::Writable for SecurityKeySpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "SFD_TIMEOUT_COUNTER (r) register accessor: Two read-only diagnostic counters independently read by the common and ESP32-S31 LL headers.\n\nYou can [`read`](crate::Reg::read) this register and get [`sfd_timeout_counter::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sfd_timeout_counter`] module"]
@@ -50496,6 +50496,19 @@ pub mod fixed_register_image {
         }
     }
 
+    /// Publish the SVD-qualified image `0x00000001` to `IEEE802154_MAC`.`ENHANCED_ACK_NOTIFY`.
+    #[inline]
+    pub fn notify_ieee802154_enhanced_ack_generated(registers: &crate::Ieee802154Mac) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .enhanced_ack_notify()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
     /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CONTROL_1`.
     #[inline]
     pub fn release_bluetooth_interrupt_output_0(registers: &crate::BluetoothInterruptBank) {
@@ -51363,6 +51376,49 @@ pub mod zero_based_field_write {
         }
     }
 
+    /// Write `ADDRESS_WORD` in `IEEE802154_MAC`.`SECURITY_ADDRESS_LOW` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_ieee802154_security_address_low(registers: &crate::Ieee802154Mac, value: u32) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .security_address_low()
+                .write_with_zero(|writer| writer.address_word().set(value));
+        }
+    }
+
+    /// Write `ADDRESS_WORD` in `IEEE802154_MAC`.`SECURITY_ADDRESS_HIGH` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_ieee802154_security_address_high(registers: &crate::Ieee802154Mac, value: u32) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .security_address_high()
+                .write_with_zero(|writer| writer.address_word().set(value));
+        }
+    }
+
+    /// Write `KEY_WORD` in `IEEE802154_MAC`.`SECURITY_KEY%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_ieee802154_security_key_word(
+        registers: &crate::Ieee802154Mac,
+        index: usize,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .security_key(index)
+                .write_with_zero(|writer| writer.key_word().set(value));
+        }
+    }
+
     /// Write `QOS_NULL_TO_TRANSLATED_BSS`, `TRIGGER_BASED_ENABLE`, `MU_EDCA_TIMER_SELECT`, `MPDU_LENGTH_LINK_ADDRESS`, `TID` in `WIFI_MAC_HE_INIT_SUFFIX`.`QUEUE_CONTROL%s` while publishing zero to every other register bit.
     #[inline]
     pub fn mac_he_trigger_queue_control(
@@ -51823,6 +51879,17 @@ pub mod masked_register_modify {
     pub fn set_ieee802154_ed_duration(registers: &crate::Ieee802154Mac, input: u32) {
         registers.ed_duration().modify(|reader, writer| {
             let image = (reader.bits() & 0xff000000) | (input & 0x00ffffff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xffffff00, accept input mask 0x000000ff, and set 0x00000000 in IEEE802154_MAC.TX_POWER.
+    #[inline]
+    pub fn set_ieee802154_tx_power_code(registers: &crate::Ieee802154Mac, input: u32) {
+        registers.tx_power().modify(|reader, writer| {
+            let image = (reader.bits() & 0xffffff00) | (input & 0x000000ff);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

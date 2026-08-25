@@ -160,10 +160,13 @@ impl Ieee802154TimingTransitionPort for ProductionTimingPort<'_> {
     }
 
     fn set_rx_on_delay(&mut self, value: generated::Ieee802154RxOnDelay) {
-        generated::set_ieee802154_rx_on_delay(
-            self.registers.peripherals.ieee802154_mac.registers(),
-            value,
-        );
+        match value {
+            generated::Ieee802154RxOnDelay::Delay50 => self
+                .registers
+                .peripherals
+                .ieee802154_mac
+                .set_rx_on_delay_50(),
+        }
     }
 
     fn order_device_accesses(&mut self) {

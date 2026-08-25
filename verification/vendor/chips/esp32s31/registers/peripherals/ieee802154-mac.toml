@@ -871,6 +871,10 @@ name = "ADDRESS_WORD"
 bitOffset = 0
 bitWidth = 32
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xffff_ffff
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -884,6 +888,10 @@ access = "write-only"
 name = "ADDRESS_WORD"
 bitOffset = 0
 bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xffff_ffff
 
 [[peripherals.registers]]
 
@@ -901,6 +909,10 @@ access = "write-only"
 name = "KEY_WORD"
 bitOffset = 0
 bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xffff_ffff
 
 [[peripherals.registers]]
 

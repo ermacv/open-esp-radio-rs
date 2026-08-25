@@ -7,10 +7,10 @@
 
 #![forbid(unsafe_code)]
 
-use super::{
-    Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154TaskRegisters,
-};
-pub use crate::generated::Ieee802154EdDurationUnits;
+use core::ops::{Deref, DerefMut};
+
+use super::{Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154TaskRegisters};
+pub use crate::generated::{Ieee802154EdDurationUnits, Ieee802154TxPowerCode};
 
 /// Opaque eight-bit value accepted by the MAC frequency-code register.
 ///
@@ -35,6 +35,143 @@ impl Ieee802154FrequencyCode {
 impl From<u8> for Ieee802154FrequencyCode {
     fn from(value: u8) -> Self {
         Self::new(value)
+    }
+}
+
+/// One of the four source-confirmed MAC PAN contexts.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154MultipanIndex(u8);
+
+impl Ieee802154MultipanIndex {
+    pub const COUNT: u8 = 4;
+    pub const CONTEXT0: Self = Self(0);
+    pub const CONTEXT1: Self = Self(1);
+    pub const CONTEXT2: Self = Self(2);
+    pub const CONTEXT3: Self = Self(3);
+
+    pub const fn new(value: u8) -> Option<Self> {
+        if value < Self::COUNT {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+
+    const fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+
+    const fn enable_bit(self) -> u8 {
+        1 << self.0
+    }
+}
+
+/// Exact four-bit `MULTIPAN_ENABLE_MASK` field image.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154MultipanEnableMask(u8);
+
+impl Ieee802154MultipanEnableMask {
+    pub const NONE: Self = Self(0);
+    pub const ALL: Self = Self(0x0f);
+
+    pub const fn from_bits(bits: u8) -> Option<Self> {
+        if bits & !Self::ALL.0 == 0 {
+            Some(Self(bits))
+        } else {
+            None
+        }
+    }
+
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
+    pub const fn contains(self, index: Ieee802154MultipanIndex) -> bool {
+        self.0 & index.enable_bit() != 0
+    }
+
+    pub const fn with(self, index: Ieee802154MultipanIndex) -> Self {
+        Self(self.0 | index.enable_bit())
+    }
+
+    pub const fn without(self, index: Ieee802154MultipanIndex) -> Self {
+        Self(self.0 & !index.enable_bit())
+    }
+}
+
+/// Source-confirmed energy-detection sampling rate.
+///
+/// The discriminants are the two-bit PAC field values.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum Ieee802154EdSampleRate {
+    OnePerMicrosecond = 0,
+    TwoPerMicrosecond = 1,
+    FourPerMicrosecond = 2,
+    EightPerMicrosecond = 3,
+}
+
+impl Ieee802154EdSampleRate {
+    pub const fn field_value(self) -> u8 {
+        self as u8
+    }
+
+    const fn from_field(value: u8) -> Self {
+        match value {
+            0 => Self::OnePerMicrosecond,
+            1 => Self::TwoPerMicrosecond,
+            2 => Self::FourPerMicrosecond,
+            3 => Self::EightPerMicrosecond,
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Seven-bit transmit-security payload offset.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154SecurityPayloadOffset(u8);
+
+impl Ieee802154SecurityPayloadOffset {
+    pub const MAX: u8 = 0x7f;
+
+    pub const fn new(value: u8) -> Option<Self> {
+        if value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+}
+
+/// Readable transmit-security control state without write-only key material.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ieee802154TransmitSecurityControl {
+    enabled: bool,
+    payload_offset: Ieee802154SecurityPayloadOffset,
+}
+
+impl Ieee802154TransmitSecurityControl {
+    const fn new(enabled: bool, payload_offset: Ieee802154SecurityPayloadOffset) -> Self {
+        Self {
+            enabled,
+            payload_offset,
+        }
+    }
+
+    pub const fn enabled(self) -> bool {
+        self.enabled
+    }
+
+    pub const fn payload_offset(self) -> Ieee802154SecurityPayloadOffset {
+        self.payload_offset
     }
 }
 
@@ -782,8 +919,9 @@ pub struct Ieee802154FoundationSnapshot {
 
 /// Readback of the static, interrupt-masked MAC policy subset.
 ///
-/// TX power is deliberately absent: its dBm-to-code table remains an opaque
-/// RF/BTBB dependency, so this snapshot is not a complete vendor PIB image.
+/// This is exactly the subset written and compared by the current runtime
+/// refresh transaction. Dynamic frame-pending state and newly modeled
+/// diagnostic/configuration fields are intentionally absent.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Ieee802154MacPolicySnapshot {
     frequency_code: Ieee802154FrequencyCode,
@@ -793,6 +931,36 @@ pub struct Ieee802154MacPolicySnapshot {
     control: Ieee802154MacControl,
     multipan_enable_mask: u8,
     identity: Ieee802154PanIdentity,
+}
+
+/// Complete read-only observation of the currently modeled MAC configuration.
+///
+/// This diagnostic DTO is not a static runtime policy and is never compared
+/// by command refresh. In particular, `frame_pending` is dynamic per-ACK
+/// state. The transmit-power value is raw eight-bit PAC geometry with no dBm
+/// or calibration-table claim.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ieee802154MacConfigurationReadback {
+    frequency_code: Ieee802154FrequencyCode,
+    tx_power_code: Ieee802154TxPowerCode,
+    cca_mode: Ieee802154CcaMode,
+    cca_threshold_code: i8,
+    ed_sample_rate: Ieee802154EdSampleRate,
+    ack_timeout: Ieee802154AckTimeoutUnits,
+    control: Ieee802154MacControl,
+    multipan_enable_mask: Ieee802154MultipanEnableMask,
+    identities: [Ieee802154PanIdentity; 4],
+    frame_pending: bool,
+}
+
+fn raw_identity_to_typed(
+    readback: crate::svd::ieee802154_mac_ownership::MultipanIdentityReadback,
+) -> Ieee802154PanIdentity {
+    Ieee802154PanIdentity::new(
+        readback.pan_id(),
+        readback.short_address(),
+        readback.extended_address(),
+    )
 }
 
 impl Ieee802154MacPolicySnapshot {
@@ -843,6 +1011,48 @@ impl Ieee802154MacPolicySnapshot {
 
     pub const fn identity(self) -> Ieee802154PanIdentity {
         self.identity
+    }
+}
+
+impl Ieee802154MacConfigurationReadback {
+    pub const fn frequency_code(self) -> Ieee802154FrequencyCode {
+        self.frequency_code
+    }
+
+    pub const fn tx_power_code(self) -> Ieee802154TxPowerCode {
+        self.tx_power_code
+    }
+
+    pub const fn cca_mode(self) -> Ieee802154CcaMode {
+        self.cca_mode
+    }
+
+    pub const fn cca_threshold_code(self) -> i8 {
+        self.cca_threshold_code
+    }
+
+    pub const fn ed_sample_rate(self) -> Ieee802154EdSampleRate {
+        self.ed_sample_rate
+    }
+
+    pub const fn ack_timeout(self) -> Ieee802154AckTimeoutUnits {
+        self.ack_timeout
+    }
+
+    pub const fn control(self) -> Ieee802154MacControl {
+        self.control
+    }
+
+    pub const fn multipan_enable_mask(self) -> Ieee802154MultipanEnableMask {
+        self.multipan_enable_mask
+    }
+
+    pub const fn multipan_identity(self, index: Ieee802154MultipanIndex) -> Ieee802154PanIdentity {
+        self.identities[index.as_usize()]
+    }
+
+    pub const fn frame_pending(self) -> bool {
+        self.frame_pending
     }
 }
 
@@ -925,125 +1135,51 @@ impl Ieee802154StateSnapshot {
 /// The generated peripheral remains inside the active whole-radio route. Only
 /// named field operations are available through this lease, so HAL cannot
 /// recover its register block, addresses, or raw images.
+///
+/// Interrupt status and W1C operations require the combined inactive-route
+/// lease and cannot be called through this task-only capability:
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::Ieee802154RegisterLease;
+///
+/// fn sample_irq_status(task: &Ieee802154RegisterLease<'_>) {
+///     let _ = task.event_status_observation();
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::Ieee802154RegisterLease;
+///
+/// fn acknowledge_irq_status(task: &mut Ieee802154RegisterLease<'_>) {
+///     let _ = task.acknowledge_pending_events();
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::Ieee802154RegisterLease;
+///
+/// fn literal_status_write(task: &mut Ieee802154RegisterLease<'_>) {
+///     task.validation_write_event_timer0();
+/// }
+/// ```
 #[must_use = "dropping the lease releases the unique radio-register borrow"]
 #[doc(hidden)]
 pub struct Ieee802154RegisterLease<'registers> {
-    mac: &'registers mut crate::svd::Ieee802154Mac,
+    registers: &'registers mut crate::svd::ieee802154_mac_ownership::TaskRegisters,
 }
 
 impl Ieee802154RegisterLease<'_> {
-    /// Mask every MAC event while the IRQ ownership split is not active.
-    ///
-    /// This touches `EVENT_ENABLE` only. `EVENT_STATUS` acknowledgement is
-    /// available only through snapshot-consuming polled or interrupt-owner
-    /// methods.
-    pub fn mask_all_events(&mut self) {
-        self.mac
-            .event_enable()
-            .modify(|_, writer| writer.events().set(0));
-    }
-
-    /// Mask every receive-abort source before a receive dataplane exists.
-    pub fn mask_all_rx_aborts(&mut self) {
-        self.mac
-            .rx_abort_enable()
-            .modify(|_, writer| writer.events().set(0));
-    }
-
-    /// Mask every transmit-abort source before a transmit dataplane exists.
-    pub fn mask_all_tx_aborts(&mut self) {
-        self.mac
-            .tx_abort_enable()
-            .modify(|_, writer| writer.events().set(0));
-    }
-
-    /// Select the vendor foundation's average energy-detection sampler.
-    pub fn select_average_ed_sampling(&mut self) {
-        self.mac
-            .ed_config()
-            .modify(|_, writer| writer.ed_sample_mode().average());
-    }
-
-    /// Replace the complete named `EVENT_ENABLE` set exactly.
-    ///
-    /// This is a full field replacement, not a union operation. Unnamed bits
-    /// seven and thirteen cannot be represented by the input type.
-    pub fn set_event_enable(&mut self, events: Ieee802154EventEnableMask) {
-        self.mac
-            .event_enable()
-            .modify(|_, writer| writer.events().set(events.bits()));
-    }
-
-    /// Replace the complete receive-abort-enable field with one closed image.
-    ///
-    /// Callers can select only [`Ieee802154RxAbortEnableMask::NONE`] or the
-    /// exact three-reason ED/CCA operation set. The generated field update
-    /// preserves the unowned high bit of the backing word.
-    pub fn set_rx_abort_enable(&mut self, reasons: Ieee802154RxAbortEnableMask) {
-        self.mac
-            .rx_abort_enable()
-            .modify(|_, writer| writer.events().set(reasons.bits()));
-    }
-
-    /// Replace the complete receive-abort field for one inactive-route IRQ
-    /// activation transaction.
-    fn set_interrupt_rx_abort_enable(&mut self, reasons: Ieee802154InterruptRxAbortEnableMask) {
-        self.mac
-            .rx_abort_enable()
-            .modify(|_, writer| writer.events().set(reasons.bits()));
-    }
-
-    /// Replace the complete transmit-abort field for one inactive-route IRQ
-    /// activation transaction.
-    fn set_interrupt_tx_abort_enable(&mut self, reasons: Ieee802154InterruptTxAbortEnableMask) {
-        self.mac
-            .tx_abort_enable()
-            .modify(|_, writer| writer.events().set(reasons.bits()));
-    }
-
-    /// Classify the complete `EVENT_ENABLE` field for a finite polled ED/CCA
-    /// operation.
-    ///
-    /// This samples the backing word once and never reads or acknowledges
-    /// `EVENT_STATUS`.
-    pub fn operation_event_enable_observation(&self) -> Ieee802154OperationEventEnableObservation {
-        let bits = self.mac.event_enable().read().events().bits();
-        Ieee802154OperationEventEnableObservation::from_field(bits)
-    }
-
-    /// Classify the complete `RX_ABORT_ENABLE` field for a finite polled
-    /// ED/CCA operation.
-    ///
-    /// Every image other than the two values expressible by
-    /// [`Ieee802154RxAbortEnableMask`] is retained semantically as
-    /// `Unexpected`, never projected into a writable mask.
-    pub fn operation_rx_abort_enable_observation(
-        &self,
-    ) -> Ieee802154OperationRxAbortEnableObservation {
-        let bits = self.mac.rx_abort_enable().read().events().bits();
-        Ieee802154OperationRxAbortEnableObservation::from_field(bits)
-    }
-
-    /// Observe the complete fourteen-bit `EVENT_STATUS` field without
-    /// acknowledging any event.
-    pub fn event_status_observation(&self) -> Ieee802154EventObservation {
-        let bits = self.mac.event_status().read().events().bits();
-        Ieee802154EventObservation::from_field(bits)
-    }
-
-    /// Observe the complete `RX_STATUS` word for terminal abort evidence.
-    pub fn rx_status_observation(&self) -> Ieee802154RxStatusObservation {
-        let bits = self.mac.rx_status().read().bits();
-        Ieee802154RxStatusObservation::from_register(bits)
-    }
-
     /// Replace the source-confirmed sixteen-bit ED-duration subset.
     ///
     /// The generated masked transaction clears unused bits 23:16 exactly as
     /// the public `uint16_t` bitfield assignment does and preserves the
     /// adjacent unowned high byte.
     pub fn set_ed_duration(&mut self, duration: Ieee802154EdDurationUnits) {
-        crate::generated::set_ieee802154_ed_duration(self.mac, duration);
+        let duration = match u16::try_from(duration.get()) {
+            Ok(duration) => duration,
+            Err(_) => unreachable!("generated ED-duration domain is bounded to sixteen bits"),
+        };
+        self.registers.set_ed_duration(duration);
     }
 
     /// Issue one finite ED command through a generated fixed-image bridge.
@@ -1063,40 +1199,25 @@ impl Ieee802154RegisterLease<'_> {
     /// Buffer provenance, DMA accessibility, alignment, and lifetime remain
     /// obligations of the higher DMA owner.
     pub fn publish_transmit_dma_address(&mut self, address: u32) {
-        crate::generated::publish_ieee802154_tx_dma_address(
-            self.mac,
-            crate::generated::Ieee802154TxDmaAddress::new(address),
-        );
+        self.registers.publish_transmit_dma_address(address);
     }
 
     /// Publish the complete RX frame-buffer address through its generated
     /// register-specific domain.
     pub fn publish_receive_dma_address(&mut self, address: u32) {
-        crate::generated::publish_ieee802154_rx_dma_address(
-            self.mac,
-            crate::generated::Ieee802154RxDmaAddress::new(address),
-        );
+        self.registers.publish_receive_dma_address(address);
     }
 
     /// Issue exactly one source-confirmed complete MAC command image.
     pub fn request_mac_command(&mut self, command: Ieee802154MacCommand) {
-        let mac = &self.mac;
         match command {
-            Ieee802154MacCommand::Transmit => {
-                crate::svd::fixed_register_image::issue_ieee802154_tx_start(mac);
-            }
-            Ieee802154MacCommand::Receive => {
-                crate::svd::fixed_register_image::issue_ieee802154_rx_start(mac);
-            }
+            Ieee802154MacCommand::Transmit => self.registers.issue_transmit(),
+            Ieee802154MacCommand::Receive => self.registers.issue_receive(),
             Ieee802154MacCommand::ClearChannelThenTransmit => {
-                crate::svd::fixed_register_image::issue_ieee802154_cca_tx_start(mac);
+                self.registers.issue_clear_channel_then_transmit();
             }
-            Ieee802154MacCommand::EnergyDetection => {
-                crate::svd::fixed_register_image::issue_ieee802154_ed_start(mac);
-            }
-            Ieee802154MacCommand::Stop => {
-                crate::svd::fixed_register_image::issue_ieee802154_stop(mac);
-            }
+            Ieee802154MacCommand::EnergyDetection => self.registers.issue_energy_detection(),
+            Ieee802154MacCommand::Stop => self.registers.issue_stop(),
         }
     }
 
@@ -1110,451 +1231,569 @@ impl Ieee802154RegisterLease<'_> {
 
     /// Replace only the generated eight-bit MAC frequency-code field.
     pub fn set_frequency_code(&mut self, code: Ieee802154FrequencyCode) {
-        self.mac
-            .channel()
-            .modify(|_, writer| writer.frequency_code().set(code.value()));
+        self.registers.set_frequency_code(code.value());
+    }
+
+    /// Replace only the raw eight-bit transmit-power field.
+    ///
+    /// This preserving update makes no dBm or calibration-table claim.
+    pub fn set_tx_power_code(&mut self, code: Ieee802154TxPowerCode) {
+        self.registers.set_tx_power_code(code.get());
     }
 
     /// Replace the CCA mode through the generated enumerated field.
     pub fn set_cca_mode(&mut self, mode: Ieee802154CcaMode) {
-        self.mac.ed_config().modify(|_, writer| match mode {
-            Ieee802154CcaMode::Carrier => writer.cca_mode().carrier(),
-            Ieee802154CcaMode::EnergyDetection => writer.cca_mode().energy_detection(),
-            Ieee802154CcaMode::CarrierOrEnergyDetection => {
-                writer.cca_mode().carrier_or_energy_detection()
-            }
-            Ieee802154CcaMode::CarrierAndEnergyDetection => {
-                writer.cca_mode().carrier_and_energy_detection()
-            }
-        });
+        self.registers.set_cca_mode(mode.field_value());
     }
 
     /// Replace the source-defined signed CCA threshold code.
     pub fn set_cca_threshold_code(&mut self, threshold: i8) {
-        self.mac
-            .ed_config()
-            .modify(|_, writer| writer.cca_threshold_code().set(threshold as u8));
+        self.registers.set_cca_threshold_code(threshold);
+    }
+
+    /// Replace the source-confirmed two-bit ED sample-rate field.
+    pub fn set_ed_sample_rate(&mut self, rate: Ieee802154EdSampleRate) {
+        self.registers.set_ed_sample_rate(rate.field_value());
     }
 
     /// Replace the ACK timeout field without assigning units at the PAC layer.
     pub fn set_ack_timeout(&mut self, timeout: Ieee802154AckTimeoutUnits) {
-        self.mac
-            .ack_timeout()
-            .modify(|_, writer| writer.timeout().set(timeout.value()));
+        self.registers.set_ack_timeout(timeout.value());
     }
 
     /// Apply the six public PIB control fields in vendor update order.
     pub fn set_mac_control(&mut self, control: Ieee802154MacControl) {
-        let register = self.mac.control();
-        register.modify(|_, writer| writer.auto_ack_tx().bit(control.tx_auto_ack()));
-        register.modify(|_, writer| writer.auto_ack_rx().bit(control.rx_auto_ack()));
-        register.modify(|_, writer| writer.enhanced_ack_tx().bit(control.enhanced_ack_tx()));
-        register.modify(|_, writer| writer.coordinator().bit(control.coordinator()));
-        register.modify(|_, writer| writer.promiscuous().bit(control.promiscuous()));
-        register.modify(|_, writer| writer.pending_enhanced().bit(control.enhanced_pending()));
+        self.registers.set_mac_control(
+            control.tx_auto_ack(),
+            control.rx_auto_ack(),
+            control.enhanced_ack_tx(),
+            control.coordinator(),
+            control.promiscuous(),
+            control.enhanced_pending(),
+        );
+    }
+
+    /// Replace the complete four-bit multipan-enable field exactly.
+    pub fn set_multipan_enable_mask(&mut self, mask: Ieee802154MultipanEnableMask) {
+        self.registers.set_multipan_enable_mask(mask.bits());
+    }
+
+    /// Program one of the four public PAN identities.
+    ///
+    /// Matching the public LL, each logical address setter first enables its
+    /// context while preserving every other enable bit. Call
+    /// [`Self::set_multipan_enable_mask`] afterwards when the caller needs one
+    /// exact final enable image independent of identity publication.
+    pub fn set_multipan_identity(
+        &mut self,
+        index: Ieee802154MultipanIndex,
+        identity: Ieee802154PanIdentity,
+    ) {
+        self.registers.set_multipan_identity(
+            index.as_usize(),
+            identity.pan_id(),
+            identity.short_address(),
+            identity.extended_address(),
+        );
     }
 
     /// Program the public API's primary PAN identity.
-    ///
-    /// Each address setter first enables context zero, matching the public LL
-    /// and preserving any other enabled contexts.
     pub fn set_primary_pan_identity(&mut self, identity: Ieee802154PanIdentity) {
-        let mac = &self.mac;
-        let enable_primary = || {
-            mac.control().modify(|reader, writer| {
-                writer
-                    .multipan_enable_mask()
-                    .set(reader.multipan_enable_mask().bits() | 1)
-            });
-        };
+        self.set_multipan_identity(Ieee802154MultipanIndex::CONTEXT0, identity);
+    }
 
-        enable_primary();
-        mac.multipan0_pan_id()
-            .modify(|_, writer| writer.pan_id().set(identity.pan_id()));
-        enable_primary();
-        mac.multipan0_short_address()
-            .modify(|_, writer| writer.address().set(identity.short_address()));
-        enable_primary();
-        let address = identity.extended_address();
-        mac.multipan0_extended_address_low().modify(|_, writer| {
-            writer.address_word().set(u32::from_le_bytes([
-                address[0], address[1], address[2], address[3],
-            ]))
-        });
-        mac.multipan0_extended_address_high().modify(|_, writer| {
-            writer.address_word().set(u32::from_le_bytes([
-                address[4], address[5], address[6], address[7],
-            ]))
-        });
+    /// Read one complete PAN identity without changing its enable bit.
+    pub fn multipan_identity(&self, index: Ieee802154MultipanIndex) -> Ieee802154PanIdentity {
+        raw_identity_to_typed(self.registers.multipan_identity(index.as_usize()))
+    }
+
+    /// Read the complete four-bit multipan enable field.
+    pub fn multipan_enable_mask(&self) -> Ieee802154MultipanEnableMask {
+        Ieee802154MultipanEnableMask(self.registers.multipan_enable_mask())
+    }
+
+    /// Set the outgoing ACK frame-pending bit through a preserving update.
+    pub fn set_frame_pending(&mut self, pending: bool) {
+        self.registers.set_frame_pending(pending);
+    }
+
+    /// Read the outgoing ACK frame-pending bit.
+    pub fn frame_pending(&self) -> bool {
+        self.registers.frame_pending()
+    }
+
+    /// Publish exactly one enhanced-ACK-generation-done notification write.
+    ///
+    /// The only accepted image is the public LL's complete value one. This
+    /// method does not infer whether hardware self-clears or handshakes the
+    /// write; operation lifecycle must make each call non-replayable.
+    pub fn notify_enhanced_ack_generated(&mut self) {
+        self.registers.notify_enhanced_ack_generated();
+    }
+
+    /// Configure and enable transmit security in exact public-driver order.
+    ///
+    /// The borrowed key is written as four little-endian words and is never
+    /// stored in a PAC value or exposed through `Debug`. The transaction is
+    /// address low/high, key words zero through three, payload offset, then
+    /// `TX_ENABLE = 1`.
+    pub fn configure_transmit_security(
+        &mut self,
+        address: &[u8; 8],
+        key: &[u8; 16],
+        payload_offset: Ieee802154SecurityPayloadOffset,
+    ) {
+        self.registers
+            .configure_transmit_security(address, key, payload_offset.value());
+    }
+
+    /// Disable transmit security without claiming key/address zeroization.
+    ///
+    /// Pinned ESP-IDF `ieee802154_sec_clear()` clears only `TX_ENABLE`; no
+    /// source proves that writing zero to the write-only address/key registers
+    /// is a safe hardware zeroization transaction. This method therefore
+    /// preserves those registers and makes no erasure claim.
+    ///
+    /// No misleading clear/zeroize operation exists:
+    ///
+    /// ```compile_fail
+    /// use open_esp_radio_esp32s31_pac::Ieee802154RegisterLease;
+    ///
+    /// fn unsupported_zeroization(lease: &mut Ieee802154RegisterLease<'_>) {
+    ///     lease.clear_transmit_security();
+    /// }
+    /// ```
+    pub fn disable_transmit_security(&mut self) {
+        self.registers.disable_transmit_security();
+    }
+
+    /// Read only the non-secret transmit-security control fields.
+    pub fn transmit_security_control(&self) -> Ieee802154TransmitSecurityControl {
+        let control = self.registers.transmit_security_control();
+        Ieee802154TransmitSecurityControl::new(
+            control.enabled(),
+            Ieee802154SecurityPayloadOffset(control.payload_offset()),
+        )
     }
 
     /// Replace only the generated five-bit TX/RX coexistence PTI field.
     pub fn set_txrx_pti(&mut self, pti: Ieee802154Pti) {
-        self.mac
-            .coex_pti()
-            .modify(|_, writer| writer.txrx_pti().set(pti.value()));
+        self.registers.set_txrx_pti(pti.value());
     }
 
     /// Replace only the generated five-bit ACK coexistence PTI field.
     pub fn set_ack_pti(&mut self, pti: Ieee802154Pti) {
-        self.mac
-            .coex_pti()
-            .modify(|_, writer| writer.ack_pti().set(pti.value()));
-    }
-
-    /// Sample only fields written by the interrupt-masked foundation.
-    pub fn foundation_snapshot(&self) -> Ieee802154FoundationSnapshot {
-        let mac = &self.mac;
-        let event_enable = mac.event_enable().read();
-        let rx_abort_enable = mac.rx_abort_enable().read();
-        let tx_abort_enable = mac.tx_abort_enable().read();
-        let ed_config = mac.ed_config().read();
-        let coex_pti = mac.coex_pti().read();
-
-        Ieee802154FoundationSnapshot {
-            enabled_events: event_enable.events().bits(),
-            enabled_rx_aborts: rx_abort_enable.events().bits(),
-            enabled_tx_aborts: tx_abort_enable.events().bits(),
-            ed_uses_average: ed_config.ed_sample_mode().is_average(),
-            txrx_pti: Ieee802154Pti(coex_pti.txrx_pti().bits()),
-            ack_pti: Ieee802154Pti(coex_pti.ack_pti().bits()),
-        }
+        self.registers.set_ack_pti(pti.value());
     }
 
     /// Sample the complete static MAC-policy subset once per backing word.
     pub fn mac_policy_snapshot(&self) -> Ieee802154MacPolicySnapshot {
-        let mac = &self.mac;
-        let channel = mac.channel().read();
-        let ed_config = mac.ed_config().read();
-        let ack_timeout = mac.ack_timeout().read();
-        let control = mac.control().read();
-        let pan_id = mac.multipan0_pan_id().read();
-        let short_address = mac.multipan0_short_address().read();
-        let extended_low = mac.multipan0_extended_address_low().read();
-        let extended_high = mac.multipan0_extended_address_high().read();
-        let low = extended_low.address_word().bits().to_le_bytes();
-        let high = extended_high.address_word().bits().to_le_bytes();
-
+        let readback = self.registers.static_mac_policy_readback();
+        let identity = readback.identity();
         Ieee802154MacPolicySnapshot {
-            frequency_code: Ieee802154FrequencyCode(channel.frequency_code().bits()),
-            cca_mode: Ieee802154CcaMode::from_field(ed_config.cca_mode().bits()),
-            cca_threshold_code: ed_config.cca_threshold_code().bits() as i8,
-            ack_timeout: Ieee802154AckTimeoutUnits(ack_timeout.timeout().bits()),
+            frequency_code: Ieee802154FrequencyCode(readback.frequency_code()),
+            cca_mode: Ieee802154CcaMode::from_field(readback.cca_mode()),
+            cca_threshold_code: readback.cca_threshold_code() as i8,
+            ack_timeout: Ieee802154AckTimeoutUnits(readback.ack_timeout()),
             control: Ieee802154MacControl::new(
-                control.auto_ack_tx().bit_is_set(),
-                control.auto_ack_rx().bit_is_set(),
-                control.enhanced_ack_tx().bit_is_set(),
-                control.coordinator().bit_is_set(),
-                control.promiscuous().bit_is_set(),
-                control.pending_enhanced().bit_is_set(),
+                readback.auto_ack_tx(),
+                readback.auto_ack_rx(),
+                readback.enhanced_ack_tx(),
+                readback.coordinator(),
+                readback.promiscuous(),
+                readback.pending_enhanced(),
             ),
-            multipan_enable_mask: control.multipan_enable_mask().bits(),
+            multipan_enable_mask: readback.multipan_enable_mask(),
             identity: Ieee802154PanIdentity::new(
-                pan_id.pan_id().bits(),
-                short_address.address().bits(),
-                [
-                    low[0], low[1], low[2], low[3], high[0], high[1], high[2], high[3],
-                ],
+                identity.pan_id(),
+                identity.short_address(),
+                identity.extended_address(),
             ),
+        }
+    }
+
+    /// Sample every currently modeled task-side MAC configuration field.
+    ///
+    /// This diagnostic readback is deliberately separate from
+    /// [`Self::mac_policy_snapshot`]: dynamic frame-pending state and fields
+    /// not written by runtime refresh cannot silently join policy equality.
+    pub fn mac_configuration_readback(&self) -> Ieee802154MacConfigurationReadback {
+        let readback = self.registers.mac_configuration_readback();
+        let identities = [
+            raw_identity_to_typed(readback.identity(0)),
+            raw_identity_to_typed(readback.identity(1)),
+            raw_identity_to_typed(readback.identity(2)),
+            raw_identity_to_typed(readback.identity(3)),
+        ];
+        Ieee802154MacConfigurationReadback {
+            frequency_code: Ieee802154FrequencyCode(readback.frequency_code()),
+            tx_power_code: Ieee802154TxPowerCode::new(u32::from(readback.tx_power_code()))
+                .expect("raw PAC field is eight bits"),
+            cca_mode: Ieee802154CcaMode::from_field(readback.cca_mode()),
+            cca_threshold_code: readback.cca_threshold_code() as i8,
+            ed_sample_rate: Ieee802154EdSampleRate::from_field(readback.ed_sample_rate()),
+            ack_timeout: Ieee802154AckTimeoutUnits(readback.ack_timeout()),
+            control: Ieee802154MacControl::new(
+                readback.auto_ack_tx(),
+                readback.auto_ack_rx(),
+                readback.enhanced_ack_tx(),
+                readback.coordinator(),
+                readback.promiscuous(),
+                readback.pending_enhanced(),
+            ),
+            multipan_enable_mask: Ieee802154MultipanEnableMask(readback.multipan_enable_mask()),
+            identities,
+            frame_pending: readback.frame_pending(),
+        }
+    }
+
+    /// Order memory and device accesses at a descriptor/MMIO boundary.
+    pub fn order_device_accesses(&mut self) {
+        crate::device_fence();
+    }
+}
+
+/// Cold/polled MAC lease that borrows both disjoint ownership halves.
+///
+/// Construction requires the inactive [`Ieee802154InterruptSetup`]. Because
+/// activation consumes that setup, `EVENT_STATUS`, affine W1C acknowledge and
+/// RX/TX interrupt sidebands are statically unavailable while a hard-IRQ owner
+/// exists. Task-only command, DMA and policy operations remain reachable via
+/// the embedded [`Ieee802154RegisterLease`].
+#[must_use = "dropping the polled lease releases both inactive ownership borrows"]
+#[doc(hidden)]
+pub struct Ieee802154PolledRegisterLease<'registers> {
+    task: Ieee802154RegisterLease<'registers>,
+    interrupt: &'registers mut crate::svd::ieee802154_mac_ownership::InterruptRegisters,
+}
+
+impl<'registers> Deref for Ieee802154PolledRegisterLease<'registers> {
+    type Target = Ieee802154RegisterLease<'registers>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.task
+    }
+}
+
+impl DerefMut for Ieee802154PolledRegisterLease<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.task
+    }
+}
+
+impl Ieee802154PolledRegisterLease<'_> {
+    /// Mask every MAC event while the inactive interrupt owner is borrowed.
+    pub fn mask_all_events(&mut self) {
+        self.task.registers.replace_event_enable(0);
+    }
+
+    /// Mask every receive-abort source before a receive dataplane exists.
+    pub fn mask_all_rx_aborts(&mut self) {
+        self.task.registers.replace_rx_abort_enable(0);
+    }
+
+    /// Mask every transmit-abort source before a transmit dataplane exists.
+    pub fn mask_all_tx_aborts(&mut self) {
+        self.task.registers.replace_tx_abort_enable(0);
+    }
+
+    /// Select the vendor foundation's average energy-detection sampler.
+    pub fn select_average_ed_sampling(&mut self) {
+        self.task.registers.select_average_ed_sampling();
+    }
+
+    /// Replace the complete named `EVENT_ENABLE` set exactly.
+    pub fn set_event_enable(&mut self, events: Ieee802154EventEnableMask) {
+        self.task.registers.replace_event_enable(events.bits());
+    }
+
+    /// Replace the complete receive-abort field with one closed image.
+    pub fn set_rx_abort_enable(&mut self, reasons: Ieee802154RxAbortEnableMask) {
+        self.task.registers.replace_rx_abort_enable(reasons.bits());
+    }
+
+    /// Classify the complete event-delivery field for a finite polled ED/CCA
+    /// operation without sampling `EVENT_STATUS`.
+    pub fn operation_event_enable_observation(&self) -> Ieee802154OperationEventEnableObservation {
+        Ieee802154OperationEventEnableObservation::from_field(self.task.registers.event_enable())
+    }
+
+    /// Classify the complete RX-abort delivery field for a finite polled
+    /// ED/CCA operation.
+    pub fn operation_rx_abort_enable_observation(
+        &self,
+    ) -> Ieee802154OperationRxAbortEnableObservation {
+        Ieee802154OperationRxAbortEnableObservation::from_field(
+            self.task.registers.rx_abort_enable(),
+        )
+    }
+
+    /// Observe the complete fourteen-bit event field without acknowledging it.
+    pub fn event_status_observation(&self) -> Ieee802154EventObservation {
+        let snapshot = self.interrupt.sample_event_status();
+        Ieee802154EventObservation::from_field(snapshot.bits() as u16)
+    }
+
+    /// Observe the complete IRQ-owned RX sideband word.
+    pub fn rx_status_observation(&self) -> Ieee802154RxStatusObservation {
+        Ieee802154RxStatusObservation::from_register(self.interrupt.rx_status_bits())
+    }
+
+    /// Sample only fields written by the interrupt-masked foundation.
+    pub fn foundation_snapshot(&self) -> Ieee802154FoundationSnapshot {
+        let readback = self.task.registers.foundation_readback();
+        Ieee802154FoundationSnapshot {
+            enabled_events: readback.event_enable(),
+            enabled_rx_aborts: readback.rx_abort_enable(),
+            enabled_tx_aborts: readback.tx_abort_enable(),
+            ed_uses_average: readback.ed_uses_average(),
+            txrx_pti: Ieee802154Pti(readback.txrx_pti()),
+            ack_pti: Ieee802154Pti(readback.ack_pti()),
         }
     }
 
     /// Sample the generated receive and transmit state fields once each.
     pub fn state_snapshot(&self) -> Ieee802154StateSnapshot {
-        let mac = &self.mac;
-        let rx = Ieee802154RxStateCode::from_field(mac.rx_status().read().state().bits());
-        let tx = Ieee802154TxStateCode::from_field(mac.tx_status().read().state().bits());
-        Ieee802154StateSnapshot::new(rx, tx)
-    }
-
-    /// Sample the DMA-free energy-detection and CCA surface.
-    ///
-    /// Each backing word is read once. This snapshot only observes
-    /// `EVENT_STATUS`; it never mints or consumes the affine W1C token.
-    pub fn ed_cca_snapshot(&self) -> Ieee802154EdCcaSnapshot {
-        let mac = &self.mac;
-        let duration = mac.ed_duration().read();
-        let event_enable = mac.event_enable().read();
-        let event_status = mac.event_status().read();
-        let ed_config = mac.ed_config().read();
-
-        Ieee802154EdCcaSnapshot::new(
-            Ieee802154EdDurationUnits::from_field(duration.duration().bits()),
-            Ieee802154EventObservation::from_field(event_enable.events().bits()),
-            Ieee802154EventObservation::from_field(event_status.events().bits()),
-            ed_config.ed_rss_code().bits() as i8,
-            ed_config.cca_busy().bit_is_set(),
+        let (rx, tx) = self.interrupt.state_codes();
+        Ieee802154StateSnapshot::new(
+            Ieee802154RxStateCode::from_field(rx),
+            Ieee802154TxStateCode::from_field(tx),
         )
     }
 
-    /// Sample only the signed source-defined ED RSS result field.
-    ///
-    /// This narrow observation is used after a lone `ED_DONE`; it does not
-    /// read or acknowledge `EVENT_STATUS` a second time.
+    /// Sample the DMA-free ED/CCA surface while the interrupt half is inactive.
+    pub fn ed_cca_snapshot(&self) -> Ieee802154EdCcaSnapshot {
+        let event_status = self.interrupt.sample_event_status();
+        Ieee802154EdCcaSnapshot::new(
+            Ieee802154EdDurationUnits::from_field(self.task.registers.ed_duration()),
+            Ieee802154EventObservation::from_field(self.task.registers.event_enable()),
+            Ieee802154EventObservation::from_field(event_status.bits() as u16),
+            self.interrupt.ed_rss_code(),
+            self.interrupt.cca_busy(),
+        )
+    }
+
+    /// Sample only the signed ED RSS sideband after `ED_DONE`.
     pub fn ed_rss_code(&self) -> i8 {
-        self.mac.ed_config().read().ed_rss_code().bits() as i8
+        self.interrupt.ed_rss_code()
     }
 
-    /// Sample only the source-confirmed `CCA_BUSY` result field.
-    ///
-    /// This narrow observation is used after a lone `ED_DONE`; it does not
-    /// read or acknowledge `EVENT_STATUS` a second time.
+    /// Sample only the CCA-busy sideband after `ED_DONE`.
     pub fn cca_busy(&self) -> bool {
-        self.mac.ed_config().read().cca_busy().bit_is_set()
+        self.interrupt.cca_busy()
     }
 
-    /// Sample and acknowledge the complete pending W1C event field.
-    ///
-    /// This cold/polled operation is unavailable from the separated task
-    /// owner. Runtime event acknowledgement belongs exclusively to
-    /// [`Ieee802154InterruptRegisters`].
+    /// Sample and consume one complete affine W1C event snapshot.
     #[doc(hidden)]
     pub fn acknowledge_pending_events(&mut self) -> Ieee802154EventObservation {
         crate::device_fence();
-        let snapshot = crate::svd::w1c_register_snapshot::sample_ieee802154_event_status(self.mac);
+        let snapshot = self.interrupt.sample_event_status();
         let events = Ieee802154EventObservation::from_field(snapshot.bits() as u16);
-        crate::svd::w1c_register_snapshot::acknowledge_ieee802154_event_status(self.mac, snapshot);
+        self.interrupt.acknowledge_event_status(snapshot);
         crate::device_fence();
         events
     }
 
-    /// Observe whether MAC event delivery is still masked for the closed
-    /// `EVENT_STATUS` validation transaction.
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub fn validation_event_enable_events(&self) -> u16 {
-        crate::svd::ieee802154_event_status_validation::event_enable_events(self.mac)
-    }
-
-    /// Enable exactly the two timer events for the closed validation probe.
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub fn validation_enable_timer_events(&mut self) {
-        crate::svd::ieee802154_event_status_validation::enable_timer_events(self.mac);
-    }
-
-    /// Mask every event before the validation probe cleans selected status.
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub fn validation_disable_all_events(&mut self) {
-        crate::svd::ieee802154_event_status_validation::disable_all_events(self.mac);
-    }
-
-    /// Sample the source-132 interrupt-route words for both CPU cores without
-    /// changing either route.
-    ///
-    /// Production polled operations require both complete words to remain at
-    /// reset before, during, and after their temporary event-enable window.
+    /// Sample the source-132 route words without exposing either pointer.
     #[doc(hidden)]
     pub fn interrupt_route_readback(&self) -> Ieee802154RouteRawReadback {
-        let readback = crate::svd::ieee802154_route_observation::read_route_words(self.mac);
+        let readback = self.task.registers.interrupt_route_readback();
         Ieee802154RouteRawReadback {
             core0: readback.core0_bits(),
             core1: readback.core1_bits(),
         }
     }
 
-    /// Sample `EVENT_STATUS` without assigning an acknowledge access class.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_event_enable_events(&self) -> u16 {
+        self.task.registers.event_enable()
+    }
+
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_enable_timer_events(&mut self) {
+        self.task.registers.validation_enable_timer_events();
+    }
+
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_disable_all_events(&mut self) {
+        self.task.registers.validation_disable_all_events();
+    }
+
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_event_status_events(&self) -> u16 {
-        crate::svd::ieee802154_event_status_validation::event_status_events(self.mac)
+        self.interrupt.validation_event_status_events()
     }
 
-    /// Sample the complete timer-zero counter during the closed validation
-    /// transaction.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_event_timer0_value(&self) -> u32 {
-        crate::svd::ieee802154_event_status_validation::timer0_value(self.mac)
+        self.task.registers.validation_timer0_value()
     }
 
-    /// Sample the complete timer-one counter during the closed validation
-    /// transaction.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_event_timer1_value(&self) -> u32 {
-        crate::svd::ieee802154_event_status_validation::timer1_value(self.mac)
+        self.task.registers.validation_timer1_value()
     }
 
-    /// Program both independent event-status validation timers.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_set_event_timer_thresholds(&mut self, threshold: u32) {
-        crate::svd::ieee802154_event_status_validation::set_timer_thresholds(self.mac, threshold);
+        self.task
+            .registers
+            .validation_set_timer_thresholds(threshold);
     }
 
-    /// Start validation timer zero without enabling event delivery.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_start_event_timer0(&mut self) {
-        crate::svd::ieee802154_event_status_validation::start_timer0(self.mac);
+        self.task.registers.validation_start_timer0();
     }
 
-    /// Stop validation timer zero without changing event delivery.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_stop_event_timer0(&mut self) {
-        crate::svd::ieee802154_event_status_validation::stop_timer0(self.mac);
+        self.task.registers.validation_stop_timer0();
     }
 
-    /// Start validation timer one without enabling event delivery.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_start_event_timer1(&mut self) {
-        crate::svd::ieee802154_event_status_validation::start_timer1(self.mac);
+        self.task.registers.validation_start_timer1();
     }
 
-    /// Stop validation timer one without changing event delivery.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_stop_event_timer1(&mut self) {
-        crate::svd::ieee802154_event_status_validation::stop_timer1(self.mac);
+        self.task.registers.validation_stop_timer1();
     }
 
-    /// Write only timer-zero's event bit in the validation-only raw API.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_write_event_timer0(&mut self) {
-        crate::svd::ieee802154_event_status_validation::write_timer0_event(self.mac);
+        self.interrupt.validation_write_timer0_event();
     }
 
-    /// Write only timer-one's event bit in the validation-only raw API.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_write_event_timer1(&mut self) {
-        crate::svd::ieee802154_event_status_validation::write_timer1_event(self.mac);
+        self.interrupt.validation_write_timer1_event();
     }
 
-    /// Observe the complete event-enable field for the closed ED validation.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_event_enable_events(&self) -> u16 {
-        crate::svd::ieee802154_ed_event_validation::event_enable_events(self.mac)
+        self.task.registers.event_enable()
     }
 
-    /// Enable only RX-ABORT, ED-DONE and TIMER0 for the closed ED validation.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_enable_ed_timer_abort_events(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::enable_ed_timer_abort_events(self.mac);
+        self.task
+            .registers
+            .validation_enable_ed_timer_abort_events();
     }
 
-    /// Mask all event delivery during ED validation cleanup.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_disable_ed_events(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::disable_all_events(self.mac);
+        self.task.registers.validation_disable_ed_events();
     }
 
-    /// Observe the complete RX-abort-enable field for the ED discriminator.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_rx_abort_enable_events(&self) -> u32 {
-        crate::svd::ieee802154_ed_event_validation::rx_abort_enable_events(self.mac)
+        self.task.registers.validation_ed_rx_abort_enable()
     }
 
-    /// Enable only the three source-confirmed ED abort reasons.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_enable_ed_abort_reasons(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::enable_ed_abort_reasons(self.mac);
+        self.task.registers.validation_enable_ed_abort_reasons();
     }
 
-    /// Mask every RX-abort reason during terminal cleanup.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_disable_ed_abort_reasons(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::disable_all_rx_abort_reasons(self.mac);
+        self.task.registers.validation_disable_ed_abort_reasons();
     }
 
-    /// Observe the complete event-status field for the ED discriminator.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_event_status_events(&self) -> u16 {
-        crate::svd::ieee802154_ed_event_validation::event_status_events(self.mac)
+        self.interrupt.validation_ed_event_status_events()
     }
 
-    /// Observe the complete RX status when ED terminates through RX-ABORT.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_rx_status_raw(&self) -> u32 {
-        crate::svd::ieee802154_ed_event_validation::rx_status_raw(self.mac)
+        self.interrupt.validation_ed_rx_status_raw()
     }
 
-    /// Observe the complete public ED-duration field.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_duration(&self) -> u32 {
-        crate::svd::ieee802154_ed_event_validation::ed_duration(self.mac)
+        self.task.registers.validation_ed_duration()
     }
 
-    /// Program the fixed public standalone-CCA ED duration, exactly eight.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_set_ed_duration_eight(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::set_ed_duration_eight(self.mac);
+        self.task.registers.validation_set_ed_duration_eight();
     }
 
-    /// Observe TIMER0 while it supplies the independent event latch.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_timer0_value(&self) -> u32 {
-        crate::svd::ieee802154_ed_event_validation::timer0_value(self.mac)
+        self.task.registers.validation_ed_timer0_value()
     }
 
-    /// Program TIMER0's threshold for the ED event discriminator.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_set_ed_timer0_threshold(&mut self, threshold: u32) {
-        crate::svd::ieee802154_ed_event_validation::set_timer0_threshold(self.mac, threshold);
+        self.task
+            .registers
+            .validation_set_ed_timer0_threshold(threshold);
     }
 
-    /// Start TIMER0 before the ED stimulus.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_start_ed_timer0(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::start_timer0(self.mac);
+        self.task.registers.validation_start_ed_timer0();
     }
 
-    /// Stop TIMER0 during terminal cleanup.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_stop_ed_timer0(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::stop_timer0(self.mac);
+        self.task.registers.validation_stop_ed_timer0();
     }
 
-    /// Start the fixed-duration energy-detection stimulus.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_start_ed(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::start_ed(self.mac);
+        self.task.registers.validation_start_ed();
     }
 
-    /// Issue best-effort STOP after a bounded ED timeout.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_stop_ed_operation(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::stop_operation(self.mac);
+        self.task.registers.validation_stop_ed_operation();
     }
 
-    /// Exercise the validation-only literal ED-DONE write.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_write_ed_done_event(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::write_ed_done_event(self.mac);
+        self.interrupt.validation_write_ed_done_event();
     }
 
-    /// Write only TIMER0 in the ED validation-only raw status vocabulary.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_write_ed_timer0_event(&mut self) {
-        crate::svd::ieee802154_ed_event_validation::write_timer0_event(self.mac);
-    }
-
-    /// Order memory and device accesses at a descriptor/MMIO boundary.
-    pub fn order_device_accesses(&mut self) {
-        crate::device_fence();
+        self.interrupt.validation_write_ed_timer0_event();
     }
 }
 
@@ -1627,20 +1866,23 @@ impl Ieee802154InterruptTransitionPort for Ieee802154PacInterruptTransitionPort<
 
     fn replace_event_enable(&mut self, events: Ieee802154EventEnableMask) {
         self.task
-            .ieee802154_register_lease()
-            .set_event_enable(events);
+            .peripherals
+            .ieee802154_mac
+            .replace_event_enable(events.bits());
     }
 
     fn replace_tx_abort_enable(&mut self, aborts: Ieee802154InterruptTxAbortEnableMask) {
         self.task
-            .ieee802154_register_lease()
-            .set_interrupt_tx_abort_enable(aborts);
+            .peripherals
+            .ieee802154_mac
+            .replace_tx_abort_enable(aborts.bits());
     }
 
     fn replace_rx_abort_enable(&mut self, aborts: Ieee802154InterruptRxAbortEnableMask) {
         self.task
-            .ieee802154_register_lease()
-            .set_interrupt_rx_abort_enable(aborts);
+            .peripherals
+            .ieee802154_mac
+            .replace_rx_abort_enable(aborts.bits());
     }
 
     fn order_device_accesses(&mut self) {
@@ -1657,6 +1899,22 @@ impl Ieee802154InterruptTransitionPort for Ieee802154PacInterruptTransitionPort<
 }
 
 impl Ieee802154InterruptSetup {
+    /// Borrow both disjoint halves for one inactive-route polled transaction.
+    ///
+    /// The returned lease cannot outlive either owner. Calling
+    /// [`Self::activate`] consumes this setup, so no polled `EVENT_STATUS` or
+    /// W1C operation can coexist with the active hard-IRQ capability.
+    #[doc(hidden)]
+    pub fn polled_register_lease<'registers>(
+        &'registers mut self,
+        task: &'registers mut Ieee802154TaskRegisters,
+    ) -> Ieee802154PolledRegisterLease<'registers> {
+        Ieee802154PolledRegisterLease {
+            task: task.ieee802154_register_lease(),
+            interrupt: &mut self.registers,
+        }
+    }
+
     /// Install the source-confirmed runtime baseline and create the finite
     /// hard-IRQ owner.
     ///
@@ -1742,7 +2000,7 @@ impl Ieee802154TaskRegisters {
     #[doc(hidden)]
     pub fn ieee802154_register_lease(&mut self) -> Ieee802154RegisterLease<'_> {
         Ieee802154RegisterLease {
-            mac: self.peripherals.ieee802154_mac.task_mac_mut(),
+            registers: &mut self.peripherals.ieee802154_mac,
         }
     }
 }
@@ -1751,16 +2009,20 @@ impl Ieee802154TaskRegisters {
 mod tests {
     use super::{
         Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdCcaSnapshot, Ieee802154EdCommand,
-        Ieee802154EdDurationUnits, Ieee802154EventEnableMask, Ieee802154EventObservation,
-        Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154InterruptActivationPlan,
-        Ieee802154InterruptRegisters, Ieee802154InterruptRxAbortEnableMask,
-        Ieee802154InterruptSetup, Ieee802154InterruptSnapshot, Ieee802154InterruptTransitionPort,
-        Ieee802154InterruptTxAbortEnableMask, Ieee802154MacCommand, Ieee802154MacControl,
-        Ieee802154MacPolicySnapshot, Ieee802154OperationEventEnableObservation,
-        Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154Pti,
-        Ieee802154RegisterLease, Ieee802154RxAbortEnableMask, Ieee802154RxStateCode,
-        Ieee802154RxStatusObservation, Ieee802154StateSnapshot, Ieee802154TaskRegisters,
-        Ieee802154TxStateCode, execute_interrupt_activation, execute_interrupt_deactivation,
+        Ieee802154EdDurationUnits, Ieee802154EdSampleRate, Ieee802154EventEnableMask,
+        Ieee802154EventObservation, Ieee802154FoundationSnapshot, Ieee802154FrequencyCode,
+        Ieee802154InterruptActivationPlan, Ieee802154InterruptRegisters,
+        Ieee802154InterruptRxAbortEnableMask, Ieee802154InterruptSetup,
+        Ieee802154InterruptSnapshot, Ieee802154InterruptTransitionPort,
+        Ieee802154InterruptTxAbortEnableMask, Ieee802154MacCommand,
+        Ieee802154MacConfigurationReadback, Ieee802154MacControl, Ieee802154MultipanEnableMask,
+        Ieee802154MultipanIndex, Ieee802154OperationEventEnableObservation,
+        Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity,
+        Ieee802154PolledRegisterLease, Ieee802154Pti, Ieee802154RegisterLease,
+        Ieee802154RxAbortEnableMask, Ieee802154RxStateCode, Ieee802154RxStatusObservation,
+        Ieee802154SecurityPayloadOffset, Ieee802154StateSnapshot, Ieee802154TaskRegisters,
+        Ieee802154TxPowerCode, Ieee802154TxStateCode, execute_interrupt_activation,
+        execute_interrupt_deactivation,
     };
     use crate::RadioHardware;
     use std::vec::Vec;
@@ -1791,33 +2053,113 @@ mod tests {
     }
 
     #[test]
-    fn mac_policy_snapshot_keeps_typed_fields_and_little_endian_identity() {
+    fn complete_configuration_readback_keeps_typed_fields_and_all_identities() {
         let control = Ieee802154MacControl::new(true, false, true, false, true, false);
-        let identity = Ieee802154PanIdentity::new(
-            0x1234,
-            0xabcd,
-            [0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe],
-        );
-        let snapshot = Ieee802154MacPolicySnapshot::new(
-            Ieee802154FrequencyCode::new(78),
-            Ieee802154CcaMode::CarrierAndEnergyDetection,
-            -75,
-            Ieee802154AckTimeoutUnits::new(108),
+        let identities = [
+            Ieee802154PanIdentity::new(
+                0x1234,
+                0xabcd,
+                [0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe],
+            ),
+            Ieee802154PanIdentity::new(1, 2, [3; 8]),
+            Ieee802154PanIdentity::new(4, 5, [6; 8]),
+            Ieee802154PanIdentity::new(7, 8, [9; 8]),
+        ];
+        let snapshot = Ieee802154MacConfigurationReadback {
+            frequency_code: Ieee802154FrequencyCode::new(78),
+            tx_power_code: Ieee802154TxPowerCode::new(0xa5).expect("eight-bit TX-power code"),
+            cca_mode: Ieee802154CcaMode::CarrierAndEnergyDetection,
+            cca_threshold_code: -75,
+            ed_sample_rate: Ieee802154EdSampleRate::FourPerMicrosecond,
+            ack_timeout: Ieee802154AckTimeoutUnits::new(108),
             control,
-            0b0101,
-            identity,
-        );
+            multipan_enable_mask: Ieee802154MultipanEnableMask::from_bits(0b0101)
+                .expect("four-bit mask"),
+            identities,
+            frame_pending: true,
+        };
 
         assert_eq!(snapshot.frequency_code().value(), 78);
+        assert_eq!(snapshot.tx_power_code().get(), 0xa5);
         assert_eq!(
             snapshot.cca_mode(),
             Ieee802154CcaMode::CarrierAndEnergyDetection
         );
         assert_eq!(snapshot.cca_threshold_code(), -75);
+        assert_eq!(
+            snapshot.ed_sample_rate(),
+            Ieee802154EdSampleRate::FourPerMicrosecond
+        );
         assert_eq!(snapshot.ack_timeout().value(), 108);
         assert_eq!(snapshot.control(), control);
-        assert_eq!(snapshot.multipan_enable_mask(), 0b0101);
-        assert_eq!(snapshot.identity(), identity);
+        assert_eq!(snapshot.multipan_enable_mask().bits(), 0b0101);
+        for index in 0..Ieee802154MultipanIndex::COUNT {
+            let index = Ieee802154MultipanIndex::new(index).expect("bounded context");
+            assert_eq!(
+                snapshot.multipan_identity(index),
+                identities[index.as_usize()]
+            );
+        }
+        assert!(snapshot.frame_pending());
+    }
+
+    #[test]
+    fn pac_geometry_constructors_are_exhaustive_over_every_u8() {
+        for raw in u8::MIN..=u8::MAX {
+            assert_eq!(
+                Ieee802154TxPowerCode::new(u32::from(raw)).map(Ieee802154TxPowerCode::get),
+                Some(u32::from(raw))
+            );
+            assert_eq!(
+                Ieee802154MultipanIndex::new(raw).map(Ieee802154MultipanIndex::value),
+                (raw < 4).then_some(raw)
+            );
+            assert_eq!(
+                Ieee802154MultipanEnableMask::from_bits(raw)
+                    .map(Ieee802154MultipanEnableMask::bits),
+                (raw < 16).then_some(raw)
+            );
+            assert_eq!(
+                Ieee802154SecurityPayloadOffset::new(raw)
+                    .map(Ieee802154SecurityPayloadOffset::value),
+                (raw <= Ieee802154SecurityPayloadOffset::MAX).then_some(raw)
+            );
+        }
+        assert_eq!(Ieee802154TxPowerCode::new(0x100), None);
+    }
+
+    #[test]
+    fn multipan_masks_address_all_four_contexts_without_truncation() {
+        let mut mask = Ieee802154MultipanEnableMask::NONE;
+        for raw in 0..Ieee802154MultipanIndex::COUNT {
+            let index = Ieee802154MultipanIndex::new(raw).expect("all four indices are valid");
+            assert!(!mask.contains(index));
+            mask = mask.with(index);
+            assert!(mask.contains(index));
+        }
+        assert_eq!(mask, Ieee802154MultipanEnableMask::ALL);
+        for raw in 0..Ieee802154MultipanIndex::COUNT {
+            let index = Ieee802154MultipanIndex::new(raw).expect("all four indices are valid");
+            mask = mask.without(index);
+            assert!(!mask.contains(index));
+        }
+        assert_eq!(mask, Ieee802154MultipanEnableMask::NONE);
+    }
+
+    #[test]
+    fn ed_sample_rate_values_cover_the_complete_two_bit_field() {
+        for (raw, rate) in [
+            Ieee802154EdSampleRate::OnePerMicrosecond,
+            Ieee802154EdSampleRate::TwoPerMicrosecond,
+            Ieee802154EdSampleRate::FourPerMicrosecond,
+            Ieee802154EdSampleRate::EightPerMicrosecond,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(rate.field_value(), raw as u8);
+            assert_eq!(Ieee802154EdSampleRate::from_field(raw as u8), rate);
+        }
     }
 
     #[test]
@@ -2058,32 +2400,39 @@ mod tests {
 
     #[test]
     fn cold_w1c_boundary_accepts_no_caller_supplied_image() {
-        let _acknowledge: fn(&mut Ieee802154RegisterLease<'static>) -> Ieee802154EventObservation =
-            Ieee802154RegisterLease::acknowledge_pending_events;
+        let _acknowledge: fn(
+            &mut Ieee802154PolledRegisterLease<'static>,
+        ) -> Ieee802154EventObservation = Ieee802154PolledRegisterLease::acknowledge_pending_events;
     }
 
     #[test]
     fn polled_operation_pac_surface_uses_only_closed_typed_writes() {
-        let _set_events: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154EventEnableMask) =
-            Ieee802154RegisterLease::set_event_enable;
-        let _set_rx_aborts: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154RxAbortEnableMask) =
-            Ieee802154RegisterLease::set_rx_abort_enable;
+        let _set_events: fn(
+            &mut Ieee802154PolledRegisterLease<'static>,
+            Ieee802154EventEnableMask,
+        ) = Ieee802154PolledRegisterLease::set_event_enable;
+        let _set_rx_aborts: fn(
+            &mut Ieee802154PolledRegisterLease<'static>,
+            Ieee802154RxAbortEnableMask,
+        ) = Ieee802154PolledRegisterLease::set_rx_abort_enable;
         let _event_enable: fn(
-            &Ieee802154RegisterLease<'static>,
+            &Ieee802154PolledRegisterLease<'static>,
         ) -> Ieee802154OperationEventEnableObservation =
-            Ieee802154RegisterLease::operation_event_enable_observation;
+            Ieee802154PolledRegisterLease::operation_event_enable_observation;
         let _rx_abort_enable: fn(
-            &Ieee802154RegisterLease<'static>,
+            &Ieee802154PolledRegisterLease<'static>,
         ) -> Ieee802154OperationRxAbortEnableObservation =
-            Ieee802154RegisterLease::operation_rx_abort_enable_observation;
-        let _event_status: fn(&Ieee802154RegisterLease<'static>) -> Ieee802154EventObservation =
-            Ieee802154RegisterLease::event_status_observation;
-        let _rx_status: fn(&Ieee802154RegisterLease<'static>) -> Ieee802154RxStatusObservation =
-            Ieee802154RegisterLease::rx_status_observation;
+            Ieee802154PolledRegisterLease::operation_rx_abort_enable_observation;
+        let _event_status: fn(
+            &Ieee802154PolledRegisterLease<'static>,
+        ) -> Ieee802154EventObservation = Ieee802154PolledRegisterLease::event_status_observation;
+        let _rx_status: fn(
+            &Ieee802154PolledRegisterLease<'static>,
+        ) -> Ieee802154RxStatusObservation = Ieee802154PolledRegisterLease::rx_status_observation;
         let _set_duration: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154EdDurationUnits) =
             Ieee802154RegisterLease::set_ed_duration;
-        let _sample_ed: fn(&Ieee802154RegisterLease<'static>) -> Ieee802154EdCcaSnapshot =
-            Ieee802154RegisterLease::ed_cca_snapshot;
+        let _sample_ed: fn(&Ieee802154PolledRegisterLease<'static>) -> Ieee802154EdCcaSnapshot =
+            Ieee802154PolledRegisterLease::ed_cca_snapshot;
         let _start: fn(&mut Ieee802154RegisterLease<'static>) =
             Ieee802154RegisterLease::request_ed_start;
     }
@@ -2213,24 +2562,30 @@ mod tests {
             Ieee802154RegisterLease::publish_transmit_dma_address;
         let _rx_dma: fn(&mut Ieee802154RegisterLease<'static>, u32) =
             Ieee802154RegisterLease::publish_receive_dma_address;
-    }
-
-    #[test]
-    fn generated_mac_geometry_is_owned_by_the_radio_partition() {
-        let cold = RadioHardware::for_validation().into_ieee802154();
-        let mac = cold.radio().peripherals.ieee802154_mac.registers();
-
-        // Pointer inspection performs no volatile access on the host.
-        assert_eq!(mac.channel().as_ptr() as usize, 0x2010_3048);
-        assert_eq!(mac.command().as_ptr() as usize, 0x2010_3000);
-        assert_eq!(mac.ed_duration().as_ptr() as usize, 0x2010_3050);
-        assert_eq!(mac.ed_config().as_ptr() as usize, 0x2010_3054);
-        assert_eq!(mac.event_enable().as_ptr() as usize, 0x2010_3060);
-        assert_eq!(mac.event_status().as_ptr() as usize, 0x2010_3064);
-        assert_eq!(mac.rx_abort_enable().as_ptr() as usize, 0x2010_3068);
-        assert_eq!(mac.coex_pti().as_ptr() as usize, 0x2010_3070);
-        assert_eq!(mac.tx_abort_enable().as_ptr() as usize, 0x2010_3078);
-        assert_eq!(mac.rx_status().as_ptr() as usize, 0x2010_3080);
-        assert_eq!(mac.tx_status().as_ptr() as usize, 0x2010_3084);
+        let _tx_power: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154TxPowerCode) =
+            Ieee802154RegisterLease::set_tx_power_code;
+        let _ed_rate: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154EdSampleRate) =
+            Ieee802154RegisterLease::set_ed_sample_rate;
+        let _multipan_identity: fn(
+            &mut Ieee802154RegisterLease<'static>,
+            Ieee802154MultipanIndex,
+            Ieee802154PanIdentity,
+        ) = Ieee802154RegisterLease::set_multipan_identity;
+        let _multipan_mask: fn(
+            &mut Ieee802154RegisterLease<'static>,
+            Ieee802154MultipanEnableMask,
+        ) = Ieee802154RegisterLease::set_multipan_enable_mask;
+        let _frame_pending: fn(&mut Ieee802154RegisterLease<'static>, bool) =
+            Ieee802154RegisterLease::set_frame_pending;
+        let _notify: fn(&mut Ieee802154RegisterLease<'static>) =
+            Ieee802154RegisterLease::notify_enhanced_ack_generated;
+        let _security_config: fn(
+            &mut Ieee802154RegisterLease<'static>,
+            &[u8; 8],
+            &[u8; 16],
+            Ieee802154SecurityPayloadOffset,
+        ) = Ieee802154RegisterLease::configure_transmit_security;
+        let _security_disable: fn(&mut Ieee802154RegisterLease<'static>) =
+            Ieee802154RegisterLease::disable_transmit_security;
     }
 }

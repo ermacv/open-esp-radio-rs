@@ -447,6 +447,29 @@ impl Ieee802154EdDurationUnits {
     }
 }
 
+/// Raw eight-bit IEEE 802.15.4 transmit-power field accepted by the public common LL; no dBm conversion or calibration-table meaning is assigned at the PAC boundary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ieee802154TxPowerCode(u32);
+
+impl Ieee802154TxPowerCode {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete transmit frame-buffer address. Buffer provenance, alignment and lifetime remain HAL obligations.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154TxDmaAddress(u32);
@@ -1279,6 +1302,15 @@ pub(crate) fn set_ieee802154_ed_duration(
     value: Ieee802154EdDurationUnits,
 ) {
     crate::svd::masked_register_modify::set_ieee802154_ed_duration(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_tx_power_code` masked transaction.
+#[inline]
+pub(crate) fn set_ieee802154_tx_power_code(
+    registers: &crate::svd::Ieee802154Mac,
+    value: Ieee802154TxPowerCode,
+) {
+    crate::svd::masked_register_modify::set_ieee802154_tx_power_code(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `override_ieee802154_shared_tx_on_delay` masked transaction.

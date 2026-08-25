@@ -20,6 +20,14 @@ mod cfr;
 pub mod clock;
 mod coex;
 mod frequency;
+// The generated capability catalog is intentionally broader than this crate's
+// restricted ownership facade. Some reviewed leaves stay unreachable until an
+// owner transition exposes them; do not reopen full-block access to make them
+// appear used.
+#[allow(
+    dead_code,
+    reason = "generated capability catalog is wider than the restricted ownership facade"
+)]
 mod generated;
 mod ieee802154;
 mod ieee802154_timing;
@@ -112,18 +120,21 @@ pub use generated::{
     MacTxPtiCount, MacTxQueueIndex,
 };
 #[doc(hidden)]
-pub use ieee802154::Ieee802154RegisterLease;
-#[doc(hidden)]
 pub use ieee802154::Ieee802154RouteRawReadback;
 pub use ieee802154::{
     Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdCcaSnapshot, Ieee802154EdCommand,
-    Ieee802154EdDurationUnits, Ieee802154EventEnableMask, Ieee802154EventObservation,
-    Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154InterruptSnapshot,
-    Ieee802154MacCommand, Ieee802154MacControl, Ieee802154MacPolicySnapshot,
-    Ieee802154OperationEventEnableObservation, Ieee802154OperationRxAbortEnableObservation,
-    Ieee802154PanIdentity, Ieee802154Pti, Ieee802154RxAbortEnableMask, Ieee802154RxStateCode,
-    Ieee802154RxStatusObservation, Ieee802154StateSnapshot, Ieee802154TxStateCode,
+    Ieee802154EdDurationUnits, Ieee802154EdSampleRate, Ieee802154EventEnableMask,
+    Ieee802154EventObservation, Ieee802154FoundationSnapshot, Ieee802154FrequencyCode,
+    Ieee802154InterruptSnapshot, Ieee802154MacCommand, Ieee802154MacConfigurationReadback,
+    Ieee802154MacControl, Ieee802154MacPolicySnapshot, Ieee802154MultipanEnableMask,
+    Ieee802154MultipanIndex, Ieee802154OperationEventEnableObservation,
+    Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154Pti,
+    Ieee802154RxAbortEnableMask, Ieee802154RxStateCode, Ieee802154RxStatusObservation,
+    Ieee802154SecurityPayloadOffset, Ieee802154StateSnapshot, Ieee802154TransmitSecurityControl,
+    Ieee802154TxPowerCode, Ieee802154TxStateCode,
 };
+#[doc(hidden)]
+pub use ieee802154::{Ieee802154PolledRegisterLease, Ieee802154RegisterLease};
 pub use ieee802154_timing::{Ieee802154TimingPrerequisite, Ieee802154TimingReady};
 pub use mac_block_ack::{
     ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, RxBlockAckEntrySnapshot,

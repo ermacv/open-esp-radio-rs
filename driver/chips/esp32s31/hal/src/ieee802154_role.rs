@@ -64,7 +64,7 @@ impl<P> OwnedIeee802154Backend<P> {
     }
 
     fn mac_hal(&mut self) -> Ieee802154PacHal<'_> {
-        Ieee802154PacHal::from_owned(&mut self.task)
+        Ieee802154PacHal::from_owned(&mut self.task, &mut self.interrupts)
     }
 }
 

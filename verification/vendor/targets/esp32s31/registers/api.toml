@@ -347,6 +347,13 @@ min = 0
 max = 0x0000_ffff
 sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
 
+[[bounded-domains]]
+name = "Ieee802154TxPowerCode"
+description = "Raw eight-bit IEEE 802.15.4 transmit-power field accepted by the public common LL; no dBm conversion or calibration-table meaning is assigned at the PAC boundary."
+min = 0
+max = 0x0000_00ff
+sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
+
 [[opaque-domains]]
 name = "Ieee802154TxDmaAddress"
 description = "Register-specific complete transmit frame-buffer address. Buffer provenance, alignment and lifetime remain HAL obligations."
@@ -906,6 +913,13 @@ value = 0x00000045
 sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
 
 [[fixed-register-images]]
+name = "notify_ieee802154_enhanced_ack_generated"
+peripheral = "IEEE802154_MAC"
+register = "ENHANCED_ACK_NOTIFY"
+value = 0x00000001
+sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
+
+[[fixed-register-images]]
 name = "release_bluetooth_interrupt_output_0"
 peripheral = "BLUETOOTH_INTERRUPT_BANK"
 register = "IRQ_CONTROL_1"
@@ -1234,6 +1248,27 @@ fields = ["VALUE"]
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
 
 [[zero-based-field-writes]]
+name = "publish_ieee802154_security_address_low"
+peripheral = "IEEE802154_MAC"
+register = "SECURITY_ADDRESS_LOW"
+fields = ["ADDRESS_WORD"]
+sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
+
+[[zero-based-field-writes]]
+name = "publish_ieee802154_security_address_high"
+peripheral = "IEEE802154_MAC"
+register = "SECURITY_ADDRESS_HIGH"
+fields = ["ADDRESS_WORD"]
+sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
+
+[[zero-based-field-writes]]
+name = "publish_ieee802154_security_key_word"
+peripheral = "IEEE802154_MAC"
+register = "SECURITY_KEY%s"
+fields = ["KEY_WORD"]
+sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
+
+[[zero-based-field-writes]]
 name = "mac_he_trigger_queue_control"
 peripheral = "WIFI_MAC_HE_INIT_SUFFIX"
 register = "QUEUE_CONTROL%s"
@@ -1393,6 +1428,16 @@ register = "ED_DURATION"
 domain = "Ieee802154EdDurationUnits"
 preserve-mask = 0xff000000
 input-mask = 0x00ffffff
+set-mask = 0x00000000
+sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
+
+[[masked-register-modifies]]
+name = "set_ieee802154_tx_power_code"
+peripheral = "IEEE802154_MAC"
+register = "TX_POWER"
+domain = "Ieee802154TxPowerCode"
+preserve-mask = 0xffffff00
+input-mask = 0x000000ff
 set-mask = 0x00000000
 sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
 

@@ -2,7 +2,7 @@
 
 Verification answers whether observed vendor behavior agrees with a named
 Rust binding under an explicit contract. It is supporting evidence. Product
-readiness is decided only by the repository qualification ledger.
+readiness is decided only by the repository qualification evaluator.
 
 ## Evidence classes
 
@@ -150,7 +150,7 @@ and an upper bound on the claim, not execution truth.
 
 The policy does not contain product phases, HIL campaigns or an umbrella
 feature hierarchy. It consumes verification suites and produces pass/fail
-supporting evidence. The qualification ledger references that evidence and
+supporting evidence. The qualification specification references that evidence and
 remains the only readiness authority.
 
 ## Production trace versus environment model
@@ -238,8 +238,8 @@ cargo blobray project check --project path/to/vendor-project.toml
 Focused `advanced verify ...` and `advanced execute ...` commands are backend
 tools. The project commands are the normal reproducible interface.
 
-The qualification ledger remains outside the project. Blobray owns no
-ledger parser, readiness types, or policy calculation. A future frontend may
+The qualification specification and evaluator remain outside the project.
+Blobray owns no readiness types or policy calculation. A future frontend may
 display a read-only result emitted by the independent `qualification-check`
-tool, but it cannot update the ledger or turn Blobray evidence into
+tool, but it cannot update qualification policy or turn Blobray evidence into
 readiness.

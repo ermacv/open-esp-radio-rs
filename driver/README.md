@@ -146,8 +146,8 @@ enter that formatter. S31 hardware encoding remains fail-closed with separate
 diagnostics for missing formatter fields and on-air qualification; local STA
 and AP HT capability elements keep the MCS32 receive bit clear until controlled
 RX evidence exists. All capabilities in this section describe source behavior
-only; they are not qualification-ledger or HIL claims without the required
-dated evidence.
+only; they are not qualification or HIL claims without the required
+machine-readable evidence.
 
 Bluetooth/BLE and IEEE 802.15.4 are not operational public runtime features.
 The IEEE 802.15.4 HAL exposes finite whole-radio typestates only through an

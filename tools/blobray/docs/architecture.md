@@ -47,7 +47,7 @@ raw PAC -> restricted capabilities -> HAL -> driver
                                           |
 compiled vendor + production Rust --------+-> verification result
                                                |
-                                      qualification ledger
+                                    qualification evaluator
 ```
 
 The schema-3 composition is deliberately layered:
@@ -154,7 +154,7 @@ measured boundary and retention policy are documented in
 [`cache-policy.md`](cache-policy.md). Generated
 output files are always streamed into the same CAS and may be atomically
 restored; generated IR bundles remain publication artifacts and are not the
-cache database. Reviewed packs and the qualification ledger must never be
+cache database. Reviewed packs and qualification specifications must never be
 copied into or modified by the store. In schema 10, every persisted query result
 belongs to at least one analysis epoch; an unowned result is invalid cache state
 rather than a GC candidate. Query results are never selected by per-result LRU

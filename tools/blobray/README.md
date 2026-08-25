@@ -48,7 +48,7 @@ generated result byte for byte before publishing or merging a replacement.
 Blobray assurance is not the product readiness authority. The repository's
 [verification and qualification contract](../../docs/VERIFICATION_AND_QUALIFICATION.md)
 defines which results are supporting research and which exact production
-traces may enter the qualification ledger.
+traces may enter the qualification evaluator.
 
 Use `--details` only when you need the complete component or file inventory.
 Use `--format json` for automation. Human results go to stdout; diagnostics,

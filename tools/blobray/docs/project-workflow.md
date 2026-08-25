@@ -248,7 +248,7 @@ cargo blobray project check --project path/to/vendor-project.toml
 
 `project check` is the fail-closed reproducibility gate. It verifies generated
 outputs and the configured verification policy. It does not decide whether the
-product is ready to ship; the repository qualification ledger is the sole
+product is ready to ship; the repository qualification evaluator is the sole
 readiness authority. Unqualified implementations remain reported as coverage
 debt in review-scope details but do not make `project status` incomplete and
 are not silently promoted into mandatory verification claims. Only an explicit

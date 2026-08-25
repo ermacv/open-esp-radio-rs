@@ -1,101 +1,116 @@
 # Verification and qualification contract
 
-This document is the canonical boundary between the production driver,
-Blobray evidence, HIL records and the qualification ledger.
+This document defines the boundary between production code, host contracts,
+Blobray verification, HIL execution and product qualification.
 
-## What answers which question
+## Authorities
 
-| Source | Question it answers | May make the driver ready? |
+| Source | Question it answers | May decide readiness? |
 | --- | --- | --- |
-| `driver/` tests | Does production Rust satisfy its local invariants? | Required, not sufficient |
-| Blobray `production-trace` | Does a concrete vendor execution have the same ordered observable effects as the exact compiled production entry? | Yes, for the named bounded contract |
-| Blobray `shared-core` | Does a compiled probe exercise code shared with production? | No; supporting evidence only |
-| Environment model | Does an explicit environment make a comparison executable? | No; it is an input, not an implementation or verdict |
-| Blobray `static-analysis` | Do lifted, symbolic or generated traces agree? | No; supporting evidence only |
-| HIL record | Did the dated production composition work on hardware? | Required for hardware-qualified axes |
-| Qualification ledger | Are all required capability axes and dependencies closed? | **Sole readiness authority** |
+| `driver/` owners and tests | Does the current source contain the declared production and host contracts? | Required, not sufficient |
+| Blobray `production-trace` | Does concrete vendor execution match the exact compiled production entry under the declared bounded contract? | Supplies vendor evidence only |
+| Blobray `shared-core` or static analysis | Does supporting code or a model agree? | No |
+| HIL sealed run | Did the current clean production composition pass the declared scenario on hardware? | Supplies HIL evidence only |
+| Qualification v3 | Are all required axes and dependencies closed by acceptable current evidence? | **Sole readiness authority** |
 
-Blobray is intentionally broader than the qualification gate. Its analysis,
-register discovery, environment models and focused investigations remain useful
-for understanding vendor code. They must not be described as product
-qualification unless their result reaches the ledger through the strict
-production-trace path.
+No evidence producer imports product-readiness policy. Qualification consumes
+their typed outputs and derives the verdict.
 
-## Strict production-trace path
+Production owners, general host tests and bounded-async contracts are separate
+manifest declarations. Every `async-contracts` entry must also be a declared
+host test; the evaluator never infers bounded scheduling from unrelated test
+coverage.
 
-A vendor comparison is verification-eligible only when all of these hold:
+## Vendor verification path
+
+A vendor comparison is qualification-eligible only when all of these hold:
 
 1. the vendor side is a concrete replay;
 2. the Rust binding is `exact-production-entry`, not a generated reference,
    shared production core or verification projection;
 3. the reviewed production component resolves to source and compiled symbols;
-4. the compiled artifact is fresh relative to the production source;
+4. the compiled artifact is fresh relative to production source;
 5. the comparison is `match` or an explicitly bounded match;
-6. the accepted evidence baseline passes and has a reproducible identity.
+6. the accepted evidence baseline passes with a reproducible identity;
+7. the evidence row is explicitly release eligible and has no blockers;
+8. the evaluator worktree is clean and every named production source still
+   matches its recorded hash.
 
-`project audit bindings` checks the declaration-side trust boundary.
-`project verify` checks behavior and, on a complete run only, writes the
-compact `evidence/vendor-evidence.json` index. The index contains hashes and
-repository-relative production sources, never private artifact paths or
-vendor binaries. A partial `--suite` run updates focused reports but never
-replaces this aggregate index.
+`project verify` writes the compact
+`verification/vendor/.../evidence/vendor-evidence.json` only for a complete
+project run. Qualification follows the selected project's
+`verification-addon`, requires the configured index to be that exact output,
+checks its command and project identity, validates proof class/status/hash
+shape and re-hashes every referenced production source. A partial suite run
+cannot replace this index.
 
-## Ledger version 2
+The qualification manifest names vendor roots and explicit evidence rows:
 
-The ledger does not contain a manually editable `vendor-proof`. It names:
-
-```text
-vendor-root archive phy_chip_set_chan
-vendor-evidence phy archive phy_chip_set_chan
+```toml
+vendor-roots = [
+  { source = "archive", symbol = "phy_chip_set_chan" },
+]
+vendor-evidence = [
+  { suite = "phy", source = "archive", symbol = "phy_chip_set_chan" },
+]
 ```
 
-The checker joins that reference to the compact index and derives:
+The evaluator derives:
 
-- `qualified` when every declared root has verification-eligible production-trace
-  evidence and no source-only anchors remain;
-- `mapped` when roots or anchors exist but strict evidence is absent;
-- `unmapped` when neither exists.
+- `qualified` only when every root has current release-eligible
+  `production-trace` evidence and no source-only anchor remains;
+- `mapped` when reviewed roots or anchors exist but strict evidence is absent;
+- `unmapped` when neither exists;
+- `not-applicable` only from an explicit reason and with no vendor references.
 
-The checker also follows the project's `verification-addon` reference and
-requires the evidence-index path declared by that add-on,
-validates its proof class/status/hash shape and re-hashes every referenced
-production source. Editing a status bit or changing driver source cannot keep
-a capability qualified.
+## HIL evidence path
 
-Other axes remain independent. A capability is `proof-ready` only when its own
-five axes are terminal; it is `ready` only when all dependencies are also
-ready. Blobray feature reports describe evidence closure inside Blobray;
-they are not an alternative product-readiness ledger.
+Qualification manifests name exact scenario requirements rather than dated
+narrative files:
+
+```toml
+hil-requirements = [
+  { scenario = "station-reconnect", minimum-repetitions = 1 },
+]
+```
+
+The evaluator first checks that every requirement exists in the typed HIL
+scenario catalog and is achievable by its declared repetition count. It then
+accepts a run only when:
+
+1. `integrity.json` exactly seals the complete file inventory;
+2. every size and SHA-256 digest matches;
+3. manifest, suite, run directory and target identities agree;
+4. the run and required scenarios passed;
+5. every required repetition passed;
+6. the run was created from a clean tree at the evaluator's current commit.
+
+Historical Markdown records do not enter this decision. A changed commit needs
+a new hardware run; no hand-edited `qualified` field exists.
 
 ## Normal workflow
 
-1. Implement and test behavior in `driver/`.
-2. Add the smallest exact production entry that can be compiled and invoked.
-3. Add a concrete vendor profile for the same operation and ordered MMIO/RAM
-   effects. Do not copy production behavior into a shadow implementation.
-4. Run the focused suite while iterating.
-5. Run the complete resource-limited project verification to refresh the
-   aggregate report and compact evidence index.
-6. Review the index diff, then run the qualification checker and HIL cells.
+1. Implement behavior and named host contracts in `driver/`.
+2. Run workspace tests.
+3. Produce complete Blobray verification evidence for declared vendor roots.
+4. Run the exact HIL scenarios declared by the target qualification manifest
+   from a clean commit.
+5. Validate and inspect the derived report.
+6. Use the strict gate for a release decision.
 
 ```console
-cargo build --profile blobray \
-  -p blobray-esp32s31 \
-  --bin blobray
-
 tools/blobray/scripts/run-limited \
   project verify \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec verification/vendor/targets/esp32s31/local.toml
 
-cargo qualification check \
-  --manifest qualification/targets/esp32s31/wifi-sta.ledger
+cargo qualification evaluate \
+  --manifest qualification/targets/esp32s31/wifi-sta.toml \
+  --json-report target/qualification/wifi-sta.json
+
+cargo qualification gate \
+  --manifest qualification/targets/esp32s31/wifi-sta.toml
 ```
 
-## Scope control
-
-New Blobray features are frozen unless they directly unblock a named driver
-capability, repair a false result, preserve reproducibility, or reduce the
-maintenance cost of this workflow. Physical extraction into a separate
-repository remains a later task after this contract is stable and the full
-check is reproducible.
+`validate` is the normal source-tree consistency check. `gate` is intentionally
+expected to fail while any required claim remains incomplete.

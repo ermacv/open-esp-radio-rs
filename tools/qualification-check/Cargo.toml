@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Fail-closed qualification manifest checker for the open radio driver"
+description = "Fail-closed qualification evaluator for the open radio driver"
 
 [dependencies]
 serde = { version = "=1.0.229", features = ["derive"] }

@@ -7,7 +7,7 @@ the combined RISC-V harness. The harness first applies the reusable rev0 chip
 add-on, then applies these exact project summaries.
 
 It must not depend on the production PAC, HAL, PHY, MAC, driver, HIL, or
-qualification ledger. Those dependencies belong to the generic verifier or
+qualification policy. Those dependencies belong to the generic verifier or
 to qualification tooling.
 
 See [`../OWNERSHIP.md`](../OWNERSHIP.md) for the per-module promotion audit and

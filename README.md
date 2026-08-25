@@ -73,7 +73,7 @@ owns PAC, DMA and ISR state. Shared cross-chip code is extracted only after a
 second backend demonstrates the same semantic operation.
 
 See the canonical [driver architecture](driver/README.md), the
-[machine-checked qualification ledger](qualification/README.md), and the
+[machine-checked qualification specification](qualification/README.md), and the
 [verification/qualification contract](docs/VERIFICATION_AND_QUALIFICATION.md).
 
 ## Verification
@@ -81,7 +81,7 @@ See the canonical [driver architecture](driver/README.md), the
 ```console
 cargo fmt --all -- --check
 cargo test --workspace
-cargo qualification check --manifest qualification/targets/esp32s31/wifi-sta.ledger
+cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.toml
 cargo blobray project configure \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --check
@@ -103,7 +103,7 @@ Rust source text for required or forbidden function names.
 
 Hardware workflows are documented in [the ESP32-S31 HIL README](hil/targets/esp32s31/README.md).
 Current cross-layer readiness, dependencies and stale-HIL gaps are tracked by
-the [machine-checked qualification ledger](qualification/README.md). Stable
+the [machine-checked qualification specification](qualification/README.md). Stable
 public API limits belong in [the driver architecture](driver/README.md), not a
 second hand-maintained status matrix.
 

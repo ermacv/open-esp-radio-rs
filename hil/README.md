@@ -15,9 +15,10 @@ hil/
     └── esp32s31/      current embedded target workspace
 ```
 
-Target firmware lives under `hil/targets/<chip>`. Dated results live under
-`qualification/targets/esp32s31/records`; their contents retain the paths and
-commands of the revision they measured.
+Target firmware lives under `hil/targets/<chip>`. Machine-readable evidence
+lives in immutable bundles under `target/hil/<chip>/runs`; dated narratives in
+`qualification/targets/esp32s31/records` are historical context, not proof
+consumed by the qualification evaluator.
 
 Vendor-linked oracles remain isolated under `verification/vendor`; they are
 not HIL scenarios or runner commands.
@@ -51,6 +52,13 @@ views over those bundles. Rebuild them at any time with
 Verify the structure and content digests of one bundle with
 `cargo hil report verify <run-id>`, or omit the ID to verify all bundles. This
 also runs without a DUT or private lab configuration.
+
+Qualification v3 independently reads the sealed bundles instead of trusting a
+handwritten HIL status. A capability is HIL-qualified only when its declared
+scenario and repetition requirement is satisfied by a completed bundle for
+the exact current commit, and both the producer and evaluator worktrees are
+clean. Scenario IDs and achievable repetition counts are checked against the
+versioned catalog in `hil/scenarios`.
 
 The controlled OpenWrt AP and the HIL host share its laboratory LAN; reverse
 flows use the local IPv4 route selected for the discovered target. The

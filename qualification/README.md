@@ -1,57 +1,89 @@
-# Qualification progress ledger
+# Qualification v3
 
-The checked-in ledger is the primary completion metric for the supported
-driver path. Vendor-function totals remain useful validator throughput data,
-but they do not prove that a usable radio capability is complete.
+Qualification is the sole readiness authority for a supported product path.
+The checked-in TOML manifests declare capability roots, dependencies, required
+evidence and known blockers. They never declare proof outcomes.
 
-Run the fail-closed check from the repository root:
-
-```console
-cargo qualification check \
-  --manifest qualification/targets/esp32s31/wifi-sta.ledger
-```
-
-The Bluetooth LE program has an independent fail-closed ledger. It is expected
-to report zero ready on-air capabilities until its implementation, evidence and
-HIL gaps close:
+The ESP32-S31 Wi-Fi and Bluetooth programs are independent:
 
 ```console
-cargo qualification check \
-  --manifest qualification/targets/esp32s31/bluetooth-le.ledger
+cargo qualification validate \
+  --manifest qualification/targets/esp32s31/wifi-sta.toml
+
+cargo qualification validate \
+  --manifest qualification/targets/esp32s31/bluetooth-le.toml
 ```
 
-Each capability has five independent axes:
+Three commands have deliberately different contracts:
 
-- `implementation`: a production owner exists under `driver/*/src`;
-- `host-proof`: named host tests exercise the capability contract;
-- vendor evidence: version 2 derives `qualified`, `mapped` or `unmapped` from
-  Blobray's compact evidence index; it is not manually declared;
-- `hil-proof`: a dated hardware record contains the named qualification ID;
-- `async-proof`: waits are bounded scheduling edges or not applicable.
+- `validate` rejects malformed manifests, unsafe or stale references, invalid
+  dependency graphs, mismatched verification inputs and corrupt HIL bundles;
+  an incomplete target is still a valid development state;
+- `evaluate` emits the same derived verdict and optionally a complete JSON
+  report through `--json-report PATH`;
+- `gate` returns non-zero unless every required capability and dependency is
+  ready.
 
-Only terminal values make a capability ready. Every non-terminal axis must
-carry a stable gap ID. Dependencies are checked for missing nodes and cycles;
-`proof-ready` means the capability's own five axes are terminal, while
-`ready` additionally requires every dependency to be ready. The manifest also
-declares every required root separately so deleting a difficult capability
-cannot improve the summary.
+There is no `check` compatibility command and no `.ledger` parser.
 
-A historical HIL record supports `partial`, not `qualified`, after any owner
-or integration boundary named by that record changes. Promotion back to
-`qualified` requires repeating the cell against the current tree and adding a
-new immutable record (or an explicit current-revision addendum).
+## Derived axes
 
-Owner, test, source-anchor and HIL references are checked against their real
-repository files. A `vendor-root` must be an explicit entry in a disposition
-pack selected by the target verification project. A `vendor-evidence`
-reference qualifies that root only when the generated index records a fresh,
-baseline-accepted concrete trace of the exact compiled production entry.
-Shared-core adapters, semantic models and static traces remain mapped evidence.
+Every capability has five independent axes:
+
+- `implementation` is complete only when all named public production owners
+  resolve under `driver/*/src` and no implementation blocker remains;
+- `host` is covered only when all named driver test functions resolve and no
+  host blocker remains. Test execution is still enforced by the workspace test
+  job; source discovery alone is not a test-run attestation;
+- `vendor` is derived from Blobray's complete compact evidence index. Only a
+  fresh, baseline-accepted, release-eligible `production-trace` for every
+  declared root evaluated from a clean worktree can qualify the axis;
+- `hil` is derived from immutable schema-2 HIL bundles. Every required scenario
+  must pass with enough repetitions in a sealed run from the exact current
+  clean commit;
+- `async` is bounded only when at least one `async-contracts` reference names a
+  declared host test and no async blocker remains, or is explicitly not
+  applicable with a reason.
+
+`proof-ready` means all five axes are terminal. `ready` additionally requires
+every dependency to be ready. `required-capabilities` must exactly equal the
+manifest capability set, so deleting a difficult node cannot improve the
+summary.
+
+Known `gaps` are planning facts, not editable outcomes. The evaluator also adds
+a deterministic derived gap whenever machine evidence is absent.
+
+## Evidence ownership
+
+```text
+driver owners/tests ───────────────┐
+Blobray vendor evidence index ─────┼─> qualification evaluator ─> JSON/verdict
+sealed HIL run bundles ────────────┘
+```
+
+Blobray and the HIL runner never decide product readiness. Blobray owns vendor
+comparison truth; the HIL runner owns hardware execution truth; qualification
+maps both into the declared capability graph.
+
+The HIL runner writes bundles below `target/hil/<target>/runs/<run-id>/`.
+Qualification independently checks `integrity.json`, every indexed file hash,
+manifest/suite identity, clean repository provenance, commit equality,
+scenario outcome and repetition count. A Markdown narrative under
+`targets/esp32s31/records/` remains useful review history but is not proof.
+
+Use a JSON report for CI and downstream presentation:
+
+```console
+cargo qualification evaluate \
+  --manifest qualification/targets/esp32s31/wifi-sta.toml \
+  --json-report target/qualification/wifi-sta.json
+```
+
+The console `INPUT` row and JSON `evidence_inputs` object expose how many
+verification rows and HIL bundles were observed, how many are current, and
+whether a dirty evaluator worktree prevented otherwise valid evidence from
+entering the verdict.
 
 See the canonical
 [verification and qualification contract](../docs/VERIFICATION_AND_QUALIFICATION.md)
-for evidence classes and the update workflow.
-
-Dated, immutable ESP32-S31 hardware evidence lives in
-[`targets/esp32s31/records/`](targets/esp32s31/records/README.md). The ledger
-references those records by stable qualification ID.
+for evidence strength and the release workflow.

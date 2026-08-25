@@ -241,7 +241,7 @@ invent field semantics.
 
 `verification-policy.toml` selects independent review scopes, function
 requirements and bounded properties. It does not define product readiness.
-The repository qualification ledger is the sole authority for that decision.
+The repository qualification evaluator is the sole authority for that decision.
 
 Bindings distinguish exact production entries, shared production core and
 verification projections. Concrete replay may support release evidence only

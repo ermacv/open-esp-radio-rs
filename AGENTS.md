@@ -11,7 +11,7 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
 - `hil/` contains the typed HIL protocol, host runner, targets, and scenarios.
 - `verification/vendor/` holds reviewed vendor-comparison inputs; `_oracles/`
   is private input and must never be committed.
-- `qualification/` is the machine-checked capability ledger. `svd/` contains
+- `qualification/` contains machine-checked capability specifications. `svd/` contains
   reviewed hardware descriptions. `tools/` contains repository utilities and
   Blobray.
 
@@ -25,7 +25,7 @@ cargo check --workspace
 cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets
-cargo qualification check --manifest qualification/targets/esp32s31/wifi-sta.ledger
+cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.toml
 tools/audit-source-only.sh
 ```
 

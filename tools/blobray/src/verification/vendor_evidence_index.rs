@@ -1,4 +1,4 @@
-//! Compact, shareable evidence consumed by the qualification ledger.
+//! Compact, shareable evidence consumed by the qualification evaluator.
 
 use std::{collections::BTreeSet, fs, path::Path};
 

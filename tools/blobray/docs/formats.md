@@ -219,7 +219,7 @@ Two machine-written records are intentionally durable rather than disposable:
 the immutable revision snapshots described above, and the complete-run vendor
 evidence index selected by a verification add-on. The evidence index is a
 compact qualification publication whose source hashes are rechecked by the
-qualification ledger; preserve both record classes in version control or
+qualification evaluator; preserve both record classes in version control or
 equivalent controlled storage. They remain tool-owned records, not manually
 reviewed fact packs.
 

@@ -93,6 +93,12 @@ and changed content fail closed. The hashes detect accidental corruption and
 internally inconsistent bundles; because they live beside the evidence, they
 are not a signature against a malicious rewrite of the whole bundle.
 
+The qualification evaluator consumes these same sealed bundles through an
+independent reader. `qualification/targets/<chip>/*.toml` maps capabilities to
+scenario IDs and minimum passing repetitions; only a bundle produced from the
+exact current commit with a clean worktree can satisfy the HIL axis. The
+derived history views and Markdown narratives are never proof inputs.
+
 `boot-smoke` intentionally precedes the radio protocol and proves only runtime
 relocation plus one Embassy timer wake. It uses its single fixed PASS record;
 all radio, lifecycle and traffic evidence uses the typed HIL protocol.

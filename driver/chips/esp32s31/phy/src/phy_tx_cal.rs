@@ -1513,11 +1513,8 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target<
-        P: open_esp_radio_esp32s31_hal::power_detector_platform::PhyPowerDetectorPlatformControl,
-    >(
+    pub fn execute_target(
         self,
-        platform: &mut P,
         registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyContext,
     ) -> PhyTxCalibrationEnvironmentCompletion {
         match self.action {
@@ -1530,14 +1527,12 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
                 PhyTxCalibrationEnvironmentCompletion::TxClockConfigured { enabled }
             }
             PhyTxCalibrationEnvironmentAction::ConfigurePowerDetector => {
-                open_esp_radio_esp32s31_hal::phy_power_detector::configure_enabled(
-                    platform, registers,
-                );
+                open_esp_radio_esp32s31_hal::phy_power_detector::configure_enabled(registers);
                 PhyTxCalibrationEnvironmentCompletion::PowerDetectorConfigured
             }
             PhyTxCalibrationEnvironmentAction::ConfigureCalibrationMode => {
                 open_esp_radio_esp32s31_hal::phy_power_detector::configure_calibration_mode(
-                    platform,
+                    registers,
                 );
                 PhyTxCalibrationEnvironmentCompletion::CalibrationModeConfigured
             }

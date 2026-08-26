@@ -7,10 +7,7 @@
 //! with a value-only decision.
 
 use open_esp_radio_esp32s31_hal::MacInterruptSetup;
-use open_esp_radio_esp32s31_hal::{
-    phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
-    wifi_bb::PhyWifiBbControl,
-};
+use open_esp_radio_esp32s31_hal::{phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl};
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
@@ -467,7 +464,7 @@ pub async fn run_esp32s31_station_scan<
     >,
 >
 where
-    P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+    P: PhyWifiBbControl + PhyI2cMasterControl,
     Q: PhyTargetObserver,
     D: PhyAsyncDelay,
     H: TxHardware,

@@ -391,7 +391,6 @@ where
     where
         D: PhyAsyncDelay,
         P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
             + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         O: PhyTargetObserver,
     {
@@ -820,7 +819,6 @@ where
     where
         D: PhyAsyncDelay,
         P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
             + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         O: PhyTargetObserver,
     {
@@ -987,7 +985,6 @@ where
     where
         D: PhyAsyncDelay,
         P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
             + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         O: PhyTargetObserver,
     {
@@ -1041,7 +1038,6 @@ where
     where
         D: PhyAsyncDelay,
         P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
             + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         O: PhyTargetObserver,
     {

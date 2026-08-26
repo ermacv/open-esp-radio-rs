@@ -11752,6 +11752,391 @@ pub mod phy_clock_oracle {
         }
     }
 }
+#[doc = "Low-power always-on clock/reset registers reached by the reviewed PHY power-detector lifecycle."]
+pub type LpAonClkrst = crate::Periph<lp_aon_clkrst::RegisterBlock, 0x2070_1000>;
+impl core::fmt::Debug for LpAonClkrst {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("LpAonClkrst").finish()
+    }
+}
+#[doc = "Low-power always-on clock/reset registers reached by the reviewed PHY power-detector lifecycle."]
+pub mod lp_aon_clkrst {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x68],
+        rtc_sar2_pwdet_cct: RtcSar2PwdetCct,
+    }
+    impl RegisterBlock {
+        #[doc = "0x68 - SAR2 power-detector circuit mode. Only encodings two and four are published by reviewed complete ROM bodies."]
+        #[inline(always)]
+        pub const fn rtc_sar2_pwdet_cct(&self) -> &RtcSar2PwdetCct {
+            &self.rtc_sar2_pwdet_cct
+        }
+    }
+    #[doc = "RTC_SAR2_PWDET_CCT (rw) register accessor: SAR2 power-detector circuit mode. Only encodings two and four are published by reviewed complete ROM bodies.\n\nYou can [`read`](crate::Reg::read) this register and get [`rtc_sar2_pwdet_cct::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rtc_sar2_pwdet_cct::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rtc_sar2_pwdet_cct`] module"]
+    #[doc(alias = "RTC_SAR2_PWDET_CCT")]
+    pub type RtcSar2PwdetCct = crate::Reg<rtc_sar2_pwdet_cct::RtcSar2PwdetCctSpec>;
+    #[doc = "SAR2 power-detector circuit mode. Only encodings two and four are published by reviewed complete ROM bodies."]
+    pub mod rtc_sar2_pwdet_cct {
+        #[doc = "Register `RTC_SAR2_PWDET_CCT` reader"]
+        pub type R = crate::R<RtcSar2PwdetCctSpec>;
+        #[doc = "Register `RTC_SAR2_PWDET_CCT` writer"]
+        pub type W = crate::W<RtcSar2PwdetCctSpec>;
+        #[doc = "Field `RTC_SAR2_PWDET_CCT` reader - Three-bit power-detector circuit-mode field."]
+        pub type RtcSar2PwdetCctR = crate::FieldReader;
+        #[doc = "Field `RTC_SAR2_PWDET_CCT` writer - Three-bit power-detector circuit-mode field."]
+        pub type RtcSar2PwdetCctW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        impl R {
+            #[doc = "Bits 0:2 - Three-bit power-detector circuit-mode field."]
+            #[inline(always)]
+            pub fn rtc_sar2_pwdet_cct(&self) -> RtcSar2PwdetCctR {
+                RtcSar2PwdetCctR::new((self.bits & 7) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:2 - Three-bit power-detector circuit-mode field."]
+            #[inline(always)]
+            pub fn rtc_sar2_pwdet_cct(&mut self) -> RtcSar2PwdetCctW<'_, RtcSar2PwdetCctSpec> {
+                RtcSar2PwdetCctW::new(self, 0)
+            }
+        }
+        #[doc = "SAR2 power-detector circuit mode. Only encodings two and four are published by reviewed complete ROM bodies.\n\nYou can [`read`](crate::Reg::read) this register and get [`rtc_sar2_pwdet_cct::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rtc_sar2_pwdet_cct::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RtcSar2PwdetCctSpec;
+        impl crate::RegisterSpec for RtcSar2PwdetCctSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rtc_sar2_pwdet_cct::R`](R) reader structure"]
+        impl crate::Readable for RtcSar2PwdetCctSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rtc_sar2_pwdet_cct::W`](W) writer structure"]
+        impl crate::Writable for RtcSar2PwdetCctSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets RTC_SAR2_PWDET_CCT to value 0"]
+        impl crate::Resettable for RtcSar2PwdetCctSpec {}
+    }
+}
+#[doc = "Low-power peripheral clock/reset registers reached by the reviewed PHY temperature-sensor initializer."]
+pub type LpPericlkrst = crate::Periph<lp_periclkrst::RegisterBlock, 0x2071_0000>;
+impl core::fmt::Debug for LpPericlkrst {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("LpPericlkrst").finish()
+    }
+}
+#[doc = "Low-power peripheral clock/reset registers reached by the reviewed PHY temperature-sensor initializer."]
+pub mod lp_periclkrst {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x30],
+        tsens_ctrl: TsensCtrl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x30 - Low-power temperature-sensor clock and reset control."]
+        #[inline(always)]
+        pub const fn tsens_ctrl(&self) -> &TsensCtrl {
+            &self.tsens_ctrl
+        }
+    }
+    #[doc = "TSENS_CTRL (rw) register accessor: Low-power temperature-sensor clock and reset control.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsens_ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsens_ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tsens_ctrl`] module"]
+    #[doc(alias = "TSENS_CTRL")]
+    pub type TsensCtrl = crate::Reg<tsens_ctrl::TsensCtrlSpec>;
+    #[doc = "Low-power temperature-sensor clock and reset control."]
+    pub mod tsens_ctrl {
+        #[doc = "Register `TSENS_CTRL` reader"]
+        pub type R = crate::R<TsensCtrlSpec>;
+        #[doc = "Register `TSENS_CTRL` writer"]
+        pub type W = crate::W<TsensCtrlSpec>;
+        #[doc = "Field `LP_TSENS_CLK_EN` reader - Temperature-sensor peripheral clock enable."]
+        pub type LpTsensClkEnR = crate::BitReader;
+        #[doc = "Field `LP_TSENS_CLK_EN` writer - Temperature-sensor peripheral clock enable."]
+        pub type LpTsensClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LP_TSENS_RST_EN` reader - Temperature-sensor peripheral reset enable; modeled for exact register geometry but not written by this slice."]
+        pub type LpTsensRstEnR = crate::BitReader;
+        #[doc = "Field `LP_TSENS_RST_EN` writer - Temperature-sensor peripheral reset enable; modeled for exact register geometry but not written by this slice."]
+        pub type LpTsensRstEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 30 - Temperature-sensor peripheral clock enable."]
+            #[inline(always)]
+            pub fn lp_tsens_clk_en(&self) -> LpTsensClkEnR {
+                LpTsensClkEnR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Temperature-sensor peripheral reset enable; modeled for exact register geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn lp_tsens_rst_en(&self) -> LpTsensRstEnR {
+                LpTsensRstEnR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 30 - Temperature-sensor peripheral clock enable."]
+            #[inline(always)]
+            pub fn lp_tsens_clk_en(&mut self) -> LpTsensClkEnW<'_, TsensCtrlSpec> {
+                LpTsensClkEnW::new(self, 30)
+            }
+            #[doc = "Bit 31 - Temperature-sensor peripheral reset enable; modeled for exact register geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn lp_tsens_rst_en(&mut self) -> LpTsensRstEnW<'_, TsensCtrlSpec> {
+                LpTsensRstEnW::new(self, 31)
+            }
+        }
+        #[doc = "Low-power temperature-sensor clock and reset control.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsens_ctrl::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsens_ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TsensCtrlSpec;
+        impl crate::RegisterSpec for TsensCtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tsens_ctrl::R`](R) reader structure"]
+        impl crate::Readable for TsensCtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tsens_ctrl::W`](W) writer structure"]
+        impl crate::Writable for TsensCtrlSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets TSENS_CTRL to value 0"]
+        impl crate::Resettable for TsensCtrlSpec {}
+    }
+}
+#[doc = "Low-power temperature sensor reached by reviewed complete ROM and libphy bodies."]
+pub type LpTsens = crate::Periph<lp_tsens::RegisterBlock, 0x2081_8000>;
+impl core::fmt::Debug for LpTsens {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("LpTsens").finish()
+    }
+}
+#[doc = "Low-power temperature sensor reached by reviewed complete ROM and libphy bodies."]
+pub mod lp_tsens {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        ctrl: Ctrl,
+        _reserved1: [u8; 0x14],
+        clk_conf: ClkConf,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Temperature-sensor sample and power control."]
+        #[inline(always)]
+        pub const fn ctrl(&self) -> &Ctrl {
+            &self.ctrl
+        }
+        #[doc = "0x18 - Temperature-sensor register-bank and PHY read-path control."]
+        #[inline(always)]
+        pub const fn clk_conf(&self) -> &ClkConf {
+            &self.clk_conf
+        }
+    }
+    #[doc = "CTRL (rw) register accessor: Temperature-sensor sample and power control.\n\nYou can [`read`](crate::Reg::read) this register and get [`ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ctrl`] module"]
+    #[doc(alias = "CTRL")]
+    pub type Ctrl = crate::Reg<ctrl::CtrlSpec>;
+    #[doc = "Temperature-sensor sample and power control."]
+    pub mod ctrl {
+        #[doc = "Register `CTRL` reader"]
+        pub type R = crate::R<CtrlSpec>;
+        #[doc = "Register `CTRL` writer"]
+        pub type W = crate::W<CtrlSpec>;
+        #[doc = "Field `OUT` reader - Unsigned temperature-sensor code sampled once by the complete ROM read leaves."]
+        pub type OutR = crate::FieldReader;
+        #[doc = "Field `READY` reader - Temperature-sensor ready observation; not consumed by this slice."]
+        pub type ReadyR = crate::BitReader;
+        #[doc = "Field `SAMPLE_EN` reader - Temperature sample enable; modeled for exact geometry but not written by this slice."]
+        pub type SampleEnR = crate::BitReader;
+        #[doc = "Field `SAMPLE_EN` writer - Temperature sample enable; modeled for exact geometry but not written by this slice."]
+        pub type SampleEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `WAKEUP_MASK` reader - Temperature wakeup mask; modeled for exact geometry but not written by this slice."]
+        pub type WakeupMaskR = crate::BitReader;
+        #[doc = "Field `WAKEUP_MASK` writer - Temperature wakeup mask; modeled for exact geometry but not written by this slice."]
+        pub type WakeupMaskW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INT_EN` reader - Temperature interrupt enable; modeled for exact geometry but not written by this slice."]
+        pub type IntEnR = crate::BitReader;
+        #[doc = "Field `INT_EN` writer - Temperature interrupt enable; modeled for exact geometry but not written by this slice."]
+        pub type IntEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `IN_INV` reader - Input inversion control; modeled for exact geometry but not written by this slice."]
+        pub type InInvR = crate::BitReader;
+        #[doc = "Field `IN_INV` writer - Input inversion control; modeled for exact geometry but not written by this slice."]
+        pub type InInvW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_DIV` reader - Temperature-sensor clock divider; modeled for exact geometry but not written by this slice."]
+        pub type ClkDivR = crate::FieldReader;
+        #[doc = "Field `CLK_DIV` writer - Temperature-sensor clock divider; modeled for exact geometry but not written by this slice."]
+        pub type ClkDivW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `POWER_UP` reader - Temperature-sensor power control set by complete ROM phy_set_tsens_power_."]
+        pub type PowerUpR = crate::BitReader;
+        #[doc = "Field `POWER_UP` writer - Temperature-sensor power control set by complete ROM phy_set_tsens_power_."]
+        pub type PowerUpW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `POWER_UP_FORCE` reader - Forced power control; modeled for exact geometry but not written by this slice."]
+        pub type PowerUpForceR = crate::BitReader;
+        #[doc = "Field `POWER_UP_FORCE` writer - Forced power control; modeled for exact geometry but not written by this slice."]
+        pub type PowerUpForceW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:7 - Unsigned temperature-sensor code sampled once by the complete ROM read leaves."]
+            #[inline(always)]
+            pub fn out(&self) -> OutR {
+                OutR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bit 8 - Temperature-sensor ready observation; not consumed by this slice."]
+            #[inline(always)]
+            pub fn ready(&self) -> ReadyR {
+                ReadyR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9 - Temperature sample enable; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn sample_en(&self) -> SampleEnR {
+                SampleEnR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bit 10 - Temperature wakeup mask; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn wakeup_mask(&self) -> WakeupMaskR {
+                WakeupMaskR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bit 12 - Temperature interrupt enable; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn int_en(&self) -> IntEnR {
+                IntEnR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13 - Input inversion control; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn in_inv(&self) -> InInvR {
+                InInvR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bits 14:21 - Temperature-sensor clock divider; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn clk_div(&self) -> ClkDivR {
+                ClkDivR::new(((self.bits >> 14) & 0xff) as u8)
+            }
+            #[doc = "Bit 22 - Temperature-sensor power control set by complete ROM phy_set_tsens_power_."]
+            #[inline(always)]
+            pub fn power_up(&self) -> PowerUpR {
+                PowerUpR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Forced power control; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn power_up_force(&self) -> PowerUpForceR {
+                PowerUpForceR::new(((self.bits >> 23) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 9 - Temperature sample enable; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn sample_en(&mut self) -> SampleEnW<'_, CtrlSpec> {
+                SampleEnW::new(self, 9)
+            }
+            #[doc = "Bit 10 - Temperature wakeup mask; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn wakeup_mask(&mut self) -> WakeupMaskW<'_, CtrlSpec> {
+                WakeupMaskW::new(self, 10)
+            }
+            #[doc = "Bit 12 - Temperature interrupt enable; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn int_en(&mut self) -> IntEnW<'_, CtrlSpec> {
+                IntEnW::new(self, 12)
+            }
+            #[doc = "Bit 13 - Input inversion control; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn in_inv(&mut self) -> InInvW<'_, CtrlSpec> {
+                InInvW::new(self, 13)
+            }
+            #[doc = "Bits 14:21 - Temperature-sensor clock divider; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn clk_div(&mut self) -> ClkDivW<'_, CtrlSpec> {
+                ClkDivW::new(self, 14)
+            }
+            #[doc = "Bit 22 - Temperature-sensor power control set by complete ROM phy_set_tsens_power_."]
+            #[inline(always)]
+            pub fn power_up(&mut self) -> PowerUpW<'_, CtrlSpec> {
+                PowerUpW::new(self, 22)
+            }
+            #[doc = "Bit 23 - Forced power control; modeled for exact geometry but not written by this slice."]
+            #[inline(always)]
+            pub fn power_up_force(&mut self) -> PowerUpForceW<'_, CtrlSpec> {
+                PowerUpForceW::new(self, 23)
+            }
+        }
+        #[doc = "Temperature-sensor sample and power control.\n\nYou can [`read`](crate::Reg::read) this register and get [`ctrl::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CtrlSpec;
+        impl crate::RegisterSpec for CtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ctrl::R`](R) reader structure"]
+        impl crate::Readable for CtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ctrl::W`](W) writer structure"]
+        impl crate::Writable for CtrlSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CTRL to value 0x0001_9400"]
+        impl crate::Resettable for CtrlSpec {
+            const RESET_VALUE: u32 = 0x0001_9400;
+        }
+    }
+    #[doc = "CLK_CONF (rw) register accessor: Temperature-sensor register-bank and PHY read-path control.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf`] module"]
+    #[doc(alias = "CLK_CONF")]
+    pub type ClkConf = crate::Reg<clk_conf::ClkConfSpec>;
+    #[doc = "Temperature-sensor register-bank and PHY read-path control."]
+    pub mod clk_conf {
+        #[doc = "Register `CLK_CONF` reader"]
+        pub type R = crate::R<ClkConfSpec>;
+        #[doc = "Register `CLK_CONF` writer"]
+        pub type W = crate::W<ClkConfSpec>;
+        #[doc = "Field `CLK_EN` reader - Temperature-sensor register-bank clock enable."]
+        pub type ClkEnR = crate::BitReader;
+        #[doc = "Field `CLK_EN` writer - Temperature-sensor register-bank clock enable."]
+        pub type ClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PHY_CONVERSION_ENABLE_UNKNOWN` reader - Blob-evidenced conversion-path enable; the individual hardware meaning remains unknown."]
+        pub type PhyConversionEnableUnknownR = crate::BitReader;
+        #[doc = "Field `PHY_CONVERSION_ENABLE_UNKNOWN` writer - Blob-evidenced conversion-path enable; the individual hardware meaning remains unknown."]
+        pub type PhyConversionEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PHY_READOUT_ENABLE_UNKNOWN` reader - Blob-evidenced readout-path enable; the individual hardware meaning remains unknown."]
+        pub type PhyReadoutEnableUnknownR = crate::BitReader;
+        #[doc = "Field `PHY_READOUT_ENABLE_UNKNOWN` writer - Blob-evidenced readout-path enable; the individual hardware meaning remains unknown."]
+        pub type PhyReadoutEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Temperature-sensor register-bank clock enable."]
+            #[inline(always)]
+            pub fn clk_en(&self) -> ClkEnR {
+                ClkEnR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 9 - Blob-evidenced conversion-path enable; the individual hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn phy_conversion_enable_unknown(&self) -> PhyConversionEnableUnknownR {
+                PhyConversionEnableUnknownR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Blob-evidenced readout-path enable; the individual hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn phy_readout_enable_unknown(&self) -> PhyReadoutEnableUnknownR {
+                PhyReadoutEnableUnknownR::new(((self.bits >> 23) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Temperature-sensor register-bank clock enable."]
+            #[inline(always)]
+            pub fn clk_en(&mut self) -> ClkEnW<'_, ClkConfSpec> {
+                ClkEnW::new(self, 0)
+            }
+            #[doc = "Bit 9 - Blob-evidenced conversion-path enable; the individual hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn phy_conversion_enable_unknown(
+                &mut self,
+            ) -> PhyConversionEnableUnknownW<'_, ClkConfSpec> {
+                PhyConversionEnableUnknownW::new(self, 9)
+            }
+            #[doc = "Bit 23 - Blob-evidenced readout-path enable; the individual hardware meaning remains unknown."]
+            #[inline(always)]
+            pub fn phy_readout_enable_unknown(
+                &mut self,
+            ) -> PhyReadoutEnableUnknownW<'_, ClkConfSpec> {
+                PhyReadoutEnableUnknownW::new(self, 23)
+            }
+        }
+        #[doc = "Temperature-sensor register-bank and PHY read-path control.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConfSpec;
+        impl crate::RegisterSpec for ClkConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf::R`](R) reader structure"]
+        impl crate::Readable for ClkConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf::W`](W) writer structure"]
+        impl crate::Writable for ClkConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF to value 0"]
+        impl crate::Resettable for ClkConfSpec {}
+    }
+}
 #[doc = "Station beacon-filter control word recovered from the complete enable and disable leaves. The three low bits are toggled together; individual hardware meanings remain unknown."]
 pub type WifiMacStaBeaconFilter =
     crate::Periph<wifi_mac_sta_beacon_filter::RegisterBlock, 0x2010_42b4>;
@@ -49227,6 +49612,12 @@ pub struct Peripherals {
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
+    #[doc = "LP_AON_CLKRST"]
+    pub lp_aon_clkrst: LpAonClkrst,
+    #[doc = "LP_PERICLKRST"]
+    pub lp_periclkrst: LpPericlkrst,
+    #[doc = "LP_TSENS"]
+    pub lp_tsens: LpTsens,
     #[doc = "WIFI_MAC_STA_BEACON_FILTER"]
     pub wifi_mac_sta_beacon_filter: WifiMacStaBeaconFilter,
     #[doc = "WIFI_MAC_BEACON_IE_CRC"]
@@ -49430,6 +49821,9 @@ impl Peripherals {
             phy_rx_dco_oracle: unsafe { PhyRxDcoOracle::steal() },
             phy_cold_deadline_oracle: unsafe { PhyColdDeadlineOracle::steal() },
             phy_clock_oracle: unsafe { PhyClockOracle::steal() },
+            lp_aon_clkrst: unsafe { LpAonClkrst::steal() },
+            lp_periclkrst: unsafe { LpPericlkrst::steal() },
+            lp_tsens: unsafe { LpTsens::steal() },
             wifi_mac_sta_beacon_filter: unsafe { WifiMacStaBeaconFilter::steal() },
             wifi_mac_beacon_ie_crc: unsafe { WifiMacBeaconIeCrc::steal() },
             wifi_mac_rx_end_state: unsafe { WifiMacRxEndState::steal() },
@@ -49854,6 +50248,9 @@ pub mod peripheral_ownership {
         pub phy_frequency_channel_oracle: crate::PhyFrequencyChannelOracle,
         pub phy_i2c_command_ram: crate::PhyI2cCommandRam,
         pub phy_iq_estimator_oracle: crate::PhyIqEstimatorOracle,
+        pub lp_aon_clkrst: crate::LpAonClkrst,
+        pub lp_periclkrst: crate::LpPericlkrst,
+        pub lp_tsens: crate::LpTsens,
         pub phy_memory: crate::PhyMemory,
         pub phy_nrx_recovered_gaps: crate::PhyNrxRecoveredGaps,
         pub phy_pbus: crate::PhyPbus,
@@ -49953,6 +50350,9 @@ pub mod peripheral_ownership {
             phy_rx_dco_oracle,
             phy_cold_deadline_oracle,
             phy_clock_oracle,
+            lp_aon_clkrst,
+            lp_periclkrst,
+            lp_tsens,
             wifi_mac_sta_beacon_filter,
             wifi_mac_beacon_ie_crc,
             wifi_mac_rx_end_state,
@@ -50107,6 +50507,9 @@ pub mod peripheral_ownership {
                 phy_frequency_channel_oracle,
                 phy_i2c_command_ram,
                 phy_iq_estimator_oracle,
+                lp_aon_clkrst,
+                lp_periclkrst,
+                lp_tsens,
                 phy_memory,
                 phy_nrx_recovered_gaps,
                 phy_pbus,
@@ -52025,6 +52428,72 @@ pub mod masked_register_modify {
     pub fn publish_station_tbtt_target(registers: &crate::WifiMacStaTbttTarget, input: u32) {
         registers.target().modify(|reader, writer| {
             let image = (reader.bits() & 0xfc000000) | (input & 0x03ffffff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffffff8, accept input mask 0x00000007, and set 0x00000000 in LP_AON_CLKRST.RTC_SAR2_PWDET_CCT.
+    #[inline]
+    pub fn select_lp_power_detector_circuit_mode(registers: &crate::LpAonClkrst, input: u32) {
+        registers.rtc_sar2_pwdet_cct().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffff8) | (input & 0x00000007);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffffffe, accept input mask 0x00000001, and set 0x00000000 in LP_TSENS.CLK_CONF.
+    #[inline]
+    pub fn enable_lp_tsens_register_bank(registers: &crate::LpTsens, input: u32) {
+        registers.clk_conf().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffffe) | (input & 0x00000001);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xbfffffff, accept input mask 0x40000000, and set 0x00000000 in LP_PERICLKRST.TSENS_CTRL.
+    #[inline]
+    pub fn enable_lp_tsens_peripheral_clock(registers: &crate::LpPericlkrst, input: u32) {
+        registers.tsens_ctrl().modify(|reader, writer| {
+            let image = (reader.bits() & 0xbfffffff) | (input & 0x40000000);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xff7fffff, accept input mask 0x00800000, and set 0x00000000 in LP_TSENS.CLK_CONF.
+    #[inline]
+    pub fn enable_lp_tsens_phy_readout(registers: &crate::LpTsens, input: u32) {
+        registers.clk_conf().modify(|reader, writer| {
+            let image = (reader.bits() & 0xff7fffff) | (input & 0x00800000);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffffdff, accept input mask 0x00000200, and set 0x00000000 in LP_TSENS.CLK_CONF.
+    #[inline]
+    pub fn enable_lp_tsens_phy_conversion(registers: &crate::LpTsens, input: u32) {
+        registers.clk_conf().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffdff) | (input & 0x00000200);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xffbfffff, accept input mask 0x00400000, and set 0x00000000 in LP_TSENS.CTRL.
+    #[inline]
+    pub fn enable_lp_tsens_power(registers: &crate::LpTsens, input: u32) {
+        registers.ctrl().modify(|reader, writer| {
+            let image = (reader.bits() & 0xffbfffff) | (input & 0x00400000);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

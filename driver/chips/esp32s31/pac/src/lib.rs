@@ -34,6 +34,7 @@ mod generated;
 mod ieee802154;
 mod ieee802154_timing;
 mod iq_estimator;
+mod lp_phy_aux;
 mod mac_antenna_init;
 mod mac_block_ack;
 mod mac_channel;

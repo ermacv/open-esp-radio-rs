@@ -2,8 +2,7 @@
 
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
-    RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
-    wifi_bb::PhyWifiBbControl,
+    RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
@@ -41,7 +40,7 @@ pub const fn lower_wifi_channel(channel: WifiChannel) -> Esp32s31PhyChannel {
 #[cfg(target_arch = "riscv32")]
 pub async fn switch_esp32s31_wifi_channel<
     D: PhyAsyncDelay,
-    P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+    P: PhyWifiBbControl + PhyI2cMasterControl,
     O: PhyTargetObserver,
 >(
     state: &mut PhyState,

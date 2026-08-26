@@ -23,8 +23,6 @@ use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
     phy_prelude::PhyPreludePlatformControl,
-    phy_temperature::PhyTemperatureSystemControl,
-    power_detector_platform::PhyPowerDetectorPlatformControl,
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile;
@@ -448,73 +446,6 @@ impl PhyPmuControl for EspHalRadioPeripheral {
                 .hp_active_xpd_bb_i2c()
                 .set_bit()
         });
-    }
-}
-
-impl PhyPowerDetectorPlatformControl for EspHalRadioPeripheral {
-    fn select_power_detector_initialization_mode(&mut self) {
-        // SOURCE[ROM_REV0_PHY_POWER_DETECTOR]. Complete `phy_pwdet_reg_init`
-        // and `phy_pwdet_sar2_init` replace the official three-bit
-        // LP_AON_CLKRST field with encoding four.
-        LP_AON_CLK_RST::regs()
-            .rtc_sar2_pwdet_cct()
-            .modify(|_, w| w.rtc_sar2_pwdet_cct().set(4));
-    }
-
-    fn select_power_detector_calibration_mode(&mut self) {
-        // SOURCE[ROM_REV0_PHY_POWER_DETECTOR]. Complete
-        // `phy_txcal_debuge_mode_` replaces the same official field with
-        // encoding two after enabling PWDET.
-        LP_AON_CLK_RST::regs()
-            .rtc_sar2_pwdet_cct()
-            .modify(|_, w| w.rtc_sar2_pwdet_cct().set(2));
-    }
-}
-
-impl PhyTemperatureSystemControl for EspHalRadioPeripheral {
-    fn enable_temperature_sensor_register_bank(&mut self) {
-        // SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT]. First fresh RMW.
-        LP_TSENS::regs()
-            .clk_conf()
-            .modify(|_, w| w.clk_en().set_bit());
-    }
-
-    fn enable_temperature_sensor_clock(&mut self) {
-        // SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT]. Complete
-        // libphy.a[phy_tsens.o]::phy_tsens_read_init sets this official bit
-        // between the first and second LP_TSENS read-path RMW operations.
-        LP_PERI::regs()
-            .tsens_ctrl()
-            .modify(|_, w| w.lp_tsens_clk_en().set_bit());
-    }
-
-    fn enable_temperature_sensor_phy_readout(&mut self) {
-        // SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT]. Third fresh RMW; the PAC
-        // keeps the electrical meaning explicitly unknown.
-        LP_TSENS::regs()
-            .clk_conf()
-            .modify(|_, w| w.phy_readout_enable_unknown().set_bit());
-    }
-
-    fn enable_temperature_sensor_phy_conversion(&mut self) {
-        // SOURCE[BLOB_LIBPHY_PHY_TSENS_READ_INIT]. Fourth fresh RMW; the PAC
-        // keeps the electrical meaning explicitly unknown.
-        LP_TSENS::regs()
-            .clk_conf()
-            .modify(|_, w| w.phy_conversion_enable_unknown().set_bit());
-    }
-
-    fn enable_temperature_sensor_power(&mut self) {
-        // SOURCE[ROM_REV0_PHY_TSENS]. Complete `phy_set_tsens_power_(1)`.
-        LP_TSENS::regs()
-            .ctrl()
-            .modify(|_, w| w.power_up().set_bit());
-    }
-
-    fn read_temperature_sensor_code(&self) -> u8 {
-        // SOURCE[ROM_REV0_PHY_TSENS]. Complete `phy_tsens_code_read` and
-        // `phy_tsens_temp_read_local` each consume this low-byte field once.
-        LP_TSENS::regs().ctrl().read().out().bits()
     }
 }
 

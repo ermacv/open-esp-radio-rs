@@ -29,8 +29,7 @@ use esp_hal::{
     timer::systimer::SystemTimer,
 };
 use open_esp_radio_esp32s31_hal::{
-    Radio, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
-    wifi_bb::PhyWifiBbControl,
+    Radio, phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_pac::{WifiColdRegisters, WifiRadioRegisters};
 use open_esp_radio_esp32s31_phy::{
@@ -972,7 +971,7 @@ async fn complete_temperature_i2c<P: PhyI2cMasterControl>(
 }
 
 async fn complete_binding<
-    P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+    P: PhyWifiBbControl + PhyI2cMasterControl,
 >(
     binding: PhyChipChannelExternalBinding,
     platform: &mut P,

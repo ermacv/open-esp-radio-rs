@@ -12,7 +12,7 @@ pub trait Esp32s31StaAttemptChannel<H> {
 
 impl<P, O, D> Esp32s31StaAttemptChannel<RadioRuntimeOwner> for Esp32s31ScanPhy<'_, P, O, D>
 where
-    P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+    P: PhyWifiBbControl + PhyI2cMasterControl,
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {
@@ -29,7 +29,7 @@ where
 impl<'arena, P, O, D> Esp32s31StaAttemptChannel<CooperativeRadioHardware<'arena>>
     for Esp32s31ScanPhy<'_, P, O, D>
 where
-    P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+    P: PhyWifiBbControl + PhyI2cMasterControl,
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {

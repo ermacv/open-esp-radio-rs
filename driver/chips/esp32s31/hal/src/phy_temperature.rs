@@ -22,6 +22,32 @@ pub trait PhyTemperatureSystemControl {
     fn read_temperature_sensor_code(&self) -> u8;
 }
 
+impl<T: crate::SharedPhyAccess> PhyTemperatureSystemControl for T {
+    fn enable_temperature_sensor_register_bank(&mut self) {
+        crate::phy_pac_mut(self).enable_temperature_sensor_register_bank();
+    }
+
+    fn enable_temperature_sensor_clock(&mut self) {
+        crate::phy_pac_mut(self).enable_temperature_sensor_clock();
+    }
+
+    fn enable_temperature_sensor_phy_readout(&mut self) {
+        crate::phy_pac_mut(self).enable_temperature_sensor_phy_readout();
+    }
+
+    fn enable_temperature_sensor_phy_conversion(&mut self) {
+        crate::phy_pac_mut(self).enable_temperature_sensor_phy_conversion();
+    }
+
+    fn enable_temperature_sensor_power(&mut self) {
+        crate::phy_pac_mut(self).enable_temperature_sensor_power();
+    }
+
+    fn read_temperature_sensor_code(&self) -> u8 {
+        crate::phy_pac(self).read_temperature_sensor_code()
+    }
+}
+
 /// Configure the temperature-sensor read path.
 ///
 /// Complete pinned `phy_tsens_read_init` performs five independent

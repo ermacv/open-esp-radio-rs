@@ -12,8 +12,7 @@ use open_esp_radio_esp32s31_hal::{
 };
 use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl,
-    phy_prelude::PhyPreludePlatformControl, phy_temperature::PhyTemperatureSystemControl,
-    power_detector_platform::PhyPowerDetectorPlatformControl, wifi_bb::PhyWifiBbControl,
+    phy_prelude::PhyPreludePlatformControl, wifi_bb::PhyWifiBbControl,
 };
 
 use crate::{
@@ -722,14 +721,13 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_tx_calibration_environment<P: PhyPowerDetectorPlatformControl>(
+    async fn complete_tx_calibration_environment(
         binding: PhyTxCalibrationEnvironmentExternalBinding,
-        platform: &mut P,
         registers: &mut impl SharedPhyContext,
     ) -> Result<PhyTxCalibrationEnvironmentCompletion, PhyTargetPortError> {
         match binding {
             PhyTxCalibrationEnvironmentExternalBinding::Mmio(binding) => {
-                Ok(binding.execute_target(platform, registers))
+                Ok(binding.execute_target(registers))
             }
             PhyTxCalibrationEnvironmentExternalBinding::Pbus(binding) => {
                 complete_tx_calibration_environment_pbus::<D>(binding, registers).await
@@ -754,15 +752,16 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_temperature<P: PhyTemperatureSystemControl + PhyI2cMasterControl>(
+    async fn complete_temperature<P: PhyI2cMasterControl>(
         binding: PhyTemperatureExternalBinding,
         platform: &mut P,
+        registers: &mut impl SharedPhyAccess,
     ) -> Result<PhyTemperatureCompletion, PhyTargetPortError> {
         match binding {
             PhyTemperatureExternalBinding::I2c(binding) => {
                 complete_temperature_i2c::<D>(binding, platform).await
             }
-            PhyTemperatureExternalBinding::Sample(binding) => Ok(binding.execute_target(platform)),
+            PhyTemperatureExternalBinding::Sample(binding) => Ok(binding.execute_target(registers)),
         }
     }
 
@@ -781,7 +780,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_tx_power<P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl>(
+    async fn complete_tx_power<P: PhyI2cMasterControl>(
         binding: PhyTxPowerExternalBinding,
         platform: &mut P,
         registers: &mut impl SharedPhyContext,
@@ -789,7 +788,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         match binding {
             PhyTxPowerExternalBinding::Environment(binding) => {
                 Ok(PhyTxPowerCompletion::Environment(
-                    Self::complete_tx_calibration_environment(binding, platform, registers).await?,
+                    Self::complete_tx_calibration_environment(binding, registers).await?,
                 ))
             }
             PhyTxPowerExternalBinding::Rfpll(binding) => Ok(PhyTxPowerCompletion::Rfpll(
@@ -809,9 +808,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_bluetooth_tx_power<
-        P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl,
-    >(
+    async fn complete_bluetooth_tx_power<P: PhyI2cMasterControl>(
         binding: PhyBluetoothTxPowerExternalBinding,
         platform: &mut P,
         registers: &mut impl SharedPhyContext,
@@ -822,12 +819,12 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             }
             PhyBluetoothTxPowerExternalBinding::Prepare(binding) => {
                 Ok(PhyBluetoothTxPowerCompletion::Prepare(
-                    Self::complete_tx_calibration_environment(binding, platform, registers).await?,
+                    Self::complete_tx_calibration_environment(binding, registers).await?,
                 ))
             }
             PhyBluetoothTxPowerExternalBinding::Cleanup(binding) => {
                 Ok(PhyBluetoothTxPowerCompletion::Cleanup(
-                    Self::complete_tx_calibration_environment(binding, platform, registers).await?,
+                    Self::complete_tx_calibration_environment(binding, registers).await?,
                 ))
             }
             PhyBluetoothTxPowerExternalBinding::Pbus(binding) => {
@@ -844,10 +841,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_bluetooth_tx_gain<
-        P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl,
-        O: PhyTargetObserver,
-    >(
+    async fn complete_bluetooth_tx_gain<P: PhyI2cMasterControl, O: PhyTargetObserver>(
         binding: PhyBluetoothTxGainInitExternalBinding,
         platform: &mut P,
         registers: &mut impl SharedPhyContext,
@@ -876,7 +870,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             }
             PhyBluetoothTxGainInitExternalBinding::TxDcPwdet(binding) => {
                 Ok(PhyBluetoothTxGainInitCompletion::TxDcPwdet(
-                    Self::complete_tx_dc_pwdet(binding, platform, registers).await?,
+                    Self::complete_tx_dc_pwdet(binding, registers).await?,
                 ))
             }
             PhyBluetoothTxGainInitExternalBinding::Publish(binding) => {
@@ -917,14 +911,14 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_tx_cap<P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl>(
+    async fn complete_tx_cap<P: PhyI2cMasterControl>(
         binding: PhyTxCapExternalBinding,
         platform: &mut P,
         registers: &mut impl SharedPhyContext,
     ) -> Result<PhyTxCapCompletion, PhyTargetPortError> {
         match binding {
             PhyTxCapExternalBinding::Environment(binding) => Ok(PhyTxCapCompletion::Environment(
-                Self::complete_tx_calibration_environment(binding, platform, registers).await?,
+                Self::complete_tx_calibration_environment(binding, registers).await?,
             )),
             PhyTxCapExternalBinding::Rfpll(binding) => Ok(PhyTxCapCompletion::Rfpll(
                 Self::complete_rfpll(binding, platform, registers).await?,
@@ -961,15 +955,12 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_tx_dc_pwdet<P: PhyPowerDetectorPlatformControl>(
+    async fn complete_tx_dc_pwdet(
         binding: PhyTxDcPwdetExternalBinding,
-        platform: &mut P,
         registers: &mut impl SharedPhyContext,
     ) -> Result<PhyTxDcPwdetCompletion, PhyTargetPortError> {
         match binding {
-            PhyTxDcPwdetExternalBinding::Mmio(binding) => {
-                Ok(binding.execute_target(platform, registers))
-            }
+            PhyTxDcPwdetExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
             PhyTxDcPwdetExternalBinding::Pbus(binding) => {
                 complete_tx_dc_pwdet_pbus::<D>(binding, registers).await
             }
@@ -1055,7 +1046,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_txiq_calibration<P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl>(
+    async fn complete_txiq_calibration<P: PhyI2cMasterControl>(
         binding: PhyTxIqCalibrationExternalBinding,
         platform: &mut P,
         registers: &mut impl SharedPhyContext,
@@ -1074,7 +1065,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             }
             PhyTxIqCalibrationExternalBinding::Environment(binding) => {
                 Ok(PhyTxIqCalibrationCompletion::Environment(
-                    Self::complete_tx_calibration_environment(binding, platform, registers).await?,
+                    Self::complete_tx_calibration_environment(binding, registers).await?,
                 ))
             }
             PhyTxIqCalibrationExternalBinding::PowerAttenuation(binding) => {
@@ -1090,9 +1081,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_txiq<
-        P: PhyPowerDetectorPlatformControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
-    >(
+    async fn complete_txiq<P: PhyI2cMasterControl>(
         binding: PhyTxIqInitExternalBinding,
         platform: &mut P,
         registers: &mut impl SharedPhyContext,
@@ -1111,7 +1100,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             }
             PhyTxIqInitExternalBinding::Temperature(binding) => {
                 Ok(PhyTxIqInitCompletion::Temperature(
-                    Self::complete_temperature(binding, platform).await?,
+                    Self::complete_temperature(binding, platform, registers).await?,
                 ))
             }
         }
@@ -1394,10 +1383,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_channel<
-        P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
-        O: PhyTargetObserver,
-    >(
+    async fn complete_channel<P: PhyWifiBbControl + PhyI2cMasterControl, O: PhyTargetObserver>(
         binding: PhyChipChannelExternalBinding,
         platform: &mut P,
         registers: &mut impl SharedPhyAccess,
@@ -1415,7 +1401,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             },
             PhyChipChannelExternalBinding::Temperature(binding) => {
                 Ok(PhyChipChannelCompletion::Temperature(
-                    Self::complete_temperature(binding, platform).await?,
+                    Self::complete_temperature(binding, platform, registers).await?,
                 ))
             }
             PhyChipChannelExternalBinding::Timer(binding) => {
@@ -1455,9 +1441,14 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 _ => Ok(binding.execute_channel_hal(channel)),
             },
             PhyChipChannelExternalBinding::Temperature(binding) => {
-                Ok(PhyChipChannelCompletion::Temperature(
-                    Self::complete_temperature(binding, channel.platform_mut()).await?,
-                ))
+                Ok(PhyChipChannelCompletion::Temperature(match binding {
+                    PhyTemperatureExternalBinding::I2c(binding) => {
+                        complete_temperature_i2c::<D>(binding, channel.platform_mut()).await?
+                    }
+                    PhyTemperatureExternalBinding::Sample(binding) => {
+                        binding.execute_target(channel)
+                    }
+                }))
             }
             PhyChipChannelExternalBinding::Timer(binding) => {
                 D::after_micros(u64::from(binding.micros())).await;
@@ -1601,15 +1592,14 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_pwdet<P: PhyPowerDetectorPlatformControl, O: PhyTargetObserver>(
+    async fn complete_pwdet<O: PhyTargetObserver>(
         binding: PhyPwdetExternalBinding,
-        platform: &mut P,
         registers: &mut impl SharedPhyContext,
         observer: &mut O,
     ) -> Result<PhyPwdetCompletion, PhyTargetPortError> {
         match binding {
             PhyPwdetExternalBinding::Mmio(binding) => {
-                let completion = binding.execute_target(platform, registers);
+                let completion = binding.execute_target(registers);
                 if let PhyPwdetCompletion::SarSampled {
                     measurement_index,
                     sample_index,
@@ -1657,13 +1647,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_baseband<
-        P: PhyWifiBbControl
-            + PhyPowerDetectorPlatformControl
-            + PhyTemperatureSystemControl
-            + PhyI2cMasterControl,
-        O: PhyTargetObserver,
-    >(
+    async fn complete_baseband<P: PhyWifiBbControl + PhyI2cMasterControl, O: PhyTargetObserver>(
         binding: PhyBbExternalBinding,
         platform: &mut P,
         registers: &mut impl PhyInitializationAccess,
@@ -1677,19 +1661,19 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 Self::complete_tx_dc(binding, registers, observer).await?,
             )),
             PhyBbExternalBinding::Pwdet(binding) => Ok(PhyBbInitCompletion::Pwdet(
-                Self::complete_pwdet(binding, platform, registers, observer).await?,
+                Self::complete_pwdet(binding, registers, observer).await?,
             )),
             PhyBbExternalBinding::TxCap(binding) => Ok(PhyBbInitCompletion::TxCap(
                 Self::complete_tx_cap(binding, platform, registers).await?,
             )),
             PhyBbExternalBinding::Temperature(binding) => Ok(PhyBbInitCompletion::Temperature(
-                Self::complete_temperature(binding, platform).await?,
+                Self::complete_temperature(binding, platform, registers).await?,
             )),
             PhyBbExternalBinding::TxPower(binding) => Ok(PhyBbInitCompletion::TxPower(
                 Self::complete_tx_power(binding, platform, registers).await?,
             )),
             PhyBbExternalBinding::TxDcPwdet(binding) => Ok(PhyBbInitCompletion::TxDcPwdet(
-                Self::complete_tx_dc_pwdet(binding, platform, registers).await?,
+                Self::complete_tx_dc_pwdet(binding, registers).await?,
             )),
             PhyBbExternalBinding::Dcode(binding) => Ok(PhyBbInitCompletion::Dcode(
                 Self::complete_dcode(binding, platform, registers).await?,
@@ -1726,13 +1710,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_rf<
-        P: PhyPmuControl
-            + PhyPowerDetectorPlatformControl
-            + PhyTemperatureSystemControl
-            + PhyI2cMasterControl,
-        O: PhyTargetObserver,
-    >(
+    async fn complete_rf<P: PhyPmuControl + PhyI2cMasterControl, O: PhyTargetObserver>(
         binding: PhyColdExternalBinding,
         platform: &mut P,
         registers: &mut impl SharedPhyContext,
@@ -1860,13 +1838,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn run_calibration_pbus<
-        P: PhyPmuControl
-            + PhyPowerDetectorPlatformControl
-            + PhyTemperatureSystemControl
-            + PhyI2cMasterControl,
-        O: PhyTargetObserver,
-    >(
+    async fn run_calibration_pbus<P: PhyPmuControl + PhyI2cMasterControl, O: PhyTargetObserver>(
         mut child: PhyCalibrationPbusClearTransition,
         platform: &mut P,
         registers: &mut impl SharedPhyContext,
@@ -1931,7 +1903,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
     }
 
     async fn run_calibration_channel<
-        P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+        P: PhyWifiBbControl + PhyI2cMasterControl,
         O: PhyTargetObserver,
     >(
         mut child: PhyCalibrationChannelTransition,
@@ -1981,9 +1953,8 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         Err(PhyTargetPortError::RfOperationLimit)
     }
 
-    async fn run_calibration_tx_dc_pwdet<P: PhyPowerDetectorPlatformControl>(
+    async fn run_calibration_tx_dc_pwdet(
         mut child: PhyCalibrationTxDcPwdetTransition,
-        platform: &mut P,
         registers: &mut impl SharedPhyContext,
     ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
         for _ in 0..RF_OPERATION_LIMIT {
@@ -1994,7 +1965,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             let binding = child
                 .lower_external()
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion = Self::complete_tx_dc_pwdet(binding, platform, registers).await?;
+            let completion = Self::complete_tx_dc_pwdet(binding, registers).await?;
             child
                 .advance(completion)
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -2064,9 +2035,10 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         Err(PhyTargetPortError::RfOperationLimit)
     }
 
-    async fn run_param_temperature<P: PhyTemperatureSystemControl + PhyI2cMasterControl>(
+    async fn run_param_temperature<P: PhyI2cMasterControl>(
         mut child: PhyParamTrackingTemperatureTransition<'_>,
         platform: &mut P,
+        registers: &mut impl SharedPhyAccess,
     ) -> Result<PhyParamTrackingCompletion, PhyTargetPortError> {
         for _ in 0..RF_OPERATION_LIMIT {
             child = match child.commit() {
@@ -2076,7 +2048,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             let binding = child
                 .lower_external()
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion = Self::complete_temperature(binding, platform).await?;
+            let completion = Self::complete_temperature(binding, platform, registers).await?;
             child
                 .advance(completion)
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -2126,11 +2098,7 @@ impl<'a, P, R, D, O> TargetPhyParamTrackingPort<'a, P, R, D, O> {
 }
 
 impl<
-    P: PhyPmuControl
-        + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     R: PhyInitializationAccess,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
@@ -2200,7 +2168,6 @@ impl<
                     transition
                         .begin_tx_dc_pwdet()
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
-                    self.platform,
                     self.registers,
                 )
                 .await?
@@ -2236,11 +2203,7 @@ impl<
 }
 
 impl<
-    P: PhyPmuControl
-        + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     R: PhyInitializationAccess,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
@@ -2309,6 +2272,7 @@ impl<
                         .begin_temperature_read(state)
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
                     self.platform,
+                    self.registers,
                 )
                 .await?
             }
@@ -2347,11 +2311,7 @@ pub async fn run_target_phy_param_tracking<P, D, O>(
     observer: O,
 ) -> Result<TargetPhyParamTrackingSuccess<P>, TargetPhyParamTrackingFailure<P>>
 where
-    P: PhyPmuControl
-        + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2397,11 +2357,7 @@ pub async fn run_target_ieee802154_phy_param_tracking<P, D, O>(
     observer: O,
 ) -> Result<TargetIeee802154PhyParamTrackingSuccess<P>, TargetIeee802154PhyParamTrackingFailure<P>>
 where
-    P: PhyPmuControl
-        + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2430,12 +2386,7 @@ where
 }
 
 impl<
-    P: PhyPreludePlatformControl
-        + PhyPmuControl
-        + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
+    P: PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     R: PhyInitializationAccess,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
@@ -2492,7 +2443,12 @@ impl<
             }
             PhyRegisterExternalBinding::Temperature(binding) => {
                 Ok(PhyRegisterCompletion::Temperature(
-                    TargetCompleter::<D>::complete_temperature(binding, self.platform).await?,
+                    TargetCompleter::<D>::complete_temperature(
+                        binding,
+                        self.platform,
+                        self.registers,
+                    )
+                    .await?,
                 ))
             }
             PhyRegisterExternalBinding::FinalI2c(binding) => {
@@ -2532,12 +2488,7 @@ pub async fn run_target_ieee802154_phy_register<P, D, O>(
     observer: O,
 ) -> Result<TargetIeee802154PhyRegisterSuccess<P>, TargetIeee802154PhyRegisterFailure<P>>
 where
-    P: PhyPreludePlatformControl
-        + PhyPmuControl
-        + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
+    P: PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2614,12 +2565,7 @@ pub async fn run_target_phy_register<P, D, O>(
     observer: O,
 ) -> Result<TargetPhyRegisterSuccess<P>, TargetPhyRegisterFailure<P>>
 where
-    P: PhyPreludePlatformControl
-        + PhyPmuControl
-        + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl,
+    P: PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {

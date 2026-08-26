@@ -1,8 +1,7 @@
 //! ESP32-S31 system power-detector control used by the open PHY.
 //!
-//! `LP_AON_CLKRST` is an official chip-level peripheral. Its ownership and
-//! svd2rust field decoding therefore remain in the platform integration;
-//! this module exposes only the two encodings evidenced by complete ROM code.
+//! `LP_AON_CLKRST` belongs to the shared route-owned PHY PAC partition. This
+//! module exposes only the two encodings evidenced by complete ROM code.
 
 /// Platform capability for `LP_AON_CLKRST.RTC_SAR2_PWDET_CCT`.
 pub trait PhyPowerDetectorPlatformControl {
@@ -11,6 +10,16 @@ pub trait PhyPowerDetectorPlatformControl {
 
     /// Select encoding two, used by TX-calibration debug mode.
     fn select_power_detector_calibration_mode(&mut self);
+}
+
+impl<T: crate::SharedPhyAccess> PhyPowerDetectorPlatformControl for T {
+    fn select_power_detector_initialization_mode(&mut self) {
+        crate::phy_pac_mut(self).select_power_detector_initialization_mode();
+    }
+
+    fn select_power_detector_calibration_mode(&mut self) {
+        crate::phy_pac_mut(self).select_power_detector_calibration_mode();
+    }
 }
 
 /// Apply the final system-register edge of complete ROM `phy_pwdet_reg_init`.

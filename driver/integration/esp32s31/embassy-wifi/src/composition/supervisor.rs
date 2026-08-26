@@ -325,7 +325,6 @@ pub async fn drive_esp32s31_monitor_role<
 where
     P: Sized
         + open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-        + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
         + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
     R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
     M: RawMutex,

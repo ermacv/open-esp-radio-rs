@@ -95,7 +95,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
     let expected = [
         ("WifiMacPeripherals", "wifi_mac", 50_usize),
         ("WifiInterruptPeripherals", "wifi_interrupts", 2),
-        ("RadioPhyPeripherals", "radio_phy", 18),
+        ("RadioPhyPeripherals", "radio_phy", 21),
         ("CoexistencePeripherals", "coexistence", 4),
         ("BluetoothControllerPeripherals", "bluetooth", 19),
         ("BluetoothInterruptPeripherals", "bluetooth_interrupts", 2),

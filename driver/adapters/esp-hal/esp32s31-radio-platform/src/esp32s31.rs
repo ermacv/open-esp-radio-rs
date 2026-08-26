@@ -14,8 +14,6 @@ use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
     phy_prelude::PhyPreludePlatformControl,
-    phy_temperature::PhyTemperatureSystemControl,
-    power_detector_platform::PhyPowerDetectorPlatformControl,
     wifi_bb::PhyWifiBbControl,
 };
 
@@ -235,56 +233,6 @@ impl PhyPmuControl for EspHalBluetoothPlatform<'_> {
                 .hp_active_xpd_bb_i2c()
                 .set_bit()
         });
-    }
-}
-
-impl PhyPowerDetectorPlatformControl for EspHalBluetoothPlatform<'_> {
-    fn select_power_detector_initialization_mode(&mut self) {
-        LP_AON_CLK_RST::regs()
-            .rtc_sar2_pwdet_cct()
-            .modify(|_, w| w.rtc_sar2_pwdet_cct().set(4));
-    }
-
-    fn select_power_detector_calibration_mode(&mut self) {
-        LP_AON_CLK_RST::regs()
-            .rtc_sar2_pwdet_cct()
-            .modify(|_, w| w.rtc_sar2_pwdet_cct().set(2));
-    }
-}
-
-impl PhyTemperatureSystemControl for EspHalBluetoothPlatform<'_> {
-    fn enable_temperature_sensor_register_bank(&mut self) {
-        LP_TSENS::regs()
-            .clk_conf()
-            .modify(|_, w| w.clk_en().set_bit());
-    }
-
-    fn enable_temperature_sensor_clock(&mut self) {
-        LP_PERI::regs()
-            .tsens_ctrl()
-            .modify(|_, w| w.lp_tsens_clk_en().set_bit());
-    }
-
-    fn enable_temperature_sensor_phy_readout(&mut self) {
-        LP_TSENS::regs()
-            .clk_conf()
-            .modify(|_, w| w.phy_readout_enable_unknown().set_bit());
-    }
-
-    fn enable_temperature_sensor_phy_conversion(&mut self) {
-        LP_TSENS::regs()
-            .clk_conf()
-            .modify(|_, w| w.phy_conversion_enable_unknown().set_bit());
-    }
-
-    fn enable_temperature_sensor_power(&mut self) {
-        LP_TSENS::regs()
-            .ctrl()
-            .modify(|_, w| w.power_up().set_bit());
-    }
-
-    fn read_temperature_sensor_code(&self) -> u8 {
-        LP_TSENS::regs().ctrl().read().out().bits()
     }
 }
 

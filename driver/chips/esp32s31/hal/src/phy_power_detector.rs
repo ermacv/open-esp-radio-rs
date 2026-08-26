@@ -13,13 +13,9 @@ use crate::{SharedPhyAccess, phy_pac_mut};
 /// performs six finite stores through the PAC's table-zero, table-one,
 /// control, reference, and auxiliary-mode identities.
 #[cfg(target_arch = "riscv32")]
-pub fn initialize_registers(
-    platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
-    registers: &mut impl SharedPhyAccess,
-) {
-    let registers = phy_pac_mut(registers);
-    registers.initialize_power_detector_registers();
-    crate::power_detector_platform::select_initialization_mode(platform);
+pub fn initialize_registers(registers: &mut impl SharedPhyAccess) {
+    phy_pac_mut(registers).initialize_power_detector_registers();
+    crate::power_detector_platform::select_initialization_mode(registers);
 }
 
 /// Configure and enable the background TX power-control path.
@@ -30,13 +26,9 @@ pub fn initialize_registers(
 /// `POWER_DETECTOR_CONTROL`. All eight fresh-read/full-write operations are
 /// preserved.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_background(
-    platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
-    registers: &mut impl SharedPhyAccess,
-) {
-    let registers = phy_pac_mut(registers);
-    configure_enabled(platform, registers);
-    registers.enable_power_detector_background_control();
+pub fn configure_background(registers: &mut impl SharedPhyAccess) {
+    configure_enabled(registers);
+    phy_pac_mut(registers).enable_power_detector_background_control();
 }
 
 /// Configure the power-detector/SAR path without enabling background control.
@@ -45,13 +37,9 @@ pub fn configure_background(
 /// complete `phy_pwdet_sar2_init` callee at `0x2f82_63a6`, size `0x34`,
 /// supply the eight ordered operations.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_enabled(
-    platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
-    registers: &mut impl SharedPhyAccess,
-) {
-    let registers = phy_pac_mut(registers);
-    registers.configure_power_detector_enabled();
-    crate::power_detector_platform::select_enabled_mode(platform);
+pub fn configure_enabled(registers: &mut impl SharedPhyAccess) {
+    phy_pac_mut(registers).configure_power_detector_enabled();
+    crate::power_detector_platform::select_enabled_mode(registers);
 }
 
 /// Select the auxiliary power-detector calibration mode.
@@ -60,10 +48,8 @@ pub fn configure_enabled(
 /// replaces the PAC's three-bit auxiliary-mode field with mode two after
 /// enabling PWDET.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_calibration_mode(
-    platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
-) {
-    crate::power_detector_platform::select_calibration_mode(platform);
+pub fn configure_calibration_mode(registers: &mut impl SharedPhyAccess) {
+    crate::power_detector_platform::select_calibration_mode(registers);
 }
 
 /// Capture and replace the two TX-DC power-detector fields.

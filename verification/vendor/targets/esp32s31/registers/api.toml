@@ -90,6 +90,9 @@ peripherals = [
     "PHY_FREQUENCY_CHANNEL_ORACLE",
     "PHY_I2C_COMMAND_RAM",
     "PHY_IQ_ESTIMATOR_ORACLE",
+    "LP_AON_CLKRST",
+    "LP_PERICLKRST",
+    "LP_TSENS",
     "PHY_MEMORY",
     "PHY_NRX_RECOVERED_GAPS",
     "PHY_PBUS",
@@ -221,6 +224,72 @@ name = "Delay50"
 value = 0x01400000
 description = "Argument 50 encoded by the complete shared setter as ((50 - 10) << 3) = 0x140, then aligned to AUXILIARY_TX_ON_DELAY bits 16:26."
 sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT", "ESP_RADIO_7F914782_S31_IEEE802154_INIT"]
+
+[[enum-domains]]
+name = "LpPowerDetectorCircuitMode"
+description = "The two complete-ROM-evidenced power-detector circuit-mode encodings; no other three-bit value crosses the closed PAC."
+
+[[enum-domains.values]]
+name = "Calibration"
+value = 2
+description = "Encoding published by complete rev0 ROM phy_txcal_debuge_mode_."
+sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
+
+[[enum-domains.values]]
+name = "Initialization"
+value = 4
+description = "Encoding published by complete rev0 ROM phy_pwdet_reg_init and phy_pwdet_sar2_init."
+sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
+
+[[enum-domains]]
+name = "LpTsensRegisterBankEnable"
+description = "The sole reviewed enabled image for LP_TSENS.CLK_CONF.CLK_EN."
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 0x00000001
+description = "Bit zero set by complete phy_tsens_read_init."
+sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+
+[[enum-domains]]
+name = "LpTsensPeripheralClockEnable"
+description = "The sole reviewed enabled image for LP_PERICLKRST.TSENS_CTRL.LP_TSENS_CLK_EN."
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 0x40000000
+description = "Bit thirty set by complete phy_tsens_read_init."
+sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+
+[[enum-domains]]
+name = "LpTsensPhyReadoutEnable"
+description = "The sole reviewed enabled image for the blob-evidenced readout path."
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 0x00800000
+description = "Bit twenty-three set by complete phy_tsens_read_init."
+sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+
+[[enum-domains]]
+name = "LpTsensPhyConversionEnable"
+description = "The sole reviewed enabled image for the blob-evidenced conversion path."
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 0x00000200
+description = "Bit nine set by complete phy_tsens_read_init."
+sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+
+[[enum-domains]]
+name = "LpTsensPowerEnable"
+description = "The sole reviewed enabled image for LP_TSENS.CTRL.POWER_UP."
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 0x00400000
+description = "Bit twenty-two set by complete ROM phy_set_tsens_power_."
+sources = ["ROM_REV0_PHY_TSENS", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 
 [[enum-domains]]
 name = "Ieee802154RxOnDelay"
@@ -1563,6 +1632,72 @@ input-mask = 0x03ffffff
 set-mask = 0x00000000
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_TSF"]
+
+[[masked-register-modifies]]
+name = "select_lp_power_detector_circuit_mode"
+peripheral = "LP_AON_CLKRST"
+register = "RTC_SAR2_PWDET_CCT"
+domain = "LpPowerDetectorCircuitMode"
+preserve-mask = 0xfffffff8
+input-mask = 0x00000007
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD", "ROM_REV0_PHY_POWER_DETECTOR"]
+
+[[masked-register-modifies]]
+name = "enable_lp_tsens_register_bank"
+peripheral = "LP_TSENS"
+register = "CLK_CONF"
+domain = "LpTsensRegisterBankEnable"
+preserve-mask = 0xfffffffe
+input-mask = 0x00000001
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+
+[[masked-register-modifies]]
+name = "enable_lp_tsens_peripheral_clock"
+peripheral = "LP_PERICLKRST"
+register = "TSENS_CTRL"
+domain = "LpTsensPeripheralClockEnable"
+preserve-mask = 0xbfffffff
+input-mask = 0x40000000
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+
+[[masked-register-modifies]]
+name = "enable_lp_tsens_phy_readout"
+peripheral = "LP_TSENS"
+register = "CLK_CONF"
+domain = "LpTsensPhyReadoutEnable"
+preserve-mask = 0xff7fffff
+input-mask = 0x00800000
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+
+[[masked-register-modifies]]
+name = "enable_lp_tsens_phy_conversion"
+peripheral = "LP_TSENS"
+register = "CLK_CONF"
+domain = "LpTsensPhyConversionEnable"
+preserve-mask = 0xfffffdff
+input-mask = 0x00000200
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
+
+[[masked-register-modifies]]
+name = "enable_lp_tsens_power"
+peripheral = "LP_TSENS"
+register = "CTRL"
+domain = "LpTsensPowerEnable"
+preserve-mask = 0xffbfffff
+input-mask = 0x00400000
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD", "ROM_REV0_PHY_TSENS", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 
 [[masked-register-modifies]]
 name = "set_ieee802154_ed_duration"

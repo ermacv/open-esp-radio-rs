@@ -74,8 +74,6 @@ where
         + open_esp_radio_esp32s31_hal::phy_prelude::PhyPreludePlatformControl
         + open_esp_radio_esp32s31_hal::analog_i2c::PhyPmuControl
         + open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-        + open_esp_radio_esp32s31_hal::power_detector_platform::PhyPowerDetectorPlatformControl
-        + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
         + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl
         + Esp32s31WifiMacPlatform,
     D: PhyAsyncDelay,

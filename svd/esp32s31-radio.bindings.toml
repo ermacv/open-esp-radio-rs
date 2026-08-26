@@ -40151,3 +40151,152 @@ method = "data"
 bit-offset = 16
 bit-width = 8
 access = "write-only"
+
+[[registers]]
+address = 544215144
+width = 32
+access = "read-write"
+identity = "LP_AON_CLKRST.RTC_SAR2_PWDET_CCT"
+peripheral = "LP_AON_CLKRST"
+peripheral-type = "LpAonClkrst"
+peripheral-module = "lp_aon_clkrst"
+scope = []
+register-method = "rtc_sar2_pwdet_cct"
+
+[[registers.fields]]
+svd-name = "RTC_SAR2_PWDET_CCT"
+method = "rtc_sar2_pwdet_cct"
+bit-offset = 0
+bit-width = 3
+access = "read-write"
+
+[[registers]]
+address = 544276528
+width = 32
+access = "read-write"
+identity = "LP_PERICLKRST.TSENS_CTRL"
+peripheral = "LP_PERICLKRST"
+peripheral-type = "LpPericlkrst"
+peripheral-module = "lp_periclkrst"
+scope = []
+register-method = "tsens_ctrl"
+
+[[registers.fields]]
+svd-name = "LP_TSENS_CLK_EN"
+method = "lp_tsens_clk_en"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LP_TSENS_RST_EN"
+method = "lp_tsens_rst_en"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 545357824
+width = 32
+access = "read-write"
+identity = "LP_TSENS.CTRL"
+peripheral = "LP_TSENS"
+peripheral-type = "LpTsens"
+peripheral-module = "lp_tsens"
+scope = []
+register-method = "ctrl"
+
+[[registers.fields]]
+svd-name = "OUT"
+method = "out"
+bit-offset = 0
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "READY"
+method = "ready"
+bit-offset = 8
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SAMPLE_EN"
+method = "sample_en"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "WAKEUP_MASK"
+method = "wakeup_mask"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INT_EN"
+method = "int_en"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "IN_INV"
+method = "in_inv"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_DIV"
+method = "clk_div"
+bit-offset = 14
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POWER_UP"
+method = "power_up"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POWER_UP_FORCE"
+method = "power_up_force"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 545357848
+width = 32
+access = "read-write"
+identity = "LP_TSENS.CLK_CONF"
+peripheral = "LP_TSENS"
+peripheral-type = "LpTsens"
+peripheral-module = "lp_tsens"
+scope = []
+register-method = "clk_conf"
+
+[[registers.fields]]
+svd-name = "CLK_EN"
+method = "clk_en"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PHY_CONVERSION_ENABLE_UNKNOWN"
+method = "phy_conversion_enable_unknown"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PHY_READOUT_ENABLE_UNKNOWN"
+method = "phy_readout_enable_unknown"
+bit-offset = 23
+bit-width = 1
+access = "read-write"

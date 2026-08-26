@@ -3,8 +3,8 @@
 use core::marker::PhantomData;
 
 use open_esp_radio_esp32s31_hal::{
-    RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
-    radio_arena::Esp32s31RadioAccess, wifi_bb::PhyWifiBbControl,
+    RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl, radio_arena::Esp32s31RadioAccess,
+    wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError, select_phy_channel_with_hal,
@@ -25,7 +25,7 @@ pub struct Esp32s31ScanPhy<'state, P, O, D> {
 
 impl<'state, P, O, D> Esp32s31ScanPhy<'state, P, O, D>
 where
-    P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+    P: PhyWifiBbControl + PhyI2cMasterControl,
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {

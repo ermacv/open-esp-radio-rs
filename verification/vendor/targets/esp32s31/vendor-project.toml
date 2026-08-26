@@ -249,6 +249,9 @@ owned-ranges = [
     "modem-radio-core-mid",
     "coex-hw-timer",
     "modem-radio-core-high",
+    "lp-aon-phy-aux",
+    "lp-periclkrst-tsens-phy-aux",
+    "lp-tsens-phy-aux",
 ]
 
 [registers.review]

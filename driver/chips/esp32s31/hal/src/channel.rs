@@ -4,10 +4,10 @@ use core::cell::RefMut;
 
 use open_esp_radio_esp32s31_pac::WifiRadioRegisters;
 
-use crate::{
-    phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
-    wifi_bb::PhyWifiBbControl,
-};
+use crate::{phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl};
+
+#[cfg(target_arch = "riscv32")]
+use crate::phy_temperature::PhyTemperatureSystemControl;
 
 /// Temporary channel-programming borrow from the unique [`crate::Radio`] owner.
 ///
@@ -165,13 +165,52 @@ impl<P: PhyWifiBbControl> RadioChannelHal<'_, P> {
     }
 }
 
-/// Traits required by the complete channel transaction.
-pub trait RadioChannelPlatform:
-    PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl
-{
+#[cfg(target_arch = "riscv32")]
+impl<P> PhyTemperatureSystemControl for RadioChannelHal<'_, P> {
+    fn enable_temperature_sensor_register_bank(&mut self) {
+        self.registers
+            .get_mut()
+            .radio_phy_mut()
+            .enable_temperature_sensor_register_bank();
+    }
+
+    fn enable_temperature_sensor_clock(&mut self) {
+        self.registers
+            .get_mut()
+            .radio_phy_mut()
+            .enable_temperature_sensor_clock();
+    }
+
+    fn enable_temperature_sensor_phy_readout(&mut self) {
+        self.registers
+            .get_mut()
+            .radio_phy_mut()
+            .enable_temperature_sensor_phy_readout();
+    }
+
+    fn enable_temperature_sensor_phy_conversion(&mut self) {
+        self.registers
+            .get_mut()
+            .radio_phy_mut()
+            .enable_temperature_sensor_phy_conversion();
+    }
+
+    fn enable_temperature_sensor_power(&mut self) {
+        self.registers
+            .get_mut()
+            .radio_phy_mut()
+            .enable_temperature_sensor_power();
+    }
+
+    fn read_temperature_sensor_code(&self) -> u8 {
+        self.registers
+            .get()
+            .radio_phy()
+            .read_temperature_sensor_code()
+    }
 }
 
-impl<T> RadioChannelPlatform for T where
-    T: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl
-{
-}
+/// Traits required by the complete channel transaction.
+pub trait RadioChannelPlatform: PhyWifiBbControl + PhyI2cMasterControl {}
+
+impl<T> RadioChannelPlatform for T where T: PhyWifiBbControl + PhyI2cMasterControl {}

@@ -1019,8 +1019,6 @@ impl PhyColdMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target<
         P: open_esp_radio_esp32s31_hal::analog_i2c::PhyPmuControl
-            + open_esp_radio_esp32s31_hal::power_detector_platform::PhyPowerDetectorPlatformControl
-            + open_esp_radio_esp32s31_hal::phy_temperature::PhyTemperatureSystemControl
             + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         R: open_esp_radio_esp32s31_hal::SharedPhyAccess,
     >(
@@ -1039,19 +1037,15 @@ impl PhyColdMmioBinding {
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigurePowerDetectorRegisters => {
-                open_esp_radio_esp32s31_hal::phy_power_detector::initialize_registers(
-                    platform, registers,
-                );
+                open_esp_radio_esp32s31_hal::phy_power_detector::initialize_registers(registers);
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureTxPowerControlBackground => {
-                open_esp_radio_esp32s31_hal::phy_power_detector::configure_background(
-                    platform, registers,
-                );
+                open_esp_radio_esp32s31_hal::phy_power_detector::configure_background(registers);
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureTemperatureSensorRead => {
-                open_esp_radio_esp32s31_hal::phy_temperature::initialize(platform);
+                open_esp_radio_esp32s31_hal::phy_temperature::initialize(registers);
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureBbpllCalibration { enabled } => {

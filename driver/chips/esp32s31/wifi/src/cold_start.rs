@@ -7,9 +7,7 @@
 
 use open_esp_radio_esp32s31_hal::{
     PowerClockControl, PowerUpFailure, Radio, analog_i2c::PhyPmuControl,
-    phy_i2c::PhyI2cMasterControl, phy_prelude::PhyPreludePlatformControl,
-    phy_temperature::PhyTemperatureSystemControl,
-    power_detector_platform::PhyPowerDetectorPlatformControl, state::Powered,
+    phy_i2c::PhyI2cMasterControl, phy_prelude::PhyPreludePlatformControl, state::Powered,
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{
@@ -129,8 +127,6 @@ where
         + PhyPreludePlatformControl
         + PhyPmuControl
         + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
         + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,

@@ -79,17 +79,65 @@ end-exclusive = 0x20600000
 permissions = "rw"
 
 [[regions]]
-name = "lp-system"
+name = "lp-system-before-aon-phy-aux"
 address-space = "cpu"
 kind = "mmio"
 start = 0x20700000
+end-exclusive = 0x20701068
+permissions = "rw"
+
+[[regions]]
+name = "lp-aon-phy-aux"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20701068
+end-exclusive = 0x2070106C
+permissions = "rw"
+
+[[regions]]
+name = "lp-system-between-phy-aux"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2070106C
+end-exclusive = 0x20710030
+permissions = "rw"
+
+[[regions]]
+name = "lp-periclkrst-tsens-phy-aux"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20710030
+end-exclusive = 0x20710034
+permissions = "rw"
+
+[[regions]]
+name = "lp-system-after-phy-aux"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20710034
 end-exclusive = 0x20800000
 permissions = "rw"
 
 [[regions]]
-name = "lp-peripheral"
+name = "lp-peripheral-before-tsens-phy-aux"
 address-space = "cpu"
 kind = "mmio"
 start = 0x20800000
+end-exclusive = 0x20818000
+permissions = "rw"
+
+[[regions]]
+name = "lp-tsens-phy-aux"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20818000
+end-exclusive = 0x2081801C
+permissions = "rw"
+
+[[regions]]
+name = "lp-peripheral-after-tsens-phy-aux"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2081801C
 end-exclusive = 0x20900000
 permissions = "rw"

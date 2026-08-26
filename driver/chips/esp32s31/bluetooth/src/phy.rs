@@ -7,8 +7,7 @@
 
 use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl,
-    phy_prelude::PhyPreludePlatformControl, phy_temperature::PhyTemperatureSystemControl,
-    power_detector_platform::PhyPowerDetectorPlatformControl, wifi_bb::PhyWifiBbControl,
+    phy_prelude::PhyPreludePlatformControl, wifi_bb::PhyWifiBbControl,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
@@ -30,22 +29,12 @@ use crate::{
 /// of one official system-peripheral operation family; Bluetooth gains no raw
 /// platform-register access through this marker.
 pub trait BluetoothPhyPlatform:
-    PhyPreludePlatformControl
-    + PhyPmuControl
-    + PhyWifiBbControl
-    + PhyPowerDetectorPlatformControl
-    + PhyTemperatureSystemControl
-    + PhyI2cMasterControl
+    PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl
 {
 }
 
 impl<T> BluetoothPhyPlatform for T where
-    T: PhyPreludePlatformControl
-        + PhyPmuControl
-        + PhyWifiBbControl
-        + PhyPowerDetectorPlatformControl
-        + PhyTemperatureSystemControl
-        + PhyI2cMasterControl
+    T: PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl
 {
 }
 

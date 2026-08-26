@@ -72,6 +72,98 @@ impl Ieee802154SharedTxOnDelayOverride {
     }
 }
 
+/// The two complete-ROM-evidenced power-detector circuit-mode encodings; no other three-bit value crosses the closed PAC.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LpPowerDetectorCircuitMode {
+    /// Encoding published by complete rev0 ROM phy_txcal_debuge_mode_.
+    Calibration = 0x00000002,
+    /// Encoding published by complete rev0 ROM phy_pwdet_reg_init and phy_pwdet_sar2_init.
+    Initialization = 0x00000004,
+}
+
+impl LpPowerDetectorCircuitMode {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// The sole reviewed enabled image for LP_TSENS.CLK_CONF.CLK_EN.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LpTsensRegisterBankEnable {
+    /// Bit zero set by complete phy_tsens_read_init.
+    Enabled = 0x00000001,
+}
+
+impl LpTsensRegisterBankEnable {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// The sole reviewed enabled image for LP_PERICLKRST.TSENS_CTRL.LP_TSENS_CLK_EN.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LpTsensPeripheralClockEnable {
+    /// Bit thirty set by complete phy_tsens_read_init.
+    Enabled = 0x40000000,
+}
+
+impl LpTsensPeripheralClockEnable {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// The sole reviewed enabled image for the blob-evidenced readout path.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LpTsensPhyReadoutEnable {
+    /// Bit twenty-three set by complete phy_tsens_read_init.
+    Enabled = 0x00800000,
+}
+
+impl LpTsensPhyReadoutEnable {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// The sole reviewed enabled image for the blob-evidenced conversion path.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LpTsensPhyConversionEnable {
+    /// Bit nine set by complete phy_tsens_read_init.
+    Enabled = 0x00000200,
+}
+
+impl LpTsensPhyConversionEnable {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// The sole reviewed enabled image for LP_TSENS.CTRL.POWER_UP.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LpTsensPowerEnable {
+    /// Bit twenty-two set by complete ROM phy_set_tsens_power_.
+    Enabled = 0x00400000,
+}
+
+impl LpTsensPowerEnable {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// The sole receive-on delay image accepted by the pinned ESP32-S31 IEEE 802.15.4 initialization transaction.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1385,6 +1477,60 @@ pub(crate) fn publish_station_tbtt_target(
     value: StationTbttTargetBits35To10,
 ) {
     crate::svd::masked_register_modify::publish_station_tbtt_target(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `select_lp_power_detector_circuit_mode` masked transaction.
+#[inline]
+pub(crate) fn select_lp_power_detector_circuit_mode(
+    registers: &crate::svd::LpAonClkrst,
+    value: LpPowerDetectorCircuitMode,
+) {
+    crate::svd::masked_register_modify::select_lp_power_detector_circuit_mode(
+        registers,
+        value.bits(),
+    );
+}
+
+/// Typed bridge for the reviewed `enable_lp_tsens_register_bank` masked transaction.
+#[inline]
+pub(crate) fn enable_lp_tsens_register_bank(
+    registers: &crate::svd::LpTsens,
+    value: LpTsensRegisterBankEnable,
+) {
+    crate::svd::masked_register_modify::enable_lp_tsens_register_bank(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `enable_lp_tsens_peripheral_clock` masked transaction.
+#[inline]
+pub(crate) fn enable_lp_tsens_peripheral_clock(
+    registers: &crate::svd::LpPericlkrst,
+    value: LpTsensPeripheralClockEnable,
+) {
+    crate::svd::masked_register_modify::enable_lp_tsens_peripheral_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `enable_lp_tsens_phy_readout` masked transaction.
+#[inline]
+pub(crate) fn enable_lp_tsens_phy_readout(
+    registers: &crate::svd::LpTsens,
+    value: LpTsensPhyReadoutEnable,
+) {
+    crate::svd::masked_register_modify::enable_lp_tsens_phy_readout(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `enable_lp_tsens_phy_conversion` masked transaction.
+#[inline]
+pub(crate) fn enable_lp_tsens_phy_conversion(
+    registers: &crate::svd::LpTsens,
+    value: LpTsensPhyConversionEnable,
+) {
+    crate::svd::masked_register_modify::enable_lp_tsens_phy_conversion(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `enable_lp_tsens_power` masked transaction.
+#[inline]
+pub(crate) fn enable_lp_tsens_power(registers: &crate::svd::LpTsens, value: LpTsensPowerEnable) {
+    crate::svd::masked_register_modify::enable_lp_tsens_power(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `set_ieee802154_ed_duration` masked transaction.

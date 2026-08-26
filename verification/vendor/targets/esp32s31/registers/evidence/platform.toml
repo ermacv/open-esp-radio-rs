@@ -11,7 +11,15 @@ description = "esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/i
 
 [[sources]]
 id = "S31_ESP_PACS_SVD"
-description = "local esp-pacs commit f823dd9de91c0b83c5e8e85cbea4749dbabc4a27, esp32s31/pac/esp32s31.svd"
+description = "ermacv/esp-pacs commit d0fb94ef39e992ca0b5fed51cb98a34c8aa8bcd5, esp32s31/pac/esp32s31.svd, pinned by Cargo.lock; exact LP_AON_CLKRST, LP_PERICLKRST and LP_TSENS register/field geometry"
+
+[[sources]]
+id = "ROM_REV0_PHY_TSENS"
+description = "_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_set_tsens_power_ at 0x2f825dc8 size 0x1c, phy_tsens_code_read at 0x2f825ee0 size 0x0c and phy_tsens_temp_read_local at 0x2f825f1e size 0x5e"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_TSENS_READ_INIT"
+description = "Pinned ESP32-S31 libphy.a member phy_tsens.o, complete phy_tsens_read_init body size 0x36; exact five preserving MMIO updates are independently projected by the source-owned HAL test"
 
 [[sources]]
 id = "S31_REG_BASE"

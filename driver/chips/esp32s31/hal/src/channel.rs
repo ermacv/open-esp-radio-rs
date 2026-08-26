@@ -134,11 +134,10 @@ impl<P> RadioChannelHal<'_, P> {
         crate::phy_memory::read_table_memory_base_index(self.registers.get().radio_phy())
     }
 
-    pub fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8) {
+    pub fn program_gain_memory_entry(&mut self, entry: crate::types::PhyGainMemoryEntry) {
         crate::phy_memory::program_gain_memory_entry(
             self.registers.get_mut().radio_phy_mut(),
-            words,
-            index,
+            entry,
         );
     }
 

@@ -225,7 +225,7 @@ pub use modem_syscon::{
 use open_esp_radio_esp32s31_pac_raw as svd;
 pub use phy_i2c::PhyI2cHost;
 pub use platform_clock_power::PlatformClockPowerObservation;
-pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
+pub use table_memory::{PbusMemoryGroupBoundary, PhyGainMemoryEntry, PhyMemoryError};
 
 /// Private Wi-Fi and shared-radio owners used by one exclusive Wi-Fi route.
 struct WifiRadioPeripheralOwners {

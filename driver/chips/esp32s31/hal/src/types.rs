@@ -20,6 +20,6 @@ pub use open_esp_radio_esp32s31_pac::{
     MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics, MacRxStatisticsSnapshot,
     MacStaApReceivePlan, MacStaPolicyMode, MacStaReceivePolicySnapshot, MacTxCompletionRegisters,
     MacTxDetachOutcome, MacTxDetachReason, MacTxPowerPair, MacTxPowerTable, MacTxPtiCount,
-    MacTxPtiProgram, MacTxQueueDetached, MacTxQueueIndex, PbusMemoryGroupBoundary, PhyMemoryError,
-    RxBlockAckEntrySnapshot, TxBlockAckPayload,
+    MacTxPtiProgram, MacTxQueueDetached, MacTxQueueIndex, PbusMemoryGroupBoundary,
+    PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot, TxBlockAckPayload,
 };

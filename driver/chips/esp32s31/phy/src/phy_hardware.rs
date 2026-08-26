@@ -89,11 +89,7 @@ pub(crate) fn configure_phy_rx_table(
     let mut index = 0_u8;
     while index != crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT {
         let entry = crate::phy_bb::phy_rx_table_gain_entry(parameters, index);
-        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(
-            registers,
-            [entry.word0, entry.word1, entry.word2],
-            entry.index,
-        );
+        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(registers, entry);
         index += 1;
     }
     configure_phy_registers(
@@ -116,32 +112,6 @@ const fn tx_baseband_gain_index(gain: u16) -> usize {
         0x00a0 => 4,
         _ => 0,
     }
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-const fn encode_phy_gain_memory_words(
-    gain_72: u16,
-    gain_64: u16,
-    gain_32: u8,
-    seed: [u16; 4],
-    config: u16,
-) -> (u32, u32, u32) {
-    let [seed_0, seed_1, seed_2, seed_3] = seed;
-    let gain_72 = gain_72 as u32;
-    let gain_64 = gain_64 as u32;
-    let word_0 = ((config & 0x1fff) as u32)
-        | ((seed_2 as u32) << 22)
-        | ((seed_1 as u32) << 31)
-        | ((seed_3 as u32) << 13);
-    let word_1 = ((seed_0 as u32) << 8)
-        | ((seed_1 as u32) >> 1)
-        | (((gain_64 >> 6) & 0xff) << 17)
-        | ((gain_72 & 7) << 31)
-        | ((gain_64 & 0x3f) << 20)
-        | 0x1000_0000;
-    let word_2 =
-        ((gain_72 & 7) >> 1) | ((gain_72 >> 1) & 0x1c) | ((gain_32 as u32) << 15) | 0x0000_7f80;
-    (word_0, word_1, word_2)
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -406,15 +376,18 @@ pub(crate) fn clear_phy_tx_dc_measurement(registers: &mut impl SharedPhyAccess) 
 /// concatenation explicitly instead of relying on struct layout or pointer
 /// arithmetic.
 ///
-/// Every iteration performs three ordinary input reads, selects four
-/// halfwords from that contiguous layout, encodes three register words, then
-/// publishes the three words through the owned `PHY_MEMORY` HAL. There is no
-/// allocation, wait, indirect call, hidden state, raw pointer, or
-/// hardware-dependent loop exit.
+/// Every iteration performs three ordinary input reads and selects four
+/// halfwords from that contiguous layout. It passes those semantic values to
+/// the PAC-owned gain-memory encoder and publisher. There is no allocation,
+/// wait, indirect call, hidden state, raw pointer, or hardware-dependent loop
+/// exit.
 #[cfg(target_arch = "riscv32")]
 trait PhyGainMemory {
     fn table_memory_base_index(&self) -> u8;
-    fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8);
+    fn program_gain_memory_entry(
+        &mut self,
+        entry: open_esp_radio_esp32s31_hal::types::PhyGainMemoryEntry,
+    );
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -428,12 +401,11 @@ impl<T: SharedPhyAccess> PhyGainMemory for SharedPhyGainMemory<'_, T> {
         open_esp_radio_esp32s31_hal::phy_memory::read_table_memory_base_index(self.registers)
     }
 
-    fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8) {
-        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(
-            self.registers,
-            words,
-            index,
-        );
+    fn program_gain_memory_entry(
+        &mut self,
+        entry: open_esp_radio_esp32s31_hal::types::PhyGainMemoryEntry,
+    ) {
+        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(self.registers, entry);
     }
 }
 
@@ -443,8 +415,11 @@ impl<P> PhyGainMemory for RadioChannelHal<'_, P> {
         self.table_memory_base_index()
     }
 
-    fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8) {
-        self.program_gain_memory_entry(words, index);
+    fn program_gain_memory_entry(
+        &mut self,
+        entry: open_esp_radio_esp32s31_hal::types::PhyGainMemoryEntry,
+    ) {
+        self.program_gain_memory_entry(entry);
     }
 }
 
@@ -463,7 +438,8 @@ fn publish_phy_tx_gain_memory_to(
         let gain_64 = packed_halfword(&image.output_64, entry_index);
         let gain_32 = packed_byte(&image.output_32, entry_index);
         let seed_index = tx_baseband_gain_index(gain_64) * 4;
-        let (word_0, word_1, word_2) = encode_phy_gain_memory_words(
+        let memory_entry = open_esp_radio_esp32s31_hal::types::PhyGainMemoryEntry::transmit(
+            memory_base.wrapping_add(entry),
             gain_72,
             gain_64,
             gain_32,
@@ -476,8 +452,7 @@ fn publish_phy_tx_gain_memory_to(
             image.config,
         );
 
-        registers
-            .program_gain_memory_entry([word_0, word_1, word_2], memory_base.wrapping_add(entry));
+        registers.program_gain_memory_entry(memory_entry);
         entry += 1;
     }
 }
@@ -519,7 +494,8 @@ pub(crate) fn publish_bluetooth_tx_gain_memory(
         let gain_64 = image.output_64[entry_index];
         let gain_32 = image.output_32[entry_index];
         let seed_index = tx_baseband_gain_index(gain_64) * 4;
-        let (word_0, word_1, word_2) = encode_phy_gain_memory_words(
+        let memory_entry = open_esp_radio_esp32s31_hal::types::PhyGainMemoryEntry::transmit(
+            memory_base.wrapping_add(entry),
             gain_72,
             gain_64,
             gain_32,
@@ -531,21 +507,14 @@ pub(crate) fn publish_bluetooth_tx_gain_memory(
             ],
             image.config,
         );
-        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(
-            registers,
-            [word_0, word_1, word_2],
-            memory_base.wrapping_add(entry),
-        );
+        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(registers, memory_entry);
         entry += 1;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        encode_phy_gain_memory_words, packed_byte, packed_halfword, tx_baseband_gain_index,
-        tx_gain_seed_halfword,
-    };
+    use super::{packed_byte, packed_halfword, tx_baseband_gain_index, tx_gain_seed_halfword};
 
     #[test]
     fn phy_baseband_gain_indices_match_the_rom_leaf() {
@@ -555,24 +524,6 @@ mod tests {
         assert_eq!(tx_baseband_gain_index(0x00a0), 4);
         assert_eq!(tx_baseband_gain_index(0), 0);
         assert_eq!(tx_baseband_gain_index(u16::MAX), 0);
-    }
-
-    #[test]
-    fn phy_gain_words_match_the_complete_vendor_transform() {
-        assert_eq!(
-            encode_phy_gain_memory_words(0, 0, 0, [0; 4], 0),
-            (0, 0x1000_0000, 0x0000_7f80)
-        );
-        assert_eq!(
-            encode_phy_gain_memory_words(
-                0x0007,
-                0x00bf,
-                0xa5,
-                [0x1234, 0x5678, 0x9abc, 0xdef0],
-                0xffff,
-            ),
-            (0xbfde_1fff, 0x93f6_3f3c, 0x0052_ff83)
-        );
     }
 
     #[test]

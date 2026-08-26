@@ -529,9 +529,7 @@ impl PhyRxGainPublishMmioBinding {
             }
             PhyRxGainPublishAction::ProgramEntry { bank, entry } => {
                 open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(
-                    registers,
-                    [entry.word0, entry.word1, entry.word2],
-                    entry.index,
+                    registers, entry,
                 );
                 PhyRxGainPublishCompletion::EntryProgrammed { bank, entry }
             }

@@ -1,6 +1,6 @@
 //! Owned access to the shared ESP32-S31 PHY table-memory aperture.
 
-pub use crate::types::{PbusMemoryGroupBoundary, PhyMemoryError};
+pub use crate::types::{PbusMemoryGroupBoundary, PhyGainMemoryEntry, PhyMemoryError};
 #[cfg(target_arch = "riscv32")]
 use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
 
@@ -66,14 +66,14 @@ pub fn program_tx_cfr_entry(registers: &mut impl SharedPhyAccess, data: u32, ind
     registers.program_tx_cfr_entry(data, index);
 }
 
-/// Publish one three-word gain-memory entry.
+/// Publish one opaque PAC-encoded gain-memory entry.
 ///
 /// Basis: complete rev0 ROM `phy_write_gain_mem` at `0x2f82_74f0`, size
-/// `0x2a`. It writes all three data words in order, clears the low command
-/// field, writes the index, sets gain-write, and preserves the upper fields
-/// in one final RMW.
+/// `0x2a`. The PAC writes all three private data words in order, clears the
+/// low command field, writes the index, sets gain-write, and preserves the
+/// upper fields in one final RMW.
 #[cfg(target_arch = "riscv32")]
-pub fn program_gain_memory_entry(registers: &mut impl SharedPhyAccess, words: [u32; 3], index: u8) {
+pub fn program_gain_memory_entry(registers: &mut impl SharedPhyAccess, entry: PhyGainMemoryEntry) {
     let registers = phy_pac_mut(registers);
-    registers.program_gain_memory_entry(words, index);
+    registers.program_gain_memory_entry(entry);
 }

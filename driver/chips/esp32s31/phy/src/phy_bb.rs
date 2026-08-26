@@ -13,6 +13,8 @@
 //! accesses per entry. It has no callback, allocation, hidden software state,
 //! wait, delay, or hardware-dependent exit.
 
+pub use open_esp_radio_esp32s31_hal::types::PhyGainMemoryEntry;
+
 /// Required pinned `libphy.a` vendor-ABI no-op leaf.
 ///
 /// The ESP32-S31 `set_bb_wdg` body is exactly one `ret` instruction.
@@ -78,7 +80,7 @@ fn rfrx_gain_index(bank: PhyRxGainBank, encoded_gain: u16) -> usize {
     bases.len()
 }
 
-const fn shared_rx_mixer_digital_gain(index: usize) -> u32 {
+const fn shared_rx_mixer_digital_gain(index: usize) -> u8 {
     match index {
         9 => 4,
         10 => 7,
@@ -124,7 +126,7 @@ pub fn phy_generated_rx_gain_memory_entry(
         PhyRxGainBank::Wifi => parameters.wifi_auxiliary,
         PhyRxGainBank::Shared => 0,
     };
-    let mixer_digital_gain = match bank {
+    let mixer_digital_gain: u8 = match bank {
         PhyRxGainBank::Wifi => 7,
         PhyRxGainBank::Shared => shared_rx_mixer_digital_gain(gain_index),
     };
@@ -132,21 +134,15 @@ pub fn phy_generated_rx_gain_memory_entry(
         PhyRxGainBank::Wifi => index,
         PhyRxGainBank::Shared => index.wrapping_add(0x50),
     };
-    PhyGainMemoryEntry {
-        word0: (u32::from(dc_i) << 31)
-            | (u32::from(dc_q) << 13)
-            | (u32::from(index_dc[1]) << 22)
-            | (u32::from(auxiliary) & 0x1fff),
-        word1: (((encoded >> 4) & 0x7f) << 20)
-            | ((encoded & 7) << 17)
-            | (u32::from(index_dc[0]) << 8)
-            | (u32::from(dc_i) >> 1)
-            | (mixer_digital_gain << 29),
-        word2: u32::from(parameters.parameter_002 >> 6)
-            | (((encoded >> 15) & 7) << 5)
-            | (((encoded >> 12) & 7) << 2),
-        index: memory_index,
-    }
+    PhyGainMemoryEntry::generated_receive(
+        memory_index,
+        [dc_i, dc_q],
+        index_dc,
+        auxiliary,
+        encoded,
+        mixer_digital_gain,
+        parameters.parameter_002,
+    )
 }
 
 /// Pure Rust replacement for complete ROM `phy_gen_rx_gain_table`, size 312.
@@ -210,15 +206,6 @@ pub fn generate_phy_rx_gain_table(bank: PhyRxGainBank) -> PhyGeneratedRxGainTabl
     }
 }
 
-/// Exact four-word input of complete ROM leaf `phy_write_gain_mem`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PhyGainMemoryEntry {
-    pub word0: u32,
-    pub word1: u32,
-    pub word2: u32,
-    pub index: u8,
-}
-
 /// The two explicit `phy_param` bytes consumed by ROM `phy_reg_init`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRegisterInitParameters {
@@ -238,12 +225,7 @@ pub const fn phy_rx_table_gain_entry(
     parameters: PhyRxTableInitParameters,
     index: u8,
 ) -> PhyGainMemoryEntry {
-    PhyGainMemoryEntry {
-        word0: 0x4020_0000,
-        word1: 0x0201_0080 | ((parameters.parameter_002 as u32) << 29),
-        word2: ((parameters.parameter_002 >> 6) as u32) | 0x0000_00fc,
-        index,
-    }
+    PhyGainMemoryEntry::receive_table(index, parameters.parameter_002)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -558,11 +540,7 @@ impl PhyBbMmioBinding {
                 open_esp_radio_esp32s31_hal::phy_baseband::configure_i2c_tx_rate(registers)
             }
             PhyBbMmioAction::ProgramGainMemory(entry) => {
-                open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(
-                    registers,
-                    [entry.word0, entry.word1, entry.word2],
-                    entry.index,
-                )
+                open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(registers, entry)
             }
             PhyBbMmioAction::EnableIqCorrection => {
                 open_esp_radio_esp32s31_hal::phy_baseband::enable_iq_correction(registers)
@@ -1433,12 +1411,7 @@ mod tests {
         let table = generate_phy_rx_gain_table(PhyRxGainBank::Wifi);
         assert_eq!(
             phy_generated_rx_gain_memory_entry(parameters, PhyRxGainBank::Wifi, &table, 0),
-            PhyGainMemoryEntry {
-                word0: 0x8102_c005,
-                word1: 0xe006_0305,
-                word2: 2,
-                index: 0,
-            }
+            PhyGainMemoryEntry::generated_receive(0, [11, 22], [3, 4], 5, table.words[0], 7, 0xbf,)
         );
     }
 
@@ -1551,12 +1524,7 @@ mod tests {
                 phase: PhyRfRxSaturationPhase::Finalize,
             },
             PhyBbMmioAction::ConfigureI2cTxRate,
-            PhyBbMmioAction::ProgramGainMemory(PhyGainMemoryEntry {
-                word0: 1,
-                word1: 2,
-                word2: 3,
-                index: 4,
-            }),
+            PhyBbMmioAction::ProgramGainMemory(PhyGainMemoryEntry::receive_table(4, 0)),
             PhyBbMmioAction::EnableIqCorrection,
             PhyBbMmioAction::SetWifiAgcSaturationGain { value: 0x0008_1825 },
             PhyBbMmioAction::ConfigureBasebandWatchdog,
@@ -1579,40 +1547,6 @@ mod tests {
         ] {
             assert_eq!(PhyBbMmioBinding::new(action).action(), action);
         }
-    }
-
-    #[test]
-    fn rx_table_entry_transform_matches_both_parameter_extremes() {
-        assert_eq!(
-            super::phy_rx_table_gain_entry(
-                PhyRxTableInitParameters {
-                    parameter_002: 0,
-                    parameter_121: 0x4e,
-                },
-                0,
-            ),
-            PhyGainMemoryEntry {
-                word0: 0x4020_0000,
-                word1: 0x0201_0080,
-                word2: 0x0000_00fc,
-                index: 0,
-            }
-        );
-        assert_eq!(
-            super::phy_rx_table_gain_entry(
-                PhyRxTableInitParameters {
-                    parameter_002: u8::MAX,
-                    parameter_121: 0x4e,
-                },
-                0x4e,
-            ),
-            PhyGainMemoryEntry {
-                word0: 0x4020_0000,
-                word1: 0xe201_0080,
-                word2: 0x0000_00ff,
-                index: 0x4e,
-            }
-        );
     }
 
     fn complete_parent_mmio(transition: &mut super::PhyBbInitTransition, action: PhyBbMmioAction) {

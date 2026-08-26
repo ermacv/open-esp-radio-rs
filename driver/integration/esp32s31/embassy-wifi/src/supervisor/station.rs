@@ -619,8 +619,41 @@ pub struct Esp32s31DiagnosticRxStatistics {
     pub mpdu_count: u16,
     pub data_success: u16,
     pub fcs_error: u16,
+    pub abort: u16,
+    pub abort_fcs_pass: u16,
+    pub power_drop_error: u16,
+    pub he_sig_b_error: u16,
+    pub same_bm_error: u16,
+    pub signal_field: u16,
+    pub end: u16,
+    pub other_unicast: u16,
     pub buffer_full: u16,
     pub fifo_overflow: u16,
+    pub tkip_error: u16,
+    pub bt_block_error: u16,
+    pub frequency_hop_error: u16,
+    pub last_unmatched_error: u16,
+    pub ack_interrupt: u16,
+    pub rts_interrupt: u16,
+    pub brx_agc_error: u16,
+    pub brx_error: u16,
+    pub nrx_error: u16,
+    pub nrx_abort: u16,
+    pub nrx_agc_exit: u16,
+    pub nrx_baseband_off: u16,
+    pub nrx_fdm_watchdog: u16,
+    pub nrx_restart: u16,
+    pub nrx_service: u16,
+    pub nrx_tx_over: u16,
+    pub nrx_unsupported: u16,
+    pub nrx_he_format: u16,
+    pub nrx_ht_sig: u16,
+    pub nrx_he_unsupported: u16,
+    pub nrx_he_sig_a_crc: u16,
+    pub rx_hang: u8,
+    pub tx_hang: u8,
+    pub rx_tx_hang: u32,
+    pub rx_tx_panic: u32,
 }
 
 /// Value-only hard-IRQ observation exported only by diagnostics builds.
@@ -770,17 +803,52 @@ impl Esp32s31DiagnosticSnapshot {
     /// register arena. `None` means the role is stopped/transitioning or a
     /// driver transaction currently has the bounded borrow.
     pub fn rx_statistics(self) -> Option<Esp32s31DiagnosticRxStatistics> {
-        let primary = self
+        let statistics = self
             .registers
             .try_receive_statistics_snapshot()
-            .ok()?
-            .primary;
+            .ok()?;
+        let primary = statistics.primary;
+        let decode = statistics.decode_errors;
+        let hang = statistics.hang;
         Some(Esp32s31DiagnosticRxStatistics {
             mpdu_count: primary.mpdu_count,
             data_success: primary.data_success,
             fcs_error: primary.fcs_error,
+            abort: primary.abort,
+            abort_fcs_pass: primary.abort_fcs_pass,
+            power_drop_error: primary.power_drop_error,
+            he_sig_b_error: primary.he_sig_b_error,
+            same_bm_error: primary.same_bm_error,
+            signal_field: primary.signal_field,
+            end: primary.end,
+            other_unicast: primary.other_unicast,
             buffer_full: primary.buffer_full,
             fifo_overflow: primary.fifo_overflow,
+            tkip_error: primary.tkip_error,
+            bt_block_error: primary.bt_block_error,
+            frequency_hop_error: primary.frequency_hop_error,
+            last_unmatched_error: primary.last_unmatched_error,
+            ack_interrupt: primary.ack_interrupt,
+            rts_interrupt: primary.rts_interrupt,
+            brx_agc_error: decode.brx_agc,
+            brx_error: decode.brx,
+            nrx_error: decode.nrx,
+            nrx_abort: decode.nrx_abort,
+            nrx_agc_exit: decode.nrx_agc_exit,
+            nrx_baseband_off: decode.nrx_baseband_off,
+            nrx_fdm_watchdog: decode.nrx_fdm_watchdog,
+            nrx_restart: decode.nrx_restart,
+            nrx_service: decode.nrx_service,
+            nrx_tx_over: decode.nrx_tx_over,
+            nrx_unsupported: decode.nrx_unsupported,
+            nrx_he_format: decode.nrx_he_format,
+            nrx_ht_sig: decode.nrx_ht_sig,
+            nrx_he_unsupported: decode.nrx_he_unsupported,
+            nrx_he_sig_a_crc: decode.nrx_he_sig_a_crc,
+            rx_hang: hang.rx,
+            tx_hang: hang.tx,
+            rx_tx_hang: hang.rx_tx_hang,
+            rx_tx_panic: hang.rx_tx_panic,
         })
     }
 

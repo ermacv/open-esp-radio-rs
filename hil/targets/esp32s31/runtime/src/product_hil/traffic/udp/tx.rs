@@ -55,10 +55,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     config: UdpTxBenchmarkConfig,
     aggregate_counters: &AggregateTxCounters,
 ) -> ! {
-    stack.wait_config_up().await;
-    while stack.config_v4().is_none() {
-        Timer::after_millis(100).await;
-    }
     // Complete the connected-data-path settle before advertising readiness.
     // `Start` must mean the benchmark task can consume its session without a
     // hidden post-acceptance delay.

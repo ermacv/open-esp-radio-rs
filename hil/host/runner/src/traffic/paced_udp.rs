@@ -11,6 +11,8 @@ use crate::Result;
 
 const FINAL_SPIN: Duration = Duration::from_micros(30);
 const MAX_CATCH_UP_INTERVALS: u32 = 4;
+const TERMINAL_MARKERS: usize = 16;
+const TERMINAL_MARKER_SPACING: Duration = Duration::from_millis(1);
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Config {
@@ -99,8 +101,7 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
     }
 
     let elapsed = started.elapsed();
-    packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
-    let _ = socket.send(&packet);
+    send_terminal_markers(&socket)?;
     Ok(HostTransmission {
         source,
         bytes,
@@ -112,12 +113,30 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
     })
 }
 
+fn send_terminal_markers(socket: &UdpSocket) -> Result<()> {
+    let marker = (-1_i32).to_be_bytes();
+    for index in 0..TERMINAL_MARKERS {
+        if index != 0 {
+            thread::sleep(TERMINAL_MARKER_SPACING);
+        }
+        let length = socket.send(&marker)?;
+        if length != marker.len() {
+            return Err(format!("short UDP terminal send: {length}/{}", marker.len()).into());
+        }
+    }
+    Ok(())
+}
+
 fn packet_interval(payload: usize, rate_bps: u64) -> Result<Duration> {
     Ok(Duration::from_nanos(
         u64::try_from((payload as u128 * 8 * 1_000_000_000) / rate_bps as u128)?.max(1),
     ))
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "host traffic pacing uses a bounded 30 us final spin outside production radio code"
+)]
 fn wait_until(deadline: Instant) {
     loop {
         let now = Instant::now();
@@ -146,5 +165,25 @@ mod tests {
             packet_interval(1_200, 10_000_000).unwrap(),
             Duration::from_micros(960)
         );
+    }
+
+    #[test]
+    fn terminal_marker_is_redundant_and_bounded() {
+        let receiver = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
+        receiver
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+        let sender = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
+        sender.connect(receiver.local_addr().unwrap()).unwrap();
+
+        send_terminal_markers(&sender).unwrap();
+
+        let mut marker = [0_u8; 4];
+        for _ in 0..TERMINAL_MARKERS {
+            let (length, source) = receiver.recv_from(&mut marker).unwrap();
+            assert_eq!(length, marker.len());
+            assert_eq!(source, sender.local_addr().unwrap());
+            assert_eq!(i32::from_be_bytes(marker), -1);
+        }
     }
 }

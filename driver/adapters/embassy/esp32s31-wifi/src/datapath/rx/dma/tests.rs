@@ -800,7 +800,7 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::CriticalAdmissionBlocked),
+        Ok(DatapathRxProgress::StageCapacityBlocked),
     );
     assert_eq!(pool.claimed_slots(), 1);
     assert_eq!(pool.network_slots(), 1);
@@ -1148,7 +1148,7 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
 }
 
 #[test]
-fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical_credit() {
+fn saturated_bulk_rx_preserves_completed_head_until_staging_capacity_wakes() {
     const COUNT: usize = 40;
     const COMPLETED: usize = 34;
     const FRAME_LENGTH: usize = PUBLIC_HEADER_SIZE + 24;
@@ -1198,15 +1198,15 @@ fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::BudgetExhausted),
+        Ok(DatapathRxProgress::StageCapacityBlocked),
     );
     assert_eq!(pool.claimed_slots(), STAGED as u32);
-    assert_eq!(observer.overload_discarded_units.load(Ordering::Relaxed), 1);
+    assert_eq!(observer.overload_discarded_units.load(Ordering::Relaxed), 0);
     assert_eq!(
         observer
             .overload_recycled_descriptors
             .load(Ordering::Relaxed),
-        1
+        0
     );
     assert_eq!(
         observer.critical_reserve_admissions.load(Ordering::Relaxed),
@@ -1216,24 +1216,18 @@ fn saturated_bulk_rx_discards_upper_copy_and_recycles_without_consuming_critical
     assert_eq!(observer.minimum_pool_credits.load(Ordering::Relaxed), 1);
     assert_eq!(observer.minimum_queue_credits.load(Ordering::Relaxed), 1);
 
-    assert_eq!(
-        embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
-    );
-    assert_eq!(observer.overload_discarded_units.load(Ordering::Relaxed), 3);
-    assert_eq!(
-        observer
-            .overload_recycled_descriptors
-            .load(Ordering::Relaxed),
-        3
-    );
-    assert_eq!(service.ring().recycle_start(), COMPLETED);
+    assert_eq!(service.ring().recycle_start(), STAGED);
+    assert_ne!(storage.descriptors()[STAGED].word0() & BIT_30, 0);
     assert_eq!(pool.available_slots(), 1);
 
-    for _ in 0..STAGED {
-        drop(receiver.try_receive().expect("ordinary staged bulk frame"));
-    }
-    assert_eq!(pool.claimed_slots(), 0);
+    drop(receiver.try_receive().expect("ordinary staged bulk frame"));
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::StageCapacityBlocked),
+    );
+    assert_eq!(service.ring().recycle_start(), STAGED + 1);
+    assert_ne!(storage.descriptors()[STAGED + 1].word0() & BIT_30, 0);
+    assert_eq!(observer.overload_discarded_units.load(Ordering::Relaxed), 0);
 }
 
 #[test]

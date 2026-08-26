@@ -121,13 +121,27 @@ fn execute_workload_inner(
                     if let Some(floor) = selected.criteria.minimum_rx_bps {
                         push_option(&mut arguments, "--floor", floor);
                     }
+                    if let Some(maximum) = selected.criteria.maximum_idle_channel_utilization_255 {
+                        push_option(
+                            &mut arguments,
+                            "--max-idle-channel-utilization-255",
+                            maximum,
+                        );
+                    }
                     traffic::rx_traffic::run(
                         arguments,
                         output,
                         lab,
-                        selected.criteria.exact_delivery,
-                        selected.criteria.require_no_beacon_loss,
-                        selected.image != qualification::scenario::ImageClass::Performance,
+                        traffic::rx_traffic::EvidencePolicy {
+                            require_exact_delivery: selected.criteria.exact_delivery,
+                            require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
+                            require_driver_observation: selected.image
+                                != qualification::scenario::ImageClass::Performance,
+                            capture_openwrt_tx_monitor: selected.evidence.openwrt_tx_monitor_rx,
+                            capture_independent_laptop_monitor: selected
+                                .evidence
+                                .independent_laptop_monitor_rx,
+                        },
                     )
                 }
                 Direction::Tx => {

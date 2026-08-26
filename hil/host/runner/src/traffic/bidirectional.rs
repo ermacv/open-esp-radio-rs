@@ -1222,6 +1222,7 @@ pub(crate) fn run(
             Phy::Ht40 => crate::qualification::scenario::PhyExpectation::Ht40,
             Phy::He20 => crate::qualification::scenario::PhyExpectation::He20,
         },
+        None,
     )?;
     let fixture_tx_capture = match &lab.station_fixture {
         StationFixtureConfig::LocalLinux(config) => Some(LocalLinuxTxCapture::start(

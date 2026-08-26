@@ -60,11 +60,6 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     aggregate_counters: &AggregateTxCounters,
     sessions: &'static SessionChannel,
 ) -> ! {
-    stack.wait_config_up().await;
-    while stack.config_v4().is_none() {
-        Timer::after_millis(100).await;
-    }
-
     let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
     for direction in [
         HilDirection::Rx,

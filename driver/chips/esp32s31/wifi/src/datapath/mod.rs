@@ -12,7 +12,10 @@ pub enum DatapathRxProgress {
     /// The durable completion frontier was drained within this pass.
     Drained,
     /// Completed descriptors remain but the role's independent staging is full.
-    CriticalAdmissionBlocked,
+    ///
+    /// Descriptor ownership stays with the completed ring until a capacity
+    /// wake allows the same head unit to be staged.
+    StageCapacityBlocked,
     /// The finite poll budget ended with another completed DMA unit pending.
     BudgetExhausted,
     /// Upper staging was saturated, but bulk units were deliberately dropped

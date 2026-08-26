@@ -244,9 +244,7 @@ where
                     pending().await
                 } else {
                     match rx_progress {
-                        DatapathRxProgress::CriticalAdmissionBlocked => {
-                            irq.wait_rx_capacity().await
-                        }
+                        DatapathRxProgress::StageCapacityBlocked => irq.wait_rx_capacity().await,
                         DatapathRxProgress::NetworkBackpressured => {
                             let _ = select(
                                 core::future::poll_fn(|context| network_rx.poll_any_ready(context)),

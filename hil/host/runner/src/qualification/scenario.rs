@@ -293,6 +293,10 @@ pub struct Criteria {
     pub minimum_rx_bps: Option<u64>,
     pub minimum_tx_bps: Option<u64>,
     pub minimum_combined_bps: Option<u64>,
+    /// Maximum pre-workload channel utilization reported by hostapd, in the
+    /// native 0..=255 BSS-load scale. This is deliberately a ceiling-scenario
+    /// criterion rather than an inferred throughput failure.
+    pub maximum_idle_channel_utilization_255: Option<u8>,
     pub maximum_lost: Option<u32>,
     pub maximum_p95_ms: Option<u16>,
     pub require_no_beacon_loss: bool,
@@ -405,13 +409,13 @@ impl Scenario {
                 || !matches!(
                     self.workload,
                     Workload::Udp {
-                        direction: Direction::Bidirectional,
+                        direction: Direction::Rx | Direction::Bidirectional,
                         ..
                     }
                 ))
         {
             return Err(format!(
-                "{}: OpenWrt TX-monitor RX evidence requires the bidirectional UDP RX-delivery diagnostic",
+                "{}: OpenWrt TX-monitor RX evidence requires an RX-bearing UDP RX-delivery diagnostic",
                 self.source.display()
             )
             .into());
@@ -781,6 +785,22 @@ impl Scenario {
                     .criteria_error("minimum_combined_bps cannot exceed the RX+TX offered rate");
             }
         }
+        if let Some(maximum) = self.criteria.maximum_idle_channel_utilization_255 {
+            if maximum == 0 {
+                return self.criteria_error("maximum_idle_channel_utilization_255 must be nonzero");
+            }
+            if !matches!(
+                self.workload,
+                Workload::Udp {
+                    direction: Direction::Rx,
+                    ..
+                }
+            ) {
+                return self.criteria_error(
+                    "maximum_idle_channel_utilization_255 requires a station UDP RX workload",
+                );
+            }
+        }
         if (self.criteria.maximum_lost.is_some() || self.criteria.maximum_p95_ms.is_some()) && !icmp
         {
             return self.criteria_error("loss and latency criteria are valid only for ICMP");
@@ -963,6 +983,14 @@ mod tests {
         assert!(catalog.get("tcp-rx-ht40-split").is_ok());
         assert!(catalog.get("icmp-latency-ht40-split").is_ok());
         assert!(catalog.get("station-reconnect-ht40").is_ok());
+        assert_eq!(
+            catalog
+                .get("udp-rx-ht40-performance-ceiling")
+                .unwrap()
+                .criteria
+                .maximum_idle_channel_utilization_255,
+            Some(64)
+        );
         assert_eq!(
             catalog
                 .get("udp-bidirectional-ht40-single-core-baseline")

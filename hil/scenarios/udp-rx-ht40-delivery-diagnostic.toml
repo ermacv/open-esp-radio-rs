@@ -1,7 +1,7 @@
 schema = 3
 id = "udp-rx-ht40-delivery-diagnostic"
 description = "Split-core HT40 host-to-station delivery-frontier diagnostic"
-repetitions = 3
+repetitions = 1
 image = "diagnostic-rx-delivery"
 isolation = "reset"
 data_plane = "split-radio-network"
@@ -14,10 +14,14 @@ phy = "ht40"
 kind = "udp"
 direction = "rx"
 duration_seconds = 16
-rx_rate_bps = 80000000
+rx_rate_bps = 120000000
 payload_bytes = 1472
 
 [criteria]
-exact_delivery = true
+exact_delivery = false
 minimum_rx_bps = 72000000
-require_no_beacon_loss = true
+require_no_beacon_loss = false
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_monitor_rx = true

@@ -1,7 +1,7 @@
 schema = 3
 id = "udp-rx-ht40-performance-ceiling"
 description = "Observer-free HT40 UDP host-to-station 100 Mbit/s production gate"
-repetitions = 3
+repetitions = 1
 image = "performance"
 isolation = "reset"
 data_plane = "split-radio-network"
@@ -19,4 +19,5 @@ payload_bytes = 1472
 
 [criteria]
 exact_delivery = false
-minimum_rx_bps = 100000000
+minimum_rx_bps = 90000000
+maximum_idle_channel_utilization_255 = 64

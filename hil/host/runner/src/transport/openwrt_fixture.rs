@@ -12,6 +12,15 @@ use crate::{
     Result, qualification::scenario::PhyExpectation, transport::lab_config::OpenWrtConfig,
 };
 
+const PRE_WORKLOAD_CHANNEL_SAMPLE: Duration = Duration::from_secs(12);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ChannelUtilization {
+    pub(crate) active_millis: u64,
+    pub(crate) busy_millis: u64,
+    pub(crate) scaled_255: u8,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OpenWrtRxEvidence {
     pub(crate) ingress_packets: u64,
@@ -22,6 +31,7 @@ pub(crate) struct OpenWrtRxEvidence {
     pub(crate) station_tx_retries: u64,
     pub(crate) station_tx_failed: u64,
     pub(crate) station_tid0_aqm_drops: u64,
+    pub(crate) pre_workload_channel_utilization: Option<ChannelUtilization>,
     pub(crate) channel_width_mhz: u8,
     pub(crate) tx_bitrate: String,
     pub(crate) rx_bitrate: String,
@@ -58,6 +68,7 @@ pub(crate) struct OpenWrtRxCapture {
     target: Ipv4Addr,
     expected_phy: PhyExpectation,
     before: Snapshot,
+    pre_workload_channel_utilization: Option<ChannelUtilization>,
     ingress: Option<Capture>,
     wireless: Option<Capture>,
 }
@@ -69,7 +80,15 @@ impl OpenWrtRxCapture {
         port: u16,
         traffic_duration: Duration,
         expected_phy: PhyExpectation,
+        maximum_idle_channel_utilization_255: Option<u8>,
     ) -> Result<Self> {
+        let pre_workload_channel_utilization = maximum_idle_channel_utilization_255
+            .map(|maximum| -> Result<_> {
+                let utilization = measure_channel_utilization(config)?;
+                require_pre_workload_channel_utilization(Some(maximum), utilization.scaled_255)?;
+                Ok(utilization)
+            })
+            .transpose()?;
         let before = snapshot(config, target, None)?;
         require_width(expected_phy, before.channel_width_mhz)?;
         let timeout = traffic_duration.saturating_add(Duration::from_secs(3));
@@ -114,6 +133,7 @@ impl OpenWrtRxCapture {
             target,
             expected_phy,
             before,
+            pre_workload_channel_utilization,
             ingress: Some(ingress),
             wireless: Some(wireless),
         })
@@ -157,6 +177,7 @@ impl OpenWrtRxCapture {
                 self.before.station_tid0_aqm_drops,
                 after.station_tid0_aqm_drops,
             )?,
+            pre_workload_channel_utilization: self.pre_workload_channel_utilization,
             channel_width_mhz: after.channel_width_mhz,
             tx_bitrate: after.tx_bitrate,
             rx_bitrate: after.rx_bitrate,
@@ -319,6 +340,74 @@ fn require_width(phy: PhyExpectation, observed: u8) -> Result<()> {
     Ok(())
 }
 
+fn require_pre_workload_channel_utilization(maximum: Option<u8>, observed: u8) -> Result<()> {
+    if maximum.is_some_and(|maximum| observed > maximum) {
+        return Err(format!(
+            "OpenWrt pre-workload channel utilization is too high for a ceiling run: observed={observed}/255 maximum={}/255",
+            maximum.expect("checked above"),
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn measure_channel_utilization(config: &OpenWrtConfig) -> Result<ChannelUtilization> {
+    let script = format!(
+        "set -eu; \
+         before=$(ubus -S call hostapd.{wireless} get_status); \
+         active_before=$(jsonfilter -s \"$before\" -e '@.airtime.time'); \
+         busy_before=$(jsonfilter -s \"$before\" -e '@.airtime.time_busy'); \
+         sleep {seconds}; \
+         after=$(ubus -S call hostapd.{wireless} get_status); \
+         printf 'active_before=%s\\n' \"$active_before\"; \
+         printf 'busy_before=%s\\n' \"$busy_before\"; \
+         printf 'active_after=%s\\n' \"$(jsonfilter -s \"$after\" -e '@.airtime.time')\"; \
+         printf 'busy_after=%s\\n' \"$(jsonfilter -s \"$after\" -e '@.airtime.time_busy')\"",
+        wireless = config.wireless_interface,
+        seconds = PRE_WORKLOAD_CHANNEL_SAMPLE.as_secs(),
+    );
+    let output = Command::new("ssh")
+        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
+        .arg(&config.ssh_target)
+        .arg(script)
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot measure OpenWrt pre-workload channel utilization: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    let stdout = String::from_utf8(output.stdout)?;
+    let active_millis = delta(
+        "channel active time",
+        tagged(&stdout, "active_before")?,
+        tagged(&stdout, "active_after")?,
+    )?;
+    let busy_millis = delta(
+        "channel busy time",
+        tagged(&stdout, "busy_before")?,
+        tagged(&stdout, "busy_after")?,
+    )?;
+    let scaled_255 = scale_channel_utilization(active_millis, busy_millis)?;
+    Ok(ChannelUtilization {
+        active_millis,
+        busy_millis,
+        scaled_255,
+    })
+}
+
+fn scale_channel_utilization(active_millis: u64, busy_millis: u64) -> Result<u8> {
+    if active_millis == 0 || busy_millis > active_millis {
+        return Err(format!(
+            "invalid OpenWrt channel survey delta: active={active_millis} ms busy={busy_millis} ms"
+        )
+        .into());
+    }
+    let scaled = (u128::from(busy_millis) * 255).div_ceil(u128::from(active_millis));
+    Ok(u8::try_from(scaled)?)
+}
+
 fn tagged(output: &str, key: &str) -> Result<u64> {
     output
         .lines()
@@ -349,6 +438,7 @@ impl Drop for OpenWrtRxCapture {
 pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
     let script = format!(
         "set -eu; command -v tcpdump >/dev/null; command -v timeout >/dev/null; \
+         command -v ubus >/dev/null; command -v jsonfilter >/dev/null; \
          test -d /sys/kernel/debug/ieee80211; \
          test -d /sys/class/net/{ingress}; \
          test -d /sys/class/net/{wireless}; \
@@ -468,5 +558,16 @@ mod tests {
         assert!(parse_mac("30:ed:a0:f3:f6").is_err());
         assert!(parse_mac("30:ed:a0:f3:f6:d0:00").is_err());
         assert!(parse_mac("30:ed:a0:f3:f6:zz").is_err());
+    }
+
+    #[test]
+    fn ceiling_rejects_busy_pre_workload_channel() {
+        require_pre_workload_channel_utilization(Some(64), 64).unwrap();
+        assert!(require_pre_workload_channel_utilization(Some(64), 65).is_err());
+        require_pre_workload_channel_utilization(None, 255).unwrap();
+        assert_eq!(scale_channel_utilization(12_002, 2_837).unwrap(), 61);
+        assert_eq!(scale_channel_utilization(12_002, 3_790).unwrap(), 81);
+        assert!(scale_channel_utilization(0, 0).is_err());
+        assert!(scale_channel_utilization(10, 11).is_err());
     }
 }

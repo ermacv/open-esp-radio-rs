@@ -104,6 +104,8 @@ pub struct Esp32s31RxCompletedUnitPreview {
 /// Policy decision when ordinary staging credits are unavailable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxStageUnavailableDisposition {
+    /// Keep ordinary bulk data at the completed ring head until staging frees.
+    PreserveForCapacity,
     /// Preserve the final staging credit for control/management/EAPOL input.
     PreserveForCriticalAdmission,
     /// Drop the upper copy but return the completed descriptor immediately.
@@ -123,6 +125,9 @@ pub enum Esp32s31RxIngressObservation {
     /// A bulk unit could not acquire an upper-layer credit and followed the
     /// reviewed vendor discard/append path.
     OverloadDiscardedAndRecycled(Esp32s31RxCompletedUnitPreview),
+    /// A bulk unit remained at the completed ring head until upper capacity
+    /// becomes available.
+    BulkAdmissionBlocked(Esp32s31RxCompletedUnitPreview),
     /// A critical unit consumed the reserved final staging credit.
     CriticalReserveAdmitted(Esp32s31RxCompletedUnitPreview),
     /// No reserved credit remained for a critical unit. Descriptor ownership
@@ -160,7 +165,7 @@ pub trait Esp32s31RxStageAdmissionPolicy {
     ) -> RxStageUnavailableDisposition {
         match preview.class {
             Esp32s31RxIngressClass::BulkProtectedData => {
-                RxStageUnavailableDisposition::DiscardAndRecycle
+                RxStageUnavailableDisposition::PreserveForCapacity
             }
             Esp32s31RxIngressClass::Critical | Esp32s31RxIngressClass::Unclassified => {
                 RxStageUnavailableDisposition::PreserveForCriticalAdmission

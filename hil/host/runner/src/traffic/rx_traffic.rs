@@ -1,7 +1,7 @@
 //! Host sender and report writer for production RX-only qualification.
 
 use std::{
-    fs,
+    env, fs,
     net::Ipv4Addr,
     path::{Path, PathBuf},
     time::Duration,
@@ -21,7 +21,9 @@ use crate::{
     },
     traffic::host_network::BenchmarkIpv4Route,
     traffic::paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
-    transport::lab_config::LabConfig,
+    transport::lab_config::{LabConfig, StationFixtureConfig},
+    transport::local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
+    transport::openwrt_tx_monitor::{OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
     transport::station_fixture::RxCapture,
 };
 
@@ -42,17 +44,26 @@ struct Options {
     serial: PathBuf,
     expected_rx_format: u8,
     phy: PhyExpectation,
+    maximum_idle_channel_utilization_255: Option<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct EvidencePolicy {
+    pub(crate) require_exact_delivery: bool,
+    pub(crate) require_no_beacon_loss: bool,
+    pub(crate) require_driver_observation: bool,
+    pub(crate) capture_openwrt_tx_monitor: bool,
+    pub(crate) capture_independent_laptop_monitor: bool,
 }
 
 pub(crate) fn run(
     arguments: Vec<String>,
     output: &Path,
     lab: &LabConfig,
-    require_exact_delivery: bool,
-    require_no_beacon_loss: bool,
-    require_driver_observation: bool,
+    evidence_policy: EvidencePolicy,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
+    let require_exact_delivery = evidence_policy.require_exact_delivery;
     fs::create_dir_all(output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_udp_rx_ready(
@@ -76,13 +87,100 @@ pub(crate) fn run(
             return Err(error);
         }
     };
+    let same_boot_probes = env::var("OPEN_RADIO_RX_SAME_BOOT_PROBES")
+        .ok()
+        .and_then(|value| value.parse::<u8>().ok())
+        .unwrap_or(0);
+    for probe in 1..=same_boot_probes {
+        let fixture_capture = RxCapture::start(
+            &lab.station_fixture,
+            options.address,
+            options.port,
+            options.duration,
+            options.phy,
+            options.maximum_idle_channel_utilization_255,
+        )?;
+        let duration_millis = u32::try_from(options.duration.as_millis())?;
+        let session = capture.start_session(SessionConfig {
+            network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
+            transport: Transport::Udp,
+            direction: Direction::Rx,
+            completion: Completion::DurationMillis(duration_millis),
+            peer: None,
+            target_rx: Some(FlowConfig {
+                payload_bytes: u16::try_from(options.payload)?,
+                offered_rate_bps: Some(options.rate_bps),
+            }),
+            target_tx: None,
+            link_requirements: SessionLinkRequirements::NONE,
+        })?;
+        let host = send_paced_udp(PacedUdpConfig {
+            address: options.address,
+            port: options.port,
+            rate_bps: options.rate_bps,
+            duration: options.duration,
+            payload: options.payload,
+        })?;
+        host_route.verify_socket_source(host.source)?;
+        let structured = capture.wait_for_session(
+            session,
+            options.duration.saturating_add(Duration::from_secs(10)),
+        )?;
+        capture.acknowledge_session(session)?;
+        let fixture = fixture_capture.map(RxCapture::finish).transpose()?;
+        let throughput_kbps = structured
+            .transport
+            .rx_bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000)
+            .checked_div(structured.transport.elapsed_micros.max(1))
+            .unwrap_or(0);
+        eprintln!(
+            "OPENRADIOHOST same_boot_probe={probe}/{same_boot_probes} rx_kbps={throughput_kbps} rx_units={} elapsed_us={}",
+            structured.transport.rx_units, structured.transport.elapsed_micros,
+        );
+        if let Some(fixture) = fixture {
+            eprintln!(
+                "OPENRADIOHOST same_boot_probe={probe}/{same_boot_probes} {}",
+                fixture.markdown().trim(),
+            );
+        }
+    }
     let fixture_capture = RxCapture::start(
         &lab.station_fixture,
         options.address,
         options.port,
         options.duration,
         options.phy,
+        options.maximum_idle_channel_utilization_255,
     )?;
+    let tx_monitor_capture = if evidence_policy.capture_openwrt_tx_monitor {
+        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+            return Err("OpenWrt TX-monitor evidence requires an OpenWrt station fixture".into());
+        };
+        Some(OpenWrtTxMonitorCapture::start(
+            config,
+            options.address,
+            options.port,
+            options.duration,
+            output,
+        )?)
+    } else {
+        None
+    };
+    let independent_air_capture = if evidence_policy.capture_independent_laptop_monitor {
+        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+            return Err("independent laptop evidence requires an OpenWrt station fixture".into());
+        };
+        Some(LocalAirMonitorCapture::start(
+            config,
+            options.address,
+            options.duration,
+            output,
+        )?)
+    } else {
+        None
+    };
     let duration_millis = u32::try_from(options.duration.as_millis())?;
     let session = capture.start_session(SessionConfig {
         network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::Station,
@@ -121,7 +219,15 @@ pub(crate) fn run(
         return Err(error);
     }
     let fixture = fixture_capture.map(RxCapture::finish).transpose()?;
-    let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
+    let tx_monitor_rx = tx_monitor_capture
+        .map(|capture| capture.finish(host.datagrams))
+        .transpose()?;
+    let independent_air_rx = independent_air_capture
+        .map(LocalAirMonitorCapture::finish)
+        .transpose()?;
+    let beacon_loss = evidence_policy
+        .require_no_beacon_loss
+        .then(|| capture.require_no_beacon_loss());
     let log = capture.finish_to(output)?;
     if let Some(result) = beacon_loss {
         result?;
@@ -136,7 +242,7 @@ pub(crate) fn run(
         .saturating_mul(1_000)
         .checked_div(structured.transport.elapsed_micros.max(1))
         .unwrap_or(0);
-    if !require_driver_observation {
+    if !evidence_policy.require_driver_observation {
         if structured.radio.is_some()
             || structured.tx_timing.is_some()
             || structured.rx_delivery.is_some()
@@ -382,6 +488,7 @@ pub(crate) fn run(
         || String::from("- AP-side evidence: `external AP; not observed`\n"),
         |fixture| fixture.markdown(),
     );
+    let air_report = rx_air_evidence_markdown(tx_monitor_rx.as_ref(), independent_air_rx.as_ref());
     let pipeline = rx.pipeline;
     let irq = rx.irq;
     let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
@@ -417,6 +524,7 @@ pub(crate) fn run(
              - Host payload: `{}` bytes in `{}` datagrams\n\
              {structured_report}\
              {fixture_report}\
+             {air_report}\
              - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
              - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
@@ -576,6 +684,44 @@ pub(crate) fn run(
     Ok(())
 }
 
+fn rx_air_evidence_markdown(
+    tx_monitor: Option<&OpenWrtTxMonitorEvidence>,
+    independent: Option<&LocalAirMonitorEvidence>,
+) -> String {
+    let ap = tx_monitor.map_or_else(
+        || String::from("- OpenWrt TX monitor: `not collected`\n"),
+        |evidence| {
+            format!(
+                "- OpenWrt TX monitor frames/kernel drops: `{}` / `{}`; UDP unique/duplicates/unrecovered: `{}` / `{}` / `{}`; MAC retry publications: `{}`\n",
+                evidence.captured_frames,
+                evidence.kernel_dropped,
+                evidence.unique_units,
+                evidence.duplicates,
+                evidence.unrecovered,
+                evidence.mac_retry_publications,
+            )
+        },
+    );
+    let observer = independent.map_or_else(
+        || String::from("- Independent air observer: `not collected`\n"),
+        |evidence| {
+            format!(
+                "- Independent air observer frames/kernel drops: `{}` / `{}`; logical decoded data MPDUs/retry attempts/missing metadata: `{}` / `{}` / `{}`; BlockAck full/partial/unique MPDUs/backward starts: `{}` / `{}` / `{}` / `{}`\n",
+                evidence.captured_frames,
+                evidence.kernel_dropped,
+                evidence.logical_data_units,
+                evidence.retry_attempts,
+                evidence.missing_mac_metadata,
+                evidence.full_block_ack_frames,
+                evidence.partial_block_ack_frames,
+                evidence.unique_block_acked_mpdus,
+                evidence.backward_block_ack_starts,
+            )
+        },
+    );
+    format!("{ap}{observer}")
+}
+
 fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut options = Options {
         address: Ipv4Addr::UNSPECIFIED,
@@ -587,6 +733,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         serial: lab.device.serial.clone(),
         expected_rx_format: 4,
         phy: PhyExpectation::He20,
+        maximum_idle_channel_utilization_255: None,
     };
     let mut index = 0;
     while index < arguments.len() {
@@ -610,6 +757,13 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
                 }
             }
             "--port" => options.port = value.parse::<u16>()?,
+            "--max-idle-channel-utilization-255" => {
+                let maximum = value.parse::<u8>()?;
+                if maximum == 0 {
+                    return Err("--max-idle-channel-utilization-255 must be nonzero".into());
+                }
+                options.maximum_idle_channel_utilization_255 = Some(maximum);
+            }
             "--phy" => match value.as_str() {
                 "he20" => {
                     options.expected_rx_format = 4;
@@ -673,6 +827,19 @@ mod tests {
         .unwrap();
         assert_eq!(options.rate_bps, 40_000_000);
         assert_eq!(options.expected_rx_format, 2);
+        let guarded = parse_options(
+            &["--max-idle-channel-utilization-255".into(), "64".into()],
+            &lab,
+        )
+        .unwrap();
+        assert_eq!(guarded.maximum_idle_channel_utilization_255, Some(64));
+        assert!(
+            parse_options(
+                &["--max-idle-channel-utilization-255".into(), "0".into(),],
+                &lab,
+            )
+            .is_err()
+        );
         let ht20 = parse_options(&["--phy".into(), "ht20".into()], &lab).unwrap();
         assert_eq!(ht20.expected_rx_format, 2);
         assert_eq!(ht20.phy, PhyExpectation::Ht20);

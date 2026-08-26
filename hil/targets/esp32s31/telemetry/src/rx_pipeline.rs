@@ -401,8 +401,8 @@ impl RxPipelineCounters {
     pub(crate) fn record_service(&self, observation: RxServiceObservation) {
         let RxServiceObservation {
             frontier,
-            pool_credits,
-            queue_credits,
+            pool_credits: _,
+            queue_credits: _,
             completed_units,
             completed_descriptors,
             admitted,
@@ -414,8 +414,8 @@ impl RxPipelineCounters {
             overload_recycled_descriptors,
             critical_reserve_admitted,
             critical_admission_blocked,
-            minimum_pool_credits: _,
-            minimum_queue_credits: _,
+            minimum_pool_credits,
+            minimum_queue_credits,
             micros,
             hardware_buffer_full_before: _,
             hardware_buffer_full_after: _,
@@ -458,24 +458,32 @@ impl RxPipelineCounters {
             Ordering::Relaxed,
         );
         if admitted < frontier {
-            self.backpressured_services.fetch_add(1, Ordering::Relaxed);
             self.maximum_deferred_frames.fetch_max(
                 u32::try_from(frontier - admitted).unwrap_or(u32::MAX),
                 Ordering::Relaxed,
             );
+        }
+        // A bounded service budget leaves a later DMA frontier pending, but it
+        // is not upper-layer backpressure: those units have not been examined
+        // or discarded. Attribute backpressure only when this transaction
+        // actually exhausted admission credits or could not preserve a
+        // critical unit, and use the in-transaction low-water marks rather
+        // than the entry credits that preceded staging.
+        if overload_discarded != 0 || critical_admission_blocked {
+            self.backpressured_services.fetch_add(1, Ordering::Relaxed);
             self.minimum_backpressured_pool_credits.fetch_min(
-                u32::try_from(pool_credits).unwrap_or(u32::MAX),
+                u32::try_from(minimum_pool_credits).unwrap_or(u32::MAX),
                 Ordering::Relaxed,
             );
             self.minimum_backpressured_queue_credits.fetch_min(
-                u32::try_from(queue_credits).unwrap_or(u32::MAX),
+                u32::try_from(minimum_queue_credits).unwrap_or(u32::MAX),
                 Ordering::Relaxed,
             );
-            if pool_credits <= queue_credits {
+            if minimum_pool_credits <= minimum_queue_credits {
                 self.pool_credit_limited_services
                     .fetch_add(1, Ordering::Relaxed);
             }
-            if queue_credits <= pool_credits {
+            if minimum_queue_credits <= minimum_pool_credits {
                 self.queue_credit_limited_services
                     .fetch_add(1, Ordering::Relaxed);
             }
@@ -1184,6 +1192,8 @@ mod tests {
             overload_discarded: 2,
             critical_reserve_admitted: 1,
             critical_admission_blocked: true,
+            minimum_pool_credits: 1,
+            minimum_queue_credits: 4,
             micros: 70,
             hardware_buffer_full_before: None,
             hardware_buffer_full_after: None,
@@ -1218,8 +1228,8 @@ mod tests {
         assert_eq!(delta.pool_credit_limited_services, 1);
         assert_eq!(delta.queue_credit_limited_services, 0);
         assert_eq!(delta.maximum_deferred_frames, 1);
-        assert_eq!(delta.minimum_backpressured_pool_credits, 3);
-        assert_eq!(delta.minimum_backpressured_queue_credits, 5);
+        assert_eq!(delta.minimum_backpressured_pool_credits, 1);
+        assert_eq!(delta.minimum_backpressured_queue_credits, 4);
         assert_eq!(delta.maximum_frontier, 4);
         assert_eq!(delta.maximum_admitted, 3);
         assert_eq!(delta.service_micros, 70);
@@ -1235,6 +1245,28 @@ mod tests {
         assert_eq!(delta.protocol_units_1701_3400, 1);
         assert_eq!(delta.protocol_unit_lifetime_max_bytes, 2_750);
         assert_eq!(delta.dispatch_micros, 31);
+    }
+
+    #[test]
+    fn budget_deferred_frontier_is_not_reported_as_admission_backpressure() {
+        let counters = RxPipelineCounters::new(test_clock);
+        let before = counters.snapshot();
+        counters.record_service(RxServiceObservation {
+            frontier: 45,
+            pool_credits: 32,
+            queue_credits: 32,
+            completed_units: 32,
+            admitted: 32,
+            minimum_pool_credits: 8,
+            minimum_queue_credits: 8,
+            ..RxServiceObservation::default()
+        });
+        let delta = counters.snapshot().wrapping_delta_since(before);
+
+        assert_eq!(delta.maximum_deferred_frames, 13);
+        assert_eq!(delta.backpressured_services, 0);
+        assert_eq!(delta.pool_credit_limited_services, 0);
+        assert_eq!(delta.queue_credit_limited_services, 0);
     }
 
     #[test]

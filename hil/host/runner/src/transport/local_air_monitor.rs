@@ -1,7 +1,7 @@
 //! Independent passive 802.11 evidence from the laptop radio.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     net::Ipv4Addr,
     path::{Path, PathBuf},
@@ -29,6 +29,11 @@ pub(crate) struct LocalAirMonitorEvidence {
     pub(crate) retry_attempts: u32,
     pub(crate) missing_mac_metadata: u32,
     pub(crate) mac_units: BTreeMap<MacFrameKey, u32>,
+    pub(crate) block_ack_frames: u32,
+    pub(crate) full_block_ack_frames: u32,
+    pub(crate) partial_block_ack_frames: u32,
+    pub(crate) unique_block_acked_mpdus: u32,
+    pub(crate) backward_block_ack_starts: u32,
 }
 
 pub(crate) struct LocalAirMonitorCapture {
@@ -52,12 +57,15 @@ impl LocalAirMonitorCapture {
             );
         }
         let target_mac = resolve_station_mac(config, target)?;
-        helper_action("observer-ht40-1")?;
+        helper_action(resolve_observer_action(config)?)?;
         let capture_path = output.join("independent-air.pcapng");
         let timeout = duration.saturating_add(Duration::from_secs(3));
-        let filter = format!("wlan host {target_mac}");
         let child = Command::new("dumpcap")
-            .args(["-q", "-i", MONITOR_INTERFACE, "-f", &filter, "-s", "128"])
+            // libpcap's `wlan host` capture filter drops the target's HT40
+            // A-MPDU records on this radiotap interface. Capture the bounded
+            // channel view and apply the exact target-MAC display filter in
+            // `parse_capture` instead.
+            .args(["-q", "-i", MONITOR_INTERFACE, "-s", "128"])
             .args(["-a", &format!("duration:{}", timeout.as_secs().max(1))])
             .arg("-w")
             .arg(&capture_path)
@@ -133,6 +141,43 @@ impl LocalAirMonitorCapture {
             self.owns_monitor = false;
         }
         Ok(())
+    }
+}
+
+fn resolve_observer_action(config: &OpenWrtConfig) -> Result<&'static str> {
+    let output = Command::new("ssh")
+        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
+        .arg(&config.ssh_target)
+        .arg(format!("iw dev {} info", config.wireless_interface))
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot query OpenWrt channel for independent monitor: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    resolve_observer_action_from_iw(&String::from_utf8(output.stdout)?)
+}
+
+fn resolve_observer_action_from_iw(info: &str) -> Result<&'static str> {
+    let channel = info.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("channel ")?
+            .split_whitespace()
+            .next()?
+            .parse::<u8>()
+            .ok()
+    });
+    match channel {
+        Some(1) => Ok("observer-ht40-1"),
+        Some(6) => Ok("observer-ht40-6"),
+        Some(11) => Ok("observer-ht40-11"),
+        Some(channel) => Err(format!(
+            "independent HT40 monitor does not support OpenWrt primary channel {channel}"
+        )
+        .into()),
+        None => Err("OpenWrt interface did not report its channel".into()),
     }
 }
 
@@ -230,7 +275,113 @@ fn parse_capture(path: &Path, target_mac: &str) -> Result<LocalAirMonitorEvidenc
             *count = count.saturating_add(1);
         }
     }
+    parse_block_ack_capture(path, target_mac, &mut evidence)?;
     Ok(evidence)
+}
+
+fn parse_block_ack_capture(
+    path: &Path,
+    target_mac: &str,
+    evidence: &mut LocalAirMonitorEvidence,
+) -> Result<()> {
+    let output = Command::new("tshark")
+        .args(["-r"])
+        .arg(path)
+        .args([
+            "-Y",
+            &format!("wlan.fc.type == 1 && wlan.fc.subtype == 9 && wlan.ta == {target_mac}"),
+            "-T",
+            "fields",
+            "-E",
+            "separator=\t",
+            "-e",
+            "wlan.fixed.ssc.sequence",
+            "-e",
+            "wlan.ba.bm",
+        ])
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot decode independent BlockAck capture: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    let mut tracker = BlockAckTracker::default();
+    for line in String::from_utf8(output.stdout)?.lines() {
+        let Some((sequence, bitmap)) = line.split_once('\t') else {
+            continue;
+        };
+        let Some(sequence) = sequence.parse::<u16>().ok() else {
+            continue;
+        };
+        let Some(bitmap) = decode_block_ack_bitmap(bitmap) else {
+            continue;
+        };
+        tracker.observe(sequence, bitmap);
+    }
+    evidence.block_ack_frames = tracker.frames;
+    evidence.full_block_ack_frames = tracker.full_frames;
+    evidence.partial_block_ack_frames = tracker.partial_frames;
+    evidence.unique_block_acked_mpdus =
+        u32::try_from(tracker.acknowledged.len()).unwrap_or(u32::MAX);
+    evidence.backward_block_ack_starts = tracker.backward_starts;
+    Ok(())
+}
+
+#[derive(Default)]
+struct BlockAckTracker {
+    frames: u32,
+    full_frames: u32,
+    partial_frames: u32,
+    backward_starts: u32,
+    previous_start: Option<u16>,
+    unwrapped_start: u64,
+    acknowledged: BTreeSet<u64>,
+}
+
+impl BlockAckTracker {
+    fn observe(&mut self, start: u16, bitmap: [u8; 8]) {
+        let start = start & 0x0fff;
+        if let Some(previous) = self.previous_start {
+            let advance = start.wrapping_sub(previous) & 0x0fff;
+            if advance > 0x0800 {
+                self.backward_starts = self.backward_starts.saturating_add(1);
+                return;
+            }
+            self.unwrapped_start = self.unwrapped_start.saturating_add(u64::from(advance));
+        } else {
+            self.unwrapped_start = u64::from(start);
+        }
+        self.previous_start = Some(start);
+        self.frames = self.frames.saturating_add(1);
+        if bitmap == [u8::MAX; 8] {
+            self.full_frames = self.full_frames.saturating_add(1);
+        } else {
+            self.partial_frames = self.partial_frames.saturating_add(1);
+        }
+        for (byte_index, byte) in bitmap.into_iter().enumerate() {
+            for bit in 0..8_u8 {
+                if byte & (1_u8 << bit) != 0 {
+                    self.acknowledged.insert(
+                        self.unwrapped_start
+                            .saturating_add((byte_index * 8 + usize::from(bit)) as u64),
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn decode_block_ack_bitmap(value: &str) -> Option<[u8; 8]> {
+    if value.len() != 16 {
+        return None;
+    }
+    let mut bitmap = [0_u8; 8];
+    for (index, byte) in bitmap.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(value.get(index * 2..index * 2 + 2)?, 16).ok()?;
+    }
+    Some(bitmap)
 }
 
 fn parse_retry_flag(value: &str) -> bool {
@@ -300,5 +451,42 @@ mod tests {
         assert!(!parse_retry_flag("0"));
         assert!(!parse_retry_flag("False"));
         assert!(!parse_retry_flag(""));
+    }
+
+    #[test]
+    fn monitor_action_follows_openwrt_primary_channel() {
+        assert_eq!(
+            resolve_observer_action_from_iw(
+                "type AP\n\tchannel 6 (2437 MHz), width: 40 MHz, center1: 2447 MHz\n"
+            )
+            .unwrap(),
+            "observer-ht40-6"
+        );
+        assert!(resolve_observer_action_from_iw("channel 3 (2422 MHz)").is_err());
+    }
+
+    #[test]
+    fn block_ack_tracker_unwraps_windows_and_deduplicates_overlap() {
+        let mut tracker = BlockAckTracker::default();
+        tracker.observe(4_090, [u8::MAX; 8]);
+        tracker.observe(10, [u8::MAX; 8]);
+        assert_eq!(tracker.frames, 2);
+        assert_eq!(tracker.full_frames, 2);
+        assert_eq!(tracker.partial_frames, 0);
+        assert_eq!(tracker.backward_starts, 0);
+        assert_eq!(tracker.acknowledged.len(), 80);
+
+        tracker.observe(9, [1; 8]);
+        assert_eq!(tracker.backward_starts, 1);
+        assert_eq!(tracker.frames, 2);
+    }
+
+    #[test]
+    fn decodes_little_bit_order_block_ack_bitmap_bytes() {
+        let bitmap = decode_block_ack_bitmap("7f00000000000000").unwrap();
+        let mut tracker = BlockAckTracker::default();
+        tracker.observe(1, bitmap);
+        assert_eq!(tracker.partial_frames, 1);
+        assert_eq!(tracker.acknowledged.len(), 7);
     }
 }

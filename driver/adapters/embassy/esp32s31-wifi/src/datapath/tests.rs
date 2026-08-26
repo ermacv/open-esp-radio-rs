@@ -444,7 +444,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
                 if self.repost_rx_when_backpressured {
                     self.irq.publish(MAC_INT_RX_SUCCESS);
                 }
-                return Ok(DatapathRxProgress::CriticalAdmissionBlocked);
+                return Ok(DatapathRxProgress::StageCapacityBlocked);
             }
             if self.queue_control_on_rx {
                 self.control_pending = true;

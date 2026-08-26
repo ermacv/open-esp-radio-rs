@@ -28,15 +28,38 @@ impl RxCapture {
         port: u16,
         duration: Duration,
         phy: PhyExpectation,
+        maximum_idle_channel_utilization_255: Option<u8>,
     ) -> Result<Option<Self>> {
         match fixture {
-            StationFixtureConfig::LocalLinux(config) => Ok(Some(Self::LocalLinux(
-                LocalLinuxRxCapture::start(config, target, port, duration, phy)?,
-            ))),
-            StationFixtureConfig::OpenWrt(config) => Ok(Some(Self::OpenWrt(
-                OpenWrtRxCapture::start(config, target, port, duration, phy)?,
-            ))),
-            StationFixtureConfig::External(_) => Ok(None),
+            StationFixtureConfig::LocalLinux(config) => {
+                if maximum_idle_channel_utilization_255.is_some() {
+                    return Err(
+                        "idle channel utilization requires an OpenWrt station fixture".into(),
+                    );
+                }
+                Ok(Some(Self::LocalLinux(LocalLinuxRxCapture::start(
+                    config, target, port, duration, phy,
+                )?)))
+            }
+            StationFixtureConfig::OpenWrt(config) => {
+                Ok(Some(Self::OpenWrt(OpenWrtRxCapture::start(
+                    config,
+                    target,
+                    port,
+                    duration,
+                    phy,
+                    maximum_idle_channel_utilization_255,
+                )?)))
+            }
+            StationFixtureConfig::External(_) => {
+                if maximum_idle_channel_utilization_255.is_some() {
+                    return Err(
+                        "idle channel utilization requires a managed OpenWrt station fixture"
+                            .into(),
+                    );
+                }
+                Ok(None)
+            }
         }
     }
 
@@ -70,20 +93,33 @@ impl RxEvidence {
                 evidence.tx_bitrate,
                 evidence.rx_bitrate,
             ),
-            Self::OpenWrt(evidence) => format!(
-                "- OpenWrt filtered Ethernet ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; pre-air TID-0 AQM drops: `{}`; channel width: `{}` MHz; AP TX/RX bitrate: `{}` / `{}`\n",
-                evidence.ingress_packets,
-                evidence.wireless_packets,
-                evidence.ingress_interface_rx_packets,
-                evidence.wireless_interface_tx_packets,
-                evidence.station_tx_packets,
-                evidence.station_tx_retries,
-                evidence.station_tx_failed,
-                evidence.station_tid0_aqm_drops,
-                evidence.channel_width_mhz,
-                evidence.tx_bitrate,
-                evidence.rx_bitrate,
-            ),
+            Self::OpenWrt(evidence) => {
+                let channel_utilization = evidence
+                    .pre_workload_channel_utilization
+                    .map(|utilization| {
+                        format!(
+                            "{}/255 (busy/active: {}/{} ms)",
+                            utilization.scaled_255,
+                            utilization.busy_millis,
+                            utilization.active_millis,
+                        )
+                    })
+                    .unwrap_or_else(|| String::from("not required"));
+                format!(
+                    "- OpenWrt filtered Ethernet ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; pre-air TID-0 AQM drops: `{}`; pre-workload channel utilization: `{channel_utilization}`; channel width: `{}` MHz; AP TX/RX bitrate: `{}` / `{}`\n",
+                    evidence.ingress_packets,
+                    evidence.wireless_packets,
+                    evidence.ingress_interface_rx_packets,
+                    evidence.wireless_interface_tx_packets,
+                    evidence.station_tx_packets,
+                    evidence.station_tx_retries,
+                    evidence.station_tx_failed,
+                    evidence.station_tid0_aqm_drops,
+                    evidence.channel_width_mhz,
+                    evidence.tx_bitrate,
+                    evidence.rx_bitrate,
+                )
+            }
         }
     }
 

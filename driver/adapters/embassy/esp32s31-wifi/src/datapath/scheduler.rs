@@ -302,7 +302,7 @@ where
             let network_rx = &mut self.network_rx;
             let wait_rx = async move {
                 match rx_progress {
-                    DatapathRxProgress::CriticalAdmissionBlocked => irq.wait_rx_capacity().await,
+                    DatapathRxProgress::StageCapacityBlocked => irq.wait_rx_capacity().await,
                     // Network ownership can remain unavailable for multiple
                     // milliseconds. RX DMA is an independent lower frontier:
                     // wake on either capacity or a new completion so a role

@@ -204,6 +204,10 @@ fn chunk_interval(chunk_bytes: usize, rate_bps: u64) -> Result<Duration> {
     ))
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "host traffic pacing uses a bounded 30 us final spin outside production radio code"
+)]
 fn wait_until(deadline: Instant) {
     loop {
         let now = Instant::now();

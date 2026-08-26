@@ -270,15 +270,25 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
 ) {
     let pipeline = counters.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
-        "ORXS calls={} frontier={} admitted={} bytes={} discard_empty={} discard_long={} \
+        "ORXS calls={} frontier={} completed={} descriptors={} admitted={} staged={} bytes={} \
+         discarded={} discard_empty={} discard_long={} discard_overload={} \
+         overload_discarded={} recycled={} overload_recycled={} \
          back={} pool={} queue={} deferred_max={} pool_min={} queue_min={} \
          fmax={} amax={} service_us={} service_boot_max_us={}",
         pipeline.service_calls,
         pipeline.completion_frontier_frames,
+        pipeline.completed_units,
+        pipeline.completed_descriptors,
         pipeline.admitted_frames,
+        pipeline.staged_units,
         pipeline.staged_bytes,
+        pipeline.discarded_units,
         pipeline.stage_empty_discards,
         pipeline.stage_too_long_discards,
+        pipeline.stage_overload_bulk_discards,
+        pipeline.overload_discarded_units,
+        pipeline.recycled_descriptors,
+        pipeline.overload_recycled_descriptors,
         pipeline.backpressured_services,
         pipeline.pool_credit_limited_services,
         pipeline.queue_credit_limited_services,

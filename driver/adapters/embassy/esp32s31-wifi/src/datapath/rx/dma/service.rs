@@ -93,6 +93,7 @@ where
             let mut overload_recycled_descriptors = 0_usize;
             let mut critical_reserve_admitted = 0_usize;
             let mut critical_admission_blocked = false;
+            let mut stage_capacity_blocked = false;
             let mut remaining_descriptors = frontier_snapshot.descriptor_count;
 
             for _ in 0..service_budget {
@@ -172,6 +173,15 @@ where
                     unavailable,
                     Some(RxStageUnavailableDisposition::PreserveForCriticalAdmission)
                 ) && current_credits != 0;
+                if matches!(
+                    unavailable,
+                    Some(RxStageUnavailableDisposition::PreserveForCapacity)
+                ) {
+                    stage_capacity_blocked = true;
+                    self.admission
+                        .observe(Esp32s31RxIngressObservation::BulkAdmissionBlocked(preview));
+                    break;
+                }
                 if matches!(
                     unavailable,
                     Some(RxStageUnavailableDisposition::PreserveForCriticalAdmission)
@@ -376,8 +386,8 @@ where
                 ));
             }
 
-            Ok(if critical_admission_blocked {
-                DatapathRxProgress::CriticalAdmissionBlocked
+            Ok(if stage_capacity_blocked || critical_admission_blocked {
+                DatapathRxProgress::StageCapacityBlocked
             } else if budget_exhausted {
                 DatapathRxProgress::BudgetExhausted
             } else if completion_frontier_remaining

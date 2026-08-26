@@ -7,7 +7,7 @@ use embassy_futures::{
     yield_now,
 };
 use embassy_net::{Stack, udp::UdpSocket};
-use embassy_time::{Duration, Instant, Timer, with_timeout};
+use embassy_time::{Duration, Instant, with_timeout};
 use open_esp_radio_hil_esp32s31_telemetry::{
     rx_evidence::RX_HE_MCS_BUCKETS, rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
@@ -62,10 +62,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
     config: UdpRxBenchmarkConfig,
     telemetry: UdpRxTelemetry,
 ) -> ! {
-    stack.wait_config_up().await;
-    while stack.config_v4().is_none() {
-        Timer::after_millis(100).await;
-    }
     let mut socket = UdpSocket::new(
         stack,
         buffers.rx_metadata,
@@ -305,6 +301,52 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             hardware.fifo_overflow,
             rx_irq_posts,
             config.code_address,
+        ));
+        yield_now().await;
+        runtime_log(format_args!(
+            "ORXHW abort={} abort_fcs_pass={} power_drop={} he_sig_b={} same_bm={} \
+             signal={} end={} other_unicast={} tkip={} bt_block={} frequency_hop={} \
+             unmatched={} ack_irq={} rts_irq={}",
+            hardware.abort,
+            hardware.abort_fcs_pass,
+            hardware.power_drop_error,
+            hardware.he_sig_b_error,
+            hardware.same_bm_error,
+            hardware.signal_field,
+            hardware.end,
+            hardware.other_unicast,
+            hardware.tkip_error,
+            hardware.bt_block_error,
+            hardware.frequency_hop_error,
+            hardware.last_unmatched_error,
+            hardware.ack_interrupt,
+            hardware.rts_interrupt,
+        ));
+        yield_now().await;
+        runtime_log(format_args!(
+            "ORXDEC brx_agc={} brx={} nrx={} abort={} agc_exit={} bb_off={} fdm_watchdog={} \
+             restart={} service={} tx_over={} unsupported={} he_format={} ht_sig={} \
+             he_unsupported={} he_sig_a_crc={}",
+            hardware.brx_agc_error,
+            hardware.brx_error,
+            hardware.nrx_error,
+            hardware.nrx_abort,
+            hardware.nrx_agc_exit,
+            hardware.nrx_baseband_off,
+            hardware.nrx_fdm_watchdog,
+            hardware.nrx_restart,
+            hardware.nrx_service,
+            hardware.nrx_tx_over,
+            hardware.nrx_unsupported,
+            hardware.nrx_he_format,
+            hardware.nrx_ht_sig,
+            hardware.nrx_he_unsupported,
+            hardware.nrx_he_sig_a_crc,
+        ));
+        yield_now().await;
+        runtime_log(format_args!(
+            "ORXHANG rx={} tx={} combined={} panic={}",
+            hardware.rx_hang, hardware.tx_hang, hardware.rx_tx_hang, hardware.rx_tx_panic,
         ));
         yield_now().await;
         runtime_log(format_args!(

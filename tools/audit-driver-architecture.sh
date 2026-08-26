@@ -358,8 +358,8 @@ for mode in ordinary diagnostics; do
 done
 
 # HIL image classes are intentionally different compiled graphs. Performance
-# has no driver observers; correctness adds those observers but not scheduler
-# instrumentation. Diagnostic images opt into scheduler probes separately.
+# has no driver observers; correctness adds those observers but not intrusive
+# task-poll or hard-IRQ instrumentation.
 hil_manifest="hil/targets/esp32s31/Cargo.toml"
 hil_common_features="open-radio-hil,psram-task-stack,code-psram,profile-psram-data"
 for mode in performance correctness; do
@@ -394,7 +394,7 @@ for mode in performance correctness; do
     fi
 done
 
-# The task-poll image is the only production graph allowed to time every
+# The task-poll image is the only diagnostic graph allowed to time every
 # protocol Future::poll. Its feature must be absent from correctness above and
 # explicitly reach the integration crate here.
 cargo tree \
@@ -406,7 +406,7 @@ cargo tree \
     --edges features \
     --no-default-features \
     --features \
-    open-radio-hil,psram-task-stack,task-poll-telemetry,network-scheduler-telemetry,code-psram,profile-psram-data \
+    open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data \
     --invert open-esp-radio-esp32s31-embassy-wifi >"$audit_dir/hil-task-poll-features"
 if ! rg -q 'open-esp-radio-esp32s31-embassy-wifi feature "task-poll-telemetry"' \
     "$audit_dir/hil-task-poll-features"

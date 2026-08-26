@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 edge-dhcp = { version = "0.8.0", default-features = false }
-embassy-net = { git = "https://github.com/ermacv/embassy", rev = "5a981ab3ccad883520ef634566215feb350613ad", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "e7a576f22393edaf9070f29ee5f4f07f5f4d8782", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
 embassy-time = "0.5.1"
 static_cell = "2.1.1"
 
@@ -34,6 +34,11 @@ strip = false
 
 [patch."https://github.com/esp-rs/esp-pacs"]
 esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "5b8b56036abd5f4646505b15988cc9da51cec826" }
+
+[patch."https://github.com/embassy-rs/embassy"]
+embassy-futures = { version = "0.1.2", registry = "crates-io" }
+embassy-sync = { version = "0.8.0", registry = "crates-io" }
+embassy-time = { version = "0.5.1", registry = "crates-io" }
 
 [workspace]
 resolver = "3"

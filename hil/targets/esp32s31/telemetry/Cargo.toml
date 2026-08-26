@@ -6,11 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 description = "ESP32-S31 qualification observers for open-esp-radio HIL"
 
-[features]
-network-scheduler = ["dep:embassy-net", "embassy-net/cooperative-scheduler-telemetry"]
-
 [dependencies]
-embassy-net = { workspace = true, optional = true }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../../driver/chips/esp32s31/wifi/mac" }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../driver/adapters/embassy/esp32s31-wifi" }
 open-esp-radio-hil-protocol = { path = "../../../protocol" }

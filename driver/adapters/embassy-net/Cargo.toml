@@ -13,13 +13,13 @@ default = []
 diagnostics = []
 
 [dependencies]
-embassy-net-driver = { git = "https://github.com/ermacv/embassy", rev = "5a981ab3ccad883520ef634566215feb350613ad" }
+embassy-net-driver = { git = "https://github.com/embassy-rs/embassy", rev = "e7a576f22393edaf9070f29ee5f4f07f5f4d8782" }
 embassy-sync = "0.8.0"
 open-esp-radio-dma = { path = "../../common/dma" }
 
 [dev-dependencies]
 embassy-executor = { version = "0.10.0", features = ["executor-thread", "platform-std"] }
-embassy-net = { git = "https://github.com/ermacv/embassy", rev = "5a981ab3ccad883520ef634566215feb350613ad", features = ["icmp", "medium-ethernet", "proto-ipv4", "std"] }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "e7a576f22393edaf9070f29ee5f4f07f5f4d8782", features = ["icmp", "medium-ethernet", "proto-ipv4", "std"] }
 embassy-time = { version = "0.5.0", features = ["std"] }
 
 [lints]

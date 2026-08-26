@@ -11,8 +11,6 @@ extern crate std;
 
 pub mod aggregate_tx;
 pub mod mac_irq;
-#[cfg(feature = "network-scheduler")]
-pub mod network_scheduler;
 pub mod rx_delivery;
 pub mod rx_evidence;
 pub mod rx_pipeline;

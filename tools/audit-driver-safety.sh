@@ -398,9 +398,23 @@ if ! rg -q 'pub struct BluetoothModemLpTimerInitializationPrerequisite' "$modem_
     || ! rg -q 'pub unsafe fn assume_pending\(' "$modem_lp_timer_spi" \
     || ! rg -q 'pub struct BluetoothModemLpTimerInterruptReady' "$modem_lp_timer_spi" \
     || ! rg -q 'pub struct BluetoothModemLpTimerHandlerPending' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub struct BluetoothModemLpTimerHandlerRegisterObservation' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub struct BluetoothModemLpTimerSoftwarePending' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub struct BluetoothModemLpTimerEpoch' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub struct BluetoothModemLpTimerCounterObservation' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub enum BluetoothModemLpTimerCompareDisposition' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub fn step_registers\(' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub fn sample_counter\(' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub fn program_compare\(' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub fn complete_software\(' "$modem_lp_timer_spi" \
     || ! rg -q 'pub fn stage_for_interrupt\(' "$modem_lp_timer_spi" \
     || ! rg -q 'pub struct BluetoothModemLpTimerInterruptReadyOwner' "$bluetooth_hal" \
     || ! rg -q 'pub struct BluetoothModemLpTimerHandlerPendingOwner' "$bluetooth_hal" \
+    || ! rg -q 'pub struct BluetoothModemLpTimerSoftwarePendingOwner' "$bluetooth_hal" \
+    || ! rg -q 'pub fn step_registers\(' "$bluetooth_hal" \
+    || ! rg -q 'pub fn sample_counter\(' "$bluetooth_hal" \
+    || ! rg -q 'pub fn program_compare\(' "$bluetooth_hal" \
+    || ! rg -q 'pub fn complete_software\(' "$bluetooth_hal" \
     || ! rg -q 'pub fn stage_for_interrupt\(' "$bluetooth_hal" \
     || ! rg -q 'pub unsafe fn prepare_modem_lp_timer_registers\(' "$bluetooth_validation"
 then
@@ -429,6 +443,15 @@ then
 fi
 if rg -q 'BluetoothModemLpTimerInterruptEvent::assume_pending' driver --glob '*.rs'; then
     echo "Bluetooth modem LP-timer ISR event escaped before stable source-127 routing exists" >&2
+    exit 1
+fi
+mapfile -t modem_lp_timer_completion_callers < <(
+    rg -l '[.]complete_software[[:space:]]*\(' driver --glob '*.rs' | sort
+)
+if test "${#modem_lp_timer_completion_callers[@]}" -ne 1 \
+    || test "${modem_lp_timer_completion_callers[0]}" != "$bluetooth_hal"
+then
+    echo "Bluetooth modem LP-timer final rearm escaped HAL before software completion proof exists" >&2
     exit 1
 fi
 

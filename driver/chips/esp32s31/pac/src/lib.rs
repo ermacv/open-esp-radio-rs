@@ -95,10 +95,13 @@ pub use bluetooth_memory_lists::{
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
 };
 pub use bluetooth_modem_lp_timer::{
-    BluetoothModemLpTimerHandlerPending, BluetoothModemLpTimerInitializationPrerequisite,
+    BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
+    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerPending,
+    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerHandlerRegisterStep,
+    BluetoothModemLpTimerInitializationPrerequisite, BluetoothModemLpTimerInstant,
     BluetoothModemLpTimerInterruptEvent, BluetoothModemLpTimerInterruptObservation,
     BluetoothModemLpTimerInterruptReady, BluetoothModemLpTimerInterruptStep,
-    BluetoothModemLpTimerRegistersPrepared,
+    BluetoothModemLpTimerRegistersPrepared, BluetoothModemLpTimerSoftwarePending,
 };
 pub use bluetooth_scheduler_lock_modify::{
     BluetoothSchedulerLockModifyObservation, BluetoothSchedulerLockModifyRequest,

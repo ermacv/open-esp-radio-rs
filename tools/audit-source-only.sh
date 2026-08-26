@@ -20,9 +20,23 @@ tools/audit-driver-architecture.sh
 cargo blobray project configure \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
-cargo blobray project publish \
-    --project verification/vendor/targets/esp32s31/vendor-project.toml \
-    --check
+
+# Publication also validates local analysis products and therefore belongs to
+# artifact-backed CI.  The source-only gate checks each public register product
+# directly so a clean checkout never needs generated/findings or local.toml.
+for register_command in \
+    validate \
+    export-svd \
+    generate-pac-raw \
+    generate-bindings
+do
+    arguments=(registers "$register_command")
+    if [[ "$register_command" != validate ]]; then
+        arguments+=(--check)
+    fi
+    cargo blobray "${arguments[@]}" \
+        --project verification/vendor/targets/esp32s31/vendor-project.toml
+done
 
 cargo build \
     -p open-esp-radio-esp32s31-phy \

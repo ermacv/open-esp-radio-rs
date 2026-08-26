@@ -11,8 +11,10 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerHalInitPrerequisite, BluetoothControllerLatchedTime,
     BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchStep,
     BluetoothControllerTimeLatchStepError, BluetoothInterruptOutputPreparationPrerequisite,
-    BluetoothModemLpTimerInitializationPrerequisite, BluetoothModemLpTimerInterruptEvent,
-    BluetoothModemLpTimerInterruptObservation,
+    BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
+    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
+    BluetoothModemLpTimerInitializationPrerequisite, BluetoothModemLpTimerInstant,
+    BluetoothModemLpTimerInterruptEvent, BluetoothModemLpTimerInterruptObservation,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
     BluetoothSchedulerDisablePrerequisite as BluetoothControllerSchedulerDisablePrerequisite,
 };
@@ -20,9 +22,11 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothInterruptRegisters,
     BluetoothInterruptSetup as PacBluetoothInterruptSetup,
     BluetoothModemLpTimerHandlerPending as PacBluetoothModemLpTimerHandlerPending,
+    BluetoothModemLpTimerHandlerRegisterStep as PacBluetoothModemLpTimerHandlerRegisterStep,
     BluetoothModemLpTimerInterruptReady as PacBluetoothModemLpTimerInterruptReady,
     BluetoothModemLpTimerInterruptStep as PacBluetoothModemLpTimerInterruptStep,
     BluetoothModemLpTimerRegistersPrepared as PacBluetoothModemLpTimerRegistersPrepared,
+    BluetoothModemLpTimerSoftwarePending as PacBluetoothModemLpTimerSoftwarePending,
     BluetoothSchedulerDisableBusyObserved as PacSchedulerDisableBusyObserved,
     BluetoothSchedulerDisableIdleObserved as PacSchedulerDisableIdleObserved,
     BluetoothSchedulerDisableRequest as PacSchedulerDisableRequest,
@@ -213,11 +217,12 @@ pub enum BluetoothModemLpTimerInterruptStep {
     HandlerPending(BluetoothModemLpTimerHandlerPendingOwner),
 }
 
-/// Opaque HAL owner retained until the common modem timer handler is open.
+/// Opaque HAL owner for the common modem timer handler's register phase.
 ///
-/// No rearm or task-owner escape exists: omitting the required callback is a
-/// terminal fail-stop state, not a silently reusable interrupt owner.
-#[must_use = "the required modem LP-timer software handler remains pending"]
+/// No direct rearm or task-owner escape exists. The owner must execute the
+/// bounded register step, which either rearms an idle handler or produces the
+/// separate fail-closed software-pending state.
+#[must_use = "the common modem LP-timer register phase remains pending"]
 pub struct BluetoothModemLpTimerHandlerPendingOwner {
     registers: PacBluetoothModemLpTimerHandlerPending,
 }
@@ -226,6 +231,89 @@ impl BluetoothModemLpTimerHandlerPendingOwner {
     /// Return the exact positional path that selected handler dispatch.
     pub const fn observation(&self) -> BluetoothModemLpTimerInterruptObservation {
         self.registers.observation()
+    }
+
+    /// Execute the bounded register-acknowledgement phase of the common timer
+    /// handler without invoking software or an RTOS service.
+    pub fn step_registers(self) -> BluetoothModemLpTimerHandlerRegisterStep {
+        match self.registers.step_registers() {
+            PacBluetoothModemLpTimerHandlerRegisterStep::Rearmed(registers) => {
+                BluetoothModemLpTimerHandlerRegisterStep::Rearmed(
+                    BluetoothModemLpTimerInterruptReadyOwner { registers },
+                )
+            }
+            PacBluetoothModemLpTimerHandlerRegisterStep::SoftwarePending(registers) => {
+                BluetoothModemLpTimerHandlerRegisterStep::SoftwarePending(
+                    BluetoothModemLpTimerSoftwarePendingOwner { registers },
+                )
+            }
+        }
+    }
+}
+
+/// Result of the common handler's bounded register-acknowledgement phase.
+#[must_use = "retain the ready owner or complete the required software work"]
+pub enum BluetoothModemLpTimerHandlerRegisterStep {
+    /// No software work was requested and the interrupt owner is ready again.
+    Rearmed(BluetoothModemLpTimerInterruptReadyOwner),
+    /// At least one acknowledged state byte requires software work.
+    SoftwarePending(BluetoothModemLpTimerSoftwarePendingOwner),
+}
+
+/// Opaque HAL owner retained while source-127 software work is pending.
+///
+/// This owner has no raw PAC escape and cannot be rearmed until the no-RTOS
+/// timer runtime supplies the missing software transition and final register
+/// read.
+#[must_use = "software timer work and the final hardware read remain pending"]
+pub struct BluetoothModemLpTimerSoftwarePendingOwner {
+    registers: PacBluetoothModemLpTimerSoftwarePending,
+}
+
+impl BluetoothModemLpTimerSoftwarePendingOwner {
+    /// Return the initial source-127 classifier path.
+    pub const fn interrupt_observation(&self) -> BluetoothModemLpTimerInterruptObservation {
+        self.registers.interrupt_observation()
+    }
+
+    /// Return the positional state bytes requiring software consequences.
+    pub const fn register_observation(&self) -> BluetoothModemLpTimerHandlerRegisterObservation {
+        self.registers.register_observation()
+    }
+
+    /// Sample one finite positional LP-timer instant and acknowledge a newly
+    /// observed rollover without polling.
+    pub fn sample_counter(
+        &mut self,
+        epoch: &mut BluetoothModemLpTimerEpoch,
+    ) -> BluetoothModemLpTimerCounterObservation {
+        self.registers.sample_counter(epoch)
+    }
+
+    /// Disable the currently programmed positional compare.
+    pub fn disable_compare(&mut self) {
+        self.registers.disable_compare();
+    }
+
+    /// Program one positional deadline and return the exact hardware branch.
+    pub fn program_compare(
+        &mut self,
+        deadline: BluetoothModemLpTimerInstant,
+        epoch: BluetoothModemLpTimerEpoch,
+    ) -> BluetoothModemLpTimerCompareDisposition {
+        self.registers.program_compare(deadline, epoch)
+    }
+
+    /// Perform the final fresh handler read and return the ISR-ready owner.
+    ///
+    /// This seam is hidden because the controller timer state machine must call
+    /// it only after every software consequence represented by this owner has
+    /// completed.
+    #[doc(hidden)]
+    pub fn complete_software(self) -> BluetoothModemLpTimerInterruptReadyOwner {
+        BluetoothModemLpTimerInterruptReadyOwner {
+            registers: self.registers.complete_software(),
+        }
     }
 }
 

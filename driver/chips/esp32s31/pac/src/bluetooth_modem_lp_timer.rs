@@ -2,10 +2,11 @@
 //!
 //! The transactions in this module are the complete MMIO prefix immediately
 //! before the ESP32-S31 controller installs interrupt source 127 and the
-//! bounded register classifier at the start of that source's handler. They do
-//! not initialize the vendor software environment, publish ISR storage,
-//! install a CPU route, implement the software timer handler, or claim that
-//! the timer, controller, Link Layer, or HCI is live.
+//! bounded register classifier and hardware-acknowledgement phase at the start
+//! of that source's handler. They do not initialize the vendor software
+//! environment, publish ISR storage, install a CPU route, dispatch the
+//! software timer queue, or claim that the timer, controller, Link Layer, or
+//! HCI is live.
 
 #![deny(unsafe_code)]
 
@@ -131,7 +132,7 @@ impl BluetoothModemLpTimerInterruptEvent {
 ///
 /// The task owner remains private and cannot concurrently escape back to task
 /// context. A spurious hardware entry returns this state unchanged; a real
-/// timer dispatch consumes it into a terminal handler-pending state.
+/// timer dispatch consumes it into the next common-handler register phase.
 #[must_use = "the source-127 owner must remain in stable ISR storage"]
 pub struct BluetoothModemLpTimerInterruptReady {
     task: BluetoothTaskRegisters,
@@ -156,13 +157,13 @@ pub enum BluetoothModemLpTimerInterruptObservation {
 /// Source-127 ownership after the register prefix selected the software timer
 /// handler.
 ///
-/// The open software timer-handler body is not implemented yet. Consequently
-/// this owner exposes only its positional observation and deliberately cannot
-/// be rearmed, returned to task context or discarded into an apparently ready
-/// interrupt owner.
-#[must_use = "the required modem LP-timer software handler remains pending"]
+/// This owner exposes the initial positional observation and exactly one
+/// bounded transition into the common handler's register-acknowledgement
+/// phase. It cannot be rearmed directly, returned to task context or discarded
+/// into an apparently ready interrupt owner.
+#[must_use = "the common modem LP-timer register phase remains pending"]
 pub struct BluetoothModemLpTimerHandlerPending {
-    _ready: BluetoothModemLpTimerInterruptReady,
+    ready: BluetoothModemLpTimerInterruptReady,
     observation: BluetoothModemLpTimerInterruptObservation,
 }
 
@@ -171,6 +172,246 @@ impl BluetoothModemLpTimerHandlerPending {
     pub const fn observation(&self) -> BluetoothModemLpTimerInterruptObservation {
         self.observation
     }
+
+    /// Acknowledge the two positional state bytes at the start of the common
+    /// timer handler.
+    ///
+    /// This second finite step never waits, loops, allocates or invokes
+    /// software. If neither byte requests work, the vendor path performs its
+    /// final fresh read and the source-127 owner is ready again. Otherwise the
+    /// owner remains affine in [`BluetoothModemLpTimerSoftwarePending`] until
+    /// the matching software state transition and final read are implemented.
+    pub fn step_registers(self) -> BluetoothModemLpTimerHandlerRegisterStep {
+        let disposition = {
+            let mut transaction = HardwareModemLpTimerTransaction {
+                registers: &self.ready.task.bluetooth.btdm_runtime_control,
+            };
+            execute_modem_lp_timer_handler_registers(&mut transaction)
+        };
+
+        match disposition {
+            ModemLpTimerHandlerRegisterDisposition::Rearmed => {
+                BluetoothModemLpTimerHandlerRegisterStep::Rearmed(self.ready)
+            }
+            ModemLpTimerHandlerRegisterDisposition::SoftwarePending(register_observation) => {
+                BluetoothModemLpTimerHandlerRegisterStep::SoftwarePending(
+                    BluetoothModemLpTimerSoftwarePending {
+                        ready: self.ready,
+                        interrupt_observation: self.observation,
+                        register_observation,
+                    },
+                )
+            }
+        }
+    }
+}
+
+/// Positional state acknowledged by the common source-127 timer handler.
+///
+/// The two booleans intentionally retain register positions instead of
+/// assigning undocumented timer or RTC meanings. A nonzero `STATE_0024` low
+/// byte requires software timer-queue dispatch. A nonzero `STATE_002C` low
+/// byte requires a separate software environment update before the final
+/// hardware read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothModemLpTimerHandlerRegisterObservation {
+    state_0024_low_byte_nonzero: bool,
+    state_002c_low_byte_nonzero: bool,
+}
+
+impl BluetoothModemLpTimerHandlerRegisterObservation {
+    /// Whether the sampled low byte of `STATE_0024` was nonzero.
+    pub const fn state_0024_low_byte_was_nonzero(self) -> bool {
+        self.state_0024_low_byte_nonzero
+    }
+
+    /// Whether the sampled low byte of `STATE_002C` was nonzero.
+    pub const fn state_002c_low_byte_was_nonzero(self) -> bool {
+        self.state_002c_low_byte_nonzero
+    }
+}
+
+/// Source-127 owner after hardware state acknowledgement exposed required
+/// software work.
+///
+/// This state deliberately cannot be rearmed. The vendor handler mutates a
+/// software epoch, may dispatch its timer queue, and then performs a final
+/// fresh `STATE_0024` read. Those actions belong above the PAC and must be
+/// represented by a later explicit completion transition.
+#[must_use = "software timer work and the final hardware read remain pending"]
+pub struct BluetoothModemLpTimerSoftwarePending {
+    ready: BluetoothModemLpTimerInterruptReady,
+    interrupt_observation: BluetoothModemLpTimerInterruptObservation,
+    register_observation: BluetoothModemLpTimerHandlerRegisterObservation,
+}
+
+impl BluetoothModemLpTimerSoftwarePending {
+    /// Return the initial source-127 classifier path.
+    pub const fn interrupt_observation(&self) -> BluetoothModemLpTimerInterruptObservation {
+        self.interrupt_observation
+    }
+
+    /// Return the state bytes whose software consequences remain pending.
+    pub const fn register_observation(&self) -> BluetoothModemLpTimerHandlerRegisterObservation {
+        self.register_observation
+    }
+
+    /// Sample one complete positional LP-timer instant.
+    ///
+    /// A newly observed rollover advances `epoch` before the fresh counter
+    /// read and publishes the exact hardware acknowledgement. The method is
+    /// finite and returns without polling.
+    pub fn sample_counter(
+        &mut self,
+        epoch: &mut BluetoothModemLpTimerEpoch,
+    ) -> BluetoothModemLpTimerCounterObservation {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.ready.task.bluetooth.btdm_runtime_control,
+        };
+        execute_modem_lp_timer_counter_sample(&mut transaction, epoch)
+    }
+
+    /// Disable the currently programmed positional compare.
+    pub fn disable_compare(&mut self) {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.ready.task.bluetooth.btdm_runtime_control,
+        };
+        execute_modem_lp_timer_compare_disable(&mut transaction);
+    }
+
+    /// Program one positional deadline using the current software epoch.
+    ///
+    /// The exact finite transaction either requests immediate software work,
+    /// publishes the deadline low counter image, or places a half-range
+    /// checkpoint when the deadline is at least one full low-counter span
+    /// away. It never waits for the compare to fire.
+    pub fn program_compare(
+        &mut self,
+        deadline: BluetoothModemLpTimerInstant,
+        epoch: BluetoothModemLpTimerEpoch,
+    ) -> BluetoothModemLpTimerCompareDisposition {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.ready.task.bluetooth.btdm_runtime_control,
+        };
+        execute_modem_lp_timer_compare_program(&mut transaction, deadline, epoch)
+    }
+
+    /// Perform the common handler's final fresh state read after software work.
+    ///
+    /// This lower transition cannot prove that the no-RTOS timer queue was
+    /// drained. The HAL/controller composition must keep the owner private and
+    /// call this method only from its completed software state.
+    #[doc(hidden)]
+    pub fn complete_software(self) -> BluetoothModemLpTimerInterruptReady {
+        {
+            let mut transaction = HardwareModemLpTimerTransaction {
+                registers: &self.ready.task.bluetooth.btdm_runtime_control,
+            };
+            transaction.sample_final_state_0024();
+        }
+        self.ready
+    }
+}
+
+/// Source-owned high byte paired with the modem LP timer's positional counter.
+///
+/// The vendor environment advances this byte with wrapping arithmetic whenever
+/// the reviewed rollover state is acknowledged. No physical time unit is
+/// assigned here.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BluetoothModemLpTimerEpoch(u8);
+
+impl BluetoothModemLpTimerEpoch {
+    /// Begin the source-owned timer environment at epoch zero.
+    pub const fn new() -> Self {
+        Self(0)
+    }
+
+    /// Return the current positional high byte.
+    pub const fn high_byte(self) -> u8 {
+        self.0
+    }
+
+    /// Apply the rollover fact already acknowledged by the common handler's
+    /// register phase.
+    pub fn advance_for_handler_registers(
+        &mut self,
+        observation: BluetoothModemLpTimerHandlerRegisterObservation,
+    ) {
+        if observation.state_002c_low_byte_was_nonzero() {
+            self.advance();
+        }
+    }
+
+    fn advance(&mut self) {
+        self.0 = self.0.wrapping_add(1);
+    }
+
+    const fn advanced(mut self) -> Self {
+        self.0 = self.0.wrapping_add(1);
+        self
+    }
+
+    const fn combine(self, counter_image: u32) -> BluetoothModemLpTimerInstant {
+        BluetoothModemLpTimerInstant(((self.0 as u32) << 24) | counter_image)
+    }
+}
+
+/// One positional 32-bit modem LP-timer instant.
+///
+/// The value wraps and deliberately has no claimed physical unit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothModemLpTimerInstant(u32);
+
+impl BluetoothModemLpTimerInstant {
+    /// Retain one complete positional deadline image.
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    /// Return the complete positional image.
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+}
+
+/// Result of one finite LP-counter sample.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothModemLpTimerCounterObservation {
+    instant: BluetoothModemLpTimerInstant,
+    rollover_acknowledged: bool,
+}
+
+impl BluetoothModemLpTimerCounterObservation {
+    /// Return the sampled positional instant after any epoch advance.
+    pub const fn instant(self) -> BluetoothModemLpTimerInstant {
+        self.instant
+    }
+
+    /// Whether this sample acknowledged a newly observed rollover state.
+    pub const fn rollover_was_acknowledged(self) -> bool {
+        self.rollover_acknowledged
+    }
+}
+
+/// Hardware branch selected while programming one positional compare.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothModemLpTimerCompareDisposition {
+    /// The deadline delta was at most two and software work was requested now.
+    Immediate,
+    /// The deadline lies within one low-counter span and its low image was used.
+    Deadline,
+    /// A half-range checkpoint was used for a more distant deadline.
+    HalfRangeCheckpoint,
+}
+
+/// Result of the common handler's bounded register-acknowledgement phase.
+#[must_use = "retain the ready owner or complete the required software work"]
+pub enum BluetoothModemLpTimerHandlerRegisterStep {
+    /// No software work was requested and the final fresh read completed.
+    Rearmed(BluetoothModemLpTimerInterruptReady),
+    /// At least one acknowledged state byte requires software work.
+    SoftwarePending(BluetoothModemLpTimerSoftwarePending),
 }
 
 /// Result of one finite source-127 handler prefix.
@@ -206,10 +447,42 @@ trait ModemLpTimerInterruptTransaction {
     fn fence(&mut self);
 }
 
+trait ModemLpTimerHandlerRegisterTransaction {
+    fn sample_state_0024_low_byte_nonzero(&mut self) -> bool;
+    fn clear_state_0024(&mut self);
+    fn sample_state_002c_low_byte_nonzero(&mut self) -> bool;
+    fn clear_state_002c(&mut self);
+    fn sample_final_state_0024(&mut self);
+    fn fence(&mut self);
+}
+
+trait ModemLpTimerRuntimeTransaction {
+    fn read_counter(&mut self) -> u32;
+    fn rollover_low_byte_nonzero(&mut self) -> bool;
+    fn clear_rollover(&mut self);
+    fn publish_software_pending(&mut self);
+    fn disable_compare(&mut self);
+    fn write_compare(&mut self, image: u32);
+    fn trigger_timer_command(&mut self);
+    fn fence(&mut self);
+}
+
+const MODEM_LP_TIMER_COMMAND: u32 = 0x0004_0000;
+const MODEM_LP_TIMER_LOW_SPAN: u32 = 0x0100_0000;
+const MODEM_LP_TIMER_LOW_MASK: u32 = MODEM_LP_TIMER_LOW_SPAN - 1;
+const MODEM_LP_TIMER_HALF_RANGE: u32 = 0x0080_0000;
+const MODEM_LP_TIMER_IMMEDIATE_TOLERANCE: i32 = 2;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ModemLpTimerInterruptDisposition {
     Spurious,
     HandlerPending(BluetoothModemLpTimerInterruptObservation),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ModemLpTimerHandlerRegisterDisposition {
+    Rearmed,
+    SoftwarePending(BluetoothModemLpTimerHandlerRegisterObservation),
 }
 
 fn execute_modem_lp_timer_interrupt(
@@ -229,6 +502,92 @@ fn execute_modem_lp_timer_interrupt(
     };
     transaction.fence();
     ModemLpTimerInterruptDisposition::HandlerPending(observation)
+}
+
+fn execute_modem_lp_timer_handler_registers(
+    transaction: &mut impl ModemLpTimerHandlerRegisterTransaction,
+) -> ModemLpTimerHandlerRegisterDisposition {
+    let state_0024_low_byte_nonzero = transaction.sample_state_0024_low_byte_nonzero();
+    if state_0024_low_byte_nonzero {
+        transaction.clear_state_0024();
+    }
+
+    let state_002c_low_byte_nonzero = transaction.sample_state_002c_low_byte_nonzero();
+    if state_002c_low_byte_nonzero {
+        transaction.clear_state_002c();
+    }
+
+    let observation = BluetoothModemLpTimerHandlerRegisterObservation {
+        state_0024_low_byte_nonzero,
+        state_002c_low_byte_nonzero,
+    };
+    if state_0024_low_byte_nonzero || state_002c_low_byte_nonzero {
+        transaction.fence();
+        ModemLpTimerHandlerRegisterDisposition::SoftwarePending(observation)
+    } else {
+        transaction.sample_final_state_0024();
+        ModemLpTimerHandlerRegisterDisposition::Rearmed
+    }
+}
+
+fn execute_modem_lp_timer_counter_sample(
+    transaction: &mut impl ModemLpTimerRuntimeTransaction,
+    epoch: &mut BluetoothModemLpTimerEpoch,
+) -> BluetoothModemLpTimerCounterObservation {
+    let first_counter = transaction.read_counter();
+    let rollover_acknowledged = transaction.rollover_low_byte_nonzero();
+    let counter = if rollover_acknowledged {
+        epoch.advance();
+        let fresh_counter = transaction.read_counter();
+        transaction.clear_rollover();
+        transaction.publish_software_pending();
+        transaction.trigger_timer_command();
+        transaction.fence();
+        fresh_counter
+    } else {
+        first_counter
+    };
+
+    BluetoothModemLpTimerCounterObservation {
+        instant: epoch.combine(counter),
+        rollover_acknowledged,
+    }
+}
+
+fn execute_modem_lp_timer_compare_disable(transaction: &mut impl ModemLpTimerRuntimeTransaction) {
+    transaction.disable_compare();
+    transaction.fence();
+}
+
+fn execute_modem_lp_timer_compare_program(
+    transaction: &mut impl ModemLpTimerRuntimeTransaction,
+    deadline: BluetoothModemLpTimerInstant,
+    epoch: BluetoothModemLpTimerEpoch,
+) -> BluetoothModemLpTimerCompareDisposition {
+    transaction.disable_compare();
+    let first_counter = transaction.read_counter();
+    let rollover = transaction.rollover_low_byte_nonzero();
+    let (effective_epoch, counter) = if rollover {
+        (epoch.advanced(), transaction.read_counter())
+    } else {
+        (epoch, first_counter)
+    };
+    let current = effective_epoch.combine(counter).bits();
+    let delta = deadline.bits().wrapping_sub(current);
+
+    let disposition = if (delta as i32) <= MODEM_LP_TIMER_IMMEDIATE_TOLERANCE {
+        transaction.publish_software_pending();
+        BluetoothModemLpTimerCompareDisposition::Immediate
+    } else if delta < MODEM_LP_TIMER_LOW_SPAN {
+        transaction.write_compare(deadline.bits() & MODEM_LP_TIMER_LOW_MASK);
+        BluetoothModemLpTimerCompareDisposition::Deadline
+    } else {
+        transaction.write_compare(counter.wrapping_add(MODEM_LP_TIMER_HALF_RANGE));
+        BluetoothModemLpTimerCompareDisposition::HalfRangeCheckpoint
+    };
+    transaction.trigger_timer_command();
+    transaction.fence();
+    disposition
 }
 
 fn execute_modem_lp_timer_prepare(transaction: &mut impl ModemLpTimerTransaction) {
@@ -324,6 +683,136 @@ impl ModemLpTimerInterruptTransaction for HardwareModemLpTimerTransaction<'_> {
     }
 }
 
+impl ModemLpTimerHandlerRegisterTransaction for HardwareModemLpTimerTransaction<'_> {
+    fn sample_state_0024_low_byte_nonzero(&mut self) -> bool {
+        self.registers.state_0024().read().image().bits() as u8 != 0
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the closed handler executor supplies the reviewed complete zero image"
+    )]
+    fn clear_state_0024(&mut self) {
+        // SAFETY: this trait implementation is private and the only caller is
+        // the finite executor above, which supplies the reviewed zero image.
+        unsafe {
+            self.registers
+                .state_0024()
+                .write_with_zero(|writer| writer.image().bits(0));
+        }
+    }
+
+    fn sample_state_002c_low_byte_nonzero(&mut self) -> bool {
+        self.registers.state_002c().read().image().bits() as u8 != 0
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the closed handler executor supplies the reviewed complete zero image"
+    )]
+    fn clear_state_002c(&mut self) {
+        // SAFETY: this trait implementation is private and the only caller is
+        // the finite executor above, which supplies the reviewed zero image.
+        unsafe {
+            self.registers
+                .state_002c()
+                .write_with_zero(|writer| writer.image().bits(0));
+        }
+    }
+
+    fn sample_final_state_0024(&mut self) {
+        let _ = self.registers.state_0024().read().image().bits();
+    }
+
+    fn fence(&mut self) {
+        device_fence();
+    }
+}
+
+impl ModemLpTimerRuntimeTransaction for HardwareModemLpTimerTransaction<'_> {
+    fn read_counter(&mut self) -> u32 {
+        self.registers.status_0048().read().image().bits()
+    }
+
+    fn rollover_low_byte_nonzero(&mut self) -> bool {
+        self.registers.state_002c().read().image().bits() as u8 != 0
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the closed runtime executor supplies the reviewed complete zero image"
+    )]
+    fn clear_rollover(&mut self) {
+        // SAFETY: this private implementation is called only by the finite
+        // runtime executor with the reviewed complete zero image.
+        unsafe {
+            self.registers
+                .state_002c()
+                .write_with_zero(|writer| writer.image().bits(0));
+        }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the closed runtime executor supplies the reviewed complete one image"
+    )]
+    fn publish_software_pending(&mut self) {
+        // SAFETY: this private implementation is called only by the finite
+        // runtime executor with the reviewed complete one image.
+        unsafe {
+            self.registers
+                .state_0024()
+                .write_with_zero(|writer| writer.image().bits(1));
+        }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the closed runtime executor supplies the reviewed timer command image"
+    )]
+    fn disable_compare(&mut self) {
+        // SAFETY: this private implementation is called only by the finite
+        // runtime executor with the reviewed command image.
+        unsafe {
+            self.registers
+                .command_0014()
+                .write_with_zero(|writer| writer.image().bits(MODEM_LP_TIMER_COMMAND));
+        }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the closed runtime executor bounds the dynamic compare image"
+    )]
+    fn write_compare(&mut self, image: u32) {
+        // SAFETY: `image` is closed inside the executor to either the reviewed
+        // low-deadline projection or selected-counter half-range projection.
+        unsafe {
+            self.registers
+                .value_006c()
+                .write_with_zero(|writer| writer.image().bits(image));
+        }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the closed runtime executor supplies the reviewed timer command image"
+    )]
+    fn trigger_timer_command(&mut self) {
+        // SAFETY: this private implementation is called only by the finite
+        // runtime executor with the reviewed command image.
+        unsafe {
+            self.registers
+                .command_0010()
+                .write_with_zero(|writer| writer.image().bits(MODEM_LP_TIMER_COMMAND));
+        }
+    }
+
+    fn fence(&mut self) {
+        device_fence();
+    }
+}
+
 impl BluetoothTaskRegisters {
     /// Apply the exact controller-register prefix before source 127 is routed.
     ///
@@ -370,8 +859,8 @@ impl BluetoothModemLpTimerInterruptReady {
     /// The method never waits, loops, allocates or calls software. A zero
     /// `STATUS_0038` returns the ready owner after one read. Every other branch
     /// is fenced and retains the unique owner in
-    /// [`BluetoothModemLpTimerHandlerPending`] until the common timer-handler
-    /// body is implemented.
+    /// [`BluetoothModemLpTimerHandlerPending`] for the next finite common
+    /// handler register step.
     pub fn step(
         self,
         _event: BluetoothModemLpTimerInterruptEvent,
@@ -389,7 +878,7 @@ impl BluetoothModemLpTimerInterruptReady {
             ModemLpTimerInterruptDisposition::HandlerPending(observation) => {
                 BluetoothModemLpTimerInterruptStep::HandlerPending(
                     BluetoothModemLpTimerHandlerPending {
-                        _ready: self,
+                        ready: self,
                         observation,
                     },
                 )
@@ -405,9 +894,15 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        BluetoothModemLpTimerInterruptObservation, ModemLpTimerInterruptDisposition,
-        ModemLpTimerInterruptTransaction, ModemLpTimerRegister, ModemLpTimerTransaction,
-        execute_modem_lp_timer_interrupt, execute_modem_lp_timer_prepare,
+        BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerEpoch,
+        BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
+        BluetoothModemLpTimerInterruptObservation, ModemLpTimerHandlerRegisterDisposition,
+        ModemLpTimerHandlerRegisterTransaction, ModemLpTimerInterruptDisposition,
+        ModemLpTimerInterruptTransaction, ModemLpTimerRegister, ModemLpTimerRuntimeTransaction,
+        ModemLpTimerTransaction, execute_modem_lp_timer_compare_disable,
+        execute_modem_lp_timer_compare_program, execute_modem_lp_timer_counter_sample,
+        execute_modem_lp_timer_handler_registers, execute_modem_lp_timer_interrupt,
+        execute_modem_lp_timer_prepare,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -424,6 +919,139 @@ mod tests {
         TestControl0058Bit2(bool),
         SetControl0058Bit1FromFreshRead,
         Fence,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum HandlerRegisterOperation {
+        SampleState0024(bool),
+        ClearState0024,
+        SampleState002c(bool),
+        ClearState002c,
+        SampleFinalState0024,
+        Fence,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum RuntimeOperation {
+        ReadCounter(u32),
+        SampleRollover(bool),
+        ClearRollover,
+        PublishSoftwarePending,
+        DisableCompare,
+        WriteCompare(u32),
+        TriggerTimerCommand,
+        Fence,
+    }
+
+    struct RuntimeRecorder {
+        counters: [u32; 2],
+        counter_index: usize,
+        rollover: bool,
+        operations: Vec<RuntimeOperation>,
+    }
+
+    impl RuntimeRecorder {
+        fn new(first_counter: u32, fresh_counter: u32, rollover: bool) -> Self {
+            Self {
+                counters: [first_counter, fresh_counter],
+                counter_index: 0,
+                rollover,
+                operations: Vec::new(),
+            }
+        }
+    }
+
+    impl ModemLpTimerRuntimeTransaction for RuntimeRecorder {
+        fn read_counter(&mut self) -> u32 {
+            let counter = self.counters[self.counter_index.min(1)];
+            self.counter_index += 1;
+            self.operations.push(RuntimeOperation::ReadCounter(counter));
+            counter
+        }
+
+        fn rollover_low_byte_nonzero(&mut self) -> bool {
+            self.operations
+                .push(RuntimeOperation::SampleRollover(self.rollover));
+            self.rollover
+        }
+
+        fn clear_rollover(&mut self) {
+            self.operations.push(RuntimeOperation::ClearRollover);
+        }
+
+        fn publish_software_pending(&mut self) {
+            self.operations
+                .push(RuntimeOperation::PublishSoftwarePending);
+        }
+
+        fn disable_compare(&mut self) {
+            self.operations.push(RuntimeOperation::DisableCompare);
+        }
+
+        fn write_compare(&mut self, image: u32) {
+            self.operations.push(RuntimeOperation::WriteCompare(image));
+        }
+
+        fn trigger_timer_command(&mut self) {
+            self.operations.push(RuntimeOperation::TriggerTimerCommand);
+        }
+
+        fn fence(&mut self) {
+            self.operations.push(RuntimeOperation::Fence);
+        }
+    }
+
+    struct HandlerRegisterRecorder {
+        state_0024_low_byte_nonzero: bool,
+        state_002c_low_byte_nonzero: bool,
+        operations: Vec<HandlerRegisterOperation>,
+    }
+
+    impl HandlerRegisterRecorder {
+        fn new(state_0024_low_byte_nonzero: bool, state_002c_low_byte_nonzero: bool) -> Self {
+            Self {
+                state_0024_low_byte_nonzero,
+                state_002c_low_byte_nonzero,
+                operations: Vec::new(),
+            }
+        }
+    }
+
+    impl ModemLpTimerHandlerRegisterTransaction for HandlerRegisterRecorder {
+        fn sample_state_0024_low_byte_nonzero(&mut self) -> bool {
+            self.operations
+                .push(HandlerRegisterOperation::SampleState0024(
+                    self.state_0024_low_byte_nonzero,
+                ));
+            self.state_0024_low_byte_nonzero
+        }
+
+        fn clear_state_0024(&mut self) {
+            self.operations
+                .push(HandlerRegisterOperation::ClearState0024);
+        }
+
+        fn sample_state_002c_low_byte_nonzero(&mut self) -> bool {
+            self.operations
+                .push(HandlerRegisterOperation::SampleState002c(
+                    self.state_002c_low_byte_nonzero,
+                ));
+            self.state_002c_low_byte_nonzero
+        }
+
+        fn clear_state_002c(&mut self) {
+            self.operations
+                .push(HandlerRegisterOperation::ClearState002c);
+        }
+
+        fn sample_final_state_0024(&mut self) {
+            self.operations
+                .push(HandlerRegisterOperation::SampleFinalState0024);
+        }
+
+        fn fence(&mut self) {
+            self.operations.push(HandlerRegisterOperation::Fence);
+        }
     }
 
     struct InterruptRecorder {
@@ -610,6 +1238,272 @@ mod tests {
                 InterruptOperation::TestControl0058Bit2(true),
                 InterruptOperation::SetControl0058Bit1FromFreshRead,
                 InterruptOperation::Fence,
+            ]
+        );
+    }
+
+    #[test]
+    fn source_127_common_handler_rearms_after_idle_state_samples() {
+        let mut recorder = HandlerRegisterRecorder::new(false, false);
+
+        let disposition = execute_modem_lp_timer_handler_registers(&mut recorder);
+
+        assert_eq!(disposition, ModemLpTimerHandlerRegisterDisposition::Rearmed);
+        assert_eq!(
+            recorder.operations,
+            [
+                HandlerRegisterOperation::SampleState0024(false),
+                HandlerRegisterOperation::SampleState002c(false),
+                HandlerRegisterOperation::SampleFinalState0024,
+            ]
+        );
+    }
+
+    #[test]
+    fn source_127_common_handler_acknowledges_queue_work_before_software_pending() {
+        let mut recorder = HandlerRegisterRecorder::new(true, false);
+
+        let disposition = execute_modem_lp_timer_handler_registers(&mut recorder);
+
+        assert_eq!(
+            disposition,
+            ModemLpTimerHandlerRegisterDisposition::SoftwarePending(
+                BluetoothModemLpTimerHandlerRegisterObservation {
+                    state_0024_low_byte_nonzero: true,
+                    state_002c_low_byte_nonzero: false,
+                }
+            )
+        );
+        assert_eq!(
+            recorder.operations,
+            [
+                HandlerRegisterOperation::SampleState0024(true),
+                HandlerRegisterOperation::ClearState0024,
+                HandlerRegisterOperation::SampleState002c(false),
+                HandlerRegisterOperation::Fence,
+            ]
+        );
+    }
+
+    #[test]
+    fn source_127_common_handler_acknowledges_epoch_work_before_software_pending() {
+        let mut recorder = HandlerRegisterRecorder::new(false, true);
+
+        let disposition = execute_modem_lp_timer_handler_registers(&mut recorder);
+
+        assert_eq!(
+            disposition,
+            ModemLpTimerHandlerRegisterDisposition::SoftwarePending(
+                BluetoothModemLpTimerHandlerRegisterObservation {
+                    state_0024_low_byte_nonzero: false,
+                    state_002c_low_byte_nonzero: true,
+                }
+            )
+        );
+        assert_eq!(
+            recorder.operations,
+            [
+                HandlerRegisterOperation::SampleState0024(false),
+                HandlerRegisterOperation::SampleState002c(true),
+                HandlerRegisterOperation::ClearState002c,
+                HandlerRegisterOperation::Fence,
+            ]
+        );
+    }
+
+    #[test]
+    fn source_127_common_handler_acknowledges_both_states_in_vendor_order() {
+        let mut recorder = HandlerRegisterRecorder::new(true, true);
+
+        let disposition = execute_modem_lp_timer_handler_registers(&mut recorder);
+
+        assert_eq!(
+            disposition,
+            ModemLpTimerHandlerRegisterDisposition::SoftwarePending(
+                BluetoothModemLpTimerHandlerRegisterObservation {
+                    state_0024_low_byte_nonzero: true,
+                    state_002c_low_byte_nonzero: true,
+                }
+            )
+        );
+        assert_eq!(
+            recorder.operations,
+            [
+                HandlerRegisterOperation::SampleState0024(true),
+                HandlerRegisterOperation::ClearState0024,
+                HandlerRegisterOperation::SampleState002c(true),
+                HandlerRegisterOperation::ClearState002c,
+                HandlerRegisterOperation::Fence,
+            ]
+        );
+    }
+
+    #[test]
+    fn modem_lp_counter_without_rollover_returns_one_bounded_sample() {
+        let mut epoch = BluetoothModemLpTimerEpoch::new();
+        epoch.advance_for_handler_registers(BluetoothModemLpTimerHandlerRegisterObservation {
+            state_0024_low_byte_nonzero: false,
+            state_002c_low_byte_nonzero: true,
+        });
+        let mut recorder = RuntimeRecorder::new(0x0000_1234, 0, false);
+
+        let observation = execute_modem_lp_timer_counter_sample(&mut recorder, &mut epoch);
+
+        assert_eq!(epoch.high_byte(), 1);
+        assert_eq!(observation.instant().bits(), 0x0100_1234);
+        assert!(!observation.rollover_was_acknowledged());
+        assert_eq!(
+            recorder.operations,
+            [
+                RuntimeOperation::ReadCounter(0x0000_1234),
+                RuntimeOperation::SampleRollover(false),
+            ]
+        );
+    }
+
+    #[test]
+    fn modem_lp_counter_rollover_advances_epoch_before_fresh_sample_and_ack() {
+        let mut epoch = BluetoothModemLpTimerEpoch::new();
+        let mut recorder = RuntimeRecorder::new(0x00ff_fffe, 0x0000_0003, true);
+
+        let observation = execute_modem_lp_timer_counter_sample(&mut recorder, &mut epoch);
+
+        assert_eq!(epoch.high_byte(), 1);
+        assert_eq!(observation.instant().bits(), 0x0100_0003);
+        assert!(observation.rollover_was_acknowledged());
+        assert_eq!(
+            recorder.operations,
+            [
+                RuntimeOperation::ReadCounter(0x00ff_fffe),
+                RuntimeOperation::SampleRollover(true),
+                RuntimeOperation::ReadCounter(0x0000_0003),
+                RuntimeOperation::ClearRollover,
+                RuntimeOperation::PublishSoftwarePending,
+                RuntimeOperation::TriggerTimerCommand,
+                RuntimeOperation::Fence,
+            ]
+        );
+    }
+
+    #[test]
+    fn modem_lp_empty_queue_disables_compare_in_one_finite_step() {
+        let mut recorder = RuntimeRecorder::new(0, 0, false);
+
+        execute_modem_lp_timer_compare_disable(&mut recorder);
+
+        assert_eq!(
+            recorder.operations,
+            [RuntimeOperation::DisableCompare, RuntimeOperation::Fence]
+        );
+    }
+
+    #[test]
+    fn modem_lp_compare_requests_immediate_work_for_due_deadline() {
+        let mut recorder = RuntimeRecorder::new(0x100, 0, false);
+
+        let disposition = execute_modem_lp_timer_compare_program(
+            &mut recorder,
+            BluetoothModemLpTimerInstant::from_bits(0x102),
+            BluetoothModemLpTimerEpoch::new(),
+        );
+
+        assert_eq!(
+            disposition,
+            BluetoothModemLpTimerCompareDisposition::Immediate
+        );
+        assert_eq!(
+            recorder.operations,
+            [
+                RuntimeOperation::DisableCompare,
+                RuntimeOperation::ReadCounter(0x100),
+                RuntimeOperation::SampleRollover(false),
+                RuntimeOperation::PublishSoftwarePending,
+                RuntimeOperation::TriggerTimerCommand,
+                RuntimeOperation::Fence,
+            ]
+        );
+    }
+
+    #[test]
+    fn modem_lp_compare_programs_near_deadline_without_callback_loop() {
+        let mut recorder = RuntimeRecorder::new(0x100, 0, false);
+
+        let disposition = execute_modem_lp_timer_compare_program(
+            &mut recorder,
+            BluetoothModemLpTimerInstant::from_bits(0x200),
+            BluetoothModemLpTimerEpoch::new(),
+        );
+
+        assert_eq!(
+            disposition,
+            BluetoothModemLpTimerCompareDisposition::Deadline
+        );
+        assert_eq!(
+            recorder.operations,
+            [
+                RuntimeOperation::DisableCompare,
+                RuntimeOperation::ReadCounter(0x100),
+                RuntimeOperation::SampleRollover(false),
+                RuntimeOperation::WriteCompare(0x200),
+                RuntimeOperation::TriggerTimerCommand,
+                RuntimeOperation::Fence,
+            ]
+        );
+    }
+
+    #[test]
+    fn modem_lp_compare_uses_half_range_checkpoint_for_distant_deadline() {
+        let mut recorder = RuntimeRecorder::new(0x100, 0, false);
+
+        let disposition = execute_modem_lp_timer_compare_program(
+            &mut recorder,
+            BluetoothModemLpTimerInstant::from_bits(0x0100_0200),
+            BluetoothModemLpTimerEpoch::new(),
+        );
+
+        assert_eq!(
+            disposition,
+            BluetoothModemLpTimerCompareDisposition::HalfRangeCheckpoint
+        );
+        assert_eq!(
+            recorder.operations,
+            [
+                RuntimeOperation::DisableCompare,
+                RuntimeOperation::ReadCounter(0x100),
+                RuntimeOperation::SampleRollover(false),
+                RuntimeOperation::WriteCompare(0x0080_0100),
+                RuntimeOperation::TriggerTimerCommand,
+                RuntimeOperation::Fence,
+            ]
+        );
+    }
+
+    #[test]
+    fn modem_lp_compare_accounts_for_unacknowledged_rollover_locally() {
+        let mut recorder = RuntimeRecorder::new(0x00ff_fffe, 0x0000_0003, true);
+        let epoch = BluetoothModemLpTimerEpoch::new();
+
+        let disposition = execute_modem_lp_timer_compare_program(
+            &mut recorder,
+            BluetoothModemLpTimerInstant::from_bits(0x0100_0010),
+            epoch,
+        );
+
+        assert_eq!(
+            disposition,
+            BluetoothModemLpTimerCompareDisposition::Deadline
+        );
+        assert_eq!(epoch.high_byte(), 0);
+        assert_eq!(
+            recorder.operations,
+            [
+                RuntimeOperation::DisableCompare,
+                RuntimeOperation::ReadCounter(0x00ff_fffe),
+                RuntimeOperation::SampleRollover(true),
+                RuntimeOperation::ReadCounter(0x0000_0003),
+                RuntimeOperation::WriteCompare(0x10),
+                RuntimeOperation::TriggerTimerCommand,
+                RuntimeOperation::Fence,
             ]
         );
     }

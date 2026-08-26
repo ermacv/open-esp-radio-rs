@@ -311,6 +311,8 @@ fn only_esp32s31_hardware_boundaries_depend_on_the_closed_pac() {
     let driver = repository.join("driver");
     let hal_manifest = driver.join("chips/esp32s31/hal/Cargo.toml");
     let bluetooth_manifest = driver.join("chips/esp32s31/bluetooth/Cargo.toml");
+    let ieee802154_esp_hal_manifest =
+        driver.join("adapters/esp-hal/esp32s31-ieee802154/Cargo.toml");
     let ieee802154_irq_manifest = driver.join("chips/esp32s31/ieee802154/irq/Cargo.toml");
     let ieee802154_runtime_manifest = driver.join("chips/esp32s31/ieee802154/runtime/Cargo.toml");
     let pac_manifest = driver.join("chips/esp32s31/pac/Cargo.toml");
@@ -318,6 +320,7 @@ fn only_esp32s31_hardware_boundaries_depend_on_the_closed_pac() {
     let permitted = [
         hal_manifest.as_path(),
         bluetooth_manifest.as_path(),
+        ieee802154_esp_hal_manifest.as_path(),
         ieee802154_irq_manifest.as_path(),
         ieee802154_runtime_manifest.as_path(),
         pac_manifest.as_path(),
@@ -426,9 +429,11 @@ fn chip_hardware_boundaries_do_not_expose_restricted_pac_owners() {
                 }
             }
             let exposed = public_declarations.into_iter().find(|declaration| {
-                forbidden_owners
-                    .iter()
-                    .any(|owner| declaration.contains(owner))
+                declaration
+                    .split(|character: char| {
+                        !(character.is_ascii_alphanumeric() || character == '_')
+                    })
+                    .any(|identifier| forbidden_owners.contains(&identifier))
             });
             exposed.map(|declaration| (path, declaration))
         })
@@ -799,6 +804,24 @@ fn cargo_alias_selects_the_product_host_and_keeps_build_output_visible() {
 }
 
 #[test]
+fn source_only_audit_does_not_cross_the_local_analysis_boundary() {
+    let audit = fs::read_to_string(repository_root().join("tools/audit-source-only.sh"))
+        .expect("read source-only audit");
+    assert!(audit.contains("cargo blobray project configure"));
+    assert!(audit.contains("registers \"$register_command\""));
+    for artifact_backed_command in [
+        "cargo blobray project analyze",
+        "cargo blobray project verify",
+        "cargo blobray project publish",
+    ] {
+        assert!(
+            !audit.contains(artifact_backed_command),
+            "source-only audit invokes artifact-backed command: {artifact_backed_command}"
+        );
+    }
+}
+
+#[test]
 fn analysis_input_builder_owns_every_generated_project_role() {
     let builder =
         repository_root().join("verification/vendor/targets/esp32s31/build-analysis-inputs");
@@ -1125,7 +1148,7 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
     let scopes = project["review"]["scopes"]
         .as_array_of_tables()
         .expect("project review scopes");
-    assert_eq!(scopes.len(), 32);
+    assert_eq!(scopes.len(), 33);
 
     let allowed = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
         .into_iter()
@@ -1156,6 +1179,16 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
 
     let all_radios = allowed.iter().map(|value| (*value).to_owned()).collect();
     assert_eq!(by_id["phy-init"], all_radios);
+    assert_eq!(
+        by_id["phy-pll-tracking"],
+        BTreeSet::from([
+            "wifi".to_owned(),
+            "bluetooth".to_owned(),
+            "ble".to_owned(),
+            "ieee802154".to_owned(),
+            "shared".to_owned(),
+        ])
+    );
     assert_eq!(by_id["station-state"], BTreeSet::from(["wifi".to_owned()]));
     assert_eq!(
         by_id["ble-controller-lifecycle"],
@@ -1212,12 +1245,12 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    assert_eq!(counts["wifi"], 22);
-    assert_eq!(counts["bluetooth"], 10);
-    assert_eq!(counts["ble"], 12);
-    assert_eq!(counts["ieee802154"], 8);
+    assert_eq!(counts["wifi"], 23);
+    assert_eq!(counts["bluetooth"], 11);
+    assert_eq!(counts["ble"], 13);
+    assert_eq!(counts["ieee802154"], 9);
     assert_eq!(counts["coex"], 9);
-    assert_eq!(counts["shared"], 6);
+    assert_eq!(counts["shared"], 7);
 }
 
 #[test]
@@ -1490,6 +1523,7 @@ fn compiled_probe_operations_do_not_call_pac_validation_directly() {
             "bluetooth_interrupt_registers",
             "initialize_bluetooth_baseband_v2",
             "initialize_bluetooth_controller_hal",
+            "disable_bluetooth_scheduler_and_sample_once",
             "program_bluetooth_memory_list_pointer",
             "initialize_bluetooth_phy_registers",
         ],

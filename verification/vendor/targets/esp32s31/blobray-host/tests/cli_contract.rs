@@ -77,6 +77,7 @@ fn checked_register_publications_are_typed_reports() {
 }
 
 #[test]
+#[ignore = "requires local vendor artifacts and generated Blobray findings"]
 fn inspect_register_schema_seven_exposes_typed_validation_actions() {
     let inspect = |address: &str| {
         let output = blobray()
@@ -217,6 +218,7 @@ fn inspect_register_schema_seven_exposes_typed_validation_actions() {
 }
 
 #[test]
+#[ignore = "requires local vendor artifacts and generated Blobray findings"]
 fn research_schema_fourteen_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
     let lookup = |scope: &str, finding: &str| {
         let output = blobray()
@@ -329,6 +331,7 @@ fn research_schema_fourteen_exact_finding_resolution_is_current_and_not_a_comple
 }
 
 #[test]
+#[ignore = "requires local vendor artifacts and generated Blobray findings"]
 fn inspect_function_schema_fifteen_has_one_fail_closed_blocker_route() {
     let output = blobray()
         .args([
@@ -383,6 +386,7 @@ fn inspect_function_schema_fifteen_has_one_fail_closed_blocker_route() {
 }
 
 #[test]
+#[ignore = "requires local vendor artifacts and generated Blobray findings"]
 fn research_surfaces_are_protocol_exact_and_keep_inspection_visible() {
     let query = |arguments: &[&str]| {
         let output = blobray()
@@ -546,6 +550,7 @@ fn checked_in_project_and_target_owned_review_packs_pass_doctor() {
 }
 
 #[test]
+#[ignore = "requires local vendor artifacts and generated Blobray findings"]
 fn reusable_radio_capability_report_is_deterministic_and_fail_closed() {
     let evaluate = || {
         let output = blobray()

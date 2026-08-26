@@ -60,11 +60,15 @@ pub use bluetooth::{
     BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
     BluetoothInterruptOutputAfterRoutesOwner, BluetoothInterruptOutputPreparationPrerequisite,
     BluetoothInterruptOutputPreparedOwner, BluetoothInterruptRegistersOwner,
-    BluetoothInterruptSetupOwner, BluetoothModemLpTimerHandlerPendingOwner,
-    BluetoothModemLpTimerInitializationPrerequisite, BluetoothModemLpTimerInterruptEvent,
+    BluetoothInterruptSetupOwner, BluetoothModemLpTimerCompareDisposition,
+    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
+    BluetoothModemLpTimerHandlerPendingOwner, BluetoothModemLpTimerHandlerRegisterObservation,
+    BluetoothModemLpTimerHandlerRegisterStep, BluetoothModemLpTimerInitializationPrerequisite,
+    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptEvent,
     BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerInterruptReadyOwner,
     BluetoothModemLpTimerInterruptStep, BluetoothModemLpTimerRegistersPreparedOwner,
-    BluetoothTaskOwner, BluetoothTaskOwnerReuniteError, BluetoothTaskOwnerReuniteFailure,
+    BluetoothModemLpTimerSoftwarePendingOwner, BluetoothTaskOwner, BluetoothTaskOwnerReuniteError,
+    BluetoothTaskOwnerReuniteFailure,
 };
 #[cfg(feature = "validation-probes")]
 pub use ieee802154_ed_event_probe::{

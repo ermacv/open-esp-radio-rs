@@ -87,9 +87,11 @@ cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.
 cargo blobray project configure \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --check
+# Artifact-backed: requires local.toml and current generated/findings.
 cargo blobray project publish \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --check
+cargo test -p blobray-esp32s31 --test cli_contract -- --ignored
 tools/audit-source-only.sh
 (cd examples/esp32s31-station && cargo check --release)
 ```

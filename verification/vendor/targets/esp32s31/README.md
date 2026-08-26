@@ -48,6 +48,9 @@ cargo blobray project verify \
 
 cargo blobray project check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+# Run the target-host contracts that consume those local analysis products.
+cargo test -p blobray-esp32s31 --test cli_contract -- --ignored
 ```
 
 Use `project status` for the quick overview, `project browse` for navigation,

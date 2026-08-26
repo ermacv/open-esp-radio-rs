@@ -1,5 +1,5 @@
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 #[cfg(test)]
 extern crate std;
@@ -49,29 +49,27 @@ pub mod validation;
 pub mod wifi_bb;
 pub mod wifi_mac;
 pub use bluetooth::{
-    BluetoothBasebandInitializationPrerequisite, BluetoothColdOwner, BluetoothControllerHal,
-    BluetoothControllerHalBorrow, BluetoothControllerHalInitConfig,
-    BluetoothControllerHalInitPrerequisite, BluetoothControllerLatchedTime,
+    BluetoothColdOwner, BluetoothControllerHal, BluetoothControllerHalBorrow,
+    BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
     BluetoothControllerSchedulerDisableBeginError, BluetoothControllerSchedulerDisableBeginFailure,
     BluetoothControllerSchedulerDisableBusyObserved,
-    BluetoothControllerSchedulerDisableIdleObserved,
-    BluetoothControllerSchedulerDisablePrerequisite, BluetoothControllerSchedulerDisableStep,
+    BluetoothControllerSchedulerDisableIdleObserved, BluetoothControllerSchedulerDisableStep,
     BluetoothControllerSchedulerDisabling, BluetoothControllerTimeLatchBeginError,
     BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
-    BluetoothInterruptOutputAfterRoutesOwner, BluetoothInterruptOutputPreparationPrerequisite,
-    BluetoothInterruptOutputPreparedOwner, BluetoothInterruptRegistersOwner,
-    BluetoothInterruptSetupOwner, BluetoothModemLpTimerCompareDisposition,
-    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
-    BluetoothModemLpTimerHandlerPendingOwner, BluetoothModemLpTimerHandlerRegisterObservation,
-    BluetoothModemLpTimerHandlerRegisterStep, BluetoothModemLpTimerInitializationPrerequisite,
-    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptEvent,
-    BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerInterruptReadyOwner,
-    BluetoothModemLpTimerInterruptStep, BluetoothModemLpTimerRegistersPreparedOwner,
-    BluetoothModemLpTimerSoftwarePendingOwner, BluetoothSchedulerLockModifyInterruptObservation,
-    BluetoothSchedulerLockModifyObservation, BluetoothSchedulerLockModifyPublished,
-    BluetoothSchedulerLockModifyRequest, BluetoothSchedulerLockModifyTaskObservation,
-    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
-    BluetoothTaskOwner, BluetoothTaskOwnerReuniteError, BluetoothTaskOwnerReuniteFailure,
+    BluetoothInterruptOutputAfterRoutesOwner, BluetoothInterruptOutputPreparedOwner,
+    BluetoothInterruptRegistersOwner, BluetoothInterruptSetupOwner,
+    BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
+    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerPendingOwner,
+    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerHandlerRegisterStep,
+    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
+    BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerInterruptStep,
+    BluetoothModemLpTimerRegistersPreparedOwner, BluetoothModemLpTimerSoftwarePendingOwner,
+    BluetoothNrtInterruptObservation, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
+    BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
+    BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceGateObservation,
+    BluetoothSchedulerWorkObservation, BluetoothTaskOwner, BluetoothTaskOwnerReuniteError,
+    BluetoothTaskOwnerReuniteFailure,
 };
 #[cfg(feature = "validation-probes")]
 pub use ieee802154_ed_event_probe::{

@@ -4,24 +4,8 @@
 //! receive only this finite borrow and named operations; they cannot recover,
 //! move or duplicate the underlying register partition.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
-pub use open_esp_radio_esp32s31_pac::{
-    BluetoothBasebandInitializationPrerequisite, BluetoothControllerHalInitConfig,
-    BluetoothControllerHalInitPrerequisite, BluetoothControllerLatchedTime,
-    BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchStep,
-    BluetoothControllerTimeLatchStepError, BluetoothInterruptOutputPreparationPrerequisite,
-    BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
-    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
-    BluetoothModemLpTimerInitializationPrerequisite, BluetoothModemLpTimerInstant,
-    BluetoothModemLpTimerInterruptEvent, BluetoothModemLpTimerInterruptObservation,
-    BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
-    BluetoothSchedulerDisablePrerequisite as BluetoothControllerSchedulerDisablePrerequisite,
-    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
-    BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
-    BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceGateObservation,
-    BluetoothSchedulerWorkObservation,
-};
 use open_esp_radio_esp32s31_pac::{
     BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothInterruptRegisters,
     BluetoothInterruptSetup as PacBluetoothInterruptSetup,
@@ -38,6 +22,19 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerDisableStep as PacSchedulerDisableStep,
     BluetoothTaskRegisters as PacBluetoothTaskRegisters,
     BluetoothTaskReuniteError as PacBluetoothTaskReuniteError, RadioHardware,
+};
+pub use open_esp_radio_esp32s31_pac::{
+    BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
+    BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchStep,
+    BluetoothControllerTimeLatchStepError, BluetoothModemLpTimerCompareDisposition,
+    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
+    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
+    BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptObservation,
+    BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
+    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerLockModifyInterruptObservation,
+    BluetoothSchedulerLockModifyObservation, BluetoothSchedulerLockModifyPublished,
+    BluetoothSchedulerLockModifyRequest, BluetoothSchedulerLockModifyTaskObservation,
+    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
 };
 
 /// Opaque HAL owner for the exclusive Bluetooth route before task/IRQ split.
@@ -134,30 +131,42 @@ impl BluetoothTaskOwner {
         self.registers.radio_phy_mut()
     }
 
-    /// Execute the reviewed BTBB-v2 component after consuming the affine
-    /// common-PHY prerequisite supplied by the lifecycle owner.
+    /// Execute the reviewed BTBB-v2 component for the lifecycle owner that
+    /// retains the completed common-PHY state.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain enabled Bluetooth clocks and the completed
+    /// common-PHY owner for this exact task partition.
     #[doc(hidden)]
-    pub fn initialize_baseband_v2_arg_one(
-        &mut self,
-        prerequisite: BluetoothBasebandInitializationPrerequisite,
-        gain_parameter: u8,
-    ) {
+    #[allow(
+        unsafe_code,
+        reason = "the caller must retain the external common-PHY and powered-clock owners"
+    )]
+    pub unsafe fn initialize_baseband_v2_arg_one(&mut self, gain_parameter: u8) {
         self.reunitable = false;
         self.registers
-            .initialize_baseband_v2_arg_one(prerequisite, gain_parameter);
+            .initialize_baseband_v2_arg_one(gain_parameter);
     }
 
     /// Execute the complete reviewed 50-operation controller HAL-init body
-    /// after consuming its affine external-prerequisite proof.
+    /// at the upper controller lifecycle's verified transition.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the matching powered PHY, initialized BTBB,
+    /// controller SRAM, software queues, and inactive interrupt bank.
     #[doc(hidden)]
-    pub fn initialize_controller_hal_transaction(
+    #[allow(
+        unsafe_code,
+        reason = "the caller must retain the external powered PHY, BTBB, SRAM and queue owners"
+    )]
+    pub unsafe fn initialize_controller_hal_transaction(
         &mut self,
-        prerequisite: BluetoothControllerHalInitPrerequisite,
         config: BluetoothControllerHalInitConfig,
     ) {
         self.reunitable = false;
-        self.registers
-            .initialize_controller_hal(prerequisite, config);
+        self.registers.initialize_controller_hal(config);
     }
 
     /// Apply the exact modem low-power timer register prefix before source 127
@@ -166,15 +175,21 @@ impl BluetoothTaskOwner {
     /// This consumes task ownership. The returned state is terminal until the
     /// missing scheduler/HCI software stages, ISR storage and route lifecycle
     /// are implemented; the reviewed teardown cannot restore the cold images.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain initialized controller/timer software and an
+    /// inactive source-127 CPU route for this exact task owner.
     #[doc(hidden)]
-    pub fn prepare_modem_lp_timer_registers(
+    #[allow(
+        unsafe_code,
+        reason = "the caller must retain the initialized timer software and inactive source-127 route"
+    )]
+    pub unsafe fn prepare_modem_lp_timer_registers(
         self,
-        prerequisite: BluetoothModemLpTimerInitializationPrerequisite,
     ) -> BluetoothModemLpTimerRegistersPreparedOwner {
         BluetoothModemLpTimerRegistersPreparedOwner {
-            registers: self
-                .registers
-                .prepare_modem_lp_timer_registers(prerequisite),
+            registers: self.registers.prepare_modem_lp_timer_registers(),
         }
     }
 }
@@ -325,13 +340,11 @@ impl BluetoothModemLpTimerSoftwarePendingOwner {
 impl BluetoothModemLpTimerInterruptReadyOwner {
     /// Perform one finite source-127 register classification.
     ///
-    /// The method consumes both the unique ISR owner and one affine event. It
-    /// never waits, loops, allocates or invokes an RTOS service.
-    pub fn step(
-        self,
-        event: BluetoothModemLpTimerInterruptEvent,
-    ) -> BluetoothModemLpTimerInterruptStep {
-        match self.registers.step(event) {
+    /// The unique ISR-staged owner is the authority for exactly one register
+    /// pass. The method never waits, loops, allocates or invokes an RTOS
+    /// service.
+    pub fn step(self) -> BluetoothModemLpTimerInterruptStep {
+        match self.registers.step() {
             PacBluetoothModemLpTimerInterruptStep::Spurious(registers) => {
                 BluetoothModemLpTimerInterruptStep::Spurious(
                     BluetoothModemLpTimerInterruptReadyOwner { registers },
@@ -404,15 +417,21 @@ pub struct BluetoothInterruptSetupOwner {
 impl BluetoothInterruptSetupOwner {
     /// Execute the reviewed baseline clear/enable/output preparation.
     ///
-    /// The affine prerequisite is constructible only by the lifecycle that
-    /// owns completed controller HAL-init and quiescent dynamic sources. The
-    /// returned state must remain retained until stable ISR storage is ready.
-    pub fn prepare_controller_output(
-        self,
-        prerequisite: BluetoothInterruptOutputPreparationPrerequisite,
-    ) -> BluetoothInterruptOutputPreparedOwner {
+    /// The controller lifecycle owns completed HAL-init and quiescent dynamic
+    /// sources. The returned state remains retained until stable ISR storage
+    /// is ready.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain completed controller HAL-init, quiescent dynamic
+    /// sources, and inactive primary/NRT CPU routes for this interrupt owner.
+    #[allow(
+        unsafe_code,
+        reason = "the caller must retain completed controller init and inactive CPU routes"
+    )]
+    pub unsafe fn prepare_controller_output(self) -> BluetoothInterruptOutputPreparedOwner {
         BluetoothInterruptOutputPreparedOwner {
-            registers: self.registers.prepare_controller_output(prerequisite),
+            registers: self.registers.prepare_controller_output(),
         }
     }
 }
@@ -455,6 +474,14 @@ pub struct BluetoothInterruptRegistersOwner {
 }
 
 impl BluetoothInterruptRegistersOwner {
+    /// Capture and acknowledge one complete opaque NRT source-133 epoch.
+    ///
+    /// This preserves the PAC sample/sample/acknowledge/acknowledge order. It
+    /// deliberately performs no feature dispatch and publishes no task wake.
+    pub fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptObservation {
+        self.registers.capture_nrt_and_acknowledge()
+    }
+
     /// Capture, acknowledge and retain one complete primary source-124 epoch.
     pub fn capture_primary_and_acknowledge(&mut self) -> BluetoothPrimaryInterruptEpoch {
         self.registers.capture_primary_and_acknowledge()
@@ -466,13 +493,6 @@ impl BluetoothInterruptRegistersOwner {
         &mut self,
     ) -> BluetoothSchedulerReferenceGateObservation {
         self.registers.capture_scheduler_reference_gate()
-    }
-
-    /// Clear the scheduler reference after the Controller has admitted the
-    /// mandatory post-clear scheduler consistency action.
-    #[doc(hidden)]
-    pub fn clear_scheduler_reference(&mut self) {
-        self.registers.clear_scheduler_reference();
     }
 
     /// Capture the later, independent scheduler-state observation used to
@@ -553,7 +573,6 @@ pub struct BluetoothControllerSchedulerDisableIdleObserved {
 #[must_use = "a failed Controller scheduler disable still owns the HAL task owner"]
 pub struct BluetoothControllerSchedulerDisableBeginFailure {
     task: BluetoothTaskOwner,
-    prerequisite: BluetoothControllerSchedulerDisablePrerequisite,
     error: BluetoothControllerSchedulerDisableBeginError,
 }
 
@@ -563,15 +582,14 @@ impl BluetoothControllerSchedulerDisableBeginFailure {
         self.error
     }
 
-    /// Recover the unchanged HAL task owner, unconsumed proof and reason.
+    /// Recover the unchanged HAL task owner and rejection reason.
     pub fn into_parts(
         self,
     ) -> (
         BluetoothTaskOwner,
-        BluetoothControllerSchedulerDisablePrerequisite,
         BluetoothControllerSchedulerDisableBeginError,
     ) {
-        (self.task, self.prerequisite, self.error)
+        (self.task, self.error)
     }
 }
 
@@ -588,28 +606,34 @@ impl BluetoothControllerSchedulerDisabling {
     /// Begin the reviewed scheduler-disable command while the caller retains
     /// the separate interrupt route epoch for later quiescence.
     ///
-    /// The affine prerequisite is constructible only at the powered
-    /// task-stopping lifecycle edge. It makes no claim about whether CPU routes
-    /// are still live. A controller-time latch still in flight is rejected
-    /// before the command write and returns the task owner unchanged.
-    pub fn begin(
+    /// A controller-time latch still in flight is rejected before the command
+    /// write and returns the task owner unchanged. Powered task-stopping
+    /// lifecycle ownership remains an upper controller-layer requirement.
+    ///
+    /// # Safety
+    ///
+    /// `task` must belong to the unique powered controller in its stopping
+    /// lifecycle. No new scheduler work may be admitted after this call.
+    #[allow(
+        unsafe_code,
+        reason = "the caller must retain the unique powered task-stopping lifecycle"
+    )]
+    pub unsafe fn begin(
         task: BluetoothTaskOwner,
-        prerequisite: BluetoothControllerSchedulerDisablePrerequisite,
     ) -> Result<Self, BluetoothControllerSchedulerDisableBeginFailure> {
         let BluetoothTaskOwner {
             registers,
             reunitable,
         } = task;
-        match registers.begin_scheduler_disable(prerequisite) {
+        match registers.begin_scheduler_disable() {
             Ok(request) => Ok(Self { request }),
             Err(failure) => {
-                let (task, prerequisite, error) = failure.into_parts();
+                let (task, error) = failure.into_parts();
                 Err(BluetoothControllerSchedulerDisableBeginFailure {
                     task: BluetoothTaskOwner {
                         registers: task,
                         reunitable,
                     },
-                    prerequisite,
                     error,
                 })
             }
@@ -674,6 +698,18 @@ impl BluetoothControllerHal<'_> {
         &mut self,
     ) -> BluetoothSchedulerLockModifyTaskObservation {
         self.registers.capture_scheduler_lock_modify_task()
+    }
+
+    /// Transfer one fresh hardware finished-list observation to its reviewed
+    /// report register and return the typed sixteen-list projection.
+    ///
+    /// This finite task-side operation performs no item lookup or callback.
+    /// The Controller must retain descriptor ownership until a separately
+    /// proven completion-visibility fence permits CPU access.
+    pub fn transfer_scheduler_finished_lists(
+        &mut self,
+    ) -> BluetoothSchedulerFinishedListObservation {
+        self.registers.transfer_scheduler_finished_lists()
     }
 
     /// Execute the finite scheduler lock/modify publication transaction.

@@ -74,11 +74,9 @@ pub mod validation;
 #[cfg(feature = "validation-probes")]
 mod validation_transactions;
 pub use agc_runtime::ForcedRxGain;
-pub use bluetooth_baseband::BluetoothBasebandInitializationPrerequisite;
 pub use bluetooth_controller_hal_init::{
-    BluetoothControllerHalInitConfig, BluetoothControllerHalInitPrerequisite,
-    BluetoothControllerTimeScale, BluetoothHalInitPeriod, BluetoothHalInitScale,
-    BluetoothRawTimeDeltaProjection,
+    BluetoothControllerHalInitConfig, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
+    BluetoothHalInitScale, BluetoothRawTimeDeltaProjection,
 };
 pub use bluetooth_controller_time::{
     BluetoothControllerLatchedTime, BluetoothControllerTimeLatchBeginError,
@@ -88,9 +86,9 @@ pub use bluetooth_controller_time::{
 pub use bluetooth_interrupt::{
     BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
     BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
-    BluetoothInterruptOutputPreparationPrerequisite, BluetoothInterruptOutputPrepared,
-    BluetoothNrtInterruptObservation, BluetoothPrimaryFaultEvidence,
-    BluetoothPrimaryInterruptEpoch, BluetoothPrimaryInterruptObservation,
+    BluetoothInterruptOutputPrepared, BluetoothNrtInterruptObservation,
+    BluetoothPrimaryFaultEvidence, BluetoothPrimaryInterruptEpoch,
+    BluetoothPrimaryInterruptObservation,
 };
 pub use bluetooth_memory_lists::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
@@ -100,8 +98,7 @@ pub use bluetooth_modem_lp_timer::{
     BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
     BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerPending,
     BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerHandlerRegisterStep,
-    BluetoothModemLpTimerInitializationPrerequisite, BluetoothModemLpTimerInstant,
-    BluetoothModemLpTimerInterruptEvent, BluetoothModemLpTimerInterruptObservation,
+    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
     BluetoothModemLpTimerInterruptReady, BluetoothModemLpTimerInterruptStep,
     BluetoothModemLpTimerRegistersPrepared, BluetoothModemLpTimerSoftwarePending,
 };
@@ -111,14 +108,13 @@ pub use bluetooth_scheduler_lock_modify::{
     BluetoothSchedulerLockModifyRequestError, BluetoothSchedulerLockModifyTaskObservation,
 };
 pub use bluetooth_scheduler_runtime::{
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerReferenceGateObservation,
-    BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerReferenceCleared,
+    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
 };
 pub use bluetooth_scheduler_stop::{
     BluetoothSchedulerDisableBeginError, BluetoothSchedulerDisableBeginFailure,
     BluetoothSchedulerDisableBusyObserved, BluetoothSchedulerDisableIdleObserved,
-    BluetoothSchedulerDisablePrerequisite, BluetoothSchedulerDisableRequest,
-    BluetoothSchedulerDisableStep,
+    BluetoothSchedulerDisableRequest, BluetoothSchedulerDisableStep,
 };
 pub use cfr::CfrValue;
 pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};

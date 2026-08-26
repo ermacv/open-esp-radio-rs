@@ -11,43 +11,6 @@
 
 use super::{BluetoothTaskRegisters, Ieee802154TaskRegisters, device_fence, svd};
 
-/// Affine proof that the external common-PHY prerequisite is satisfied.
-///
-/// The restricted PAC cannot construct this value because the matching PHY
-/// lifecycle is owned by a higher crate. Safe HAL code may consume it once;
-/// only that lifecycle boundary may assume the prerequisite.
-///
-/// ```compile_fail
-/// use open_esp_radio_esp32s31_pac::BluetoothBasebandInitializationPrerequisite;
-///
-/// fn duplicate(proof: BluetoothBasebandInitializationPrerequisite) {
-///     let _first = proof;
-///     let _second = proof;
-/// }
-/// ```
-#[must_use = "the common-PHY proof must be consumed by the matching BTBB transaction"]
-pub struct BluetoothBasebandInitializationPrerequisite {
-    _private: (),
-}
-
-impl BluetoothBasebandInitializationPrerequisite {
-    /// Assume the complete common-PHY prerequisite for one BTBB transaction.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the enabled Bluetooth clocks and the completed
-    /// common-PHY state for the same unique radio owner. Every physical owner
-    /// must remain retained until verified last-owner PHY teardown.
-    #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "construction is the explicit cross-crate common-PHY proof boundary"
-    )]
-    pub unsafe fn assume_satisfied() -> Self {
-        Self { _private: () }
-    }
-}
-
 const fn gain_force_low(parameter: u8) -> u8 {
     parameter & 0x7f
 }
@@ -67,15 +30,11 @@ impl BluetoothTaskRegisters {
     /// the body, this standalone Bluetooth edge adds exactly one device fence
     /// before returning to its lifecycle owner.
     ///
-    /// The consumed prerequisite is constructible only at the unsafe
-    /// post-common-PHY lifecycle boundary. It keeps this PAC transaction and
-    /// the opaque HAL wrapper safe without making the prerequisite implicit.
+    /// Common-PHY and clock ordering do not belong to the PAC. The controller
+    /// lifecycle above HAL is the only safe production caller and retains
+    /// those owners while this finite register transaction executes.
     #[doc(hidden)]
-    pub fn initialize_baseband_v2_arg_one(
-        &mut self,
-        _prerequisite: BluetoothBasebandInitializationPrerequisite,
-        gain_parameter: u8,
-    ) {
+    pub fn initialize_baseband_v2_arg_one(&mut self, gain_parameter: u8) {
         let mut port = BluetoothBasebandV2Transaction {
             bluetooth: &self.bluetooth,
             radio_phy: &self.radio_phy.peripherals,
@@ -648,9 +607,9 @@ impl BluetoothBasebandV2Transaction<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BluetoothBasebandInitializationPrerequisite, BluetoothBasebandV2TransitionPort,
-        BluetoothTaskRegisters, Ieee802154TaskRegisters, execute_ieee802154_baseband_body,
-        execute_standalone_bluetooth_transition, gain_force_low, gain_image,
+        BluetoothBasebandV2TransitionPort, BluetoothTaskRegisters, Ieee802154TaskRegisters,
+        execute_ieee802154_baseband_body, execute_standalone_bluetooth_transition, gain_force_low,
+        gain_image,
     };
     use std::vec::Vec;
 
@@ -701,7 +660,7 @@ mod tests {
 
     #[test]
     fn both_protocol_owners_reuse_the_body_with_distinct_entry_shapes() {
-        let _: fn(&mut BluetoothTaskRegisters, BluetoothBasebandInitializationPrerequisite, u8) =
+        let _: fn(&mut BluetoothTaskRegisters, u8) =
             BluetoothTaskRegisters::initialize_baseband_v2_arg_one;
         let _: unsafe fn(&mut Ieee802154TaskRegisters, u8) =
             Ieee802154TaskRegisters::initialize_baseband_v2_arg_one_body_without_fence;

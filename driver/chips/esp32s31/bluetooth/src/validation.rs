@@ -41,22 +41,21 @@ pub fn capture_primary_and_acknowledge_interrupts() -> [u32; 2] {
 )]
 #[inline(always)]
 pub unsafe fn prepare_primary_interrupt_output() {
-    let bluetooth = open_esp_radio_esp32s31_pac::RadioHardware::for_validation().into_bluetooth();
-    let (task, interrupts) = bluetooth.separate_interrupt_owner();
-    let prerequisite = unsafe {
-        open_esp_radio_esp32s31_pac::BluetoothInterruptOutputPreparationPrerequisite::assume_satisfied()
-    };
-    let prepared = interrupts.prepare_controller_output(prerequisite);
+    let cold = open_esp_radio_esp32s31_hal::BluetoothColdOwner::from_radio_hardware(
+        open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
+    );
+    let (task, interrupts) = cold.separate_interrupt_owner();
+    let prepared = unsafe { interrupts.prepare_controller_output() };
     let _powered_owners = (task, prepared);
 }
 
 /// Execute the exact production scheduler-table low-bit clear transaction.
 #[inline(always)]
 pub fn clear_scheduler_table_low_bits() {
-    let resources = crate::BluetoothPhysicalResources::from_radio_hardware(
+    let cold = open_esp_radio_esp32s31_hal::BluetoothColdOwner::from_radio_hardware(
         open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
     );
-    let (mut task, interrupts) = resources.separate_interrupt_owner();
+    let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
     task.clear_scheduler_table_low_bits();
     // The comparison image deliberately retains the mutated partitions; it
     // must not reconstruct cold ownership without the missing rollback.
@@ -103,10 +102,10 @@ pub unsafe fn initialize_baseband_v2(gain_parameter: u8) {
 )]
 #[inline(always)]
 pub unsafe fn initialize_controller_hal_reviewed_standalone() {
-    let resources = crate::BluetoothPhysicalResources::from_radio_hardware(
+    let cold = open_esp_radio_esp32s31_hal::BluetoothColdOwner::from_radio_hardware(
         open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
     );
-    let (mut task, interrupts) = resources.separate_interrupt_owner();
+    let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
     unsafe {
         task.initialize_controller_hal(BluetoothControllerHalInitConfig::reviewed_standalone());
     }
@@ -134,10 +133,7 @@ pub unsafe fn prepare_modem_lp_timer_registers() {
         open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
     );
     let (task, interrupts) = cold.separate_interrupt_owner();
-    let prerequisite = unsafe {
-        open_esp_radio_esp32s31_hal::BluetoothModemLpTimerInitializationPrerequisite::assume_satisfied()
-    };
-    let prepared = task.prepare_modem_lp_timer_registers(prerequisite);
+    let prepared = unsafe { task.prepare_modem_lp_timer_registers() };
     let _terminal_owners = (prepared, interrupts);
 }
 

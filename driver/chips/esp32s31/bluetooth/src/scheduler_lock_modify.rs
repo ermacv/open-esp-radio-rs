@@ -290,6 +290,11 @@ impl BluetoothSchedulerLockModifyWorker {
         }
     }
 
+    /// Whether this worker owns no admitted or completed request.
+    pub const fn is_idle(&self) -> bool {
+        matches!(self.state, BluetoothSchedulerLockModifyWorkerState::Idle)
+    }
+
     /// Admit one validated request without touching hardware.
     pub fn begin(
         &mut self,

@@ -7,9 +7,7 @@
 use esp_hal::peripherals::{
     HP_SYS_CLKRST, I2C_ANA_MST, LP_AON_CLK_RST, LP_PERI, LP_TSENS, MODEM_LPCON, MODEM_SYSCON, PMU,
 };
-use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothClockControl, BluetoothClockState, BluetoothPhyPlatform,
-};
+use open_esp_radio_esp32s31_bluetooth::{BluetoothClockControl, BluetoothClockState};
 use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
@@ -88,10 +86,6 @@ impl EspHalRadioPlatform {
 pub struct EspHalBluetoothPlatform<'a> {
     inner: BluetoothPlatformLease<'a, EspHalClockIo>,
 }
-
-fn require_complete_bluetooth_phy_platform<T: BluetoothPhyPlatform>() {}
-
-const _: fn() = require_complete_bluetooth_phy_platform::<EspHalBluetoothPlatform<'static>>;
 
 impl BluetoothClockControl for EspHalBluetoothPlatform<'_> {
     fn enable_bluetooth_controller_clocks(&mut self) {

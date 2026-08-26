@@ -30,6 +30,18 @@ impl BluetoothSchedulerReferenceGateObservation {
     }
 }
 
+/// Affine proof that the source-124 reference-clear MMIO and trailing device
+/// fence completed.
+///
+/// This value carries no scheduler-consistency claim. The Controller must
+/// consume it immediately in its post-clear selector-6 invariant action
+/// before making the later scheduler-work observation.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the completed reference clear must feed the post-clear scheduler invariant"]
+pub struct BluetoothSchedulerReferenceCleared {
+    _private: (),
+}
+
 /// Later complete `SCHEDULER_STATE` image used to construct deferred work.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothSchedulerWorkObservation(u32);
@@ -64,13 +76,19 @@ impl BluetoothSchedulerWorkObservation {
 pub struct BluetoothSchedulerFinishedListObservation(u16);
 
 impl BluetoothSchedulerFinishedListObservation {
-    /// Retain one complete reviewed field image.
-    ///
-    /// Every `u16` is a representable subset of the sixteen hardware lists.
-    /// Live code obtains this value through the task-owned MMIO transfer;
-    /// virtual-time tests may construct it directly.
-    pub const fn from_bits(bits: u16) -> Self {
-        Self(bits)
+    /// Construct a semantic set of finished hardware lists for host-only
+    /// controller tests.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn from_lists_for_validation(lists: &[u8]) -> Option<Self> {
+        let mut image = 0u16;
+        for &list in lists {
+            if list >= 16 {
+                return None;
+            }
+            image |= 1u16 << list;
+        }
+        Some(Self(image))
     }
 
     /// Return the complete sixteen-list mask.
@@ -176,12 +194,13 @@ impl BluetoothInterruptRegisters {
     /// observed `SCHEDULER_STATE.BUSY == 0` at the reference gate. This MMIO
     /// operation does not perform the mandatory post-clear scheduler action;
     /// the future live interrupt owner must compose both in order.
-    pub fn clear_scheduler_reference(&mut self) {
+    pub fn clear_scheduler_reference(&mut self) -> BluetoothSchedulerReferenceCleared {
         let mut control = HardwareSchedulerInterruptControl {
             registers: &self.peripherals.bluetooth_scheduler_interrupt_runtime,
         };
         execute_clear_scheduler_reference(&mut control);
         device_fence();
+        BluetoothSchedulerReferenceCleared { _private: () }
     }
 
     /// Read the later scheduler-state image used to classify deferred work.

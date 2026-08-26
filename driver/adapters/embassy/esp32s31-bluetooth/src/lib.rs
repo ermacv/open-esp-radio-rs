@@ -19,76 +19,80 @@ use core::{
 use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::RawMutex, waitqueue::GenericAtomicWaker};
 use open_esp_radio_esp32s31_bluetooth::{
-    BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
-    BluetoothModemLpTimerExpiration, BluetoothModemLpTimerExpirationPending,
-    BluetoothModemLpTimerSoftwareWork, BluetoothPrimaryControllerFault,
+    BluetoothControllerInterruptRuntime, BluetoothControllerTaskRuntime,
+    BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
+    BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerSoftwareWork,
+    BluetoothNrtDefaultInterruptEpoch, BluetoothPrimaryControllerFault,
     BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
     BluetoothPrimaryReferenceRecoveryRequired, BluetoothPrimarySchedulerEvent,
-    BluetoothSchedulerLockModifyEvent, BluetoothSchedulerLockModifyEventCell,
-    BluetoothSchedulerLockModifyEventPublication, BluetoothSchedulerLockModifyInterruptObservation,
-    BluetoothSchedulerLockModifyWorker, BluetoothSchedulerLockModifyWorkerStep,
-    BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
-    BluetoothSchedulerWorkerWakeClass, step_primary_interrupt,
+    BluetoothSchedulerLockModifyEvent, BluetoothSchedulerLockModifyEventPublication,
+    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyWorkerStep,
+    BluetoothSchedulerWakeBatch, BluetoothSchedulerWakePublication,
+    BluetoothSchedulerWorkerWakeClass, step_nrt_default_interrupt, step_primary_interrupt,
 };
 use open_esp_radio_esp32s31_hal::{BluetoothControllerHal, BluetoothInterruptRegistersOwner};
 
-/// Statically allocated scheduler wake state for one Bluetooth runtime epoch.
+/// Embassy wakers for one borrowed Bluetooth Controller runtime epoch.
 ///
-/// [`split`](Self::split) creates exactly one interrupt publisher and one async
-/// receiver at a time. The mutable borrow prevents a second endpoint pair
-/// while either endpoint from the current epoch is alive. A live interrupt to
-/// task route must use a [`RawMutex`] implementation that synchronizes those
-/// contexts; `NoopRawMutex` is suitable only for single-executor use and tests.
-pub struct EmbassyBluetoothWakeResources<M: RawMutex> {
-    scheduler: BluetoothSchedulerWakeCell,
+/// This adapter owns no pending state or Controller worker. [`split`](Self::split)
+/// must borrow the core [`BluetoothControllerRuntimeResources`] that is bound
+/// to the hardware epoch. A live interrupt-to-task route must use a
+/// [`RawMutex`] implementation that synchronizes those contexts;
+/// `NoopRawMutex` is suitable only for single-executor use and tests.
+pub struct EmbassyBluetoothRuntimeWakers<M: RawMutex> {
     scheduler_waker: GenericAtomicWaker<M>,
-    lock_modify: BluetoothSchedulerLockModifyEventCell,
     lock_modify_waker: GenericAtomicWaker<M>,
-    timer_event: BluetoothModemLpTimerEventCell,
     timer_event_waker: GenericAtomicWaker<M>,
 }
 
-impl<M: RawMutex> EmbassyBluetoothWakeResources<M> {
-    /// Construct an empty wake handoff.
+impl<M: RawMutex> EmbassyBluetoothRuntimeWakers<M> {
+    /// Construct executor notification state without a duplicate event cell.
     pub const fn new() -> Self {
         Self {
-            scheduler: BluetoothSchedulerWakeCell::new(),
             scheduler_waker: GenericAtomicWaker::new(M::INIT),
-            lock_modify: BluetoothSchedulerLockModifyEventCell::new(),
             lock_modify_waker: GenericAtomicWaker::new(M::INIT),
-            timer_event: BluetoothModemLpTimerEventCell::new(),
             timer_event_waker: GenericAtomicWaker::new(M::INIT),
         }
     }
 
-    /// Bind the sole interrupt publisher to the sole async receiver.
+    /// Bind Embassy notification to the sole core interrupt/task endpoint pair.
     ///
     /// The resource borrow makes a second live endpoint pair impossible:
     ///
     /// ```compile_fail
     /// use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-    /// use open_esp_radio_esp32s31_bluetooth_embassy::EmbassyBluetoothWakeResources;
+    /// use open_esp_radio_esp32s31_bluetooth::BluetoothControllerRuntimeResources;
+    /// use open_esp_radio_esp32s31_bluetooth_embassy::EmbassyBluetoothRuntimeWakers;
     ///
-    /// let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-    /// let first = resources.split();
-    /// let second = resources.split();
+    /// let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+    /// let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+    /// let first = wakers.split(runtime.split());
+    /// let second = wakers.split(runtime.split());
     /// let _ = (first, second);
     /// ```
-    pub fn split(
-        &mut self,
+    pub fn split<'resources>(
+        &'resources mut self,
+        runtime: (
+            BluetoothControllerInterruptRuntime<'resources>,
+            BluetoothControllerTaskRuntime<'resources>,
+        ),
     ) -> (
-        EmbassyBluetoothIrqPublisher<'_, M>,
-        EmbassyBluetoothWakeReceiver<'_, M>,
+        EmbassyBluetoothIrqPublisher<'resources, M>,
+        EmbassyBluetoothWakeReceiver<'resources, M>,
     ) {
-        let resources = &*self;
+        let wakers = &*self;
+        let (runtime, task) = runtime;
         (
-            EmbassyBluetoothIrqPublisher { resources },
-            EmbassyBluetoothWakeReceiver { resources },
+            EmbassyBluetoothIrqPublisher { runtime, wakers },
+            EmbassyBluetoothWakeReceiver {
+                runtime: task,
+                wakers,
+            },
         )
     }
 }
 
-impl<M: RawMutex> Default for EmbassyBluetoothWakeResources<M> {
+impl<M: RawMutex> Default for EmbassyBluetoothRuntimeWakers<M> {
     fn default() -> Self {
         Self::new()
     }
@@ -96,7 +100,8 @@ impl<M: RawMutex> Default for EmbassyBluetoothWakeResources<M> {
 
 /// Interrupt-side endpoint for publishing classified scheduler work.
 pub struct EmbassyBluetoothIrqPublisher<'resources, M: RawMutex> {
-    resources: &'resources EmbassyBluetoothWakeResources<M>,
+    runtime: BluetoothControllerInterruptRuntime<'resources>,
+    wakers: &'resources EmbassyBluetoothRuntimeWakers<M>,
 }
 
 impl<M: RawMutex> EmbassyBluetoothIrqPublisher<'_, M> {
@@ -112,9 +117,9 @@ impl<M: RawMutex> EmbassyBluetoothIrqPublisher<'_, M> {
         BluetoothModemLpTimerSoftwareWork<'queue, CAPACITY>,
         BluetoothModemLpTimerExpirationPending<'queue, CAPACITY>,
     > {
-        match pending.publish(&self.resources.timer_event) {
+        match pending.publish(self.runtime.modem_lp_timer_events()) {
             Ok((work, BluetoothModemLpTimerEventPublication::WakeWorker)) => {
-                self.resources.timer_event_waker.wake();
+                self.wakers.timer_event_waker.wake();
                 Ok(work)
             }
             Err(pending) => Err(pending),
@@ -153,6 +158,19 @@ impl<M: RawMutex> EmbassyBluetoothIrqPublisher<'_, M> {
         }
     }
 
+    /// Capture and acknowledge one default-profile NRT source-133 epoch.
+    ///
+    /// The pinned default profile has no NRT software consumer, so this path
+    /// intentionally wakes neither scheduler nor async worker. The returned
+    /// opaque epoch remains available for diagnostics and future explicit
+    /// feature policy.
+    pub fn capture_nrt_default(
+        &self,
+        interrupts: &mut BluetoothInterruptRegistersOwner,
+    ) -> BluetoothNrtDefaultInterruptEpoch {
+        step_nrt_default_interrupt(interrupts)
+    }
+
     /// Publish one classified scheduler wake and notify the worker on a fresh
     /// pending epoch.
     ///
@@ -162,9 +180,9 @@ impl<M: RawMutex> EmbassyBluetoothIrqPublisher<'_, M> {
         &self,
         class: BluetoothSchedulerWorkerWakeClass,
     ) -> BluetoothSchedulerWakePublication {
-        let publication = self.resources.scheduler.publish_from_interrupt(class);
+        let publication = self.runtime.scheduler_wake().publish_from_interrupt(class);
         if publication == BluetoothSchedulerWakePublication::WakeWorker {
-            self.resources.scheduler_waker.wake();
+            self.wakers.scheduler_waker.wake();
         }
         publication
     }
@@ -176,11 +194,11 @@ impl<M: RawMutex> EmbassyBluetoothIrqPublisher<'_, M> {
         observation: BluetoothSchedulerLockModifyInterruptObservation,
     ) -> BluetoothSchedulerLockModifyEventPublication {
         let publication = self
-            .resources
-            .lock_modify
+            .runtime
+            .scheduler_lock_modify_events()
             .publish_from_interrupt(observation);
         if publication == BluetoothSchedulerLockModifyEventPublication::WakeWorker {
-            self.resources.lock_modify_waker.wake();
+            self.wakers.lock_modify_waker.wake();
         }
         publication
     }
@@ -227,7 +245,8 @@ pub enum EmbassyBluetoothWake {
 
 /// Async endpoint for the sole Bluetooth controller worker.
 pub struct EmbassyBluetoothWakeReceiver<'resources, M: RawMutex> {
-    resources: &'resources EmbassyBluetoothWakeResources<M>,
+    runtime: BluetoothControllerTaskRuntime<'resources>,
+    wakers: &'resources EmbassyBluetoothRuntimeWakers<M>,
 }
 
 impl<M: RawMutex> EmbassyBluetoothWakeReceiver<'_, M> {
@@ -238,8 +257,8 @@ impl<M: RawMutex> EmbassyBluetoothWakeReceiver<'_, M> {
     /// software path backpressured until a replacement receiver consumes it.
     pub async fn wait_timer_expiration(&mut self) -> BluetoothModemLpTimerExpiration {
         poll_fn(|context| {
-            self.resources.timer_event_waker.register(context.waker());
-            match self.resources.timer_event.take() {
+            self.wakers.timer_event_waker.register(context.waker());
+            match self.runtime.modem_lp_timer_events().take() {
                 Some(event) => Poll::Ready(event),
                 None => Poll::Pending,
             }
@@ -249,7 +268,7 @@ impl<M: RawMutex> EmbassyBluetoothWakeReceiver<'_, M> {
 
     /// Whether one source-127 timer expiration is awaiting the receiver.
     pub fn timer_expiration_pending(&self) -> bool {
-        self.resources.timer_event.is_pending()
+        self.runtime.modem_lp_timer_events().is_pending()
     }
 
     /// Wait for the next durable scheduler batch.
@@ -260,8 +279,8 @@ impl<M: RawMutex> EmbassyBluetoothWakeReceiver<'_, M> {
     /// not remove scheduler state; a replacement waiter can consume it.
     pub async fn wait_scheduler(&mut self) -> BluetoothSchedulerWakeBatch {
         poll_fn(|context| {
-            self.resources.scheduler_waker.register(context.waker());
-            match self.resources.scheduler.take() {
+            self.wakers.scheduler_waker.register(context.waker());
+            match self.runtime.scheduler_wake().take() {
                 Some(batch) => Poll::Ready(batch),
                 None => Poll::Pending,
             }
@@ -271,7 +290,7 @@ impl<M: RawMutex> EmbassyBluetoothWakeReceiver<'_, M> {
 
     /// Whether classified scheduler work is currently pending.
     pub fn scheduler_pending(&self) -> bool {
-        self.resources.scheduler.is_pending()
+        self.runtime.scheduler_wake().is_pending()
     }
 
     /// Wait for one durable scheduler lock/modify event.
@@ -281,8 +300,8 @@ impl<M: RawMutex> EmbassyBluetoothWakeReceiver<'_, M> {
     /// the original pending value or a newer coalesced BUSY value.
     pub async fn wait_lock_modify(&mut self) -> BluetoothSchedulerLockModifyEvent {
         poll_fn(|context| {
-            self.resources.lock_modify_waker.register(context.waker());
-            match self.resources.lock_modify.take() {
+            self.wakers.lock_modify_waker.register(context.waker());
+            match self.runtime.scheduler_lock_modify_events().take() {
                 Some(event) => Poll::Ready(event),
                 None => Poll::Pending,
             }
@@ -292,7 +311,7 @@ impl<M: RawMutex> EmbassyBluetoothWakeReceiver<'_, M> {
 
     /// Whether a lock/modify event is currently pending.
     pub fn lock_modify_pending(&self) -> bool {
-        self.resources.lock_modify.is_pending()
+        self.runtime.scheduler_lock_modify_events().is_pending()
     }
 
     /// Await one lock/modify interrupt event and perform exactly one durable
@@ -303,11 +322,12 @@ impl<M: RawMutex> EmbassyBluetoothWakeReceiver<'_, M> {
     /// it performs one task observation and at most one finite publication.
     pub async fn wait_and_step_lock_modify(
         &mut self,
-        worker: &mut BluetoothSchedulerLockModifyWorker,
         controller: &mut BluetoothControllerHal<'_>,
     ) -> BluetoothSchedulerLockModifyWorkerStep {
         let event = self.wait_lock_modify().await;
-        worker.step(event, controller)
+        self.runtime
+            .scheduler_lock_modify_worker()
+            .step(event, controller)
     }
 
     /// Wait for scheduler work or a caller-owned bounded recheck.
@@ -340,6 +360,7 @@ mod tests {
 
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+    use open_esp_radio_esp32s31_bluetooth::BluetoothControllerRuntimeResources;
 
     use super::*;
 
@@ -367,8 +388,9 @@ mod tests {
 
     #[test]
     fn publication_before_wait_is_rechecked_without_a_lost_wake() {
-        let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-        let (publisher, mut receiver) = resources.split();
+        let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+        let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (publisher, mut receiver) = wakers.split(runtime.split());
 
         assert_eq!(
             publisher.publish_scheduler(BluetoothSchedulerWorkerWakeClass::Ordinary),
@@ -383,8 +405,9 @@ mod tests {
 
     #[test]
     fn pending_wait_is_woken_only_by_first_coalesced_epoch() {
-        let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-        let (publisher, mut receiver) = resources.split();
+        let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+        let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (publisher, mut receiver) = wakers.split(runtime.split());
         let (counter, waker) = counting_waker();
         let mut wait = Box::pin(receiver.wait_scheduler());
 
@@ -408,8 +431,9 @@ mod tests {
 
     #[test]
     fn cancelled_wait_leaves_batch_for_replacement_waiter() {
-        let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-        let (publisher, mut receiver) = resources.split();
+        let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+        let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (publisher, mut receiver) = wakers.split(runtime.split());
         let (_counter, waker) = counting_waker();
         let mut cancelled = Box::pin(receiver.wait_scheduler());
 
@@ -427,8 +451,9 @@ mod tests {
 
     #[test]
     fn lock_modify_publication_before_wait_is_rechecked_without_loss() {
-        let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-        let (publisher, mut receiver) = resources.split();
+        let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+        let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (publisher, mut receiver) = wakers.split(runtime.split());
 
         assert_eq!(
             publisher.publish_lock_modify(
@@ -443,8 +468,9 @@ mod tests {
 
     #[test]
     fn lock_modify_wait_wakes_once_and_consumes_the_latest_value() {
-        let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-        let (publisher, mut receiver) = resources.split();
+        let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+        let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (publisher, mut receiver) = wakers.split(runtime.split());
         let (counter, waker) = counting_waker();
         let mut wait = Box::pin(receiver.wait_lock_modify());
 
@@ -471,8 +497,9 @@ mod tests {
 
     #[test]
     fn cancelled_lock_modify_wait_retains_the_event_for_replacement() {
-        let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-        let (publisher, mut receiver) = resources.split();
+        let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+        let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (publisher, mut receiver) = wakers.split(runtime.split());
         let (_counter, waker) = counting_waker();
         let mut cancelled = Box::pin(receiver.wait_lock_modify());
 
@@ -487,8 +514,9 @@ mod tests {
 
     #[test]
     fn marked_duplicate_is_returned_in_the_same_batch() {
-        let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-        let (publisher, mut receiver) = resources.split();
+        let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+        let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (publisher, mut receiver) = wakers.split(runtime.split());
 
         assert_eq!(
             publisher.publish_scheduler(BluetoothSchedulerWorkerWakeClass::Ordinary),
@@ -504,8 +532,9 @@ mod tests {
 
     #[test]
     fn scheduler_wins_a_ready_tie_with_external_recheck() {
-        let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-        let (publisher, mut receiver) = resources.split();
+        let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+        let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (publisher, mut receiver) = wakers.split(runtime.split());
 
         publisher.publish_scheduler(BluetoothSchedulerWorkerWakeClass::Ordinary);
 
@@ -517,8 +546,9 @@ mod tests {
 
     #[test]
     fn external_recheck_does_not_consume_a_later_scheduler_batch() {
-        let mut resources = EmbassyBluetoothWakeResources::<NoopRawMutex>::new();
-        let (publisher, mut receiver) = resources.split();
+        let mut runtime = BluetoothControllerRuntimeResources::<4>::new();
+        let mut wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (publisher, mut receiver) = wakers.split(runtime.split());
 
         assert_eq!(
             block_on(receiver.wait_with_recheck(ready(()))),

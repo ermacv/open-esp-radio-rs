@@ -12,6 +12,7 @@ generated_unsafe_leaf="driver/chips/esp32s31/pac-raw"
 audited_unsafe_leaves=(
     "driver/common/dma"
     "driver/chips/esp32s31/bluetooth"
+    "driver/chips/esp32s31/hal"
     "driver/chips/esp32s31/pac"
     "driver/chips/esp32s31/phy"
     "driver/chips/esp32s31/ieee802154/dma"
@@ -287,28 +288,101 @@ then
     exit 1
 fi
 
-# Cross-crate lifecycle prerequisites are represented by affine PAC values.
-# Their constructors remain unsafe at the audited Bluetooth/validation edges;
-# the safe HAL can consume the values without weakening its crate-wide unsafe
-# prohibition or exposing a raw PAC owner.
+# The Bluetooth controller has one Wi-Fi-style cold aggregate. Platform and
+# radio ownership may be separated only inside the lifecycle crate; rollback
+# and reversible shutdown must return the same aggregate, never a tuple.
+bluetooth_resources=driver/chips/esp32s31/bluetooth/src/resources.rs
+bluetooth_clock=driver/chips/esp32s31/bluetooth/src/clock.rs
+bluetooth_controller_root=driver/chips/esp32s31/bluetooth/src/lib.rs
+if ! rg -q 'pub struct BluetoothStopped<P>' "$bluetooth_resources" \
+    || ! rg -q 'pub fn from_hardware\(platform: P, hardware: RadioHardware\)' "$bluetooth_resources" \
+    || ! rg -q 'pub fn release\(self\) -> \(P, RadioHardware\)' "$bluetooth_resources" \
+    || ! rg -q 'pub fn disable_clocks\(mut self\) -> BluetoothStopped<P>' "$bluetooth_clock" \
+    || ! rg -q 'pub fn into_stopped\(self\) -> BluetoothStopped<P>' "$bluetooth_clock"
+then
+    echo "Bluetooth stopped ownership frontier is incomplete" >&2
+    exit 1
+fi
+if rg -q 'BluetoothPhysicalResources|^[[:space:]]*pub fn from_radio_hardware|^[[:space:]]*pub fn into_parts|pub fn enable_clocks<P:' \
+        "$bluetooth_resources" "$bluetooth_clock"
+then
+    echo "legacy split Bluetooth ownership API was reintroduced" >&2
+    exit 1
+fi
+if rg -q 'pub use (baseband|common_phy_state|phy)::|Bluetooth(Baseband|Phy)Initialized' \
+        "$bluetooth_controller_root"
+then
+    echo "disconnected Bluetooth PHY/baseband state was re-exported as production API" >&2
+    exit 1
+fi
+
+# PAC and HAL own affine register capabilities and finite transactions only.
+# Cross-layer PHY/controller/route facts must not be represented by public
+# `assume_satisfied` tokens: those values were forgeable and inverted the
+# dependency direction. The controller lifecycle and isolated validation
+# probes retain the real prerequisite owners at explicit unsafe boundaries.
 baseband_spi=driver/chips/esp32s31/pac/src/bluetooth_baseband.rs
 controller_init_spi=driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs
 interrupt_spi=driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs
 modem_lp_timer_spi=driver/chips/esp32s31/pac/src/bluetooth_modem_lp_timer.rs
 modem_lp_timer_queue=driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs
+nrt_interrupt=driver/chips/esp32s31/bluetooth/src/nrt_interrupt.rs
 scheduler_disable_spi=driver/chips/esp32s31/pac/src/bluetooth_scheduler_stop.rs
 bluetooth_hal=driver/chips/esp32s31/hal/src/bluetooth.rs
 bluetooth_lifecycle=driver/chips/esp32s31/bluetooth/src/resources.rs
+bluetooth_runtime_resources=driver/chips/esp32s31/bluetooth/src/runtime_resources.rs
+bluetooth_scheduler=driver/chips/esp32s31/bluetooth/src/scheduler.rs
+bluetooth_embassy=driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs
 bluetooth_validation=driver/chips/esp32s31/bluetooth/src/validation.rs
 pac_validation=driver/chips/esp32s31/pac/src/validation.rs
 
-if ! rg -q 'pub struct BluetoothBasebandInitializationPrerequisite' "$baseband_spi" \
-    || ! rg -q 'pub unsafe fn assume_satisfied\(' "$baseband_spi" \
-    || ! rg -q -U 'pub fn initialize_baseband_v2_arg_one\([^)]*BluetoothBasebandInitializationPrerequisite' "$baseband_spi" \
-    || ! rg -q -U 'pub fn initialize_baseband_v2_arg_one\([^)]*BluetoothBasebandInitializationPrerequisite' "$bluetooth_hal" \
+if rg -q 'Bluetooth(BasebandInitialization|ControllerHalInit|InterruptOutputPreparation|ModemLpTimerInitialization|SchedulerDisable)Prerequisite|BluetoothControllerSchedulerDisablePrerequisite|assume_satisfied' \
+        "$baseband_spi" "$controller_init_spi" "$interrupt_spi" \
+        "$modem_lp_timer_spi" "$scheduler_disable_spi" "$bluetooth_hal" \
+        "$bluetooth_lifecycle" "$bluetooth_validation" "$pac_validation"
+then
+    echo "forgeable Bluetooth cross-layer prerequisite token was reintroduced" >&2
+    exit 1
+fi
+if ! rg -q 'pub struct BluetoothControllerRuntimeResources' "$bluetooth_runtime_resources" \
+    || ! rg -q 'pub struct BluetoothControllerInterruptRuntime' "$bluetooth_runtime_resources" \
+    || ! rg -q 'pub struct BluetoothControllerTaskRuntime' "$bluetooth_runtime_resources" \
+    || ! rg -q 'pub fn split' "$bluetooth_runtime_resources" \
+    || ! rg -q 'pub struct BluetoothSchedulerRuntimeResourcesBound' "$bluetooth_scheduler" \
+    || ! rg -q 'pub fn bind_runtime_resources' "$bluetooth_scheduler" \
+    || ! rg -q 'pub fn split_runtime' "$bluetooth_scheduler" \
+    || rg -q 'derive.*(Copy|Clone)' "$bluetooth_runtime_resources"
+then
+    echo "Bluetooth no-RTOS runtime aggregate is not an affine scheduler-prefix owner" >&2
+    exit 1
+fi
+if ! rg -q 'pub struct EmbassyBluetoothRuntimeWakers' "$bluetooth_embassy" \
+    || rg -q 'EmbassyBluetoothWakeResources|Bluetooth(SchedulerWakeCell|SchedulerLockModifyEventCell|ModemLpTimerEventCell)' "$bluetooth_embassy" \
+    || rg -q 'worker: &mut BluetoothSchedulerLockModifyWorker' "$bluetooth_embassy"
+then
+    echo "Bluetooth Embassy adapter reintroduced duplicate epoch state or an external worker" >&2
+    exit 1
+fi
+mapfile -t bluetooth_hal_unsafe_entries < <(
+    rg -o 'pub unsafe fn [a-z0-9_]+' "$bluetooth_hal" | sort
+)
+if test "${#bluetooth_hal_unsafe_entries[@]}" -ne 5 \
+    || test "${bluetooth_hal_unsafe_entries[0]}" != "pub unsafe fn begin" \
+    || test "${bluetooth_hal_unsafe_entries[1]}" != "pub unsafe fn initialize_baseband_v2_arg_one" \
+    || test "${bluetooth_hal_unsafe_entries[2]}" != "pub unsafe fn initialize_controller_hal_transaction" \
+    || test "${bluetooth_hal_unsafe_entries[3]}" != "pub unsafe fn prepare_controller_output" \
+    || test "${bluetooth_hal_unsafe_entries[4]}" != "pub unsafe fn prepare_modem_lp_timer_registers" \
+    || rg -q 'unsafe[[:space:]]*\{' "$bluetooth_hal"
+then
+    echo "Bluetooth HAL unsafe surface is not the closed lifecycle-boundary set" >&2
+    exit 1
+fi
+
+if ! rg -q 'pub fn initialize_baseband_v2_arg_one\(&mut self, gain_parameter: u8\)' "$baseband_spi" \
+    || ! rg -q 'pub unsafe fn initialize_baseband_v2_arg_one\(&mut self, gain_parameter: u8\)' "$bluetooth_hal" \
     || ! rg -q 'pub\(crate\) unsafe fn initialize_baseband_v2\(' "$bluetooth_lifecycle"
 then
-    echo "Bluetooth baseband affine prerequisite path is incomplete" >&2
+    echo "Bluetooth baseband PAC/HAL/lifecycle boundary is incomplete" >&2
     exit 1
 fi
 mapfile -t baseband_transaction_callers < <(
@@ -322,17 +396,6 @@ then
     echo "Bluetooth baseband transaction escaped HAL or isolated PAC validation" >&2
     exit 1
 fi
-mapfile -t baseband_proof_callers < <(
-    rg -l 'BluetoothBasebandInitializationPrerequisite::assume_satisfied' \
-        driver --glob '*.rs' | sort
-)
-if test "${#baseband_proof_callers[@]}" -ne 2 \
-    || test "${baseband_proof_callers[0]}" != "$bluetooth_lifecycle" \
-    || test "${baseband_proof_callers[1]}" != "$pac_validation"
-then
-    echo "Bluetooth common-PHY proof escaped its two audited unsafe boundaries" >&2
-    exit 1
-fi
 if ! rg -q 'pub unsafe fn initialize_bluetooth_baseband_v2\(' "$pac_validation" \
     || ! rg -q 'pub unsafe fn initialize_baseband_v2\(' "$bluetooth_validation"
 then
@@ -340,44 +403,19 @@ then
     exit 1
 fi
 
-if ! rg -q 'pub struct BluetoothControllerHalInitPrerequisite' "$controller_init_spi" \
-    || ! rg -q 'pub unsafe fn assume_satisfied\(' "$controller_init_spi" \
-    || ! rg -q -U 'pub fn initialize_controller_hal\([^)]*BluetoothControllerHalInitPrerequisite' "$controller_init_spi" \
-    || ! rg -q -U 'pub fn initialize_controller_hal_transaction\([^)]*BluetoothControllerHalInitPrerequisite' "$bluetooth_hal" \
+if ! rg -q 'pub fn initialize_controller_hal\(&mut self, config: BluetoothControllerHalInitConfig\)' "$controller_init_spi" \
+    || ! rg -q 'pub unsafe fn initialize_controller_hal_transaction\(' "$bluetooth_hal" \
     || ! rg -q 'pub\(crate\) unsafe fn initialize_controller_hal\(' "$bluetooth_lifecycle"
 then
-    echo "Bluetooth controller HAL-init affine prerequisite path is incomplete" >&2
-    exit 1
-fi
-mapfile -t controller_init_proof_callers < <(
-    rg -l 'BluetoothControllerHalInitPrerequisite::assume_satisfied' \
-        driver --glob '*.rs' | sort
-)
-if test "${#controller_init_proof_callers[@]}" -ne 2 \
-    || test "${controller_init_proof_callers[0]}" != "$bluetooth_lifecycle" \
-    || test "${controller_init_proof_callers[1]}" != "$pac_validation"
-then
-    echo "Bluetooth controller-init proof escaped its two audited unsafe boundaries" >&2
+    echo "Bluetooth controller HAL-init PAC/HAL/lifecycle boundary is incomplete" >&2
     exit 1
 fi
 
-if ! rg -q 'pub struct BluetoothInterruptOutputPreparationPrerequisite' "$interrupt_spi" \
-    || ! rg -q 'pub unsafe fn assume_satisfied\(' "$interrupt_spi" \
-    || ! rg -q -U 'pub fn prepare_controller_output\([^)]*BluetoothInterruptOutputPreparationPrerequisite' "$interrupt_spi" \
-    || ! rg -q -U 'pub fn prepare_controller_output\([^)]*BluetoothInterruptOutputPreparationPrerequisite' "$bluetooth_hal" \
+if ! rg -q 'pub fn prepare_controller_output\(self\)' "$interrupt_spi" \
+    || ! rg -q 'pub unsafe fn prepare_controller_output\(self\)' "$bluetooth_hal" \
     || ! rg -q 'pub unsafe fn prepare_primary_interrupt_output\(' "$bluetooth_validation"
 then
-    echo "Bluetooth interrupt-output affine prerequisite path is incomplete" >&2
-    exit 1
-fi
-mapfile -t interrupt_prepare_proof_callers < <(
-    rg -l 'BluetoothInterruptOutputPreparationPrerequisite::assume_satisfied' \
-        driver --glob '*.rs' | sort
-)
-if test "${#interrupt_prepare_proof_callers[@]}" -ne 1 \
-    || test "${interrupt_prepare_proof_callers[0]}" != "$bluetooth_validation"
-then
-    echo "Bluetooth interrupt-output proof escaped isolated validation before lifecycle composition" >&2
+    echo "Bluetooth interrupt-output PAC/HAL/lifecycle boundary is incomplete" >&2
     exit 1
 fi
 mapfile -t interrupt_prepare_transaction_callers < <(
@@ -390,13 +428,28 @@ then
     echo "Bluetooth interrupt-output transaction escaped HAL or isolated validation" >&2
     exit 1
 fi
+if ! rg -q 'pub fn capture_nrt_and_acknowledge\(' "$interrupt_spi" \
+    || ! rg -q 'pub fn capture_nrt_and_acknowledge\(' "$bluetooth_hal" \
+    || ! rg -q 'pub fn step_nrt_default_interrupt\(' "$nrt_interrupt" \
+    || ! rg -q 'pub struct BluetoothNrtDefaultInterruptEpoch' "$nrt_interrupt"
+then
+    echo "Bluetooth default-profile NRT PAC/HAL/controller path is incomplete" >&2
+    exit 1
+fi
+mapfile -t nrt_capture_callers < <(
+    rg -l '[.]capture_nrt_and_acknowledge[[:space:]]*\(' driver --glob '*.rs' | sort
+)
+if test "${#nrt_capture_callers[@]}" -ne 3 \
+    || test "${nrt_capture_callers[0]}" != "$nrt_interrupt" \
+    || test "${nrt_capture_callers[1]}" != "$bluetooth_validation" \
+    || test "${nrt_capture_callers[2]}" != "$bluetooth_hal"
+then
+    echo "Bluetooth NRT PAC transaction escaped HAL/controller or isolated validation" >&2
+    exit 1
+fi
 
-if ! rg -q 'pub struct BluetoothModemLpTimerInitializationPrerequisite' "$modem_lp_timer_spi" \
-    || ! rg -q 'pub unsafe fn assume_satisfied\(' "$modem_lp_timer_spi" \
-    || ! rg -q -U 'pub fn prepare_modem_lp_timer_registers\([^)]*BluetoothModemLpTimerInitializationPrerequisite' "$modem_lp_timer_spi" \
-    || ! rg -q -U 'pub fn prepare_modem_lp_timer_registers\([^)]*BluetoothModemLpTimerInitializationPrerequisite' "$bluetooth_hal" \
-    || ! rg -q 'pub struct BluetoothModemLpTimerInterruptEvent' "$modem_lp_timer_spi" \
-    || ! rg -q 'pub unsafe fn assume_pending\(' "$modem_lp_timer_spi" \
+if ! rg -q 'pub fn prepare_modem_lp_timer_registers\(self\)' "$modem_lp_timer_spi" \
+    || ! rg -q 'pub unsafe fn prepare_modem_lp_timer_registers\(' "$bluetooth_hal" \
     || ! rg -q 'pub struct BluetoothModemLpTimerInterruptReady' "$modem_lp_timer_spi" \
     || ! rg -q 'pub struct BluetoothModemLpTimerHandlerPending' "$modem_lp_timer_spi" \
     || ! rg -q 'pub struct BluetoothModemLpTimerHandlerRegisterObservation' "$modem_lp_timer_spi" \
@@ -432,18 +485,16 @@ then
     echo "Bluetooth modem LP-timer transaction escaped HAL or isolated validation" >&2
     exit 1
 fi
-mapfile -t modem_lp_timer_proof_callers < <(
-    rg -l 'BluetoothModemLpTimerInitializationPrerequisite::assume_satisfied' \
-        driver --glob '*.rs' | sort
-)
-if test "${#modem_lp_timer_proof_callers[@]}" -ne 1 \
-    || test "${modem_lp_timer_proof_callers[0]}" != "$bluetooth_validation"
+if rg -q 'BluetoothModemLpTimerInterruptEvent|assume_pending' \
+    "$modem_lp_timer_spi" "$bluetooth_hal" "$modem_lp_timer_queue"
 then
-    echo "Bluetooth modem LP-timer proof escaped isolated validation before lifecycle composition" >&2
+    echo "Bluetooth modem LP-timer retained a forgeable ISR event token" >&2
     exit 1
 fi
-if rg -q 'BluetoothModemLpTimerInterruptEvent::assume_pending' driver --glob '*.rs'; then
-    echo "Bluetooth modem LP-timer ISR event escaped before stable source-127 routing exists" >&2
+if rg -q 'pub fn clear_scheduler_reference\(' "$bluetooth_hal" \
+    || rg -q 'BluetoothSchedulerReferenceCleared' "$bluetooth_hal"
+then
+    echo "Bluetooth HAL exposed scheduler-reference clear before selector-6 ownership exists" >&2
     exit 1
 fi
 mapfile -t modem_lp_timer_completion_callers < <(
@@ -461,12 +512,10 @@ then
     exit 1
 fi
 
-if ! rg -q 'pub struct BluetoothSchedulerDisablePrerequisite' "$scheduler_disable_spi" \
-    || ! rg -q 'pub unsafe fn assume_satisfied\(' "$scheduler_disable_spi" \
-    || ! rg -q -U 'pub fn begin_scheduler_disable\([^)]*BluetoothSchedulerDisablePrerequisite' "$scheduler_disable_spi" \
-    || ! rg -q -U 'pub fn begin\([^)]*BluetoothControllerSchedulerDisablePrerequisite' "$bluetooth_hal"
+if ! rg -q 'pub fn begin_scheduler_disable\(' "$scheduler_disable_spi" \
+    || ! rg -q 'pub unsafe fn begin\(' "$bluetooth_hal"
 then
-    echo "Bluetooth scheduler-disable affine prerequisite path is incomplete" >&2
+    echo "Bluetooth scheduler-disable PAC/HAL boundary is incomplete" >&2
     exit 1
 fi
 mapfile -t scheduler_disable_transaction_callers < <(
@@ -480,16 +529,10 @@ then
     echo "Bluetooth scheduler-disable transaction escaped HAL or isolated validation" >&2
     exit 1
 fi
-mapfile -t scheduler_disable_proof_callers < <(
-    rg -l 'BluetoothControllerSchedulerDisablePrerequisite::assume_satisfied|BluetoothSchedulerDisablePrerequisite::assume_satisfied' \
-        driver --glob '*.rs' | sort
-)
-if test "${#scheduler_disable_proof_callers[@]}" -ne 1 \
-    || test "${scheduler_disable_proof_callers[0]}" != "$pac_validation" \
-    || ! rg -q 'pub unsafe fn disable_bluetooth_scheduler_and_sample_once\(' "$pac_validation" \
+if ! rg -q 'pub unsafe fn disable_bluetooth_scheduler_and_sample_once\(' "$pac_validation" \
     || ! rg -q 'pub unsafe fn disable_scheduler_and_sample_once\(' "$bluetooth_validation"
 then
-    echo "Bluetooth scheduler-disable proof escaped isolated validation before lifecycle composition" >&2
+    echo "Bluetooth scheduler-disable validation boundary is incomplete" >&2
     exit 1
 fi
 

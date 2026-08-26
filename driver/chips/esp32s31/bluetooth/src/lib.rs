@@ -17,9 +17,12 @@
 //! still-missing completed-header ownership or visibility fence.
 //! These components are deliberately not connected across the missing
 //! selector-6 invariant, affine item/completion-list owner, primary-ISR worker
-//! composition, LP, BLE, NRT feature classification and live-route
+//! composition, LP, BLE, feature-specific NRT classification and live-route
 //! prerequisites. No current finite state claims that the complete controller
 //! lifecycle, HCI transport, task or live interrupt epoch has completed.
+//! The public lifecycle begins with one [`BluetoothStopped`] aggregate; the
+//! platform lease and neutral radio root cannot be split across clock enable,
+//! rollback, or clean reversible shutdown.
 
 #![no_std]
 #![deny(unsafe_code)]
@@ -46,10 +49,12 @@ mod interrupt;
 mod interrupt_classifier;
 mod interrupt_wake;
 mod modem_lp_timer_queue;
+mod nrt_interrupt;
 #[cfg(target_arch = "riscv32")]
 mod phy;
 mod primary_interrupt;
 mod resources;
+mod runtime_resources;
 #[cfg(any(target_arch = "riscv32", test))]
 mod scheduler;
 mod scheduler_finished_lists;
@@ -58,14 +63,10 @@ mod scheduler_lock_modify;
 #[doc(hidden)]
 pub mod validation;
 
-#[cfg(target_arch = "riscv32")]
-pub use baseband::{BluetoothBasebandInitializationReport, BluetoothBasebandInitialized};
 pub use clock::{
     BluetoothClockCheckpoint, BluetoothClockControl, BluetoothClockEnableFailure,
     BluetoothClockError, BluetoothClockState, BluetoothClockedResources,
 };
-#[cfg(target_arch = "riscv32")]
-pub use common_phy_state::{BluetoothPhyInitializationReport, BluetoothPhyInitialized};
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{
     BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
@@ -124,6 +125,7 @@ pub use modem_lp_timer_queue::{
     BluetoothModemLpTimerScheduleError, BluetoothModemLpTimerSoftwareStep,
     BluetoothModemLpTimerSoftwareWork, BluetoothModemLpTimerToken, step_modem_lp_timer_interrupt,
 };
+pub use nrt_interrupt::{BluetoothNrtDefaultInterruptEpoch, step_nrt_default_interrupt};
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError,
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPrepareError,
@@ -131,22 +133,24 @@ pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
     BluetoothRxMemoryListClass,
 };
-#[cfg(target_arch = "riscv32")]
-pub use phy::{
-    BluetoothPhyInitializationConfig, BluetoothPhyInitializationError,
-    BluetoothPhyInitializationFailure, BluetoothPhyPlatform,
-};
 pub use primary_interrupt::{
     BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
     BluetoothPrimaryReferenceRecoveryRequired, BluetoothPrimarySchedulerEvent,
     step_primary_interrupt,
 };
-pub use resources::BluetoothPhysicalResources;
+pub use resources::BluetoothStopped;
+pub use runtime_resources::{
+    BluetoothControllerInterruptRuntime, BluetoothControllerRuntimeResources,
+    BluetoothControllerTaskRuntime,
+};
 #[cfg(target_arch = "riscv32")]
-pub use scheduler::BluetoothSchedulerTableLowBitsCleared;
+pub use scheduler::{
+    BluetoothSchedulerRuntimeResourcesBound, BluetoothSchedulerTableLowBitsCleared,
+};
 pub use scheduler_finished_lists::{
-    BluetoothSchedulerFinishedListDrain, BluetoothSchedulerFinishedListDrainStep,
-    BluetoothSchedulerFinishedListIndex,
+    BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListDrain,
+    BluetoothSchedulerFinishedListDrainStep, BluetoothSchedulerFinishedListIndex,
+    BluetoothSchedulerFinishedListWorker, BluetoothSchedulerFinishedListWorkerStep,
 };
 pub use scheduler_lock_modify::{
     BluetoothSchedulerLockModifyAwaitingPublication, BluetoothSchedulerLockModifyBeginError,

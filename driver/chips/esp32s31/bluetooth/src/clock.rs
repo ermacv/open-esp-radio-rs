@@ -5,7 +5,9 @@
 //! `espressif/esp-idf@aeab6dcfbeb44aba4b1f8ed102e3086172833153` and
 //! `espressif/esp32s31-bt-lib@7f20740dd66ee774ffce5db0b55507892551aa31`.
 
-use crate::BluetoothPhysicalResources;
+use open_esp_radio_esp32s31_hal::BluetoothColdOwner;
+
+use crate::resources::BluetoothStopped;
 
 const MAIN_XTAL_LOW_POWER_DIVIDER: u16 = 399;
 
@@ -92,30 +94,29 @@ pub struct BluetoothClockError {
 /// by this slice; the next lifecycle transaction consumes this value.
 #[must_use = "clocked Bluetooth resources retain the radio and platform owners"]
 pub struct BluetoothClockedResources<P> {
-    resources: BluetoothPhysicalResources,
+    registers: BluetoothColdOwner,
     platform: P,
 }
 
 impl<P> BluetoothClockedResources<P> {
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn into_parts(self) -> (BluetoothPhysicalResources, P) {
-        (self.resources, self.platform)
+    pub(crate) fn into_parts(self) -> (BluetoothColdOwner, P) {
+        (self.registers, self.platform)
     }
 }
 
 impl<P: BluetoothClockControl> BluetoothClockedResources<P> {
-    /// Reverse the exact clock prerequisite and recover both owners.
-    pub fn disable_clocks(mut self) -> (BluetoothPhysicalResources, P) {
+    /// Reverse the exact clock prerequisite and recover the cold owner.
+    pub fn disable_clocks(mut self) -> BluetoothStopped<P> {
         disable_owned(&mut self.platform);
-        (self.resources, self.platform)
+        BluetoothStopped::from_parts(self.registers, self.platform)
     }
 }
 
 /// Failed clock setup after automatic reverse-order rollback.
 #[must_use = "a failed Bluetooth clock transaction still owns both resources"]
 pub struct BluetoothClockEnableFailure<P> {
-    resources: BluetoothPhysicalResources,
-    platform: P,
+    stopped: BluetoothStopped<P>,
     error: BluetoothClockError,
 }
 
@@ -125,22 +126,22 @@ impl<P> BluetoothClockEnableFailure<P> {
         self.error
     }
 
-    /// Recover the cold radio and platform owners after completed rollback.
-    pub fn into_parts(self) -> (BluetoothPhysicalResources, P, BluetoothClockError) {
-        (self.resources, self.platform, self.error)
+    /// Recover the intact cold owner after completed rollback.
+    pub fn into_stopped(self) -> BluetoothStopped<P> {
+        self.stopped
     }
 }
 
-impl BluetoothPhysicalResources {
+impl<P: BluetoothClockControl> BluetoothStopped<P> {
     /// Execute the exact outer ESP32-S31 Bluetooth clock prerequisite.
     ///
     /// The current standalone profile uses the 40 MHz main crystal divided to
     /// 100 kHz, matching the source-bound S31 default. Any failed read-back is
     /// rolled back in reverse order before the owners are returned.
-    pub fn enable_clocks<P: BluetoothClockControl>(
+    pub fn enable_clocks(
         self,
-        mut platform: P,
     ) -> Result<BluetoothClockedResources<P>, BluetoothClockEnableFailure<P>> {
+        let (registers, mut platform) = self.into_parts();
         platform.enable_bluetooth_controller_clocks();
         platform.enable_bluetooth_apb_clocks();
         platform.reset_bluetooth_controller_domains();
@@ -150,14 +151,13 @@ impl BluetoothPhysicalResources {
         if let Err(error) = validate_state(state) {
             disable_owned(&mut platform);
             return Err(BluetoothClockEnableFailure {
-                resources: self,
-                platform,
+                stopped: BluetoothStopped::from_parts(registers, platform),
                 error,
             });
         }
 
         Ok(BluetoothClockedResources {
-            resources: self,
+            registers,
             platform,
         })
     }
@@ -199,8 +199,7 @@ mod tests {
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
     use super::{
-        BluetoothClockCheckpoint, BluetoothClockControl, BluetoothClockState,
-        BluetoothPhysicalResources,
+        BluetoothClockCheckpoint, BluetoothClockControl, BluetoothClockState, BluetoothStopped,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -271,17 +270,18 @@ mod tests {
         }
     }
 
-    fn resources() -> BluetoothPhysicalResources {
-        BluetoothPhysicalResources::from_radio_hardware(RadioHardware::for_validation())
+    fn stopped(platform: FakePlatform) -> BluetoothStopped<FakePlatform> {
+        BluetoothStopped::from_hardware(platform, RadioHardware::for_validation())
     }
 
     #[test]
     fn exact_clock_order_retains_both_owners_until_reverse_shutdown() {
-        let clocked = match resources().enable_clocks(FakePlatform::ready()) {
+        let clocked = match stopped(FakePlatform::ready()).enable_clocks() {
             Ok(clocked) => clocked,
             Err(_) => panic!("valid clock state was rejected"),
         };
-        let (resources, platform) = clocked.disable_clocks();
+        let stopped = clocked.disable_clocks();
+        let (platform, hardware) = stopped.release();
 
         assert_eq!(
             platform.operations,
@@ -296,7 +296,7 @@ mod tests {
                 Operation::DisableController,
             ]
         );
-        let _hardware = resources.release();
+        let _hardware = hardware;
     }
 
     #[test]
@@ -304,7 +304,7 @@ mod tests {
         let mut platform = FakePlatform::ready();
         platform.state.low_power_timer_enabled = false;
 
-        let failure = match resources().enable_clocks(platform) {
+        let failure = match stopped(platform).enable_clocks() {
             Ok(_) => panic!("invalid clock state was accepted"),
             Err(failure) => failure,
         };
@@ -312,7 +312,8 @@ mod tests {
             failure.error().checkpoint,
             BluetoothClockCheckpoint::LowPowerTimerClock
         );
-        let (resources, platform, _) = failure.into_parts();
+        let stopped = failure.into_stopped();
+        let (platform, hardware) = stopped.release();
         assert_eq!(
             &platform.operations[5..],
             [
@@ -321,6 +322,6 @@ mod tests {
                 Operation::DisableController,
             ]
         );
-        let _hardware = resources.release();
+        let _hardware = hardware;
     }
 }

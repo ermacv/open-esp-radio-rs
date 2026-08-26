@@ -7,44 +7,6 @@
 
 use super::{BluetoothControllerSramAddress, BluetoothTaskRegisters, device_fence};
 
-/// Affine proof for the external prerequisites of controller HAL-init.
-///
-/// The PAC owns the exact MMIO transaction but not the clock, common-PHY,
-/// BTBB, controller-software or IRQ lifecycle that precedes it. A higher
-/// lifecycle constructs this proof at its explicit unsafe boundary and a safe
-/// HAL operation consumes it exactly once.
-///
-/// ```compile_fail
-/// use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitPrerequisite;
-///
-/// fn duplicate(proof: BluetoothControllerHalInitPrerequisite) {
-///     let _first = proof;
-///     let _second = proof;
-/// }
-/// ```
-#[must_use = "the controller-init proof must be consumed by its exact transaction"]
-pub struct BluetoothControllerHalInitPrerequisite {
-    _private: (),
-}
-
-impl BluetoothControllerHalInitPrerequisite {
-    /// Assume every external prerequisite for one controller HAL-init body.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain enabled Bluetooth clocks, completed common PHY
-    /// and BTBB state, quiescent controller software queues, controller SRAM,
-    /// and the inactive interrupt bank for the same unique hardware owner.
-    #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "construction is the explicit cross-crate controller-init proof boundary"
-    )]
-    pub unsafe fn assume_satisfied() -> Self {
-        Self { _private: () }
-    }
-}
-
 /// First positional scaling input accepted by the complete HAL-config setter.
 ///
 /// The instruction evidence accepts exactly the byte values 8 and 16.  No
@@ -430,15 +392,11 @@ impl BluetoothTaskRegisters {
     /// This method does not initialize software events/lists, route a CPU
     /// interrupt, enable the Link Layer or claim HCI readiness.
     ///
-    /// The consumed prerequisite is constructible only at the unsafe lifecycle
-    /// boundary that owns clocks, PHY, BTBB, software queues, SRAM and the
-    /// inactive interrupt bank.
+    /// Clocks, PHY, BTBB, software queues, SRAM and interrupt lifecycle are
+    /// upper-layer ownership facts. They are deliberately not represented by
+    /// a forgeable PAC proof token.
     #[doc(hidden)]
-    pub fn initialize_controller_hal(
-        &mut self,
-        _prerequisite: BluetoothControllerHalInitPrerequisite,
-        config: BluetoothControllerHalInitConfig,
-    ) {
+    pub fn initialize_controller_hal(&mut self, config: BluetoothControllerHalInitConfig) {
         let mut transaction = MmioHalInit {
             registers: &self.bluetooth.bluetooth_controller_core,
         };

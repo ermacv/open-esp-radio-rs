@@ -14,44 +14,6 @@ trait BluetoothSchedulerStopStatus {
     fn fence(&mut self);
 }
 
-/// Affine proof for publishing the scheduler-disable command.
-///
-/// Clock, task-enable and route state are owned above the PAC. Safe transaction
-/// layers may consume this value once; only the complete powered lifecycle may
-/// assume it.
-///
-/// ```compile_fail
-/// use open_esp_radio_esp32s31_pac::BluetoothSchedulerDisablePrerequisite;
-///
-/// fn duplicate(proof: BluetoothSchedulerDisablePrerequisite) {
-///     let _first = proof;
-///     let _second = proof;
-/// }
-/// ```
-#[must_use = "the scheduler-disable proof must be consumed by its exact command"]
-pub struct BluetoothSchedulerDisablePrerequisite {
-    _private: (),
-}
-
-impl BluetoothSchedulerDisablePrerequisite {
-    /// Assume the external scheduler-disable prerequisites.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the powered controller in its task-stopping
-    /// lifecycle for this unique radio owner. This proof establishes no order
-    /// relative to CPU-route teardown; the later observation has its own
-    /// post-route owner requirement.
-    #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "construction is the explicit powered scheduler lifecycle boundary"
-    )]
-    pub unsafe fn assume_satisfied() -> Self {
-        Self { _private: () }
-    }
-}
-
 struct HardwareStopCommand<'a> {
     controller: &'a super::svd::BluetoothControllerCore,
 }
@@ -122,7 +84,6 @@ pub enum BluetoothSchedulerDisableBeginError {
 #[must_use = "a failed scheduler disable still owns the task partition"]
 pub struct BluetoothSchedulerDisableBeginFailure {
     task: BluetoothTaskRegisters,
-    prerequisite: BluetoothSchedulerDisablePrerequisite,
     error: BluetoothSchedulerDisableBeginError,
 }
 
@@ -132,15 +93,9 @@ impl BluetoothSchedulerDisableBeginFailure {
         self.error
     }
 
-    /// Recover the unchanged task owner, unconsumed prerequisite and reason.
-    pub fn into_parts(
-        self,
-    ) -> (
-        BluetoothTaskRegisters,
-        BluetoothSchedulerDisablePrerequisite,
-        BluetoothSchedulerDisableBeginError,
-    ) {
-        (self.task, self.prerequisite, self.error)
+    /// Recover the unchanged task owner and rejection reason.
+    pub fn into_parts(self) -> (BluetoothTaskRegisters, BluetoothSchedulerDisableBeginError) {
+        (self.task, self.error)
     }
 }
 
@@ -236,26 +191,20 @@ impl BluetoothTaskRegisters {
     /// ended; live-route teardown must first produce that state.
     pub fn begin_scheduler_disable(
         self,
-        prerequisite: BluetoothSchedulerDisablePrerequisite,
     ) -> Result<BluetoothSchedulerDisableRequest, BluetoothSchedulerDisableBeginFailure> {
-        begin_scheduler_stop(self, prerequisite)
+        begin_scheduler_stop(self)
     }
 }
 
 fn begin_scheduler_stop(
     task: BluetoothTaskRegisters,
-    prerequisite: BluetoothSchedulerDisablePrerequisite,
 ) -> Result<BluetoothSchedulerDisableRequest, BluetoothSchedulerDisableBeginFailure> {
     let controller_time_latch_in_flight = task.controller_time_latch.in_flight();
     let mut command = HardwareStopCommand {
         controller: &task.bluetooth.bluetooth_controller_core,
     };
     if let Err(error) = execute_stop_begin(controller_time_latch_in_flight, &mut command) {
-        return Err(BluetoothSchedulerDisableBeginFailure {
-            task,
-            prerequisite,
-            error,
-        });
+        return Err(BluetoothSchedulerDisableBeginFailure { task, error });
     }
     Ok(BluetoothSchedulerDisableRequest { task })
 }
@@ -298,9 +247,8 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        BluetoothSchedulerDisableBeginError, BluetoothSchedulerDisablePrerequisite,
-        BluetoothSchedulerStopCommand, BluetoothSchedulerStopStatus, execute_stop_begin,
-        execute_stop_step,
+        BluetoothSchedulerDisableBeginError, BluetoothSchedulerStopCommand,
+        BluetoothSchedulerStopStatus, execute_stop_begin, execute_stop_step,
     };
     use crate::RadioHardware;
 
@@ -399,24 +347,22 @@ mod tests {
     }
 
     #[test]
-    fn preflight_failure_returns_the_unconsumed_affine_proof() {
+    fn preflight_failure_returns_the_unchanged_task_owner() {
         let bluetooth = RadioHardware::for_validation().into_bluetooth();
         let (mut task, interrupts) = bluetooth.separate_interrupt_owner();
         assert_eq!(
             task.controller_time_latch.begin_without_mmio_for_test(),
             Ok(())
         );
-        let prerequisite = BluetoothSchedulerDisablePrerequisite { _private: () };
-
-        let failure = match task.begin_scheduler_disable(prerequisite) {
+        let failure = match task.begin_scheduler_disable() {
             Ok(_) => panic!("an in-flight time latch must reject before MMIO"),
             Err(failure) => failure,
         };
-        let (task, prerequisite, error) = failure.into_parts();
+        let (task, error) = failure.into_parts();
         assert_eq!(
             error,
             BluetoothSchedulerDisableBeginError::ControllerTimeLatchInFlight
         );
-        let _retained_owners = (task, prerequisite, interrupts);
+        let _retained_owners = (task, interrupts);
     }
 }

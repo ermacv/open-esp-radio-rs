@@ -12,8 +12,8 @@ use core::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering};
 use open_esp_radio_esp32s31_hal::{
     BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerEpoch,
     BluetoothModemLpTimerHandlerRegisterStep, BluetoothModemLpTimerInstant,
-    BluetoothModemLpTimerInterruptEvent, BluetoothModemLpTimerInterruptReadyOwner,
-    BluetoothModemLpTimerInterruptStep, BluetoothModemLpTimerSoftwarePendingOwner,
+    BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerInterruptStep,
+    BluetoothModemLpTimerSoftwarePendingOwner,
 };
 
 const EVENT_EMPTY: u8 = 0;
@@ -316,11 +316,10 @@ pub enum BluetoothModemLpTimerInterruptRuntimeStep<'queue, const CAPACITY: usize
 /// callback or loops over the queue in hard-interrupt context.
 pub fn step_modem_lp_timer_interrupt<'queue, const CAPACITY: usize>(
     ready: BluetoothModemLpTimerInterruptReadyOwner,
-    event: BluetoothModemLpTimerInterruptEvent,
     queue: &'queue mut BluetoothModemLpTimerQueue<CAPACITY>,
     epoch: &'queue mut BluetoothModemLpTimerEpoch,
 ) -> BluetoothModemLpTimerInterruptRuntimeStep<'queue, CAPACITY> {
-    match ready.step(event) {
+    match ready.step() {
         BluetoothModemLpTimerInterruptStep::Spurious(ready) => {
             BluetoothModemLpTimerInterruptRuntimeStep::Ready(ready)
         }

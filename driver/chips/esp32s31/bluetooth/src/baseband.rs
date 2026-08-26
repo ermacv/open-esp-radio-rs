@@ -104,14 +104,14 @@ mod tests {
     use super::BluetoothBasebandInitializationReport;
     use crate::{
         common_phy_state::{BluetoothPhyInitializationReport, BluetoothPhyInitialized},
-        resources::{BluetoothPhysicalResources, BluetoothTeardownPendingPlatform},
+        resources::{BluetoothStopped, BluetoothTeardownPendingPlatform, separate_interrupt_owner},
     };
 
     #[test]
     fn transition_consumes_terminal_phy_projection_and_retains_reports() {
-        let resources =
-            BluetoothPhysicalResources::from_radio_hardware(RadioHardware::for_validation());
-        let (task, interrupts) = resources.separate_interrupt_owner();
+        let stopped = BluetoothStopped::from_hardware((), RadioHardware::for_validation());
+        let (registers, platform) = stopped.into_parts();
+        let (task, interrupts) = separate_interrupt_owner(registers);
         let mut phy = PhyState::default();
         let _parameters = phy.prepare_rx_table_init();
         let report = BluetoothPhyInitializationReport {
@@ -128,7 +128,7 @@ mod tests {
         let initialized = BluetoothPhyInitialized {
             task,
             interrupts,
-            platform: BluetoothTeardownPendingPlatform::new(()),
+            platform: BluetoothTeardownPendingPlatform::new(platform),
             phy,
             calibration_cache: None,
             report,

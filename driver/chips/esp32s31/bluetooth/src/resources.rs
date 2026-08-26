@@ -3,18 +3,17 @@
 #[cfg(any(target_arch = "riscv32", test))]
 use core::mem::ManuallyDrop;
 
-#[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::BluetoothBasebandInitializationPrerequisite;
 use open_esp_radio_esp32s31_hal::BluetoothColdOwner as HalBluetoothColdOwner;
-#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
-use open_esp_radio_esp32s31_hal::BluetoothControllerHalInitPrerequisite;
 #[cfg(test)]
 use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerHalBorrow, BluetoothInterruptSetupOwner as HalBluetoothInterruptSetupOwner,
-    BluetoothSharedPhyBorrow, BluetoothTaskOwner as HalBluetoothTaskOwner, SharedPhyHal,
-    WifiBasebandEnableObservation,
+    BluetoothTaskOwner as HalBluetoothTaskOwner,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_hal::{
+    BluetoothSharedPhyBorrow, SharedPhyHal, WifiBasebandEnableObservation,
 };
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
@@ -27,14 +26,45 @@ use crate::controller_time::{
     BluetoothControllerTimeWorker, BluetoothControllerTimeWorkerPhase,
 };
 
-/// Exclusive standalone Bluetooth ownership before any lifecycle transaction.
+/// Complete cold Bluetooth owner before any powered lifecycle transaction.
 ///
-/// Construction consumes the protocol-neutral radio root. Releasing this
-/// value returns that exact root, so a later Wi-Fi or coexistence lifecycle
-/// does not need to steal or manufacture another MMIO owner.
-#[must_use = "Bluetooth physical resources retain the unique radio owner"]
-pub struct BluetoothPhysicalResources {
+/// This is the only public entry to and exit from the standalone Bluetooth
+/// lifecycle. Keeping the platform lease and protocol-neutral radio root in
+/// one affine value prevents owners from unrelated epochs being paired during
+/// clock enable, rollback, or a later Wi-Fi handoff.
+#[must_use = "stopped Bluetooth retains the platform and radio owners"]
+pub struct BluetoothStopped<P> {
     registers: HalBluetoothColdOwner,
+    platform: P,
+}
+
+impl<P> BluetoothStopped<P> {
+    /// Bind one platform lease to the exact protocol-neutral radio root.
+    ///
+    /// This transition performs no MMIO. Once constructed, the pair can only
+    /// move together through the typed Bluetooth lifecycle.
+    pub fn from_hardware(platform: P, hardware: RadioHardware) -> Self {
+        Self {
+            registers: HalBluetoothColdOwner::from_radio_hardware(hardware),
+            platform,
+        }
+    }
+
+    /// Release an unpowered Bluetooth owner for another radio protocol.
+    pub fn release(self) -> (P, RadioHardware) {
+        (self.platform, self.registers.release())
+    }
+
+    pub(crate) fn into_parts(self) -> (HalBluetoothColdOwner, P) {
+        (self.registers, self.platform)
+    }
+
+    pub(crate) const fn from_parts(registers: HalBluetoothColdOwner, platform: P) -> Self {
+        Self {
+            registers,
+            platform,
+        }
+    }
 }
 
 /// Platform owner retained after the first non-reversible powered mutation.
@@ -64,41 +94,25 @@ impl<P> BluetoothTeardownPendingPlatform<P> {
     }
 }
 
-impl BluetoothPhysicalResources {
-    /// Enter the exclusive Bluetooth ownership route without touching MMIO.
-    pub fn from_radio_hardware(hardware: RadioHardware) -> Self {
-        Self {
-            registers: HalBluetoothColdOwner::from_radio_hardware(hardware),
-        }
-    }
-
-    /// Return every physical radio owner to the protocol-neutral root.
-    ///
-    /// This is valid only before a future powered lifecycle starts, or after
-    /// that lifecycle has completed its shutdown and rollback transaction.
-    pub fn release(self) -> RadioHardware {
-        self.registers.release()
-    }
-
-    /// Separate task-side controller ownership from the inactive IRQ bank.
-    ///
-    /// The transition performs no MMIO. In particular it does not configure
-    /// controller masks or a CPU interrupt route.
-    #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
-    pub(crate) fn separate_interrupt_owner(
-        self,
-    ) -> (BluetoothTaskResources, BluetoothInterruptBankOwner) {
-        let (task, interrupts) = self.registers.separate_interrupt_owner();
-        (
-            BluetoothTaskResources {
-                registers: task,
-                controller_time: BluetoothControllerTimeWorker::new_idle(),
-            },
-            BluetoothInterruptBankOwner {
-                _registers: interrupts,
-            },
-        )
-    }
+/// Separate the cold HAL owner into the controller lifecycle's task and IRQ
+/// owners without exposing either partition publicly.
+///
+/// This transition performs no MMIO. In particular it does not configure
+/// controller masks or a CPU interrupt route.
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+pub(crate) fn separate_interrupt_owner(
+    registers: HalBluetoothColdOwner,
+) -> (BluetoothTaskResources, BluetoothInterruptBankOwner) {
+    let (task, interrupts) = registers.separate_interrupt_owner();
+    (
+        BluetoothTaskResources {
+            registers: task,
+            controller_time: BluetoothControllerTimeWorker::new_idle(),
+        },
+        BluetoothInterruptBankOwner {
+            _registers: interrupts,
+        },
+    )
 }
 
 /// Ordinary task-side owner of the standalone Bluetooth controller region.
@@ -207,9 +221,9 @@ impl BluetoothTaskResources {
         &mut self,
         config: BluetoothControllerHalInitConfig,
     ) {
-        let prerequisite = unsafe { BluetoothControllerHalInitPrerequisite::assume_satisfied() };
-        self.registers
-            .initialize_controller_hal_transaction(prerequisite, config);
+        unsafe {
+            self.registers.initialize_controller_hal_transaction(config);
+        }
     }
 
     /// Borrow the protocol-neutral radio PHY for one finite lower-layer scope.
@@ -217,6 +231,7 @@ impl BluetoothTaskResources {
     /// The caller supplies an explicit lifecycle-owned Wi-Fi baseband
     /// readback. Selecting the Bluetooth route alone is not treated as proof
     /// that the shared settle condition is false.
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn shared_phy_hal(
         &mut self,
         wifi_baseband: WifiBasebandEnableObservation,
@@ -240,10 +255,10 @@ impl BluetoothTaskResources {
         reason = "the unsafe signature retains the PAC common-PHY prerequisite across the crate boundary"
     )]
     pub(crate) unsafe fn initialize_baseband_v2(&mut self, gain_parameter: u8) {
-        let prerequisite =
-            unsafe { BluetoothBasebandInitializationPrerequisite::assume_satisfied() };
-        self.registers
-            .initialize_baseband_v2_arg_one(prerequisite, gain_parameter);
+        unsafe {
+            self.registers
+                .initialize_baseband_v2_arg_one(gain_parameter);
+        }
     }
 
     /// Reunite a quiescent task owner with its inactive interrupt owner.
@@ -251,14 +266,12 @@ impl BluetoothTaskResources {
     pub(crate) fn reunite(
         self,
         interrupts: BluetoothInterruptBankOwner,
-    ) -> Result<BluetoothPhysicalResources, BluetoothTaskOwnerReuniteFailure> {
+    ) -> Result<HalBluetoothColdOwner, BluetoothTaskOwnerReuniteFailure> {
         assert!(
             self.controller_time.is_reunitable(),
             "controller-time fault or transaction prevents cold reunion"
         );
-        self.registers
-            .into_cold(interrupts._registers)
-            .map(|registers| BluetoothPhysicalResources { registers })
+        self.registers.into_cold(interrupts._registers)
     }
 }
 
@@ -278,7 +291,7 @@ mod tests {
 
     use crate::controller_time::BluetoothControllerTimeWorkerPhase;
 
-    use super::{BluetoothPhysicalResources, BluetoothTeardownPendingPlatform};
+    use super::{BluetoothStopped, BluetoothTeardownPendingPlatform, separate_interrupt_owner};
 
     static PLATFORM_DROPS: AtomicUsize = AtomicUsize::new(0);
 
@@ -299,9 +312,9 @@ mod tests {
 
     #[test]
     fn task_and_interrupt_owners_reunite_into_the_same_radio_root() {
-        let resources =
-            BluetoothPhysicalResources::from_radio_hardware(RadioHardware::for_validation());
-        let (task, setup) = resources.separate_interrupt_owner();
+        let stopped = BluetoothStopped::from_hardware((), RadioHardware::for_validation());
+        let (registers, ()) = stopped.into_parts();
+        let (task, setup) = separate_interrupt_owner(registers);
         assert_eq!(
             task.controller_time_phase(),
             BluetoothControllerTimeWorkerPhase::Idle
@@ -320,9 +333,9 @@ mod tests {
     fn mutable_shared_phy_borrow_arms_fail_stop_reunion() {
         fn accepts_shared_phy(_: &mut impl SharedPhyAccess) {}
 
-        let resources =
-            BluetoothPhysicalResources::from_radio_hardware(RadioHardware::for_validation());
-        let (mut task, setup) = resources.separate_interrupt_owner();
+        let stopped = BluetoothStopped::from_hardware((), RadioHardware::for_validation());
+        let (registers, ()) = stopped.into_parts();
+        let (mut task, setup) = separate_interrupt_owner(registers);
         {
             let mut phy =
                 task.shared_phy_hal(WifiBasebandEnableObservation::from_platform_readback(false));

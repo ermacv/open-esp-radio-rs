@@ -12,51 +12,6 @@
 
 use super::{BluetoothTaskRegisters, device_fence};
 
-/// Affine proof that every external prerequisite of the modem low-power timer
-/// register transaction has been established for the same controller owner.
-///
-/// The PAC cannot derive this proof: controller clocks, task software state,
-/// scheduler/event-list initialization, HCI software initialization, ISR
-/// storage, and CPU-route absence are owned by higher lifecycle layers.
-///
-/// This proof cannot be reused:
-///
-/// ```compile_fail
-/// use open_esp_radio_esp32s31_pac::BluetoothModemLpTimerInitializationPrerequisite;
-///
-/// fn consume(_: BluetoothModemLpTimerInitializationPrerequisite) {}
-///
-/// fn reuse(prerequisite: BluetoothModemLpTimerInitializationPrerequisite) {
-///     consume(prerequisite);
-///     consume(prerequisite);
-/// }
-/// ```
-#[must_use = "the modem LP-timer prerequisite must be consumed by its exact transaction"]
-pub struct BluetoothModemLpTimerInitializationPrerequisite {
-    _private: (),
-}
-
-impl BluetoothModemLpTimerInitializationPrerequisite {
-    /// Assume every external prerequisite for one register transaction.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the enabled controller and low-power timer
-    /// clocks, completed task/HAL/scheduler/HCI initialization, stable timer
-    /// software environment, no in-flight controller-time latch, inactive
-    /// source-127 CPU route, and the same unique Bluetooth task owner. No
-    /// controller-time operation or other consumer may concurrently access
-    /// `BTDM_RUNTIME_CONTROL`.
-    #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "construction is the explicit cross-crate modem LP-timer lifecycle boundary"
-    )]
-    pub unsafe fn assume_satisfied() -> Self {
-        Self { _private: () }
-    }
-}
-
 /// Task ownership after the exact source-127 controller-register prefix.
 ///
 /// This state proves only that the eight reviewed MMIO operations completed
@@ -87,45 +42,6 @@ impl BluetoothModemLpTimerInitializationPrerequisite {
 #[must_use = "the prepared modem LP-timer registers must continue through route setup"]
 pub struct BluetoothModemLpTimerRegistersPrepared {
     task: BluetoothTaskRegisters,
-}
-
-/// Affine proof of one entry into the source-127 hard handler.
-///
-/// This value is intentionally neither `Copy` nor `Clone`. One CPU interrupt
-/// entry can authorize exactly one bounded register-classification step:
-///
-/// ```compile_fail
-/// use open_esp_radio_esp32s31_pac::BluetoothModemLpTimerInterruptEvent;
-///
-/// fn duplicate(event: BluetoothModemLpTimerInterruptEvent) {
-///     let _first = event;
-///     let _second = event;
-/// }
-/// ```
-#[must_use = "one source-127 event must be consumed by its bounded PAC step"]
-pub struct BluetoothModemLpTimerInterruptEvent {
-    _private: (),
-}
-
-impl BluetoothModemLpTimerInterruptEvent {
-    /// Assume execution is inside one source-127 interrupt entry.
-    ///
-    /// # Safety
-    ///
-    /// The caller must be the installed source-127 hard handler on the
-    /// controller core. Its stable ISR storage must exclusively own the
-    /// matching [`BluetoothModemLpTimerInterruptReady`] value, the CPU route
-    /// must be active, and no task or other interrupt may concurrently access
-    /// `BTDM_RUNTIME_CONTROL`. The caller must construct this proof at most
-    /// once for that hardware interrupt entry.
-    #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "construction is the explicit source-127 hard-handler boundary"
-    )]
-    pub unsafe fn assume_pending() -> Self {
-        Self { _private: () }
-    }
 }
 
 /// Source-127 registers staged for exclusive placement in stable ISR storage.
@@ -828,10 +744,7 @@ impl BluetoothTaskRegisters {
     /// transaction. The returned state exposes no rollback because the
     /// reviewed source-127 teardown does not reverse these eight operations.
     #[doc(hidden)]
-    pub fn prepare_modem_lp_timer_registers(
-        self,
-        _prerequisite: BluetoothModemLpTimerInitializationPrerequisite,
-    ) -> BluetoothModemLpTimerRegistersPrepared {
+    pub fn prepare_modem_lp_timer_registers(self) -> BluetoothModemLpTimerRegistersPrepared {
         {
             let mut transaction = HardwareModemLpTimerTransaction {
                 registers: &self.bluetooth.btdm_runtime_control,
@@ -861,10 +774,7 @@ impl BluetoothModemLpTimerInterruptReady {
     /// is fenced and retains the unique owner in
     /// [`BluetoothModemLpTimerHandlerPending`] for the next finite common
     /// handler register step.
-    pub fn step(
-        self,
-        _event: BluetoothModemLpTimerInterruptEvent,
-    ) -> BluetoothModemLpTimerInterruptStep {
+    pub fn step(self) -> BluetoothModemLpTimerInterruptStep {
         let disposition = {
             let mut transaction = HardwareModemLpTimerTransaction {
                 registers: &self.task.bluetooth.btdm_runtime_control,

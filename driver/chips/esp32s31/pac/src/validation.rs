@@ -92,9 +92,7 @@ pub fn bluetooth_interrupt_registers() -> BluetoothInterruptRegisters {
 pub unsafe fn initialize_bluetooth_baseband_v2(gain_parameter: u8) {
     let cold = RadioHardware::for_validation().into_bluetooth();
     let (mut task, interrupts) = cold.separate_interrupt_owner();
-    let prerequisite =
-        unsafe { crate::BluetoothBasebandInitializationPrerequisite::assume_satisfied() };
-    task.initialize_baseband_v2_arg_one(prerequisite, gain_parameter);
+    task.initialize_baseband_v2_arg_one(gain_parameter);
     let _powered_owners = (task, interrupts);
 }
 
@@ -118,8 +116,7 @@ pub unsafe fn initialize_bluetooth_baseband_v2(gain_parameter: u8) {
 pub unsafe fn initialize_bluetooth_controller_hal(config: BluetoothControllerHalInitConfig) {
     let cold = RadioHardware::for_validation().into_bluetooth();
     let (mut task, interrupts) = cold.separate_interrupt_owner();
-    let prerequisite = unsafe { crate::BluetoothControllerHalInitPrerequisite::assume_satisfied() };
-    task.initialize_controller_hal(prerequisite, config);
+    task.initialize_controller_hal(config);
     let _powered_owners = (task, interrupts);
 }
 
@@ -145,8 +142,7 @@ pub unsafe fn disable_bluetooth_scheduler_and_sample_once() -> bool {
     let (task, interrupts) = cold.separate_interrupt_owner();
     let mut post_routes =
         unsafe { interrupts.assume_output_prepared_after_routes_for_validation() };
-    let prerequisite = unsafe { crate::BluetoothSchedulerDisablePrerequisite::assume_satisfied() };
-    let request = match task.begin_scheduler_disable(prerequisite) {
+    let request = match task.begin_scheduler_disable() {
         Ok(request) => request,
         Err(_) => unreachable!("a fresh validation task has no controller-time request"),
     };

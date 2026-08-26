@@ -27,43 +27,6 @@ const BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_8: u32 = 1 << 8;
 const BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_9: u32 = 1 << 9;
 const BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_12: u32 = 1 << 12;
 
-/// Affine proof for controller-side interrupt output preparation.
-///
-/// The exact interrupt-bank transaction lives in the PAC, while controller
-/// HAL-init and powered ordering belong to a higher lifecycle. Safe HAL code
-/// consumes this value once; only that lifecycle may assume it.
-///
-/// ```compile_fail
-/// use open_esp_radio_esp32s31_pac::BluetoothInterruptOutputPreparationPrerequisite;
-///
-/// fn duplicate(proof: BluetoothInterruptOutputPreparationPrerequisite) {
-///     let _first = proof;
-///     let _second = proof;
-/// }
-/// ```
-#[must_use = "the interrupt-output proof must be consumed by its exact transaction"]
-pub struct BluetoothInterruptOutputPreparationPrerequisite {
-    _private: (),
-}
-
-impl BluetoothInterruptOutputPreparationPrerequisite {
-    /// Assume every external prerequisite for controller output preparation.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain enabled clocks, completed controller HAL-init,
-    /// quiescent dynamic Link-Layer sources and an inactive CPU route for the
-    /// same unique Bluetooth owner.
-    #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "construction is the explicit post-controller-init IRQ proof boundary"
-    )]
-    pub unsafe fn assume_satisfied() -> Self {
-        Self { _private: () }
-    }
-}
-
 trait BluetoothInterruptControl {
     fn clear_primary_baseline_bank_0(&mut self);
     fn clear_primary_baseline_bank_1(&mut self);
@@ -250,10 +213,7 @@ impl BluetoothInterruptSetup {
     /// to `0x2010_100c`, then the outer path calls the platform interrupt
     /// allocator for source 124. The earlier HAL-init part of that composite
     /// remains a separate lifecycle prerequisite.
-    pub fn prepare_controller_output(
-        self,
-        _prerequisite: BluetoothInterruptOutputPreparationPrerequisite,
-    ) -> BluetoothInterruptOutputPrepared {
+    pub fn prepare_controller_output(self) -> BluetoothInterruptOutputPrepared {
         let mut control = HardwareInterruptControl {
             bank: &self.peripherals.bluetooth_interrupt_bank,
         };
@@ -391,6 +351,13 @@ impl BluetoothPrimaryInterruptObservation {
 }
 
 impl BluetoothNrtInterruptObservation {
+    /// Construct one opaque NRT observation for upper-layer host validation.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn for_validation(bank_0: u32, bank_1: u32) -> Self {
+        Self { bank_0, bank_1 }
+    }
+
     /// Complete first-bank image observed at `0x2010_1340`.
     pub const fn bank_0_bits(self) -> u32 {
         self.bank_0

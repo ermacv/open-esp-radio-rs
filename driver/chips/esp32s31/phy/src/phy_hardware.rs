@@ -21,11 +21,8 @@ pub(crate) fn set_phy_register_calibration_clock(
 
 /// Complete rev0 ROM `phy_bb_agc_reg_update`, size `0xa6`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_bb_agc_register_update(
-    platform: &mut impl open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl SharedPhyAccess,
-) {
-    open_esp_radio_esp32s31_hal::phy_agc::update_baseband_registers(platform, registers);
+pub(crate) fn configure_phy_bb_agc_register_update(registers: &mut impl SharedPhyAccess) {
+    open_esp_radio_esp32s31_hal::phy_agc::update_baseband_registers(registers);
 }
 
 /// Complete rev0 ROM `phy_enable_agc`, size `0x28`.
@@ -55,7 +52,6 @@ fn configure_phy_rx_11b_optimization(registers: &mut impl SharedPhyAccess, enabl
 /// every direct and tail child reproduced by source-owned safe HAL leaves.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_registers(
-    platform: &mut impl open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl,
     registers: &mut impl open_esp_radio_esp32s31_hal::PhyInitializationAccess,
     parameters: crate::phy_bb::PhyRegisterInitParameters,
 ) {
@@ -66,7 +62,7 @@ pub(crate) fn configure_phy_registers(
         parameters.parameter_120,
     );
     open_esp_radio_esp32s31_hal::phy_agc::set_saturation_gain(registers, 0x0008_1825);
-    open_esp_radio_esp32s31_hal::phy_baseband::initialize_baseband(platform, registers);
+    open_esp_radio_esp32s31_hal::phy_baseband::initialize_baseband(registers);
     open_esp_radio_esp32s31_hal::phy_baseband::configure_watchdog(registers);
     open_esp_radio_esp32s31_hal::phy_baseband::configure_tx_pa_on(registers);
     configure_phy_rx_11b_optimization(registers, true);
@@ -74,7 +70,7 @@ pub(crate) fn configure_phy_registers(
     open_esp_radio_esp32s31_hal::phy_baseband::configure_noise_floor_auto(registers);
     open_esp_radio_esp32s31_hal::phy_agc::configure_antenna(registers);
     open_esp_radio_esp32s31_hal::phy_frequency::configure_bt_filter(registers);
-    open_esp_radio_esp32s31_hal::phy_frequency::enable_mac_baseband(platform, registers);
+    open_esp_radio_esp32s31_hal::phy_frequency::enable_mac_baseband(registers);
 }
 
 /// Complete pinned `libphy.a[phy_rx_gain.o]::phy_rx_table_init`, size `0x7c`.
@@ -87,7 +83,6 @@ pub(crate) fn configure_phy_registers(
 /// register-init, AGC-update and AGC-enable suffix.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_rx_table(
-    platform: &mut impl open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl,
     registers: &mut impl open_esp_radio_esp32s31_hal::PhyInitializationAccess,
     parameters: crate::phy_bb::PhyRxTableInitParameters,
 ) {
@@ -102,14 +97,13 @@ pub(crate) fn configure_phy_rx_table(
         index += 1;
     }
     configure_phy_registers(
-        platform,
         registers,
         crate::phy_bb::PhyRegisterInitParameters {
             parameter_121: parameters.parameter_121,
             parameter_120: crate::phy_bb::PHY_RX_TABLE_ENTRY_COUNT,
         },
     );
-    configure_phy_bb_agc_register_update(platform, registers);
+    configure_phy_bb_agc_register_update(registers);
     enable_phy_agc(registers);
 }
 

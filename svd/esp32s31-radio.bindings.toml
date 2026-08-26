@@ -36419,6 +36419,446 @@ bit-width = 32
 access = "read-write"
 
 [[registers]]
+address = 537959428
+width = 32
+access = "read-write"
+identity = "MODEM_SYSCON_RADIO.CLK_CONF"
+peripheral = "MODEM_SYSCON_RADIO"
+peripheral-type = "ModemSysconRadio"
+peripheral-module = "modem_syscon_radio"
+scope = []
+register-method = "clk_conf"
+
+[[registers.fields]]
+svd-name = "CLK_I2C_MST_SEL_160M"
+method = "clk_i2c_mst_sel_160m"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_ETM_EN"
+method = "clk_etm_en"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_ZB_APB_EN"
+method = "clk_zb_apb_en"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_ZBMAC_EN"
+method = "clk_zbmac_en"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_SEC_ECB_EN"
+method = "clk_modem_sec_ecb_en"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_SEC_CCM_EN"
+method = "clk_modem_sec_ccm_en"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_SEC_BAH_EN"
+method = "clk_modem_sec_bah_en"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_SEC_APB_EN"
+method = "clk_modem_sec_apb_en"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_SEC_EN"
+method = "clk_modem_sec_en"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_BLE_TIMER_EN"
+method = "clk_ble_timer_en"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537959436
+width = 32
+access = "read-write"
+identity = "MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST"
+peripheral = "MODEM_SYSCON_RADIO"
+peripheral-type = "ModemSysconRadio"
+peripheral-module = "modem_syscon_radio"
+scope = []
+register-method = "clk_conf_power_st"
+
+[[registers.fields]]
+svd-name = "CLK_ZB_ST_MAP_BIT_TWO"
+method = "clk_zb_st_map_bit_two"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_FE_ST_MAP_BIT_ONE"
+method = "clk_fe_st_map_bit_one"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_FE_ST_MAP_BIT_TWO"
+method = "clk_fe_st_map_bit_two"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_BT_ST_MAP_BIT_TWO"
+method = "clk_bt_st_map_bit_two"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFI_ST_MAP_BIT_ONE"
+method = "clk_wifi_st_map_bit_one"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFI_ST_MAP_BIT_TWO"
+method = "clk_wifi_st_map_bit_two"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_PERI_ST_MAP_BIT_TWO"
+method = "clk_modem_peri_st_map_bit_two"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_APB_ST_MAP_BIT_ONE"
+method = "clk_modem_apb_st_map_bit_one"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_APB_ST_MAP_BIT_TWO"
+method = "clk_modem_apb_st_map_bit_two"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537959440
+width = 32
+access = "read-write"
+identity = "MODEM_SYSCON_RADIO.MODEM_RST_CONF"
+peripheral = "MODEM_SYSCON_RADIO"
+peripheral-type = "ModemSysconRadio"
+peripheral-module = "modem_syscon_radio"
+scope = []
+register-method = "modem_rst_conf"
+
+[[registers.fields]]
+svd-name = "RST_WIFIBB"
+method = "rst_wifibb"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_WIFIMAC"
+method = "rst_wifimac"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_BTMAC_APB"
+method = "rst_btmac_apb"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_BTMAC"
+method = "rst_btmac"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_ZBMAC_APB"
+method = "rst_zbmac_apb"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_ZBMAC"
+method = "rst_zbmac"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_MODEM_ECB"
+method = "rst_modem_ecb"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_MODEM_CCM"
+method = "rst_modem_ccm"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_MODEM_BAH"
+method = "rst_modem_bah"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_MODEM_SEC"
+method = "rst_modem_sec"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RST_BLE_TIMER"
+method = "rst_ble_timer"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537959444
+width = 32
+access = "read-write"
+identity = "MODEM_SYSCON_RADIO.CLK_CONF1"
+peripheral = "MODEM_SYSCON_RADIO"
+peripheral-type = "ModemSysconRadio"
+peripheral-module = "modem_syscon_radio"
+scope = []
+register-method = "clk_conf1"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIBB_22M_EN"
+method = "clk_wifibb_22m_en"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIBB_40M_EN"
+method = "clk_wifibb_40m_en"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIBB_44M_EN"
+method = "clk_wifibb_44m_en"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIBB_80M_EN"
+method = "clk_wifibb_80m_en"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIBB_40X_EN"
+method = "clk_wifibb_40x_en"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIBB_80X_EN"
+method = "clk_wifibb_80x_en"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIBB_40X1_EN"
+method = "clk_wifibb_40x1_en"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIBB_80X1_EN"
+method = "clk_wifibb_80x1_en"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIBB_160X1_EN"
+method = "clk_wifibb_160x1_en"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIMAC_EN"
+method = "clk_wifimac_en"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFI_APB_EN"
+method = "clk_wifi_apb_en"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_FE_80M_EN"
+method = "clk_fe_80m_en"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_FE_160M_EN"
+method = "clk_fe_160m_en"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_FE_APB_EN"
+method = "clk_fe_apb_en"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_BT_APB_EN"
+method = "clk_bt_apb_en"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_BTBB_EN"
+method = "clk_btbb_en"
+bit-offset = 17
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_BTMAC_EN"
+method = "clk_btmac_en"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_FE_PWDET_ADC_EN"
+method = "clk_fe_pwdet_adc_en"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_FE_ADC_EN"
+method = "clk_fe_adc_en"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_FE_DAC_EN"
+method = "clk_fe_dac_en"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537959448
+width = 32
+access = "read-write"
+identity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG"
+peripheral = "MODEM_SYSCON_RADIO"
+peripheral-type = "ModemSysconRadio"
+peripheral-module = "modem_syscon_radio"
+scope = []
+register-method = "wifi_bb_cfg"
+
+[[registers.fields]]
+svd-name = "COLD_START_CLEAR_UNKNOWN"
+method = "cold_start_clear_unknown"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "WIFI_ENABLE"
+method = "wifi_enable"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BSS_CBW_40_DIGITAL_UNKNOWN"
+method = "bss_cbw_40_digital_unknown"
+bit-offset = 2
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BB_AGC_UPDATE_ENABLE_UNKNOWN"
+method = "bb_agc_update_enable_unknown"
+bit-offset = 11
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MAC_BASEBAND_ENABLE_UNKNOWN"
+method = "mac_baseband_enable_unknown"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 537964544
 width = 32
 access = "read-write"
@@ -38220,31 +38660,59 @@ scope = []
 register-method = "clk_conf_power_st"
 
 [[registers.fields]]
-svd-name = "CLK_WIFIPWR_ST_MAP"
-method = "clk_wifipwr_st_map"
-bit-offset = 16
-bit-width = 4
+svd-name = "CLK_WIFIPWR_ST_MAP_BIT_ONE"
+method = "clk_wifipwr_st_map_bit_one"
+bit-offset = 17
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CLK_COEX_ST_MAP"
-method = "clk_coex_st_map"
-bit-offset = 20
-bit-width = 4
+svd-name = "CLK_WIFIPWR_ST_MAP_BIT_TWO"
+method = "clk_wifipwr_st_map_bit_two"
+bit-offset = 18
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CLK_I2C_MST_ST_MAP"
-method = "clk_i2c_mst_st_map"
-bit-offset = 24
-bit-width = 4
+svd-name = "CLK_COEX_ST_MAP_BIT_ONE"
+method = "clk_coex_st_map_bit_one"
+bit-offset = 21
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CLK_LP_APB_ST_MAP"
-method = "clk_lp_apb_st_map"
-bit-offset = 28
-bit-width = 4
+svd-name = "CLK_COEX_ST_MAP_BIT_TWO"
+method = "clk_coex_st_map_bit_two"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_I2C_MST_ST_MAP_BIT_ONE"
+method = "clk_i2c_mst_st_map_bit_one"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_I2C_MST_ST_MAP_BIT_TWO"
+method = "clk_i2c_mst_st_map_bit_two"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_LP_APB_ST_MAP_BIT_ONE"
+method = "clk_lp_apb_st_map_bit_one"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_LP_APB_ST_MAP_BIT_TWO"
+method = "clk_lp_apb_st_map_bit_two"
+bit-offset = 30
+bit-width = 1
 access = "read-write"
 
 [[registers]]

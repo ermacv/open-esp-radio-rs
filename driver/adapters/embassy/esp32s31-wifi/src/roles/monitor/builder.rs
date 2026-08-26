@@ -390,8 +390,7 @@ where
     ) -> Result<(), Esp32s31MonitorChannelSwitchError>
     where
         D: PhyAsyncDelay,
-        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         O: PhyTargetObserver,
     {
         if self.quarantined {
@@ -818,8 +817,7 @@ where
     ) -> Result<Esp32s31MonitorRunReport, Esp32s31MonitorRunFailure<R::Error>>
     where
         D: PhyAsyncDelay,
-        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         O: PhyTargetObserver,
     {
         if self.owner.current_channel() != sequence.first()
@@ -984,8 +982,7 @@ where
     >
     where
         D: PhyAsyncDelay,
-        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         O: PhyTargetObserver,
     {
         let result = match policy {
@@ -1037,8 +1034,7 @@ where
     ) -> Result<(), Esp32s31MonitorChannelSwitchError>
     where
         D: PhyAsyncDelay,
-        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         O: PhyTargetObserver,
     {
         self.owner.switch_channel::<D, O>(channel, observer).await

@@ -1,9 +1,7 @@
 //! ESP32-S31 lowering of portable Wi-Fi channel definitions.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::{
-    RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl,
-};
+use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError,
@@ -40,7 +38,7 @@ pub const fn lower_wifi_channel(channel: WifiChannel) -> Esp32s31PhyChannel {
 #[cfg(target_arch = "riscv32")]
 pub async fn switch_esp32s31_wifi_channel<
     D: PhyAsyncDelay,
-    P: PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyI2cMasterControl,
     O: PhyTargetObserver,
 >(
     state: &mut PhyState,

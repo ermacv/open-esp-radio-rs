@@ -33,13 +33,10 @@ impl FtmEnableRestore {
 /// The body at `0x2f82_860e`, size `0xa6`, performs fourteen internal radio
 /// operations before its official-platform enable edge.
 #[cfg(target_arch = "riscv32")]
-pub fn update_baseband_registers(
-    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl SharedPhyAccess,
-) {
+pub fn update_baseband_registers(registers: &mut impl SharedPhyAccess) {
     let registers = phy_pac_mut(registers);
     registers.update_agc_baseband_registers();
-    crate::wifi_bb::enable_agc_register_update(platform);
+    crate::wifi_bb::enable_agc_register_update(registers);
 }
 
 /// Select complete rev0 ROM `phy_enable_agc` or `phy_disable_agc`.

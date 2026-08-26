@@ -10,9 +10,7 @@ use open_esp_radio_esp32s31_hal::{
     Ieee802154Clocked, PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext,
     state::Powered,
 };
-use open_esp_radio_esp32s31_hal::{
-    analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl,
-};
+use open_esp_radio_esp32s31_hal::{analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl};
 
 use crate::{
     HARDWARE_EDGE_LIMIT, PhyCalibrationTrackingPort, PhyParamTrackingPort,
@@ -1382,7 +1380,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_channel<P: PhyWifiBbControl + PhyI2cMasterControl, O: PhyTargetObserver>(
+    async fn complete_channel<P: PhyI2cMasterControl, O: PhyTargetObserver>(
         binding: PhyChipChannelExternalBinding,
         platform: &mut P,
         registers: &mut impl SharedPhyAccess,
@@ -1646,16 +1644,16 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_baseband<P: PhyWifiBbControl + PhyI2cMasterControl, O: PhyTargetObserver>(
+    async fn complete_baseband<P: PhyI2cMasterControl, O: PhyTargetObserver>(
         binding: PhyBbExternalBinding,
         platform: &mut P,
         registers: &mut impl PhyInitializationAccess,
         observer: &mut O,
     ) -> Result<PhyBbInitCompletion, PhyTargetPortError> {
         match binding {
-            PhyBbExternalBinding::Mmio(binding) => Ok(PhyBbInitCompletion::Mmio(
-                binding.execute_target(platform, registers),
-            )),
+            PhyBbExternalBinding::Mmio(binding) => {
+                Ok(PhyBbInitCompletion::Mmio(binding.execute_target(registers)))
+            }
             PhyBbExternalBinding::TxDc(binding) => Ok(PhyBbInitCompletion::TxDc(
                 Self::complete_tx_dc(binding, registers, observer).await?,
             )),
@@ -1901,10 +1899,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         Err(PhyTargetPortError::RfOperationLimit)
     }
 
-    async fn run_calibration_channel<
-        P: PhyWifiBbControl + PhyI2cMasterControl,
-        O: PhyTargetObserver,
-    >(
+    async fn run_calibration_channel<P: PhyI2cMasterControl, O: PhyTargetObserver>(
         mut child: PhyCalibrationChannelTransition,
         platform: &mut P,
         registers: &mut impl SharedPhyAccess,
@@ -2097,7 +2092,7 @@ impl<'a, P, R, D, O> TargetPhyParamTrackingPort<'a, P, R, D, O> {
 }
 
 impl<
-    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyI2cMasterControl,
     R: PhyInitializationAccess,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
@@ -2188,7 +2183,7 @@ impl<
                         binding.execute_target(self.registers)
                     }
                     PhyCalibrationTrackingExternalBinding::MacBaseband(binding) => {
-                        binding.execute_target(self.platform, self.registers)
+                        binding.execute_target(self.registers)
                     }
                 }
             }
@@ -2202,7 +2197,7 @@ impl<
 }
 
 impl<
-    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyI2cMasterControl,
     R: PhyInitializationAccess,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
@@ -2310,7 +2305,7 @@ pub async fn run_target_phy_param_tracking<P, D, O>(
     observer: O,
 ) -> Result<TargetPhyParamTrackingSuccess<P>, TargetPhyParamTrackingFailure<P>>
 where
-    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2356,7 +2351,7 @@ pub async fn run_target_ieee802154_phy_param_tracking<P, D, O>(
     observer: O,
 ) -> Result<TargetIeee802154PhyParamTrackingSuccess<P>, TargetIeee802154PhyParamTrackingFailure<P>>
 where
-    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2385,7 +2380,7 @@ where
 }
 
 impl<
-    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyI2cMasterControl,
     R: PhyInitializationAccess,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
@@ -2487,7 +2482,7 @@ pub async fn run_target_ieee802154_phy_register<P, D, O>(
     observer: O,
 ) -> Result<TargetIeee802154PhyRegisterSuccess<P>, TargetIeee802154PhyRegisterFailure<P>>
 where
-    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2564,7 +2559,7 @@ pub async fn run_target_phy_register<P, D, O>(
     observer: O,
 ) -> Result<TargetPhyRegisterSuccess<P>, TargetPhyRegisterFailure<P>>
 where
-    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {

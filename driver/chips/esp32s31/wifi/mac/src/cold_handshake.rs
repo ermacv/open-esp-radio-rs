@@ -5,7 +5,6 @@ use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacColdHal;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacColdStartError {
     HandshakeTimedOut { samples: u32, observed: u32 },
-    SharedClockUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

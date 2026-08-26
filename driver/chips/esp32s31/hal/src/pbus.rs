@@ -56,10 +56,10 @@ pub fn configure_debug_mode(registers: &mut impl SharedPhyAccess) {
 /// Enter PBus work mode and sample the optional settle-pulse condition once.
 ///
 /// Basis: complete rev0 ROM `phy_pbus_force_mode(0)`. It clears
-/// `COMMAND.DEBUG_MODE_ENABLE`, sets `MODE.WORK_MODE_ENABLE`, and samples
-/// `MODEM_SYSCON.WIFI_BB_CFG` bit 1. The returned boolean only reports that
-/// instruction-evidenced condition; the delayed pulse itself belongs to the
-/// caller's async transition.
+/// `COMMAND.DEBUG_MODE_ENABLE`, sets `MODE.WORK_MODE_ENABLE`, and samples the
+/// semantic Wi-Fi-baseband-enable condition. The returned boolean only reports
+/// that instruction-evidenced condition; the delayed pulse itself belongs to
+/// the caller's async transition.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_work_mode(registers: &mut impl SharedPhyContext) -> bool {
     let settle_required =

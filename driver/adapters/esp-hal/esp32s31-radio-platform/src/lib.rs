@@ -6,8 +6,9 @@
 //! The neutral coordinator is the sole owner of the official system PAC
 //! singletons used by modem clocking and common PHY initialization. A
 //! Bluetooth platform handle is a semantic lease: raw register blocks cannot
-//! escape through it, and dependency clocks are reference-counted before they
-//! reach MMIO. This is the boundary required for a later Wi-Fi/Bluetooth
+//! escape through it, and the remaining upstream PLL source is
+//! reference-counted. MODEM shared-clock leases live in the affine custom PAC.
+//! This is the boundary required for a later Wi-Fi/Bluetooth
 //! coexistence composition; the current Wi-Fi adapter must be migrated onto
 //! the same coordinator before simultaneous use.
 

@@ -18,31 +18,6 @@
   <width>32</width>
   <peripherals>
     <peripheral>
-      <name>MODEM_SYSCON</name>
-      <description>SOURCE[ESP32S31_PAC_D0FB94E,S31_MODEM_SYSCON_STRUCT]. Platform-owned modem system configuration.</description>
-      <baseAddress>0x20109c00</baseAddress>
-      <registers>
-        <register>
-          <name>CLK_CONF1</name>
-          <description>SOURCE[ESP32S31_PAC_D0FB94E]. Exact platform-PAC register name and access. Wi-Fi, Bluetooth and front-end clock-enable word.</description>
-          <addressOffset>0x14</addressOffset><size>32</size><access>read-write</access>
-        </register>
-        <register>
-          <name>WIFI_BB_CFG</name>
-          <description>SOURCE[ESP32S31_PAC_D0FB94E,ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT]. Wi-Fi baseband configuration fields reached by the PHY call graph.</description>
-          <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
-          <fields>
-            <field><name>COLD_START_CLEAR_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>WIFI_ENABLE</name><bitOffset>1</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>BSS_CBW_40_DIGITAL_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
-            <field><name>BB_AGC_UPDATE_ENABLE_UNKNOWN</name><bitOffset>11</bitOffset><bitWidth>3</bitWidth></field>
-            <field><name>MAC_BASEBAND_ENABLE_UNKNOWN</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
-          </fields>
-        </register>
-      </registers>
-    </peripheral>
-
-    <peripheral>
       <name>MODEM_LPCON</name>
       <description>SOURCE[ESP32S31_PAC_D0FB94E,S31_MODEM_LPCON_STRUCT]. Remaining platform-owned modem low-power configuration registers from the pinned ESP32-S31 PAC; the shared clock registers and TICK_CONF are carved into canonical route-owned models.</description>
       <baseAddress>0x2010F000</baseAddress>

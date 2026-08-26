@@ -4,7 +4,7 @@ use core::cell::RefMut;
 
 use open_esp_radio_esp32s31_pac::WifiRadioRegisters;
 
-use crate::{phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl};
+use crate::phy_i2c::PhyI2cMasterControl;
 
 #[cfg(target_arch = "riscv32")]
 use crate::phy_temperature::PhyTemperatureSystemControl;
@@ -155,13 +155,9 @@ impl<P: PhyI2cMasterControl> RadioChannelHal<'_, P> {
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<P: PhyWifiBbControl> RadioChannelHal<'_, P> {
+impl<P> RadioChannelHal<'_, P> {
     pub fn configure_bss_cbw(&mut self, cbw: u8) {
-        crate::phy_frequency::configure_bss_cbw(
-            self.platform,
-            self.registers.get_mut().radio_phy_mut(),
-            cbw,
-        );
+        crate::phy_frequency::configure_bss_cbw(self.registers.get_mut().radio_phy_mut(), cbw);
     }
 }
 
@@ -211,6 +207,6 @@ impl<P> PhyTemperatureSystemControl for RadioChannelHal<'_, P> {
 }
 
 /// Traits required by the complete channel transaction.
-pub trait RadioChannelPlatform: PhyWifiBbControl + PhyI2cMasterControl {}
+pub trait RadioChannelPlatform: PhyI2cMasterControl {}
 
-impl<T> RadioChannelPlatform for T where T: PhyWifiBbControl + PhyI2cMasterControl {}
+impl<T> RadioChannelPlatform for T where T: PhyI2cMasterControl {}

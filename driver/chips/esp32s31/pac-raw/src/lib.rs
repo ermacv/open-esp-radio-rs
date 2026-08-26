@@ -11752,6 +11752,1093 @@ pub mod phy_clock_oracle {
         }
     }
 }
+#[doc = "Route-owned MODEM_SYSCON clocks, resets and shared Wi-Fi-baseband control used by the exclusive Wi-Fi, Bluetooth and IEEE 802.15.4 lifecycles."]
+pub type ModemSysconRadio = crate::Periph<modem_syscon_radio::RegisterBlock, 0x2010_9c00>;
+impl core::fmt::Debug for ModemSysconRadio {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ModemSysconRadio").finish()
+    }
+}
+#[doc = "Route-owned MODEM_SYSCON clocks, resets and shared Wi-Fi-baseband control used by the exclusive Wi-Fi, Bluetooth and IEEE 802.15.4 lifecycles."]
+pub mod modem_syscon_radio {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x04],
+        clk_conf: ClkConf,
+        _reserved1: [u8; 0x04],
+        clk_conf_power_st: ClkConfPowerSt,
+        modem_rst_conf: ModemRstConf,
+        clk_conf1: ClkConf1,
+        wifi_bb_cfg: WifiBbCfg,
+    }
+    impl RegisterBlock {
+        #[doc = "0x04 - Shared modem clock selectors and protocol clock gates."]
+        #[inline(always)]
+        pub const fn clk_conf(&self) -> &ClkConf {
+            &self.clk_conf
+        }
+        #[doc = "0x0c - Six modem-domain power-state clock-map fields."]
+        #[inline(always)]
+        pub const fn clk_conf_power_st(&self) -> &ClkConfPowerSt {
+            &self.clk_conf_power_st
+        }
+        #[doc = "0x10 - Shared radio-domain reset controls."]
+        #[inline(always)]
+        pub const fn modem_rst_conf(&self) -> &ModemRstConf {
+            &self.modem_rst_conf
+        }
+        #[doc = "0x14 - Wi-Fi, Bluetooth and front-end clock gates."]
+        #[inline(always)]
+        pub const fn clk_conf1(&self) -> &ClkConf1 {
+            &self.clk_conf1
+        }
+        #[doc = "0x18 - Instruction-reviewed Wi-Fi baseband shared control."]
+        #[inline(always)]
+        pub const fn wifi_bb_cfg(&self) -> &WifiBbCfg {
+            &self.wifi_bb_cfg
+        }
+    }
+    #[doc = "CLK_CONF (rw) register accessor: Shared modem clock selectors and protocol clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf`] module"]
+    #[doc(alias = "CLK_CONF")]
+    pub type ClkConf = crate::Reg<clk_conf::ClkConfSpec>;
+    #[doc = "Shared modem clock selectors and protocol clock gates."]
+    pub mod clk_conf {
+        #[doc = "Register `CLK_CONF` reader"]
+        pub type R = crate::R<ClkConfSpec>;
+        #[doc = "Register `CLK_CONF` writer"]
+        pub type W = crate::W<ClkConfSpec>;
+        #[doc = "Field `CLK_I2C_MST_SEL_160M` reader - Select the 160 MHz PHY-I2C-master source."]
+        pub type ClkI2cMstSel160mR = crate::BitReader;
+        #[doc = "Field `CLK_I2C_MST_SEL_160M` writer - Select the 160 MHz PHY-I2C-master source."]
+        pub type ClkI2cMstSel160mW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_ETM_EN` reader - Enable the modem ETM clock."]
+        pub type ClkEtmEnR = crate::BitReader;
+        #[doc = "Field `CLK_ETM_EN` writer - Enable the modem ETM clock."]
+        pub type ClkEtmEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_ZB_APB_EN` reader - Enable the IEEE 802.15.4 APB clock."]
+        pub type ClkZbApbEnR = crate::BitReader;
+        #[doc = "Field `CLK_ZB_APB_EN` writer - Enable the IEEE 802.15.4 APB clock."]
+        pub type ClkZbApbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_ZBMAC_EN` reader - Enable the IEEE 802.15.4 MAC clock."]
+        pub type ClkZbmacEnR = crate::BitReader;
+        #[doc = "Field `CLK_ZBMAC_EN` writer - Enable the IEEE 802.15.4 MAC clock."]
+        pub type ClkZbmacEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_MODEM_SEC_ECB_EN` reader - Enable the modem-security ECB clock."]
+        pub type ClkModemSecEcbEnR = crate::BitReader;
+        #[doc = "Field `CLK_MODEM_SEC_ECB_EN` writer - Enable the modem-security ECB clock."]
+        pub type ClkModemSecEcbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_MODEM_SEC_CCM_EN` reader - Enable the modem-security CCM clock."]
+        pub type ClkModemSecCcmEnR = crate::BitReader;
+        #[doc = "Field `CLK_MODEM_SEC_CCM_EN` writer - Enable the modem-security CCM clock."]
+        pub type ClkModemSecCcmEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_MODEM_SEC_BAH_EN` reader - Enable the modem-security BAH clock."]
+        pub type ClkModemSecBahEnR = crate::BitReader;
+        #[doc = "Field `CLK_MODEM_SEC_BAH_EN` writer - Enable the modem-security BAH clock."]
+        pub type ClkModemSecBahEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_MODEM_SEC_APB_EN` reader - Enable the modem-security APB clock."]
+        pub type ClkModemSecApbEnR = crate::BitReader;
+        #[doc = "Field `CLK_MODEM_SEC_APB_EN` writer - Enable the modem-security APB clock."]
+        pub type ClkModemSecApbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_MODEM_SEC_EN` reader - Enable the modem-security functional clock."]
+        pub type ClkModemSecEnR = crate::BitReader;
+        #[doc = "Field `CLK_MODEM_SEC_EN` writer - Enable the modem-security functional clock."]
+        pub type ClkModemSecEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_BLE_TIMER_EN` reader - Enable the Bluetooth low-power timer clock."]
+        pub type ClkBleTimerEnR = crate::BitReader;
+        #[doc = "Field `CLK_BLE_TIMER_EN` writer - Enable the Bluetooth low-power timer clock."]
+        pub type ClkBleTimerEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 12 - Select the 160 MHz PHY-I2C-master source."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_sel_160m(&self) -> ClkI2cMstSel160mR {
+                ClkI2cMstSel160mR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 22 - Enable the modem ETM clock."]
+            #[inline(always)]
+            pub fn clk_etm_en(&self) -> ClkEtmEnR {
+                ClkEtmEnR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Enable the IEEE 802.15.4 APB clock."]
+            #[inline(always)]
+            pub fn clk_zb_apb_en(&self) -> ClkZbApbEnR {
+                ClkZbApbEnR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24 - Enable the IEEE 802.15.4 MAC clock."]
+            #[inline(always)]
+            pub fn clk_zbmac_en(&self) -> ClkZbmacEnR {
+                ClkZbmacEnR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25 - Enable the modem-security ECB clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_ecb_en(&self) -> ClkModemSecEcbEnR {
+                ClkModemSecEcbEnR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26 - Enable the modem-security CCM clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_ccm_en(&self) -> ClkModemSecCcmEnR {
+                ClkModemSecCcmEnR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 27 - Enable the modem-security BAH clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_bah_en(&self) -> ClkModemSecBahEnR {
+                ClkModemSecBahEnR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 28 - Enable the modem-security APB clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_apb_en(&self) -> ClkModemSecApbEnR {
+                ClkModemSecApbEnR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bit 29 - Enable the modem-security functional clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_en(&self) -> ClkModemSecEnR {
+                ClkModemSecEnR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30 - Enable the Bluetooth low-power timer clock."]
+            #[inline(always)]
+            pub fn clk_ble_timer_en(&self) -> ClkBleTimerEnR {
+                ClkBleTimerEnR::new(((self.bits >> 30) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 12 - Select the 160 MHz PHY-I2C-master source."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_sel_160m(&mut self) -> ClkI2cMstSel160mW<'_, ClkConfSpec> {
+                ClkI2cMstSel160mW::new(self, 12)
+            }
+            #[doc = "Bit 22 - Enable the modem ETM clock."]
+            #[inline(always)]
+            pub fn clk_etm_en(&mut self) -> ClkEtmEnW<'_, ClkConfSpec> {
+                ClkEtmEnW::new(self, 22)
+            }
+            #[doc = "Bit 23 - Enable the IEEE 802.15.4 APB clock."]
+            #[inline(always)]
+            pub fn clk_zb_apb_en(&mut self) -> ClkZbApbEnW<'_, ClkConfSpec> {
+                ClkZbApbEnW::new(self, 23)
+            }
+            #[doc = "Bit 24 - Enable the IEEE 802.15.4 MAC clock."]
+            #[inline(always)]
+            pub fn clk_zbmac_en(&mut self) -> ClkZbmacEnW<'_, ClkConfSpec> {
+                ClkZbmacEnW::new(self, 24)
+            }
+            #[doc = "Bit 25 - Enable the modem-security ECB clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_ecb_en(&mut self) -> ClkModemSecEcbEnW<'_, ClkConfSpec> {
+                ClkModemSecEcbEnW::new(self, 25)
+            }
+            #[doc = "Bit 26 - Enable the modem-security CCM clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_ccm_en(&mut self) -> ClkModemSecCcmEnW<'_, ClkConfSpec> {
+                ClkModemSecCcmEnW::new(self, 26)
+            }
+            #[doc = "Bit 27 - Enable the modem-security BAH clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_bah_en(&mut self) -> ClkModemSecBahEnW<'_, ClkConfSpec> {
+                ClkModemSecBahEnW::new(self, 27)
+            }
+            #[doc = "Bit 28 - Enable the modem-security APB clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_apb_en(&mut self) -> ClkModemSecApbEnW<'_, ClkConfSpec> {
+                ClkModemSecApbEnW::new(self, 28)
+            }
+            #[doc = "Bit 29 - Enable the modem-security functional clock."]
+            #[inline(always)]
+            pub fn clk_modem_sec_en(&mut self) -> ClkModemSecEnW<'_, ClkConfSpec> {
+                ClkModemSecEnW::new(self, 29)
+            }
+            #[doc = "Bit 30 - Enable the Bluetooth low-power timer clock."]
+            #[inline(always)]
+            pub fn clk_ble_timer_en(&mut self) -> ClkBleTimerEnW<'_, ClkConfSpec> {
+                ClkBleTimerEnW::new(self, 30)
+            }
+        }
+        #[doc = "Shared modem clock selectors and protocol clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConfSpec;
+        impl crate::RegisterSpec for ClkConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf::R`](R) reader structure"]
+        impl crate::Readable for ClkConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf::W`](W) writer structure"]
+        impl crate::Writable for ClkConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF to value 0x0020_0002"]
+        impl crate::Resettable for ClkConfSpec {
+            const RESET_VALUE: u32 = 0x0020_0002;
+        }
+    }
+    #[doc = "CLK_CONF_POWER_ST (rw) register accessor: Six modem-domain power-state clock-map fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf_power_st::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf_power_st::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf_power_st`] module"]
+    #[doc(alias = "CLK_CONF_POWER_ST")]
+    pub type ClkConfPowerSt = crate::Reg<clk_conf_power_st::ClkConfPowerStSpec>;
+    #[doc = "Six modem-domain power-state clock-map fields."]
+    pub mod clk_conf_power_st {
+        #[doc = "Register `CLK_CONF_POWER_ST` reader"]
+        pub type R = crate::R<ClkConfPowerStSpec>;
+        #[doc = "Register `CLK_CONF_POWER_ST` writer"]
+        pub type W = crate::W<ClkConfPowerStSpec>;
+        #[doc = "Field `CLK_ZB_ST_MAP_BIT_TWO` reader - Bit two of the IEEE 802.15.4 domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkZbStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_ZB_ST_MAP_BIT_TWO` writer - Bit two of the IEEE 802.15.4 domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkZbStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_FE_ST_MAP_BIT_ONE` reader - Bit one of the radio-front-end domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkFeStMapBitOneR = crate::BitReader;
+        #[doc = "Field `CLK_FE_ST_MAP_BIT_ONE` writer - Bit one of the radio-front-end domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkFeStMapBitOneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_FE_ST_MAP_BIT_TWO` reader - Bit two of the radio-front-end domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkFeStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_FE_ST_MAP_BIT_TWO` writer - Bit two of the radio-front-end domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkFeStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_BT_ST_MAP_BIT_TWO` reader - Bit two of the Bluetooth domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkBtStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_BT_ST_MAP_BIT_TWO` writer - Bit two of the Bluetooth domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkBtStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFI_ST_MAP_BIT_ONE` reader - Bit one of the Wi-Fi domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkWifiStMapBitOneR = crate::BitReader;
+        #[doc = "Field `CLK_WIFI_ST_MAP_BIT_ONE` writer - Bit one of the Wi-Fi domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkWifiStMapBitOneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFI_ST_MAP_BIT_TWO` reader - Bit two of the Wi-Fi domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkWifiStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_WIFI_ST_MAP_BIT_TWO` writer - Bit two of the Wi-Fi domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkWifiStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_MODEM_PERI_ST_MAP_BIT_TWO` reader - Bit two of the modem-peripheral domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkModemPeriStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_MODEM_PERI_ST_MAP_BIT_TWO` writer - Bit two of the modem-peripheral domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkModemPeriStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_MODEM_APB_ST_MAP_BIT_ONE` reader - Bit one of the modem-APB domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkModemApbStMapBitOneR = crate::BitReader;
+        #[doc = "Field `CLK_MODEM_APB_ST_MAP_BIT_ONE` writer - Bit one of the modem-APB domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkModemApbStMapBitOneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_MODEM_APB_ST_MAP_BIT_TWO` reader - Bit two of the modem-APB domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkModemApbStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_MODEM_APB_ST_MAP_BIT_TWO` writer - Bit two of the modem-APB domain state map, set by the reviewed modem clock initialization."]
+        pub type ClkModemApbStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 10 - Bit two of the IEEE 802.15.4 domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_zb_st_map_bit_two(&self) -> ClkZbStMapBitTwoR {
+                ClkZbStMapBitTwoR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bit 13 - Bit one of the radio-front-end domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_fe_st_map_bit_one(&self) -> ClkFeStMapBitOneR {
+                ClkFeStMapBitOneR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14 - Bit two of the radio-front-end domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_fe_st_map_bit_two(&self) -> ClkFeStMapBitTwoR {
+                ClkFeStMapBitTwoR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 18 - Bit two of the Bluetooth domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_bt_st_map_bit_two(&self) -> ClkBtStMapBitTwoR {
+                ClkBtStMapBitTwoR::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bit 21 - Bit one of the Wi-Fi domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_wifi_st_map_bit_one(&self) -> ClkWifiStMapBitOneR {
+                ClkWifiStMapBitOneR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 22 - Bit two of the Wi-Fi domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_wifi_st_map_bit_two(&self) -> ClkWifiStMapBitTwoR {
+                ClkWifiStMapBitTwoR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 26 - Bit two of the modem-peripheral domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_modem_peri_st_map_bit_two(&self) -> ClkModemPeriStMapBitTwoR {
+                ClkModemPeriStMapBitTwoR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 29 - Bit one of the modem-APB domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_modem_apb_st_map_bit_one(&self) -> ClkModemApbStMapBitOneR {
+                ClkModemApbStMapBitOneR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30 - Bit two of the modem-APB domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_modem_apb_st_map_bit_two(&self) -> ClkModemApbStMapBitTwoR {
+                ClkModemApbStMapBitTwoR::new(((self.bits >> 30) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 10 - Bit two of the IEEE 802.15.4 domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_zb_st_map_bit_two(&mut self) -> ClkZbStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkZbStMapBitTwoW::new(self, 10)
+            }
+            #[doc = "Bit 13 - Bit one of the radio-front-end domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_fe_st_map_bit_one(&mut self) -> ClkFeStMapBitOneW<'_, ClkConfPowerStSpec> {
+                ClkFeStMapBitOneW::new(self, 13)
+            }
+            #[doc = "Bit 14 - Bit two of the radio-front-end domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_fe_st_map_bit_two(&mut self) -> ClkFeStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkFeStMapBitTwoW::new(self, 14)
+            }
+            #[doc = "Bit 18 - Bit two of the Bluetooth domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_bt_st_map_bit_two(&mut self) -> ClkBtStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkBtStMapBitTwoW::new(self, 18)
+            }
+            #[doc = "Bit 21 - Bit one of the Wi-Fi domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_wifi_st_map_bit_one(
+                &mut self,
+            ) -> ClkWifiStMapBitOneW<'_, ClkConfPowerStSpec> {
+                ClkWifiStMapBitOneW::new(self, 21)
+            }
+            #[doc = "Bit 22 - Bit two of the Wi-Fi domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_wifi_st_map_bit_two(
+                &mut self,
+            ) -> ClkWifiStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkWifiStMapBitTwoW::new(self, 22)
+            }
+            #[doc = "Bit 26 - Bit two of the modem-peripheral domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_modem_peri_st_map_bit_two(
+                &mut self,
+            ) -> ClkModemPeriStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkModemPeriStMapBitTwoW::new(self, 26)
+            }
+            #[doc = "Bit 29 - Bit one of the modem-APB domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_modem_apb_st_map_bit_one(
+                &mut self,
+            ) -> ClkModemApbStMapBitOneW<'_, ClkConfPowerStSpec> {
+                ClkModemApbStMapBitOneW::new(self, 29)
+            }
+            #[doc = "Bit 30 - Bit two of the modem-APB domain state map, set by the reviewed modem clock initialization."]
+            #[inline(always)]
+            pub fn clk_modem_apb_st_map_bit_two(
+                &mut self,
+            ) -> ClkModemApbStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkModemApbStMapBitTwoW::new(self, 30)
+            }
+        }
+        #[doc = "Six modem-domain power-state clock-map fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf_power_st::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf_power_st::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConfPowerStSpec;
+        impl crate::RegisterSpec for ClkConfPowerStSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf_power_st::R`](R) reader structure"]
+        impl crate::Readable for ClkConfPowerStSpec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf_power_st::W`](W) writer structure"]
+        impl crate::Writable for ClkConfPowerStSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF_POWER_ST to value 0"]
+        impl crate::Resettable for ClkConfPowerStSpec {}
+    }
+    #[doc = "MODEM_RST_CONF (rw) register accessor: Shared radio-domain reset controls.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_rst_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_rst_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@modem_rst_conf`] module"]
+    #[doc(alias = "MODEM_RST_CONF")]
+    pub type ModemRstConf = crate::Reg<modem_rst_conf::ModemRstConfSpec>;
+    #[doc = "Shared radio-domain reset controls."]
+    pub mod modem_rst_conf {
+        #[doc = "Register `MODEM_RST_CONF` reader"]
+        pub type R = crate::R<ModemRstConfSpec>;
+        #[doc = "Register `MODEM_RST_CONF` writer"]
+        pub type W = crate::W<ModemRstConfSpec>;
+        #[doc = "Field `RST_WIFIBB` reader - Wi-Fi baseband reset."]
+        pub type RstWifibbR = crate::BitReader;
+        #[doc = "Field `RST_WIFIBB` writer - Wi-Fi baseband reset."]
+        pub type RstWifibbW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_WIFIMAC` reader - Wi-Fi MAC reset."]
+        pub type RstWifimacR = crate::BitReader;
+        #[doc = "Field `RST_WIFIMAC` writer - Wi-Fi MAC reset."]
+        pub type RstWifimacW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_BTMAC_APB` reader - Bluetooth MAC APB reset."]
+        pub type RstBtmacApbR = crate::BitReader;
+        #[doc = "Field `RST_BTMAC_APB` writer - Bluetooth MAC APB reset."]
+        pub type RstBtmacApbW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_BTMAC` reader - Bluetooth MAC reset."]
+        pub type RstBtmacR = crate::BitReader;
+        #[doc = "Field `RST_BTMAC` writer - Bluetooth MAC reset."]
+        pub type RstBtmacW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_ZBMAC_APB` reader - IEEE 802.15.4 MAC APB reset."]
+        pub type RstZbmacApbR = crate::BitReader;
+        #[doc = "Field `RST_ZBMAC_APB` writer - IEEE 802.15.4 MAC APB reset."]
+        pub type RstZbmacApbW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_ZBMAC` reader - IEEE 802.15.4 MAC reset."]
+        pub type RstZbmacR = crate::BitReader;
+        #[doc = "Field `RST_ZBMAC` writer - IEEE 802.15.4 MAC reset."]
+        pub type RstZbmacW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_MODEM_ECB` reader - Modem-security ECB reset."]
+        pub type RstModemEcbR = crate::BitReader;
+        #[doc = "Field `RST_MODEM_ECB` writer - Modem-security ECB reset."]
+        pub type RstModemEcbW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_MODEM_CCM` reader - Modem-security CCM reset."]
+        pub type RstModemCcmR = crate::BitReader;
+        #[doc = "Field `RST_MODEM_CCM` writer - Modem-security CCM reset."]
+        pub type RstModemCcmW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_MODEM_BAH` reader - Modem-security BAH reset."]
+        pub type RstModemBahR = crate::BitReader;
+        #[doc = "Field `RST_MODEM_BAH` writer - Modem-security BAH reset."]
+        pub type RstModemBahW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_MODEM_SEC` reader - Modem-security reset."]
+        pub type RstModemSecR = crate::BitReader;
+        #[doc = "Field `RST_MODEM_SEC` writer - Modem-security reset."]
+        pub type RstModemSecW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RST_BLE_TIMER` reader - Bluetooth low-power timer reset."]
+        pub type RstBleTimerR = crate::BitReader;
+        #[doc = "Field `RST_BLE_TIMER` writer - Bluetooth low-power timer reset."]
+        pub type RstBleTimerW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 8 - Wi-Fi baseband reset."]
+            #[inline(always)]
+            pub fn rst_wifibb(&self) -> RstWifibbR {
+                RstWifibbR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9 - Wi-Fi MAC reset."]
+            #[inline(always)]
+            pub fn rst_wifimac(&self) -> RstWifimacR {
+                RstWifimacR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bit 15 - Bluetooth MAC APB reset."]
+            #[inline(always)]
+            pub fn rst_btmac_apb(&self) -> RstBtmacApbR {
+                RstBtmacApbR::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bit 16 - Bluetooth MAC reset."]
+            #[inline(always)]
+            pub fn rst_btmac(&self) -> RstBtmacR {
+                RstBtmacR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 23 - IEEE 802.15.4 MAC APB reset."]
+            #[inline(always)]
+            pub fn rst_zbmac_apb(&self) -> RstZbmacApbR {
+                RstZbmacApbR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24 - IEEE 802.15.4 MAC reset."]
+            #[inline(always)]
+            pub fn rst_zbmac(&self) -> RstZbmacR {
+                RstZbmacR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25 - Modem-security ECB reset."]
+            #[inline(always)]
+            pub fn rst_modem_ecb(&self) -> RstModemEcbR {
+                RstModemEcbR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26 - Modem-security CCM reset."]
+            #[inline(always)]
+            pub fn rst_modem_ccm(&self) -> RstModemCcmR {
+                RstModemCcmR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 27 - Modem-security BAH reset."]
+            #[inline(always)]
+            pub fn rst_modem_bah(&self) -> RstModemBahR {
+                RstModemBahR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 29 - Modem-security reset."]
+            #[inline(always)]
+            pub fn rst_modem_sec(&self) -> RstModemSecR {
+                RstModemSecR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30 - Bluetooth low-power timer reset."]
+            #[inline(always)]
+            pub fn rst_ble_timer(&self) -> RstBleTimerR {
+                RstBleTimerR::new(((self.bits >> 30) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 8 - Wi-Fi baseband reset."]
+            #[inline(always)]
+            pub fn rst_wifibb(&mut self) -> RstWifibbW<'_, ModemRstConfSpec> {
+                RstWifibbW::new(self, 8)
+            }
+            #[doc = "Bit 9 - Wi-Fi MAC reset."]
+            #[inline(always)]
+            pub fn rst_wifimac(&mut self) -> RstWifimacW<'_, ModemRstConfSpec> {
+                RstWifimacW::new(self, 9)
+            }
+            #[doc = "Bit 15 - Bluetooth MAC APB reset."]
+            #[inline(always)]
+            pub fn rst_btmac_apb(&mut self) -> RstBtmacApbW<'_, ModemRstConfSpec> {
+                RstBtmacApbW::new(self, 15)
+            }
+            #[doc = "Bit 16 - Bluetooth MAC reset."]
+            #[inline(always)]
+            pub fn rst_btmac(&mut self) -> RstBtmacW<'_, ModemRstConfSpec> {
+                RstBtmacW::new(self, 16)
+            }
+            #[doc = "Bit 23 - IEEE 802.15.4 MAC APB reset."]
+            #[inline(always)]
+            pub fn rst_zbmac_apb(&mut self) -> RstZbmacApbW<'_, ModemRstConfSpec> {
+                RstZbmacApbW::new(self, 23)
+            }
+            #[doc = "Bit 24 - IEEE 802.15.4 MAC reset."]
+            #[inline(always)]
+            pub fn rst_zbmac(&mut self) -> RstZbmacW<'_, ModemRstConfSpec> {
+                RstZbmacW::new(self, 24)
+            }
+            #[doc = "Bit 25 - Modem-security ECB reset."]
+            #[inline(always)]
+            pub fn rst_modem_ecb(&mut self) -> RstModemEcbW<'_, ModemRstConfSpec> {
+                RstModemEcbW::new(self, 25)
+            }
+            #[doc = "Bit 26 - Modem-security CCM reset."]
+            #[inline(always)]
+            pub fn rst_modem_ccm(&mut self) -> RstModemCcmW<'_, ModemRstConfSpec> {
+                RstModemCcmW::new(self, 26)
+            }
+            #[doc = "Bit 27 - Modem-security BAH reset."]
+            #[inline(always)]
+            pub fn rst_modem_bah(&mut self) -> RstModemBahW<'_, ModemRstConfSpec> {
+                RstModemBahW::new(self, 27)
+            }
+            #[doc = "Bit 29 - Modem-security reset."]
+            #[inline(always)]
+            pub fn rst_modem_sec(&mut self) -> RstModemSecW<'_, ModemRstConfSpec> {
+                RstModemSecW::new(self, 29)
+            }
+            #[doc = "Bit 30 - Bluetooth low-power timer reset."]
+            #[inline(always)]
+            pub fn rst_ble_timer(&mut self) -> RstBleTimerW<'_, ModemRstConfSpec> {
+                RstBleTimerW::new(self, 30)
+            }
+        }
+        #[doc = "Shared radio-domain reset controls.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_rst_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_rst_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ModemRstConfSpec;
+        impl crate::RegisterSpec for ModemRstConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`modem_rst_conf::R`](R) reader structure"]
+        impl crate::Readable for ModemRstConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`modem_rst_conf::W`](W) writer structure"]
+        impl crate::Writable for ModemRstConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets MODEM_RST_CONF to value 0"]
+        impl crate::Resettable for ModemRstConfSpec {}
+    }
+    #[doc = "CLK_CONF1 (rw) register accessor: Wi-Fi, Bluetooth and front-end clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf1::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf1`] module"]
+    #[doc(alias = "CLK_CONF1")]
+    pub type ClkConf1 = crate::Reg<clk_conf1::ClkConf1Spec>;
+    #[doc = "Wi-Fi, Bluetooth and front-end clock gates."]
+    pub mod clk_conf1 {
+        #[doc = "Register `CLK_CONF1` reader"]
+        pub type R = crate::R<ClkConf1Spec>;
+        #[doc = "Register `CLK_CONF1` writer"]
+        pub type W = crate::W<ClkConf1Spec>;
+        #[doc = "Field `CLK_WIFIBB_22M_EN` reader - "]
+        pub type ClkWifibb22mEnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIBB_22M_EN` writer - "]
+        pub type ClkWifibb22mEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIBB_40M_EN` reader - "]
+        pub type ClkWifibb40mEnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIBB_40M_EN` writer - "]
+        pub type ClkWifibb40mEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIBB_44M_EN` reader - "]
+        pub type ClkWifibb44mEnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIBB_44M_EN` writer - "]
+        pub type ClkWifibb44mEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIBB_80M_EN` reader - "]
+        pub type ClkWifibb80mEnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIBB_80M_EN` writer - "]
+        pub type ClkWifibb80mEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIBB_40X_EN` reader - "]
+        pub type ClkWifibb40xEnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIBB_40X_EN` writer - "]
+        pub type ClkWifibb40xEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIBB_80X_EN` reader - "]
+        pub type ClkWifibb80xEnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIBB_80X_EN` writer - "]
+        pub type ClkWifibb80xEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIBB_40X1_EN` reader - "]
+        pub type ClkWifibb40x1EnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIBB_40X1_EN` writer - "]
+        pub type ClkWifibb40x1EnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIBB_80X1_EN` reader - "]
+        pub type ClkWifibb80x1EnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIBB_80X1_EN` writer - "]
+        pub type ClkWifibb80x1EnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIBB_160X1_EN` reader - "]
+        pub type ClkWifibb160x1EnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIBB_160X1_EN` writer - "]
+        pub type ClkWifibb160x1EnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIMAC_EN` reader - "]
+        pub type ClkWifimacEnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIMAC_EN` writer - "]
+        pub type ClkWifimacEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFI_APB_EN` reader - "]
+        pub type ClkWifiApbEnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFI_APB_EN` writer - "]
+        pub type ClkWifiApbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_FE_80M_EN` reader - "]
+        pub type ClkFe80mEnR = crate::BitReader;
+        #[doc = "Field `CLK_FE_80M_EN` writer - "]
+        pub type ClkFe80mEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_FE_160M_EN` reader - "]
+        pub type ClkFe160mEnR = crate::BitReader;
+        #[doc = "Field `CLK_FE_160M_EN` writer - "]
+        pub type ClkFe160mEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_FE_APB_EN` reader - "]
+        pub type ClkFeApbEnR = crate::BitReader;
+        #[doc = "Field `CLK_FE_APB_EN` writer - "]
+        pub type ClkFeApbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_BT_APB_EN` reader - "]
+        pub type ClkBtApbEnR = crate::BitReader;
+        #[doc = "Field `CLK_BT_APB_EN` writer - "]
+        pub type ClkBtApbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_BTBB_EN` reader - "]
+        pub type ClkBtbbEnR = crate::BitReader;
+        #[doc = "Field `CLK_BTBB_EN` writer - "]
+        pub type ClkBtbbEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_BTMAC_EN` reader - "]
+        pub type ClkBtmacEnR = crate::BitReader;
+        #[doc = "Field `CLK_BTMAC_EN` writer - "]
+        pub type ClkBtmacEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_FE_PWDET_ADC_EN` reader - "]
+        pub type ClkFePwdetAdcEnR = crate::BitReader;
+        #[doc = "Field `CLK_FE_PWDET_ADC_EN` writer - "]
+        pub type ClkFePwdetAdcEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_FE_ADC_EN` reader - "]
+        pub type ClkFeAdcEnR = crate::BitReader;
+        #[doc = "Field `CLK_FE_ADC_EN` writer - "]
+        pub type ClkFeAdcEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_FE_DAC_EN` reader - "]
+        pub type ClkFeDacEnR = crate::BitReader;
+        #[doc = "Field `CLK_FE_DAC_EN` writer - "]
+        pub type ClkFeDacEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn clk_wifibb_22m_en(&self) -> ClkWifibb22mEnR {
+                ClkWifibb22mEnR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn clk_wifibb_40m_en(&self) -> ClkWifibb40mEnR {
+                ClkWifibb40mEnR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn clk_wifibb_44m_en(&self) -> ClkWifibb44mEnR {
+                ClkWifibb44mEnR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn clk_wifibb_80m_en(&self) -> ClkWifibb80mEnR {
+                ClkWifibb80mEnR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn clk_wifibb_40x_en(&self) -> ClkWifibb40xEnR {
+                ClkWifibb40xEnR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn clk_wifibb_80x_en(&self) -> ClkWifibb80xEnR {
+                ClkWifibb80xEnR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn clk_wifibb_40x1_en(&self) -> ClkWifibb40x1EnR {
+                ClkWifibb40x1EnR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7"]
+            #[inline(always)]
+            pub fn clk_wifibb_80x1_en(&self) -> ClkWifibb80x1EnR {
+                ClkWifibb80x1EnR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn clk_wifibb_160x1_en(&self) -> ClkWifibb160x1EnR {
+                ClkWifibb160x1EnR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn clk_wifimac_en(&self) -> ClkWifimacEnR {
+                ClkWifimacEnR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bit 10"]
+            #[inline(always)]
+            pub fn clk_wifi_apb_en(&self) -> ClkWifiApbEnR {
+                ClkWifiApbEnR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn clk_fe_80m_en(&self) -> ClkFe80mEnR {
+                ClkFe80mEnR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn clk_fe_160m_en(&self) -> ClkFe160mEnR {
+                ClkFe160mEnR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn clk_fe_apb_en(&self) -> ClkFeApbEnR {
+                ClkFeApbEnR::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn clk_bt_apb_en(&self) -> ClkBtApbEnR {
+                ClkBtApbEnR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn clk_btbb_en(&self) -> ClkBtbbEnR {
+                ClkBtbbEnR::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn clk_btmac_en(&self) -> ClkBtmacEnR {
+                ClkBtmacEnR::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn clk_fe_pwdet_adc_en(&self) -> ClkFePwdetAdcEnR {
+                ClkFePwdetAdcEnR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn clk_fe_adc_en(&self) -> ClkFeAdcEnR {
+                ClkFeAdcEnR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn clk_fe_dac_en(&self) -> ClkFeDacEnR {
+                ClkFeDacEnR::new(((self.bits >> 21) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn clk_wifibb_22m_en(&mut self) -> ClkWifibb22mEnW<'_, ClkConf1Spec> {
+                ClkWifibb22mEnW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn clk_wifibb_40m_en(&mut self) -> ClkWifibb40mEnW<'_, ClkConf1Spec> {
+                ClkWifibb40mEnW::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn clk_wifibb_44m_en(&mut self) -> ClkWifibb44mEnW<'_, ClkConf1Spec> {
+                ClkWifibb44mEnW::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn clk_wifibb_80m_en(&mut self) -> ClkWifibb80mEnW<'_, ClkConf1Spec> {
+                ClkWifibb80mEnW::new(self, 3)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn clk_wifibb_40x_en(&mut self) -> ClkWifibb40xEnW<'_, ClkConf1Spec> {
+                ClkWifibb40xEnW::new(self, 4)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn clk_wifibb_80x_en(&mut self) -> ClkWifibb80xEnW<'_, ClkConf1Spec> {
+                ClkWifibb80xEnW::new(self, 5)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn clk_wifibb_40x1_en(&mut self) -> ClkWifibb40x1EnW<'_, ClkConf1Spec> {
+                ClkWifibb40x1EnW::new(self, 6)
+            }
+            #[doc = "Bit 7"]
+            #[inline(always)]
+            pub fn clk_wifibb_80x1_en(&mut self) -> ClkWifibb80x1EnW<'_, ClkConf1Spec> {
+                ClkWifibb80x1EnW::new(self, 7)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn clk_wifibb_160x1_en(&mut self) -> ClkWifibb160x1EnW<'_, ClkConf1Spec> {
+                ClkWifibb160x1EnW::new(self, 8)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn clk_wifimac_en(&mut self) -> ClkWifimacEnW<'_, ClkConf1Spec> {
+                ClkWifimacEnW::new(self, 9)
+            }
+            #[doc = "Bit 10"]
+            #[inline(always)]
+            pub fn clk_wifi_apb_en(&mut self) -> ClkWifiApbEnW<'_, ClkConf1Spec> {
+                ClkWifiApbEnW::new(self, 10)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn clk_fe_80m_en(&mut self) -> ClkFe80mEnW<'_, ClkConf1Spec> {
+                ClkFe80mEnW::new(self, 13)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn clk_fe_160m_en(&mut self) -> ClkFe160mEnW<'_, ClkConf1Spec> {
+                ClkFe160mEnW::new(self, 14)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn clk_fe_apb_en(&mut self) -> ClkFeApbEnW<'_, ClkConf1Spec> {
+                ClkFeApbEnW::new(self, 15)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn clk_bt_apb_en(&mut self) -> ClkBtApbEnW<'_, ClkConf1Spec> {
+                ClkBtApbEnW::new(self, 16)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn clk_btbb_en(&mut self) -> ClkBtbbEnW<'_, ClkConf1Spec> {
+                ClkBtbbEnW::new(self, 17)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn clk_btmac_en(&mut self) -> ClkBtmacEnW<'_, ClkConf1Spec> {
+                ClkBtmacEnW::new(self, 18)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn clk_fe_pwdet_adc_en(&mut self) -> ClkFePwdetAdcEnW<'_, ClkConf1Spec> {
+                ClkFePwdetAdcEnW::new(self, 19)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn clk_fe_adc_en(&mut self) -> ClkFeAdcEnW<'_, ClkConf1Spec> {
+                ClkFeAdcEnW::new(self, 20)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn clk_fe_dac_en(&mut self) -> ClkFeDacEnW<'_, ClkConf1Spec> {
+                ClkFeDacEnW::new(self, 21)
+            }
+        }
+        #[doc = "Wi-Fi, Bluetooth and front-end clock gates.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf1::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConf1Spec;
+        impl crate::RegisterSpec for ClkConf1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf1::R`](R) reader structure"]
+        impl crate::Readable for ClkConf1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf1::W`](W) writer structure"]
+        impl crate::Writable for ClkConf1Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF1 to value 0"]
+        impl crate::Resettable for ClkConf1Spec {}
+    }
+    #[doc = "WIFI_BB_CFG (rw) register accessor: Instruction-reviewed Wi-Fi baseband shared control.\n\nYou can [`read`](crate::Reg::read) this register and get [`wifi_bb_cfg::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wifi_bb_cfg::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@wifi_bb_cfg`] module"]
+    #[doc(alias = "WIFI_BB_CFG")]
+    pub type WifiBbCfg = crate::Reg<wifi_bb_cfg::WifiBbCfgSpec>;
+    #[doc = "Instruction-reviewed Wi-Fi baseband shared control."]
+    pub mod wifi_bb_cfg {
+        #[doc = "Register `WIFI_BB_CFG` reader"]
+        pub type R = crate::R<WifiBbCfgSpec>;
+        #[doc = "Register `WIFI_BB_CFG` writer"]
+        pub type W = crate::W<WifiBbCfgSpec>;
+        #[doc = "Field `COLD_START_CLEAR_UNKNOWN` reader - "]
+        pub type ColdStartClearUnknownR = crate::BitReader;
+        #[doc = "Field `COLD_START_CLEAR_UNKNOWN` writer - "]
+        pub type ColdStartClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `WIFI_ENABLE` reader - "]
+        pub type WifiEnableR = crate::BitReader;
+        #[doc = "Field `WIFI_ENABLE` writer - "]
+        pub type WifiEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Reviewed digital BSS 40 MHz channel-width control; zero disables and one enables the recovered path.\n\nValue on reset: 0"]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum BssCbw40DigitalUnknown {
+            #[doc = "0: `0`"]
+            Disabled = 0,
+            #[doc = "1: `1`"]
+            Enabled = 1,
+        }
+        impl From<BssCbw40DigitalUnknown> for u8 {
+            #[inline(always)]
+            fn from(variant: BssCbw40DigitalUnknown) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for BssCbw40DigitalUnknown {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for BssCbw40DigitalUnknown {}
+        #[doc = "Field `BSS_CBW_40_DIGITAL_UNKNOWN` reader - Reviewed digital BSS 40 MHz channel-width control; zero disables and one enables the recovered path."]
+        pub type BssCbw40DigitalUnknownR = crate::FieldReader<BssCbw40DigitalUnknown>;
+        impl BssCbw40DigitalUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<BssCbw40DigitalUnknown> {
+                match self.bits {
+                    0 => Some(BssCbw40DigitalUnknown::Disabled),
+                    1 => Some(BssCbw40DigitalUnknown::Enabled),
+                    _ => None,
+                }
+            }
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == BssCbw40DigitalUnknown::Disabled
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == BssCbw40DigitalUnknown::Enabled
+            }
+        }
+        #[doc = "Field `BSS_CBW_40_DIGITAL_UNKNOWN` writer - Reviewed digital BSS 40 MHz channel-width control; zero disables and one enables the recovered path."]
+        pub type BssCbw40DigitalUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, BssCbw40DigitalUnknown>;
+        impl<'a, REG> BssCbw40DigitalUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(BssCbw40DigitalUnknown::Disabled)
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(BssCbw40DigitalUnknown::Enabled)
+            }
+        }
+        #[doc = "Reviewed baseband AGC update mode used by initialization and subsequent register updates.\n\nValue on reset: 0"]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum BbAgcUpdateEnableUnknown {
+            #[doc = "1: `1`"]
+            Initialization = 1,
+            #[doc = "7: `111`"]
+            RegisterUpdatesEnabled = 7,
+        }
+        impl From<BbAgcUpdateEnableUnknown> for u8 {
+            #[inline(always)]
+            fn from(variant: BbAgcUpdateEnableUnknown) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for BbAgcUpdateEnableUnknown {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for BbAgcUpdateEnableUnknown {}
+        #[doc = "Field `BB_AGC_UPDATE_ENABLE_UNKNOWN` reader - Reviewed baseband AGC update mode used by initialization and subsequent register updates."]
+        pub type BbAgcUpdateEnableUnknownR = crate::FieldReader<BbAgcUpdateEnableUnknown>;
+        impl BbAgcUpdateEnableUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<BbAgcUpdateEnableUnknown> {
+                match self.bits {
+                    1 => Some(BbAgcUpdateEnableUnknown::Initialization),
+                    7 => Some(BbAgcUpdateEnableUnknown::RegisterUpdatesEnabled),
+                    _ => None,
+                }
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn is_initialization(&self) -> bool {
+                *self == BbAgcUpdateEnableUnknown::Initialization
+            }
+            #[doc = "`111`"]
+            #[inline(always)]
+            pub fn is_register_updates_enabled(&self) -> bool {
+                *self == BbAgcUpdateEnableUnknown::RegisterUpdatesEnabled
+            }
+        }
+        #[doc = "Field `BB_AGC_UPDATE_ENABLE_UNKNOWN` writer - Reviewed baseband AGC update mode used by initialization and subsequent register updates."]
+        pub type BbAgcUpdateEnableUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 3, BbAgcUpdateEnableUnknown>;
+        impl<'a, REG> BbAgcUpdateEnableUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn initialization(self) -> &'a mut crate::W<REG> {
+                self.variant(BbAgcUpdateEnableUnknown::Initialization)
+            }
+            #[doc = "`111`"]
+            #[inline(always)]
+            pub fn register_updates_enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(BbAgcUpdateEnableUnknown::RegisterUpdatesEnabled)
+            }
+        }
+        #[doc = "Field `MAC_BASEBAND_ENABLE_UNKNOWN` reader - "]
+        pub type MacBasebandEnableUnknownR = crate::BitReader;
+        #[doc = "Field `MAC_BASEBAND_ENABLE_UNKNOWN` writer - "]
+        pub type MacBasebandEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn cold_start_clear_unknown(&self) -> ColdStartClearUnknownR {
+                ColdStartClearUnknownR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn wifi_enable(&self) -> WifiEnableR {
+                WifiEnableR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bits 2:3 - Reviewed digital BSS 40 MHz channel-width control; zero disables and one enables the recovered path."]
+            #[inline(always)]
+            pub fn bss_cbw_40_digital_unknown(&self) -> BssCbw40DigitalUnknownR {
+                BssCbw40DigitalUnknownR::new(((self.bits >> 2) & 3) as u8)
+            }
+            #[doc = "Bits 11:13 - Reviewed baseband AGC update mode used by initialization and subsequent register updates."]
+            #[inline(always)]
+            pub fn bb_agc_update_enable_unknown(&self) -> BbAgcUpdateEnableUnknownR {
+                BbAgcUpdateEnableUnknownR::new(((self.bits >> 11) & 7) as u8)
+            }
+            #[doc = "Bit 28"]
+            #[inline(always)]
+            pub fn mac_baseband_enable_unknown(&self) -> MacBasebandEnableUnknownR {
+                MacBasebandEnableUnknownR::new(((self.bits >> 28) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn cold_start_clear_unknown(
+                &mut self,
+            ) -> ColdStartClearUnknownW<'_, WifiBbCfgSpec> {
+                ColdStartClearUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn wifi_enable(&mut self) -> WifiEnableW<'_, WifiBbCfgSpec> {
+                WifiEnableW::new(self, 1)
+            }
+            #[doc = "Bits 2:3 - Reviewed digital BSS 40 MHz channel-width control; zero disables and one enables the recovered path."]
+            #[inline(always)]
+            pub fn bss_cbw_40_digital_unknown(
+                &mut self,
+            ) -> BssCbw40DigitalUnknownW<'_, WifiBbCfgSpec> {
+                BssCbw40DigitalUnknownW::new(self, 2)
+            }
+            #[doc = "Bits 11:13 - Reviewed baseband AGC update mode used by initialization and subsequent register updates."]
+            #[inline(always)]
+            pub fn bb_agc_update_enable_unknown(
+                &mut self,
+            ) -> BbAgcUpdateEnableUnknownW<'_, WifiBbCfgSpec> {
+                BbAgcUpdateEnableUnknownW::new(self, 11)
+            }
+            #[doc = "Bit 28"]
+            #[inline(always)]
+            pub fn mac_baseband_enable_unknown(
+                &mut self,
+            ) -> MacBasebandEnableUnknownW<'_, WifiBbCfgSpec> {
+                MacBasebandEnableUnknownW::new(self, 28)
+            }
+        }
+        #[doc = "Instruction-reviewed Wi-Fi baseband shared control.\n\nYou can [`read`](crate::Reg::read) this register and get [`wifi_bb_cfg::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`wifi_bb_cfg::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct WifiBbCfgSpec;
+        impl crate::RegisterSpec for WifiBbCfgSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`wifi_bb_cfg::R`](R) reader structure"]
+        impl crate::Readable for WifiBbCfgSpec {}
+        #[doc = "`write(|w| ..)` method takes [`wifi_bb_cfg::W`](W) writer structure"]
+        impl crate::Writable for WifiBbCfgSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets WIFI_BB_CFG to value 0"]
+        impl crate::Resettable for WifiBbCfgSpec {}
+    }
+}
 #[doc = "Role-neutral MODEM_LPCON clock-map, gate and low-power selector registers shared by the exclusive Wi-Fi, Bluetooth and IEEE 802.15.4 routes."]
 pub type ModemLpconSharedClock =
     crate::Periph<modem_lpcon_shared_clock::RegisterBlock, 0x2010_f000>;
@@ -11823,7 +12910,7 @@ pub mod modem_lpcon_shared_clock {
         #[doc = "Field `CLK_LP_TIMER_DIV_NUM` reader - Twelve-bit low-power timer divider image."]
         pub type ClkLpTimerDivNumR = crate::FieldReader<u16>;
         #[doc = "Field `CLK_LP_TIMER_DIV_NUM` writer - Twelve-bit low-power timer divider image."]
-        pub type ClkLpTimerDivNumW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type ClkLpTimerDivNumW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bit 0 - Select the slow oscillator."]
             #[inline(always)]
@@ -11926,7 +13013,7 @@ pub mod modem_lpcon_shared_clock {
         #[doc = "Field `CLK_COEX_LP_DIV_NUM` reader - Twelve-bit coexistence low-power clock divider image."]
         pub type ClkCoexLpDivNumR = crate::FieldReader<u16>;
         #[doc = "Field `CLK_COEX_LP_DIV_NUM` writer - Twelve-bit coexistence low-power clock divider image."]
-        pub type ClkCoexLpDivNumW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type ClkCoexLpDivNumW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bit 0 - Select the slow oscillator."]
             #[inline(always)]
@@ -12093,64 +13180,136 @@ pub mod modem_lpcon_shared_clock {
         pub type R = crate::R<ClkConfPowerStSpec>;
         #[doc = "Register `CLK_CONF_POWER_ST` writer"]
         pub type W = crate::W<ClkConfPowerStSpec>;
-        #[doc = "Field `CLK_WIFIPWR_ST_MAP` reader - Wi-Fi power clock state map."]
-        pub type ClkWifipwrStMapR = crate::FieldReader;
-        #[doc = "Field `CLK_WIFIPWR_ST_MAP` writer - Wi-Fi power clock state map."]
-        pub type ClkWifipwrStMapW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `CLK_COEX_ST_MAP` reader - Coexistence clock state map."]
-        pub type ClkCoexStMapR = crate::FieldReader;
-        #[doc = "Field `CLK_COEX_ST_MAP` writer - Coexistence clock state map."]
-        pub type ClkCoexStMapW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `CLK_I2C_MST_ST_MAP` reader - PHY I2C master clock state map."]
-        pub type ClkI2cMstStMapR = crate::FieldReader;
-        #[doc = "Field `CLK_I2C_MST_ST_MAP` writer - PHY I2C master clock state map."]
-        pub type ClkI2cMstStMapW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `CLK_LP_APB_ST_MAP` reader - Low-power APB clock state map."]
-        pub type ClkLpApbStMapR = crate::FieldReader;
-        #[doc = "Field `CLK_LP_APB_ST_MAP` writer - Low-power APB clock state map."]
-        pub type ClkLpApbStMapW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `CLK_WIFIPWR_ST_MAP_BIT_ONE` reader - Bit one of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkWifipwrStMapBitOneR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIPWR_ST_MAP_BIT_ONE` writer - Bit one of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkWifipwrStMapBitOneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_WIFIPWR_ST_MAP_BIT_TWO` reader - Bit two of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkWifipwrStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIPWR_ST_MAP_BIT_TWO` writer - Bit two of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkWifipwrStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_COEX_ST_MAP_BIT_ONE` reader - Bit one of the coexistence clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkCoexStMapBitOneR = crate::BitReader;
+        #[doc = "Field `CLK_COEX_ST_MAP_BIT_ONE` writer - Bit one of the coexistence clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkCoexStMapBitOneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_COEX_ST_MAP_BIT_TWO` reader - Bit two of the coexistence clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkCoexStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_COEX_ST_MAP_BIT_TWO` writer - Bit two of the coexistence clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkCoexStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_I2C_MST_ST_MAP_BIT_ONE` reader - Bit one of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkI2cMstStMapBitOneR = crate::BitReader;
+        #[doc = "Field `CLK_I2C_MST_ST_MAP_BIT_ONE` writer - Bit one of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkI2cMstStMapBitOneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_I2C_MST_ST_MAP_BIT_TWO` reader - Bit two of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkI2cMstStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_I2C_MST_ST_MAP_BIT_TWO` writer - Bit two of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkI2cMstStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_LP_APB_ST_MAP_BIT_ONE` reader - Bit one of the low-power APB clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkLpApbStMapBitOneR = crate::BitReader;
+        #[doc = "Field `CLK_LP_APB_ST_MAP_BIT_ONE` writer - Bit one of the low-power APB clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkLpApbStMapBitOneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_LP_APB_ST_MAP_BIT_TWO` reader - Bit two of the low-power APB clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkLpApbStMapBitTwoR = crate::BitReader;
+        #[doc = "Field `CLK_LP_APB_ST_MAP_BIT_TWO` writer - Bit two of the low-power APB clock state map, set by the reviewed shared active-state initialization."]
+        pub type ClkLpApbStMapBitTwoW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 16:19 - Wi-Fi power clock state map."]
+            #[doc = "Bit 17 - Bit one of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."]
             #[inline(always)]
-            pub fn clk_wifipwr_st_map(&self) -> ClkWifipwrStMapR {
-                ClkWifipwrStMapR::new(((self.bits >> 16) & 0x0f) as u8)
+            pub fn clk_wifipwr_st_map_bit_one(&self) -> ClkWifipwrStMapBitOneR {
+                ClkWifipwrStMapBitOneR::new(((self.bits >> 17) & 1) != 0)
             }
-            #[doc = "Bits 20:23 - Coexistence clock state map."]
+            #[doc = "Bit 18 - Bit two of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."]
             #[inline(always)]
-            pub fn clk_coex_st_map(&self) -> ClkCoexStMapR {
-                ClkCoexStMapR::new(((self.bits >> 20) & 0x0f) as u8)
+            pub fn clk_wifipwr_st_map_bit_two(&self) -> ClkWifipwrStMapBitTwoR {
+                ClkWifipwrStMapBitTwoR::new(((self.bits >> 18) & 1) != 0)
             }
-            #[doc = "Bits 24:27 - PHY I2C master clock state map."]
+            #[doc = "Bit 21 - Bit one of the coexistence clock state map, set by the reviewed shared active-state initialization."]
             #[inline(always)]
-            pub fn clk_i2c_mst_st_map(&self) -> ClkI2cMstStMapR {
-                ClkI2cMstStMapR::new(((self.bits >> 24) & 0x0f) as u8)
+            pub fn clk_coex_st_map_bit_one(&self) -> ClkCoexStMapBitOneR {
+                ClkCoexStMapBitOneR::new(((self.bits >> 21) & 1) != 0)
             }
-            #[doc = "Bits 28:31 - Low-power APB clock state map."]
+            #[doc = "Bit 22 - Bit two of the coexistence clock state map, set by the reviewed shared active-state initialization."]
             #[inline(always)]
-            pub fn clk_lp_apb_st_map(&self) -> ClkLpApbStMapR {
-                ClkLpApbStMapR::new(((self.bits >> 28) & 0x0f) as u8)
+            pub fn clk_coex_st_map_bit_two(&self) -> ClkCoexStMapBitTwoR {
+                ClkCoexStMapBitTwoR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 25 - Bit one of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_st_map_bit_one(&self) -> ClkI2cMstStMapBitOneR {
+                ClkI2cMstStMapBitOneR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26 - Bit two of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_st_map_bit_two(&self) -> ClkI2cMstStMapBitTwoR {
+                ClkI2cMstStMapBitTwoR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 29 - Bit one of the low-power APB clock state map, set by the reviewed shared active-state initialization."]
+            #[inline(always)]
+            pub fn clk_lp_apb_st_map_bit_one(&self) -> ClkLpApbStMapBitOneR {
+                ClkLpApbStMapBitOneR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30 - Bit two of the low-power APB clock state map, set by the reviewed shared active-state initialization."]
+            #[inline(always)]
+            pub fn clk_lp_apb_st_map_bit_two(&self) -> ClkLpApbStMapBitTwoR {
+                ClkLpApbStMapBitTwoR::new(((self.bits >> 30) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 16:19 - Wi-Fi power clock state map."]
+            #[doc = "Bit 17 - Bit one of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."]
             #[inline(always)]
-            pub fn clk_wifipwr_st_map(&mut self) -> ClkWifipwrStMapW<'_, ClkConfPowerStSpec> {
-                ClkWifipwrStMapW::new(self, 16)
+            pub fn clk_wifipwr_st_map_bit_one(
+                &mut self,
+            ) -> ClkWifipwrStMapBitOneW<'_, ClkConfPowerStSpec> {
+                ClkWifipwrStMapBitOneW::new(self, 17)
             }
-            #[doc = "Bits 20:23 - Coexistence clock state map."]
+            #[doc = "Bit 18 - Bit two of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."]
             #[inline(always)]
-            pub fn clk_coex_st_map(&mut self) -> ClkCoexStMapW<'_, ClkConfPowerStSpec> {
-                ClkCoexStMapW::new(self, 20)
+            pub fn clk_wifipwr_st_map_bit_two(
+                &mut self,
+            ) -> ClkWifipwrStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkWifipwrStMapBitTwoW::new(self, 18)
             }
-            #[doc = "Bits 24:27 - PHY I2C master clock state map."]
+            #[doc = "Bit 21 - Bit one of the coexistence clock state map, set by the reviewed shared active-state initialization."]
             #[inline(always)]
-            pub fn clk_i2c_mst_st_map(&mut self) -> ClkI2cMstStMapW<'_, ClkConfPowerStSpec> {
-                ClkI2cMstStMapW::new(self, 24)
+            pub fn clk_coex_st_map_bit_one(
+                &mut self,
+            ) -> ClkCoexStMapBitOneW<'_, ClkConfPowerStSpec> {
+                ClkCoexStMapBitOneW::new(self, 21)
             }
-            #[doc = "Bits 28:31 - Low-power APB clock state map."]
+            #[doc = "Bit 22 - Bit two of the coexistence clock state map, set by the reviewed shared active-state initialization."]
             #[inline(always)]
-            pub fn clk_lp_apb_st_map(&mut self) -> ClkLpApbStMapW<'_, ClkConfPowerStSpec> {
-                ClkLpApbStMapW::new(self, 28)
+            pub fn clk_coex_st_map_bit_two(
+                &mut self,
+            ) -> ClkCoexStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkCoexStMapBitTwoW::new(self, 22)
+            }
+            #[doc = "Bit 25 - Bit one of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_st_map_bit_one(
+                &mut self,
+            ) -> ClkI2cMstStMapBitOneW<'_, ClkConfPowerStSpec> {
+                ClkI2cMstStMapBitOneW::new(self, 25)
+            }
+            #[doc = "Bit 26 - Bit two of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_st_map_bit_two(
+                &mut self,
+            ) -> ClkI2cMstStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkI2cMstStMapBitTwoW::new(self, 26)
+            }
+            #[doc = "Bit 29 - Bit one of the low-power APB clock state map, set by the reviewed shared active-state initialization."]
+            #[inline(always)]
+            pub fn clk_lp_apb_st_map_bit_one(
+                &mut self,
+            ) -> ClkLpApbStMapBitOneW<'_, ClkConfPowerStSpec> {
+                ClkLpApbStMapBitOneW::new(self, 29)
+            }
+            #[doc = "Bit 30 - Bit two of the low-power APB clock state map, set by the reviewed shared active-state initialization."]
+            #[inline(always)]
+            pub fn clk_lp_apb_st_map_bit_two(
+                &mut self,
+            ) -> ClkLpApbStMapBitTwoW<'_, ClkConfPowerStSpec> {
+                ClkLpApbStMapBitTwoW::new(self, 30)
             }
         }
         #[doc = "Four shared clock power-state map fields programmed with the reviewed active-state image.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf_power_st::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf_power_st::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -50094,6 +51253,8 @@ pub struct Peripherals {
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
+    #[doc = "MODEM_SYSCON_RADIO"]
+    pub modem_syscon_radio: ModemSysconRadio,
     #[doc = "MODEM_LPCON_SHARED_CLOCK"]
     pub modem_lpcon_shared_clock: ModemLpconSharedClock,
     #[doc = "MODEM_LPCON_PHY_TICK"]
@@ -50307,6 +51468,7 @@ impl Peripherals {
             phy_rx_dco_oracle: unsafe { PhyRxDcoOracle::steal() },
             phy_cold_deadline_oracle: unsafe { PhyColdDeadlineOracle::steal() },
             phy_clock_oracle: unsafe { PhyClockOracle::steal() },
+            modem_syscon_radio: unsafe { ModemSysconRadio::steal() },
             modem_lpcon_shared_clock: unsafe { ModemLpconSharedClock::steal() },
             modem_lpcon_phy_tick: unsafe { ModemLpconPhyTick::steal() },
             lp_aon_clkrst: unsafe { LpAonClkrst::steal() },
@@ -50722,6 +51884,7 @@ pub mod peripheral_ownership {
 
     /// Role-neutral RF and PHY register views serialized by the shared radio lifecycle.
     pub struct RadioPhyPeripherals {
+        pub modem_syscon_radio: crate::ModemSysconRadio,
         pub phy_agc_oracle: crate::PhyAgcOracle,
         pub phy_agc_recovered_gaps: crate::PhyAgcRecoveredGaps,
         pub phy_baseband_config_oracle: crate::PhyBasebandConfigOracle,
@@ -50840,6 +52003,7 @@ pub mod peripheral_ownership {
             phy_rx_dco_oracle,
             phy_cold_deadline_oracle,
             phy_clock_oracle,
+            modem_syscon_radio,
             modem_lpcon_shared_clock,
             modem_lpcon_phy_tick,
             lp_aon_clkrst,
@@ -50985,6 +52149,7 @@ pub mod peripheral_ownership {
                 wifi_mac_power_interrupt,
             },
             radio_phy: RadioPhyPeripherals {
+                modem_syscon_radio,
                 phy_agc_oracle,
                 phy_agc_recovered_gaps,
                 phy_baseband_config_oracle,
@@ -52936,67 +54101,6 @@ pub mod masked_register_modify {
     ) {
         registers.tick_conf().modify(|reader, writer| {
             let image = (reader.bits() & 0xffffffc0) | (input & 0x0000003f);
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
-    /// Preserve mask 0x9999ffff, accept input mask 0x66660000, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.CLK_CONF_POWER_ST.
-    #[inline]
-    pub fn prepare_shared_modem_clock_map(registers: &crate::ModemLpconSharedClock, input: u32) {
-        registers.clk_conf_power_st().modify(|reader, writer| {
-            let image = (reader.bits() & 0x9999ffff) | (input & 0x66660000);
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
-    /// Preserve mask 0xfffffffd, accept input mask 0x00000002, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.CLK_CONF.
-    #[inline]
-    pub fn set_shared_coexistence_clock_gate(registers: &crate::ModemLpconSharedClock, input: u32) {
-        registers.clk_conf().modify(|reader, writer| {
-            let image = (reader.bits() & 0xfffffffd) | (input & 0x00000002);
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
-    /// Preserve mask 0xfffffffb, accept input mask 0x00000004, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.CLK_CONF.
-    #[inline]
-    pub fn set_shared_phy_i2c_master_clock_gate(
-        registers: &crate::ModemLpconSharedClock,
-        input: u32,
-    ) {
-        registers.clk_conf().modify(|reader, writer| {
-            let image = (reader.bits() & 0xfffffffb) | (input & 0x00000004);
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
-    /// Preserve mask 0xfffffff7, accept input mask 0x00000008, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.CLK_CONF.
-    #[inline]
-    pub fn set_shared_low_power_timer_clock_gate(
-        registers: &crate::ModemLpconSharedClock,
-        input: u32,
-    ) {
-        registers.clk_conf().modify(|reader, writer| {
-            let image = (reader.bits() & 0xfffffff7) | (input & 0x00000008);
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
-    /// Preserve mask 0xffff0000, accept input mask 0x0000ffff, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.LP_TIMER_CONF.
-    #[inline]
-    pub fn configure_shared_low_power_timer(registers: &crate::ModemLpconSharedClock, input: u32) {
-        registers.lp_timer_conf().modify(|reader, writer| {
-            let image = (reader.bits() & 0xffff0000) | (input & 0x0000ffff);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

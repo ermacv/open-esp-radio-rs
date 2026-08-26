@@ -117,8 +117,16 @@ impl<'registers> WifiMacColdHal<'registers> {
         Self { registers }
     }
 
-    pub fn retain_coexistence_clock(&mut self) -> bool {
-        self.registers.radio_mut().retain_coexistence_clock()
+    pub fn retain_coexistence_clock(&mut self) {
+        self.registers.radio_mut().retain_coexistence_clock();
+    }
+
+    pub fn enable_wifi_mac_clocks(&mut self) {
+        self.registers.enable_wifi_mac_clocks();
+    }
+
+    pub fn set_wifi_mac_reset(&mut self, asserted: bool) {
+        self.registers.set_wifi_mac_reset(asserted);
     }
 
     pub fn initialize_antenna(&mut self) {

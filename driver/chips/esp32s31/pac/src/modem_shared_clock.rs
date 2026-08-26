@@ -6,13 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::{
-    RadioPhyRegisters,
-    generated::{
-        CoexistenceClockGateImage, LowPowerTimerClockGateImage, ModemLowPowerClockDivider,
-        ModemLowPowerTimerConfigurationBits, PhyI2cMasterClockGateImage, SharedModemClockMapImage,
-    },
-};
+use crate::{RadioPhyRegisters, generated::ModemLowPowerClockDivider};
 
 const REQUIREMENT_COUNT: usize = 3;
 
@@ -32,14 +26,6 @@ enum Requirement {
 impl Requirement {
     const fn index(self) -> usize {
         self as usize
-    }
-
-    const fn mask(self) -> u32 {
-        match self {
-            Self::Coexistence => 1 << 1,
-            Self::PhyI2cMaster => 1 << 2,
-            Self::LowPowerTimer => 1 << 3,
-        }
     }
 }
 
@@ -61,29 +47,33 @@ pub enum ModemLowPowerClockSource {
     Crystal32Khz,
 }
 
-impl ModemLowPowerClockSource {
-    const fn selector_bits(self) -> u32 {
-        match self {
-            Self::SlowOscillator => 1 << 0,
-            Self::FastOscillator => 1 << 1,
-            Self::Crystal => 1 << 2,
-            Self::Crystal32Khz => 1 << 3,
-        }
-    }
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct BluetoothLowPowerTimerConfiguration {
+    slow_oscillator_selected: bool,
+    fast_oscillator_selected: bool,
+    crystal_selected: bool,
+    crystal_32khz_selected: bool,
+    divider_minus_one: u16,
 }
 
 pub(crate) struct SharedModemClockState {
     counts: [u8; REQUIREMENT_COUNT],
-    baseline_enabled: u8,
-    low_power_timer_baseline: u16,
+    baseline_enabled: [bool; REQUIREMENT_COUNT],
+    low_power_timer_baseline: BluetoothLowPowerTimerConfiguration,
 }
 
 impl SharedModemClockState {
     pub(crate) const fn new() -> Self {
         Self {
             counts: [0; REQUIREMENT_COUNT],
-            baseline_enabled: 0,
-            low_power_timer_baseline: 0,
+            baseline_enabled: [false; REQUIREMENT_COUNT],
+            low_power_timer_baseline: BluetoothLowPowerTimerConfiguration {
+                slow_oscillator_selected: false,
+                fast_oscillator_selected: false,
+                crystal_selected: false,
+                crystal_32khz_selected: false,
+                divider_minus_one: 0,
+            },
         }
     }
 
@@ -95,12 +85,7 @@ impl SharedModemClockState {
         let index = requirement.index();
         let first = self.counts[index] == 0;
         if first {
-            let bit = 1 << index;
-            if observed {
-                self.baseline_enabled |= bit;
-            } else {
-                self.baseline_enabled &= !bit;
-            }
+            self.baseline_enabled[index] = observed;
         }
         self.counts[index] = self.counts[index]
             .checked_add(1)
@@ -116,9 +101,7 @@ impl SharedModemClockState {
         );
         self.counts[index] -= 1;
         if self.counts[index] == 0 {
-            let bit = 1 << index;
-            let baseline = self.baseline_enabled & bit != 0;
-            self.baseline_enabled &= !bit;
+            let baseline = core::mem::take(&mut self.baseline_enabled[index]);
             Some(baseline)
         } else {
             None
@@ -162,11 +145,8 @@ pub struct CoexistenceLowPowerClockObservation {
 /// Semantic Bluetooth low-power-clock observation without register authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothLowPowerClockObservation {
-    pub slow_oscillator_selected: bool,
-    pub fast_oscillator_selected: bool,
-    pub main_xtal_selected: bool,
-    pub xtal32k_selected: bool,
-    pub divider: u16,
+    pub exclusive_main_xtal_selected: bool,
+    pub bluetooth_divider_configured: bool,
     pub timer_enabled: bool,
 }
 
@@ -175,25 +155,45 @@ impl RadioPhyRegisters {
         // This is the vendor's monotonic global ICG-map initialization, not
         // lease-owned state. It preserves the existing image and is therefore
         // intentionally not rolled back when an individual route is released.
-        crate::svd::masked_register_modify::prepare_shared_modem_clock_map(
-            &self.peripherals.modem_lpcon_shared_clock,
-            SharedModemClockMapImage::ActiveStates.bits(),
-        );
+        self.peripherals
+            .modem_lpcon_shared_clock
+            .clk_conf_power_st()
+            .modify(|_, w| {
+                w.clk_wifipwr_st_map_bit_one()
+                    .set_bit()
+                    .clk_wifipwr_st_map_bit_two()
+                    .set_bit()
+                    .clk_coex_st_map_bit_one()
+                    .set_bit()
+                    .clk_coex_st_map_bit_two()
+                    .set_bit()
+                    .clk_i2c_mst_st_map_bit_one()
+                    .set_bit()
+                    .clk_i2c_mst_st_map_bit_two()
+                    .set_bit()
+                    .clk_lp_apb_st_map_bit_one()
+                    .set_bit()
+                    .clk_lp_apb_st_map_bit_two()
+                    .set_bit()
+            });
     }
 
     pub(crate) fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
-        let clock_configuration = registers.clk_conf().read().bits();
-        let power_state_map = registers.clk_conf_power_st().read().bits();
+        let clock_configuration = registers.clk_conf().read();
+        let power_state_map = registers.clk_conf_power_st().read();
         SharedModemClockObservation {
-            power_state_map_configured: [16, 20, 24, 28]
-                .into_iter()
-                .all(|shift| ((power_state_map >> shift) & 0x06) == 0x06),
-            coexistence_clock_enabled: clock_configuration & Requirement::Coexistence.mask() != 0,
-            phy_i2c_master_clock_enabled: clock_configuration & Requirement::PhyI2cMaster.mask()
-                != 0,
-            low_power_timer_clock_enabled: clock_configuration & Requirement::LowPowerTimer.mask()
-                != 0,
+            power_state_map_configured: power_state_map.clk_wifipwr_st_map_bit_one().bit_is_set()
+                && power_state_map.clk_wifipwr_st_map_bit_two().bit_is_set()
+                && power_state_map.clk_coex_st_map_bit_one().bit_is_set()
+                && power_state_map.clk_coex_st_map_bit_two().bit_is_set()
+                && power_state_map.clk_i2c_mst_st_map_bit_one().bit_is_set()
+                && power_state_map.clk_i2c_mst_st_map_bit_two().bit_is_set()
+                && power_state_map.clk_lp_apb_st_map_bit_one().bit_is_set()
+                && power_state_map.clk_lp_apb_st_map_bit_two().bit_is_set(),
+            coexistence_clock_enabled: clock_configuration.clk_coex_en().bit_is_set(),
+            phy_i2c_master_clock_enabled: clock_configuration.clk_i2c_mst_en().bit_is_set(),
+            low_power_timer_clock_enabled: clock_configuration.clk_lp_timer_en().bit_is_set(),
         }
     }
 
@@ -201,18 +201,22 @@ impl RadioPhyRegisters {
         &self,
     ) -> Option<CoexistenceLowPowerClockObservation> {
         let register = self.peripherals.modem_lpcon_shared_clock.coex_lp_clk_conf();
-        let selector_image = register.read().bits();
-        let divider_image = register.read().bits();
-        let source = match selector_image & 0x0f {
-            1 => CoexistenceLowPowerClockSource::Selector1,
-            2 => CoexistenceLowPowerClockSource::Selector2,
-            4 => CoexistenceLowPowerClockSource::Selector4,
-            8 => CoexistenceLowPowerClockSource::Selector8,
+        let selector = register.read();
+        let source = match (
+            selector.clk_coex_lp_sel_osc_slow().bit_is_set(),
+            selector.clk_coex_lp_sel_osc_fast().bit_is_set(),
+            selector.clk_coex_lp_sel_xtal().bit_is_set(),
+            selector.clk_coex_lp_sel_xtal32k().bit_is_set(),
+        ) {
+            (true, false, false, false) => CoexistenceLowPowerClockSource::Selector1,
+            (false, true, false, false) => CoexistenceLowPowerClockSource::Selector2,
+            (false, false, true, false) => CoexistenceLowPowerClockSource::Selector4,
+            (false, false, false, true) => CoexistenceLowPowerClockSource::Selector8,
             _ => return None,
         };
         Some(CoexistenceLowPowerClockObservation {
             source,
-            divider_minus_one: ((divider_image >> 4) & 0x0fff) as u16,
+            divider_minus_one: register.read().clk_coex_lp_div_num().bits(),
         })
     }
 
@@ -248,15 +252,26 @@ impl RadioPhyRegisters {
         );
 
         let registers = &self.peripherals.modem_lpcon_shared_clock;
-        let baseline = registers.lp_timer_conf().read().bits() & 0x0000_ffff;
-        self.shared_clock.low_power_timer_baseline = baseline as u16;
-        let configuration = source.selector_bits() | (divider.get() << 4);
-        let configuration = ModemLowPowerTimerConfigurationBits::new(configuration)
-            .expect("typed source and divider fit LP_TIMER_CONF");
-        crate::svd::masked_register_modify::configure_shared_low_power_timer(
-            registers,
-            configuration.get(),
-        );
+        let baseline = registers.lp_timer_conf().read();
+        self.shared_clock.low_power_timer_baseline = BluetoothLowPowerTimerConfiguration {
+            slow_oscillator_selected: baseline.clk_lp_timer_sel_osc_slow().bit_is_set(),
+            fast_oscillator_selected: baseline.clk_lp_timer_sel_osc_fast().bit_is_set(),
+            crystal_selected: baseline.clk_lp_timer_sel_xtal().bit_is_set(),
+            crystal_32khz_selected: baseline.clk_lp_timer_sel_xtal32k().bit_is_set(),
+            divider_minus_one: baseline.clk_lp_timer_div_num().bits(),
+        };
+        registers.lp_timer_conf().modify(|_, w| {
+            w.clk_lp_timer_sel_osc_slow()
+                .bit(source == ModemLowPowerClockSource::SlowOscillator)
+                .clk_lp_timer_sel_osc_fast()
+                .bit(source == ModemLowPowerClockSource::FastOscillator)
+                .clk_lp_timer_sel_xtal()
+                .bit(source == ModemLowPowerClockSource::Crystal)
+                .clk_lp_timer_sel_xtal32k()
+                .bit(source == ModemLowPowerClockSource::Crystal32Khz)
+                .clk_lp_timer_div_num()
+                .set(divider.get() as u16)
+        });
 
         BluetoothLowPowerTimerLease(self.retain_requirement(requirement))
     }
@@ -264,12 +279,21 @@ impl RadioPhyRegisters {
     pub(crate) fn release_bluetooth_low_power_timer(&mut self, lease: BluetoothLowPowerTimerLease) {
         let BluetoothLowPowerTimerLease(lease) = lease;
         let baseline = core::mem::take(&mut self.shared_clock.low_power_timer_baseline);
-        let baseline = ModemLowPowerTimerConfigurationBits::new(u32::from(baseline))
-            .expect("sampled low sixteen-bit image remains bounded");
-        crate::svd::masked_register_modify::configure_shared_low_power_timer(
-            &self.peripherals.modem_lpcon_shared_clock,
-            baseline.get(),
-        );
+        self.peripherals
+            .modem_lpcon_shared_clock
+            .lp_timer_conf()
+            .modify(|_, w| {
+                w.clk_lp_timer_sel_osc_slow()
+                    .bit(baseline.slow_oscillator_selected)
+                    .clk_lp_timer_sel_osc_fast()
+                    .bit(baseline.fast_oscillator_selected)
+                    .clk_lp_timer_sel_xtal()
+                    .bit(baseline.crystal_selected)
+                    .clk_lp_timer_sel_xtal32k()
+                    .bit(baseline.crystal_32khz_selected)
+                    .clk_lp_timer_div_num()
+                    .set(baseline.divider_minus_one)
+            });
         self.release_shared_modem_clock(lease);
     }
 
@@ -277,13 +301,14 @@ impl RadioPhyRegisters {
         &self,
     ) -> BluetoothLowPowerClockObservation {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
-        let configuration = registers.lp_timer_conf().read().bits();
+        let configuration = registers.lp_timer_conf().read();
         BluetoothLowPowerClockObservation {
-            slow_oscillator_selected: configuration & (1 << 0) != 0,
-            fast_oscillator_selected: configuration & (1 << 1) != 0,
-            main_xtal_selected: configuration & (1 << 2) != 0,
-            xtal32k_selected: configuration & (1 << 3) != 0,
-            divider: ((configuration >> 4) & 0x0fff) as u16,
+            exclusive_main_xtal_selected: configuration.clk_lp_timer_sel_osc_slow().bit_is_clear()
+                && configuration.clk_lp_timer_sel_osc_fast().bit_is_clear()
+                && configuration.clk_lp_timer_sel_xtal().bit_is_set()
+                && configuration.clk_lp_timer_sel_xtal32k().bit_is_clear(),
+            bluetooth_divider_configured: u32::from(configuration.clk_lp_timer_div_num().bits())
+                == crate::BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER.get(),
             timer_enabled: self.gate_enabled(Requirement::LowPowerTimer),
         }
     }
@@ -297,50 +322,31 @@ impl RadioPhyRegisters {
     }
 
     fn gate_enabled(&self, requirement: Requirement) -> bool {
-        self.peripherals
-            .modem_lpcon_shared_clock
-            .clk_conf()
-            .read()
-            .bits()
-            & requirement.mask()
-            != 0
+        let configuration = self.peripherals.modem_lpcon_shared_clock.clk_conf().read();
+        match requirement {
+            Requirement::Coexistence => configuration.clk_coex_en().bit_is_set(),
+            Requirement::PhyI2cMaster => configuration.clk_i2c_mst_en().bit_is_set(),
+            Requirement::LowPowerTimer => configuration.clk_lp_timer_en().bit_is_set(),
+        }
     }
 
     fn set_requirement_gate(&mut self, requirement: Requirement, enabled: bool) {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
         match requirement {
             Requirement::Coexistence => {
-                let image = if enabled {
-                    CoexistenceClockGateImage::Enabled
-                } else {
-                    CoexistenceClockGateImage::Disabled
-                };
-                crate::svd::masked_register_modify::set_shared_coexistence_clock_gate(
-                    registers,
-                    image.bits(),
-                );
+                registers
+                    .clk_conf()
+                    .modify(|_, w| w.clk_coex_en().bit(enabled));
             }
             Requirement::PhyI2cMaster => {
-                let image = if enabled {
-                    PhyI2cMasterClockGateImage::Enabled
-                } else {
-                    PhyI2cMasterClockGateImage::Disabled
-                };
-                crate::svd::masked_register_modify::set_shared_phy_i2c_master_clock_gate(
-                    registers,
-                    image.bits(),
-                );
+                registers
+                    .clk_conf()
+                    .modify(|_, w| w.clk_i2c_mst_en().bit(enabled));
             }
             Requirement::LowPowerTimer => {
-                let image = if enabled {
-                    LowPowerTimerClockGateImage::Enabled
-                } else {
-                    LowPowerTimerClockGateImage::Disabled
-                };
-                crate::svd::masked_register_modify::set_shared_low_power_timer_clock_gate(
-                    registers,
-                    image.bits(),
-                );
+                registers
+                    .clk_conf()
+                    .modify(|_, w| w.clk_lp_timer_en().bit(enabled));
             }
         }
     }

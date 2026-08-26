@@ -11,15 +11,11 @@ use open_esp_radio_esp32s31_bluetooth::{BluetoothClockControl, BluetoothPlatform
 use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
-    wifi_bb::PhyWifiBbControl,
 };
 
 use crate::coordinator::{
     BluetoothPlatformBusy, BluetoothPlatformLease, ClockCoordinator, ClockDevice, ClockIo,
 };
-
-const ICG_NOGATING_ACTIVE: u8 = 4;
-const ICG_NOGATING_ACTIVE_MODEM: u8 = 6;
 
 /// Sole safe owner of the ESP32-S31 shared radio-platform singletons.
 ///
@@ -67,9 +63,8 @@ impl EspHalRadioPlatform {
 
     /// Reserve the only standalone Bluetooth clock lifecycle slot.
     ///
-    /// Dependency clocks remain globally reference-counted inside this owner,
-    /// so a future Wi-Fi lease can share ETM, coexistence and PLL sources
-    /// without either role gating clocks still owned by the other.
+    /// The remaining upstream PLL source is reference-counted here. Shared
+    /// MODEM clock dependencies are retained by the affine custom-PAC route.
     pub fn try_bluetooth(&self) -> Result<EspHalBluetoothPlatform<'_>, BluetoothPlatformBusy> {
         self.coordinator
             .try_bluetooth()
@@ -91,78 +86,12 @@ impl BluetoothClockControl for EspHalBluetoothPlatform<'_> {
         self.inner.enable_bluetooth_controller_pll_source();
     }
 
-    fn enable_bluetooth_controller_dependents(&mut self) {
-        self.inner.enable_bluetooth_controller_dependents();
-    }
-
-    fn enable_bluetooth_apb_clocks(&mut self) {
-        self.inner.enable_bluetooth_apb_clocks();
-    }
-
-    fn reset_bluetooth_controller_domains(&mut self) {
-        self.inner.reset_bluetooth_controller_domains();
-    }
-
     fn bluetooth_platform_clock_state(&mut self) -> BluetoothPlatformClockState {
         self.inner.bluetooth_platform_clock_state()
     }
 
-    fn disable_bluetooth_apb_clocks(&mut self) {
-        self.inner.disable_bluetooth_apb_clocks();
-    }
-
     fn disable_bluetooth_controller_pll_source(&mut self) {
         self.inner.disable_bluetooth_controller_pll_source();
-    }
-
-    fn disable_bluetooth_controller_dependents(&mut self) {
-        self.inner.disable_bluetooth_controller_dependents();
-    }
-}
-
-impl PhyWifiBbControl for EspHalBluetoothPlatform<'_> {
-    fn clear_cold_start_wifi_control(&mut self) {
-        // The common PHY transition temporarily owns this physical shared
-        // baseband control even when Bluetooth is the requesting protocol.
-        MODEM_SYSCON::regs().wifi_bb_cfg().modify(|_, w| {
-            w.cold_start_clear_unknown()
-                .clear_bit()
-                .wifi_enable()
-                .clear_bit()
-        });
-    }
-
-    fn wifi_baseband_is_enabled(&self) -> bool {
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .read()
-            .wifi_enable()
-            .bit_is_set()
-    }
-
-    fn set_wifi_baseband_enabled(&mut self, enabled: bool) {
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .modify(|_, w| w.wifi_enable().bit(enabled));
-    }
-
-    fn set_bss_cbw_40_digital(&mut self, enabled: bool) {
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .modify(|_, w| w.bss_cbw_40_digital_unknown().set(u8::from(enabled)));
-    }
-
-    fn set_bb_agc_update_encoding(&mut self, encoding: u8) {
-        debug_assert!(encoding <= 7, "PHY AGC update encoding exceeds its field");
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .modify(|_, w| w.bb_agc_update_enable_unknown().set(encoding));
-    }
-
-    fn set_mac_baseband_enabled(&mut self, enabled: bool) {
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .modify(|_, w| w.mac_baseband_enable_unknown().bit(enabled));
     }
 }
 
@@ -409,147 +338,15 @@ impl EspHalClockIo {
 }
 
 impl ClockIo for EspHalClockIo {
-    fn prepare_icg_maps(&mut self) {
-        MODEM_SYSCON::regs().clk_conf_power_st().modify(|r, w| {
-            w.clk_modem_apb_st_map()
-                .set(r.clk_modem_apb_st_map().bits() | ICG_NOGATING_ACTIVE_MODEM)
-                .clk_modem_peri_st_map()
-                .set(r.clk_modem_peri_st_map().bits() | ICG_NOGATING_ACTIVE)
-                .clk_wifi_st_map()
-                .set(r.clk_wifi_st_map().bits() | ICG_NOGATING_ACTIVE_MODEM)
-                .clk_bt_st_map()
-                .set(r.clk_bt_st_map().bits() | ICG_NOGATING_ACTIVE)
-                .clk_fe_st_map()
-                .set(r.clk_fe_st_map().bits() | ICG_NOGATING_ACTIVE_MODEM)
-                .clk_zb_st_map()
-                .set(r.clk_zb_st_map().bits() | ICG_NOGATING_ACTIVE)
-        });
-    }
-
     fn clock_is_enabled(&self, device: ClockDevice) -> bool {
         match device {
             ClockDevice::Pll160mSource => Self::pll_160m_source_is_enabled(),
-            ClockDevice::WifiBaseband80x1 => MODEM_SYSCON::regs()
-                .clk_conf1()
-                .read()
-                .clk_wifibb_80x1_en()
-                .bit_is_set(),
-            ClockDevice::Etm => MODEM_SYSCON::regs()
-                .clk_conf()
-                .read()
-                .clk_etm_en()
-                .bit_is_set(),
-            ClockDevice::BluetoothMac => MODEM_SYSCON::regs()
-                .clk_conf1()
-                .read()
-                .clk_btmac_en()
-                .bit_is_set(),
-            ClockDevice::BluetoothPeripheral => {
-                let clocks = MODEM_SYSCON::regs().clk_conf().read();
-                clocks.clk_modem_sec_en().bit_is_set()
-                    && clocks.clk_modem_sec_ecb_en().bit_is_set()
-                    && clocks.clk_modem_sec_ccm_en().bit_is_set()
-                    && clocks.clk_modem_sec_bah_en().bit_is_set()
-                    && clocks.clk_ble_timer_en().bit_is_set()
-            }
-            ClockDevice::BluetoothApb => {
-                MODEM_SYSCON::regs()
-                    .clk_conf1()
-                    .read()
-                    .clk_bt_apb_en()
-                    .bit_is_set()
-                    && MODEM_SYSCON::regs()
-                        .clk_conf()
-                        .read()
-                        .clk_modem_sec_apb_en()
-                        .bit_is_set()
-            }
-            ClockDevice::BluetoothBaseband => MODEM_SYSCON::regs()
-                .clk_conf1()
-                .read()
-                .clk_btbb_en()
-                .bit_is_set(),
-            ClockDevice::Count => false,
         }
     }
 
     fn set_clock_enabled(&mut self, device: ClockDevice, enabled: bool) {
         match device {
             ClockDevice::Pll160mSource => Self::set_pll_160m_source(enabled),
-            ClockDevice::WifiBaseband80x1 => {
-                MODEM_SYSCON::regs()
-                    .clk_conf1()
-                    .modify(|_, w| w.clk_wifibb_80x1_en().bit(enabled));
-            }
-            ClockDevice::Etm => {
-                MODEM_SYSCON::regs()
-                    .clk_conf()
-                    .modify(|_, w| w.clk_etm_en().bit(enabled));
-            }
-            ClockDevice::BluetoothMac => {
-                MODEM_SYSCON::regs()
-                    .clk_conf1()
-                    .modify(|_, w| w.clk_btmac_en().bit(enabled));
-            }
-            ClockDevice::BluetoothPeripheral => {
-                MODEM_SYSCON::regs().clk_conf().modify(|_, w| {
-                    w.clk_modem_sec_en()
-                        .bit(enabled)
-                        .clk_modem_sec_ecb_en()
-                        .bit(enabled)
-                        .clk_modem_sec_ccm_en()
-                        .bit(enabled)
-                        .clk_modem_sec_bah_en()
-                        .bit(enabled)
-                        .clk_ble_timer_en()
-                        .bit(enabled)
-                });
-            }
-            ClockDevice::BluetoothApb => {
-                MODEM_SYSCON::regs()
-                    .clk_conf1()
-                    .modify(|_, w| w.clk_bt_apb_en().bit(enabled));
-                MODEM_SYSCON::regs()
-                    .clk_conf()
-                    .modify(|_, w| w.clk_modem_sec_apb_en().bit(enabled));
-            }
-            ClockDevice::BluetoothBaseband => {
-                MODEM_SYSCON::regs()
-                    .clk_conf1()
-                    .modify(|_, w| w.clk_btbb_en().bit(enabled));
-            }
-            ClockDevice::Count => {}
         }
-    }
-
-    fn reset_bluetooth_controller_domains(&mut self) {
-        let reset = MODEM_SYSCON::regs().modem_rst_conf();
-
-        reset.modify(|_, w| w.rst_btmac().set_bit());
-        reset.modify(|_, w| w.rst_btmac().clear_bit());
-        reset.modify(|_, w| w.rst_btmac_apb().set_bit());
-        reset.modify(|_, w| w.rst_btmac_apb().clear_bit());
-        reset.modify(|_, w| w.rst_ble_timer().set_bit());
-        reset.modify(|_, w| w.rst_ble_timer().clear_bit());
-
-        reset.modify(|_, w| w.rst_modem_ecb().set_bit());
-        reset.modify(|_, w| w.rst_modem_ccm().set_bit());
-        reset.modify(|_, w| w.rst_modem_bah().set_bit());
-        reset.modify(|_, w| w.rst_modem_sec().set_bit());
-        reset.modify(|_, w| w.rst_modem_ecb().clear_bit());
-        reset.modify(|_, w| w.rst_modem_ccm().clear_bit());
-        reset.modify(|_, w| w.rst_modem_bah().clear_bit());
-        reset.modify(|_, w| w.rst_modem_sec().clear_bit());
-    }
-
-    fn controller_resets_released(&self) -> bool {
-        let reset = MODEM_SYSCON::regs().modem_rst_conf().read();
-        reset.rst_btmac().bit_is_clear()
-            && reset.rst_btmac_apb().bit_is_clear()
-            && reset.rst_ble_timer().bit_is_clear()
-            && reset.rst_modem_ecb().bit_is_clear()
-            && reset.rst_modem_ccm().bit_is_clear()
-            && reset.rst_modem_bah().bit_is_clear()
-            && reset.rst_modem_sec().bit_is_clear()
     }
 }

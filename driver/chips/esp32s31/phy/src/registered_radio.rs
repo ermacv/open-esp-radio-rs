@@ -577,35 +577,13 @@ impl<P> RegisteredPhyTrackPoisoned<P> {
 
 #[cfg(test)]
 mod tests {
-    use open_esp_radio_esp32s31_hal::{Radio, wifi_bb::PhyWifiBbControl};
+    use open_esp_radio_esp32s31_hal::Radio;
 
     use super::*;
     use crate::{PhyConfig, phy_client::DEFAULT_PLL_TRACK_PERIOD_MICROS};
 
-    #[derive(Default, Debug)]
-    struct TestPlatform {
-        wifi_enabled: bool,
-    }
-
-    impl PhyWifiBbControl for TestPlatform {
-        fn clear_cold_start_wifi_control(&mut self) {
-            self.wifi_enabled = false;
-        }
-
-        fn wifi_baseband_is_enabled(&self) -> bool {
-            self.wifi_enabled
-        }
-
-        fn set_wifi_baseband_enabled(&mut self, enabled: bool) {
-            self.wifi_enabled = enabled;
-        }
-
-        fn set_bss_cbw_40_digital(&mut self, _enabled: bool) {}
-
-        fn set_bb_agc_update_encoding(&mut self, _encoding: u8) {}
-
-        fn set_mac_baseband_enabled(&mut self, _enabled: bool) {}
-    }
+    #[derive(Debug)]
+    struct TestPlatform;
 
     struct FixedClock(u64);
 
@@ -616,8 +594,8 @@ mod tests {
     }
 
     fn registered_radio() -> RegisteredPhyRadio<TestPlatform> {
-        let radio = Radio::claim_for_validation(TestPlatform::default())
-            .assume_powered_after_external_initialization();
+        let radio = Radio::claim_for_validation(TestPlatform);
+        let radio = radio.assume_powered_for_validation();
         RegisteredPhyRadio {
             radio,
             phy: RegisteredPhyState::from_wrapper_test_model(

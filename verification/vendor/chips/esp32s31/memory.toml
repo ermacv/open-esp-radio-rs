@@ -15,10 +15,18 @@ end-exclusive = 0x20109C00
 permissions = "rw"
 
 [[regions]]
-name = "modem-syscon-platform"
+name = "modem-syscon-radio"
 address-space = "cpu"
 kind = "mmio"
 start = 0x20109C00
+end-exclusive = 0x20109C1C
+permissions = "rw"
+
+[[regions]]
+name = "modem-syscon-platform-remainder"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20109C1C
 end-exclusive = 0x2010A000
 permissions = "rw"
 

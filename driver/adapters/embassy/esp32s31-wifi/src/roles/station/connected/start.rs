@@ -308,7 +308,7 @@ where
 #[cfg(test)]
 mod tests {
     use embassy_futures::block_on;
-    use open_esp_radio_esp32s31_hal::{Radio, wifi_bb::PhyWifiBbControl};
+    use open_esp_radio_esp32s31_hal::Radio;
 
     use crate::roles::station::epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31StoppedStaRx};
 
@@ -320,17 +320,6 @@ mod tests {
     }
 
     struct TestRadioPeripheral;
-
-    impl PhyWifiBbControl for TestRadioPeripheral {
-        fn clear_cold_start_wifi_control(&mut self) {}
-        fn wifi_baseband_is_enabled(&self) -> bool {
-            false
-        }
-        fn set_wifi_baseband_enabled(&mut self, _enabled: bool) {}
-        fn set_bss_cbw_40_digital(&mut self, _enabled: bool) {}
-        fn set_bb_agc_update_encoding(&mut self, _encoding: u8) {}
-        fn set_mac_baseband_enabled(&mut self, _enabled: bool) {}
-    }
 
     impl<'arena> Esp32s31ConnectedRxMaterializer<CooperativeRadioHardware<'arena>, u8>
         for TestRxResources
@@ -382,9 +371,8 @@ mod tests {
     #[test]
     fn connected_start_unifies_initial_and_reconnected_owner_frontiers() {
         let radio = Radio::claim(TestRadioPeripheral)
-            .unwrap_or_else(|_| panic!("radio singleton must be free for connected-start test"))
-            .assume_powered_after_external_initialization()
-            .into_running();
+            .unwrap_or_else(|_| panic!("radio singleton must be free for connected-start test"));
+        let radio = radio.assume_powered_for_validation().into_running();
         let (_platform, registers, _interrupt_setup) = radio.into_runtime_parts();
         let arena = Esp32s31RadioOwnerArena::new();
 

@@ -87,72 +87,6 @@ impl ModemPowerTickTarget {
     }
 }
 
-/// The reviewed active-state bits published into all four shared MODEM_LPCON clock-map nibbles while preserving every other bit.
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SharedModemClockMapImage {
-    /// Set state-map bits one and two in each nibble; this is the common image used by the existing Wi-Fi, Bluetooth and IEEE 802.15.4 clock preparation paths.
-    ActiveStates = 0x66660000,
-}
-
-impl SharedModemClockMapImage {
-    /// Numeric image for diagnostics and the private raw-PAC bridge.
-    pub const fn bits(self) -> u32 {
-        self as u32
-    }
-}
-
-/// Bit-aligned coexistence clock gate images for the shared MODEM_LPCON owner.
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CoexistenceClockGateImage {
-    /// Clear CLK_COEX_EN while preserving the rest of CLK_CONF.
-    Disabled = 0x00000000,
-    /// Set CLK_COEX_EN while preserving the rest of CLK_CONF.
-    Enabled = 0x00000002,
-}
-
-impl CoexistenceClockGateImage {
-    /// Numeric image for diagnostics and the private raw-PAC bridge.
-    pub const fn bits(self) -> u32 {
-        self as u32
-    }
-}
-
-/// Bit-aligned PHY-I2C-master clock gate images for the shared MODEM_LPCON owner.
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum PhyI2cMasterClockGateImage {
-    /// Clear CLK_I2C_MST_EN while preserving the rest of CLK_CONF.
-    Disabled = 0x00000000,
-    /// Set CLK_I2C_MST_EN while preserving the rest of CLK_CONF.
-    Enabled = 0x00000004,
-}
-
-impl PhyI2cMasterClockGateImage {
-    /// Numeric image for diagnostics and the private raw-PAC bridge.
-    pub const fn bits(self) -> u32 {
-        self as u32
-    }
-}
-
-/// Bit-aligned Bluetooth low-power timer gate images for the shared MODEM_LPCON owner.
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum LowPowerTimerClockGateImage {
-    /// Clear CLK_LP_TIMER_EN while preserving the rest of CLK_CONF.
-    Disabled = 0x00000000,
-    /// Set CLK_LP_TIMER_EN while preserving the rest of CLK_CONF.
-    Enabled = 0x00000008,
-}
-
-impl LowPowerTimerClockGateImage {
-    /// Numeric image for diagnostics and the private raw-PAC bridge.
-    pub const fn bits(self) -> u32 {
-        self as u32
-    }
-}
-
 /// The two complete-ROM-evidenced power-detector circuit-mode encodings; no other three-bit value crosses the closed PAC.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -309,29 +243,6 @@ impl ModemLowPowerClockDivider {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x00000fff {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-
-    /// Return the checked numeric value.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Complete reviewed low sixteen-bit LP_TIMER_CONF input assembled by the closed route owner; possession of this data value alone grants no register authority.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ModemLowPowerTimerConfigurationBits(u32);
-
-impl ModemLowPowerTimerConfigurationBits {
-    pub const MIN: u32 = 0x00000000;
-    pub const MAX: u32 = 0x0000ffff;
-
-    /// Construct a value only when it lies in the reviewed inclusive range.
-    pub const fn new(value: u32) -> Option<Self> {
-        if value <= 0x0000ffff {
             Some(Self(value))
         } else {
             None

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
@@ -287,6 +287,8 @@ enum Operation {
     InitializeTxPower(MacTxPowerTable),
     InitializeHeSuffix,
     RetainCoexistenceClock,
+    EnableWifiMacClocks,
+    SetWifiMacReset(bool),
     ConfigureOpenPromiscuousReceive,
     ReadInterruptStatus,
     WriteInterruptEnable(u32),
@@ -294,12 +296,23 @@ enum Operation {
     Fence,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ColdStartClockEdge {
+    EnableWifiMacClocks,
+    RetainCoexistenceClock,
+    ConfigureModemSourceClocks,
+    SetWifiMacReset(bool),
+}
+
+type ColdStartClockTrace = Rc<RefCell<Vec<ColdStartClockEdge>>>;
+
 #[derive(Default)]
 struct MockMmio {
     words: BTreeMap<TestRegister, u32>,
     operations: Vec<Operation>,
     interrupt_status: u32,
     interrupt_enable: u32,
+    cold_start_clock_trace: Option<ColdStartClockTrace>,
 }
 
 impl MockMmio {
@@ -309,6 +322,12 @@ impl MockMmio {
 
     fn operations(&self) -> &[Operation] {
         &self.operations
+    }
+
+    fn record_clock_edge(&self, edge: ColdStartClockEdge) {
+        if let Some(trace) = &self.cold_start_clock_trace {
+            trace.borrow_mut().push(edge);
+        }
     }
 }
 
@@ -329,9 +348,19 @@ impl Mmio for MockMmio {
 }
 
 impl MacSharedClockHardware for MockMmio {
-    fn retain_coexistence_clock(&mut self) -> bool {
+    fn retain_coexistence_clock(&mut self) {
+        self.record_clock_edge(ColdStartClockEdge::RetainCoexistenceClock);
         self.operations.push(Operation::RetainCoexistenceClock);
-        true
+    }
+
+    fn enable_wifi_mac_clocks(&mut self) {
+        self.record_clock_edge(ColdStartClockEdge::EnableWifiMacClocks);
+        self.operations.push(Operation::EnableWifiMacClocks);
+    }
+
+    fn set_wifi_mac_reset(&mut self, asserted: bool) {
+        self.record_clock_edge(ColdStartClockEdge::SetWifiMacReset(asserted));
+        self.operations.push(Operation::SetWifiMacReset(asserted));
     }
 }
 
@@ -1102,9 +1131,7 @@ impl TxHardware for MockMmio {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PlatformOperation {
-    EnableWifiMacClocks,
     ConfigureModemSourceClocks,
-    SetWifiMacReset(bool),
     RequestMacDelayRandom,
     RequestSlowClockCalibration,
     RequestTxPower(u8),
@@ -1114,21 +1141,18 @@ enum PlatformOperation {
 #[derive(Default)]
 struct MockPlatform {
     operations: Vec<PlatformOperation>,
+    cold_start_clock_trace: Option<ColdStartClockTrace>,
 }
 
 impl MacClockControl for MockPlatform {
-    fn enable_wifi_mac_clocks(&mut self) {
-        self.operations.push(PlatformOperation::EnableWifiMacClocks);
-    }
-
     fn configure_modem_source_clocks(&mut self) {
+        if let Some(trace) = &self.cold_start_clock_trace {
+            trace
+                .borrow_mut()
+                .push(ColdStartClockEdge::ConfigureModemSourceClocks);
+        }
         self.operations
             .push(PlatformOperation::ConfigureModemSourceClocks);
-    }
-
-    fn set_wifi_mac_reset(&mut self, asserted: bool) {
-        self.operations
-            .push(PlatformOperation::SetWifiMacReset(asserted));
     }
 }
 
@@ -1230,8 +1254,11 @@ fn slow_clock_calibration_reproduces_vendor_eighteen_bit_truncation() {
 
 #[test]
 fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
+    let clock_trace = Rc::new(RefCell::new(Vec::new()));
     let mut platform = MockPlatform::default();
     let mut mmio = MockMmio::default();
+    platform.cold_start_clock_trace = Some(clock_trace.clone());
+    mmio.cold_start_clock_trace = Some(clock_trace.clone());
     mmio.set(mac_init::HANDSHAKE, 1);
 
     let station = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
@@ -1255,9 +1282,22 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert_eq!(outcome.handshake_samples, 0);
     assert_eq!(outcome.handshake_value, 3);
     assert_eq!(
-        &mmio.operations()[..6],
+        *clock_trace.borrow(),
         [
+            ColdStartClockEdge::EnableWifiMacClocks,
+            ColdStartClockEdge::RetainCoexistenceClock,
+            ColdStartClockEdge::ConfigureModemSourceClocks,
+            ColdStartClockEdge::SetWifiMacReset(true),
+            ColdStartClockEdge::SetWifiMacReset(false),
+        ]
+    );
+    assert_eq!(
+        &mmio.operations()[..9],
+        [
+            Operation::EnableWifiMacClocks,
             Operation::RetainCoexistenceClock,
+            Operation::SetWifiMacReset(true),
+            Operation::SetWifiMacReset(false),
             Operation::Read(mac_init::HANDSHAKE),
             Operation::Write(mac_init::HANDSHAKE, 3),
             Operation::Read(mac_init::HANDSHAKE),
@@ -1485,6 +1525,15 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         mmio.operations()
             .contains(&Operation::RetainCoexistenceClock)
     );
+    assert!(mmio.operations().contains(&Operation::EnableWifiMacClocks));
+    assert!(
+        mmio.operations()
+            .contains(&Operation::SetWifiMacReset(true))
+    );
+    assert!(
+        mmio.operations()
+            .contains(&Operation::SetWifiMacReset(false))
+    );
     assert!(mmio.operations().contains(&Operation::InitializeHalTail(
         0x19a8_79e0,
         MacSlowClockCalibration::Unavailable,
@@ -1502,10 +1551,7 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     );
     assert!(mmio.operations().contains(&Operation::InitializeHeSuffix));
     let mut expected_platform = vec![
-        PlatformOperation::EnableWifiMacClocks,
         PlatformOperation::ConfigureModemSourceClocks,
-        PlatformOperation::SetWifiMacReset(true),
-        PlatformOperation::SetWifiMacReset(false),
         PlatformOperation::RequestMacDelayRandom,
     ];
     expected_platform.extend((0..43).map(PlatformOperation::RequestTxPower));
@@ -1561,7 +1607,10 @@ fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
     assert_eq!(
         mmio.operations(),
         [
+            Operation::EnableWifiMacClocks,
             Operation::RetainCoexistenceClock,
+            Operation::SetWifiMacReset(true),
+            Operation::SetWifiMacReset(false),
             Operation::Read(mac_init::HANDSHAKE),
             Operation::Write(mac_init::HANDSHAKE, 2),
             Operation::Read(mac_init::HANDSHAKE),

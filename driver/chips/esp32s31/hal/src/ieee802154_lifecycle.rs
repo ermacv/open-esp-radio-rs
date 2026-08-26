@@ -81,38 +81,15 @@ impl TryFrom<u8> for Ieee802154Channel {
 /// while a returned IEEE 802.15.4 role exists. This transition proves that
 /// gate by readback but does not claim a refcounted release authority.
 pub trait Ieee802154PlatformControl {
-    /// Publish the reviewed HP-active ICG codes to every modem clock domain.
-    fn configure_modem_clock_maps(&mut self);
-
     /// Configure the modem's selection of the shared 160 MHz PLL source.
     ///
     /// The upstream PLL gate is a separate, shared prerequisite reported by
-    /// [`Self::ieee802154_clock_images`]. Release requires a future
+    /// [`Self::ieee802154_platform_clock_images`]. Release requires a future
     /// multi-client clock manager rather than an unconditional register clear.
     fn configure_modem_source_clock(&mut self);
 
-    fn enable_wifi_bb_80x1_clock(&mut self);
-    fn enable_etm_clock(&mut self);
-
-    /// Enable BT APB and then modem-security APB.
-    fn enable_bt_apb_clocks(&mut self);
-
-    fn enable_bt_ieee802154_common_baseband_clock(&mut self);
-
-    /// Enable IEEE 802.15.4 APB first and MAC second.
-    fn enable_ieee802154_mac_clocks(&mut self);
-
-    /// Sample all shared and private clock prerequisites.
+    /// Sample the remaining platform-owned upstream prerequisites.
     fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages;
-
-    /// Assert or release only the IEEE 802.15.4 MAC reset line.
-    fn set_ieee802154_mac_reset(&mut self, asserted: bool);
-
-    /// Assert or release only the IEEE 802.15.4 APB reset line.
-    fn set_ieee802154_apb_reset(&mut self, asserted: bool);
-
-    /// Sample both private reset lines after both pulses complete.
-    fn ieee802154_reset_images(&self) -> Ieee802154ResetImages;
 }
 
 /// Closed semantic backend for the finite lifecycle sequence.
@@ -122,6 +99,15 @@ pub trait Ieee802154PlatformControl {
 /// particular, implementations must not reconstruct the IEEE 802.15.4 block
 /// from an address or independently claim a second peripheral singleton.
 pub(crate) trait Ieee802154LifecycleBackend: Ieee802154PlatformControl {
+    fn configure_modem_clock_maps(&mut self);
+    fn enable_wifi_bb_80x1_clock(&mut self);
+    fn enable_etm_clock(&mut self);
+    fn enable_bt_apb_clocks(&mut self);
+    fn enable_bt_ieee802154_common_baseband_clock(&mut self);
+    fn enable_ieee802154_mac_clocks(&mut self);
+    fn set_ieee802154_mac_reset(&mut self, asserted: bool);
+    fn set_ieee802154_apb_reset(&mut self, asserted: bool);
+    fn ieee802154_reset_images(&self) -> Ieee802154ResetImages;
     /// Retain the route-owned MODEM_LPCON coexistence clock.
     fn enable_coexistence_clock(&mut self);
 
@@ -167,16 +153,8 @@ pub struct Ieee802154ClockImages {
 /// System-PAC-only portion of the IEEE 802.15.4 clock checkpoint.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Ieee802154PlatformClockImages {
-    pub hp_active_clock_maps_configured: bool,
     pub pll_160m_clock_enabled: bool,
     pub modem_source_clock_configured: bool,
-    pub wifi_bb_80x1_clock_enabled: bool,
-    pub etm_clock_enabled: bool,
-    pub bt_apb_clock_enabled: bool,
-    pub modem_security_apb_clock_enabled: bool,
-    pub bt_ieee802154_common_baseband_clock_enabled: bool,
-    pub ieee802154_apb_clock_enabled: bool,
-    pub ieee802154_mac_clock_enabled: bool,
 }
 
 /// Semantic readback after the two private reset pulses.
@@ -604,12 +582,21 @@ mod tests {
     }
 
     impl Ieee802154PlatformControl for FakeBackend {
-        fn configure_modem_clock_maps(&mut self) {
-            self.operations.push(Operation::ConfigureClockMaps);
-        }
-
         fn configure_modem_source_clock(&mut self) {
             self.operations.push(Operation::ConfigureModemSource);
+        }
+
+        fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
+            Ieee802154PlatformClockImages {
+                pll_160m_clock_enabled: self.clock_images.pll_160m_clock_enabled,
+                modem_source_clock_configured: self.clock_images.modem_source_clock_configured,
+            }
+        }
+    }
+
+    impl Ieee802154LifecycleBackend for FakeBackend {
+        fn configure_modem_clock_maps(&mut self) {
+            self.operations.push(Operation::ConfigureClockMaps);
         }
 
         fn enable_wifi_bb_80x1_clock(&mut self) {
@@ -632,25 +619,6 @@ mod tests {
             self.operations.push(Operation::EnableIeee802154MacClocks);
         }
 
-        fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
-            Ieee802154PlatformClockImages {
-                hp_active_clock_maps_configured: self.clock_images.modem_clock_maps_configured,
-                pll_160m_clock_enabled: self.clock_images.pll_160m_clock_enabled,
-                modem_source_clock_configured: self.clock_images.modem_source_clock_configured,
-                wifi_bb_80x1_clock_enabled: self.clock_images.wifi_bb_80x1_clock_enabled,
-                etm_clock_enabled: self.clock_images.etm_clock_enabled,
-                bt_apb_clock_enabled: self.clock_images.bt_apb_clock_enabled,
-                modem_security_apb_clock_enabled: self
-                    .clock_images
-                    .modem_security_apb_clock_enabled,
-                bt_ieee802154_common_baseband_clock_enabled: self
-                    .clock_images
-                    .bt_ieee802154_common_baseband_clock_enabled,
-                ieee802154_apb_clock_enabled: self.clock_images.ieee802154_apb_clock_enabled,
-                ieee802154_mac_clock_enabled: self.clock_images.ieee802154_mac_clock_enabled,
-            }
-        }
-
         fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
             self.operations.push(Operation::SetMacReset(asserted));
         }
@@ -662,9 +630,7 @@ mod tests {
         fn ieee802154_reset_images(&self) -> Ieee802154ResetImages {
             self.reset_images
         }
-    }
 
-    impl Ieee802154LifecycleBackend for FakeBackend {
         fn enable_coexistence_clock(&mut self) {
             self.operations.push(Operation::EnableCoex);
         }

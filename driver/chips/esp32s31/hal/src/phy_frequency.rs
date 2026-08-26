@@ -8,17 +8,13 @@
 #[cfg(target_arch = "riscv32")]
 use crate::{PhyInitializationAccess, SharedPhyAccess, phy_pac_mut};
 
-/// Clear the two low Wi-Fi control bits at the start of common PHY init.
+/// Clear the shared Wi-Fi control state at the start of common PHY init.
 ///
 /// Pinned `libphy.a[phy_init.o]::register_chipv7_phy`, size `0x1e6`, performs
 /// this update before `phy_force_txrx_off`.
 #[cfg(target_arch = "riscv32")]
-pub fn prepare_common_phy_control(
-    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl PhyInitializationAccess,
-) {
-    crate::wifi_bb::prepare_cold_start(platform);
-    PhyInitializationAccess::record_wifi_baseband_enabled(registers, false);
+pub fn prepare_common_phy_control(registers: &mut impl PhyInitializationAccess) {
+    crate::wifi_bb::prepare_cold_start(phy_pac_mut(registers));
 }
 
 /// Select the two-bit baseband mode used by the Rust cold-init transition.
@@ -118,20 +114,16 @@ pub fn initialize_nrx_baseband(registers: &mut impl SharedPhyAccess) {
 
 /// Set the shared Wi-Fi baseband bit used by `phy_bb_reg_init`.
 #[cfg(target_arch = "riscv32")]
-pub fn set_baseband_init_control(platform: &mut impl crate::wifi_bb::PhyWifiBbControl) {
-    crate::wifi_bb::set_baseband_init_control(platform);
+pub fn set_baseband_init_control(registers: &mut impl SharedPhyAccess) {
+    crate::wifi_bb::set_baseband_init_control(phy_pac_mut(registers));
 }
 
 /// Apply complete rev0 ROM `phy_bb_bss_cbw40` and its finite children.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_bss_cbw(
-    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl SharedPhyAccess,
-    cbw: u8,
-) {
+pub fn configure_bss_cbw(registers: &mut impl SharedPhyAccess, cbw: u8) {
     let registers = phy_pac_mut(registers);
     registers.configure_bss_cbw_prefix(cbw);
-    crate::wifi_bb::set_bss_cbw_40_digital(platform, cbw != 0);
+    crate::wifi_bb::set_bss_cbw_40_digital(registers, cbw != 0);
     registers.configure_bss_cbw_suffix(cbw);
 }
 
@@ -151,23 +143,14 @@ pub fn configure_channel_cbw(registers: &mut impl SharedPhyAccess, cbw: u32) {
 
 /// Apply complete rev0 ROM `phy_wifi_enable_set`.
 #[cfg(target_arch = "riscv32")]
-pub fn set_wifi_enabled(
-    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl PhyInitializationAccess,
-    enabled: bool,
-) {
-    crate::wifi_bb::set_wifi_enabled(platform, enabled);
-    PhyInitializationAccess::record_wifi_baseband_enabled(registers, enabled);
+pub fn set_wifi_enabled(registers: &mut impl PhyInitializationAccess, enabled: bool) {
+    crate::wifi_bb::set_wifi_enabled(phy_pac_mut(registers), enabled);
 }
 
 /// Apply complete rev0 ROM `phy_mac_enable_bb`.
 #[cfg(target_arch = "riscv32")]
-pub fn enable_mac_baseband(
-    platform: &mut impl crate::wifi_bb::PhyWifiBbControl,
-    registers: &mut impl PhyInitializationAccess,
-) {
-    crate::wifi_bb::enable_mac_baseband(platform);
-    PhyInitializationAccess::record_wifi_baseband_enabled(registers, true);
+pub fn enable_mac_baseband(registers: &mut impl PhyInitializationAccess) {
+    crate::wifi_bb::enable_mac_baseband(phy_pac_mut(registers));
 }
 
 /// Apply complete rev0 ROM `phy_bt_filter_reg`.

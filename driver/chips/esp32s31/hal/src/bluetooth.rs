@@ -21,8 +21,8 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerDisableRequest as PacSchedulerDisableRequest,
     BluetoothSchedulerDisableStep as PacSchedulerDisableStep,
     BluetoothTaskRegisters as PacBluetoothTaskRegisters,
-    BluetoothTaskReuniteError as PacBluetoothTaskReuniteError, RadioHardware,
-    SharedModemClockObservation,
+    BluetoothTaskReuniteError as PacBluetoothTaskReuniteError, ModemSysconBluetoothObservation,
+    RadioHardware, SharedModemClockObservation,
 };
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
@@ -67,8 +67,8 @@ impl BluetoothColdOwner {
     }
 
     #[doc(hidden)]
-    pub fn retain_coexistence_clock(&mut self) -> bool {
-        self.registers.retain_coexistence_clock()
+    pub fn retain_coexistence_clock(&mut self) {
+        self.registers.retain_coexistence_clock();
     }
 
     #[doc(hidden)]
@@ -77,8 +77,8 @@ impl BluetoothColdOwner {
     }
 
     #[doc(hidden)]
-    pub fn select_main_xtal_low_power_clock(&mut self, divider: u16) -> bool {
-        self.registers.select_main_xtal_low_power_clock(divider)
+    pub fn retain_main_xtal_bluetooth_low_power_clock(&mut self) {
+        self.registers.retain_main_xtal_bluetooth_low_power_clock();
     }
 
     #[doc(hidden)]
@@ -94,6 +94,43 @@ impl BluetoothColdOwner {
         BluetoothLowPowerClockObservation,
     ) {
         self.registers.bluetooth_shared_clock_observation()
+    }
+
+    #[doc(hidden)]
+    pub fn prepare_modem_syscon_clock_map(&mut self) {
+        self.registers.prepare_modem_syscon_clock_map();
+    }
+
+    #[doc(hidden)]
+    pub fn reset_modem_syscon_bluetooth_domains(&mut self) {
+        self.registers.reset_modem_syscon_bluetooth_domains();
+    }
+
+    #[doc(hidden)]
+    pub fn modem_syscon_bluetooth_observation(&self) -> ModemSysconBluetoothObservation {
+        self.registers.modem_syscon_bluetooth_observation()
+    }
+
+    #[doc(hidden)]
+    pub fn retain_modem_syscon_controller_clocks(&mut self) {
+        self.registers
+            .retain_modem_syscon_bluetooth_controller_clocks();
+    }
+
+    #[doc(hidden)]
+    pub fn retain_modem_syscon_apb_clocks(&mut self) {
+        self.registers.retain_modem_syscon_bluetooth_apb_clocks();
+    }
+
+    #[doc(hidden)]
+    pub fn release_modem_syscon_apb_clocks(&mut self) {
+        self.registers.release_modem_syscon_bluetooth_apb_clocks();
+    }
+
+    #[doc(hidden)]
+    pub fn release_modem_syscon_controller_clocks(&mut self) {
+        self.registers
+            .release_modem_syscon_bluetooth_controller_clocks();
     }
 
     /// Split ordinary task ownership from the inactive controller IRQ bank.

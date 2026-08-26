@@ -341,10 +341,7 @@ impl<P> RegisteredIeee802154PendingTracking<P> {
         SharedPhyHal<'_>,
         &mut PhyState,
         &mut PhyPendingTracking,
-    )
-    where
-        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl,
-    {
+    ) {
         let Self {
             role,
             registered,
@@ -1025,76 +1022,31 @@ fn map_prerequisites<Before, After>(
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_hal::{
-        Ieee802154MacPolicy, Ieee802154Owned, Ieee802154PlatformClockImages,
-        Ieee802154PlatformControl, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
-        Ieee802154ResetImages, Ieee802154TimingReady as HalIeee802154TimingReady,
-        PlatformPowerClockImages, PowerClockControl,
-    };
-
-    use crate::{
-        PhyConfig, PhyState, RegisteredPhyState,
-        phy_client::{
-            DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyClientAcquireOrdering, PhyClientState,
-            PhyModemClient, PhyPllTrackClock,
-        },
-        phy_param_tracking::{PhyParamTrackingAction, PhyParamTrackingParameters},
+        Ieee802154MacPolicy, Ieee802154PlatformClockImages, Ieee802154PlatformControl,
+        Ieee802154TimingReady as HalIeee802154TimingReady, PlatformPowerClockImages,
+        PowerClockControl,
     };
 
     use super::{
-        RegisteredIeee802154Client, RegisteredIeee802154Clocked,
         RegisteredIeee802154FoundationTransitionFailure, RegisteredIeee802154MacPolicyConfigured,
         RegisteredIeee802154MacPolicyRecovery, RegisteredIeee802154MacPolicyTransitionFailure,
         RegisteredIeee802154Prerequisites, RegisteredIeee802154Reset,
-        RegisteredIeee802154ResetTransitionFailure, RegisteredIeee802154TimingReady,
-        establish_registered_timing, map_prerequisites, preserve_prerequisites,
+        RegisteredIeee802154TimingReady, map_prerequisites, preserve_prerequisites,
+    };
+    use crate::{
+        PhyConfig, PhyState, RegisteredPhyState,
+        phy_client::{
+            DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyClientState, PhyModemClient, PhyPllTrackClock,
+        },
     };
 
     #[derive(Debug)]
     struct FakePlatform {
         clocks: Ieee802154PlatformClockImages,
-        resets: Ieee802154ResetImages,
         power: PlatformPowerClockImages,
-        clock_sequences: u8,
-        reset_edges: u8,
-    }
-
-    impl FakePlatform {
-        const fn ready() -> Self {
-            Self {
-                clocks: Ieee802154PlatformClockImages {
-                    hp_active_clock_maps_configured: true,
-                    pll_160m_clock_enabled: true,
-                    modem_source_clock_configured: true,
-                    wifi_bb_80x1_clock_enabled: true,
-                    etm_clock_enabled: true,
-                    bt_apb_clock_enabled: true,
-                    modem_security_apb_clock_enabled: true,
-                    bt_ieee802154_common_baseband_clock_enabled: true,
-                    ieee802154_apb_clock_enabled: true,
-                    ieee802154_mac_clock_enabled: true,
-                },
-                resets: Ieee802154ResetImages {
-                    mac_reset_released: true,
-                    apb_reset_released: true,
-                },
-                power: PlatformPowerClockImages {
-                    reset_released: true,
-                    hp_active_icg_selected: true,
-                    modem_bus_clock_enabled: true,
-                    hp_active_clock_map_configured: true,
-                    modem_source_clocks_configured: true,
-                    phy_calibration_clocks_enabled: true,
-                    phy_i2c_160mhz_selected: true,
-                },
-                clock_sequences: 0,
-                reset_edges: 0,
-            }
-        }
     }
 
     impl PowerClockControl for FakePlatform {
-        fn set_wifi_baseband_and_mac_reset(&mut self, _asserted: bool) {}
-
         fn select_hp_active_modem_icg(&mut self) {}
 
         fn apply_modem_icg_selection(&mut self) {}
@@ -1103,15 +1055,7 @@ mod tests {
 
         fn enable_modem_register_bus_clock(&mut self) {}
 
-        fn configure_hp_active_modem_clock_map(&mut self) {}
-
         fn configure_modem_source_clocks(&mut self) {}
-
-        fn set_wifi_baseband_reset(&mut self, _asserted: bool) {}
-
-        fn enable_phy_calibration_clocks(&mut self) {}
-
-        fn select_phy_i2c_160mhz_source(&mut self) {}
 
         fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
             self.power
@@ -1119,36 +1063,10 @@ mod tests {
     }
 
     impl Ieee802154PlatformControl for FakePlatform {
-        fn configure_modem_clock_maps(&mut self) {}
-
         fn configure_modem_source_clock(&mut self) {}
-
-        fn enable_wifi_bb_80x1_clock(&mut self) {}
-
-        fn enable_etm_clock(&mut self) {}
-
-        fn enable_bt_apb_clocks(&mut self) {}
-
-        fn enable_bt_ieee802154_common_baseband_clock(&mut self) {}
-
-        fn enable_ieee802154_mac_clocks(&mut self) {
-            self.clock_sequences += 1;
-        }
 
         fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
             self.clocks
-        }
-
-        fn set_ieee802154_mac_reset(&mut self, _asserted: bool) {
-            self.reset_edges += 1;
-        }
-
-        fn set_ieee802154_apb_reset(&mut self, _asserted: bool) {
-            self.reset_edges += 1;
-        }
-
-        fn ieee802154_reset_images(&self) -> Ieee802154ResetImages {
-            self.resets
         }
     }
 
@@ -1157,29 +1075,6 @@ mod tests {
     impl PhyPllTrackClock for FixedClock {
         fn now_micros(&mut self) -> u64 {
             self.0
-        }
-    }
-
-    fn owner(platform: FakePlatform) -> RegisteredIeee802154Clocked<FakePlatform> {
-        let role = Ieee802154Owned::claim_for_validation(platform)
-            .power_up()
-            .unwrap_or_else(|_| panic!("shared power readback must pass"))
-            .into_ieee802154_clocked()
-            .unwrap_or_else(|_| panic!("clock readback must pass"));
-        RegisteredIeee802154Clocked {
-            role,
-            registered: registered_state(),
-            clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
-        }
-    }
-
-    fn client_owner(platform: FakePlatform) -> RegisteredIeee802154Client<FakePlatform> {
-        let acquired = owner(platform)
-            .acquire_phy_client(&mut FixedClock(0))
-            .unwrap_or_else(|_| panic!("fresh IEEE client acquisition must succeed"));
-        match acquired.into_owner() {
-            Ok(owner) => owner,
-            Err(_) => panic!("fresh IEEE timestamp must not request tracking"),
         }
     }
 
@@ -1199,21 +1094,6 @@ mod tests {
             registered,
             clients,
             timing: HalIeee802154TimingReady::for_host_ownership_model(gain_parameter),
-        }
-    }
-
-    fn timing_ready_owner(platform: FakePlatform) -> RegisteredIeee802154TimingReady<FakePlatform> {
-        let parts = establish_registered_timing(client_owner(platform), |_, registered| {
-            let gain_parameter = registered.state().register_init_parameters().parameter_120;
-            HalIeee802154TimingReady::for_host_ownership_model(gain_parameter)
-        });
-        RegisteredIeee802154TimingReady {
-            role: parts.role,
-            prerequisites: RegisteredIeee802154Prerequisites {
-                registered: parts.registered,
-                clients: parts.clients,
-                timing: parts.timing,
-            },
         }
     }
 
@@ -1253,66 +1133,6 @@ mod tests {
     }
 
     #[test]
-    fn registered_timing_projection_has_no_caller_gain_argument() {
-        let client = client_owner(FakePlatform::ready());
-        let expected_gain = client.phy_state().register_init_parameters().parameter_120;
-        let parts = establish_registered_timing(client, |_, registered| {
-            registered.state().register_init_parameters().parameter_120
-        });
-
-        assert_eq!(parts.timing, expected_gain);
-        assert!(parts.registered.state().phy_registered());
-        assert_eq!(parts.role.peripheral().clock_sequences, 1);
-
-        let _: fn(
-            RegisteredIeee802154Client<FakePlatform>,
-        ) -> RegisteredIeee802154TimingReady<FakePlatform> =
-            RegisteredIeee802154Client::initialize_baseband_and_ieee802154_timing;
-    }
-
-    #[test]
-    fn ieee_client_bit_blocks_timing_until_immediate_tracking_is_resolved() {
-        let acquired = owner(FakePlatform::ready())
-            .acquire_phy_client(&mut FixedClock(DEFAULT_PLL_TRACK_PERIOD_MICROS + 1))
-            .unwrap_or_else(|_| panic!("fresh IEEE client acquisition must succeed"));
-        assert_eq!(
-            acquired.ordering(),
-            PhyClientAcquireOrdering::ArmThenSetThenEvaluate
-        );
-        let pending = match acquired.into_owner() {
-            Ok(_) => panic!("elapsed first acquisition must request immediate tracking"),
-            Err(pending) => pending,
-        };
-        assert!(!pending.request().wifi());
-        assert!(pending.request().bluetooth_ieee802154());
-
-        let tracking = pending.begin_tracking(PhyParamTrackingParameters {
-            tracking_inhibited: true,
-            rfpll_cap_tracking_enabled: false,
-            rfpll_cap_tracking_threshold: None,
-            calibration_tracking_threshold: None,
-            shared_tracking_control: 0,
-            bluetooth_ieee802154_power_control: 0,
-            calibration_tracking_enabled: false,
-            relaxed_power_tracking_threshold: false,
-        });
-        assert_eq!(tracking.action(), PhyParamTrackingAction::EnterCritical);
-        let poisoned = tracking.fail();
-        assert!(
-            poisoned
-                .client_snapshot()
-                .contains(PhyModemClient::Ieee802154)
-        );
-
-        let timing_ready = timing_ready_owner(FakePlatform::ready());
-        assert!(
-            timing_ready
-                .client_snapshot()
-                .contains(PhyModemClient::Ieee802154)
-        );
-    }
-
-    #[test]
     fn registered_full_chain_and_typed_recovery_surface_connects() {
         fn full_success_chain<P: Ieee802154PlatformControl>(
             owner: RegisteredIeee802154TimingReady<P>,
@@ -1338,47 +1158,5 @@ mod tests {
         let _ = full_success_chain::<FakePlatform>;
         let _ = recover_foundation::<FakePlatform>;
         let _ = recover_policy::<FakePlatform>;
-    }
-
-    #[test]
-    fn registered_clock_and_reset_transitions_retain_one_proof_owner() {
-        let timing_ready = timing_ready_owner(FakePlatform::ready());
-        assert!(timing_ready.phy_state().phy_registered());
-        assert_eq!(timing_ready.peripheral().clock_sequences, 1);
-        let gain_parameter = timing_ready.timing_gain_parameter();
-
-        let reset = timing_ready
-            .reset_mac()
-            .unwrap_or_else(|_| panic!("reset readback must pass"));
-        assert!(reset.phy_state().phy_registered());
-        assert_eq!(reset.timing_gain_parameter(), gain_parameter);
-        assert_eq!(reset.peripheral().clock_sequences, 1);
-        assert_eq!(reset.peripheral().reset_edges, 4);
-    }
-
-    #[test]
-    fn registered_failures_retain_proof_and_only_typed_recovery() {
-        let mut reset_platform = FakePlatform::ready();
-        reset_platform.resets.mac_reset_released = false;
-        let timing_ready = timing_ready_owner(reset_platform);
-        let gain_parameter = timing_ready.timing_gain_parameter();
-        let reset_failure: RegisteredIeee802154ResetTransitionFailure<_> =
-            match timing_ready.reset_mac() {
-                Ok(_) => panic!("invalid reset readback must fail"),
-                Err(failure) => failure,
-            };
-        assert_eq!(
-            reset_failure.error(),
-            Ieee802154ReadbackError {
-                checkpoint: Ieee802154ResetCheckpoint::MacResetReleased,
-                expected: true,
-                observed: false,
-            }
-        );
-        assert_eq!(reset_failure.timing_gain_parameter(), gain_parameter);
-        let timing_ready = reset_failure.into_timing_ready();
-        assert!(timing_ready.phy_state().phy_registered());
-        assert_eq!(timing_ready.timing_gain_parameter(), gain_parameter);
-        assert_eq!(timing_ready.peripheral().reset_edges, 4);
     }
 }

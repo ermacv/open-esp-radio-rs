@@ -28,7 +28,7 @@ use crate::ieee802154_event_status_probe::{
 };
 
 use crate::{
-    Ieee802154SharedPhyBorrow, SharedPhyHal, WifiBasebandEnableObservation,
+    Ieee802154SharedPhyBorrow, SharedPhyHal,
     ieee802154::Ieee802154PacHal,
     ieee802154_lifecycle::{
         Ieee802154ClockCheckpoint, Ieee802154ClockFailure as EngineClockFailure,
@@ -69,34 +69,8 @@ impl<P> OwnedIeee802154Backend<P> {
 }
 
 impl<P: Ieee802154PlatformControl> Ieee802154PlatformControl for OwnedIeee802154Backend<P> {
-    fn configure_modem_clock_maps(&mut self) {
-        self.platform_mut().configure_modem_clock_maps();
-        self.task.prepare_shared_modem_clock_map();
-    }
-
     fn configure_modem_source_clock(&mut self) {
         self.platform_mut().configure_modem_source_clock();
-    }
-
-    fn enable_wifi_bb_80x1_clock(&mut self) {
-        self.platform_mut().enable_wifi_bb_80x1_clock();
-    }
-
-    fn enable_etm_clock(&mut self) {
-        self.platform_mut().enable_etm_clock();
-    }
-
-    fn enable_bt_apb_clocks(&mut self) {
-        self.platform_mut().enable_bt_apb_clocks();
-    }
-
-    fn enable_bt_ieee802154_common_baseband_clock(&mut self) {
-        self.platform_mut()
-            .enable_bt_ieee802154_common_baseband_clock();
-    }
-
-    fn enable_ieee802154_mac_clocks(&mut self) {
-        self.platform_mut().enable_ieee802154_mac_clocks();
     }
 
     fn ieee802154_platform_clock_images(
@@ -104,45 +78,70 @@ impl<P: Ieee802154PlatformControl> Ieee802154PlatformControl for OwnedIeee802154
     ) -> crate::ieee802154_lifecycle::Ieee802154PlatformClockImages {
         self.platform.ieee802154_platform_clock_images()
     }
-
-    fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
-        self.platform_mut().set_ieee802154_mac_reset(asserted);
-    }
-
-    fn set_ieee802154_apb_reset(&mut self, asserted: bool) {
-        self.platform_mut().set_ieee802154_apb_reset(asserted);
-    }
-
-    fn ieee802154_reset_images(&self) -> Ieee802154ResetImages {
-        self.platform.ieee802154_reset_images()
-    }
 }
 
 impl<P: Ieee802154PlatformControl> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
+    fn configure_modem_clock_maps(&mut self) {
+        self.task.configure_modem_syscon_clock_maps();
+        self.task.prepare_shared_modem_clock_map();
+    }
+
+    fn enable_wifi_bb_80x1_clock(&mut self) {
+        self.task.enable_ieee802154_wifi_bb_clock();
+    }
+
+    fn enable_etm_clock(&mut self) {
+        self.task.enable_ieee802154_etm_clock();
+    }
+
+    fn enable_bt_apb_clocks(&mut self) {
+        self.task.enable_ieee802154_bt_apb_clocks();
+    }
+
+    fn enable_bt_ieee802154_common_baseband_clock(&mut self) {
+        self.task.enable_ieee802154_common_baseband_clock();
+    }
+
+    fn enable_ieee802154_mac_clocks(&mut self) {
+        self.task.enable_ieee802154_mac_clocks();
+    }
+
+    fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
+        self.task.set_ieee802154_mac_reset(asserted);
+    }
+
+    fn set_ieee802154_apb_reset(&mut self, asserted: bool) {
+        self.task.set_ieee802154_apb_reset(asserted);
+    }
+
+    fn ieee802154_reset_images(&self) -> Ieee802154ResetImages {
+        let reset = self.task.modem_syscon_ieee802154_reset_observation();
+        Ieee802154ResetImages {
+            mac_reset_released: reset.mac_reset_released,
+            apb_reset_released: reset.apb_reset_released,
+        }
+    }
     fn enable_coexistence_clock(&mut self) {
-        assert!(
-            self.task.retain_coexistence_clock(),
-            "exclusive IEEE route has shared-clock lease capacity"
-        );
+        self.task.retain_coexistence_clock();
     }
 
     fn ieee802154_clock_images(&self) -> Ieee802154ClockImages {
         let platform = self.platform.ieee802154_platform_clock_images();
         let shared = self.task.shared_modem_clock_observation();
+        let modem = self.task.modem_syscon_ieee802154_clock_observation();
         Ieee802154ClockImages {
-            modem_clock_maps_configured: platform.hp_active_clock_maps_configured
+            modem_clock_maps_configured: modem.active_clock_map_configured
                 && shared.power_state_map_configured,
             pll_160m_clock_enabled: platform.pll_160m_clock_enabled,
             modem_source_clock_configured: platform.modem_source_clock_configured,
             coexistence_clock_enabled: shared.coexistence_clock_enabled,
-            wifi_bb_80x1_clock_enabled: platform.wifi_bb_80x1_clock_enabled,
-            etm_clock_enabled: platform.etm_clock_enabled,
-            bt_apb_clock_enabled: platform.bt_apb_clock_enabled,
-            modem_security_apb_clock_enabled: platform.modem_security_apb_clock_enabled,
-            bt_ieee802154_common_baseband_clock_enabled: platform
-                .bt_ieee802154_common_baseband_clock_enabled,
-            ieee802154_apb_clock_enabled: platform.ieee802154_apb_clock_enabled,
-            ieee802154_mac_clock_enabled: platform.ieee802154_mac_clock_enabled,
+            wifi_bb_80x1_clock_enabled: modem.wifi_bb_80x1_clock_enabled,
+            etm_clock_enabled: modem.etm_clock_enabled,
+            bt_apb_clock_enabled: modem.bt_apb_clock_enabled,
+            modem_security_apb_clock_enabled: modem.modem_security_apb_clock_enabled,
+            bt_ieee802154_common_baseband_clock_enabled: modem.common_baseband_clock_enabled,
+            ieee802154_apb_clock_enabled: modem.ieee802154_apb_clock_enabled,
+            ieee802154_mac_clock_enabled: modem.ieee802154_mac_clock_enabled,
         }
     }
 
@@ -664,7 +663,7 @@ impl<P> Ieee802154Clocked<P> {
     }
 }
 
-impl<P: crate::wifi_bb::PhyWifiBbControl> Ieee802154Clocked<P> {
+impl<P> Ieee802154Clocked<P> {
     /// Borrow the exact platform and shared-PHY partitions for the recovered
     /// concrete common-PHY target transition.
     ///
@@ -675,10 +674,7 @@ impl<P: crate::wifi_bb::PhyWifiBbControl> Ieee802154Clocked<P> {
     #[doc(hidden)]
     pub fn common_phy_parts(&mut self) -> (&mut P, SharedPhyHal<'_>) {
         let backend = self.inner.backend_mut();
-        let wifi_baseband = WifiBasebandEnableObservation::from_platform_readback(
-            backend.platform.wifi_baseband_is_enabled(),
-        );
-        let shared_phy = backend.task.borrow_shared_phy(wifi_baseband);
+        let shared_phy = backend.task.borrow_shared_phy();
         (&mut backend.platform, shared_phy)
     }
 }
@@ -842,31 +838,12 @@ mod tests {
 
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
-    use crate::{
-        Ieee802154PlatformClockImages, PlatformPowerClockImages, PowerClockControl,
-        wifi_bb::PhyWifiBbControl,
-    };
-    #[cfg(target_arch = "riscv32")]
-    use crate::{PowerCheckpoint, PowerError, SharedPhyAccess};
-
-    #[cfg(target_arch = "riscv32")]
-    use super::{
-        Ieee802154ClockCheckpoint, Ieee802154Clocked, Ieee802154Powered, Ieee802154ReadbackError,
-        Ieee802154Reset,
-    };
-    use super::{Ieee802154Owned, Ieee802154PlatformControl, Ieee802154ResetImages};
+    use super::{Ieee802154Owned, Ieee802154PlatformControl};
+    use crate::{Ieee802154PlatformClockImages, PlatformPowerClockImages, PowerClockControl};
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
-        ClockMaps,
         ConfigureModemSource,
-        WifiBb80x1,
-        Etm,
-        BtApb,
-        CommonBb,
-        MacClocks,
-        MacReset(bool),
-        ApbReset(bool),
     }
 
     #[derive(Debug)]
@@ -874,7 +851,6 @@ mod tests {
         operations: Vec<Operation>,
         power: PlatformPowerClockImages,
         clocks: Ieee802154PlatformClockImages,
-        resets: Ieee802154ResetImages,
     }
 
     impl FakePlatform {
@@ -882,37 +858,19 @@ mod tests {
             Self {
                 operations: Vec::new(),
                 power: PlatformPowerClockImages {
-                    reset_released: true,
                     hp_active_icg_selected: true,
                     modem_bus_clock_enabled: true,
-                    hp_active_clock_map_configured: true,
                     modem_source_clocks_configured: true,
-                    phy_calibration_clocks_enabled: true,
-                    phy_i2c_160mhz_selected: true,
                 },
                 clocks: Ieee802154PlatformClockImages {
-                    hp_active_clock_maps_configured: true,
                     pll_160m_clock_enabled: true,
                     modem_source_clock_configured: true,
-                    wifi_bb_80x1_clock_enabled: true,
-                    etm_clock_enabled: true,
-                    bt_apb_clock_enabled: true,
-                    modem_security_apb_clock_enabled: true,
-                    bt_ieee802154_common_baseband_clock_enabled: true,
-                    ieee802154_apb_clock_enabled: true,
-                    ieee802154_mac_clock_enabled: true,
-                },
-                resets: Ieee802154ResetImages {
-                    mac_reset_released: true,
-                    apb_reset_released: true,
                 },
             }
         }
     }
 
     impl PowerClockControl for FakePlatform {
-        fn set_wifi_baseband_and_mac_reset(&mut self, _asserted: bool) {}
-
         fn select_hp_active_modem_icg(&mut self) {}
 
         fn apply_modem_icg_selection(&mut self) {}
@@ -921,15 +879,7 @@ mod tests {
 
         fn enable_modem_register_bus_clock(&mut self) {}
 
-        fn configure_hp_active_modem_clock_map(&mut self) {}
-
         fn configure_modem_source_clocks(&mut self) {}
-
-        fn set_wifi_baseband_reset(&mut self, _asserted: bool) {}
-
-        fn enable_phy_calibration_clocks(&mut self) {}
-
-        fn select_phy_i2c_160mhz_source(&mut self) {}
 
         fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
             self.power
@@ -937,143 +887,13 @@ mod tests {
     }
 
     impl Ieee802154PlatformControl for FakePlatform {
-        fn configure_modem_clock_maps(&mut self) {
-            self.operations.push(Operation::ClockMaps);
-        }
-
         fn configure_modem_source_clock(&mut self) {
             self.operations.push(Operation::ConfigureModemSource);
-        }
-
-        fn enable_wifi_bb_80x1_clock(&mut self) {
-            self.operations.push(Operation::WifiBb80x1);
-        }
-
-        fn enable_etm_clock(&mut self) {
-            self.operations.push(Operation::Etm);
-        }
-
-        fn enable_bt_apb_clocks(&mut self) {
-            self.operations.push(Operation::BtApb);
-        }
-
-        fn enable_bt_ieee802154_common_baseband_clock(&mut self) {
-            self.operations.push(Operation::CommonBb);
-        }
-
-        fn enable_ieee802154_mac_clocks(&mut self) {
-            self.operations.push(Operation::MacClocks);
         }
 
         fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
             self.clocks
         }
-
-        fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
-            self.operations.push(Operation::MacReset(asserted));
-        }
-
-        fn set_ieee802154_apb_reset(&mut self, asserted: bool) {
-            self.operations.push(Operation::ApbReset(asserted));
-        }
-
-        fn ieee802154_reset_images(&self) -> Ieee802154ResetImages {
-            self.resets
-        }
-    }
-
-    impl PhyWifiBbControl for FakePlatform {
-        fn clear_cold_start_wifi_control(&mut self) {}
-
-        fn wifi_baseband_is_enabled(&self) -> bool {
-            false
-        }
-
-        fn set_wifi_baseband_enabled(&mut self, _enabled: bool) {}
-
-        fn set_bss_cbw_40_digital(&mut self, _enabled: bool) {}
-
-        fn set_bb_agc_update_encoding(&mut self, _encoding: u8) {}
-
-        fn set_mac_baseband_enabled(&mut self, _enabled: bool) {}
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    fn require_owned(_: &Ieee802154Owned<FakePlatform>) {}
-    #[cfg(target_arch = "riscv32")]
-    fn require_powered(_: &Ieee802154Powered<FakePlatform>) {}
-    #[cfg(target_arch = "riscv32")]
-    fn require_clocked(_: &Ieee802154Clocked<FakePlatform>) {}
-    #[cfg(target_arch = "riscv32")]
-    fn require_reset(_: &Ieee802154Reset<FakePlatform>) {}
-
-    #[test]
-    #[cfg(target_arch = "riscv32")]
-    fn concrete_role_consumes_the_neutral_root_into_the_dedicated_route() {
-        let owned =
-            Ieee802154Owned::from_hardware(FakePlatform::ready(), RadioHardware::for_validation());
-        require_owned(&owned);
-
-        let powered = owned.power_up().expect("shared power readback");
-        require_powered(&powered);
-        let mut clocked = powered.into_ieee802154_clocked().expect("clock readback");
-        require_clocked(&clocked);
-        assert_eq!(clocked.peripheral().operations.len(), 7);
-
-        {
-            let (_platform, mut shared_phy) = clocked.common_phy_parts();
-            fn require_shared_phy(_: &mut impl SharedPhyAccess) {}
-            require_shared_phy(&mut shared_phy);
-        }
-
-        let reset = clocked.reset_mac().expect("reset readback");
-        require_reset(&reset);
-        assert_eq!(reset.peripheral().operations.len(), 11);
-    }
-
-    #[test]
-    #[cfg(target_arch = "riscv32")]
-    fn clock_failure_retains_the_dedicated_route_for_exact_retry() {
-        let mut platform = FakePlatform::ready();
-        platform.clocks.etm_clock_enabled = false;
-        let owned = Ieee802154Owned::from_hardware(platform, RadioHardware::for_validation());
-        let powered = owned.power_up().expect("shared power readback");
-
-        let failure = match powered.into_ieee802154_clocked() {
-            Ok(_) => panic!("failed readback must not publish Clocked"),
-            Err(failure) => failure,
-        };
-        assert_eq!(
-            failure.error(),
-            Ieee802154ReadbackError {
-                checkpoint: Ieee802154ClockCheckpoint::EtmClock,
-                expected: true,
-                observed: false,
-            }
-        );
-        assert!(failure.retry().is_err());
-    }
-
-    #[test]
-    #[cfg(target_arch = "riscv32")]
-    fn power_failure_retains_the_dedicated_route_for_exact_retry() {
-        let mut platform = FakePlatform::ready();
-        platform.power.hp_active_icg_selected = false;
-        let owned = Ieee802154Owned::from_hardware(platform, RadioHardware::for_validation());
-
-        let failure = match owned.power_up() {
-            Ok(_) => panic!("failed power readback must not publish Powered"),
-            Err(failure) => failure,
-        };
-        assert_eq!(
-            failure.error(),
-            PowerError {
-                checkpoint: PowerCheckpoint::HpActiveIcg,
-                expected: true,
-                observed: false,
-            }
-        );
-        assert!(failure.retry().is_err());
     }
 
     #[test]

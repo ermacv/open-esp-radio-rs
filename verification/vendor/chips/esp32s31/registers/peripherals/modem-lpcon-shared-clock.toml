@@ -43,6 +43,9 @@ name = "CLK_LP_TIMER_DIV_NUM"
 description = "Twelve-bit low-power timer divider image."
 bitOffset = 4
 bitWidth = 12
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 4095
 
 [[peripherals.registers]]
 [peripherals.registers.register]
@@ -82,6 +85,9 @@ name = "CLK_COEX_LP_DIV_NUM"
 description = "Twelve-bit coexistence low-power clock divider image."
 bitOffset = 4
 bitWidth = 12
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 4095
 
 [[peripherals.registers]]
 [peripherals.registers.register]
@@ -126,28 +132,52 @@ access = "read-write"
 resetValue = 0x00000000
 
 [[peripherals.registers.register.fields]]
-name = "CLK_WIFIPWR_ST_MAP"
-description = "Wi-Fi power clock state map."
-bitOffset = 16
-bitWidth = 4
+name = "CLK_WIFIPWR_ST_MAP_BIT_ONE"
+description = "Bit one of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."
+bitOffset = 17
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CLK_COEX_ST_MAP"
-description = "Coexistence clock state map."
-bitOffset = 20
-bitWidth = 4
+name = "CLK_WIFIPWR_ST_MAP_BIT_TWO"
+description = "Bit two of the Wi-Fi-power clock state map, set by the reviewed shared active-state initialization."
+bitOffset = 18
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CLK_I2C_MST_ST_MAP"
-description = "PHY I2C master clock state map."
-bitOffset = 24
-bitWidth = 4
+name = "CLK_COEX_ST_MAP_BIT_ONE"
+description = "Bit one of the coexistence clock state map, set by the reviewed shared active-state initialization."
+bitOffset = 21
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CLK_LP_APB_ST_MAP"
-description = "Low-power APB clock state map."
-bitOffset = 28
-bitWidth = 4
+name = "CLK_COEX_ST_MAP_BIT_TWO"
+description = "Bit two of the coexistence clock state map, set by the reviewed shared active-state initialization."
+bitOffset = 22
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLK_I2C_MST_ST_MAP_BIT_ONE"
+description = "Bit one of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."
+bitOffset = 25
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLK_I2C_MST_ST_MAP_BIT_TWO"
+description = "Bit two of the PHY-I2C-master clock state map, set by the reviewed shared active-state initialization."
+bitOffset = 26
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLK_LP_APB_ST_MAP_BIT_ONE"
+description = "Bit one of the low-power APB clock state map, set by the reviewed shared active-state initialization."
+bitOffset = 29
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLK_LP_APB_ST_MAP_BIT_TWO"
+description = "Bit two of the low-power APB clock state map, set by the reviewed shared active-state initialization."
+bitOffset = 30
+bitWidth = 1
 
 [[review]]
 entity = "MODEM_LPCON_SHARED_CLOCK"

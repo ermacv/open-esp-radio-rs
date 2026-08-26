@@ -15,7 +15,7 @@ description = "Official esp-rs/esp-hal commit 63e97be553f435f29171f7ae5f37a41ad7
 
 [[sources]]
 id = "S31_ESP_PACS_SVD"
-description = "ermacv/esp-pacs commit d0fb94ef39e992ca0b5fed51cb98a34c8aa8bcd5, esp32s31/pac/esp32s31.svd, pinned by Cargo.lock; exact LP_AON_CLKRST, LP_PERICLKRST and LP_TSENS register/field geometry"
+description = "ermacv/esp-pacs commit 5b8b56036abd5f4646505b15988cc9da51cec826, pinned by Cargo.lock. esp32s31/svd/patches/_modem_syscon.yml sha256 1f19377269adfab69596d7762499a28984b975fdb9f95f791de2ceff6f82f2e0 proves the selected MODEM_SYSCON register reset values, including CLK_CONF 0x00200002; the same pinned PAC provides the exact LP_AON_CLKRST, LP_PERICLKRST and LP_TSENS register/field geometry."
 
 [[sources]]
 id = "ROM_REV0_PHY_TSENS"

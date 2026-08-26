@@ -4,9 +4,10 @@
 
 //! ESP-HAL ownership adapter for the open ESP32-S31 radio driver.
 //!
-//! The open driver owns the recovered cold-start sequence. This adapter owns
-//! the documented chip-level peripheral singletons and realizes each semantic
-//! operation through the official `esp32s31` svd2rust PAC used by `esp-hal`.
+//! The open driver owns the recovered cold-start sequence. This adapter retains
+//! the documented chip-level singleton tokens. Route-owned radio words are
+//! accessed only through the affine custom PAC; the remaining platform words
+//! use the official `esp32s31` PAC until their own reviewed carveouts exist.
 
 use esp_hal::{
     interrupt::{self, InterruptHandler},
@@ -21,7 +22,6 @@ use open_esp_radio_esp32s31_hal::{
     PlatformPowerClockImages, PowerClockControl,
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
-    wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile;
 use open_esp_radio_esp32s31_wifi::mac_start::Esp32s31WifiMacPlatform;
@@ -33,16 +33,13 @@ use open_esp_radio_esp32s31_wifi_mac::init::{
 pub mod ieee802154;
 pub mod mac_interrupt_epoch;
 
-const fn icg_map_contains(observed: u8, required: u8) -> bool {
-    observed & required == required
-}
-
 /// Complete platform capability needed by the open radio power transition.
 ///
 /// Keeping these singleton tokens together prevents the application from
 /// independently constructing another safe owner while `Radio<Self>` is live.
 /// `esp-hal` currently exposes register access as associated methods, so the
-/// fields themselves are retained as ownership proofs rather than dereferenced.
+/// fields themselves are retained as ownership proofs. In particular,
+/// `_modem_syscon` is never dereferenced outside the custom PAC route.
 pub struct EspHalRadioPeripheral {
     _wifi: WIFI<'static>,
     _modem_syscon: MODEM_SYSCON<'static>,
@@ -115,12 +112,6 @@ impl Esp32s31WifiMacPlatform for EspHalRadioPeripheral {
 }
 
 impl PowerClockControl for EspHalRadioPeripheral {
-    fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
-        MODEM_SYSCON::regs()
-            .modem_rst_conf()
-            .modify(|_, w| w.rst_wifibb().bit(asserted).rst_wifimac().bit(asserted));
-    }
-
     fn select_hp_active_modem_icg(&mut self) {
         // Code 2 and the field constraint come from the qualified esp-hal S31
         // clock implementation.
@@ -147,24 +138,6 @@ impl PowerClockControl for EspHalRadioPeripheral {
             .modify(|_, w| w.modem_clk_en().set_bit());
     }
 
-    fn configure_hp_active_modem_clock_map(&mut self) {
-        // Values 4/6 reproduce the qualified esp-hal S31 clock implementation.
-        MODEM_SYSCON::regs().clk_conf_power_st().modify(|_, w| {
-            w.clk_zb_st_map()
-                .set(4)
-                .clk_fe_st_map()
-                .set(6)
-                .clk_bt_st_map()
-                .set(4)
-                .clk_wifi_st_map()
-                .set(6)
-                .clk_modem_peri_st_map()
-                .set(4)
-                .clk_modem_apb_st_map()
-                .set(6)
-        });
-    }
-
     fn configure_modem_source_clocks(&mut self) {
         HP_SYS_CLKRST::regs().modem_conf().write(|w| {
             w.modem_apb_clk_en()
@@ -182,176 +155,21 @@ impl PowerClockControl for EspHalRadioPeripheral {
         });
     }
 
-    fn set_wifi_baseband_reset(&mut self, asserted: bool) {
-        MODEM_SYSCON::regs()
-            .modem_rst_conf()
-            .modify(|_, w| w.rst_wifibb().bit(asserted));
-    }
-
-    fn enable_phy_calibration_clocks(&mut self) {
-        MODEM_SYSCON::regs().clk_conf1().modify(|_, w| {
-            w.clk_wifibb_22m_en()
-                .set_bit()
-                .clk_wifibb_40m_en()
-                .set_bit()
-                .clk_wifibb_44m_en()
-                .set_bit()
-                .clk_wifibb_80m_en()
-                .set_bit()
-                .clk_wifibb_40x_en()
-                .set_bit()
-                .clk_wifibb_80x_en()
-                .set_bit()
-                .clk_wifibb_40x1_en()
-                .set_bit()
-                .clk_wifibb_80x1_en()
-                .set_bit()
-                .clk_wifibb_160x1_en()
-                .set_bit()
-                .clk_wifi_apb_en()
-                .set_bit()
-                .clk_fe_80m_en()
-                .set_bit()
-                .clk_fe_160m_en()
-                .set_bit()
-                .clk_fe_apb_en()
-                .set_bit()
-                .clk_bt_apb_en()
-                .set_bit()
-                .clk_btbb_en()
-                .set_bit()
-                .clk_fe_pwdet_adc_en()
-                .set_bit()
-                .clk_fe_adc_en()
-                .set_bit()
-                .clk_fe_dac_en()
-                .set_bit()
-        });
-    }
-
-    fn select_phy_i2c_160mhz_source(&mut self) {
-        MODEM_SYSCON::regs()
-            .clk_conf()
-            .modify(|_, w| w.clk_i2c_mst_sel_160m().set_bit());
-    }
-
     fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
-        let modem_reset = MODEM_SYSCON::regs().modem_rst_conf().read();
         let hp_active_icg = PMU::regs().hp_active_icg_modem().read();
         let modem_bus_clock = HP_SYS_CLKRST::regs().modem_ctrl0().read();
-        let hp_active_map = MODEM_SYSCON::regs().clk_conf_power_st().read();
         let modem_source = HP_SYS_CLKRST::regs().modem_conf().read();
-        let phy_clocks = MODEM_SYSCON::regs().clk_conf1().read();
-        let i2c_source = MODEM_SYSCON::regs().clk_conf().read();
 
         PlatformPowerClockImages {
-            reset_released: modem_reset.rst_wifibb().bit_is_clear()
-                && modem_reset.rst_wifimac().bit_is_clear(),
             hp_active_icg_selected: hp_active_icg.hp_active_dig_icg_modem_code().bits() == 2,
             modem_bus_clock_enabled: modem_bus_clock.modem_clk_en().bit_is_set(),
-            hp_active_clock_map_configured: icg_map_contains(
-                hp_active_map.clk_zb_st_map().bits(),
-                4,
-            ) && icg_map_contains(
-                hp_active_map.clk_fe_st_map().bits(),
-                6,
-            ) && icg_map_contains(
-                hp_active_map.clk_bt_st_map().bits(),
-                4,
-            ) && icg_map_contains(
-                hp_active_map.clk_wifi_st_map().bits(),
-                6,
-            ) && icg_map_contains(
-                hp_active_map.clk_modem_peri_st_map().bits(),
-                4,
-            ) && icg_map_contains(
-                hp_active_map.clk_modem_apb_st_map().bits(),
-                6,
-            ),
             modem_source_clocks_configured: modem_source.modem_apb_clk_en().bit_is_set()
                 && modem_source.modem_rst_en().bit_is_clear()
                 && modem_source.modem_clk_en().bit_is_set()
                 && modem_source.modem_clk_source_sel().bit_is_set()
                 && modem_source.modem_pll_clk_en().bit_is_set()
                 && modem_source.modem_xtal_clk_en().bit_is_set(),
-            phy_calibration_clocks_enabled: phy_clocks.clk_wifibb_22m_en().bit_is_set()
-                && phy_clocks.clk_wifibb_40m_en().bit_is_set()
-                && phy_clocks.clk_wifibb_44m_en().bit_is_set()
-                && phy_clocks.clk_wifibb_80m_en().bit_is_set()
-                && phy_clocks.clk_wifibb_40x_en().bit_is_set()
-                && phy_clocks.clk_wifibb_80x_en().bit_is_set()
-                && phy_clocks.clk_wifibb_40x1_en().bit_is_set()
-                && phy_clocks.clk_wifibb_80x1_en().bit_is_set()
-                && phy_clocks.clk_wifibb_160x1_en().bit_is_set()
-                && phy_clocks.clk_wifi_apb_en().bit_is_set()
-                && phy_clocks.clk_fe_80m_en().bit_is_set()
-                && phy_clocks.clk_fe_160m_en().bit_is_set()
-                && phy_clocks.clk_fe_apb_en().bit_is_set()
-                && phy_clocks.clk_bt_apb_en().bit_is_set()
-                && phy_clocks.clk_btbb_en().bit_is_set()
-                && phy_clocks.clk_fe_pwdet_adc_en().bit_is_set()
-                && phy_clocks.clk_fe_adc_en().bit_is_set()
-                && phy_clocks.clk_fe_dac_en().bit_is_set(),
-            phy_i2c_160mhz_selected: i2c_source.clk_i2c_mst_sel_160m().bit_is_set(),
         }
-    }
-}
-
-impl PhyWifiBbControl for EspHalRadioPeripheral {
-    fn clear_cold_start_wifi_control(&mut self) {
-        // SOURCE[BLOB_LIBPHY_REGISTER_CHIPV7_PHY]. One official-PAC RMW
-        // preserves the complete blob's single low-two-bit clear edge.
-        MODEM_SYSCON::regs().wifi_bb_cfg().modify(|_, w| {
-            w.cold_start_clear_unknown()
-                .clear_bit()
-                .wifi_enable()
-                .clear_bit()
-        });
-    }
-
-    fn wifi_baseband_is_enabled(&self) -> bool {
-        // SOURCE[ROM_REV0_PHY_PBUS]; complete `phy_pbus_force_mode(0)`
-        // samples this bit to decide whether the settle pulse is required.
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .read()
-            .wifi_enable()
-            .bit_is_set()
-    }
-
-    fn set_wifi_baseband_enabled(&mut self, enabled: bool) {
-        // SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; complete
-        // `phy_wifi_enable_set` is exactly one fresh RMW of this bit.
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .modify(|_, w| w.wifi_enable().bit(enabled));
-    }
-
-    fn set_bss_cbw_40_digital(&mut self, enabled: bool) {
-        // SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]. The recovered field is two
-        // bits wide but the complete digital helper writes only encodings 0/1.
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .modify(|_, w| w.bss_cbw_40_digital_unknown().set(u8::from(enabled)));
-    }
-
-    fn set_bb_agc_update_encoding(&mut self, encoding: u8) {
-        // SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_BB_INIT]. The two complete
-        // bodies write encodings 7 and 1 respectively.
-        debug_assert!(encoding <= 7);
-        // The PAC constraint and assertion retain the recovered three-bit
-        // range; all driver call sites use instruction-evidenced values 1/7.
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .modify(|_, w| w.bb_agc_update_enable_unknown().set(encoding));
-    }
-
-    fn set_mac_baseband_enabled(&mut self, enabled: bool) {
-        // SOURCE[ROM_REV0_PHY_AGC]; complete `phy_mac_enable_bb` sets this
-        // field before pulsing Wi-Fi enable in two further RMW edges.
-        MODEM_SYSCON::regs()
-            .wifi_bb_cfg()
-            .modify(|_, w| w.mac_baseband_enable_unknown().bit(enabled));
     }
 }
 
@@ -575,41 +393,8 @@ impl PhyI2cMasterControl for EspHalRadioPeripheral {
 }
 
 impl MacClockControl for EspHalRadioPeripheral {
-    fn enable_wifi_mac_clocks(&mut self) {
-        MODEM_SYSCON::regs().clk_conf1().modify(|_, w| {
-            w.clk_wifibb_22m_en()
-                .set_bit()
-                .clk_wifibb_40m_en()
-                .set_bit()
-                .clk_wifibb_44m_en()
-                .set_bit()
-                .clk_wifibb_80m_en()
-                .set_bit()
-                .clk_wifibb_40x_en()
-                .set_bit()
-                .clk_wifibb_80x_en()
-                .set_bit()
-                .clk_wifibb_40x1_en()
-                .set_bit()
-                .clk_wifibb_80x1_en()
-                .set_bit()
-                .clk_wifibb_160x1_en()
-                .set_bit()
-                .clk_wifimac_en()
-                .set_bit()
-                .clk_wifi_apb_en()
-                .set_bit()
-        });
-    }
-
     fn configure_modem_source_clocks(&mut self) {
         PowerClockControl::configure_modem_source_clocks(self);
-    }
-
-    fn set_wifi_mac_reset(&mut self, asserted: bool) {
-        MODEM_SYSCON::regs()
-            .modem_rst_conf()
-            .modify(|_, w| w.rst_wifimac().bit(asserted));
     }
 }
 

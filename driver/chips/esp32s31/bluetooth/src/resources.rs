@@ -12,9 +12,7 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothTaskOwner as HalBluetoothTaskOwner,
 };
 #[cfg(any(target_arch = "riscv32", test))]
-use open_esp_radio_esp32s31_hal::{
-    BluetoothSharedPhyBorrow, SharedPhyHal, WifiBasebandEnableObservation,
-};
+use open_esp_radio_esp32s31_hal::{BluetoothSharedPhyBorrow, SharedPhyHal};
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 use open_esp_radio_esp32s31_pac::RadioHardware;
@@ -228,15 +226,12 @@ impl BluetoothTaskResources {
 
     /// Borrow the protocol-neutral radio PHY for one finite lower-layer scope.
     ///
-    /// The caller supplies an explicit lifecycle-owned Wi-Fi baseband
-    /// readback. Selecting the Bluetooth route alone is not treated as proof
-    /// that the shared settle condition is false.
+    /// The returned HAL derives shared baseband state from the route PAC;
+    /// selecting the Bluetooth route alone is not treated as proof that the
+    /// shared settle condition is false.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn shared_phy_hal(
-        &mut self,
-        wifi_baseband: WifiBasebandEnableObservation,
-    ) -> SharedPhyHal<'_> {
-        self.registers.borrow_shared_phy(wifi_baseband)
+    pub(crate) fn shared_phy_hal(&mut self) -> SharedPhyHal<'_> {
+        self.registers.borrow_shared_phy()
     }
 
     /// Execute the reviewed finite BT baseband-v2 initialization transaction.
@@ -286,7 +281,7 @@ pub(crate) struct BluetoothInterruptBankOwner {
 mod tests {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
-    use open_esp_radio_esp32s31_hal::{SharedPhyAccess, WifiBasebandEnableObservation};
+    use open_esp_radio_esp32s31_hal::SharedPhyAccess;
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
     use crate::controller_time::BluetoothControllerTimeWorkerPhase;
@@ -337,8 +332,7 @@ mod tests {
         let (registers, ()) = stopped.into_parts();
         let (mut task, setup) = separate_interrupt_owner(registers);
         {
-            let mut phy =
-                task.shared_phy_hal(WifiBasebandEnableObservation::from_platform_readback(false));
+            let mut phy = task.shared_phy_hal();
             accepts_shared_phy(&mut phy);
         }
 

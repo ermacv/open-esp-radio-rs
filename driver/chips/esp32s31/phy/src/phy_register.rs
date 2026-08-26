@@ -1228,8 +1228,7 @@ impl PhyRegisterMmioBinding {
 
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target<
-        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         R: open_esp_radio_esp32s31_hal::PhyInitializationAccess,
     >(
         self,
@@ -1238,9 +1237,7 @@ impl PhyRegisterMmioBinding {
     ) -> PhyRegisterMmioCompletion {
         match self.action {
             PhyRegisterMmioAction::PrepareColdStart => {
-                open_esp_radio_esp32s31_hal::phy_frequency::prepare_common_phy_control(
-                    platform, registers,
-                )
+                open_esp_radio_esp32s31_hal::phy_frequency::prepare_common_phy_control(registers)
             }
             PhyRegisterMmioAction::ConfigureForceTxRx { enabled, phase } => {
                 open_esp_radio_esp32s31_hal::pbus::configure_force_txrx(registers, enabled, phase)

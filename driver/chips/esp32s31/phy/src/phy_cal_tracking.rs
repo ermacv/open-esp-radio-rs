@@ -1196,8 +1196,7 @@ impl PhyCalibrationTrackingRegisterBinding {
     }
 }
 
-/// Non-cloneable owner of the mixed platform/register `phy_mac_enable_bb`
-/// edge.
+/// Non-cloneable owner of the route-PAC `phy_mac_enable_bb` edge.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyCalibrationTrackingMacBasebandBinding;
 
@@ -1216,15 +1215,11 @@ impl PhyCalibrationTrackingMacBasebandBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target<
-        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl,
-        R: open_esp_radio_esp32s31_hal::PhyInitializationAccess,
-    >(
+    pub fn execute_target<R: open_esp_radio_esp32s31_hal::PhyInitializationAccess>(
         self,
-        platform: &mut P,
         registers: &mut R,
     ) -> PhyCalibrationTrackingCompletion {
-        open_esp_radio_esp32s31_hal::phy_frequency::enable_mac_baseband(platform, registers);
+        open_esp_radio_esp32s31_hal::phy_frequency::enable_mac_baseband(registers);
         PhyCalibrationTrackingCompletion::MacBasebandEnabled
     }
 }

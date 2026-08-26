@@ -519,9 +519,8 @@ impl PhyBbMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target<P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl>(
+    pub fn execute_target(
         self,
-        platform: &mut P,
         registers: &mut impl open_esp_radio_esp32s31_hal::PhyInitializationAccess,
     ) -> PhyBbMmioCompletion {
         match self.action {
@@ -535,16 +534,14 @@ impl PhyBbMmioBinding {
                 )
             }
             PhyBbMmioAction::UpdateAgcRegisters => {
-                crate::phy_hardware::configure_phy_bb_agc_register_update(platform, registers)
+                crate::phy_hardware::configure_phy_bb_agc_register_update(registers)
             }
             PhyBbMmioAction::UpdatePostInitRegisters => {
                 open_esp_radio_esp32s31_hal::phy_agc::update_post_initialization(registers)
             }
             PhyBbMmioAction::EnableAgc => crate::phy_hardware::enable_phy_agc(registers),
             PhyBbMmioAction::SetWifiEnabled { enabled } => {
-                open_esp_radio_esp32s31_hal::phy_frequency::set_wifi_enabled(
-                    platform, registers, enabled,
-                )
+                open_esp_radio_esp32s31_hal::phy_frequency::set_wifi_enabled(registers, enabled)
             }
             PhyBbMmioAction::ConfigureTxPowerTracking { enabled } => {
                 open_esp_radio_esp32s31_hal::phy_baseband::configure_tx_power_tracking(
@@ -577,7 +574,7 @@ impl PhyBbMmioBinding {
                 open_esp_radio_esp32s31_hal::phy_baseband::configure_watchdog(registers)
             }
             PhyBbMmioAction::EnableMacBaseband => {
-                open_esp_radio_esp32s31_hal::phy_frequency::enable_mac_baseband(platform, registers)
+                open_esp_radio_esp32s31_hal::phy_frequency::enable_mac_baseband(registers)
             }
             PhyBbMmioAction::ConfigureNoiseFloorAuto => {
                 open_esp_radio_esp32s31_hal::phy_baseband::configure_noise_floor_auto(registers)
@@ -589,10 +586,10 @@ impl PhyBbMmioBinding {
                 open_esp_radio_esp32s31_hal::phy_frequency::configure_bt_filter(registers)
             }
             PhyBbMmioAction::ConfigurePhyRegisters { parameters } => {
-                crate::phy_hardware::configure_phy_registers(platform, registers, parameters)
+                crate::phy_hardware::configure_phy_registers(registers, parameters)
             }
             PhyBbMmioAction::ConfigureRxTable { parameters } => {
-                crate::phy_hardware::configure_phy_rx_table(platform, registers, parameters)
+                crate::phy_hardware::configure_phy_rx_table(registers, parameters)
             }
         }
         PhyBbMmioCompletion {

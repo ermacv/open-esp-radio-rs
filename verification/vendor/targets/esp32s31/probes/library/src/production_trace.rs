@@ -40,7 +40,7 @@ pub extern "C" fn open_phy_production_trace_phy_chip_set_chan(
         peripherals.I2C_ANA_MST,
     );
     let radio = open_esp_radio_esp32s31_hal::Radio::claim_for_validation(platform);
-    let mut radio = radio.assume_powered_after_external_initialization();
+    let mut radio = radio.assume_powered_for_validation();
     let mut channel = radio.channel_hal();
     let mut state = open_esp_radio_esp32s31_phy::PhyState::default();
     let mut observer = open_esp_radio_esp32s31_phy::target_port::NoopPhyTargetObserver;

@@ -5,9 +5,7 @@
 //! module reuses that one recovered transition and its target port; it does
 //! not maintain a Bluetooth-specific shadow of common PHY initialization.
 
-use open_esp_radio_esp32s31_hal::{
-    analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl,
-};
+use open_esp_radio_esp32s31_hal::{analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyRegisterRunError, PhyRegisterTransition, PhyTargetObserver,
@@ -27,9 +25,9 @@ use crate::{
 /// This is a composition contract only. Each parent trait remains the owner
 /// of one official system-peripheral operation family; Bluetooth gains no raw
 /// platform-register access through this marker.
-pub trait BluetoothPhyPlatform: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl {}
+pub trait BluetoothPhyPlatform: PhyPmuControl + PhyI2cMasterControl {}
 
-impl<T> BluetoothPhyPlatform for T where T: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl {}
+impl<T> BluetoothPhyPlatform for T where T: PhyPmuControl + PhyI2cMasterControl {}
 
 /// Caller-owned inputs for one full common-PHY registration.
 pub struct BluetoothPhyInitializationConfig {
@@ -136,17 +134,13 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
-    let wifi_baseband =
-        open_esp_radio_esp32s31_hal::WifiBasebandEnableObservation::from_platform_readback(
-            platform.platform_mut().wifi_baseband_is_enabled(),
-        );
     let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
         config.calibration_identity,
         config.calibration_cache,
     );
 
     let registration = {
-        let mut shared_phy = task.shared_phy_hal(wifi_baseband);
+        let mut shared_phy = task.shared_phy_hal();
         let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(
             platform.platform_mut(),
             &mut shared_phy,

@@ -860,10 +860,7 @@ impl PhyChipChannelMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target<
-        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
-            + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
-    >(
+    pub fn execute_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
         self,
         platform: &mut P,
         registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
@@ -911,9 +908,7 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::NrxConfigured { frequency_mhz }
             }
             PhyChipChannelAction::ConfigureBssCbw { cbw } => {
-                open_esp_radio_esp32s31_hal::phy_frequency::configure_bss_cbw(
-                    platform, registers, cbw,
-                );
+                open_esp_radio_esp32s31_hal::phy_frequency::configure_bss_cbw(registers, cbw);
                 PhyChipChannelCompletion::BssCbwConfigured { cbw }
             }
             PhyChipChannelAction::ConfigureRxCompensation => {

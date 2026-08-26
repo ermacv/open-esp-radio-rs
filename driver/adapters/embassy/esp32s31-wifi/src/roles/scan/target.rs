@@ -14,9 +14,7 @@ use crate::{
         Esp32s31ScanRxProgress,
     },
 };
-use open_esp_radio_esp32s31_hal::{
-    RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl,
-};
+use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl};
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio_esp32s31_wifi_sta::channel::Esp32s31ScanPhy;
@@ -24,7 +22,7 @@ use open_esp_radio_esp32s31_wifi_sta::channel::Esp32s31ScanPhy;
 impl<'state, 'arena, P, O, D> Esp32s31ScanPhyPort<CooperativeRadioHardware<'arena>>
     for Esp32s31ScanPhy<'state, P, O, D>
 where
-    P: PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyI2cMasterControl,
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {
@@ -45,7 +43,7 @@ where
 
 impl<P, O, D> Esp32s31ScanPhyPort<RadioRuntimeOwner> for Esp32s31ScanPhy<'_, P, O, D>
 where
-    P: PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyI2cMasterControl,
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {

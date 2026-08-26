@@ -249,6 +249,7 @@ owned-ranges = [
     "modem-radio-core-mid",
     "coex-hw-timer",
     "modem-radio-core-high",
+    "modem-syscon-radio",
     "modem-lpcon-lp-timer-clock",
     "modem-lpcon-coex-lp-clock",
     "modem-lpcon-shared-clock-gates",

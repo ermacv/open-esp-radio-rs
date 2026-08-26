@@ -139,7 +139,7 @@ pub struct PhyHal {
     registers: WifiColdRegisters,
 }
 
-/// One platform-observed image of the Wi-Fi baseband enable condition.
+/// One PAC-observed image of the Wi-Fi baseband enable condition.
 ///
 /// The shared PBus work-mode leaf uses this condition only to decide whether
 /// its caller must execute the recovered settle pulse. Keeping it separate
@@ -148,8 +148,8 @@ pub struct PhyHal {
 pub struct WifiBasebandEnableObservation(bool);
 
 impl WifiBasebandEnableObservation {
-    /// Record one semantic platform/PAC readback made by the lifecycle owner.
-    pub const fn from_platform_readback(enabled: bool) -> Self {
+    /// Record one semantic PAC readback made by the lifecycle owner.
+    pub const fn from_pac_readback(enabled: bool) -> Self {
         Self(enabled)
     }
 
@@ -166,7 +166,6 @@ impl WifiBasebandEnableObservation {
 /// route.
 pub struct SharedPhyHal<'owner> {
     registers: &'owner mut RadioPhyRegisters,
-    wifi_baseband: WifiBasebandEnableObservation,
 }
 
 mod sealed {
@@ -204,9 +203,7 @@ mod sealed {
         fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation;
     }
 
-    pub trait PhyInitializationAccess {
-        fn record_wifi_baseband_enabled(&mut self, enabled: bool);
-    }
+    pub trait PhyInitializationAccess {}
 }
 
 /// Sealed conversion from the exclusive Bluetooth task owner to one narrow
@@ -219,15 +216,11 @@ mod sealed {
 pub trait BluetoothSharedPhyBorrow: sealed::BluetoothSharedPhyBorrow {
     /// Borrow the shared PHY for one finite Bluetooth lower-layer scope.
     ///
-    /// `wifi_baseband` must be a lifecycle-owned readback; selecting the
-    /// Bluetooth route alone is not evidence that this physical bit is clear.
-    fn borrow_shared_phy(
-        &mut self,
-        wifi_baseband: WifiBasebandEnableObservation,
-    ) -> SharedPhyHal<'_> {
+    /// The returned capability samples shared Wi-Fi-baseband state through
+    /// the retained route PAC owner.
+    fn borrow_shared_phy(&mut self) -> SharedPhyHal<'_> {
         SharedPhyHal {
             registers: sealed::BluetoothSharedPhyBorrow::radio_phy_mut(self),
-            wifi_baseband,
         }
     }
 }
@@ -243,15 +236,11 @@ impl BluetoothSharedPhyBorrow for BluetoothTaskOwner {}
 pub trait Ieee802154SharedPhyBorrow: sealed::Ieee802154SharedPhyBorrow {
     /// Borrow the shared PHY for one finite IEEE 802.15.4 lower-layer scope.
     ///
-    /// `wifi_baseband` must come from the retained platform owner; selecting
-    /// the IEEE route alone is not evidence for that shared hardware bit.
-    fn borrow_shared_phy(
-        &mut self,
-        wifi_baseband: WifiBasebandEnableObservation,
-    ) -> SharedPhyHal<'_> {
+    /// The returned capability samples shared Wi-Fi-baseband state through
+    /// the retained route PAC owner.
+    fn borrow_shared_phy(&mut self) -> SharedPhyHal<'_> {
         SharedPhyHal {
             registers: sealed::Ieee802154SharedPhyBorrow::radio_phy_mut(self),
-            wifi_baseband,
         }
     }
 }
@@ -372,15 +361,11 @@ pub trait SharedPhyContext: SharedPhyAccess + sealed::SharedPhyContext {
 
 /// Common PHY-initialization port that tracks temporary Wi-Fi-BB edges.
 ///
-/// `register_chipv7_phy` temporarily drives the physical Wi-Fi-BB enable bit
+/// `register_chipv7_phy` temporarily drives the physical Wi-Fi-BB enable state
 /// even when entered by the standalone Bluetooth lifecycle. Implementations
-/// update only their local observation after the official platform operation;
-/// this capability conveys no Wi-Fi MAC or protocol-role ownership.
-pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationAccess {
-    fn record_wifi_baseband_enabled(&mut self, enabled: bool) {
-        sealed::PhyInitializationAccess::record_wifi_baseband_enabled(self, enabled);
-    }
-}
+/// sample it through the retained PAC owner; this capability conveys no Wi-Fi
+/// MAC or protocol-role ownership.
+pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationAccess {}
 
 impl sealed::SharedPhyAccess for PhyHal {
     fn pac(&self) -> &RadioPhyRegisters {
@@ -394,8 +379,11 @@ impl sealed::SharedPhyAccess for PhyHal {
 
 impl sealed::SharedPhyContext for PhyHal {
     fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation {
-        WifiBasebandEnableObservation::from_platform_readback(
-            self.registers.radio().wifi_baseband_enabled_image(),
+        WifiBasebandEnableObservation::from_pac_readback(
+            self.registers
+                .radio()
+                .radio_phy()
+                .wifi_baseband_is_enabled(),
         )
     }
 }
@@ -403,13 +391,7 @@ impl sealed::SharedPhyContext for PhyHal {
 impl SharedPhyAccess for PhyHal {}
 impl SharedPhyContext for PhyHal {}
 
-impl sealed::PhyInitializationAccess for PhyHal {
-    fn record_wifi_baseband_enabled(&mut self, enabled: bool) {
-        self.registers
-            .radio_mut()
-            .set_wifi_baseband_enabled_image(enabled);
-    }
-}
+impl sealed::PhyInitializationAccess for PhyHal {}
 
 impl PhyInitializationAccess for PhyHal {}
 
@@ -425,18 +407,14 @@ impl sealed::SharedPhyAccess for SharedPhyHal<'_> {
 
 impl sealed::SharedPhyContext for SharedPhyHal<'_> {
     fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation {
-        self.wifi_baseband
+        WifiBasebandEnableObservation::from_pac_readback(self.registers.wifi_baseband_is_enabled())
     }
 }
 
 impl SharedPhyAccess for SharedPhyHal<'_> {}
 impl SharedPhyContext for SharedPhyHal<'_> {}
 
-impl sealed::PhyInitializationAccess for SharedPhyHal<'_> {
-    fn record_wifi_baseband_enabled(&mut self, enabled: bool) {
-        self.wifi_baseband = WifiBasebandEnableObservation::from_platform_readback(enabled);
-    }
-}
+impl sealed::PhyInitializationAccess for SharedPhyHal<'_> {}
 
 impl PhyInitializationAccess for SharedPhyHal<'_> {}
 
@@ -799,24 +777,14 @@ impl<P> Radio<P, state::Owned> {
         (self.peripheral, self.state.registers.release())
     }
 
-    /// Adopt radio clocks and resets established by an external PHY oracle.
+    /// Construct a powered owner inside an isolated validation process.
     ///
-    /// This is intentionally separate from [`Self::power_up`]: a comparison
-    /// HIL may first run the vendor cold initializer and must not pulse the
-    /// already calibrated radio reset merely to obtain the Rust type state.
-    ///
-    /// The caller is responsible for completing the modem/PHY clock, power and
-    /// reset prerequisites before choosing this explicit external-init path.
-    /// This is a hardware protocol precondition rather than a Rust memory-
-    /// safety contract.
-    pub fn assume_powered_after_external_initialization(mut self) -> Radio<P, state::Powered>
-    where
-        P: wifi_bb::PhyWifiBbControl,
-    {
-        self.state
-            .registers
-            .radio_mut()
-            .set_wifi_baseband_enabled_image(self.peripheral.wifi_baseband_is_enabled());
+    /// The validation harness is responsible for establishing the hardware
+    /// prerequisites before using this value. Production firmware cannot
+    /// enable this API.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn assume_powered_for_validation(self) -> Radio<P, state::Powered> {
         Radio {
             peripheral: self.peripheral,
             state: state::Powered {
@@ -831,9 +799,10 @@ impl<P> Radio<P, state::Owned> {
 impl<P: PowerClockControl> Radio<P, state::Owned> {
     /// Execute the finite modem/PHY clock and reset prerequisites.
     ///
-    /// Register fields come from the official ESP32-S31 PAC. The exact
-    /// operation order and field values reproduce the qualified S31 `esp-hal`
-    /// clock path; the ROM-only frontend gates are a
+    /// Route-owned fields come from the reviewed custom PAC; remaining
+    /// platform fields are reached through the platform capability. The exact
+    /// operation order reproduces the qualified S31 `esp-hal` clock path; the
+    /// ROM-only frontend gates are a
     /// later owned PHY transition and are not folded into this type-state
     /// change.
     ///
@@ -961,15 +930,15 @@ impl<P> Radio<P, state::Running> {
     }
 }
 
-impl<P: wifi_bb::PhyWifiBbControl> Radio<P, state::Powered> {
+impl<P> Radio<P, state::Powered> {
     /// Enable the Wi-Fi RX/baseband path after the PHY transition completes.
     ///
-    /// The official system register and the PBus-visible owned state are
+    /// The typed route-PAC operation and the PBus-visible owned state are
     /// updated together under the unique radio owner.
     #[cfg(target_arch = "riscv32")]
     pub fn enable_wifi_rx(&mut self) {
-        let (platform, registers) = self.phy_hal_parts();
-        phy_frequency::set_wifi_enabled(platform, registers, true);
+        let (_, registers) = self.phy_hal_parts();
+        phy_frequency::set_wifi_enabled(registers, true);
     }
 }
 
@@ -1002,39 +971,19 @@ mod tests {
     fn require_powered(_: &Radio<TestPeripheral, state::Powered>) {}
 
     impl PowerClockControl for TestPeripheral {
-        fn set_wifi_baseband_and_mac_reset(&mut self, _asserted: bool) {}
         fn select_hp_active_modem_icg(&mut self) {}
         fn apply_modem_icg_selection(&mut self) {}
         fn apply_sleep_icg_selection(&mut self) {}
         fn enable_modem_register_bus_clock(&mut self) {}
-        fn configure_hp_active_modem_clock_map(&mut self) {}
         fn configure_modem_source_clocks(&mut self) {}
-        fn set_wifi_baseband_reset(&mut self, _asserted: bool) {}
-        fn enable_phy_calibration_clocks(&mut self) {}
-        fn select_phy_i2c_160mhz_source(&mut self) {}
 
         fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
             PlatformPowerClockImages {
-                reset_released: self.ready,
                 hp_active_icg_selected: self.ready,
                 modem_bus_clock_enabled: self.ready,
-                hp_active_clock_map_configured: self.ready,
                 modem_source_clocks_configured: self.ready,
-                phy_calibration_clocks_enabled: self.ready,
-                phy_i2c_160mhz_selected: self.ready,
             }
         }
-    }
-
-    impl crate::wifi_bb::PhyWifiBbControl for TestPeripheral {
-        fn clear_cold_start_wifi_control(&mut self) {}
-        fn wifi_baseband_is_enabled(&self) -> bool {
-            false
-        }
-        fn set_wifi_baseband_enabled(&mut self, _enabled: bool) {}
-        fn set_bss_cbw_40_digital(&mut self, _enabled: bool) {}
-        fn set_bb_agc_update_encoding(&mut self, _encoding: u8) {}
-        fn set_mac_baseband_enabled(&mut self, _enabled: bool) {}
     }
 
     #[test]
@@ -1052,12 +1001,12 @@ mod tests {
     }
 
     #[test]
-    fn external_initialization_bridge_preserves_the_unique_owner() {
+    fn validation_powered_owner_preserves_the_unique_owner() {
         let owned = Radio::claim(TestPeripheral { id: 8, ready: true })
             .unwrap_or_else(|_| panic!("test radio claim failed"));
         require_owned(&owned);
 
-        let powered = owned.assume_powered_after_external_initialization();
+        let powered = owned.assume_powered_for_validation();
         require_powered(&powered);
         assert_eq!(powered.peripheral(), &TestPeripheral { id: 8, ready: true });
     }
@@ -1069,7 +1018,7 @@ mod tests {
             ready: true,
         })
         .unwrap_or_else(|_| panic!("test radio claim failed"));
-        let mut powered = owned.assume_powered_after_external_initialization();
+        let mut powered = owned.assume_powered_for_validation();
         let channel = powered.channel_hal();
         drop(channel);
         assert_eq!(powered.peripheral().id, 10);

@@ -23,6 +23,9 @@ use crate::{
     phy_dcode::{PhyDcodeOutcome, PhyDcodeParameters},
     phy_frequency::PhyChannelFrequencyInitControl,
     phy_i2c::{FilterDcapParameters, PhyRfInitPrefixOutcome},
+    phy_i2c_tracking::{
+        PhyWifiI2cTrackingBand, PhyWifiI2cTrackingOutcome, PhyWifiI2cTrackingParameters,
+    },
     phy_pbus_memory::{PhyPbusMemoryOutcome, PhyPbusMemoryParameters},
     phy_power_tracking::{PhyTxPowerTrackingOutcome, PhyTxPowerTrackingParameters},
     phy_pwdet::{PhyPwdetOutcome, PhyPwdetParameters},
@@ -156,6 +159,7 @@ struct WifiPhyState {
     dot11p_configuration: u8,
     current_level: u8,
     tx_power_tracking_slow: u8,
+    tx_i2c_tracking_band: PhyWifiI2cTrackingBand,
     baseband_calibrated: bool,
     pwdet_calibrated: bool,
     tx_power_calibrated: bool,
@@ -388,6 +392,7 @@ impl PhyState {
                 dot11p_configuration: 0,
                 current_level: 0,
                 tx_power_tracking_slow: 1,
+                tx_i2c_tracking_band: PhyWifiI2cTrackingBand::Nominal,
                 baseband_calibrated: false,
                 pwdet_calibrated: false,
                 tx_power_calibrated: false,
@@ -439,6 +444,17 @@ impl PhyState {
 
     pub const fn tx_power_tracking_slow(&self) -> u8 {
         self.wifi.tx_power_tracking_slow
+    }
+
+    pub const fn wifi_i2c_tracking_parameters(&self) -> PhyWifiI2cTrackingParameters {
+        PhyWifiI2cTrackingParameters {
+            current_temperature: self.common.temperature,
+            previous_band: self.wifi.tx_i2c_tracking_band,
+        }
+    }
+
+    pub fn apply_wifi_i2c_tracking_outcome(&mut self, outcome: PhyWifiI2cTrackingOutcome) {
+        self.wifi.tx_i2c_tracking_band = outcome.band;
     }
 
     pub fn set_dot11p_configuration(&mut self, enabled: u8, configuration: u8) {

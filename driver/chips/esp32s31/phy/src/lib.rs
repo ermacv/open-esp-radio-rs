@@ -26,6 +26,7 @@ pub mod phy_dcode;
 pub mod phy_frequency;
 mod phy_hardware;
 pub mod phy_i2c;
+pub mod phy_i2c_tracking;
 pub mod phy_math;
 pub mod phy_param_tracking;
 pub mod phy_pbus;

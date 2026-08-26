@@ -205,6 +205,16 @@ pub mod analog_registers {
     pub const TX_CAPACITOR_LOW: Field = Field::new(TX_CAPACITOR_BANKS, 3, 0);
     pub const TX_CAPACITOR_HIGH: Field = Field::new(TX_CAPACITOR_BANKS, 7, 4);
 
+    /// Block 0x6b, register 3, bits 3:0: first Wi-Fi TX-temperature tracking
+    /// field. Periodic tracking selects one of the reviewed values 10, 8 or 6.
+    pub const WIFI_TX_TEMPERATURE_TRACKING_0: Field =
+        Field::new(PhyI2cAddress::new_internal(0x6b, 0x03), 3, 0);
+
+    /// Block 0x6b, register 7, bits 3:0: second Wi-Fi TX-temperature tracking
+    /// field. Periodic tracking selects the reviewed value 15 or 13.
+    pub const WIFI_TX_TEMPERATURE_TRACKING_1: Field =
+        Field::new(PhyI2cAddress::new_internal(0x6b, 0x07), 3, 0);
+
     /// Block 0x67 registers 0x1c..0x1f are temporarily forced to value two
     /// around archive `phy_bt_tx_pwctrl_init`. Only the first byte and the low
     /// six bits of the third byte are sampled; the same saved values are

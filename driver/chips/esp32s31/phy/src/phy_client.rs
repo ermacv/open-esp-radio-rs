@@ -6,9 +6,9 @@
 //! those software decisions. It performs no MMIO and does not arm a real
 //! timer. A due request retains the unique owner while the exact outer
 //! [`crate::phy_param_tracking::PhyParamTrackingTransition`] is executed.
-//! Its recovered TX-power and temperature children compose into live-state
-//! HAL/PAC bindings; the remaining child effects stay explicit unresolved
-//! actions.
+//! Its recovered TX-power, Wi-Fi PHY-I2C and temperature children compose into
+//! live-state HAL/PAC bindings; the remaining child effects stay explicit
+//! unresolved actions.
 //!
 //! Timer arm/stop and the PHY lock are represented only as atomic model facts.
 //! There is no fallible timer executor, rollback protocol, or target lock in
@@ -29,6 +29,7 @@ use crate::phy_param_tracking::{
     PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingChildError,
     PhyParamTrackingCompletion, PhyParamTrackingParameters, PhyParamTrackingTemperatureTransition,
     PhyParamTrackingTransition, PhyParamTrackingTransitionError, PhyParamTrackingTxPowerTransition,
+    PhyParamTrackingWifiI2cTransition,
 };
 
 const WIFI_BIT: u8 = 1;
@@ -559,6 +560,14 @@ impl PhyPendingTracking {
         state: &'state mut crate::phy_state::PhyState,
     ) -> Result<PhyParamTrackingTxPowerTransition<'state>, PhyParamTrackingChildError> {
         self.transition.begin_tx_power_tracking(state)
+    }
+
+    /// Lower the current Wi-Fi PHY-I2C action into its complete typed child.
+    pub fn begin_wifi_i2c_tracking<'state>(
+        &self,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<PhyParamTrackingWifiI2cTransition<'state>, PhyParamTrackingChildError> {
+        self.transition.begin_wifi_i2c_tracking(state)
     }
 
     /// Lower the current final sensor action into its complete typed child.
@@ -1271,7 +1280,7 @@ mod tests {
     }
 
     #[test]
-    fn periodic_outer_tracking_commits_power_and_temperature_children() {
+    fn periodic_outer_tracking_commits_power_i2c_and_temperature_children() {
         let pending = match state_for_mask(WIFI_BIT | IEEE802154_BIT, 0)
             .evaluate_periodic_at(2_000_000)
             .unwrap()
@@ -1291,7 +1300,7 @@ mod tests {
         let mut tracking = pending.begin_tracking(parameters);
         let mut state = crate::phy_state::PhyState::new(crate::phy_state::PhyConfig::production());
         state.apply_temperature_outcome(crate::phy_temperature::PhyTemperatureOutcome {
-            temperature: 25,
+            temperature: 95,
             sensor_index: 3,
             next_dac: 4,
         });
@@ -1301,7 +1310,7 @@ mod tests {
             cbw: 1,
             init_complete: true,
             temperature: crate::phy_temperature::PhyTemperatureOutcome {
-                temperature: 25,
+                temperature: 95,
                 sensor_index: 3,
                 next_dac: 4,
             },
@@ -1309,6 +1318,10 @@ mod tests {
 
         assert_eq!(
             tracking.begin_tx_power_tracking(&mut state).unwrap_err(),
+            PhyParamTrackingChildError::UnsupportedAction
+        );
+        assert_eq!(
+            tracking.begin_wifi_i2c_tracking(&mut state).unwrap_err(),
             PhyParamTrackingChildError::UnsupportedAction
         );
         tracking
@@ -1326,12 +1339,24 @@ mod tests {
         );
         let completion = complete_power_child(bluetooth);
         tracking.advance(completion).unwrap();
-        assert_eq!(state.bluetooth_tx_gain_parameters().base, 5);
+        assert_eq!(state.bluetooth_tx_gain_parameters().base, 19);
         assert_eq!(tracking.action(), PhyParamTrackingAction::WifiI2cTrack);
 
-        tracking
-            .advance(PhyParamTrackingCompletion::WifiI2cTracked)
-            .unwrap();
+        let i2c = tracking.begin_wifi_i2c_tracking(&mut state).unwrap();
+        let i2c = match i2c.commit() {
+            Ok(_) => panic!("incomplete Wi-Fi I2C child minted a parent completion"),
+            Err(i2c) => i2c,
+        };
+        assert_eq!(
+            i2c.state().wifi_i2c_tracking_parameters().previous_band,
+            crate::phy_i2c_tracking::PhyWifiI2cTrackingBand::Nominal
+        );
+        let completion = complete_wifi_i2c_child(i2c);
+        tracking.advance(completion).unwrap();
+        assert_eq!(
+            state.wifi_i2c_tracking_parameters().previous_band,
+            crate::phy_i2c_tracking::PhyWifiI2cTrackingBand::Hot
+        );
         let wifi = tracking.begin_tx_power_tracking(&mut state).unwrap();
         assert_eq!(
             wifi.action(),
@@ -1341,7 +1366,7 @@ mod tests {
         );
         let completion = complete_power_child(wifi);
         tracking.advance(completion).unwrap();
-        assert_eq!(state.channel_parameters().tx_gain_base, 5);
+        assert_eq!(state.channel_parameters().tx_gain_base, 16);
         assert_eq!(tracking.action(), PhyParamTrackingAction::TemperatureRead);
 
         let temperature = tracking.begin_temperature_read(&mut state).unwrap();
@@ -1390,6 +1415,53 @@ mod tests {
                 }
             };
             child.advance(completion).unwrap();
+        }
+    }
+
+    fn complete_wifi_i2c_child(
+        mut child: PhyParamTrackingWifiI2cTransition<'_>,
+    ) -> PhyParamTrackingCompletion {
+        loop {
+            match child.action() {
+                crate::phy_i2c_tracking::PhyWifiI2cTrackingAction::MaskedWrite(action) => {
+                    let binding = child.lower_external().unwrap();
+                    let completion = match action {
+                        crate::phy_i2c::MaskedI2cWriteAction::ReadByte { address } => {
+                            assert!(matches!(
+                                binding.action(),
+                                crate::phy_cold::PhyColdI2cAction::StartRead {
+                                    address: bound_address
+                                } if bound_address == address
+                            ));
+                            crate::phy_i2c_tracking::PhyWifiI2cTrackingCompletion::MaskedWrite(
+                                crate::phy_i2c::MaskedI2cWriteCompletion::I2cReadCompleted {
+                                    address,
+                                    value: 0xa0,
+                                },
+                            )
+                        }
+                        crate::phy_i2c::MaskedI2cWriteAction::WriteByte { address, value } => {
+                            assert!(matches!(
+                                binding.action(),
+                                crate::phy_cold::PhyColdI2cAction::StartWrite {
+                                    address: bound_address,
+                                    value: bound_value,
+                                } if bound_address == address && bound_value == value
+                            ));
+                            crate::phy_i2c_tracking::PhyWifiI2cTrackingCompletion::MaskedWrite(
+                                crate::phy_i2c::MaskedI2cWriteCompletion::I2cWriteCompleted {
+                                    address,
+                                },
+                            )
+                        }
+                        crate::phy_i2c::MaskedI2cWriteAction::Complete => unreachable!(),
+                    };
+                    child.advance(completion).unwrap();
+                }
+                crate::phy_i2c_tracking::PhyWifiI2cTrackingAction::Complete(_) => {
+                    return child.commit().unwrap();
+                }
+            }
         }
     }
 

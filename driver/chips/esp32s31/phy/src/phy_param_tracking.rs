@@ -7,8 +7,9 @@
 //! transition does not claim that every child effect is implemented. The two
 //! TX-power actions lower into the complete source-owned transition in
 //! [`crate::phy_power_tracking`], and the final temperature action lowers into
-//! [`crate::phy_temperature`]. RFPLL-cap, calibration and Wi-Fi PHY-I2C
-//! children remain separate obligations.
+//! [`crate::phy_temperature`], while the Wi-Fi PHY-I2C action lowers into
+//! [`crate::phy_i2c_tracking`]. RFPLL-cap and calibration children remain
+//! separate obligations.
 //!
 //! The vendor function reads six bytes from a 508-byte `phy_param` image. The
 //! live driver does not retain that ABI layout. Its only behaviorally relevant
@@ -328,6 +329,15 @@ impl PhyParamTrackingTransition {
         PhyParamTrackingTxPowerTransition::lower(self.action(), self.parameters, state)
     }
 
+    /// Lower only the Wi-Fi PHY-I2C child while retaining exclusive access to
+    /// the live range state committed after both masked writes complete.
+    pub fn begin_wifi_i2c_tracking<'state>(
+        &self,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<PhyParamTrackingWifiI2cTransition<'state>, PhyParamTrackingChildError> {
+        PhyParamTrackingWifiI2cTransition::lower(self.action(), state)
+    }
+
     /// Lower only the final temperature child while retaining exclusive access
     /// to the live state that will receive its terminal outcome.
     pub fn begin_temperature_read<'state>(
@@ -472,6 +482,74 @@ impl<'state> PhyParamTrackingTxPowerTransition<'state> {
             },
             _ => unreachable!(),
         })
+    }
+}
+
+/// Wi-Fi PHY-I2C child selected by the outer periodic transition.
+///
+/// The child owns both read/modify/write transactions. It cannot mint the
+/// parent's `WifiI2cTracked` acknowledgement until both writes finish and the
+/// new semantic temperature band is committed to the same live PHY state.
+pub struct PhyParamTrackingWifiI2cTransition<'state> {
+    child: crate::phy_i2c_tracking::PhyWifiI2cTrackingTransition,
+    state: &'state mut crate::phy_state::PhyState,
+}
+
+impl fmt::Debug for PhyParamTrackingWifiI2cTransition<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PhyParamTrackingWifiI2cTransition")
+            .field("action", &self.child.action())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'state> PhyParamTrackingWifiI2cTransition<'state> {
+    fn lower(
+        parent_action: PhyParamTrackingAction,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<Self, PhyParamTrackingChildError> {
+        if parent_action != PhyParamTrackingAction::WifiI2cTrack {
+            return Err(PhyParamTrackingChildError::UnsupportedAction);
+        }
+        Ok(Self {
+            child: crate::phy_i2c_tracking::PhyWifiI2cTrackingTransition::new(
+                state.wifi_i2c_tracking_parameters(),
+            ),
+            state,
+        })
+    }
+
+    pub const fn action(&self) -> crate::phy_i2c_tracking::PhyWifiI2cTrackingAction {
+        self.child.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: crate::phy_i2c_tracking::PhyWifiI2cTrackingCompletion,
+    ) -> Result<(), crate::phy_i2c_tracking::PhyWifiI2cTrackingTransitionError> {
+        self.child.advance(completion)
+    }
+
+    pub fn lower_external(
+        &self,
+    ) -> Result<crate::phy_i2c::MaskedI2cWriteBinding, crate::phy_i2c::MaskedI2cWriteBindingError>
+    {
+        self.child.lower_external()
+    }
+
+    pub const fn state(&self) -> &crate::phy_state::PhyState {
+        self.state
+    }
+
+    pub fn commit(self) -> Result<PhyParamTrackingCompletion, Self> {
+        let crate::phy_i2c_tracking::PhyWifiI2cTrackingAction::Complete(outcome) =
+            self.child.action()
+        else {
+            return Err(self);
+        };
+        self.state.apply_wifi_i2c_tracking_outcome(outcome);
+        Ok(PhyParamTrackingCompletion::WifiI2cTracked)
     }
 }
 

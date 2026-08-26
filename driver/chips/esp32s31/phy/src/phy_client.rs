@@ -6,8 +6,9 @@
 //! those software decisions. It performs no MMIO and does not arm a real
 //! timer. A due request retains the unique owner while the exact outer
 //! [`crate::phy_param_tracking::PhyParamTrackingTransition`] is executed.
-//! Its recovered TX-power children compose into live-state HAL/PAC bindings;
-//! the remaining child effects stay explicit unresolved actions.
+//! Its recovered TX-power and temperature children compose into live-state
+//! HAL/PAC bindings; the remaining child effects stay explicit unresolved
+//! actions.
 //!
 //! Timer arm/stop and the PHY lock are represented only as atomic model facts.
 //! There is no fallible timer executor, rollback protocol, or target lock in
@@ -26,8 +27,8 @@ use core::fmt;
 
 use crate::phy_param_tracking::{
     PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingChildError,
-    PhyParamTrackingCompletion, PhyParamTrackingParameters, PhyParamTrackingTransition,
-    PhyParamTrackingTransitionError, PhyParamTrackingTxPowerTransition,
+    PhyParamTrackingCompletion, PhyParamTrackingParameters, PhyParamTrackingTemperatureTransition,
+    PhyParamTrackingTransition, PhyParamTrackingTransitionError, PhyParamTrackingTxPowerTransition,
 };
 
 const WIFI_BIT: u8 = 1;
@@ -558,6 +559,14 @@ impl PhyPendingTracking {
         state: &'state mut crate::phy_state::PhyState,
     ) -> Result<PhyParamTrackingTxPowerTransition<'state>, PhyParamTrackingChildError> {
         self.transition.begin_tx_power_tracking(state)
+    }
+
+    /// Lower the current final sensor action into its complete typed child.
+    pub fn begin_temperature_read<'state>(
+        &self,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<PhyParamTrackingTemperatureTransition<'state>, PhyParamTrackingChildError> {
+        self.transition.begin_temperature_read(state)
     }
 
     /// Recover the ordinary owner only after every outer action was confirmed.
@@ -1262,7 +1271,7 @@ mod tests {
     }
 
     #[test]
-    fn periodic_outer_tracking_commits_bluetooth_then_wifi_gain_children() {
+    fn periodic_outer_tracking_commits_power_and_temperature_children() {
         let pending = match state_for_mask(WIFI_BIT | IEEE802154_BIT, 0)
             .evaluate_periodic_at(2_000_000)
             .unwrap()
@@ -1334,6 +1343,17 @@ mod tests {
         tracking.advance(completion).unwrap();
         assert_eq!(state.channel_parameters().tx_gain_base, 5);
         assert_eq!(tracking.action(), PhyParamTrackingAction::TemperatureRead);
+
+        let temperature = tracking.begin_temperature_read(&mut state).unwrap();
+        let completion = complete_temperature_child(temperature, 15, 50);
+        tracking.advance(completion).unwrap();
+        assert_eq!(
+            state
+                .tx_power_tracking_parameters(false)
+                .current_temperature,
+            1
+        );
+        assert_eq!(tracking.action(), PhyParamTrackingAction::ExitCritical);
     }
 
     fn complete_power_child(
@@ -1371,6 +1391,45 @@ mod tests {
             };
             child.advance(completion).unwrap();
         }
+    }
+
+    fn complete_temperature_child(
+        mut child: PhyParamTrackingTemperatureTransition<'_>,
+        dac: u8,
+        code: u8,
+    ) -> PhyParamTrackingCompletion {
+        assert!(matches!(
+            child.lower_external(),
+            Ok(crate::phy_temperature::PhyTemperatureExternalBinding::I2c(
+                _
+            ))
+        ));
+        let crate::phy_temperature::PhyTemperatureAction::ReadMasked {
+            address,
+            high_bit,
+            low_bit,
+        } = child.action()
+        else {
+            panic!("temperature child did not begin with its DAC read")
+        };
+        child
+            .advance(
+                crate::phy_temperature::PhyTemperatureCompletion::MaskedRead {
+                    address,
+                    high_bit,
+                    low_bit,
+                    value: dac,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            child.lower_external(),
+            Ok(crate::phy_temperature::PhyTemperatureExternalBinding::Sample(_))
+        ));
+        child
+            .advance(crate::phy_temperature::PhyTemperatureCompletion::CodeSampled { value: code })
+            .unwrap();
+        child.commit().unwrap()
     }
 
     #[test]

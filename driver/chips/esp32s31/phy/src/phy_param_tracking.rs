@@ -6,8 +6,9 @@
 //! branches. The child actions remain explicit obligations: completing this
 //! transition does not claim that every child effect is implemented. The two
 //! TX-power actions lower into the complete source-owned transition in
-//! [`crate::phy_power_tracking`]; RFPLL-cap, calibration, Wi-Fi PHY-I2C and
-//! temperature children remain separate obligations.
+//! [`crate::phy_power_tracking`], and the final temperature action lowers into
+//! [`crate::phy_temperature`]. RFPLL-cap, calibration and Wi-Fi PHY-I2C
+//! children remain separate obligations.
 //!
 //! The vendor function reads six bytes from a 508-byte `phy_param` image. The
 //! live driver does not retain that ABI layout. Its only behaviorally relevant
@@ -327,6 +328,15 @@ impl PhyParamTrackingTransition {
         PhyParamTrackingTxPowerTransition::lower(self.action(), self.parameters, state)
     }
 
+    /// Lower only the final temperature child while retaining exclusive access
+    /// to the live state that will receive its terminal outcome.
+    pub fn begin_temperature_read<'state>(
+        &self,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<PhyParamTrackingTemperatureTransition<'state>, PhyParamTrackingChildError> {
+        PhyParamTrackingTemperatureTransition::lower(self.action(), state)
+    }
+
     const fn first_client_step(self) -> PhyParamTrackingStep {
         if self.request.bluetooth_ieee802154 {
             PhyParamTrackingStep::BluetoothIeee802154TxPowerTrack
@@ -462,6 +472,74 @@ impl<'state> PhyParamTrackingTxPowerTransition<'state> {
             },
             _ => unreachable!(),
         })
+    }
+}
+
+/// Final temperature child selected by the outer periodic transition.
+///
+/// A failed or incomplete sensor transaction retains this owner and cannot
+/// mint `TemperatureRead`; the caller must poison the outer scheduler epoch.
+pub struct PhyParamTrackingTemperatureTransition<'state> {
+    child: crate::phy_temperature::PhyTemperatureTransition,
+    state: &'state mut crate::phy_state::PhyState,
+}
+
+impl fmt::Debug for PhyParamTrackingTemperatureTransition<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PhyParamTrackingTemperatureTransition")
+            .field("action", &self.child.action())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'state> PhyParamTrackingTemperatureTransition<'state> {
+    fn lower(
+        parent_action: PhyParamTrackingAction,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<Self, PhyParamTrackingChildError> {
+        if parent_action != PhyParamTrackingAction::TemperatureRead {
+            return Err(PhyParamTrackingChildError::UnsupportedAction);
+        }
+        Ok(Self {
+            child: crate::phy_temperature::PhyTemperatureTransition::new(),
+            state,
+        })
+    }
+
+    pub const fn action(&self) -> crate::phy_temperature::PhyTemperatureAction {
+        self.child.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: crate::phy_temperature::PhyTemperatureCompletion,
+    ) -> Result<(), crate::phy_temperature::PhyTemperatureTransitionError> {
+        self.child.advance(completion)
+    }
+
+    pub fn lower_external(
+        &self,
+    ) -> Result<
+        crate::phy_temperature::PhyTemperatureExternalBinding,
+        crate::phy_temperature::PhyTemperatureBindingError,
+    > {
+        crate::phy_temperature::PhyTemperatureExternalBinding::lower(self.action())
+    }
+
+    pub const fn state(&self) -> &crate::phy_state::PhyState {
+        self.state
+    }
+
+    /// Commit a successful sensor outcome and mint the exact parent
+    /// completion. Failed and incomplete children are returned unchanged.
+    pub fn commit(self) -> Result<PhyParamTrackingCompletion, Self> {
+        let crate::phy_temperature::PhyTemperatureAction::Complete(outcome) = self.child.action()
+        else {
+            return Err(self);
+        };
+        self.state.apply_temperature_outcome(outcome);
+        Ok(PhyParamTrackingCompletion::TemperatureRead)
     }
 }
 
@@ -653,6 +731,53 @@ mod tests {
         assert_eq!(
             transition.advance(PhyParamTrackingCompletion::ExitedCritical),
             Err(PhyParamTrackingTransitionError::AlreadyComplete)
+        );
+    }
+
+    #[test]
+    fn failed_temperature_child_cannot_complete_parent_or_mutate_state() {
+        let mut parameters = PARAMETERS;
+        parameters.rfpll_cap_tracking_enabled = false;
+        let mut transition =
+            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, false), parameters);
+        transition
+            .advance(PhyParamTrackingCompletion::EnteredCritical)
+            .unwrap();
+        assert_eq!(transition.action(), PhyParamTrackingAction::TemperatureRead);
+
+        let mut state = crate::phy_state::PhyState::new(crate::phy_state::PhyConfig::production());
+        let mut temperature = transition.begin_temperature_read(&mut state).unwrap();
+        let crate::phy_temperature::PhyTemperatureAction::ReadMasked {
+            address,
+            high_bit,
+            low_bit,
+        } = temperature.action()
+        else {
+            panic!("temperature child did not begin with its DAC read")
+        };
+        temperature
+            .advance(
+                crate::phy_temperature::PhyTemperatureCompletion::MaskedRead {
+                    address,
+                    high_bit,
+                    low_bit,
+                    value: 3,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            temperature.action(),
+            crate::phy_temperature::PhyTemperatureAction::Failed(
+                crate::phy_temperature::PhyTemperatureFailure::InvalidDac(3),
+            )
+        );
+        let temperature = temperature.commit().unwrap_err();
+        assert_eq!(
+            temperature
+                .state()
+                .tx_power_tracking_parameters(false)
+                .current_temperature,
+            0
         );
     }
 

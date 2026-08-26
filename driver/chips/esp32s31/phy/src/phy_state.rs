@@ -819,14 +819,22 @@ impl PhyState {
             threshold_override,
             current_channel: self.wifi.current_channel,
             channel_bandwidth: self.wifi.channel_bandwidth,
+            crystal_selector: self.common.crystal_selector,
         }
     }
 
     /// Commit only references whose complete calibration branch reached its
     /// terminal restore edge.
     pub fn apply_calibration_tracking_outcome(&mut self, outcome: PhyCalibrationTrackingOutcome) {
-        if outcome.common_updated {
-            self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
+        match (outcome.common_updated, outcome.dcode) {
+            (true, Some(dcode)) => {
+                self.apply_dcode_outcome(dcode);
+                self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
+            }
+            (false, None) => {}
+            // A terminal common branch publishes both values atomically.
+            // Reject structurally inconsistent caller-created outcomes.
+            _ => return,
         }
         if !outcome.class_updated {
             return;
@@ -1432,12 +1440,29 @@ mod tests {
             bluetooth_ieee802154_reference_temperature: 99,
             common_updated: true,
             class_updated: true,
+            dcode: Some(PhyDcodeOutcome { codes: [7; 8] }),
         });
         let committed = state.calibration_tracking_parameters(Some(31));
         assert_eq!(committed.threshold_override, Some(31));
         assert_eq!(committed.common_reference_temperature, 50);
         assert_eq!(committed.wifi_reference_temperature, 50);
         assert_eq!(committed.bluetooth_ieee802154_reference_temperature, 20);
+        assert_eq!(state.common.dcode, [7; 8]);
+
+        state.apply_calibration_tracking_outcome(PhyCalibrationTrackingOutcome {
+            class: crate::phy_param_tracking::PhyCalibrationTrackClass::BluetoothIeee802154,
+            threshold: 30,
+            common_reference_temperature: 60,
+            wifi_reference_temperature: 60,
+            bluetooth_ieee802154_reference_temperature: 60,
+            common_updated: true,
+            class_updated: true,
+            dcode: None,
+        });
+        let rejected = state.calibration_tracking_parameters(None);
+        assert_eq!(rejected.common_reference_temperature, 50);
+        assert_eq!(rejected.bluetooth_ieee802154_reference_temperature, 20);
+        assert_eq!(state.common.dcode, [7; 8]);
     }
 
     #[test]

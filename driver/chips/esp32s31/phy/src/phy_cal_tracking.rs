@@ -21,6 +21,7 @@ pub struct PhyCalibrationTrackingParameters {
     pub threshold_override: Option<u8>,
     pub current_channel: u16,
     pub channel_bandwidth: u8,
+    pub crystal_selector: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,6 +38,7 @@ pub struct PhyCalibrationTrackingOutcome {
     pub bluetooth_ieee802154_reference_temperature: i16,
     pub common_updated: bool,
     pub class_updated: bool,
+    pub dcode: Option<crate::phy_dcode::PhyDcodeOutcome>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -62,7 +64,7 @@ pub enum PhyCalibrationTrackingAction {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationTrackingCompletion {
     PbusClearCompleted(PhyCalibrationPbusClearCompletion),
-    DcodeCalibrated,
+    DcodeCompleted(PhyCalibrationDcodeCompletion),
     CommonCalibrationStateReset,
     RxGainTablePublished,
     ChipChannelRestored { channel: u16, cbw: u8 },
@@ -112,9 +114,30 @@ pub struct PhyCalibrationPbusClearCompletion {
     outcome: crate::phy_pbus::PhyPbusClearOutcome,
 }
 
+/// Opaque terminal result of the complete DCODE child.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_phy::phy_cal_tracking::{
+///     PhyCalibrationDcodeCompletion, PhyCalibrationTrackingCompletion,
+/// };
+///
+/// let forged = PhyCalibrationTrackingCompletion::DcodeCompleted(
+///     PhyCalibrationDcodeCompletion {
+///         result: Ok(open_esp_radio_esp32s31_phy::phy_dcode::PhyDcodeOutcome {
+///             codes: [0; 8],
+///         }),
+///     },
+/// );
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyCalibrationDcodeCompletion {
+    result: Result<crate::phy_dcode::PhyDcodeOutcome, crate::phy_dcode::PhyDcodeFailure>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationTrackingFailure {
     PbusClearTimedOut(crate::phy_pbus::PhyPbusForceTest),
+    Dcode(crate::phy_dcode::PhyDcodeFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -155,6 +178,7 @@ pub struct PhyCalibrationTrackingTransition {
     threshold: u8,
     common_updated: bool,
     class_updated: bool,
+    dcode: Option<crate::phy_dcode::PhyDcodeOutcome>,
     failure: Option<PhyCalibrationTrackingFailure>,
     step: Step,
 }
@@ -185,6 +209,7 @@ impl PhyCalibrationTrackingTransition {
             threshold,
             common_updated: false,
             class_updated: false,
+            dcode: None,
             failure: None,
             step,
         }
@@ -259,8 +284,17 @@ impl PhyCalibrationTrackingTransition {
                     Step::RestoreTxGainCompensation
                 }
             },
-            (Step::CommonDcode, PhyCalibrationTrackingCompletion::DcodeCalibrated) => {
-                Step::CommonReset
+            (Step::CommonDcode, PhyCalibrationTrackingCompletion::DcodeCompleted(completion)) => {
+                match completion.result {
+                    Ok(outcome) => {
+                        self.dcode = Some(outcome);
+                        Step::CommonReset
+                    }
+                    Err(failure) => {
+                        self.failure = Some(PhyCalibrationTrackingFailure::Dcode(failure));
+                        Step::RestoreTxGainCompensation
+                    }
+                }
             }
             (Step::CommonReset, PhyCalibrationTrackingCompletion::CommonCalibrationStateReset) => {
                 Step::CommonPublishRxGain
@@ -377,6 +411,14 @@ impl PhyCalibrationTrackingTransition {
         PhyCalibrationPbusClearTransition::lower(self.action())
     }
 
+    /// Lower the selected common calibration step into the existing complete
+    /// RFPLL/MMIO/PHY-I2C DCODE graph.
+    pub fn begin_dcode(
+        &self,
+    ) -> Result<PhyCalibrationDcodeTransition, PhyCalibrationTrackingChildError> {
+        PhyCalibrationDcodeTransition::lower(self.action(), self.parameters.crystal_selector)
+    }
+
     const fn first_class_step(self) -> Step {
         if class_due(self.request, self.parameters, self.threshold) {
             Step::ClassDisableHardwareFrequency
@@ -413,6 +455,11 @@ impl PhyCalibrationTrackingTransition {
             },
             common_updated: self.common_updated,
             class_updated: self.class_updated,
+            dcode: if self.common_updated {
+                self.dcode
+            } else {
+                None
+            },
         }
     }
 }
@@ -433,6 +480,57 @@ pub struct PhyCalibrationForceTxRxTransition {
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyCalibrationPbusClearTransition {
     child: crate::phy_pbus::PhyPbusClearTransition,
+}
+
+/// Non-cloneable calibration-child owner for complete DCODE calibration.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyCalibrationDcodeTransition {
+    child: crate::phy_dcode::PhyDcodeTransition,
+}
+
+impl PhyCalibrationDcodeTransition {
+    fn lower(
+        parent_action: PhyCalibrationTrackingAction,
+        crystal_selector: u8,
+    ) -> Result<Self, PhyCalibrationTrackingChildError> {
+        if parent_action != PhyCalibrationTrackingAction::CalibrateDcode {
+            return Err(PhyCalibrationTrackingChildError::UnsupportedAction);
+        }
+        Ok(Self {
+            child: crate::phy_dcode::PhyDcodeTransition::new(
+                crate::phy_dcode::PhyDcodeParameters { crystal_selector },
+            ),
+        })
+    }
+
+    pub const fn action(&self) -> crate::phy_dcode::PhyDcodeAction {
+        self.child.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: crate::phy_dcode::PhyDcodeCompletion,
+    ) -> Result<(), crate::phy_dcode::PhyDcodeTransitionError> {
+        self.child.advance(completion)
+    }
+
+    pub fn lower_external(
+        &self,
+    ) -> Result<crate::phy_dcode::PhyDcodeExternalBinding, crate::phy_dcode::PhyDcodeBindingError>
+    {
+        crate::phy_dcode::PhyDcodeExternalBinding::lower(self.action())
+    }
+
+    pub fn commit(self) -> Result<PhyCalibrationTrackingCompletion, Self> {
+        let result = match self.child.action() {
+            crate::phy_dcode::PhyDcodeAction::Complete(outcome) => Ok(outcome),
+            crate::phy_dcode::PhyDcodeAction::Failed(failure) => Err(failure),
+            _ => return Err(self),
+        };
+        Ok(PhyCalibrationTrackingCompletion::DcodeCompleted(
+            PhyCalibrationDcodeCompletion { result },
+        ))
+    }
 }
 
 impl PhyCalibrationPbusClearTransition {
@@ -706,6 +804,7 @@ mod tests {
         threshold_override: None,
         current_channel: 11,
         channel_bandwidth: 1,
+        crystal_selector: 0x31,
     };
 
     fn completion(action: PhyCalibrationTrackingAction) -> PhyCalibrationTrackingCompletion {
@@ -718,7 +817,9 @@ mod tests {
                 )
             }
             PhyCalibrationTrackingAction::CalibrateDcode => {
-                PhyCalibrationTrackingCompletion::DcodeCalibrated
+                PhyCalibrationTrackingCompletion::DcodeCompleted(PhyCalibrationDcodeCompletion {
+                    result: Ok(crate::phy_dcode::PhyDcodeOutcome { codes: [7; 8] }),
+                })
             }
             PhyCalibrationTrackingAction::ResetCommonCalibrationState => {
                 PhyCalibrationTrackingCompletion::CommonCalibrationStateReset
@@ -814,6 +915,10 @@ mod tests {
         };
         assert!(outcome.common_updated);
         assert!(outcome.class_updated);
+        assert_eq!(
+            outcome.dcode,
+            Some(crate::phy_dcode::PhyDcodeOutcome { codes: [7; 8] })
+        );
         assert_eq!(outcome.common_reference_temperature, 50);
         assert_eq!(outcome.wifi_reference_temperature, 50);
         assert_eq!(outcome.bluetooth_ieee802154_reference_temperature, 20);
@@ -863,6 +968,7 @@ mod tests {
                     bluetooth_ieee802154_reference_temperature: 20,
                     common_updated: false,
                     class_updated: false,
+                    dcode: None,
                 }),
             ]
         );
@@ -936,6 +1042,7 @@ mod tests {
                 bluetooth_ieee802154_reference_temperature: 20,
                 common_updated: false,
                 class_updated: false,
+                dcode: None,
             }),
             PhyCalibrationTrackingAction::Failed(PhyCalibrationTrackingFailure::PbusClearTimedOut(
                 crate::phy_pbus::PhyPbusForceTest::new(4, 1, 0),
@@ -992,6 +1099,67 @@ mod tests {
         let completion = child.commit().unwrap();
         transition.advance(completion).unwrap();
         assert_eq!(transition.action(), PhyCalibrationTrackingAction::ClearPbus);
+    }
+
+    #[test]
+    fn dcode_parent_proof_starts_the_existing_complete_hardware_graph() {
+        let mut transition = PhyCalibrationTrackingTransition::new(
+            PhyCalibrationTrackingRequest {
+                class: PhyCalibrationTrackClass::Wifi,
+            },
+            PARAMETERS,
+        );
+        transition
+            .advance(completion(PhyCalibrationTrackingAction::ClearPbus))
+            .unwrap();
+
+        let child = transition.begin_dcode().unwrap();
+        assert!(matches!(
+            child.action(),
+            crate::phy_dcode::PhyDcodeAction::Rfpll(_)
+        ));
+        assert!(matches!(
+            child.lower_external(),
+            Ok(crate::phy_dcode::PhyDcodeExternalBinding::Rfpll(_))
+        ));
+        assert!(child.commit().is_err());
+    }
+
+    #[test]
+    fn dcode_failure_restores_gain_without_publishing_common_progress() {
+        let mut transition = PhyCalibrationTrackingTransition::new(
+            PhyCalibrationTrackingRequest {
+                class: PhyCalibrationTrackClass::Wifi,
+            },
+            PARAMETERS,
+        );
+        transition
+            .advance(completion(PhyCalibrationTrackingAction::ClearPbus))
+            .unwrap();
+        let failure = crate::phy_dcode::PhyDcodeFailure::Rfpll {
+            calibration_index: 0,
+            failure: crate::phy_rfpll::RfpllFrequencyFailure::FrequencyReadyDeadlineExceeded {
+                samples: 100,
+            },
+        };
+        transition
+            .advance(PhyCalibrationTrackingCompletion::DcodeCompleted(
+                PhyCalibrationDcodeCompletion {
+                    result: Err(failure),
+                },
+            ))
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyCalibrationTrackingAction::RestoreTxGainCompensation
+        );
+        transition
+            .advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored)
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyCalibrationTrackingAction::Failed(PhyCalibrationTrackingFailure::Dcode(failure))
+        );
     }
 
     #[test]

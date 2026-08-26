@@ -583,6 +583,15 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         self.child.begin_pbus_clear()
     }
 
+    pub fn begin_dcode(
+        &self,
+    ) -> Result<
+        crate::phy_cal_tracking::PhyCalibrationDcodeTransition,
+        crate::phy_cal_tracking::PhyCalibrationTrackingChildError,
+    > {
+        self.child.begin_dcode()
+    }
+
     pub fn lower_external(
         &self,
     ) -> Result<

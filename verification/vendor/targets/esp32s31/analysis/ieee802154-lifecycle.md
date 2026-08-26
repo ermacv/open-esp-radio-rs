@@ -381,7 +381,10 @@ effects:
   force-TX/RX with both async delays, bounded PBus clear, baseband-CBW,
   MAC/baseband-enable, and final TX-gain-compensation leaves have target
   bindings. A PBus timeout runs force/frequency/gain cleanup before returning a
-  typed failure. The nested DCODE/RX, calibration-state reset, and TXDC/gain
+  typed failure. Common DCODE now composes the complete existing
+  RFPLL/NRX/PHY-I2C graph and commits its eight output codes atomically with the
+  common temperature reference; RFPLL failure restores gain without publishing
+  progress. The nested RX publication, calibration-state reset, and TXDC/gain
   operations remain explicit unbound children. The outer transition alone is
   not an RF-readiness proof.
 - `ieee802154_txon_delay_set()`: called during every MAC initialization after

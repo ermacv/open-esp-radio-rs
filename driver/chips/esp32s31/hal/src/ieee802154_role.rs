@@ -34,9 +34,9 @@ use crate::{
         Ieee802154ClockCheckpoint, Ieee802154ClockFailure as EngineClockFailure,
         Ieee802154ClockImages, Ieee802154FoundationCheckpoint,
         Ieee802154FoundationFailure as EngineFoundationFailure, Ieee802154Lifecycle,
-        Ieee802154LifecycleBackend, Ieee802154PlatformControl, Ieee802154ReadbackError,
-        Ieee802154ResetCheckpoint, Ieee802154ResetFailure as EngineResetFailure,
-        Ieee802154ResetImages, establish_ieee802154_clocks, state as lifecycle_state,
+        Ieee802154LifecycleBackend, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
+        Ieee802154ResetFailure as EngineResetFailure, Ieee802154ResetImages,
+        establish_ieee802154_clocks, state as lifecycle_state,
     },
     ieee802154_operation::{
         Ieee802154OperationPollBudget, Ieee802154PolledOperation,
@@ -49,7 +49,7 @@ use crate::{
         Ieee802154MacPolicyFailure as EngineMacPolicyFailure, Ieee802154MacPolicyReadback,
         Ieee802154PanIdentity, configure_ieee802154_mac_policy,
     },
-    power::{self, PowerClockControl, PowerError},
+    power::{self, PowerError},
 };
 
 struct OwnedIeee802154Backend<P> {
@@ -59,31 +59,19 @@ struct OwnedIeee802154Backend<P> {
 }
 
 impl<P> OwnedIeee802154Backend<P> {
-    fn platform_mut(&mut self) -> &mut P {
-        &mut self.platform
-    }
-
     fn mac_hal(&mut self) -> Ieee802154PacHal<'_> {
         Ieee802154PacHal::from_owned(&mut self.task, &mut self.interrupts)
     }
 }
 
-impl<P: Ieee802154PlatformControl> Ieee802154PlatformControl for OwnedIeee802154Backend<P> {
-    fn configure_modem_source_clock(&mut self) {
-        self.platform_mut().configure_modem_source_clock();
-    }
-
-    fn ieee802154_platform_clock_images(
-        &self,
-    ) -> crate::ieee802154_lifecycle::Ieee802154PlatformClockImages {
-        self.platform.ieee802154_platform_clock_images()
-    }
-}
-
-impl<P: Ieee802154PlatformControl> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
+impl<P> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
     fn configure_modem_clock_maps(&mut self) {
         self.task.configure_modem_syscon_clock_maps();
         self.task.prepare_shared_modem_clock_map();
+    }
+
+    fn configure_modem_source_clock(&mut self) {
+        self.task.configure_modem_source_clocks();
     }
 
     fn enable_wifi_bb_80x1_clock(&mut self) {
@@ -126,14 +114,14 @@ impl<P: Ieee802154PlatformControl> Ieee802154LifecycleBackend for OwnedIeee80215
     }
 
     fn ieee802154_clock_images(&self) -> Ieee802154ClockImages {
-        let platform = self.platform.ieee802154_platform_clock_images();
+        let platform = self.task.platform_clock_power_observation();
         let shared = self.task.shared_modem_clock_observation();
         let modem = self.task.modem_syscon_ieee802154_clock_observation();
         Ieee802154ClockImages {
             modem_clock_maps_configured: modem.active_clock_map_configured
                 && shared.power_state_map_configured,
-            pll_160m_clock_enabled: platform.pll_160m_clock_enabled,
-            modem_source_clock_configured: platform.modem_source_clock_configured,
+            pll_160m_clock_enabled: platform.ref_160m_clock_enabled,
+            modem_source_clock_configured: platform.modem_source_clocks_configured,
             coexistence_clock_enabled: shared.coexistence_clock_enabled,
             wifi_bb_80x1_clock_enabled: modem.wifi_bb_80x1_clock_enabled,
             etm_clock_enabled: modem.etm_clock_enabled,
@@ -273,7 +261,7 @@ impl<P> Ieee802154PowerTransitionFailure<P> {
     }
 }
 
-impl<P: PowerClockControl> Ieee802154PowerTransitionFailure<P> {
+impl<P> Ieee802154PowerTransitionFailure<P> {
     /// Retry the exact shared power sequence with the retained route.
     pub fn retry(self) -> Result<Ieee802154Powered<P>, Self> {
         enter_ieee802154_powered(self.backend)
@@ -482,10 +470,7 @@ impl<P> Ieee802154ClockTransitionFailure<P> {
     }
 
     /// Retry the exact clock sequence without releasing the mutated route.
-    pub fn retry(self) -> Result<Ieee802154Clocked<P>, Self>
-    where
-        P: Ieee802154PlatformControl,
-    {
+    pub fn retry(self) -> Result<Ieee802154Clocked<P>, Self> {
         establish_ieee802154_clocks(self.inner.into_backend())
             .map(|inner| Ieee802154Clocked { inner })
             .map_err(|inner| Self { inner })
@@ -594,7 +579,7 @@ impl<P> Ieee802154MacPolicyTransitionFailure<P> {
     }
 }
 
-impl<P: PowerClockControl> Ieee802154Owned<P> {
+impl<P> Ieee802154Owned<P> {
     /// Execute and prove the shared modem/PHY power prerequisites.
     ///
     /// The transaction is the same concrete target sequence used before the
@@ -605,16 +590,16 @@ impl<P: PowerClockControl> Ieee802154Owned<P> {
     }
 }
 
-fn enter_ieee802154_powered<P: PowerClockControl>(
+fn enter_ieee802154_powered<P>(
     mut backend: OwnedIeee802154Backend<P>,
 ) -> Result<Ieee802154Powered<P>, Ieee802154PowerTransitionFailure<P>> {
-    if let Err(error) = power::execute_owned(&mut backend.platform, &mut backend.task) {
+    if let Err(error) = power::execute_owned(&mut backend.task) {
         return Err(Ieee802154PowerTransitionFailure { backend, error });
     }
     Ok(Ieee802154Powered { backend })
 }
 
-impl<P: Ieee802154PlatformControl> Ieee802154Powered<P> {
+impl<P> Ieee802154Powered<P> {
     /// Consume the powered dedicated owner and prove IEEE 802.15.4 clock gates.
     ///
     /// Shared modem clock gates are route-owned and reference-counted by the
@@ -629,7 +614,7 @@ impl<P: Ieee802154PlatformControl> Ieee802154Powered<P> {
     }
 }
 
-impl<P: Ieee802154PlatformControl> Ieee802154Clocked<P> {
+impl<P> Ieee802154Clocked<P> {
     /// Pulse the functional MAC reset and then the APB reset.
     pub fn reset_mac(self) -> Result<Ieee802154Reset<P>, Ieee802154ResetTransitionFailure<P>> {
         self.inner
@@ -679,7 +664,7 @@ impl<P> Ieee802154Clocked<P> {
     }
 }
 
-impl<P: Ieee802154PlatformControl> Ieee802154Reset<P> {
+impl<P> Ieee802154Reset<P> {
     /// Configure the interrupt-masked, non-operational MAC foundation.
     pub fn configure_foundation(
         self,
@@ -834,72 +819,16 @@ impl<P> Ieee802154MacPolicyConfigured<P> {
 
 #[cfg(test)]
 mod tests {
-    use std::vec::Vec;
-
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
-    use super::{Ieee802154Owned, Ieee802154PlatformControl};
-    use crate::{Ieee802154PlatformClockImages, PlatformPowerClockImages, PowerClockControl};
-
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum Operation {
-        ConfigureModemSource,
-    }
+    use super::Ieee802154Owned;
 
     #[derive(Debug)]
-    struct FakePlatform {
-        operations: Vec<Operation>,
-        power: PlatformPowerClockImages,
-        clocks: Ieee802154PlatformClockImages,
-    }
-
-    impl FakePlatform {
-        fn ready() -> Self {
-            Self {
-                operations: Vec::new(),
-                power: PlatformPowerClockImages {
-                    hp_active_icg_selected: true,
-                    modem_bus_clock_enabled: true,
-                    modem_source_clocks_configured: true,
-                },
-                clocks: Ieee802154PlatformClockImages {
-                    pll_160m_clock_enabled: true,
-                    modem_source_clock_configured: true,
-                },
-            }
-        }
-    }
-
-    impl PowerClockControl for FakePlatform {
-        fn select_hp_active_modem_icg(&mut self) {}
-
-        fn apply_modem_icg_selection(&mut self) {}
-
-        fn apply_sleep_icg_selection(&mut self) {}
-
-        fn enable_modem_register_bus_clock(&mut self) {}
-
-        fn configure_modem_source_clocks(&mut self) {}
-
-        fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
-            self.power
-        }
-    }
-
-    impl Ieee802154PlatformControl for FakePlatform {
-        fn configure_modem_source_clock(&mut self) {
-            self.operations.push(Operation::ConfigureModemSource);
-        }
-
-        fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
-            self.clocks
-        }
-    }
+    struct FakePlatform;
 
     #[test]
     fn untouched_owner_releases_the_complete_neutral_root() {
-        let owned =
-            Ieee802154Owned::from_hardware(FakePlatform::ready(), RadioHardware::for_validation());
+        let owned = Ieee802154Owned::from_hardware(FakePlatform, RadioHardware::for_validation());
         let (_platform, hardware) = owned.release();
 
         let ieee = hardware.into_ieee802154();

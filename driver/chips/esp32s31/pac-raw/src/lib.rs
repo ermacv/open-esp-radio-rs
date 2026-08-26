@@ -12693,6 +12693,803 @@ pub mod phy_clock_oracle {
         }
     }
 }
+#[doc = "Route-owned PMU words used by the reviewed shared radio clock, RF-power and analog-I2C lifecycles. Unrelated PMU words remain platform-owned."]
+pub type PmuRadio = crate::Periph<pmu_radio::RegisterBlock, 0x2070_4000>;
+impl core::fmt::Debug for PmuRadio {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PmuRadio").finish()
+    }
+}
+#[doc = "Route-owned PMU words used by the reviewed shared radio clock, RF-power and analog-I2C lifecycles. Unrelated PMU words remain platform-owned."]
+pub mod pmu_radio {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x14],
+        hp_active_icg_modem: HpActiveIcgModem,
+        _reserved1: [u8; 0x04],
+        hp_active_hp_ck_power: HpActiveHpCkPower,
+        _reserved2: [u8; 0xd0],
+        imm_hp_ck_power_0: ImmHpCkPower0,
+        _reserved3: [u8; 0x04],
+        imm_sleep_sysclk: ImmSleepSysclk,
+        _reserved4: [u8; 0x08],
+        imm_modem_icg: ImmModemIcg,
+        _reserved5: [u8; 0x7c],
+        rf_pwc: RfPwc,
+        _reserved6: [u8; 0x80],
+        ana_peri_pwr_ctrl: AnaPeriPwrCtrl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x14 - Active-state modem clock-gating selection."]
+        #[inline(always)]
+        pub const fn hp_active_icg_modem(&self) -> &HpActiveIcgModem {
+            &self.hp_active_icg_modem
+        }
+        #[doc = "0x1c - Active-state high-power clock and analog-I2C power control reached by the complete front-end/baseband clock body."]
+        #[inline(always)]
+        pub const fn hp_active_hp_ck_power(&self) -> &HpActiveHpCkPower {
+            &self.hp_active_hp_ck_power
+        }
+        #[doc = "0xf0 - Immediate high-power clock ties. The reviewed complete PHY body reads this word before its preserving update, overriding the write-only access class in the uncorrected public SVD."]
+        #[inline(always)]
+        pub const fn imm_hp_ck_power_0(&self) -> &ImmHpCkPower0 {
+            &self.imm_hp_ck_power_0
+        }
+        #[doc = "0xf8 - Immediate sleep/system-clock update commands."]
+        #[inline(always)]
+        pub const fn imm_sleep_sysclk(&self) -> &ImmSleepSysclk {
+            &self.imm_sleep_sysclk
+        }
+        #[doc = "0x104 - Immediate modem clock-gating update command."]
+        #[inline(always)]
+        pub const fn imm_modem_icg(&self) -> &ImmModemIcg {
+            &self.imm_modem_icg
+        }
+        #[doc = "0x184 - RF circuit power control."]
+        #[inline(always)]
+        pub const fn rf_pwc(&self) -> &RfPwc {
+            &self.rf_pwc
+        }
+        #[doc = "0x208 - Analog peripheral I2C power and active-low reset control."]
+        #[inline(always)]
+        pub const fn ana_peri_pwr_ctrl(&self) -> &AnaPeriPwrCtrl {
+            &self.ana_peri_pwr_ctrl
+        }
+    }
+    #[doc = "HP_ACTIVE_ICG_MODEM (rw) register accessor: Active-state modem clock-gating selection.\n\nYou can [`read`](crate::Reg::read) this register and get [`hp_active_icg_modem::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hp_active_icg_modem::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hp_active_icg_modem`] module"]
+    #[doc(alias = "HP_ACTIVE_ICG_MODEM")]
+    pub type HpActiveIcgModem = crate::Reg<hp_active_icg_modem::HpActiveIcgModemSpec>;
+    #[doc = "Active-state modem clock-gating selection."]
+    pub mod hp_active_icg_modem {
+        #[doc = "Register `HP_ACTIVE_ICG_MODEM` reader"]
+        pub type R = crate::R<HpActiveIcgModemSpec>;
+        #[doc = "Register `HP_ACTIVE_ICG_MODEM` writer"]
+        pub type W = crate::W<HpActiveIcgModemSpec>;
+        #[doc = "Two-bit active-state modem clock-gating code; official ESP-HAL publishes code two for the active configuration.\n\nValue on reset: 0"]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum ActiveModemIcgCode {
+            #[doc = "2: Active-state modem clock-gating code published by official ESP-HAL."]
+            Active = 2,
+        }
+        impl From<ActiveModemIcgCode> for u8 {
+            #[inline(always)]
+            fn from(variant: ActiveModemIcgCode) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for ActiveModemIcgCode {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for ActiveModemIcgCode {}
+        #[doc = "Field `HP_ACTIVE_DIG_ICG_MODEM_CODE` reader - Two-bit active-state modem clock-gating code; official ESP-HAL publishes code two for the active configuration."]
+        pub type HpActiveDigIcgModemCodeR = crate::FieldReader<ActiveModemIcgCode>;
+        impl HpActiveDigIcgModemCodeR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<ActiveModemIcgCode> {
+                match self.bits {
+                    2 => Some(ActiveModemIcgCode::Active),
+                    _ => None,
+                }
+            }
+            #[doc = "Active-state modem clock-gating code published by official ESP-HAL."]
+            #[inline(always)]
+            pub fn is_active(&self) -> bool {
+                *self == ActiveModemIcgCode::Active
+            }
+        }
+        #[doc = "Field `HP_ACTIVE_DIG_ICG_MODEM_CODE` writer - Two-bit active-state modem clock-gating code; official ESP-HAL publishes code two for the active configuration."]
+        pub type HpActiveDigIcgModemCodeW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, ActiveModemIcgCode>;
+        impl<'a, REG> HpActiveDigIcgModemCodeW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "Active-state modem clock-gating code published by official ESP-HAL."]
+            #[inline(always)]
+            pub fn active(self) -> &'a mut crate::W<REG> {
+                self.variant(ActiveModemIcgCode::Active)
+            }
+        }
+        impl R {
+            #[doc = "Bits 30:31 - Two-bit active-state modem clock-gating code; official ESP-HAL publishes code two for the active configuration."]
+            #[inline(always)]
+            pub fn hp_active_dig_icg_modem_code(&self) -> HpActiveDigIcgModemCodeR {
+                HpActiveDigIcgModemCodeR::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 30:31 - Two-bit active-state modem clock-gating code; official ESP-HAL publishes code two for the active configuration."]
+            #[inline(always)]
+            pub fn hp_active_dig_icg_modem_code(
+                &mut self,
+            ) -> HpActiveDigIcgModemCodeW<'_, HpActiveIcgModemSpec> {
+                HpActiveDigIcgModemCodeW::new(self, 30)
+            }
+        }
+        #[doc = "Active-state modem clock-gating selection.\n\nYou can [`read`](crate::Reg::read) this register and get [`hp_active_icg_modem::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hp_active_icg_modem::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HpActiveIcgModemSpec;
+        impl crate::RegisterSpec for HpActiveIcgModemSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`hp_active_icg_modem::R`](R) reader structure"]
+        impl crate::Readable for HpActiveIcgModemSpec {}
+        #[doc = "`write(|w| ..)` method takes [`hp_active_icg_modem::W`](W) writer structure"]
+        impl crate::Writable for HpActiveIcgModemSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets HP_ACTIVE_ICG_MODEM to value 0"]
+        impl crate::Resettable for HpActiveIcgModemSpec {}
+    }
+    #[doc = "HP_ACTIVE_HP_CK_POWER (rw) register accessor: Active-state high-power clock and analog-I2C power control reached by the complete front-end/baseband clock body.\n\nYou can [`read`](crate::Reg::read) this register and get [`hp_active_hp_ck_power::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hp_active_hp_ck_power::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hp_active_hp_ck_power`] module"]
+    #[doc(alias = "HP_ACTIVE_HP_CK_POWER")]
+    pub type HpActiveHpCkPower = crate::Reg<hp_active_hp_ck_power::HpActiveHpCkPowerSpec>;
+    #[doc = "Active-state high-power clock and analog-I2C power control reached by the complete front-end/baseband clock body."]
+    pub mod hp_active_hp_ck_power {
+        #[doc = "Register `HP_ACTIVE_HP_CK_POWER` reader"]
+        pub type R = crate::R<HpActiveHpCkPowerSpec>;
+        #[doc = "Register `HP_ACTIVE_HP_CK_POWER` writer"]
+        pub type W = crate::W<HpActiveHpCkPowerSpec>;
+        #[doc = "Low-nibble image set by complete rev0 ROM phy_open_fe_bb_clk; individual bit semantics remain unknown.\n\nValue on reset: 0"]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum FrontEndBasebandClockImage {
+            #[doc = "15: Complete low-nibble image published by the rev0 ROM front-end/baseband clock leaf."]
+            RomRequired = 15,
+        }
+        impl From<FrontEndBasebandClockImage> for u8 {
+            #[inline(always)]
+            fn from(variant: FrontEndBasebandClockImage) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for FrontEndBasebandClockImage {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for FrontEndBasebandClockImage {}
+        #[doc = "Field `ROM_OPEN_FE_BB_UNKNOWN_LOW` reader - Low-nibble image set by complete rev0 ROM phy_open_fe_bb_clk; individual bit semantics remain unknown."]
+        pub type RomOpenFeBbUnknownLowR = crate::FieldReader<FrontEndBasebandClockImage>;
+        impl RomOpenFeBbUnknownLowR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<FrontEndBasebandClockImage> {
+                match self.bits {
+                    15 => Some(FrontEndBasebandClockImage::RomRequired),
+                    _ => None,
+                }
+            }
+            #[doc = "Complete low-nibble image published by the rev0 ROM front-end/baseband clock leaf."]
+            #[inline(always)]
+            pub fn is_rom_required(&self) -> bool {
+                *self == FrontEndBasebandClockImage::RomRequired
+            }
+        }
+        #[doc = "Field `ROM_OPEN_FE_BB_UNKNOWN_LOW` writer - Low-nibble image set by complete rev0 ROM phy_open_fe_bb_clk; individual bit semantics remain unknown."]
+        pub type RomOpenFeBbUnknownLowW<'a, REG> =
+            crate::FieldWriter<'a, REG, 4, FrontEndBasebandClockImage>;
+        impl<'a, REG> RomOpenFeBbUnknownLowW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "Complete low-nibble image published by the rev0 ROM front-end/baseband clock leaf."]
+            #[inline(always)]
+            pub fn rom_required(self) -> &'a mut crate::W<REG> {
+                self.variant(FrontEndBasebandClockImage::RomRequired)
+            }
+        }
+        #[doc = "Field `HP_ACTIVE_XPD_BB_I2C` reader - Active-state baseband analog-I2C power control."]
+        pub type HpActiveXpdBbI2cR = crate::BitReader;
+        #[doc = "Field `HP_ACTIVE_XPD_BB_I2C` writer - Active-state baseband analog-I2C power control."]
+        pub type HpActiveXpdBbI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:3 - Low-nibble image set by complete rev0 ROM phy_open_fe_bb_clk; individual bit semantics remain unknown."]
+            #[inline(always)]
+            pub fn rom_open_fe_bb_unknown_low(&self) -> RomOpenFeBbUnknownLowR {
+                RomOpenFeBbUnknownLowR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bit 22 - Active-state baseband analog-I2C power control."]
+            #[inline(always)]
+            pub fn hp_active_xpd_bb_i2c(&self) -> HpActiveXpdBbI2cR {
+                HpActiveXpdBbI2cR::new(((self.bits >> 22) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3 - Low-nibble image set by complete rev0 ROM phy_open_fe_bb_clk; individual bit semantics remain unknown."]
+            #[inline(always)]
+            pub fn rom_open_fe_bb_unknown_low(
+                &mut self,
+            ) -> RomOpenFeBbUnknownLowW<'_, HpActiveHpCkPowerSpec> {
+                RomOpenFeBbUnknownLowW::new(self, 0)
+            }
+            #[doc = "Bit 22 - Active-state baseband analog-I2C power control."]
+            #[inline(always)]
+            pub fn hp_active_xpd_bb_i2c(&mut self) -> HpActiveXpdBbI2cW<'_, HpActiveHpCkPowerSpec> {
+                HpActiveXpdBbI2cW::new(self, 22)
+            }
+        }
+        #[doc = "Active-state high-power clock and analog-I2C power control reached by the complete front-end/baseband clock body.\n\nYou can [`read`](crate::Reg::read) this register and get [`hp_active_hp_ck_power::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hp_active_hp_ck_power::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HpActiveHpCkPowerSpec;
+        impl crate::RegisterSpec for HpActiveHpCkPowerSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`hp_active_hp_ck_power::R`](R) reader structure"]
+        impl crate::Readable for HpActiveHpCkPowerSpec {}
+        #[doc = "`write(|w| ..)` method takes [`hp_active_hp_ck_power::W`](W) writer structure"]
+        impl crate::Writable for HpActiveHpCkPowerSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets HP_ACTIVE_HP_CK_POWER to value 0"]
+        impl crate::Resettable for HpActiveHpCkPowerSpec {}
+    }
+    #[doc = "IMM_HP_CK_POWER_0 (rw) register accessor: Immediate high-power clock ties. The reviewed complete PHY body reads this word before its preserving update, overriding the write-only access class in the uncorrected public SVD.\n\nYou can [`read`](crate::Reg::read) this register and get [`imm_hp_ck_power_0::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_hp_ck_power_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@imm_hp_ck_power_0`] module"]
+    #[doc(alias = "IMM_HP_CK_POWER_0")]
+    pub type ImmHpCkPower0 = crate::Reg<imm_hp_ck_power_0::ImmHpCkPower0Spec>;
+    #[doc = "Immediate high-power clock ties. The reviewed complete PHY body reads this word before its preserving update, overriding the write-only access class in the uncorrected public SVD."]
+    pub mod imm_hp_ck_power_0 {
+        #[doc = "Register `IMM_HP_CK_POWER_0` reader"]
+        pub type R = crate::R<ImmHpCkPower0Spec>;
+        #[doc = "Register `IMM_HP_CK_POWER_0` writer"]
+        pub type W = crate::W<ImmHpCkPower0Spec>;
+        #[doc = "Field `TIE_HIGH_XPD_BB_I2C` reader - Force the baseband analog-I2C power control high."]
+        pub type TieHighXpdBbI2cR = crate::BitReader;
+        #[doc = "Field `TIE_HIGH_XPD_BB_I2C` writer - Force the baseband analog-I2C power control high."]
+        pub type TieHighXpdBbI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 28 - Force the baseband analog-I2C power control high."]
+            #[inline(always)]
+            pub fn tie_high_xpd_bb_i2c(&self) -> TieHighXpdBbI2cR {
+                TieHighXpdBbI2cR::new(((self.bits >> 28) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 28 - Force the baseband analog-I2C power control high."]
+            #[inline(always)]
+            pub fn tie_high_xpd_bb_i2c(&mut self) -> TieHighXpdBbI2cW<'_, ImmHpCkPower0Spec> {
+                TieHighXpdBbI2cW::new(self, 28)
+            }
+        }
+        #[doc = "Immediate high-power clock ties. The reviewed complete PHY body reads this word before its preserving update, overriding the write-only access class in the uncorrected public SVD.\n\nYou can [`read`](crate::Reg::read) this register and get [`imm_hp_ck_power_0::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_hp_ck_power_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ImmHpCkPower0Spec;
+        impl crate::RegisterSpec for ImmHpCkPower0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`imm_hp_ck_power_0::R`](R) reader structure"]
+        impl crate::Readable for ImmHpCkPower0Spec {}
+        #[doc = "`write(|w| ..)` method takes [`imm_hp_ck_power_0::W`](W) writer structure"]
+        impl crate::Writable for ImmHpCkPower0Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets IMM_HP_CK_POWER_0 to value 0"]
+        impl crate::Resettable for ImmHpCkPower0Spec {}
+    }
+    #[doc = "IMM_SLEEP_SYSCLK (w) register accessor: Immediate sleep/system-clock update commands.\n\nYou can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_sleep_sysclk::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@imm_sleep_sysclk`] module"]
+    #[doc(alias = "IMM_SLEEP_SYSCLK")]
+    pub type ImmSleepSysclk = crate::Reg<imm_sleep_sysclk::ImmSleepSysclkSpec>;
+    #[doc = "Immediate sleep/system-clock update commands."]
+    pub mod imm_sleep_sysclk {
+        #[doc = "Register `IMM_SLEEP_SYSCLK` writer"]
+        pub type W = crate::W<ImmSleepSysclkSpec>;
+        #[doc = "Field `UPDATE_DIG_ICG_SWITCH` writer - Publish the selected digital clock-gating switch state."]
+        pub type UpdateDigIcgSwitchW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl W {
+            #[doc = "Bit 28 - Publish the selected digital clock-gating switch state."]
+            #[inline(always)]
+            pub fn update_dig_icg_switch(&mut self) -> UpdateDigIcgSwitchW<'_, ImmSleepSysclkSpec> {
+                UpdateDigIcgSwitchW::new(self, 28)
+            }
+        }
+        #[doc = "Immediate sleep/system-clock update commands.\n\nYou can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_sleep_sysclk::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ImmSleepSysclkSpec;
+        impl crate::RegisterSpec for ImmSleepSysclkSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`imm_sleep_sysclk::W`](W) writer structure"]
+        impl crate::Writable for ImmSleepSysclkSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets IMM_SLEEP_SYSCLK to value 0"]
+        impl crate::Resettable for ImmSleepSysclkSpec {}
+    }
+    #[doc = "IMM_MODEM_ICG (w) register accessor: Immediate modem clock-gating update command.\n\nYou can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_modem_icg::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@imm_modem_icg`] module"]
+    #[doc(alias = "IMM_MODEM_ICG")]
+    pub type ImmModemIcg = crate::Reg<imm_modem_icg::ImmModemIcgSpec>;
+    #[doc = "Immediate modem clock-gating update command."]
+    pub mod imm_modem_icg {
+        #[doc = "Register `IMM_MODEM_ICG` writer"]
+        pub type W = crate::W<ImmModemIcgSpec>;
+        #[doc = "Field `UPDATE_DIG_ICG_MODEM_EN` writer - Publish the selected digital modem clock-gating state."]
+        pub type UpdateDigIcgModemEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl W {
+            #[doc = "Bit 31 - Publish the selected digital modem clock-gating state."]
+            #[inline(always)]
+            pub fn update_dig_icg_modem_en(&mut self) -> UpdateDigIcgModemEnW<'_, ImmModemIcgSpec> {
+                UpdateDigIcgModemEnW::new(self, 31)
+            }
+        }
+        #[doc = "Immediate modem clock-gating update command.\n\nYou can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_modem_icg::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ImmModemIcgSpec;
+        impl crate::RegisterSpec for ImmModemIcgSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`imm_modem_icg::W`](W) writer structure"]
+        impl crate::Writable for ImmModemIcgSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets IMM_MODEM_ICG to value 0"]
+        impl crate::Resettable for ImmModemIcgSpec {}
+    }
+    #[doc = "RF_PWC (rw) register accessor: RF circuit power control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_pwc::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_pwc::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rf_pwc`] module"]
+    #[doc(alias = "RF_PWC")]
+    pub type RfPwc = crate::Reg<rf_pwc::RfPwcSpec>;
+    #[doc = "RF circuit power control."]
+    pub mod rf_pwc {
+        #[doc = "Register `RF_PWC` reader"]
+        pub type R = crate::R<RfPwcSpec>;
+        #[doc = "Register `RF_PWC` writer"]
+        pub type W = crate::W<RfPwcSpec>;
+        #[doc = "Sixteen RF circuit power-control bits.\n\nValue on reset: 0"]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u16)]
+        pub enum RfCircuitPower {
+            #[doc = "0: Clear every reviewed RF circuit power-control bit."]
+            PoweredOff = 0,
+            #[doc = "65535: Set every reviewed RF circuit power-control bit."]
+            PoweredOn = 65535,
+        }
+        impl From<RfCircuitPower> for u16 {
+            #[inline(always)]
+            fn from(variant: RfCircuitPower) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for RfCircuitPower {
+            type Ux = u16;
+        }
+        impl crate::IsEnum for RfCircuitPower {}
+        #[doc = "Field `XPD_RF_CIRCUIT` reader - Sixteen RF circuit power-control bits."]
+        pub type XpdRfCircuitR = crate::FieldReader<RfCircuitPower>;
+        impl XpdRfCircuitR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<RfCircuitPower> {
+                match self.bits {
+                    0 => Some(RfCircuitPower::PoweredOff),
+                    65535 => Some(RfCircuitPower::PoweredOn),
+                    _ => None,
+                }
+            }
+            #[doc = "Clear every reviewed RF circuit power-control bit."]
+            #[inline(always)]
+            pub fn is_powered_off(&self) -> bool {
+                *self == RfCircuitPower::PoweredOff
+            }
+            #[doc = "Set every reviewed RF circuit power-control bit."]
+            #[inline(always)]
+            pub fn is_powered_on(&self) -> bool {
+                *self == RfCircuitPower::PoweredOn
+            }
+        }
+        #[doc = "Field `XPD_RF_CIRCUIT` writer - Sixteen RF circuit power-control bits."]
+        pub type XpdRfCircuitW<'a, REG> = crate::FieldWriter<'a, REG, 16, RfCircuitPower>;
+        impl<'a, REG> XpdRfCircuitW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u16>,
+        {
+            #[doc = "Clear every reviewed RF circuit power-control bit."]
+            #[inline(always)]
+            pub fn powered_off(self) -> &'a mut crate::W<REG> {
+                self.variant(RfCircuitPower::PoweredOff)
+            }
+            #[doc = "Set every reviewed RF circuit power-control bit."]
+            #[inline(always)]
+            pub fn powered_on(self) -> &'a mut crate::W<REG> {
+                self.variant(RfCircuitPower::PoweredOn)
+            }
+        }
+        impl R {
+            #[doc = "Bits 16:31 - Sixteen RF circuit power-control bits."]
+            #[inline(always)]
+            pub fn xpd_rf_circuit(&self) -> XpdRfCircuitR {
+                XpdRfCircuitR::new(((self.bits >> 16) & 0xffff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 16:31 - Sixteen RF circuit power-control bits."]
+            #[inline(always)]
+            pub fn xpd_rf_circuit(&mut self) -> XpdRfCircuitW<'_, RfPwcSpec> {
+                XpdRfCircuitW::new(self, 16)
+            }
+        }
+        #[doc = "RF circuit power control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_pwc::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_pwc::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RfPwcSpec;
+        impl crate::RegisterSpec for RfPwcSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rf_pwc::R`](R) reader structure"]
+        impl crate::Readable for RfPwcSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rf_pwc::W`](W) writer structure"]
+        impl crate::Writable for RfPwcSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets RF_PWC to value 0"]
+        impl crate::Resettable for RfPwcSpec {}
+    }
+    #[doc = "ANA_PERI_PWR_CTRL (rw) register accessor: Analog peripheral I2C power and active-low reset control.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_peri_pwr_ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_peri_pwr_ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ana_peri_pwr_ctrl`] module"]
+    #[doc(alias = "ANA_PERI_PWR_CTRL")]
+    pub type AnaPeriPwrCtrl = crate::Reg<ana_peri_pwr_ctrl::AnaPeriPwrCtrlSpec>;
+    #[doc = "Analog peripheral I2C power and active-low reset control."]
+    pub mod ana_peri_pwr_ctrl {
+        #[doc = "Register `ANA_PERI_PWR_CTRL` reader"]
+        pub type R = crate::R<AnaPeriPwrCtrlSpec>;
+        #[doc = "Register `ANA_PERI_PWR_CTRL` writer"]
+        pub type W = crate::W<AnaPeriPwrCtrlSpec>;
+        #[doc = "Field `XPD_PERIF_I2C` reader - Analog peripheral I2C power control."]
+        pub type XpdPerifI2cR = crate::BitReader;
+        #[doc = "Field `XPD_PERIF_I2C` writer - Analog peripheral I2C power control."]
+        pub type XpdPerifI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RSTB_PERIF_I2C` reader - Analog peripheral I2C active-low reset release."]
+        pub type RstbPerifI2cR = crate::BitReader;
+        #[doc = "Field `RSTB_PERIF_I2C` writer - Analog peripheral I2C active-low reset release."]
+        pub type RstbPerifI2cW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 30 - Analog peripheral I2C power control."]
+            #[inline(always)]
+            pub fn xpd_perif_i2c(&self) -> XpdPerifI2cR {
+                XpdPerifI2cR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Analog peripheral I2C active-low reset release."]
+            #[inline(always)]
+            pub fn rstb_perif_i2c(&self) -> RstbPerifI2cR {
+                RstbPerifI2cR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 30 - Analog peripheral I2C power control."]
+            #[inline(always)]
+            pub fn xpd_perif_i2c(&mut self) -> XpdPerifI2cW<'_, AnaPeriPwrCtrlSpec> {
+                XpdPerifI2cW::new(self, 30)
+            }
+            #[doc = "Bit 31 - Analog peripheral I2C active-low reset release."]
+            #[inline(always)]
+            pub fn rstb_perif_i2c(&mut self) -> RstbPerifI2cW<'_, AnaPeriPwrCtrlSpec> {
+                RstbPerifI2cW::new(self, 31)
+            }
+        }
+        #[doc = "Analog peripheral I2C power and active-low reset control.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_peri_pwr_ctrl::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_peri_pwr_ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AnaPeriPwrCtrlSpec;
+        impl crate::RegisterSpec for AnaPeriPwrCtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ana_peri_pwr_ctrl::R`](R) reader structure"]
+        impl crate::Readable for AnaPeriPwrCtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ana_peri_pwr_ctrl::W`](W) writer structure"]
+        impl crate::Writable for AnaPeriPwrCtrlSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets ANA_PERI_PWR_CTRL to value 0x4000_0000"]
+        impl crate::Resettable for AnaPeriPwrCtrlSpec {
+            const RESET_VALUE: u32 = 0x4000_0000;
+        }
+    }
+}
+#[doc = "Route-owned high-power system clock/reset words shared by the reviewed Wi-Fi, Bluetooth and IEEE 802.15.4 lifecycles. Unrelated HP_SYS_CLKRST words remain platform-owned."]
+pub type HpSysClkrstRadio = crate::Periph<hp_sys_clkrst_radio::RegisterBlock, 0x2058_7000>;
+impl core::fmt::Debug for HpSysClkrstRadio {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("HpSysClkrstRadio").finish()
+    }
+}
+#[doc = "Route-owned high-power system clock/reset words shared by the reviewed Wi-Fi, Bluetooth and IEEE 802.15.4 lifecycles. Unrelated HP_SYS_CLKRST words remain platform-owned."]
+pub mod hp_sys_clkrst_radio {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x40],
+        modem_ctrl0: ModemCtrl0,
+        _reserved1: [u8; 0x013c],
+        ref_160m_ctrl0: Ref160mCtrl0,
+        _reserved2: [u8; 0x5c],
+        modem_conf: ModemConf,
+    }
+    impl RegisterBlock {
+        #[doc = "0x40 - Modem control/register-bus clock gate."]
+        #[inline(always)]
+        pub const fn modem_ctrl0(&self) -> &ModemCtrl0 {
+            &self.modem_ctrl0
+        }
+        #[doc = "0x180 - 160 MHz reference divider and clock gate."]
+        #[inline(always)]
+        pub const fn ref_160m_ctrl0(&self) -> &Ref160mCtrl0 {
+            &self.ref_160m_ctrl0
+        }
+        #[doc = "0x1e0 - Modem APB, reset and source-clock configuration."]
+        #[inline(always)]
+        pub const fn modem_conf(&self) -> &ModemConf {
+            &self.modem_conf
+        }
+    }
+    #[doc = "MODEM_CTRL0 (rw) register accessor: Modem control/register-bus clock gate.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_ctrl0::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_ctrl0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@modem_ctrl0`] module"]
+    #[doc(alias = "MODEM_CTRL0")]
+    pub type ModemCtrl0 = crate::Reg<modem_ctrl0::ModemCtrl0Spec>;
+    #[doc = "Modem control/register-bus clock gate."]
+    pub mod modem_ctrl0 {
+        #[doc = "Register `MODEM_CTRL0` reader"]
+        pub type R = crate::R<ModemCtrl0Spec>;
+        #[doc = "Register `MODEM_CTRL0` writer"]
+        pub type W = crate::W<ModemCtrl0Spec>;
+        #[doc = "Field `MODEM_CLK_EN` reader - Modem control/register-bus clock enable."]
+        pub type ModemClkEnR = crate::BitReader;
+        #[doc = "Field `MODEM_CLK_EN` writer - Modem control/register-bus clock enable."]
+        pub type ModemClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Modem control/register-bus clock enable."]
+            #[inline(always)]
+            pub fn modem_clk_en(&self) -> ModemClkEnR {
+                ModemClkEnR::new((self.bits & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Modem control/register-bus clock enable."]
+            #[inline(always)]
+            pub fn modem_clk_en(&mut self) -> ModemClkEnW<'_, ModemCtrl0Spec> {
+                ModemClkEnW::new(self, 0)
+            }
+        }
+        #[doc = "Modem control/register-bus clock gate.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_ctrl0::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_ctrl0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ModemCtrl0Spec;
+        impl crate::RegisterSpec for ModemCtrl0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`modem_ctrl0::R`](R) reader structure"]
+        impl crate::Readable for ModemCtrl0Spec {}
+        #[doc = "`write(|w| ..)` method takes [`modem_ctrl0::W`](W) writer structure"]
+        impl crate::Writable for ModemCtrl0Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets MODEM_CTRL0 to value 0x01"]
+        impl crate::Resettable for ModemCtrl0Spec {
+            const RESET_VALUE: u32 = 0x01;
+        }
+    }
+    #[doc = "REF_160M_CTRL0 (rw) register accessor: 160 MHz reference divider and clock gate.\n\nYou can [`read`](crate::Reg::read) this register and get [`ref_160m_ctrl0::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ref_160m_ctrl0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ref_160m_ctrl0`] module"]
+    #[doc(alias = "REF_160M_CTRL0")]
+    pub type Ref160mCtrl0 = crate::Reg<ref_160m_ctrl0::Ref160mCtrl0Spec>;
+    #[doc = "160 MHz reference divider and clock gate."]
+    pub mod ref_160m_ctrl0 {
+        #[doc = "Register `REF_160M_CTRL0` reader"]
+        pub type R = crate::R<Ref160mCtrl0Spec>;
+        #[doc = "Register `REF_160M_CTRL0` writer"]
+        pub type W = crate::W<Ref160mCtrl0Spec>;
+        #[doc = "160 MHz reference divider programmed by the platform clock tree.\n\nValue on reset: 2"]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum Ref160mDivider {
+            #[doc = "2: Divider image two programmed by official ESP-HAL for the fixed 480 MHz BBPLL source."]
+            Fixed480mhzSource = 2,
+        }
+        impl From<Ref160mDivider> for u8 {
+            #[inline(always)]
+            fn from(variant: Ref160mDivider) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Ref160mDivider {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for Ref160mDivider {}
+        #[doc = "Field `REF_160M_CLK_DIV_NUM` reader - 160 MHz reference divider programmed by the platform clock tree."]
+        pub type Ref160mClkDivNumR = crate::FieldReader<Ref160mDivider>;
+        impl Ref160mClkDivNumR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<Ref160mDivider> {
+                match self.bits {
+                    2 => Some(Ref160mDivider::Fixed480mhzSource),
+                    _ => None,
+                }
+            }
+            #[doc = "Divider image two programmed by official ESP-HAL for the fixed 480 MHz BBPLL source."]
+            #[inline(always)]
+            pub fn is_fixed_480mhz_source(&self) -> bool {
+                *self == Ref160mDivider::Fixed480mhzSource
+            }
+        }
+        #[doc = "Field `REF_160M_CLK_DIV_NUM` writer - 160 MHz reference divider programmed by the platform clock tree."]
+        pub type Ref160mClkDivNumW<'a, REG> = crate::FieldWriter<'a, REG, 8, Ref160mDivider>;
+        impl<'a, REG> Ref160mClkDivNumW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "Divider image two programmed by official ESP-HAL for the fixed 480 MHz BBPLL source."]
+            #[inline(always)]
+            pub fn fixed_480mhz_source(self) -> &'a mut crate::W<REG> {
+                self.variant(Ref160mDivider::Fixed480mhzSource)
+            }
+        }
+        #[doc = "Field `REF_160M_CLK_EN` reader - 160 MHz reference clock gate shared by the radio lifecycles."]
+        pub type Ref160mClkEnR = crate::BitReader;
+        #[doc = "Field `REF_160M_CLK_EN` writer - 160 MHz reference clock gate shared by the radio lifecycles."]
+        pub type Ref160mClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:7 - 160 MHz reference divider programmed by the platform clock tree."]
+            #[inline(always)]
+            pub fn ref_160m_clk_div_num(&self) -> Ref160mClkDivNumR {
+                Ref160mClkDivNumR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bit 8 - 160 MHz reference clock gate shared by the radio lifecycles."]
+            #[inline(always)]
+            pub fn ref_160m_clk_en(&self) -> Ref160mClkEnR {
+                Ref160mClkEnR::new(((self.bits >> 8) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7 - 160 MHz reference divider programmed by the platform clock tree."]
+            #[inline(always)]
+            pub fn ref_160m_clk_div_num(&mut self) -> Ref160mClkDivNumW<'_, Ref160mCtrl0Spec> {
+                Ref160mClkDivNumW::new(self, 0)
+            }
+            #[doc = "Bit 8 - 160 MHz reference clock gate shared by the radio lifecycles."]
+            #[inline(always)]
+            pub fn ref_160m_clk_en(&mut self) -> Ref160mClkEnW<'_, Ref160mCtrl0Spec> {
+                Ref160mClkEnW::new(self, 8)
+            }
+        }
+        #[doc = "160 MHz reference divider and clock gate.\n\nYou can [`read`](crate::Reg::read) this register and get [`ref_160m_ctrl0::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ref_160m_ctrl0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Ref160mCtrl0Spec;
+        impl crate::RegisterSpec for Ref160mCtrl0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ref_160m_ctrl0::R`](R) reader structure"]
+        impl crate::Readable for Ref160mCtrl0Spec {}
+        #[doc = "`write(|w| ..)` method takes [`ref_160m_ctrl0::W`](W) writer structure"]
+        impl crate::Writable for Ref160mCtrl0Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets REF_160M_CTRL0 to value 0x0102"]
+        impl crate::Resettable for Ref160mCtrl0Spec {
+            const RESET_VALUE: u32 = 0x0102;
+        }
+    }
+    #[doc = "MODEM_CONF (rw) register accessor: Modem APB, reset and source-clock configuration.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@modem_conf`] module"]
+    #[doc(alias = "MODEM_CONF")]
+    pub type ModemConf = crate::Reg<modem_conf::ModemConfSpec>;
+    #[doc = "Modem APB, reset and source-clock configuration."]
+    pub mod modem_conf {
+        #[doc = "Register `MODEM_CONF` reader"]
+        pub type R = crate::R<ModemConfSpec>;
+        #[doc = "Register `MODEM_CONF` writer"]
+        pub type W = crate::W<ModemConfSpec>;
+        #[doc = "Field `MODEM_APB_CLK_EN` reader - Modem APB clock enable."]
+        pub type ModemApbClkEnR = crate::BitReader;
+        #[doc = "Field `MODEM_APB_CLK_EN` writer - Modem APB clock enable."]
+        pub type ModemApbClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MODEM_RST_EN` reader - Modem subsystem reset assertion."]
+        pub type ModemRstEnR = crate::BitReader;
+        #[doc = "Field `MODEM_RST_EN` writer - Modem subsystem reset assertion."]
+        pub type ModemRstEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MODEM_CLK_EN` reader - Modem source-clock enable."]
+        pub type ModemClkEnR = crate::BitReader;
+        #[doc = "Field `MODEM_CLK_EN` writer - Modem source-clock enable."]
+        pub type ModemClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MODEM_CLK_SOURCE_SEL` reader - Modem source-clock selector."]
+        pub type ModemClkSourceSelR = crate::BitReader;
+        #[doc = "Field `MODEM_CLK_SOURCE_SEL` writer - Modem source-clock selector."]
+        pub type ModemClkSourceSelW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MODEM_PLL_CLK_EN` reader - Modem PLL clock enable."]
+        pub type ModemPllClkEnR = crate::BitReader;
+        #[doc = "Field `MODEM_PLL_CLK_EN` writer - Modem PLL clock enable."]
+        pub type ModemPllClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MODEM_XTAL_CLK_EN` reader - Modem crystal clock enable."]
+        pub type ModemXtalClkEnR = crate::BitReader;
+        #[doc = "Field `MODEM_XTAL_CLK_EN` writer - Modem crystal clock enable."]
+        pub type ModemXtalClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Modem APB clock enable."]
+            #[inline(always)]
+            pub fn modem_apb_clk_en(&self) -> ModemApbClkEnR {
+                ModemApbClkEnR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Modem subsystem reset assertion."]
+            #[inline(always)]
+            pub fn modem_rst_en(&self) -> ModemRstEnR {
+                ModemRstEnR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Modem source-clock enable."]
+            #[inline(always)]
+            pub fn modem_clk_en(&self) -> ModemClkEnR {
+                ModemClkEnR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Modem source-clock selector."]
+            #[inline(always)]
+            pub fn modem_clk_source_sel(&self) -> ModemClkSourceSelR {
+                ModemClkSourceSelR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4 - Modem PLL clock enable."]
+            #[inline(always)]
+            pub fn modem_pll_clk_en(&self) -> ModemPllClkEnR {
+                ModemPllClkEnR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Modem crystal clock enable."]
+            #[inline(always)]
+            pub fn modem_xtal_clk_en(&self) -> ModemXtalClkEnR {
+                ModemXtalClkEnR::new(((self.bits >> 5) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Modem APB clock enable."]
+            #[inline(always)]
+            pub fn modem_apb_clk_en(&mut self) -> ModemApbClkEnW<'_, ModemConfSpec> {
+                ModemApbClkEnW::new(self, 0)
+            }
+            #[doc = "Bit 1 - Modem subsystem reset assertion."]
+            #[inline(always)]
+            pub fn modem_rst_en(&mut self) -> ModemRstEnW<'_, ModemConfSpec> {
+                ModemRstEnW::new(self, 1)
+            }
+            #[doc = "Bit 2 - Modem source-clock enable."]
+            #[inline(always)]
+            pub fn modem_clk_en(&mut self) -> ModemClkEnW<'_, ModemConfSpec> {
+                ModemClkEnW::new(self, 2)
+            }
+            #[doc = "Bit 3 - Modem source-clock selector."]
+            #[inline(always)]
+            pub fn modem_clk_source_sel(&mut self) -> ModemClkSourceSelW<'_, ModemConfSpec> {
+                ModemClkSourceSelW::new(self, 3)
+            }
+            #[doc = "Bit 4 - Modem PLL clock enable."]
+            #[inline(always)]
+            pub fn modem_pll_clk_en(&mut self) -> ModemPllClkEnW<'_, ModemConfSpec> {
+                ModemPllClkEnW::new(self, 4)
+            }
+            #[doc = "Bit 5 - Modem crystal clock enable."]
+            #[inline(always)]
+            pub fn modem_xtal_clk_en(&mut self) -> ModemXtalClkEnW<'_, ModemConfSpec> {
+                ModemXtalClkEnW::new(self, 5)
+            }
+        }
+        #[doc = "Modem APB, reset and source-clock configuration.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ModemConfSpec;
+        impl crate::RegisterSpec for ModemConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`modem_conf::R`](R) reader structure"]
+        impl crate::Readable for ModemConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`modem_conf::W`](W) writer structure"]
+        impl crate::Writable for ModemConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets MODEM_CONF to value 0x25"]
+        impl crate::Resettable for ModemConfSpec {
+            const RESET_VALUE: u32 = 0x25;
+        }
+    }
+}
 #[doc = "Route-owned MODEM_SYSCON clocks, resets and shared Wi-Fi-baseband control used by the exclusive Wi-Fi, Bluetooth and IEEE 802.15.4 lifecycles."]
 pub type ModemSysconRadio = crate::Periph<modem_syscon_radio::RegisterBlock, 0x2010_9c00>;
 impl core::fmt::Debug for ModemSysconRadio {
@@ -52196,6 +52993,10 @@ pub struct Peripherals {
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
+    #[doc = "PMU_RADIO"]
+    pub pmu_radio: PmuRadio,
+    #[doc = "HP_SYS_CLKRST_RADIO"]
+    pub hp_sys_clkrst_radio: HpSysClkrstRadio,
     #[doc = "MODEM_SYSCON_RADIO"]
     pub modem_syscon_radio: ModemSysconRadio,
     #[doc = "MODEM_LPCON_SHARED_CLOCK"]
@@ -52412,6 +53213,8 @@ impl Peripherals {
             phy_rx_dco_oracle: unsafe { PhyRxDcoOracle::steal() },
             phy_cold_deadline_oracle: unsafe { PhyColdDeadlineOracle::steal() },
             phy_clock_oracle: unsafe { PhyClockOracle::steal() },
+            pmu_radio: unsafe { PmuRadio::steal() },
+            hp_sys_clkrst_radio: unsafe { HpSysClkrstRadio::steal() },
             modem_syscon_radio: unsafe { ModemSysconRadio::steal() },
             modem_lpcon_shared_clock: unsafe { ModemLpconSharedClock::steal() },
             modem_lpcon_phy_tick: unsafe { ModemLpconPhyTick::steal() },
@@ -52828,6 +53631,8 @@ pub mod peripheral_ownership {
 
     /// Role-neutral RF and PHY register views serialized by the shared radio lifecycle.
     pub struct RadioPhyPeripherals {
+        pub hp_sys_clkrst_radio: crate::HpSysClkrstRadio,
+        pub pmu_radio: crate::PmuRadio,
         pub modem_syscon_radio: crate::ModemSysconRadio,
         pub phy_agc_oracle: crate::PhyAgcOracle,
         pub phy_agc_recovered_gaps: crate::PhyAgcRecoveredGaps,
@@ -52949,6 +53754,8 @@ pub mod peripheral_ownership {
             phy_rx_dco_oracle,
             phy_cold_deadline_oracle,
             phy_clock_oracle,
+            pmu_radio,
+            hp_sys_clkrst_radio,
             modem_syscon_radio,
             modem_lpcon_shared_clock,
             modem_lpcon_phy_tick,
@@ -53095,6 +53902,8 @@ pub mod peripheral_ownership {
                 wifi_mac_power_interrupt,
             },
             radio_phy: RadioPhyPeripherals {
+                hp_sys_clkrst_radio,
+                pmu_radio,
                 modem_syscon_radio,
                 phy_agc_oracle,
                 phy_agc_recovered_gaps,

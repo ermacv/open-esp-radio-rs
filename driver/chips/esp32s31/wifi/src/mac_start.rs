@@ -3,7 +3,7 @@
 use open_esp_radio_esp32s31_hal::{Radio, state::Powered};
 use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyState, PhyTxTargetPowerProfile};
 use open_esp_radio_esp32s31_wifi_mac::init::{
-    MacClockControl, MacCoexPtiSource, MacColdStartError, MacColdStartOutcome, MacDelayEntropy,
+    MacCoexPtiSource, MacColdStartError, MacColdStartOutcome, MacDelayEntropy,
     MacSlowClockCalibrationSource, MacTxPowerSource, initialize_wifi_mac,
 };
 use open_esp_radio_wifi_softmac::WifiMacAddress;
@@ -16,11 +16,7 @@ use crate::cold_start::{Esp32s31WifiColdStart, Esp32s31WifiColdStartReport};
 /// The installation method is deliberately semantic: MAC code never borrows
 /// the PHY parameter arena and never depends on an ESP-HAL singleton type.
 pub trait Esp32s31WifiMacPlatform:
-    MacClockControl
-    + MacCoexPtiSource
-    + MacDelayEntropy
-    + MacSlowClockCalibrationSource
-    + MacTxPowerSource
+    MacCoexPtiSource + MacDelayEntropy + MacSlowClockCalibrationSource + MacTxPowerSource
 {
     fn install_phy_tx_power_profile(&mut self, profile: PhyTxTargetPowerProfile);
 }

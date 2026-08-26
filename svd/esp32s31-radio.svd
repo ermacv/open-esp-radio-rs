@@ -5,11 +5,10 @@
   <name>ESP32S31_RADIO</name>
   <series>ESP32-S31</series>
   <version>3.52</version>
-  <description>Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
-    LP-peripheral dependencies not yet delegated to the official platform PAC.
-    HP_SYS_CLKRST, the remaining unclaimed MODEM_LPCON registers,
-    PMU remains delegated to esp-hal and the official ESP32-S31 PAC.
-    I2C_ANA_MST, MODEM_SYSCON_RADIO, MODEM_LPCON_SHARED_CLOCK, MODEM_LPCON_PHY_TICK, LP_AON_CLKRST,
+  <description>Recovered ESP32-S31 modem/radio core plus the minimum platform dependencies
+    no longer delegated to an external platform PAC. Unclaimed MODEM_LPCON,
+    PMU and HP_SYS_CLKRST words remain platform-owned.
+    I2C_ANA_MST, PMU_RADIO, HP_SYS_CLKRST_RADIO, MODEM_SYSCON_RADIO, MODEM_LPCON_SHARED_CLOCK, MODEM_LPCON_PHY_TICK, LP_AON_CLKRST,
     LP_PERICLKRST and LP_TSENS are canonical reviewed radio-PHY dependencies.
     These are independently decoded
     MMIO windows, not one monolithic radio peripheral. Covered functions include PHY-PBus,
@@ -5103,6 +5102,281 @@
                   <value>4294967295</value>
                 </enumeratedValue>
               </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>PMU_RADIO</name>
+      <description>Route-owned PMU words used by the reviewed shared radio clock, RF-power and analog-I2C lifecycles. Unrelated PMU words remain platform-owned.</description>
+      <baseAddress>0x20704000</baseAddress>
+      <registers>
+        <register>
+          <name>HP_ACTIVE_ICG_MODEM</name>
+          <description>Active-state modem clock-gating selection.</description>
+          <addressOffset>0x14</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>HP_ACTIVE_DIG_ICG_MODEM_CODE</name>
+              <description>Two-bit active-state modem clock-gating code; official ESP-HAL publishes code two for the active configuration.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>ActiveModemIcgCode</name>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>ACTIVE</name>
+                  <description>Active-state modem clock-gating code published by official ESP-HAL.</description>
+                  <value>2</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>HP_ACTIVE_HP_CK_POWER</name>
+          <description>Active-state high-power clock and analog-I2C power control reached by the complete front-end/baseband clock body.</description>
+          <addressOffset>0x1C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>ROM_OPEN_FE_BB_UNKNOWN_LOW</name>
+              <description>Low-nibble image set by complete rev0 ROM phy_open_fe_bb_clk; individual bit semantics remain unknown.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>FrontEndBasebandClockImage</name>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>ROM_REQUIRED</name>
+                  <description>Complete low-nibble image published by the rev0 ROM front-end/baseband clock leaf.</description>
+                  <value>15</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>HP_ACTIVE_XPD_BB_I2C</name>
+              <description>Active-state baseband analog-I2C power control.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>IMM_HP_CK_POWER_0</name>
+          <description>Immediate high-power clock ties. The reviewed complete PHY body reads this word before its preserving update, overriding the write-only access class in the uncorrected public SVD.</description>
+          <addressOffset>0xF0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>TIE_HIGH_XPD_BB_I2C</name>
+              <description>Force the baseband analog-I2C power control high.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>IMM_SLEEP_SYSCLK</name>
+          <description>Immediate sleep/system-clock update commands.</description>
+          <addressOffset>0xF8</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>UPDATE_DIG_ICG_SWITCH</name>
+              <description>Publish the selected digital clock-gating switch state.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>IMM_MODEM_ICG</name>
+          <description>Immediate modem clock-gating update command.</description>
+          <addressOffset>0x104</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>UPDATE_DIG_ICG_MODEM_EN</name>
+              <description>Publish the selected digital modem clock-gating state.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RF_PWC</name>
+          <description>RF circuit power control.</description>
+          <addressOffset>0x184</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>XPD_RF_CIRCUIT</name>
+              <description>Sixteen RF circuit power-control bits.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>RfCircuitPower</name>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>POWERED_OFF</name>
+                  <description>Clear every reviewed RF circuit power-control bit.</description>
+                  <value>0</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>POWERED_ON</name>
+                  <description>Set every reviewed RF circuit power-control bit.</description>
+                  <value>65535</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>ANA_PERI_PWR_CTRL</name>
+          <description>Analog peripheral I2C power and active-low reset control.</description>
+          <addressOffset>0x208</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x40000000</resetValue>
+          <fields>
+            <field>
+              <name>XPD_PERIF_I2C</name>
+              <description>Analog peripheral I2C power control.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RSTB_PERIF_I2C</name>
+              <description>Analog peripheral I2C active-low reset release.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>HP_SYS_CLKRST_RADIO</name>
+      <description>Route-owned high-power system clock/reset words shared by the reviewed Wi-Fi, Bluetooth and IEEE 802.15.4 lifecycles. Unrelated HP_SYS_CLKRST words remain platform-owned.</description>
+      <baseAddress>0x20587000</baseAddress>
+      <registers>
+        <register>
+          <name>MODEM_CTRL0</name>
+          <description>Modem control/register-bus clock gate.</description>
+          <addressOffset>0x40</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000001</resetValue>
+          <fields>
+            <field>
+              <name>MODEM_CLK_EN</name>
+              <description>Modem control/register-bus clock enable.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>REF_160M_CTRL0</name>
+          <description>160 MHz reference divider and clock gate.</description>
+          <addressOffset>0x180</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000102</resetValue>
+          <fields>
+            <field>
+              <name>REF_160M_CLK_DIV_NUM</name>
+              <description>160 MHz reference divider programmed by the platform clock tree.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>Ref160mDivider</name>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>FIXED_480MHZ_SOURCE</name>
+                  <description>Divider image two programmed by official ESP-HAL for the fixed 480 MHz BBPLL source.</description>
+                  <value>2</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>REF_160M_CLK_EN</name>
+              <description>160 MHz reference clock gate shared by the radio lifecycles.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_CONF</name>
+          <description>Modem APB, reset and source-clock configuration.</description>
+          <addressOffset>0x1E0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000025</resetValue>
+          <fields>
+            <field>
+              <name>MODEM_APB_CLK_EN</name>
+              <description>Modem APB clock enable.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MODEM_RST_EN</name>
+              <description>Modem subsystem reset assertion.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MODEM_CLK_EN</name>
+              <description>Modem source-clock enable.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MODEM_CLK_SOURCE_SEL</name>
+              <description>Modem source-clock selector.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MODEM_PLL_CLK_EN</name>
+              <description>Modem PLL clock enable.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MODEM_XTAL_CLK_EN</name>
+              <description>Modem crystal clock enable.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

@@ -84,8 +84,7 @@ pub use ieee802154_event_status_probe::{
 pub use ieee802154_lifecycle::{
     IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel, Ieee802154ChannelError,
     Ieee802154ClockCheckpoint, Ieee802154ClockImages, Ieee802154FoundationCheckpoint,
-    Ieee802154PlatformClockImages, Ieee802154PlatformControl, Ieee802154ReadbackError,
-    Ieee802154ResetCheckpoint, Ieee802154ResetImages,
+    Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetImages,
 };
 pub use ieee802154_operation::{
     Ieee802154OperationEventMaskState, Ieee802154OperationEventObservation,
@@ -122,9 +121,7 @@ pub use open_esp_radio_esp32s31_pac::{
     StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError,
     StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw,
 };
-pub use power::{
-    PlatformPowerClockImages, PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError,
-};
+pub use power::{PowerCheckpoint, PowerClockImages, PowerError};
 pub use types::{
     CfrValue, ForcedRxGain, MacInterruptEvents, MacInterruptMask, MacInterruptSnapshot,
     MacPowerInterruptSnapshot,
@@ -346,6 +343,34 @@ pub trait SharedPhyAccess: sealed::SharedPhyAccess {
 
     fn open_frontend_baseband_internal_clocks(&mut self) {
         sealed::SharedPhyAccess::pac_mut(self).open_frontend_baseband_internal_clocks();
+    }
+
+    fn set_rf_circuit_power(&mut self, enabled: bool) {
+        sealed::SharedPhyAccess::pac_mut(self).set_rf_circuit_power(enabled);
+    }
+
+    fn set_bb_i2c_power_tie(&mut self, enabled: bool) {
+        sealed::SharedPhyAccess::pac_mut(self).set_bb_i2c_power_tie(enabled);
+    }
+
+    fn analog_i2c_is_powered(&self) -> bool {
+        sealed::SharedPhyAccess::pac(self).analog_i2c_is_powered()
+    }
+
+    fn set_analog_i2c_power(&mut self, enabled: bool) {
+        sealed::SharedPhyAccess::pac_mut(self).set_analog_i2c_power(enabled);
+    }
+
+    fn analog_i2c_reset_is_released(&self) -> bool {
+        sealed::SharedPhyAccess::pac(self).analog_i2c_reset_is_released()
+    }
+
+    fn set_analog_i2c_reset_released(&mut self, released: bool) {
+        sealed::SharedPhyAccess::pac_mut(self).set_analog_i2c_reset_released(released);
+    }
+
+    fn enable_frontend_baseband_power(&mut self) {
+        sealed::SharedPhyAccess::pac_mut(self).enable_frontend_baseband_power();
     }
 }
 
@@ -715,7 +740,7 @@ impl<P> PowerUpFailure<P> {
     }
 }
 
-impl<P: PowerClockControl> PowerUpFailure<P> {
+impl<P> PowerUpFailure<P> {
     /// Retry the idempotent prerequisite sequence without exposing a cold
     /// owner or allowing a protocol switch through partially-mutated state.
     pub fn retry(self) -> Result<Radio<P, state::Powered>, Self> {
@@ -796,20 +821,19 @@ impl<P> Radio<P, state::Owned> {
     }
 }
 
-impl<P: PowerClockControl> Radio<P, state::Owned> {
+impl<P> Radio<P, state::Owned> {
     /// Execute the finite modem/PHY clock and reset prerequisites.
     ///
-    /// Route-owned fields come from the reviewed custom PAC; remaining
-    /// platform fields are reached through the platform capability. The exact
-    /// operation order reproduces the qualified S31 `esp-hal` clock path; the
-    /// ROM-only frontend gates are a
+    /// Every register transaction goes through the reviewed custom PAC. The
+    /// exact operation order reproduces the qualified S31 `esp-hal` clock
+    /// path; the ROM-only frontend gates are a
     /// later owned PHY transition and are not folded into this type-state
     /// change.
     ///
-    /// `P` owns the official platform capability. A successful read-back is
-    /// the only safe path into `Radio<P, Powered>`.
+    /// `P` remains an affine integration witness. A successful PAC read-back
+    /// is the only safe path into `Radio<P, Powered>`.
     pub fn power_up(mut self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
-        if let Err(error) = power::execute_owned(&mut self.peripheral, &mut self.state.registers) {
+        if let Err(error) = power::execute_owned(&mut self.state.registers) {
             return Err(PowerUpFailure { radio: self, error });
         }
         Ok(Radio {
@@ -959,7 +983,7 @@ pub trait AsyncEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::{PlatformPowerClockImages, PowerClockControl, Radio, state};
+    use super::{Radio, state};
 
     #[derive(Debug, Eq, PartialEq)]
     struct TestPeripheral {
@@ -969,22 +993,6 @@ mod tests {
 
     fn require_owned(_: &Radio<TestPeripheral, state::Owned>) {}
     fn require_powered(_: &Radio<TestPeripheral, state::Powered>) {}
-
-    impl PowerClockControl for TestPeripheral {
-        fn select_hp_active_modem_icg(&mut self) {}
-        fn apply_modem_icg_selection(&mut self) {}
-        fn apply_sleep_icg_selection(&mut self) {}
-        fn enable_modem_register_bus_clock(&mut self) {}
-        fn configure_modem_source_clocks(&mut self) {}
-
-        fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
-            PlatformPowerClockImages {
-                hp_active_icg_selected: self.ready,
-                modem_bus_clock_enabled: self.ready,
-                modem_source_clocks_configured: self.ready,
-            }
-        }
-    }
 
     #[test]
     #[cfg(target_arch = "riscv32")]
@@ -1059,7 +1067,7 @@ mod tests {
 
     #[test]
     #[cfg(target_arch = "riscv32")]
-    fn failed_power_transition_returns_the_unique_owned_radio() {
+    fn failed_power_transition_can_only_retry_the_unique_owner() {
         let owned = Radio::claim(TestPeripheral {
             id: 11,
             ready: false,
@@ -1069,15 +1077,11 @@ mod tests {
             Ok(_) => panic!("stuck reset unexpectedly powered the radio"),
             Err(failure) => failure,
         };
-        let recovered = failure.into_radio();
-        require_owned(&recovered);
-        let (peripheral, _hardware) = recovered.release();
-        assert_eq!(
-            peripheral,
-            TestPeripheral {
-                id: 11,
-                ready: false
-            }
-        );
+        let first_error = failure.error();
+        let retried = match failure.retry() {
+            Ok(_) => panic!("stuck reset unexpectedly powered the radio on retry"),
+            Err(failure) => failure,
+        };
+        assert_eq!(retried.error(), first_error);
     }
 }

@@ -5,31 +5,15 @@
 //! Wi-Fi MAC clocks are intentionally excluded: they belong to the later MAC
 //! start transition.
 
-/// Official chip-platform capability needed by the open radio power sequence.
-///
-/// The open driver owns the order of operations. Route-owned modem words stay
-/// behind typed custom-PAC operations; the integration owns only the remaining
-/// platform system-register capability. The common-PHY
-/// `MODEM_LPCON.TICK_CONF` carveout is not part of this trait.
-pub trait PowerClockControl {
+pub(crate) trait PowerSequenceBackend {
     fn select_hp_active_modem_icg(&mut self);
     fn apply_modem_icg_selection(&mut self);
     fn apply_sleep_icg_selection(&mut self);
     fn enable_modem_register_bus_clock(&mut self);
     fn configure_modem_source_clocks(&mut self);
-    fn platform_power_clock_images(&self) -> PlatformPowerClockImages;
-}
-
-/// Platform-owned portion of the power checkpoint. MODEM_LPCON fields are
-/// deliberately absent and are joined from the route PAC by the executor.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct PlatformPowerClockImages {
-    pub hp_active_icg_selected: bool,
-    pub modem_bus_clock_enabled: bool,
-    pub modem_source_clocks_configured: bool,
-}
-
-pub(crate) trait SharedPowerClockControl {
+    fn platform_clock_power_observation(
+        &self,
+    ) -> open_esp_radio_esp32s31_pac::PlatformClockPowerObservation;
     fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool);
     fn set_wifi_baseband_reset(&mut self, asserted: bool);
     fn configure_wifi_power_clock_map(&mut self);
@@ -45,7 +29,27 @@ pub(crate) trait SharedPowerClockControl {
     ) -> open_esp_radio_esp32s31_pac::SharedModemClockObservation;
 }
 
-impl SharedPowerClockControl for open_esp_radio_esp32s31_pac::WifiColdRegisters {
+impl PowerSequenceBackend for open_esp_radio_esp32s31_pac::WifiColdRegisters {
+    fn select_hp_active_modem_icg(&mut self) {
+        self.select_hp_active_modem_icg();
+    }
+    fn apply_modem_icg_selection(&mut self) {
+        self.apply_modem_icg_selection();
+    }
+    fn apply_sleep_icg_selection(&mut self) {
+        self.apply_sleep_icg_selection();
+    }
+    fn enable_modem_register_bus_clock(&mut self) {
+        self.enable_modem_register_bus_clock();
+    }
+    fn configure_modem_source_clocks(&mut self) {
+        self.configure_modem_source_clocks();
+    }
+    fn platform_clock_power_observation(
+        &self,
+    ) -> open_esp_radio_esp32s31_pac::PlatformClockPowerObservation {
+        self.platform_clock_power_observation()
+    }
     fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
         self.set_wifi_baseband_and_mac_reset(asserted);
     }
@@ -81,7 +85,27 @@ impl SharedPowerClockControl for open_esp_radio_esp32s31_pac::WifiColdRegisters 
     }
 }
 
-impl SharedPowerClockControl for open_esp_radio_esp32s31_pac::Ieee802154TaskRegisters {
+impl PowerSequenceBackend for open_esp_radio_esp32s31_pac::Ieee802154TaskRegisters {
+    fn select_hp_active_modem_icg(&mut self) {
+        self.select_hp_active_modem_icg();
+    }
+    fn apply_modem_icg_selection(&mut self) {
+        self.apply_modem_icg_selection();
+    }
+    fn apply_sleep_icg_selection(&mut self) {
+        self.apply_sleep_icg_selection();
+    }
+    fn enable_modem_register_bus_clock(&mut self) {
+        self.enable_modem_register_bus_clock();
+    }
+    fn configure_modem_source_clocks(&mut self) {
+        self.configure_modem_source_clocks();
+    }
+    fn platform_clock_power_observation(
+        &self,
+    ) -> open_esp_radio_esp32s31_pac::PlatformClockPowerObservation {
+        self.platform_clock_power_observation()
+    }
     fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
         self.set_wifi_baseband_and_mac_reset(asserted);
     }
@@ -169,35 +193,32 @@ pub struct PowerError {
     pub observed: bool,
 }
 
-pub(crate) fn execute_owned(
-    platform: &mut impl PowerClockControl,
-    registers: &mut impl SharedPowerClockControl,
-) -> Result<(), PowerError> {
+pub(crate) fn execute_owned(registers: &mut impl PowerSequenceBackend) -> Result<(), PowerError> {
     // Keep the operation order here: it is a lifecycle property recovered
     // from the qualified S31 esp-hal clock implementation, not a
     // property of the register layout.
     registers.set_wifi_baseband_and_mac_reset(true);
     registers.set_wifi_baseband_and_mac_reset(false);
-    platform.select_hp_active_modem_icg();
-    platform.apply_modem_icg_selection();
-    platform.apply_sleep_icg_selection();
-    platform.enable_modem_register_bus_clock();
+    registers.select_hp_active_modem_icg();
+    registers.apply_modem_icg_selection();
+    registers.apply_sleep_icg_selection();
+    registers.enable_modem_register_bus_clock();
     registers.configure_wifi_power_clock_map();
     registers.prepare_shared_modem_clock_map();
-    platform.configure_modem_source_clocks();
+    registers.configure_modem_source_clocks();
     registers.set_wifi_baseband_reset(true);
     registers.set_wifi_baseband_reset(false);
     registers.enable_phy_calibration_clocks();
     registers.select_phy_i2c_160mhz_source();
     registers.retain_phy_i2c_master_clock();
 
-    let platform_images = platform.platform_power_clock_images();
+    let platform_images = registers.platform_clock_power_observation();
     let modem = registers.modem_syscon_power_observation();
     let shared = registers.shared_modem_clock_observation();
     let images = PowerClockImages {
         reset_released: modem.wifi_reset_released,
         hp_active_icg_selected: platform_images.hp_active_icg_selected,
-        modem_bus_clock_enabled: platform_images.modem_bus_clock_enabled,
+        modem_bus_clock_enabled: platform_images.modem_register_bus_clock_enabled,
         hp_active_clock_map_configured: modem.active_clock_map_configured,
         shared_clock_map_configured: shared.power_state_map_configured,
         modem_source_clocks_configured: platform_images.modem_source_clocks_configured,
@@ -250,12 +271,9 @@ fn verify_state(checkpoint: PowerCheckpoint, observed: bool) -> Result<(), Power
 mod tests {
     use std::{cell::RefCell, rc::Rc, vec::Vec};
 
-    use open_esp_radio_esp32s31_pac::SharedModemClockObservation;
+    use open_esp_radio_esp32s31_pac::{PlatformClockPowerObservation, SharedModemClockObservation};
 
-    use super::{
-        PlatformPowerClockImages, PowerCheckpoint, PowerClockControl, PowerError,
-        SharedPowerClockControl, execute_owned,
-    };
+    use super::{PowerCheckpoint, PowerError, PowerSequenceBackend, execute_owned};
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
@@ -273,25 +291,44 @@ mod tests {
         RetainI2cClock,
     }
 
-    struct FakePlatform {
+    struct FakeShared {
         operations: Rc<RefCell<Vec<Operation>>>,
-        images: PlatformPowerClockImages,
+        prepare_calls: u8,
+        retain_calls: u8,
+        platform: PlatformClockPowerObservation,
+        modem: open_esp_radio_esp32s31_pac::ModemSysconPowerObservation,
+        observation: SharedModemClockObservation,
     }
 
-    impl FakePlatform {
+    impl FakeShared {
         fn ready(operations: Rc<RefCell<Vec<Operation>>>) -> Self {
             Self {
                 operations,
-                images: PlatformPowerClockImages {
+                prepare_calls: 0,
+                retain_calls: 0,
+                platform: PlatformClockPowerObservation {
                     hp_active_icg_selected: true,
-                    modem_bus_clock_enabled: true,
+                    modem_register_bus_clock_enabled: true,
+                    ref_160m_clock_enabled: true,
                     modem_source_clocks_configured: true,
+                },
+                modem: open_esp_radio_esp32s31_pac::ModemSysconPowerObservation {
+                    wifi_reset_released: true,
+                    active_clock_map_configured: true,
+                    phy_calibration_clocks_enabled: true,
+                    phy_i2c_160mhz_selected: true,
+                },
+                observation: SharedModemClockObservation {
+                    power_state_map_configured: true,
+                    coexistence_clock_enabled: false,
+                    phy_i2c_master_clock_enabled: true,
+                    low_power_timer_clock_enabled: false,
                 },
             }
         }
     }
 
-    impl PowerClockControl for FakePlatform {
+    impl PowerSequenceBackend for FakeShared {
         fn select_hp_active_modem_icg(&mut self) {
             self.operations
                 .borrow_mut()
@@ -316,42 +353,10 @@ mod tests {
                 .push(Operation::ConfigureModemSource);
         }
 
-        fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
-            self.images
+        fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+            self.platform
         }
-    }
 
-    struct FakeShared {
-        operations: Rc<RefCell<Vec<Operation>>>,
-        prepare_calls: u8,
-        retain_calls: u8,
-        modem: open_esp_radio_esp32s31_pac::ModemSysconPowerObservation,
-        observation: SharedModemClockObservation,
-    }
-
-    impl FakeShared {
-        fn ready(operations: Rc<RefCell<Vec<Operation>>>) -> Self {
-            Self {
-                operations,
-                prepare_calls: 0,
-                retain_calls: 0,
-                modem: open_esp_radio_esp32s31_pac::ModemSysconPowerObservation {
-                    wifi_reset_released: true,
-                    active_clock_map_configured: true,
-                    phy_calibration_clocks_enabled: true,
-                    phy_i2c_160mhz_selected: true,
-                },
-                observation: SharedModemClockObservation {
-                    power_state_map_configured: true,
-                    coexistence_clock_enabled: false,
-                    phy_i2c_master_clock_enabled: true,
-                    low_power_timer_clock_enabled: false,
-                },
-            }
-        }
-    }
-
-    impl SharedPowerClockControl for FakeShared {
         fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
             self.operations
                 .borrow_mut()
@@ -408,9 +413,8 @@ mod tests {
     #[test]
     fn exact_semantic_sequence_is_finite_and_ordered() {
         let operations = Rc::new(RefCell::new(Vec::new()));
-        let mut platform = FakePlatform::ready(operations.clone());
         let mut shared = FakeShared::ready(operations.clone());
-        assert_eq!(execute_owned(&mut platform, &mut shared), Ok(()));
+        assert_eq!(execute_owned(&mut shared), Ok(()));
         assert_eq!(
             operations.borrow().as_slice(),
             [
@@ -436,12 +440,11 @@ mod tests {
     #[test]
     fn failed_semantic_readback_names_the_exact_checkpoint() {
         let operations = Rc::new(RefCell::new(Vec::new()));
-        let mut platform = FakePlatform::ready(operations.clone());
-        platform.images.modem_source_clocks_configured = false;
         let mut shared = FakeShared::ready(operations);
+        shared.platform.modem_source_clocks_configured = false;
 
         assert_eq!(
-            execute_owned(&mut platform, &mut shared),
+            execute_owned(&mut shared),
             Err(PowerError {
                 checkpoint: PowerCheckpoint::ModemClockSource,
                 expected: true,

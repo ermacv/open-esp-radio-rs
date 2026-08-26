@@ -61,10 +61,9 @@
 //! A registered common-PHY owner cannot skip the protocol timing transition:
 //!
 //! ```compile_fail
-//! use open_esp_radio_esp32s31_hal::Ieee802154PlatformControl;
 //! use open_esp_radio_esp32s31_phy::RegisteredIeee802154Clocked;
 //!
-//! fn skip_timing<P: Ieee802154PlatformControl>(owner: RegisteredIeee802154Clocked<P>) {
+//! fn skip_timing<P>(owner: RegisteredIeee802154Clocked<P>) {
 //!     let _reset = owner.reset_mac();
 //! }
 //! ```
@@ -88,7 +87,7 @@ use open_esp_radio_esp32s31_hal::{
     Ieee802154FoundationTransitionFailure, Ieee802154MacPolicy, Ieee802154MacPolicyCheckpoint,
     Ieee802154MacPolicyConfigured, Ieee802154MacPolicyRecovery,
     Ieee802154MacPolicyTransitionFailure, Ieee802154OperationCompleted, Ieee802154OperationFailed,
-    Ieee802154OperationPollBudget, Ieee802154PlatformControl, Ieee802154PolledOperationEvidence,
+    Ieee802154OperationPollBudget, Ieee802154PolledOperationEvidence,
     Ieee802154PolledOperationFailure, Ieee802154ReadbackError, Ieee802154Reset,
     Ieee802154ResetCheckpoint, Ieee802154ResetTransitionFailure,
     Ieee802154TimingReady as HalIeee802154TimingReady,
@@ -174,7 +173,7 @@ impl<P> RegisteredIeee802154Clocked<P> {
     }
 }
 
-impl<P: Ieee802154PlatformControl> RegisteredIeee802154Clocked<P> {
+impl<P> RegisteredIeee802154Clocked<P> {
     /// Borrow the integration token without separating it from the proof.
     pub fn peripheral(&self) -> &P {
         self.role.peripheral()
@@ -407,7 +406,7 @@ impl<P> RegisteredIeee802154TrackPoisoned<P> {
     }
 }
 
-impl<P: Ieee802154PlatformControl> RegisteredIeee802154TrackPoisoned<P> {
+impl<P> RegisteredIeee802154TrackPoisoned<P> {
     pub fn peripheral(&self) -> &P {
         self.role.peripheral()
     }
@@ -486,7 +485,7 @@ impl<P> RegisteredIeee802154TimingReady<P> {
     }
 }
 
-impl<P: Ieee802154PlatformControl> RegisteredIeee802154TimingReady<P> {
+impl<P> RegisteredIeee802154TimingReady<P> {
     /// Borrow the integration token without separating it from either proof.
     pub fn peripheral(&self) -> &P {
         self.role.peripheral()
@@ -540,7 +539,7 @@ impl<P> RegisteredIeee802154Reset<P> {
     }
 }
 
-impl<P: Ieee802154PlatformControl> RegisteredIeee802154Reset<P> {
+impl<P> RegisteredIeee802154Reset<P> {
     /// Borrow the integration token without separating it from the proof.
     pub fn peripheral(&self) -> &P {
         self.role.peripheral()
@@ -978,7 +977,7 @@ impl<P> RegisteredIeee802154MacPolicyRecovery<P> {
     }
 }
 
-impl<P: Ieee802154PlatformControl> RegisteredIeee802154MacPolicyRecovery<P> {
+impl<P> RegisteredIeee802154MacPolicyRecovery<P> {
     /// Borrow the integration token without separating it from the proof.
     pub fn peripheral(&self) -> &P {
         match self {
@@ -1022,9 +1021,7 @@ fn map_prerequisites<Before, After>(
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_hal::{
-        Ieee802154MacPolicy, Ieee802154PlatformClockImages, Ieee802154PlatformControl,
-        Ieee802154TimingReady as HalIeee802154TimingReady, PlatformPowerClockImages,
-        PowerClockControl,
+        Ieee802154MacPolicy, Ieee802154TimingReady as HalIeee802154TimingReady,
     };
 
     use super::{
@@ -1039,36 +1036,6 @@ mod tests {
             DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyClientState, PhyModemClient, PhyPllTrackClock,
         },
     };
-
-    #[derive(Debug)]
-    struct FakePlatform {
-        clocks: Ieee802154PlatformClockImages,
-        power: PlatformPowerClockImages,
-    }
-
-    impl PowerClockControl for FakePlatform {
-        fn select_hp_active_modem_icg(&mut self) {}
-
-        fn apply_modem_icg_selection(&mut self) {}
-
-        fn apply_sleep_icg_selection(&mut self) {}
-
-        fn enable_modem_register_bus_clock(&mut self) {}
-
-        fn configure_modem_source_clocks(&mut self) {}
-
-        fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
-            self.power
-        }
-    }
-
-    impl Ieee802154PlatformControl for FakePlatform {
-        fn configure_modem_source_clock(&mut self) {}
-
-        fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
-            self.clocks
-        }
-    }
 
     struct FixedClock(u64);
 
@@ -1134,7 +1101,7 @@ mod tests {
 
     #[test]
     fn registered_full_chain_and_typed_recovery_surface_connects() {
-        fn full_success_chain<P: Ieee802154PlatformControl>(
+        fn full_success_chain<P>(
             owner: RegisteredIeee802154TimingReady<P>,
             policy: Ieee802154MacPolicy,
         ) -> Option<RegisteredIeee802154MacPolicyConfigured<P>> {
@@ -1155,8 +1122,8 @@ mod tests {
             failure.into_recovery()
         }
 
-        let _ = full_success_chain::<FakePlatform>;
-        let _ = recover_foundation::<FakePlatform>;
-        let _ = recover_policy::<FakePlatform>;
+        let _ = full_success_chain::<()>;
+        let _ = recover_foundation::<()>;
+        let _ = recover_policy::<()>;
     }
 }

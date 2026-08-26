@@ -72,34 +72,15 @@ impl TryFrom<u8> for Ieee802154Channel {
     }
 }
 
-/// Official system-peripheral operations used by the lifecycle.
-///
-/// The integration layer implements this trait for its unique platform token.
-/// It does not own or expose the IEEE 802.15.4 MAC register block; the HAL
-/// combines it with a narrow lease borrowed from the existing whole-radio
-/// owner. The backend must keep the shared upstream 160 MHz PLL gate enabled
-/// while a returned IEEE 802.15.4 role exists. This transition proves that
-/// gate by readback but does not claim a refcounted release authority.
-pub trait Ieee802154PlatformControl {
-    /// Configure the modem's selection of the shared 160 MHz PLL source.
-    ///
-    /// The upstream PLL gate is a separate, shared prerequisite reported by
-    /// [`Self::ieee802154_platform_clock_images`]. Release requires a future
-    /// multi-client clock manager rather than an unconditional register clear.
-    fn configure_modem_source_clock(&mut self);
-
-    /// Sample the remaining platform-owned upstream prerequisites.
-    fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages;
-}
-
 /// Closed semantic backend for the finite lifecycle sequence.
 ///
 /// An implementation must retain exclusive access to the existing complete
 /// radio owner for the lifetime of the returned typestate value. In
 /// particular, implementations must not reconstruct the IEEE 802.15.4 block
 /// from an address or independently claim a second peripheral singleton.
-pub(crate) trait Ieee802154LifecycleBackend: Ieee802154PlatformControl {
+pub(crate) trait Ieee802154LifecycleBackend {
     fn configure_modem_clock_maps(&mut self);
+    fn configure_modem_source_clock(&mut self);
     fn enable_wifi_bb_80x1_clock(&mut self);
     fn enable_etm_clock(&mut self);
     fn enable_bt_apb_clocks(&mut self);
@@ -148,13 +129,6 @@ pub struct Ieee802154ClockImages {
     pub bt_ieee802154_common_baseband_clock_enabled: bool,
     pub ieee802154_apb_clock_enabled: bool,
     pub ieee802154_mac_clock_enabled: bool,
-}
-
-/// System-PAC-only portion of the IEEE 802.15.4 clock checkpoint.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Ieee802154PlatformClockImages {
-    pub pll_160m_clock_enabled: bool,
-    pub modem_source_clock_configured: bool,
 }
 
 /// Semantic readback after the two private reset pulses.
@@ -514,9 +488,8 @@ mod tests {
     use super::{
         COEX_DISABLED_PTI, IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel,
         Ieee802154ChannelError, Ieee802154ClockCheckpoint, Ieee802154ClockImages,
-        Ieee802154FoundationCheckpoint, Ieee802154LifecycleBackend, Ieee802154PlatformClockImages,
-        Ieee802154PlatformControl, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
-        Ieee802154ResetImages, establish_ieee802154_clocks,
+        Ieee802154FoundationCheckpoint, Ieee802154LifecycleBackend, Ieee802154ReadbackError,
+        Ieee802154ResetCheckpoint, Ieee802154ResetImages, establish_ieee802154_clocks,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -581,20 +554,10 @@ mod tests {
         }
     }
 
-    impl Ieee802154PlatformControl for FakeBackend {
+    impl Ieee802154LifecycleBackend for FakeBackend {
         fn configure_modem_source_clock(&mut self) {
             self.operations.push(Operation::ConfigureModemSource);
         }
-
-        fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
-            Ieee802154PlatformClockImages {
-                pll_160m_clock_enabled: self.clock_images.pll_160m_clock_enabled,
-                modem_source_clock_configured: self.clock_images.modem_source_clock_configured,
-            }
-        }
-    }
-
-    impl Ieee802154LifecycleBackend for FakeBackend {
         fn configure_modem_clock_maps(&mut self) {
             self.operations.push(Operation::ConfigureClockMaps);
         }

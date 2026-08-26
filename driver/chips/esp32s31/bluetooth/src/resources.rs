@@ -67,11 +67,11 @@ impl<P> BluetoothStopped<P> {
 
 /// Platform owner retained after the first non-reversible powered mutation.
 ///
-/// Dropping the ordinary platform lease may gate Bluetooth clocks. Once PHY
-/// or controller initialization has started that implicit cleanup is not a
-/// proven hardware teardown, so this wrapper deliberately suppresses
-/// `P::drop`. A future verified teardown transaction, not ordinary scope exit,
-/// must recover the platform owner.
+/// Once PHY or controller initialization has started, releasing the ordinary
+/// platform reservation would advertise a reusable Bluetooth lifecycle even
+/// though no verified hardware teardown occurred. This wrapper deliberately
+/// suppresses `P::drop`; a future verified teardown transaction must recover
+/// the platform owner and release the reservation.
 #[must_use = "the powered platform remains retained until verified PHY teardown"]
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct BluetoothTeardownPendingPlatform<P> {

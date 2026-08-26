@@ -41079,6 +41079,102 @@ bit-width = 8
 access = "write-only"
 
 [[registers]]
+address = 542666816
+width = 32
+access = "read-write"
+identity = "HP_SYS_CLKRST_RADIO.MODEM_CTRL0"
+peripheral = "HP_SYS_CLKRST_RADIO"
+peripheral-type = "HpSysClkrstRadio"
+peripheral-module = "hp_sys_clkrst_radio"
+scope = []
+register-method = "modem_ctrl0"
+
+[[registers.fields]]
+svd-name = "MODEM_CLK_EN"
+method = "modem_clk_en"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 542667136
+width = 32
+access = "read-write"
+identity = "HP_SYS_CLKRST_RADIO.REF_160M_CTRL0"
+peripheral = "HP_SYS_CLKRST_RADIO"
+peripheral-type = "HpSysClkrstRadio"
+peripheral-module = "hp_sys_clkrst_radio"
+scope = []
+register-method = "ref_160m_ctrl0"
+
+[[registers.fields]]
+svd-name = "REF_160M_CLK_DIV_NUM"
+method = "ref_160m_clk_div_num"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "REF_160M_CLK_EN"
+method = "ref_160m_clk_en"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 542667232
+width = 32
+access = "read-write"
+identity = "HP_SYS_CLKRST_RADIO.MODEM_CONF"
+peripheral = "HP_SYS_CLKRST_RADIO"
+peripheral-type = "HpSysClkrstRadio"
+peripheral-module = "hp_sys_clkrst_radio"
+scope = []
+register-method = "modem_conf"
+
+[[registers.fields]]
+svd-name = "MODEM_APB_CLK_EN"
+method = "modem_apb_clk_en"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MODEM_RST_EN"
+method = "modem_rst_en"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MODEM_CLK_EN"
+method = "modem_clk_en"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MODEM_CLK_SOURCE_SEL"
+method = "modem_clk_source_sel"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MODEM_PLL_CLK_EN"
+method = "modem_pll_clk_en"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MODEM_XTAL_CLK_EN"
+method = "modem_xtal_clk_en"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 544215144
 width = 32
 access = "read-write"
@@ -41094,6 +41190,146 @@ svd-name = "RTC_SAR2_PWDET_CCT"
 method = "rtc_sar2_pwdet_cct"
 bit-offset = 0
 bit-width = 3
+access = "read-write"
+
+[[registers]]
+address = 544227348
+width = 32
+access = "read-write"
+identity = "PMU_RADIO.HP_ACTIVE_ICG_MODEM"
+peripheral = "PMU_RADIO"
+peripheral-type = "PmuRadio"
+peripheral-module = "pmu_radio"
+scope = []
+register-method = "hp_active_icg_modem"
+
+[[registers.fields]]
+svd-name = "HP_ACTIVE_DIG_ICG_MODEM_CODE"
+method = "hp_active_dig_icg_modem_code"
+bit-offset = 30
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 544227356
+width = 32
+access = "read-write"
+identity = "PMU_RADIO.HP_ACTIVE_HP_CK_POWER"
+peripheral = "PMU_RADIO"
+peripheral-type = "PmuRadio"
+peripheral-module = "pmu_radio"
+scope = []
+register-method = "hp_active_hp_ck_power"
+
+[[registers.fields]]
+svd-name = "ROM_OPEN_FE_BB_UNKNOWN_LOW"
+method = "rom_open_fe_bb_unknown_low"
+bit-offset = 0
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HP_ACTIVE_XPD_BB_I2C"
+method = "hp_active_xpd_bb_i2c"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 544227568
+width = 32
+access = "read-write"
+identity = "PMU_RADIO.IMM_HP_CK_POWER_0"
+peripheral = "PMU_RADIO"
+peripheral-type = "PmuRadio"
+peripheral-module = "pmu_radio"
+scope = []
+register-method = "imm_hp_ck_power_0"
+
+[[registers.fields]]
+svd-name = "TIE_HIGH_XPD_BB_I2C"
+method = "tie_high_xpd_bb_i2c"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 544227576
+width = 32
+access = "write-only"
+identity = "PMU_RADIO.IMM_SLEEP_SYSCLK"
+peripheral = "PMU_RADIO"
+peripheral-type = "PmuRadio"
+peripheral-module = "pmu_radio"
+scope = []
+register-method = "imm_sleep_sysclk"
+
+[[registers.fields]]
+svd-name = "UPDATE_DIG_ICG_SWITCH"
+method = "update_dig_icg_switch"
+bit-offset = 28
+bit-width = 1
+access = "write-only"
+
+[[registers]]
+address = 544227588
+width = 32
+access = "write-only"
+identity = "PMU_RADIO.IMM_MODEM_ICG"
+peripheral = "PMU_RADIO"
+peripheral-type = "PmuRadio"
+peripheral-module = "pmu_radio"
+scope = []
+register-method = "imm_modem_icg"
+
+[[registers.fields]]
+svd-name = "UPDATE_DIG_ICG_MODEM_EN"
+method = "update_dig_icg_modem_en"
+bit-offset = 31
+bit-width = 1
+access = "write-only"
+
+[[registers]]
+address = 544227716
+width = 32
+access = "read-write"
+identity = "PMU_RADIO.RF_PWC"
+peripheral = "PMU_RADIO"
+peripheral-type = "PmuRadio"
+peripheral-module = "pmu_radio"
+scope = []
+register-method = "rf_pwc"
+
+[[registers.fields]]
+svd-name = "XPD_RF_CIRCUIT"
+method = "xpd_rf_circuit"
+bit-offset = 16
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 544227848
+width = 32
+access = "read-write"
+identity = "PMU_RADIO.ANA_PERI_PWR_CTRL"
+peripheral = "PMU_RADIO"
+peripheral-type = "PmuRadio"
+peripheral-module = "pmu_radio"
+scope = []
+register-method = "ana_peri_pwr_ctrl"
+
+[[registers.fields]]
+svd-name = "XPD_PERIF_I2C"
+method = "xpd_perif_i2c"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RSTB_PERIF_I2C"
+method = "rstb_perif_i2c"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]

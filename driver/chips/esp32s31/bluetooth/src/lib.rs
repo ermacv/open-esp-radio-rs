@@ -1,7 +1,7 @@
 //! ESP32-S31 Bluetooth controller hardware boundary.
 //!
 //! This crate is intentionally below HCI and the Bluetooth Link Layer. The
-//! implemented slices establish lossless physical ownership, the platform
+//! implemented slices establish lossless physical ownership, the route-owned
 //! clock/reset prerequisite and the first finite scheduler-table transaction
 //! of controller init. Common PHY, BT-baseband and the complete 50-operation
 //! BTDM HAL-init body are implemented as later enable-stage components. The
@@ -64,9 +64,8 @@ mod scheduler_lock_modify;
 pub mod validation;
 
 pub use clock::{
-    BluetoothClockCheckpoint, BluetoothClockControl, BluetoothClockEnableFailure,
-    BluetoothClockError, BluetoothClockState, BluetoothClockedResources,
-    BluetoothPlatformClockState,
+    BluetoothClockCheckpoint, BluetoothClockEnableFailure, BluetoothClockError,
+    BluetoothClockState, BluetoothClockedResources,
 };
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{

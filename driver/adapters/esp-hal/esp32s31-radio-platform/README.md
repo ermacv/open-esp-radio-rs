@@ -6,10 +6,9 @@ singletons used by radio lifecycles: `MODEM_SYSCON`, `MODEM_LPCON`,
 `I2C_ANA_MST`. Raw peripheral handles stay private. The official
 `MODEM_SYSCON` and `MODEM_LPCON` tokens are inert ownership guards: all radio
 words carved from those blocks are operated only by the affine custom PAC.
-Clients receive narrow semantic leases, and shared clock dependencies are
-reference-counted before they reach MMIO. The Bluetooth lease implements only
-the remaining platform operation families required by the common
-`register_chipv7_phy` transition; it exposes no singleton token.
+Clients receive narrow affine reservations; all clock dependencies are
+reference-counted by the route-owned custom PAC before they reach MMIO. The
+Bluetooth platform lease exposes no operation family or singleton token.
 
 Bluetooth is the first client. The existing Wi-Fi ESP-HAL adapter still owns
 the same singleton types independently, so safe Wi-Fi + Bluetooth composition

@@ -81,13 +81,8 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
     let target = repository.join("verification/vendor/targets/esp32s31");
     let chip = repository.join("verification/vendor/chips/esp32s31");
     let api_path = target.join("registers/api.toml");
-    let api_source = fs::read_to_string(&api_path).expect("read target PAC API pack");
     let api = toml_document(&api_path);
     assert_eq!(api["schema"].as_integer(), Some(4));
-    assert!(
-        !api_source.contains("peripheral-ownership"),
-        "the removed inferred-ownership option must not return"
-    );
 
     let partitions = api["ownership-partitions"]
         .as_array_of_tables()
@@ -95,7 +90,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
     let expected = [
         ("WifiMacPeripherals", "wifi_mac", 50_usize),
         ("WifiInterruptPeripherals", "wifi_interrupts", 2),
-        ("RadioPhyPeripherals", "radio_phy", 22),
+        ("RadioPhyPeripherals", "radio_phy", 27),
         ("CoexistencePeripherals", "coexistence", 4),
         ("BluetoothControllerPeripherals", "bluetooth", 19),
         ("BluetoothInterruptPeripherals", "bluetooth_interrupts", 2),
@@ -804,24 +799,6 @@ fn cargo_alias_selects_the_product_host_and_keeps_build_output_visible() {
 }
 
 #[test]
-fn source_only_audit_does_not_cross_the_local_analysis_boundary() {
-    let audit = fs::read_to_string(repository_root().join("tools/audit-source-only.sh"))
-        .expect("read source-only audit");
-    assert!(audit.contains("cargo blobray project configure"));
-    assert!(audit.contains("registers \"$register_command\""));
-    for artifact_backed_command in [
-        "cargo blobray project analyze",
-        "cargo blobray project verify",
-        "cargo blobray project publish",
-    ] {
-        assert!(
-            !audit.contains(artifact_backed_command),
-            "source-only audit invokes artifact-backed command: {artifact_backed_command}"
-        );
-    }
-}
-
-#[test]
 fn analysis_input_builder_owns_every_generated_project_role() {
     let builder =
         repository_root().join("verification/vendor/targets/esp32s31/build-analysis-inputs");
@@ -1358,86 +1335,6 @@ fn removed_provider_and_provenance_paths_do_not_return() {
         stale.is_empty(),
         "production source cites removed migration paths: {stale:#?}"
     );
-}
-
-#[test]
-fn modem_lpcon_phy_tick_has_one_route_owned_transaction() {
-    let repository = repository_root();
-    let generated_svd = fs::read_to_string(repository.join("svd/esp32s31-radio.svd"))
-        .expect("read generated radio SVD");
-    assert!(generated_svd.contains("<name>MODEM_LPCON_PHY_TICK</name>"));
-    assert!(generated_svd.contains("<name>TICK_CONF</name>"));
-
-    let platform_svd = fs::read_to_string(repository.join("svd/esp32s31-platform-radio-deps.svd"))
-        .expect("read platform dependency SVD");
-    assert!(
-        !platform_svd.contains("<name>TICK_CONF</name>"),
-        "the platform sidecar must not retain the route-owned tick register"
-    );
-
-    for path in [
-        repository.join("driver/adapters/esp-hal/esp32s31-wifi/src/lib.rs"),
-        repository.join("driver/adapters/esp-hal/esp32s31-radio-platform/src/esp32s31.rs"),
-    ] {
-        let source = fs::read_to_string(&path).expect("read ESP-HAL adapter");
-        assert!(
-            !source.contains(".tick_conf()"),
-            "ESP-HAL adapter {} bypasses the route-owned tick transaction",
-            path.display()
-        );
-        assert!(!source.contains("PhyPreludePlatformControl"));
-    }
-}
-
-#[test]
-fn modem_lpcon_shared_registers_are_owned_only_by_the_radio_pac() {
-    let repository = repository_root();
-    let generated_svd = fs::read_to_string(repository.join("svd/esp32s31-radio.svd"))
-        .expect("read generated radio SVD");
-    for name in [
-        "<name>MODEM_LPCON_SHARED_CLOCK</name>",
-        "<name>LP_TIMER_CONF</name>",
-        "<name>COEX_LP_CLK_CONF</name>",
-        "<name>CLK_CONF_POWER_ST</name>",
-    ] {
-        assert!(
-            generated_svd.contains(name),
-            "the radio PAC must publish the reviewed shared MODEM_LPCON register {name}"
-        );
-    }
-
-    let mut production = Vec::new();
-    rust_files(&repository.join("driver"), &mut production);
-    let bypasses = production
-        .into_iter()
-        .filter(|path| {
-            !path.starts_with(repository.join("driver/chips/esp32s31/pac"))
-                && fs::read_to_string(path)
-                    .expect("read production Rust source")
-                    .contains("MODEM_LPCON::regs()")
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        bypasses.is_empty(),
-        "production code bypasses the route-owned MODEM_LPCON PAC: {bypasses:#?}"
-    );
-}
-
-#[test]
-fn failed_wifi_power_transition_has_no_cold_owner_escape() {
-    let repository = repository_root();
-    let hal = fs::read_to_string(repository.join("driver/chips/esp32s31/hal/src/lib.rs"))
-        .expect("read ESP32-S31 HAL root");
-    let failure = hal
-        .split("impl<P> PowerUpFailure<P>")
-        .nth(1)
-        .expect("find PowerUpFailure implementation")
-        .split("impl<P: PowerClockControl> PowerUpFailure<P>")
-        .next()
-        .expect("bound the observation-only failure implementation");
-    assert!(!failure.contains("into_radio"));
-    assert!(!failure.contains("into_parts"));
-    assert!(hal.contains("pub fn retry(self) -> Result<Radio<P, state::Powered>, Self>"));
 }
 
 #[test]

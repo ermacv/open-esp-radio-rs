@@ -70,9 +70,7 @@ pub async fn start_esp32s31_radio<P, D, O>(
     observer: O,
 ) -> Result<Esp32s31RadioReady<P>, Esp32s31RadioStartFailure<P>>
 where
-    P: open_esp_radio_esp32s31_hal::PowerClockControl
-        + open_esp_radio_esp32s31_hal::analog_i2c::PhyPmuControl
-        + Esp32s31WifiMacPlatform,
+    P: Esp32s31WifiMacPlatform,
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {

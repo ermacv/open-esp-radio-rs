@@ -22,7 +22,7 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerDisableStep as PacSchedulerDisableStep,
     BluetoothTaskRegisters as PacBluetoothTaskRegisters,
     BluetoothTaskReuniteError as PacBluetoothTaskReuniteError, ModemSysconBluetoothObservation,
-    RadioHardware, SharedModemClockObservation,
+    PlatformClockPowerObservation, RadioHardware, SharedModemClockObservation,
 };
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
@@ -94,6 +94,21 @@ impl BluetoothColdOwner {
         BluetoothLowPowerClockObservation,
     ) {
         self.registers.bluetooth_shared_clock_observation()
+    }
+
+    #[doc(hidden)]
+    pub fn retain_platform_pll_source(&mut self) {
+        self.registers.retain_platform_pll_source();
+    }
+
+    #[doc(hidden)]
+    pub fn release_platform_pll_source(&mut self) {
+        self.registers.release_platform_pll_source();
+    }
+
+    #[doc(hidden)]
+    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+        self.registers.platform_clock_power_observation()
     }
 
     #[doc(hidden)]

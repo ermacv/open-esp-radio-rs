@@ -76,6 +76,8 @@ name = "RadioPhyPeripherals"
 member = "radio_phy"
 description = "Role-neutral RF and PHY register views serialized by the shared radio lifecycle."
 peripherals = [
+    "HP_SYS_CLKRST_RADIO",
+    "PMU_RADIO",
     "MODEM_SYSCON_RADIO",
     "PHY_AGC_ORACLE",
     "PHY_AGC_RECOVERED_GAPS",

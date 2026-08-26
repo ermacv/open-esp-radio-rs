@@ -511,48 +511,6 @@
     </peripheral>
 
     <peripheral>
-      <name>PMU</name>
-      <description>SOURCE[ESP32S31_PAC_D0FB94E,BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW,ROM_REV0_PHY_OPEN_FE_BB_CLK]. Platform-owned power-management registers reached by radio initialization.</description>
-      <baseAddress>0x20704000</baseAddress>
-      <registers>
-        <register>
-          <name>HP_ACTIVE_HP_CK_POWER</name>
-          <description>Active-state high-power clock and analog-I2C power control.</description>
-          <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
-          <fields>
-            <field><name>ROM_OPEN_FE_BB_UNKNOWN_LOW</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>HP_ACTIVE_XPD_BB_I2C</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
-          </fields>
-        </register>
-        <register>
-          <name>IMM_HP_CK_POWER_0</name>
-          <description>Immediate high-power clock tie controls used by analog-I2C power-up.</description>
-          <addressOffset>0xf0</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
-          <fields>
-            <field><name>TIE_HIGH_XPD_BB_I2C</name><bitOffset>28</bitOffset><bitWidth>1</bitWidth></field>
-          </fields>
-        </register>
-        <register>
-          <name>RF_PWC</name>
-          <description>RF circuit power control.</description>
-          <addressOffset>0x184</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
-          <fields>
-            <field><name>XPD_RF_CIRCUIT</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field>
-          </fields>
-        </register>
-        <register>
-          <name>ANA_PERI_PWR_CTRL</name>
-          <description>Analog peripheral I2C power and reset control.</description>
-          <addressOffset>0x208</addressOffset><size>32</size><access>read-write</access><resetValue>0x40000000</resetValue>
-          <fields>
-            <field><name>XPD_PERIF_I2C</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>RSTB_PERIF_I2C</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
-          </fields>
-        </register>
-      </registers>
-    </peripheral>
-
-    <peripheral>
       <name>EFUSE</name>
       <description>SOURCE[ESP32S31_PAC_D0FB94E]. Platform-owned eFuse controller. Only the two exact read-only MAC words reached by the PHY ROM call graph are mirrored here.</description>
       <baseAddress>0x20715000</baseAddress>

@@ -556,22 +556,21 @@ impl BiasRegTransition {
 /// `ets_delay_us(100)` call in `phy_open_i2c_xpd_new(true)`.
 ///
 /// This leaf deliberately stops before the delay and delegates to the
-/// PMU-named HAL. Basis: complete pinned `libphy.a[phy_reg.o]` sequence at
-/// offsets `0x2e..0x4e`; field identities come from the official S31 PMU
-/// description.
+/// shared-PHY HAL. Basis: complete pinned `libphy.a[phy_reg.o]` sequence at
+/// offsets `0x2e..0x4e`; field identities remain private to the custom PAC.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_open_i2c_pre_delay(platform: &mut impl analog_i2c::PhyPmuControl) {
-    analog_i2c::prepare_open_i2c_pre_delay(platform);
+pub fn configure_open_i2c_pre_delay(registers: &mut impl SharedPhyAccess) {
+    analog_i2c::prepare_open_i2c_pre_delay(registers);
 }
 
 /// Execute the finite common register suffix of `phy_open_i2c_xpd_new`.
 ///
 /// The conditional PMU reset edge is preserved by the owned HAL. Basis:
 /// complete pinned `libphy.a[phy_reg.o]::phy_open_i2c_xpd_new`; PMU field
-/// identities come from the official S31 PMU description.
+/// identities remain private to the custom PAC.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_open_i2c_power_and_pulse(platform: &mut impl analog_i2c::PhyPmuControl) {
-    analog_i2c::complete_open_i2c_power_and_reset(platform);
+pub fn configure_open_i2c_power_and_pulse(registers: &mut impl SharedPhyAccess) {
+    analog_i2c::complete_open_i2c_power_and_reset(registers);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -7,34 +7,11 @@
 
 use open_esp_radio_esp32s31_hal::BluetoothColdOwner;
 use open_esp_radio_esp32s31_pac::{
-    BluetoothLowPowerClockObservation, ModemSysconBluetoothObservation, SharedModemClockObservation,
+    BluetoothLowPowerClockObservation, ModemSysconBluetoothObservation,
+    PlatformClockPowerObservation, SharedModemClockObservation,
 };
 
 use crate::resources::BluetoothStopped;
-
-/// Platform-owned clock/reset operations required by standalone Bluetooth.
-///
-/// Implementations keep the official system PAC owners private. Each method
-/// is one semantic operation from the ESP32-S31 modem-clock implementation;
-/// raw register handles and masks do not cross into the Bluetooth driver.
-pub trait BluetoothClockControl {
-    /// Retain the lowest `PERIPH_BT_MODULE` dependency: the 160 MHz source.
-    fn enable_bluetooth_controller_pll_source(&mut self);
-
-    /// Observe the system-PAC-owned portion of the clock prerequisite.
-    fn bluetooth_platform_clock_state(&mut self) -> BluetoothPlatformClockState;
-
-    /// Release the lowest `PERIPH_BT_MODULE` dependency: the 160 MHz source.
-    fn disable_bluetooth_controller_pll_source(&mut self);
-}
-
-/// Platform-only read-back; route-owned MODEM_LPCON state is joined by this
-/// crate from the cold radio owner retained inside [`BluetoothStopped`].
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct BluetoothPlatformClockState {
-    /// The upstream 160 MHz source retained through the platform singleton.
-    pub pll_160mhz_source_enabled: bool,
-}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct BluetoothModemClockState {
@@ -86,9 +63,9 @@ pub struct BluetoothClockError {
 
 /// Bluetooth hardware after the complete clock/reset prerequisite.
 ///
-/// The platform owner is retained by value so no other subsystem can gate the
-/// same clocks behind this typestate. No controller/baseband MMIO is exposed
-/// by this slice; the next lifecycle transaction consumes this value.
+/// The route owner retains every reversible clock lease, while the platform
+/// witness remains affine beside it. No controller/baseband MMIO is exposed by
+/// this slice; the next lifecycle transaction consumes this value.
 #[must_use = "clocked Bluetooth resources retain the radio and platform owners"]
 pub struct BluetoothClockedResources<P> {
     registers: Option<BluetoothColdOwner>,
@@ -145,6 +122,9 @@ impl<P> Drop for BluetoothClockedResources<P> {
 }
 
 trait BluetoothSharedClockControl {
+    fn retain_platform_pll_source(&mut self);
+    fn release_platform_pll_source(&mut self);
+    fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation;
     fn prepare_modem_syscon_clock_map(&mut self);
     fn enable_bluetooth_controller_dependents(&mut self);
     fn enable_bluetooth_apb_clocks(&mut self);
@@ -166,6 +146,18 @@ trait BluetoothSharedClockControl {
 }
 
 impl BluetoothSharedClockControl for BluetoothColdOwner {
+    fn retain_platform_pll_source(&mut self) {
+        self.retain_platform_pll_source();
+    }
+
+    fn release_platform_pll_source(&mut self) {
+        self.release_platform_pll_source();
+    }
+
+    fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+        self.platform_clock_power_observation()
+    }
+
     fn prepare_modem_syscon_clock_map(&mut self) {
         self.prepare_modem_syscon_clock_map();
     }
@@ -232,7 +224,7 @@ impl BluetoothSharedClockControl for BluetoothColdOwner {
     }
 }
 
-impl<P: BluetoothClockControl> BluetoothClockedResources<P> {
+impl<P> BluetoothClockedResources<P> {
     /// Reverse the exact clock prerequisite and recover the cold owner.
     pub fn disable_clocks(mut self) -> BluetoothStopped<P> {
         self.restore_reversible_clocks();
@@ -266,7 +258,7 @@ impl<P> BluetoothClockEnableFailure<P> {
     }
 }
 
-impl<P: BluetoothClockControl> BluetoothStopped<P> {
+impl<P> BluetoothStopped<P> {
     /// Execute the exact outer ESP32-S31 Bluetooth clock prerequisite.
     ///
     /// The current standalone profile uses the 40 MHz main crystal divided to
@@ -276,8 +268,8 @@ impl<P: BluetoothClockControl> BluetoothStopped<P> {
     pub fn enable_clocks(
         self,
     ) -> Result<BluetoothClockedResources<P>, BluetoothClockEnableFailure<P>> {
-        let (mut registers, mut platform) = self.into_parts();
-        if let Err(error) = enable_owned(&mut registers, &mut platform) {
+        let (mut registers, platform) = self.into_parts();
+        if let Err(error) = enable_owned(&mut registers) {
             return Err(BluetoothClockEnableFailure {
                 stopped: BluetoothStopped::from_parts(registers, platform),
                 error,
@@ -287,7 +279,7 @@ impl<P: BluetoothClockControl> BluetoothStopped<P> {
         Ok(BluetoothClockedResources {
             registers: Some(registers),
             platform: Some(platform),
-            cleanup: disable_owned::<BluetoothColdOwner, P>,
+            cleanup: |registers, _| disable_owned(registers),
             cleanup_armed: true,
         })
     }
@@ -295,22 +287,22 @@ impl<P: BluetoothClockControl> BluetoothStopped<P> {
 
 fn enable_owned(
     resources: &mut impl BluetoothSharedClockControl,
-    platform: &mut impl BluetoothClockControl,
 ) -> Result<(), BluetoothClockError> {
     resources.prepare_shared_modem_clock_map();
     resources.prepare_modem_syscon_clock_map();
-    platform.enable_bluetooth_controller_pll_source();
+    resources.retain_platform_pll_source();
     resources.retain_coexistence_clock();
     resources.enable_bluetooth_controller_dependents();
     resources.enable_bluetooth_apb_clocks();
     resources.reset_bluetooth_controller_domains();
     resources.retain_main_xtal_low_power_clock();
 
-    let platform_state = platform.bluetooth_platform_clock_state();
+    let platform_state = resources.platform_clock_power_observation();
     let modem_state = resources.modem_syscon_clock_state();
     let (shared, low_power) = resources.bluetooth_shared_clock_observation();
     let state = BluetoothClockState {
-        controller_clocks_enabled: platform_state.pll_160mhz_source_enabled
+        controller_clocks_enabled: platform_state.ref_160m_clock_enabled
+            && platform_state.modem_source_clocks_configured
             && modem_state.controller_clocks_enabled
             && shared.coexistence_clock_enabled,
         apb_clocks_enabled: modem_state.apb_clocks_enabled,
@@ -320,7 +312,7 @@ fn enable_owned(
         low_power_timer_enabled: low_power.timer_enabled,
     };
     if let Err(error) = validate_state(state) {
-        disable_owned(resources, platform);
+        disable_owned(resources);
         return Err(error);
     }
     Ok(())
@@ -349,13 +341,10 @@ fn validate_state(state: BluetoothClockState) -> Result<(), BluetoothClockError>
     }
 }
 
-fn disable_owned<R: BluetoothSharedClockControl, P: BluetoothClockControl>(
-    resources: &mut R,
-    platform: &mut P,
-) {
+fn disable_owned(resources: &mut impl BluetoothSharedClockControl) {
     resources.release_bluetooth_low_power_timer();
     resources.disable_bluetooth_apb_clocks();
-    platform.disable_bluetooth_controller_pll_source();
+    resources.release_platform_pll_source();
     resources.release_coexistence_clock();
     resources.disable_bluetooth_controller_dependents();
 }
@@ -365,13 +354,13 @@ mod tests {
     use std::{cell::RefCell, rc::Rc, vec::Vec};
 
     use open_esp_radio_esp32s31_pac::{
-        BluetoothLowPowerClockObservation, RadioHardware, SharedModemClockObservation,
+        BluetoothLowPowerClockObservation, PlatformClockPowerObservation, RadioHardware,
+        SharedModemClockObservation,
     };
 
     use super::{
-        BluetoothClockCheckpoint, BluetoothClockControl, BluetoothClockedResources,
-        BluetoothColdOwner, BluetoothModemClockState, BluetoothPlatformClockState,
-        BluetoothSharedClockControl, disable_owned, enable_owned,
+        BluetoothClockCheckpoint, BluetoothClockedResources, BluetoothColdOwner,
+        BluetoothModemClockState, BluetoothSharedClockControl, disable_owned, enable_owned,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -396,11 +385,11 @@ mod tests {
 
     struct FakePlatform {
         operations: Rc<RefCell<Vec<Operation>>>,
-        state: BluetoothPlatformClockState,
     }
 
     struct FakeShared {
         operations: Rc<RefCell<Vec<Operation>>>,
+        platform: PlatformClockPowerObservation,
         shared: SharedModemClockObservation,
         low_power: BluetoothLowPowerClockObservation,
     }
@@ -409,6 +398,12 @@ mod tests {
         fn ready(operations: Rc<RefCell<Vec<Operation>>>) -> Self {
             Self {
                 operations,
+                platform: PlatformClockPowerObservation {
+                    hp_active_icg_selected: false,
+                    modem_register_bus_clock_enabled: false,
+                    ref_160m_clock_enabled: true,
+                    modem_source_clocks_configured: true,
+                },
                 shared: SharedModemClockObservation {
                     power_state_map_configured: true,
                     coexistence_clock_enabled: true,
@@ -425,6 +420,25 @@ mod tests {
     }
 
     impl BluetoothSharedClockControl for FakeShared {
+        fn retain_platform_pll_source(&mut self) {
+            self.operations
+                .borrow_mut()
+                .push(Operation::EnablePllSource);
+        }
+
+        fn release_platform_pll_source(&mut self) {
+            self.operations
+                .borrow_mut()
+                .push(Operation::DisablePllSource);
+        }
+
+        fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+            self.operations
+                .borrow_mut()
+                .push(Operation::ObservePlatform);
+            self.platform
+        }
+
         fn prepare_modem_syscon_clock_map(&mut self) {
             self.operations
                 .borrow_mut()
@@ -504,33 +518,7 @@ mod tests {
 
     impl FakePlatform {
         fn ready(operations: Rc<RefCell<Vec<Operation>>>) -> Self {
-            Self {
-                operations,
-                state: BluetoothPlatformClockState {
-                    pll_160mhz_source_enabled: true,
-                },
-            }
-        }
-    }
-
-    impl BluetoothClockControl for FakePlatform {
-        fn enable_bluetooth_controller_pll_source(&mut self) {
-            self.operations
-                .borrow_mut()
-                .push(Operation::EnablePllSource);
-        }
-
-        fn bluetooth_platform_clock_state(&mut self) -> BluetoothPlatformClockState {
-            self.operations
-                .borrow_mut()
-                .push(Operation::ObservePlatform);
-            self.state
-        }
-
-        fn disable_bluetooth_controller_pll_source(&mut self) {
-            self.operations
-                .borrow_mut()
-                .push(Operation::DisablePllSource);
+            Self { operations }
         }
     }
 
@@ -567,12 +555,11 @@ mod tests {
     }
 
     #[test]
-    fn exact_clock_order_joins_platform_and_shared_observations() {
+    fn exact_clock_order_joins_route_owned_observations() {
         let operations = Rc::new(RefCell::new(Vec::new()));
         let mut shared = FakeShared::ready(operations.clone());
-        let mut platform = FakePlatform::ready(operations.clone());
-        assert_eq!(enable_owned(&mut shared, &mut platform), Ok(()));
-        disable_owned(&mut shared, &mut platform);
+        assert_eq!(enable_owned(&mut shared), Ok(()));
+        disable_owned(&mut shared);
 
         assert_eq!(
             *operations.borrow(),
@@ -599,11 +586,10 @@ mod tests {
     #[test]
     fn failed_readback_rolls_back_before_returning_owners() {
         let operations = Rc::new(RefCell::new(Vec::new()));
-        let mut platform = FakePlatform::ready(operations.clone());
         let mut shared = FakeShared::ready(operations.clone());
         shared.low_power.timer_enabled = false;
 
-        let failure = enable_owned(&mut shared, &mut platform).unwrap_err();
+        let failure = enable_owned(&mut shared).unwrap_err();
         assert_eq!(
             failure.checkpoint,
             BluetoothClockCheckpoint::LowPowerTimerClock

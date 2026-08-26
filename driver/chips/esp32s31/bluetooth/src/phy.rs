@@ -5,7 +5,6 @@
 //! module reuses that one recovered transition and its target port; it does
 //! not maintain a Bluetooth-specific shadow of common PHY initialization.
 
-use open_esp_radio_esp32s31_hal::analog_i2c::PhyPmuControl;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyRegisterRunError, PhyRegisterTransition, PhyTargetObserver,
@@ -19,15 +18,6 @@ use crate::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
     },
 };
-
-/// Complete platform capability set consumed by common PHY initialization.
-///
-/// This is a composition contract only. Each parent trait remains the owner
-/// of one official system-peripheral operation family; Bluetooth gains no raw
-/// platform-register access through this marker.
-pub trait BluetoothPhyPlatform: PhyPmuControl {}
-
-impl<T> BluetoothPhyPlatform for T where T: PhyPmuControl {}
 
 /// Caller-owned inputs for one full common-PHY registration.
 pub struct BluetoothPhyInitializationConfig {
@@ -130,7 +120,6 @@ pub(crate) async fn initialize_common_phy<D, O, P>(
     observer: O,
 ) -> Result<BluetoothPhyInitialized<P>, BluetoothPhyInitializationFailure<P>>
 where
-    P: BluetoothPhyPlatform,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {

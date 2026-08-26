@@ -121,6 +121,10 @@ impl<'registers> WifiMacColdHal<'registers> {
         self.registers.radio_mut().retain_coexistence_clock();
     }
 
+    pub fn configure_modem_source_clocks(&mut self) {
+        self.registers.configure_modem_source_clocks();
+    }
+
     pub fn enable_wifi_mac_clocks(&mut self) {
         self.registers.enable_wifi_mac_clocks();
     }

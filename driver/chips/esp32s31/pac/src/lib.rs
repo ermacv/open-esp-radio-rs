@@ -70,6 +70,7 @@ mod modem_syscon;
 pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;
+mod platform_clock_power;
 mod table_memory;
 #[cfg(feature = "validation-probes")]
 pub mod validation;
@@ -223,6 +224,7 @@ pub use modem_syscon::{
 };
 use open_esp_radio_esp32s31_pac_raw as svd;
 pub use phy_i2c::PhyI2cHost;
+pub use platform_clock_power::PlatformClockPowerObservation;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 
 /// Private Wi-Fi and shared-radio owners used by one exclusive Wi-Fi route.
@@ -267,6 +269,7 @@ struct Ieee802154BtbbPeripheralOwners {
 pub struct RadioPhyRegisters {
     peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
     shared_clock: modem_shared_clock::SharedModemClockState,
+    platform_clock_power: platform_clock_power::PlatformClockPowerState,
 }
 
 /// Bluetooth owners retained, but not exposed, while Wi-Fi is exclusive.
@@ -341,6 +344,7 @@ impl RadioHardware {
             radio_phy: RadioPhyRegisters {
                 peripherals: radio_phy,
                 shared_clock: modem_shared_clock::SharedModemClockState::new(),
+                platform_clock_power: platform_clock_power::PlatformClockPowerState::new(),
             },
             coexistence,
             bluetooth,
@@ -419,6 +423,7 @@ impl RadioHardware {
                 },
                 coexistence_clock: None,
                 low_power_timer_clock: None,
+                platform_pll_source: None,
                 modem_syscon_clocks: BluetoothModemSysconClockState::new(),
                 modem_syscon_controller_clocks_retained: false,
                 modem_syscon_apb_clocks_retained: false,
@@ -796,6 +801,54 @@ impl WifiColdRegisters {
     }
 
     #[doc(hidden)]
+    pub fn select_hp_active_modem_icg(&mut self) {
+        self.registers
+            .peripherals
+            .radio_phy
+            .select_hp_active_modem_icg();
+    }
+
+    #[doc(hidden)]
+    pub fn apply_modem_icg_selection(&mut self) {
+        self.registers
+            .peripherals
+            .radio_phy
+            .apply_modem_icg_selection();
+    }
+
+    #[doc(hidden)]
+    pub fn apply_sleep_icg_selection(&mut self) {
+        self.registers
+            .peripherals
+            .radio_phy
+            .apply_sleep_icg_selection();
+    }
+
+    #[doc(hidden)]
+    pub fn enable_modem_register_bus_clock(&mut self) {
+        self.registers
+            .peripherals
+            .radio_phy
+            .enable_modem_register_bus_clock();
+    }
+
+    #[doc(hidden)]
+    pub fn configure_modem_source_clocks(&mut self) {
+        self.registers
+            .peripherals
+            .radio_phy
+            .configure_modem_source_clocks();
+    }
+
+    #[doc(hidden)]
+    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+        self.registers
+            .peripherals
+            .radio_phy
+            .platform_clock_power_observation()
+    }
+
+    #[doc(hidden)]
     pub fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
         self.registers
             .peripherals
@@ -1031,6 +1084,38 @@ impl Ieee802154TaskRegisters {
     }
 
     #[doc(hidden)]
+    pub fn select_hp_active_modem_icg(&mut self) {
+        self.peripherals.radio_phy.select_hp_active_modem_icg();
+    }
+
+    #[doc(hidden)]
+    pub fn apply_modem_icg_selection(&mut self) {
+        self.peripherals.radio_phy.apply_modem_icg_selection();
+    }
+
+    #[doc(hidden)]
+    pub fn apply_sleep_icg_selection(&mut self) {
+        self.peripherals.radio_phy.apply_sleep_icg_selection();
+    }
+
+    #[doc(hidden)]
+    pub fn enable_modem_register_bus_clock(&mut self) {
+        self.peripherals.radio_phy.enable_modem_register_bus_clock();
+    }
+
+    #[doc(hidden)]
+    pub fn configure_modem_source_clocks(&mut self) {
+        self.peripherals.radio_phy.configure_modem_source_clocks();
+    }
+
+    #[doc(hidden)]
+    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+        self.peripherals
+            .radio_phy
+            .platform_clock_power_observation()
+    }
+
+    #[doc(hidden)]
     pub fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
         self.peripherals
             .radio_phy
@@ -1245,6 +1330,21 @@ impl BluetoothColdRegisters {
     }
 
     #[doc(hidden)]
+    pub fn retain_platform_pll_source(&mut self) {
+        self.task.retain_platform_pll_source();
+    }
+
+    #[doc(hidden)]
+    pub fn release_platform_pll_source(&mut self) {
+        self.task.release_platform_pll_source();
+    }
+
+    #[doc(hidden)]
+    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+        self.task.radio_phy.platform_clock_power_observation()
+    }
+
+    #[doc(hidden)]
     pub fn prepare_modem_syscon_clock_map(&mut self) {
         self.task.radio_phy.prepare_modem_syscon_clock_map();
     }
@@ -1295,6 +1395,7 @@ pub struct BluetoothTaskRegisters {
     retained_wifi: RetainedWifiPeripheralOwners,
     coexistence_clock: Option<SharedModemClockLease>,
     low_power_timer_clock: Option<BluetoothLowPowerTimerLease>,
+    platform_pll_source: Option<platform_clock_power::PlatformPllSourceLease>,
     modem_syscon_clocks: BluetoothModemSysconClockState,
     modem_syscon_controller_clocks_retained: bool,
     modem_syscon_apb_clocks_retained: bool,
@@ -1344,6 +1445,18 @@ impl core::fmt::Debug for BluetoothTaskReuniteFailure {
 }
 
 impl BluetoothTaskRegisters {
+    fn retain_platform_pll_source(&mut self) {
+        if self.platform_pll_source.is_none() {
+            self.platform_pll_source = Some(self.radio_phy.retain_platform_pll_source());
+        }
+    }
+
+    fn release_platform_pll_source(&mut self) {
+        if let Some(lease) = self.platform_pll_source.take() {
+            self.radio_phy.release_platform_pll_source(lease);
+        }
+    }
+
     fn retain_modem_syscon_bluetooth_controller_clocks(&mut self) {
         if !self.modem_syscon_controller_clocks_retained {
             self.radio_phy
@@ -1427,6 +1540,7 @@ impl BluetoothTaskRegisters {
         self.release_coexistence_clock();
         self.release_modem_syscon_bluetooth_apb_clocks();
         self.release_modem_syscon_bluetooth_controller_clocks();
+        self.release_platform_pll_source();
         let Self {
             bluetooth,
             radio_phy,
@@ -1440,6 +1554,7 @@ impl BluetoothTaskRegisters {
                 },
             coexistence_clock: _,
             low_power_timer_clock: _,
+            platform_pll_source: _,
             modem_syscon_clocks: _,
             modem_syscon_controller_clocks_retained: _,
             modem_syscon_apb_clocks_retained: _,

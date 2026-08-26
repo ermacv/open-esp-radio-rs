@@ -259,6 +259,16 @@ owned-ranges = [
     "lp-aon-phy-aux",
     "lp-periclkrst-tsens-phy-aux",
     "lp-tsens-phy-aux",
+    "hp-sys-clkrst-radio-modem-control",
+    "hp-sys-clkrst-radio-ref160",
+    "hp-sys-clkrst-radio-modem-configuration",
+    "pmu-radio-active-icg-modem",
+    "pmu-radio-active-clock-power",
+    "pmu-radio-immediate-clock-power",
+    "pmu-radio-immediate-sleep-sysclk",
+    "pmu-radio-immediate-modem-icg",
+    "pmu-radio-rf-power",
+    "pmu-radio-analog-peripheral-power",
 ]
 
 [registers.review]

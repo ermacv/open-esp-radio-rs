@@ -6,7 +6,6 @@
 
 use core::marker::PhantomData;
 
-use open_esp_radio_esp32s31_hal::analog_i2c::PhyPmuControl;
 use open_esp_radio_esp32s31_hal::{
     Ieee802154Clocked, PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext,
     state::Powered,
@@ -1698,9 +1697,8 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn complete_rf<P: PhyPmuControl, O: PhyTargetObserver>(
+    async fn complete_rf<O: PhyTargetObserver>(
         binding: PhyColdExternalBinding,
-        platform: &mut P,
         registers: &mut impl SharedPhyContext,
         observer: &mut O,
     ) -> Result<PhyRfInitPrefixCompletion, PhyTargetPortError> {
@@ -1768,7 +1766,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                     observer.rf_boundary(boundary);
                 }
                 binding
-                    .execute_target(platform, registers)
+                    .execute_target(registers)
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)
             }
             PhyColdExternalBinding::Observation(binding) => {
@@ -1789,11 +1787,11 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                     | PhyColdObservationRequest::ObserveSignalPowerReadiness { .. } => {
                         D::after_micros(1).await;
                         binding
-                            .execute_target(platform, registers)
+                            .execute_target(registers)
                             .map_err(|_| PhyTargetPortError::UnexpectedBinding)
                     }
                     _ => binding
-                        .execute_target(platform, registers)
+                        .execute_target(registers)
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding),
                 }
             }
@@ -1826,9 +1824,8 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         }
     }
 
-    async fn run_calibration_pbus<P: PhyPmuControl, O: PhyTargetObserver>(
+    async fn run_calibration_pbus<O: PhyTargetObserver>(
         mut child: PhyCalibrationPbusClearTransition,
-        platform: &mut P,
         registers: &mut impl SharedPhyContext,
         observer: &mut O,
     ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
@@ -1840,7 +1837,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             let binding = child
                 .lower_external()
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
-            let completion = Self::complete_rf(binding, platform, registers, observer).await?;
+            let completion = Self::complete_rf(binding, registers, observer).await?;
             child
                 .advance_external(completion)
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -2082,7 +2079,7 @@ impl<'a, P, R, D, O> TargetPhyParamTrackingPort<'a, P, R, D, O> {
     }
 }
 
-impl<P: PhyPmuControl, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
+impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
     PhyCalibrationTrackingPort for TargetPhyCalibrationTrackingPort<'_, P, R, D, O>
 {
     type Error = PhyTargetPortError;
@@ -2098,7 +2095,6 @@ impl<P: PhyPmuControl, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTarge
                     transition
                         .begin_pbus_clear()
                         .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
-                    self.platform,
                     self.registers,
                     &mut *self.observer,
                 )
@@ -2183,8 +2179,8 @@ impl<P: PhyPmuControl, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTarge
     }
 }
 
-impl<P: PhyPmuControl, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
-    PhyParamTrackingPort for TargetPhyParamTrackingPort<'_, P, R, D, O>
+impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyParamTrackingPort
+    for TargetPhyParamTrackingPort<'_, P, R, D, O>
 {
     type Error = PhyTargetPortError;
 
@@ -2288,7 +2284,6 @@ pub async fn run_target_phy_param_tracking<P, D, O>(
     observer: O,
 ) -> Result<TargetPhyParamTrackingSuccess<P>, TargetPhyParamTrackingFailure<P>>
 where
-    P: PhyPmuControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2334,7 +2329,6 @@ pub async fn run_target_ieee802154_phy_param_tracking<P, D, O>(
     observer: O,
 ) -> Result<TargetIeee802154PhyParamTrackingSuccess<P>, TargetIeee802154PhyParamTrackingFailure<P>>
 where
-    P: PhyPmuControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2362,8 +2356,8 @@ where
     }
 }
 
-impl<P: PhyPmuControl, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver>
-    PhyRegisterPort for TargetPhyRegisterPort<'_, P, R, D, O>
+impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyRegisterPort
+    for TargetPhyRegisterPort<'_, P, R, D, O>
 {
     type Error = PhyTargetPortError;
 
@@ -2394,7 +2388,6 @@ impl<P: PhyPmuControl, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTarge
                 } else {
                     let completion = TargetCompleter::<D>::complete_rf(
                         binding,
-                        self.platform,
                         self.registers,
                         &mut self.observer,
                     )
@@ -2461,7 +2454,6 @@ pub async fn run_target_ieee802154_phy_register<P, D, O>(
     observer: O,
 ) -> Result<TargetIeee802154PhyRegisterSuccess<P>, TargetIeee802154PhyRegisterFailure<P>>
 where
-    P: PhyPmuControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2538,7 +2530,6 @@ pub async fn run_target_phy_register<P, D, O>(
     observer: O,
 ) -> Result<TargetPhyRegisterSuccess<P>, TargetPhyRegisterFailure<P>>
 where
-    P: PhyPmuControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {

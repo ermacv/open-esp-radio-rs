@@ -15,16 +15,15 @@ use open_esp_radio_esp32s31_wifi_mac::{
         install_sta_pairwise_ccmp,
     },
     init::{
-        MacClockControl, MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacColdAntennaHardware,
-        MacColdCoexHardware, MacColdCoexPti, MacColdCryptoHardware, MacColdEnableHardware,
-        MacColdHalTailHardware, MacColdHandshakeHardware, MacColdHeHardware,
-        MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdRxPolicyHardware,
-        MacColdStartConfig, MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware,
-        MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware, MacLowRateHardware,
-        MacSharedClockHardware, MacSlowClockCalibration, MacSlowClockCalibrationSource,
-        MacSnifferHardware, MacTxPowerPair, MacTxPowerSource, MacTxPowerTable,
-        StaLinkRxPolicyHardware, activate_promiscuous_receive, configure_sta_link_receive_policy,
-        initialize_wifi_mac,
+        MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacColdAntennaHardware, MacColdCoexHardware,
+        MacColdCoexPti, MacColdCryptoHardware, MacColdEnableHardware, MacColdHalTailHardware,
+        MacColdHandshakeHardware, MacColdHeHardware, MacColdLastRxBufferHardware,
+        MacColdRxBufferHardware, MacColdRxPolicyHardware, MacColdStartConfig, MacColdStartError,
+        MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot,
+        MacInterfaceAddressHardware, MacLowRateHardware, MacSharedClockHardware,
+        MacSlowClockCalibration, MacSlowClockCalibrationSource, MacSnifferHardware, MacTxPowerPair,
+        MacTxPowerSource, MacTxPowerTable, StaLinkRxPolicyHardware, activate_promiscuous_receive,
+        configure_sta_link_receive_policy, initialize_wifi_mac,
     },
     irq::{
         IrqDisposition, IrqState, IrqWork, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
@@ -287,6 +286,7 @@ enum Operation {
     InitializeTxPower(MacTxPowerTable),
     InitializeHeSuffix,
     RetainCoexistenceClock,
+    ConfigureModemSourceClocks,
     EnableWifiMacClocks,
     SetWifiMacReset(bool),
     ConfigureOpenPromiscuousReceive,
@@ -351,6 +351,11 @@ impl MacSharedClockHardware for MockMmio {
     fn retain_coexistence_clock(&mut self) {
         self.record_clock_edge(ColdStartClockEdge::RetainCoexistenceClock);
         self.operations.push(Operation::RetainCoexistenceClock);
+    }
+
+    fn configure_modem_source_clocks(&mut self) {
+        self.record_clock_edge(ColdStartClockEdge::ConfigureModemSourceClocks);
+        self.operations.push(Operation::ConfigureModemSourceClocks);
     }
 
     fn enable_wifi_mac_clocks(&mut self) {
@@ -1131,35 +1136,20 @@ impl TxHardware for MockMmio {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PlatformOperation {
-    ConfigureModemSourceClocks,
-    RequestMacDelayRandom,
-    RequestSlowClockCalibration,
-    RequestTxPower(u8),
-    RequestCoexPti(MacCoexEvent),
+    MacDelayRandom,
+    SlowClockCalibration,
+    TxPower(u8),
+    CoexPti(MacCoexEvent),
 }
 
 #[derive(Default)]
 struct MockPlatform {
     operations: Vec<PlatformOperation>,
-    cold_start_clock_trace: Option<ColdStartClockTrace>,
-}
-
-impl MacClockControl for MockPlatform {
-    fn configure_modem_source_clocks(&mut self) {
-        if let Some(trace) = &self.cold_start_clock_trace {
-            trace
-                .borrow_mut()
-                .push(ColdStartClockEdge::ConfigureModemSourceClocks);
-        }
-        self.operations
-            .push(PlatformOperation::ConfigureModemSourceClocks);
-    }
 }
 
 impl MacDelayEntropy for MockPlatform {
     fn mac_delay_random(&mut self) -> u32 {
-        self.operations
-            .push(PlatformOperation::RequestMacDelayRandom);
+        self.operations.push(PlatformOperation::MacDelayRandom);
         7
     }
 }
@@ -1167,15 +1157,14 @@ impl MacDelayEntropy for MockPlatform {
 impl MacSlowClockCalibrationSource for MockPlatform {
     fn mac_slow_clock_calibration(&mut self) -> MacSlowClockCalibration {
         self.operations
-            .push(PlatformOperation::RequestSlowClockCalibration);
+            .push(PlatformOperation::SlowClockCalibration);
         MacSlowClockCalibration::Unavailable
     }
 }
 
 impl MacTxPowerSource for MockPlatform {
     fn mac_tx_power_pair(&mut self, rate: u8) -> MacTxPowerPair {
-        self.operations
-            .push(PlatformOperation::RequestTxPower(rate));
+        self.operations.push(PlatformOperation::TxPower(rate));
         MacTxPowerPair {
             primary: rate as i8,
             alternate: -(rate as i8),
@@ -1185,8 +1174,7 @@ impl MacTxPowerSource for MockPlatform {
 
 impl MacCoexPtiSource for MockPlatform {
     fn mac_coex_pti(&mut self, event: MacCoexEvent) -> MacCoexPti {
-        self.operations
-            .push(PlatformOperation::RequestCoexPti(event));
+        self.operations.push(PlatformOperation::CoexPti(event));
         MacCoexPti::from_osi_value(match event {
             MacCoexEvent::Event1 => 5,
             MacCoexEvent::Event3 => 7,
@@ -1256,9 +1244,10 @@ fn slow_clock_calibration_reproduces_vendor_eighteen_bit_truncation() {
 fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     let clock_trace = Rc::new(RefCell::new(Vec::new()));
     let mut platform = MockPlatform::default();
-    let mut mmio = MockMmio::default();
-    platform.cold_start_clock_trace = Some(clock_trace.clone());
-    mmio.cold_start_clock_trace = Some(clock_trace.clone());
+    let mut mmio = MockMmio {
+        cold_start_clock_trace: Some(clock_trace.clone()),
+        ..MockMmio::default()
+    };
     mmio.set(mac_init::HANDSHAKE, 1);
 
     let station = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
@@ -1292,10 +1281,11 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         ]
     );
     assert_eq!(
-        &mmio.operations()[..9],
+        &mmio.operations()[..10],
         [
             Operation::EnableWifiMacClocks,
             Operation::RetainCoexistenceClock,
+            Operation::ConfigureModemSourceClocks,
             Operation::SetWifiMacReset(true),
             Operation::SetWifiMacReset(false),
             Operation::Read(mac_init::HANDSHAKE),
@@ -1550,32 +1540,29 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             .any(|operation| matches!(operation, Operation::InitializeTxPower(_)))
     );
     assert!(mmio.operations().contains(&Operation::InitializeHeSuffix));
-    let mut expected_platform = vec![
-        PlatformOperation::ConfigureModemSourceClocks,
-        PlatformOperation::RequestMacDelayRandom,
-    ];
-    expected_platform.extend((0..43).map(PlatformOperation::RequestTxPower));
+    let mut expected_platform = vec![PlatformOperation::MacDelayRandom];
+    expected_platform.extend((0..43).map(PlatformOperation::TxPower));
     expected_platform.extend(
         (0..26)
             .filter(|rate| *rate != 4)
-            .map(PlatformOperation::RequestTxPower),
+            .map(PlatformOperation::TxPower),
     );
     expected_platform.extend([
-        PlatformOperation::RequestSlowClockCalibration,
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event15),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event1),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event3),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event10),
-        PlatformOperation::RequestCoexPti(MacCoexEvent::Event10),
+        PlatformOperation::SlowClockCalibration,
+        PlatformOperation::CoexPti(MacCoexEvent::Event3),
+        PlatformOperation::CoexPti(MacCoexEvent::Event15),
+        PlatformOperation::CoexPti(MacCoexEvent::Event1),
+        PlatformOperation::CoexPti(MacCoexEvent::Event3),
+        PlatformOperation::CoexPti(MacCoexEvent::Event3),
+        PlatformOperation::CoexPti(MacCoexEvent::Event3),
+        PlatformOperation::CoexPti(MacCoexEvent::Event1),
+        PlatformOperation::CoexPti(MacCoexEvent::Event1),
+        PlatformOperation::CoexPti(MacCoexEvent::Event1),
+        PlatformOperation::CoexPti(MacCoexEvent::Event1),
+        PlatformOperation::CoexPti(MacCoexEvent::Event3),
+        PlatformOperation::CoexPti(MacCoexEvent::Event3),
+        PlatformOperation::CoexPti(MacCoexEvent::Event10),
+        PlatformOperation::CoexPti(MacCoexEvent::Event10),
     ]);
     assert_eq!(platform.operations, expected_platform);
     assert_eq!(
@@ -1609,6 +1596,7 @@ fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
         [
             Operation::EnableWifiMacClocks,
             Operation::RetainCoexistenceClock,
+            Operation::ConfigureModemSourceClocks,
             Operation::SetWifiMacReset(true),
             Operation::SetWifiMacReset(false),
             Operation::Read(mac_init::HANDSHAKE),

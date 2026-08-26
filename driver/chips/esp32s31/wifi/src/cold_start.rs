@@ -5,9 +5,7 @@
 //! channel selection. Board token construction, persistent calibration
 //! storage and diagnostics remain caller policy.
 
-use open_esp_radio_esp32s31_hal::{
-    PowerClockControl, PowerUpFailure, Radio, analog_i2c::PhyPmuControl, state::Powered,
-};
+use open_esp_radio_esp32s31_hal::{PowerUpFailure, Radio, state::Powered};
 use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome, PhyState,
     PhyTargetObserver, PhyTargetPortCounters, PhyTargetPortError, PhyTxTargetPowerProfile,
@@ -121,7 +119,6 @@ pub async fn start_esp32s31_wifi<P, D, O>(
     observer: O,
 ) -> Result<Esp32s31WifiColdStart<P>, Esp32s31WifiColdStartFailure<P>>
 where
-    P: PowerClockControl + PhyPmuControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {

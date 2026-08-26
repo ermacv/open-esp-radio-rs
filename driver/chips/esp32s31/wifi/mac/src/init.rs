@@ -38,17 +38,10 @@ pub use open_esp_radio_esp32s31_hal::types::{MacInterruptMask, MacTxPowerPair, M
 /// part of the MAC lifecycle recovered from `libpp.a[hal_mac.o]::hal_init`.
 pub const MAC_COLD_RX_INTERRUPT_MASK: MacInterruptMask = MacInterruptMask::COLD_RX;
 
-/// Chip-platform capability required before touching MAC-local MMIO.
-///
-/// The MAC crate owns the lifecycle order while the integration implements
-/// the remaining upstream operation behind its singleton owner.
-pub trait MacClockControl {
-    fn configure_modem_source_clocks(&mut self);
-}
-
-/// Route-owned shared clock edge kept separate from platform clock tokens.
+/// Route-owned shared clock operations required before touching MAC-local MMIO.
 pub trait MacSharedClockHardware {
     fn retain_coexistence_clock(&mut self);
+    fn configure_modem_source_clocks(&mut self);
     fn enable_wifi_mac_clocks(&mut self);
     fn set_wifi_mac_reset(&mut self, asserted: bool);
 }
@@ -56,6 +49,9 @@ pub trait MacSharedClockHardware {
 impl MacSharedClockHardware for open_esp_radio_esp32s31_hal::wifi_mac::WifiMacColdHal<'_> {
     fn retain_coexistence_clock(&mut self) {
         self.retain_coexistence_clock();
+    }
+    fn configure_modem_source_clocks(&mut self) {
+        self.configure_modem_source_clocks();
     }
     fn enable_wifi_mac_clocks(&mut self) {
         self.enable_wifi_mac_clocks();
@@ -116,11 +112,7 @@ pub fn initialize_wifi_mac<
         + MacInterfaceAddressHardware
         + MacLowRateHardware
         + MacSharedClockHardware,
-    P: MacClockControl
-        + MacCoexPtiSource
-        + MacDelayEntropy
-        + MacSlowClockCalibrationSource
-        + MacTxPowerSource,
+    P: MacCoexPtiSource + MacDelayEntropy + MacSlowClockCalibrationSource + MacTxPowerSource,
 >(
     platform: &mut P,
     mmio: &mut M,
@@ -133,7 +125,7 @@ pub fn initialize_wifi_mac<
     // here; the calibrated Wi-Fi baseband remains live.
     mmio.enable_wifi_mac_clocks();
     mmio.retain_coexistence_clock();
-    platform.configure_modem_source_clocks();
+    mmio.configure_modem_source_clocks();
     mmio.set_wifi_mac_reset(true);
     mmio.set_wifi_mac_reset(false);
 

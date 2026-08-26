@@ -15,15 +15,16 @@ impl WifiColdRegisters {
             .modify(|_, w| w.request().set_bit());
     }
 
-    /// Sample the cold-start handshake register once.
-    pub fn sample_mac_cold_start(&self) -> u32 {
+    /// Sample the cold-start ready field once.
+    pub fn sample_mac_cold_start_ready(&self) -> bool {
         self.registers
             .peripherals
             .wifi_mac
             .wifi_mac_cold_handshake
             .control()
             .read()
-            .bits()
+            .ready()
+            .bit_is_set()
     }
 
     /// Mask every MAC interrupt source.

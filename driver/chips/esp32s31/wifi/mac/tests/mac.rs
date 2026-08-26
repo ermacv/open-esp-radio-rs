@@ -171,7 +171,6 @@ mod mac {
 mod mac_init {
     use super::{TestRegister, indexed, named};
 
-    pub const HANDSHAKE: TestRegister = named("HANDSHAKE");
     pub const R_4C00: TestRegister = named("R_4C00");
     pub const R_407C: TestRegister = named("R_407C");
     pub const R_4098: TestRegister = named("R_4098");
@@ -277,6 +276,7 @@ const TX_COMPLETE_Q0: u32 = 1;
 enum Operation {
     Read(TestRegister),
     Write(TestRegister, u32),
+    BeginColdHandshake(u32),
     InitializeMacAntenna,
     InitializeHalTail(u32, MacSlowClockCalibration),
     InitializeColdCoex(MacColdCoexPti),
@@ -310,6 +310,7 @@ struct MockMmio {
     operations: Vec<Operation>,
     interrupt_status: u32,
     interrupt_enable: u32,
+    cold_handshake_result: Option<Result<MacColdStartOutcome, MacColdStartError>>,
     cold_start_clock_trace: Option<ColdStartClockTrace>,
 }
 
@@ -605,30 +606,13 @@ impl MacColdHandshakeHardware for MockMmio {
         &mut self,
         sample_limit: u32,
     ) -> Result<MacColdStartOutcome, MacColdStartError> {
-        let current = self.read32(mac_init::HANDSHAKE);
-        self.write32(mac_init::HANDSHAKE, current | (1 << 1));
-        let mut samples = 0;
-        let value = loop {
-            let value = self.read32(mac_init::HANDSHAKE);
-            if value & 1 != 0 {
-                break value;
-            }
-            samples += 1;
-            if samples >= sample_limit {
-                return Err(MacColdStartError::HandshakeTimedOut {
-                    samples,
-                    observed: value,
-                });
-            }
-        };
-        self.interrupt_enable = 0;
-        self.interrupt_status = 0;
-        self.operations.push(Operation::WriteInterruptEnable(0));
-        self.operations.push(Operation::ClearInterrupt(u32::MAX));
-        Ok(MacColdStartOutcome {
-            handshake_samples: samples,
-            handshake_value: value,
-        })
+        self.operations
+            .push(Operation::BeginColdHandshake(sample_limit));
+        self.cold_handshake_result
+            .unwrap_or(Err(MacColdStartError::HandshakeTimedOut {
+                samples: sample_limit,
+                sample_limit,
+            }))
     }
 }
 
@@ -1226,10 +1210,13 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     let clock_trace = Rc::new(RefCell::new(Vec::new()));
     let mut platform = MockPlatform::default();
     let mut mmio = MockMmio {
+        cold_handshake_result: Some(Ok(MacColdStartOutcome {
+            handshake_samples: 0,
+            handshake_observations: 1,
+        })),
         cold_start_clock_trace: Some(clock_trace.clone()),
         ..MockMmio::default()
     };
-    mmio.set(mac_init::HANDSHAKE, 1);
 
     let station = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
     let access_point = [0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee];
@@ -1250,7 +1237,7 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     activate_promiscuous_receive(&mut mmio);
 
     assert_eq!(outcome.handshake_samples, 0);
-    assert_eq!(outcome.handshake_value, 3);
+    assert_eq!(outcome.handshake_observations, 1);
     assert_eq!(
         *clock_trace.borrow(),
         [
@@ -1262,18 +1249,14 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         ]
     );
     assert_eq!(
-        &mmio.operations()[..10],
+        &mmio.operations()[..6],
         [
             Operation::EnableWifiMacClocks,
             Operation::RetainCoexistenceClock,
             Operation::ConfigureModemSourceClocks,
             Operation::SetWifiMacReset(true),
             Operation::SetWifiMacReset(false),
-            Operation::Read(mac_init::HANDSHAKE),
-            Operation::Write(mac_init::HANDSHAKE, 3),
-            Operation::Read(mac_init::HANDSHAKE),
-            Operation::WriteInterruptEnable(0),
-            Operation::ClearInterrupt(u32::MAX),
+            Operation::BeginColdHandshake(4),
         ]
     );
     assert_eq!(
@@ -1553,9 +1536,15 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
 }
 
 #[test]
-fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
+fn cold_mac_handshake_timeout_stops_mac_initialization() {
     let mut platform = MockPlatform::default();
-    let mut mmio = MockMmio::default();
+    let mut mmio = MockMmio {
+        cold_handshake_result: Some(Err(MacColdStartError::HandshakeTimedOut {
+            samples: 2,
+            sample_limit: 2,
+        })),
+        ..MockMmio::default()
+    };
 
     assert_eq!(
         initialize_wifi_mac(
@@ -1569,7 +1558,7 @@ fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
         ),
         Err(MacColdStartError::HandshakeTimedOut {
             samples: 2,
-            observed: 2,
+            sample_limit: 2,
         })
     );
     assert_eq!(
@@ -1580,16 +1569,9 @@ fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
             Operation::ConfigureModemSourceClocks,
             Operation::SetWifiMacReset(true),
             Operation::SetWifiMacReset(false),
-            Operation::Read(mac_init::HANDSHAKE),
-            Operation::Write(mac_init::HANDSHAKE, 2),
-            Operation::Read(mac_init::HANDSHAKE),
-            Operation::Read(mac_init::HANDSHAKE),
+            Operation::BeginColdHandshake(2),
         ]
     );
-    assert!(!mmio.operations().iter().any(|operation| matches!(
-        operation,
-        Operation::WriteInterruptEnable(_) | Operation::ClearInterrupt(_)
-    )));
 }
 
 #[test]

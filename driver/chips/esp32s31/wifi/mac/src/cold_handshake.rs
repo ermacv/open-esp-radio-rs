@@ -4,13 +4,20 @@ use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacColdHal;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacColdStartError {
-    HandshakeTimedOut { samples: u32, observed: u32 },
+    HandshakeTimedOut {
+        /// Number of not-ready observations consumed before stopping.
+        samples: u32,
+        /// Caller-provided finite not-ready observation limit.
+        sample_limit: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacColdStartOutcome {
+    /// Number of not-ready observations before the ready edge.
     pub handshake_samples: u32,
-    pub handshake_value: u32,
+    /// Total hardware observations, including the final ready edge.
+    pub handshake_observations: u32,
 }
 
 pub trait MacColdHandshakeHardware {
@@ -28,11 +35,11 @@ impl MacColdHandshakeHardware for WifiMacColdHal<'_> {
         self.begin_handshake(sample_limit)
             .map(|outcome| MacColdStartOutcome {
                 handshake_samples: outcome.samples,
-                handshake_value: outcome.value,
+                handshake_observations: outcome.observations,
             })
             .map_err(|timeout| MacColdStartError::HandshakeTimedOut {
                 samples: timeout.samples,
-                observed: timeout.observed,
+                sample_limit: timeout.sample_limit,
             })
     }
 }

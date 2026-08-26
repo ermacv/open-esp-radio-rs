@@ -62,45 +62,86 @@ pub struct MacInterfaceIdentity {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacColdHandshakeOutcome {
+    /// Number of not-ready observations before the ready edge.
     pub samples: u32,
-    pub value: u32,
+    /// Total hardware observations, including the final ready edge.
+    pub observations: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacColdHandshakeTimeout {
+    /// Number of not-ready observations consumed from the finite budget.
     pub samples: u32,
-    pub observed: u32,
+    /// Caller-provided finite not-ready observation limit.
+    pub sample_limit: u32,
+}
+
+trait MacColdHandshakeBackend {
+    fn request_cold_start(&mut self);
+    fn sample_cold_start_ready(&mut self) -> bool;
+    fn mask_mac_interrupts(&mut self);
+    fn clear_mac_interrupts(&mut self);
+}
+
+impl MacColdHandshakeBackend for WifiColdRegisters {
+    fn request_cold_start(&mut self) {
+        self.request_mac_cold_start();
+    }
+
+    fn sample_cold_start_ready(&mut self) -> bool {
+        self.sample_mac_cold_start_ready()
+    }
+
+    fn mask_mac_interrupts(&mut self) {
+        self.mask_all_mac_interrupts();
+    }
+
+    fn clear_mac_interrupts(&mut self) {
+        self.clear_all_mac_interrupts();
+    }
+}
+
+fn execute_cold_mac_handshake(
+    backend: &mut impl MacColdHandshakeBackend,
+    sample_limit: u32,
+) -> Result<MacColdHandshakeOutcome, MacColdHandshakeTimeout> {
+    backend.request_cold_start();
+
+    let mut samples = 0;
+    loop {
+        if backend.sample_cold_start_ready() {
+            break;
+        }
+        samples += 1;
+        if samples >= sample_limit {
+            return Err(MacColdHandshakeTimeout {
+                samples,
+                sample_limit,
+            });
+        }
+    }
+
+    backend.mask_mac_interrupts();
+    backend.clear_mac_interrupts();
+    Ok(MacColdHandshakeOutcome {
+        samples,
+        observations: samples + 1,
+    })
 }
 
 /// Execute the finite cold-MAC handshake and interrupt cleanup sequence.
 ///
 /// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_init`, offsets
 /// `0x00..0x3a`. The vendor waits forever; this HAL operation owns the finite
-/// sample limit, polling, and multi-register cleanup order.
+/// sample limit, polling, and multi-register cleanup order. One initial sample
+/// always occurs. Each not-ready observation increments the sample count, then
+/// reaches timeout when that count is greater than or equal to `sample_limit`;
+/// a zero limit therefore still performs exactly one observation.
 pub(crate) fn begin_cold_mac_handshake(
     registers: &mut WifiColdRegisters,
     sample_limit: u32,
 ) -> Result<MacColdHandshakeOutcome, MacColdHandshakeTimeout> {
-    registers.request_mac_cold_start();
-
-    let mut samples = 0;
-    let value = loop {
-        let value = registers.sample_mac_cold_start();
-        if value & 1 != 0 {
-            break value;
-        }
-        samples += 1;
-        if samples >= sample_limit {
-            return Err(MacColdHandshakeTimeout {
-                samples,
-                observed: value,
-            });
-        }
-    };
-
-    registers.mask_all_mac_interrupts();
-    registers.clear_all_mac_interrupts();
-    Ok(MacColdHandshakeOutcome { samples, value })
+    execute_cold_mac_handshake(registers, sample_limit)
 }
 
 /// Closed HAL authority for the one-way cold Wi-Fi MAC transition.
@@ -902,4 +943,133 @@ pub fn validation_set_cca_enabled(enabled: bool) {
 pub fn validation_initialize_sifs() {
     let mut owner = crate::RadioRuntimeOwner::claim_for_validation();
     initialize_sifs(owner.pac_mut());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MacColdHandshakeBackend, MacColdHandshakeTimeout, execute_cold_mac_handshake};
+    use std::vec::Vec;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum HandshakeEvent {
+        Request,
+        Sample,
+        MaskInterrupts,
+        ClearInterrupts,
+    }
+
+    struct HandshakeBackend {
+        ready_after: u32,
+        observations: u32,
+        events: Vec<HandshakeEvent>,
+    }
+
+    impl HandshakeBackend {
+        fn new(ready_after: u32) -> Self {
+            Self {
+                ready_after,
+                observations: 0,
+                events: Vec::new(),
+            }
+        }
+    }
+
+    impl MacColdHandshakeBackend for HandshakeBackend {
+        fn request_cold_start(&mut self) {
+            self.events.push(HandshakeEvent::Request);
+        }
+
+        fn sample_cold_start_ready(&mut self) -> bool {
+            self.events.push(HandshakeEvent::Sample);
+            let ready = self.observations == self.ready_after;
+            self.observations += 1;
+            ready
+        }
+
+        fn mask_mac_interrupts(&mut self) {
+            self.events.push(HandshakeEvent::MaskInterrupts);
+        }
+
+        fn clear_mac_interrupts(&mut self) {
+            self.events.push(HandshakeEvent::ClearInterrupts);
+        }
+    }
+
+    #[test]
+    fn cold_handshake_polls_then_masks_and_clears_interrupts() {
+        let mut backend = HandshakeBackend::new(2);
+        let outcome = execute_cold_mac_handshake(&mut backend, 4).unwrap();
+
+        assert_eq!(outcome.samples, 2);
+        assert_eq!(outcome.observations, 3);
+        assert_eq!(
+            backend.events,
+            [
+                HandshakeEvent::Request,
+                HandshakeEvent::Sample,
+                HandshakeEvent::Sample,
+                HandshakeEvent::Sample,
+                HandshakeEvent::MaskInterrupts,
+                HandshakeEvent::ClearInterrupts,
+            ]
+        );
+    }
+
+    #[test]
+    fn cold_handshake_timeout_stops_before_interrupt_cleanup() {
+        let mut backend = HandshakeBackend::new(u32::MAX);
+        let error = execute_cold_mac_handshake(&mut backend, 2).unwrap_err();
+
+        assert_eq!(
+            error,
+            MacColdHandshakeTimeout {
+                samples: 2,
+                sample_limit: 2,
+            }
+        );
+        assert_eq!(
+            backend.events,
+            [
+                HandshakeEvent::Request,
+                HandshakeEvent::Sample,
+                HandshakeEvent::Sample,
+            ]
+        );
+    }
+
+    #[test]
+    fn cold_handshake_samples_ready_once_with_zero_not_ready_budget() {
+        let mut backend = HandshakeBackend::new(0);
+        let outcome = execute_cold_mac_handshake(&mut backend, 0).unwrap();
+
+        assert_eq!(outcome.samples, 0);
+        assert_eq!(outcome.observations, 1);
+        assert_eq!(
+            backend.events,
+            [
+                HandshakeEvent::Request,
+                HandshakeEvent::Sample,
+                HandshakeEvent::MaskInterrupts,
+                HandshakeEvent::ClearInterrupts,
+            ]
+        );
+    }
+
+    #[test]
+    fn cold_handshake_zero_limit_times_out_after_the_initial_not_ready_sample() {
+        let mut backend = HandshakeBackend::new(u32::MAX);
+        let error = execute_cold_mac_handshake(&mut backend, 0).unwrap_err();
+
+        assert_eq!(
+            error,
+            MacColdHandshakeTimeout {
+                samples: 1,
+                sample_limit: 0,
+            }
+        );
+        assert_eq!(
+            backend.events,
+            [HandshakeEvent::Request, HandshakeEvent::Sample]
+        );
+    }
 }

@@ -296,10 +296,14 @@ scope = "Clock reset and power-up handoff of the unique radio owner; station sle
 owners = [
   { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "PowerUpFailure" },
   { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "power_up" },
+  { path = "driver/chips/esp32s31/pac/src/mac_cold_start.rs", token = "sample_mac_cold_start_ready" },
+  { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "execute_cold_mac_handshake" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/hal/src/power.rs", token = "exact_semantic_sequence_is_finite_and_ordered" },
   { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "failed_power_transition_returns_the_unique_owned_radio" },
+  { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "cold_handshake_polls_then_masks_and_clears_interrupts" },
+  { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "cold_handshake_timeout_stops_before_interrupt_cleanup" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/chips/esp32s31/registers/peripherals/wifi-mac-rtc-timer-update.toml", token = "pwr_hal_set_mac_modem_state_wakeup_protect_enable" },

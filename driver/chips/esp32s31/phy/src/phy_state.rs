@@ -826,7 +826,7 @@ impl PhyState {
     /// Commit only references whose complete calibration branch reached its
     /// terminal restore edge.
     pub fn apply_calibration_tracking_outcome(&mut self, outcome: PhyCalibrationTrackingOutcome) {
-        match (
+        let common = match (
             outcome.common_updated,
             outcome.dcode,
             outcome.rx_gain,
@@ -844,26 +844,36 @@ impl PhyState {
                 {
                     return;
                 }
-                self.apply_dcode_outcome(dcode);
-                self.apply_rx_gain_init_outcome(rx_gain);
-                self.apply_channel_outcome(channel);
-                self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
+                Some((dcode, rx_gain, channel))
             }
-            (false, None, None, None) => {}
+            (false, None, None, None) => None,
             // A terminal common branch publishes all three values atomically.
             // Reject structurally inconsistent caller-created outcomes.
             _ => return,
+        };
+        let class_tx_dc_pwdet = match (outcome.class_updated, outcome.tx_dc_pwdet) {
+            (true, Some(tx_dc_pwdet)) => Some(tx_dc_pwdet),
+            (false, None) => None,
+            _ => return,
+        };
+
+        if let Some((dcode, rx_gain, channel)) = common {
+            self.apply_dcode_outcome(dcode);
+            self.apply_rx_gain_init_outcome(rx_gain);
+            self.apply_channel_outcome(channel);
+            self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
         }
-        if !outcome.class_updated {
-            return;
-        }
-        match outcome.class {
-            crate::phy_param_tracking::PhyCalibrationTrackClass::Wifi => {
-                self.wifi.txdc_tracking_temperature = outcome.wifi_reference_temperature;
-            }
-            crate::phy_param_tracking::PhyCalibrationTrackClass::BluetoothIeee802154 => {
-                self.bluetooth.txdc_tracking_temperature =
-                    outcome.bluetooth_ieee802154_reference_temperature;
+        if let Some(tx_dc_pwdet) = class_tx_dc_pwdet {
+            match outcome.class {
+                crate::phy_param_tracking::PhyCalibrationTrackClass::Wifi => {
+                    self.apply_tx_dc_pwdet_outcome(tx_dc_pwdet);
+                    self.wifi.txdc_tracking_temperature = outcome.wifi_reference_temperature;
+                }
+                crate::phy_param_tracking::PhyCalibrationTrackClass::BluetoothIeee802154 => {
+                    self.apply_bluetooth_tx_dc_pwdet_outcome(tx_dc_pwdet);
+                    self.bluetooth.txdc_tracking_temperature =
+                        outcome.bluetooth_ieee802154_reference_temperature;
+                }
             }
         }
     }
@@ -1481,6 +1491,10 @@ mod tests {
                     next_dac: 15,
                 },
             }),
+            tx_dc_pwdet: Some(crate::phy_txdc_pwdet::PhyTxDcPwdetOutcome {
+                dco: [[5; 4]; 3],
+                total_measurements: 144,
+            }),
         });
         let committed = state.calibration_tracking_parameters(Some(31));
         assert_eq!(committed.threshold_override, Some(31));
@@ -1496,6 +1510,7 @@ mod tests {
         assert!(state.wifi.rx_gain_tables_initialized);
         assert_eq!(state.current_wifi_channel(), 11);
         assert_eq!(state.common.temperature, 50);
+        assert_eq!(state.tx_dc_pwdet_parameters().dco, [[5; 4]; 3]);
 
         state.apply_calibration_tracking_outcome(PhyCalibrationTrackingOutcome {
             class: crate::phy_param_tracking::PhyCalibrationTrackClass::BluetoothIeee802154,
@@ -1508,6 +1523,10 @@ mod tests {
             dcode: None,
             rx_gain: None,
             channel: None,
+            tx_dc_pwdet: Some(crate::phy_txdc_pwdet::PhyTxDcPwdetOutcome {
+                dco: [[6; 4]; 3],
+                total_measurements: 144,
+            }),
         });
         let rejected = state.calibration_tracking_parameters(None);
         assert_eq!(rejected.common_reference_temperature, 50);
@@ -1540,6 +1559,7 @@ mod tests {
                     next_dac: 15,
                 },
             }),
+            tx_dc_pwdet: None,
         });
         let rejected_partial_rx = state.calibration_tracking_parameters(None);
         assert_eq!(rejected_partial_rx.common_reference_temperature, 50);

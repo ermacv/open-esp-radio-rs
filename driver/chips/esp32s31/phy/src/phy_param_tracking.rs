@@ -612,6 +612,18 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
             .begin_channel_restore(self.state.channel_parameters())
     }
 
+    pub fn begin_tx_dc_pwdet(
+        &self,
+    ) -> Result<
+        crate::phy_cal_tracking::PhyCalibrationTxDcPwdetTransition,
+        crate::phy_cal_tracking::PhyCalibrationTrackingChildError,
+    > {
+        self.child.begin_tx_dc_pwdet(
+            self.state.tx_dc_pwdet_parameters(),
+            self.state.bluetooth_tx_dc_pwdet_transition(),
+        )
+    }
+
     pub fn lower_external(
         &self,
     ) -> Result<

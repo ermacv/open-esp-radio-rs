@@ -49,13 +49,6 @@ task-poll-telemetry = [
     "driver-observation",
     "open-esp-radio-esp32s31-embassy-wifi/task-poll-telemetry",
 ]
-# Diagnostic-only aggregate evidence for the bounded embassy-net scheduler.
-# Both the callback and its atomics are absent from correctness/performance.
-network-scheduler-telemetry = [
-    "embassy-net/cooperative-scheduler-telemetry",
-    "open-esp-radio-esp32s31-embassy-wifi/network-scheduler-observation",
-    "open-esp-radio-hil-esp32s31-telemetry/network-scheduler",
-]
 # Diagnostic overlay proving each UDP RX delivery frontier from software
 # reorder output through network admission and application consumption.
 rx-delivery-telemetry = ["driver-observation"]

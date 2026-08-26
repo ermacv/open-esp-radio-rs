@@ -1397,6 +1397,7 @@ mod tests {
     #[test]
     fn udp_exact_delivery_checks_both_directions() {
         let sent = UdpTransmission {
+            source: Ipv4Addr::LOCALHOST,
             bytes: 1_200,
             datagrams: 1,
             elapsed: Duration::from_secs(1),
@@ -1452,6 +1453,7 @@ mod tests {
     #[test]
     fn udp_target_rx_reordering_fails_closed_even_when_counts_match() {
         let sent = UdpTransmission {
+            source: Ipv4Addr::LOCALHOST,
             bytes: 2_400,
             datagrams: 2,
             elapsed: Duration::from_secs(1),
@@ -1485,6 +1487,7 @@ mod tests {
     #[test]
     fn udp_characterization_reports_receiver_delivery_and_allows_loss() {
         let sent = UdpTransmission {
+            source: Ipv4Addr::LOCALHOST,
             bytes: 2_400,
             datagrams: 2,
             elapsed: Duration::from_secs(1),
@@ -1517,6 +1520,7 @@ mod tests {
     #[test]
     fn observer_free_udp_rx_accepts_transport_without_driver_evidence() {
         let sent = UdpTransmission {
+            source: Ipv4Addr::LOCALHOST,
             bytes: 1_200,
             datagrams: 1,
             elapsed: Duration::from_secs(1),
@@ -1545,6 +1549,7 @@ mod tests {
     #[test]
     fn rx_delivery_diagnostic_fails_closed_without_publication_evidence() {
         let sent = UdpTransmission {
+            source: Ipv4Addr::LOCALHOST,
             bytes: 1_200,
             datagrams: 1,
             elapsed: Duration::from_secs(1),
@@ -1571,6 +1576,7 @@ mod tests {
     #[test]
     fn rx_delivery_diagnostic_rejects_evidence_from_the_wrong_publication_edge() {
         let sent = UdpTransmission {
+            source: Ipv4Addr::LOCALHOST,
             bytes: 1_200,
             datagrams: 1,
             elapsed: Duration::from_secs(1),

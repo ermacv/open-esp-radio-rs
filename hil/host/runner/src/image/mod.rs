@@ -844,7 +844,7 @@ mod tests {
         );
         assert_eq!(
             qualification::scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
-            "open-radio-hil,psram-task-stack,task-poll-telemetry,network-scheduler-telemetry,code-psram,profile-psram-data"
+            "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
         );
         assert_eq!(
             qualification::scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),

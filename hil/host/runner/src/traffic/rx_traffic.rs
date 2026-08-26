@@ -19,6 +19,7 @@ use crate::{
         RxQualification, assess_rx_log, rx_order_markdown, rx_reorder_markdown, task_poll_markdown,
         udp_sequence_markdown,
     },
+    traffic::host_network::BenchmarkIpv4Route,
     traffic::paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
     transport::lab_config::LabConfig,
     transport::station_fixture::RxCapture,
@@ -68,6 +69,13 @@ pub(crate) fn run(
         }
     };
     options.address = discovered_address.address;
+    let host_route = match BenchmarkIpv4Route::discover(options.address, &lab.station_fixture) {
+        Ok(route) => route,
+        Err(error) => {
+            capture.finish_to(output)?;
+            return Err(error);
+        }
+    };
     let fixture_capture = RxCapture::start(
         &lab.station_fixture,
         options.address,
@@ -96,6 +104,8 @@ pub(crate) fn run(
         duration: options.duration,
         payload: options.payload,
     })?;
+    host_route.verify_socket_source(host.source)?;
+    host_route.record(output, options.address, host.source)?;
     let structured = match capture.wait_for_session(
         session,
         options.duration.saturating_add(Duration::from_secs(10)),

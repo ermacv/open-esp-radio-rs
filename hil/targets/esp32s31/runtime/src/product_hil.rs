@@ -71,8 +71,6 @@ use open_esp_radio_esp32s31_phy::{
     PhyCalibrationIdentity, PhyCalibrationPath, phy_rfpll::phy_get_rf_cal_version,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
-#[cfg(feature = "network-scheduler-telemetry")]
-use open_esp_radio_hil_esp32s31_telemetry::network_scheduler::NetworkSchedulerCounters;
 #[cfg(all(
     feature = "driver-observation",
     not(any(
@@ -132,8 +130,6 @@ const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
 pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
 pub(crate) const OPEN_RADIO_MAC_IRQ_TELEMETRY: bool = cfg!(feature = "mac-irq-telemetry");
-pub(crate) const OPEN_RADIO_NETWORK_SCHEDULER_TELEMETRY: bool =
-    cfg!(feature = "network-scheduler-telemetry");
 pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
 pub(crate) const OPEN_RADIO_DRIVER_OBSERVATION: bool = cfg!(feature = "driver-observation");
 pub(crate) const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
@@ -807,10 +803,6 @@ pub(crate) static AGGREGATE_TX: AggregateTxCounters = AggregateTxCounters::with_
 pub(crate) static MAC_IRQ: MacIrqClassificationCounters = MacIrqClassificationCounters::new();
 #[unsafe(link_section = ".critical.data.open_radio_task_poll_telemetry")]
 pub(crate) static TASK_POLLS: TaskPollSet = TaskPollSet::new();
-#[cfg(feature = "network-scheduler-telemetry")]
-#[unsafe(link_section = ".critical.data.open_radio_network_scheduler_telemetry")]
-pub(crate) static NETWORK_SCHEDULER: NetworkSchedulerCounters = NetworkSchedulerCounters::new();
-
 fn now_micros() -> u64 {
     Instant::now().as_micros()
 }
@@ -1029,11 +1021,6 @@ fn observe_protocol_task_poll(elapsed_micros: u64) {
     TASK_POLLS.protocol().record(elapsed_micros);
 }
 
-#[cfg(feature = "network-scheduler-telemetry")]
-fn observe_network_scheduler(report: embassy_net::CooperativePollReport) {
-    NETWORK_SCHEDULER.record(report);
-}
-
 pub fn diagnostic_snapshot() -> (u32, u32) {
     (DIAGNOSTIC_STAGE.load(Ordering::Acquire), 0)
 }
@@ -1061,7 +1048,7 @@ pub const fn hil_capabilities() -> Capabilities {
             task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
             mac_irq_evidence: OPEN_RADIO_MAC_IRQ_TELEMETRY,
             psram_task_stack: cfg!(feature = "psram-task-stack"),
-            network_scheduler_evidence: OPEN_RADIO_NETWORK_SCHEDULER_TELEMETRY,
+            network_scheduler_evidence: false,
             data_plane_placement: true,
             timebase_probe: true,
             ieee802154_event_status_probe: cfg!(feature = "ieee802154-event-status-probe"),
@@ -1141,12 +1128,7 @@ pub(in crate::product_hil) async fn qualification_sample(
 
 #[embassy_executor::task(pool_size = 2)]
 async fn network_runner_task(runner: Esp32s31WifiNetworkRunner<'static>) {
-    let network = async move {
-        #[cfg(feature = "network-scheduler-telemetry")]
-        runner.run_observed(observe_network_scheduler).await;
-        #[cfg(not(feature = "network-scheduler-telemetry"))]
-        runner.run().await;
-    };
+    let network = runner.run();
     observe_open_radio_task_polls(
         network,
         TASK_POLLS.network(),

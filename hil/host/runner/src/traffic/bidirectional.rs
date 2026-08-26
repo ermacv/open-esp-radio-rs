@@ -3979,6 +3979,7 @@ mod tests {
         );
         let options = parse_options(&[], &LabConfig::for_test()).unwrap();
         let host = HostTransmission {
+            source: Ipv4Addr::LOCALHOST,
             bytes: 6_250_000,
             datagrams: 5_000,
             elapsed: Duration::from_secs(5),

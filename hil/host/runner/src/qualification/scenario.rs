@@ -62,7 +62,7 @@ impl ImageClass {
                 "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
             }
             Self::DiagnosticTaskPoll => {
-                "open-radio-hil,psram-task-stack,task-poll-telemetry,network-scheduler-telemetry,code-psram,profile-psram-data"
+                "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
             }
             Self::DiagnosticRxDelivery => {
                 "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"

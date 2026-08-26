@@ -9,12 +9,10 @@ pub struct Esp32s31WifiNetworkRunner<'resources> {
 
 impl Esp32s31WifiNetworkRunner<'_> {
     pub async fn run(mut self) -> ! {
-        self.inner.run_work_conserving().await
-    }
-
-    #[cfg(feature = "network-scheduler-observation")]
-    pub async fn run_observed(mut self, observer: fn(embassy_net::CooperativePollReport)) -> ! {
-        self.inner.run_work_conserving_observed(observer).await
+        // The device already bounds RX epochs and TX credits. Keep xarxa's
+        // native batched poll here: wrapping its single-packet primitives in
+        // a second scheduler measurably lowers the saturated RX ceiling.
+        self.inner.run().await
     }
 }
 

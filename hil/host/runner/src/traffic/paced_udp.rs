@@ -2,7 +2,7 @@
 
 use std::{
     hint,
-    net::{Ipv4Addr, SocketAddrV4, UdpSocket},
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
     thread,
     time::{Duration, Instant},
 };
@@ -23,6 +23,7 @@ pub(crate) struct Config {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HostTransmission {
+    pub(crate) source: Ipv4Addr,
     pub(crate) bytes: u64,
     pub(crate) datagrams: u64,
     pub(crate) elapsed: Duration,
@@ -52,6 +53,10 @@ impl HostTransmission {
 pub(crate) fn send(config: Config) -> Result<HostTransmission> {
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     socket.connect(SocketAddrV4::new(config.address, config.port))?;
+    let source = match socket.local_addr()? {
+        SocketAddr::V4(address) => *address.ip(),
+        SocketAddr::V6(_) => return Err("paced UDP sender selected an IPv6 source".into()),
+    };
     socket.set_write_timeout(Some(Duration::from_secs(2)))?;
     let mut packet = vec![0x5a; config.payload];
     let interval = packet_interval(config.payload, config.rate_bps)?;
@@ -97,6 +102,7 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
     packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
     let _ = socket.send(&packet);
     Ok(HostTransmission {
+        source,
         bytes,
         datagrams,
         elapsed,

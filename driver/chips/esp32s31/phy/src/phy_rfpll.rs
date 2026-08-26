@@ -24,7 +24,14 @@ pub const fn phy_get_rf_cal_version() -> u32 {
     100
 }
 
-use crate::phy_i2c::{PhyI2cAddress, analog_registers};
+use crate::{
+    phy_frequency::{
+        PhyFrequencyCapCorrection, PhyFrequencyCapMemoryAction, PhyFrequencyCapMemoryCompletion,
+        PhyFrequencyCapMemoryOutcome, PhyFrequencyCapMemoryRequest,
+        PhyFrequencyCapMemoryTransition,
+    },
+    phy_i2c::{PhyI2cAddress, analog_registers},
+};
 
 const RFPLL_BLOCK: u8 = 0x62;
 const SDM_BLOCK: u8 = 0x63;
@@ -705,6 +712,322 @@ impl RfpllFrequencyTransition {
     }
 }
 
+/// All four values of `RFPLL 0x0c[3:2]` consumed by complete rev0 ROM
+/// `phy_rfpll_cap_correct`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RfpllCapCorrectionDirection {
+    StableZero,
+    IncreaseTwo,
+    DecreaseTwo,
+    StableThree,
+}
+
+impl RfpllCapCorrectionDirection {
+    const fn from_field(value: u8) -> Self {
+        match value & 3 {
+            0 => Self::StableZero,
+            1 => Self::IncreaseTwo,
+            2 => Self::DecreaseTwo,
+            _ => Self::StableThree,
+        }
+    }
+
+    pub const fn correction(self) -> Option<PhyFrequencyCapCorrection> {
+        match self {
+            Self::IncreaseTwo => Some(PhyFrequencyCapCorrection::IncreaseTwo),
+            Self::DecreaseTwo => Some(PhyFrequencyCapCorrection::DecreaseTwo),
+            Self::StableZero | Self::StableThree => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RfpllCapCorrectionRequest {
+    pub current_channel: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RfpllCapUpdateOutcome {
+    pub previous_cap: u16,
+    pub requested_cap: i16,
+    pub programmed_cap: u16,
+    pub memory: PhyFrequencyCapMemoryOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RfpllCapCorrectionOutcome {
+    pub direction: RfpllCapCorrectionDirection,
+    pub update: Option<RfpllCapUpdateOutcome>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RfpllCapCorrectionAction {
+    ReadMasked {
+        address: PhyI2cAddress,
+        high_bit: u8,
+        low_bit: u8,
+    },
+    ReadByte {
+        address: PhyI2cAddress,
+    },
+    WriteMasked {
+        address: PhyI2cAddress,
+        high_bit: u8,
+        low_bit: u8,
+        value: u8,
+    },
+    WriteByte {
+        address: PhyI2cAddress,
+        value: u8,
+    },
+    Memory(PhyFrequencyCapMemoryAction),
+    Complete(RfpllCapCorrectionOutcome),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RfpllCapCorrectionCompletion {
+    MaskedRead {
+        address: PhyI2cAddress,
+        high_bit: u8,
+        low_bit: u8,
+        value: u8,
+    },
+    ByteRead {
+        address: PhyI2cAddress,
+        value: u8,
+    },
+    MaskedWrite {
+        address: PhyI2cAddress,
+        high_bit: u8,
+        low_bit: u8,
+    },
+    ByteWrite {
+        address: PhyI2cAddress,
+    },
+    Memory(PhyFrequencyCapMemoryCompletion),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RfpllCapCorrectionTransitionError {
+    WrongCompletion,
+    AlreadyComplete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RfpllCapUpdateContext {
+    direction: RfpllCapCorrectionDirection,
+    correction: PhyFrequencyCapCorrection,
+    previous_cap: u16,
+    requested_cap: i16,
+    programmed_cap: u16,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum RfpllCapCorrectionStep {
+    ReadDirection,
+    ReadCapLow {
+        direction: RfpllCapCorrectionDirection,
+        correction: PhyFrequencyCapCorrection,
+    },
+    ReadCapHigh {
+        direction: RfpllCapCorrectionDirection,
+        correction: PhyFrequencyCapCorrection,
+        low: u8,
+    },
+    WriteCapLow(RfpllCapUpdateContext),
+    WriteCapHigh(RfpllCapUpdateContext),
+    Memory {
+        context: RfpllCapUpdateContext,
+        child: PhyFrequencyCapMemoryTransition,
+    },
+    Complete(RfpllCapCorrectionOutcome),
+}
+
+/// Caller-driven replacement for complete rev0 ROM
+/// `phy_rfpll_cap_correct` and its 85-entry memory child.
+#[derive(Debug, Eq, PartialEq)]
+pub struct RfpllCapCorrectionTransition {
+    request: RfpllCapCorrectionRequest,
+    step: RfpllCapCorrectionStep,
+}
+
+impl RfpllCapCorrectionTransition {
+    pub const fn new(request: RfpllCapCorrectionRequest) -> Self {
+        Self {
+            request,
+            step: RfpllCapCorrectionStep::ReadDirection,
+        }
+    }
+
+    pub const fn action(&self) -> RfpllCapCorrectionAction {
+        match &self.step {
+            RfpllCapCorrectionStep::ReadDirection => RfpllCapCorrectionAction::ReadMasked {
+                address: analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.address,
+                high_bit: analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.high_bit,
+                low_bit: analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.low_bit,
+            },
+            RfpllCapCorrectionStep::ReadCapLow { .. } => RfpllCapCorrectionAction::ReadByte {
+                address: analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW,
+            },
+            RfpllCapCorrectionStep::ReadCapHigh { .. } => RfpllCapCorrectionAction::ReadMasked {
+                address: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.address,
+                high_bit: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.high_bit,
+                low_bit: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.low_bit,
+            },
+            RfpllCapCorrectionStep::WriteCapLow(context) => RfpllCapCorrectionAction::WriteByte {
+                address: analog_registers::RFPLL_CAPACITOR_LOW,
+                value: context.programmed_cap as u8,
+            },
+            RfpllCapCorrectionStep::WriteCapHigh(context) => {
+                RfpllCapCorrectionAction::WriteMasked {
+                    address: analog_registers::RFPLL_CAPACITOR_HIGH.address,
+                    high_bit: analog_registers::RFPLL_CAPACITOR_HIGH.high_bit,
+                    low_bit: analog_registers::RFPLL_CAPACITOR_HIGH.low_bit,
+                    value: (context.programmed_cap >> 8) as u8,
+                }
+            }
+            RfpllCapCorrectionStep::Memory { child, .. } => {
+                RfpllCapCorrectionAction::Memory(child.action())
+            }
+            RfpllCapCorrectionStep::Complete(outcome) => {
+                RfpllCapCorrectionAction::Complete(*outcome)
+            }
+        }
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: RfpllCapCorrectionCompletion,
+    ) -> Result<(), RfpllCapCorrectionTransitionError> {
+        if let RfpllCapCorrectionStep::Memory { context, child } = &mut self.step {
+            let RfpllCapCorrectionCompletion::Memory(completion) = completion else {
+                return Err(RfpllCapCorrectionTransitionError::WrongCompletion);
+            };
+            child.advance(completion).map_err(|error| match error {
+                crate::phy_frequency::PhyFrequencyCapMemoryTransitionError::WrongCompletion => {
+                    RfpllCapCorrectionTransitionError::WrongCompletion
+                }
+                crate::phy_frequency::PhyFrequencyCapMemoryTransitionError::AlreadyComplete => {
+                    RfpllCapCorrectionTransitionError::AlreadyComplete
+                }
+            })?;
+            if let PhyFrequencyCapMemoryAction::Complete(memory) = child.action() {
+                self.step = RfpllCapCorrectionStep::Complete(RfpllCapCorrectionOutcome {
+                    direction: context.direction,
+                    update: Some(RfpllCapUpdateOutcome {
+                        previous_cap: context.previous_cap,
+                        requested_cap: context.requested_cap,
+                        programmed_cap: context.programmed_cap,
+                        memory,
+                    }),
+                });
+            }
+            return Ok(());
+        }
+
+        self.step = match (&self.step, completion) {
+            (
+                RfpllCapCorrectionStep::ReadDirection,
+                RfpllCapCorrectionCompletion::MaskedRead {
+                    address,
+                    high_bit,
+                    low_bit,
+                    value,
+                },
+            ) if address == analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.address
+                && high_bit == analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.high_bit
+                && low_bit == analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.low_bit =>
+            {
+                let direction = RfpllCapCorrectionDirection::from_field(value);
+                match direction.correction() {
+                    Some(correction) => RfpllCapCorrectionStep::ReadCapLow {
+                        direction,
+                        correction,
+                    },
+                    None => RfpllCapCorrectionStep::Complete(RfpllCapCorrectionOutcome {
+                        direction,
+                        update: None,
+                    }),
+                }
+            }
+            (
+                RfpllCapCorrectionStep::ReadCapLow {
+                    direction,
+                    correction,
+                },
+                RfpllCapCorrectionCompletion::ByteRead { address, value },
+            ) if address == analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW => {
+                RfpllCapCorrectionStep::ReadCapHigh {
+                    direction: *direction,
+                    correction: *correction,
+                    low: value,
+                }
+            }
+            (
+                RfpllCapCorrectionStep::ReadCapHigh {
+                    direction,
+                    correction,
+                    low,
+                },
+                RfpllCapCorrectionCompletion::MaskedRead {
+                    address,
+                    high_bit,
+                    low_bit,
+                    value,
+                },
+            ) if address == analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.address
+                && high_bit == analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.high_bit
+                && low_bit == analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.low_bit =>
+            {
+                let previous_cap = u16::from(*low) | (u16::from(value) << 8);
+                let requested_cap = (previous_cap as i16).wrapping_add(correction.delta());
+                let programmed_cap = if requested_cap < 0 {
+                    0
+                } else {
+                    requested_cap as u16
+                };
+                RfpllCapCorrectionStep::WriteCapLow(RfpllCapUpdateContext {
+                    direction: *direction,
+                    correction: *correction,
+                    previous_cap,
+                    requested_cap,
+                    programmed_cap,
+                })
+            }
+            (
+                RfpllCapCorrectionStep::WriteCapLow(context),
+                RfpllCapCorrectionCompletion::ByteWrite { address },
+            ) if address == analog_registers::RFPLL_CAPACITOR_LOW => {
+                RfpllCapCorrectionStep::WriteCapHigh(*context)
+            }
+            (
+                RfpllCapCorrectionStep::WriteCapHigh(context),
+                RfpllCapCorrectionCompletion::MaskedWrite {
+                    address,
+                    high_bit,
+                    low_bit,
+                },
+            ) if address == analog_registers::RFPLL_CAPACITOR_HIGH.address
+                && high_bit == analog_registers::RFPLL_CAPACITOR_HIGH.high_bit
+                && low_bit == analog_registers::RFPLL_CAPACITOR_HIGH.low_bit =>
+            {
+                RfpllCapCorrectionStep::Memory {
+                    context: *context,
+                    child: PhyFrequencyCapMemoryTransition::new(PhyFrequencyCapMemoryRequest {
+                        correction: context.correction,
+                        current_channel: self.request.current_channel,
+                    }),
+                }
+            }
+            (RfpllCapCorrectionStep::Complete(_), _) => {
+                return Err(RfpllCapCorrectionTransitionError::AlreadyComplete);
+            }
+            _ => return Err(RfpllCapCorrectionTransitionError::WrongCompletion),
+        };
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RfpllFrequencyBindingError {
     UnsupportedAction,
@@ -969,14 +1292,401 @@ impl RfpllFrequencyExternalBinding {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RfpllCapCorrectionBindingError {
+    UnsupportedAction,
+    IncompleteTransaction,
+    UnexpectedOutcome,
+}
+
+/// Non-cloneable owner of one RFPLL-cap correction PHY-I2C transaction.
+#[derive(Debug, Eq, PartialEq)]
+pub struct RfpllCapCorrectionI2cBinding {
+    outer_action: RfpllCapCorrectionAction,
+    inner: RfpllFrequencyI2cBinding,
+}
+
+impl RfpllCapCorrectionI2cBinding {
+    pub fn new(action: RfpllCapCorrectionAction) -> Result<Self, RfpllCapCorrectionBindingError> {
+        let inner_action = match action {
+            RfpllCapCorrectionAction::ReadMasked {
+                address,
+                high_bit,
+                low_bit,
+            } => RfpllFrequencyAction::ReadMasked {
+                address,
+                high_bit,
+                low_bit,
+            },
+            RfpllCapCorrectionAction::ReadByte { address } => {
+                RfpllFrequencyAction::ReadByte { address }
+            }
+            RfpllCapCorrectionAction::WriteMasked {
+                address,
+                high_bit,
+                low_bit,
+                value,
+            } => RfpllFrequencyAction::WriteMasked {
+                address,
+                high_bit,
+                low_bit,
+                value,
+            },
+            RfpllCapCorrectionAction::WriteByte { address, value } => {
+                RfpllFrequencyAction::WriteByte { address, value }
+            }
+            RfpllCapCorrectionAction::Memory(_) | RfpllCapCorrectionAction::Complete(_) => {
+                return Err(RfpllCapCorrectionBindingError::UnsupportedAction);
+            }
+        };
+        let inner = RfpllFrequencyI2cBinding::new(inner_action)
+            .map_err(|_| RfpllCapCorrectionBindingError::UnsupportedAction)?;
+        Ok(Self {
+            outer_action: action,
+            inner,
+        })
+    }
+
+    pub const fn action(&self) -> crate::phy_cold::PhyColdI2cAction {
+        self.inner.action()
+    }
+
+    pub fn read_started(&mut self) -> Result<(), crate::phy_cold::PhyColdI2cError> {
+        self.inner.read_started()
+    }
+
+    pub fn write_started(&mut self) -> Result<(), crate::phy_cold::PhyColdI2cError> {
+        self.inner.write_started()
+    }
+
+    pub fn observe_read_result(
+        &mut self,
+        result: Result<u8, crate::phy_i2c::PhyI2cError>,
+    ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
+        self.inner.observe_read_result(result)
+    }
+
+    pub fn observe_write_result(
+        &mut self,
+        result: Result<(), crate::phy_i2c::PhyI2cError>,
+    ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
+        self.inner.observe_write_result(result)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn start_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+        &mut self,
+        platform: &mut P,
+    ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
+        self.inner.start_target(platform)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+        &mut self,
+        platform: &mut P,
+    ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
+        self.inner.observe_target_edge(platform)
+    }
+
+    pub fn into_completion(
+        self,
+    ) -> Result<RfpllCapCorrectionCompletion, RfpllCapCorrectionBindingError> {
+        let completion = self.inner.into_completion().map_err(|error| match error {
+            RfpllFrequencyBindingError::IncompleteTransaction => {
+                RfpllCapCorrectionBindingError::IncompleteTransaction
+            }
+            RfpllFrequencyBindingError::UnsupportedAction
+            | RfpllFrequencyBindingError::UnexpectedOutcome => {
+                RfpllCapCorrectionBindingError::UnexpectedOutcome
+            }
+        })?;
+        match (self.outer_action, completion) {
+            (
+                RfpllCapCorrectionAction::ReadMasked {
+                    address,
+                    high_bit,
+                    low_bit,
+                },
+                RfpllFrequencyCompletion::MaskedRead {
+                    address: completed,
+                    high_bit: completed_high,
+                    low_bit: completed_low,
+                    value,
+                },
+            ) if completed == address && completed_high == high_bit && completed_low == low_bit => {
+                Ok(RfpllCapCorrectionCompletion::MaskedRead {
+                    address,
+                    high_bit,
+                    low_bit,
+                    value,
+                })
+            }
+            (
+                RfpllCapCorrectionAction::ReadByte { address },
+                RfpllFrequencyCompletion::ByteRead {
+                    address: completed,
+                    value,
+                },
+            ) if completed == address => {
+                Ok(RfpllCapCorrectionCompletion::ByteRead { address, value })
+            }
+            (
+                RfpllCapCorrectionAction::WriteMasked {
+                    address,
+                    high_bit,
+                    low_bit,
+                    ..
+                },
+                RfpllFrequencyCompletion::MaskedWrite {
+                    address: completed,
+                    high_bit: completed_high,
+                    low_bit: completed_low,
+                },
+            ) if completed == address && completed_high == high_bit && completed_low == low_bit => {
+                Ok(RfpllCapCorrectionCompletion::MaskedWrite {
+                    address,
+                    high_bit,
+                    low_bit,
+                })
+            }
+            (
+                RfpllCapCorrectionAction::WriteByte { address, .. },
+                RfpllFrequencyCompletion::ByteWrite { address: completed },
+            ) if completed == address => Ok(RfpllCapCorrectionCompletion::ByteWrite { address }),
+            _ => Err(RfpllCapCorrectionBindingError::UnexpectedOutcome),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum RfpllCapCorrectionExternalBinding {
+    I2c(RfpllCapCorrectionI2cBinding),
+    Memory(crate::phy_frequency::PhyFrequencyCapMemoryExternalBinding),
+}
+
+impl RfpllCapCorrectionExternalBinding {
+    pub fn lower(action: RfpllCapCorrectionAction) -> Result<Self, RfpllCapCorrectionBindingError> {
+        match action {
+            RfpllCapCorrectionAction::Memory(action) => {
+                crate::phy_frequency::PhyFrequencyCapMemoryExternalBinding::lower(action)
+                    .map(Self::Memory)
+                    .map_err(|_| RfpllCapCorrectionBindingError::UnsupportedAction)
+            }
+            RfpllCapCorrectionAction::Complete(_) => {
+                Err(RfpllCapCorrectionBindingError::UnsupportedAction)
+            }
+            _ => RfpllCapCorrectionI2cBinding::new(action).map(Self::I2c),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        CAP_SEARCH_LIMIT, RFPLL_BLOCK, RfpllFrequencyAction, RfpllFrequencyBindingError,
+        CAP_SEARCH_LIMIT, RFPLL_BLOCK, RfpllCapCorrectionAction, RfpllCapCorrectionBindingError,
+        RfpllCapCorrectionCompletion, RfpllCapCorrectionDirection,
+        RfpllCapCorrectionExternalBinding, RfpllCapCorrectionRequest, RfpllCapCorrectionTransition,
+        RfpllCapCorrectionTransitionError, RfpllFrequencyAction, RfpllFrequencyBindingError,
         RfpllFrequencyCompletion, RfpllFrequencyExternalBinding, RfpllFrequencyI2cBinding,
         RfpllFrequencyOutcome, RfpllFrequencyRequest, RfpllFrequencyTransition, address,
         calculate_rfpll_sdm,
     };
+
+    fn cap_read_completion(
+        action: RfpllCapCorrectionAction,
+        value: u8,
+    ) -> RfpllCapCorrectionCompletion {
+        match action {
+            RfpllCapCorrectionAction::ReadMasked {
+                address,
+                high_bit,
+                low_bit,
+            } => RfpllCapCorrectionCompletion::MaskedRead {
+                address,
+                high_bit,
+                low_bit,
+                value,
+            },
+            RfpllCapCorrectionAction::ReadByte { address } => {
+                RfpllCapCorrectionCompletion::ByteRead { address, value }
+            }
+            action => panic!("expected cap read action, got {action:?}"),
+        }
+    }
+
+    fn cap_write_completion(action: RfpllCapCorrectionAction) -> RfpllCapCorrectionCompletion {
+        match action {
+            RfpllCapCorrectionAction::WriteMasked {
+                address,
+                high_bit,
+                low_bit,
+                ..
+            } => RfpllCapCorrectionCompletion::MaskedWrite {
+                address,
+                high_bit,
+                low_bit,
+            },
+            RfpllCapCorrectionAction::WriteByte { address, .. } => {
+                RfpllCapCorrectionCompletion::ByteWrite { address }
+            }
+            action => panic!("expected cap write action, got {action:?}"),
+        }
+    }
+
+    #[test]
+    fn cap_correction_stable_directions_stop_after_one_field_read() {
+        for (field, expected) in [
+            (0, RfpllCapCorrectionDirection::StableZero),
+            (3, RfpllCapCorrectionDirection::StableThree),
+        ] {
+            let mut transition = RfpllCapCorrectionTransition::new(RfpllCapCorrectionRequest {
+                current_channel: 11,
+            });
+            assert!(matches!(
+                RfpllCapCorrectionExternalBinding::lower(transition.action()),
+                Ok(RfpllCapCorrectionExternalBinding::I2c(_))
+            ));
+            transition
+                .advance(cap_read_completion(transition.action(), field))
+                .unwrap();
+            let RfpllCapCorrectionAction::Complete(outcome) = transition.action() else {
+                panic!("stable direction did not complete");
+            };
+            assert_eq!(outcome.direction, expected);
+            assert_eq!(outcome.update, None);
+            assert_eq!(
+                RfpllCapCorrectionExternalBinding::lower(transition.action()),
+                Err(RfpllCapCorrectionBindingError::UnsupportedAction)
+            );
+        }
+    }
+
+    #[test]
+    fn cap_correction_increase_composes_cap_write_and_all_memory_updates() {
+        let mut transition = RfpllCapCorrectionTransition::new(RfpllCapCorrectionRequest {
+            current_channel: 11,
+        });
+        for value in [1, 0xfe, 0] {
+            transition
+                .advance(cap_read_completion(transition.action(), value))
+                .unwrap();
+        }
+        assert!(matches!(
+            transition.action(),
+            RfpllCapCorrectionAction::WriteByte { value: 0, .. }
+        ));
+        transition
+            .advance(cap_write_completion(transition.action()))
+            .unwrap();
+        assert!(matches!(
+            transition.action(),
+            RfpllCapCorrectionAction::WriteMasked { value: 1, .. }
+        ));
+        transition
+            .advance(cap_write_completion(transition.action()))
+            .unwrap();
+
+        let mut reads = 0_u8;
+        let mut writes = 0_u8;
+        while let RfpllCapCorrectionAction::Memory(action) = transition.action() {
+            assert!(matches!(
+                RfpllCapCorrectionExternalBinding::lower(RfpllCapCorrectionAction::Memory(action)),
+                Ok(RfpllCapCorrectionExternalBinding::Memory(_))
+            ));
+            let completion = match action {
+                crate::phy_frequency::PhyFrequencyCapMemoryAction::ReadMemory {
+                    entry_index,
+                    address,
+                    mode,
+                } => {
+                    reads += 1;
+                    crate::phy_frequency::PhyFrequencyCapMemoryCompletion::MemoryRead {
+                        entry_index,
+                        address,
+                        mode,
+                        value: 0x0000_bf20,
+                    }
+                }
+                crate::phy_frequency::PhyFrequencyCapMemoryAction::WriteMemory {
+                    entry_index,
+                    address,
+                    value,
+                    mode,
+                } => {
+                    assert_eq!(value, 0x0000_bf22);
+                    writes += 1;
+                    crate::phy_frequency::PhyFrequencyCapMemoryCompletion::MemoryWritten {
+                        entry_index,
+                        address,
+                        mode,
+                    }
+                }
+                crate::phy_frequency::PhyFrequencyCapMemoryAction::RestoreChannelIndex {
+                    frequency_index,
+                } => crate::phy_frequency::PhyFrequencyCapMemoryCompletion::ChannelIndexRestored {
+                    frequency_index,
+                },
+                crate::phy_frequency::PhyFrequencyCapMemoryAction::Complete(_) => {
+                    panic!("nested terminal action escaped correction owner")
+                }
+            };
+            transition
+                .advance(RfpllCapCorrectionCompletion::Memory(completion))
+                .unwrap();
+        }
+
+        assert_eq!(reads, 85);
+        assert_eq!(writes, 85);
+        let RfpllCapCorrectionAction::Complete(outcome) = transition.action() else {
+            panic!("correction did not complete");
+        };
+        assert_eq!(outcome.direction, RfpllCapCorrectionDirection::IncreaseTwo);
+        let update = outcome.update.unwrap();
+        assert_eq!(update.previous_cap, 0xfe);
+        assert_eq!(update.requested_cap, 0x100);
+        assert_eq!(update.programmed_cap, 0x100);
+        assert_eq!(update.memory.entries_updated, 85);
+    }
+
+    #[test]
+    fn cap_correction_decrease_clips_only_the_live_negative_cap_write() {
+        let mut transition =
+            RfpllCapCorrectionTransition::new(RfpllCapCorrectionRequest { current_channel: 1 });
+        for value in [2, 1, 0] {
+            transition
+                .advance(cap_read_completion(transition.action(), value))
+                .unwrap();
+        }
+        assert!(matches!(
+            transition.action(),
+            RfpllCapCorrectionAction::WriteByte { value: 0, .. }
+        ));
+        transition
+            .advance(cap_write_completion(transition.action()))
+            .unwrap();
+        assert!(matches!(
+            transition.action(),
+            RfpllCapCorrectionAction::WriteMasked { value: 0, .. }
+        ));
+    }
+
+    #[test]
+    fn cap_correction_rejects_a_completion_for_the_old_low_status_bits() {
+        let mut transition = RfpllCapCorrectionTransition::new(RfpllCapCorrectionRequest {
+            current_channel: 11,
+        });
+        let address = super::analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.address;
+        assert_eq!(
+            transition.advance(RfpllCapCorrectionCompletion::MaskedRead {
+                address,
+                high_bit: 1,
+                low_bit: 0,
+                value: 1,
+            }),
+            Err(RfpllCapCorrectionTransitionError::WrongCompletion)
+        );
+    }
 
     fn complete_write(action: RfpllFrequencyAction) -> RfpllFrequencyCompletion {
         match action {

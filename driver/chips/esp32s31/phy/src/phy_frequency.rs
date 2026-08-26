@@ -251,7 +251,7 @@ pub enum PhyFrequencyCapCorrection {
 }
 
 impl PhyFrequencyCapCorrection {
-    const fn delta(self) -> i16 {
+    pub const fn delta(self) -> i16 {
         match self {
             Self::DecreaseTwo => -2,
             Self::IncreaseTwo => 2,

@@ -192,6 +192,21 @@ pub mod analog_registers {
     pub const RFPLL_CAPACITOR_HIGH: Field =
         Field::new(PhyI2cAddress::new_internal(0x62, 0x02), 6, 6);
 
+    /// Block 0x62, register 5: low eight bits of the live calibrated RFPLL
+    /// capacitor code sampled by `phy_read_pll_cap`.
+    pub const RFPLL_CALIBRATED_CAPACITOR_LOW: PhyI2cAddress =
+        PhyI2cAddress::new_internal(0x62, 0x05);
+
+    /// Block 0x62, register 7, bit 2: high bit of the live calibrated RFPLL
+    /// capacitor code sampled by `phy_read_pll_cap`.
+    pub const RFPLL_CALIBRATED_CAPACITOR_HIGH: Field =
+        Field::new(PhyI2cAddress::new_internal(0x62, 0x07), 2, 2);
+
+    /// Block 0x62, register 12, bits 3:2: correction direction consumed by
+    /// complete rev0 ROM `phy_rfpll_cap_correct`.
+    pub const RFPLL_CAPACITOR_CORRECTION_DIRECTION: Field =
+        Field::new(PhyI2cAddress::new_internal(0x62, 0x0c), 3, 2);
+
     /// Block 0x63, register 6, bits 2:0: low SDM frequency-programming bits.
     /// Bits 7:3 are preserved by the ROM writer and participate in the
     /// frequency-command-memory image.

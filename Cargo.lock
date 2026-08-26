@@ -2289,6 +2289,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "open-esp-radio-esp32s31-bluetooth",
+ "open-esp-radio-esp32s31-hal",
 ]
 
 [[package]]

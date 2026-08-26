@@ -212,9 +212,17 @@ owners = [
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt.rs", token = "BluetoothCpuInterruptRoutePolicy" },
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs", token = "BluetoothPrimaryInterruptClassification" },
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs", token = "BluetoothPrimaryControllerFault" },
+  { path = "driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs", token = "step_primary_interrupt" },
+  { path = "driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs", token = "BluetoothPrimaryReferenceRecoveryRequired" },
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_wake.rs", token = "BluetoothSchedulerWakeCell" },
+  { path = "driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs", token = "BluetoothModemLpTimerQueue" },
+  { path = "driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs", token = "BluetoothModemLpTimerSoftwareWork" },
+  { path = "driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs", token = "BluetoothModemLpTimerEventCell" },
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "EmbassyBluetoothIrqPublisher" },
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "EmbassyBluetoothWakeReceiver" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "capture_and_publish_primary" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "publish_timer_expiration" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "wait_timer_expiration" },
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs", token = "BoundBluetoothInterruptRoutes" },
 ]
 tests = [
@@ -248,16 +256,27 @@ tests = [
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs", token = "bank_one_source_three_has_precedence_and_retains_mark_candidate" },
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs", token = "reference_gate_requires_post_clear_action_only_when_not_busy" },
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs", token = "combined_bank_zero_trigger_marks_and_publishes_the_same_second_read" },
-  { path = "driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs", token = "baseline_fault_preempts_dynamic_scheduler_work_and_retains_diagnostics" },
+  { path = "driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs", token = "baseline_fault_preempts_dynamic_scheduler_work" },
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_classifier.rs", token = "fault_free_epoch_reaches_dynamic_scheduler_classifier" },
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_wake.rs", token = "marker_is_sticky_for_both_publication_orders" },
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_wake.rs", token = "dequeue_closes_the_epoch_and_the_next_publication_wakes_again" },
+  { path = "driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs", token = "ordinary_dynamic_epoch_produces_one_paired_scheduler_event" },
+  { path = "driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs", token = "idle_reference_gate_stops_before_clear_and_later_work_read" },
+  { path = "driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs", token = "busy_reference_gate_preserves_reference_then_uses_a_fresh_work_read" },
+  { path = "driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs", token = "queue_expires_oldest_due_timer_one_step_at_a_time" },
+  { path = "driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs", token = "cancellation_generation_cannot_target_a_reused_slot" },
+  { path = "driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs", token = "full_event_cell_applies_backpressure_without_overwrite" },
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "publication_before_wait_is_rechecked_without_a_lost_wake" },
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "cancelled_wait_leaves_batch_for_replacement_waiter" },
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "pending_wait_is_woken_only_by_first_coalesced_epoch" },
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs", token = "complete_level_three_pair_is_accepted" },
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs", token = "either_invalid_priority_rejects_the_pair_before_binding" },
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs", token = "quiesce_is_affine_to_the_binding_core" },
+]
+async-contracts = [
+  { path = "driver/chips/esp32s31/bluetooth/src/interrupt_wake.rs", token = "dequeue_closes_the_epoch_and_the_next_publication_wakes_again" },
+  { path = "driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs", token = "full_event_cell_applies_backpressure_without_overwrite" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "cancelled_wait_leaves_batch_for_replacement_waiter" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/README.md", token = "0x00008000" },
@@ -267,10 +286,10 @@ vendor-anchors = [
 gaps = [
   { axis = "implementation", id = "selector-6-scheduler-invariant-missing" },
   { axis = "implementation", id = "scanner-resume-action-deferred-until-scan-ull" },
-  { axis = "implementation", id = "source-127-software-queue-event-publication-proof-gated-final-rearm-live-route-composition-and-nrt-dispatch-missing" },
+  { axis = "implementation", id = "source-127-live-route-stable-owner-composition-and-nrt-dispatch-missing" },
   { axis = "vendor", id = "complete-interrupt-production-trace-missing" },
   { axis = "hil", id = "bluetooth-interrupt-epoch-cell-missing" },
-  { axis = "async", id = "live-isr-adapter-composition-scheduler-drain-and-rearm-contract-missing" },
+  { axis = "async", id = "live-source-127-owner-runner-and-scheduler-finished-item-drain-missing" },
 ]
 
 [[capabilities]]
@@ -573,29 +592,46 @@ gaps = [
 [[capabilities]]
 id = "scheduler-head-transaction"
 title = "Event-driven scheduler lock-modify head transaction"
-scope = "Validated task-side images and affine pre-publication and in-flight phases advanced by fresh scheduler observations without polling"
+scope = "Live finite PAC and HAL request publication with split task and ISR observations durable cancellation-safe worker state and lock-free latest-event handoff without polling"
 depends-on = ["controller-initialization", "controller-timebase", "interrupt-runtime"]
 owners = [
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs", token = "BluetoothSchedulerLockModifyRequest" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs", token = "BluetoothSchedulerLockModifyObservation" },
+  { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs", token = "BluetoothSchedulerLockModifyPublished" },
+  { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "publish_scheduler_lock_modify" },
   { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "BluetoothSchedulerLockModifyAwaitingPublication" },
   { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "BluetoothSchedulerLockModifyInFlight" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "BluetoothSchedulerLockModifyEventCell" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "BluetoothSchedulerLockModifyWorker" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "capture_and_publish_lock_modify" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "capture_and_publish_primary" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "wait_lock_modify" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "wait_and_step_lock_modify" },
 ]
 tests = [
-  { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs", token = "request_images_match_the_reviewed_transaction" },
+  { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs", token = "request_validation_rejects_an_argument_outside_the_protocol_field" },
+  { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs", token = "publication_uses_two_fresh_rmw_edges_before_request_and_fence" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs", token = "wait_requires_busy_and_start_simultaneously" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_lock_modify.rs", token = "result_projection_uses_idle_zero_or_busy_result_nibble" },
   { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "each_busy_edge_returns_control_to_the_executor" },
-  { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "scheduler_idle_forces_zero_publication_result_code" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "event_handoff_keeps_the_latest_level_and_reopens_the_wake_epoch" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "durable_worker_publishes_once_and_retains_result_across_event_steps" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "lock_modify_wait_wakes_once_and_consumes_the_latest_value" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "cancelled_lock_modify_wait_retains_the_event_for_replacement" },
+]
+async-contracts = [
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "event_handoff_keeps_the_latest_level_and_reopens_the_wake_epoch" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler_lock_modify.rs", token = "durable_worker_publishes_once_and_retains_result_across_event_steps" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "lock_modify_wait_wakes_once_and_consumes_the_latest_value" },
+  { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "cancelled_lock_modify_wait_retains_the_event_for_replacement" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md", token = "SCHEDULER_LOCK_MODIFY_REQUEST" },
 ]
 gaps = [
-  { axis = "implementation", id = "live-task-isr-coordinator-and-mmio-publication-missing" },
+  { axis = "implementation", id = "powered-controller-runner-and-selector-6-recovery-missing" },
   { axis = "vendor", id = "publication-result-meaning-and-live-radio-descriptor-recycle-proof-missing" },
-  { axis = "hil", id = "scheduler-lock-modify-transaction-cell-missing" },
-  { axis = "async", id = "registered-waker-and-fresh-cross-owner-observation-missing" },
+  { axis = "hil", id = "scheduler-lock-modify-live-hardware-trace-missing" },
 ]
 
 [[capabilities]]

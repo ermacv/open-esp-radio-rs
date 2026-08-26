@@ -770,6 +770,9 @@ access = "read-write"
 name = "COMPRESSED_SRAM_POINTER"
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xfffff
 [[peripherals.registers.register.fields]]
 name = "ZERO_IMAGE_20_26"
 bitOffset = 20

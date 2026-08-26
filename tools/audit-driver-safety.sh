@@ -295,6 +295,7 @@ baseband_spi=driver/chips/esp32s31/pac/src/bluetooth_baseband.rs
 controller_init_spi=driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs
 interrupt_spi=driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs
 modem_lp_timer_spi=driver/chips/esp32s31/pac/src/bluetooth_modem_lp_timer.rs
+modem_lp_timer_queue=driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs
 scheduler_disable_spi=driver/chips/esp32s31/pac/src/bluetooth_scheduler_stop.rs
 bluetooth_hal=driver/chips/esp32s31/hal/src/bluetooth.rs
 bluetooth_lifecycle=driver/chips/esp32s31/bluetooth/src/resources.rs
@@ -448,10 +449,15 @@ fi
 mapfile -t modem_lp_timer_completion_callers < <(
     rg -l '[.]complete_software[[:space:]]*\(' driver --glob '*.rs' | sort
 )
-if test "${#modem_lp_timer_completion_callers[@]}" -ne 1 \
-    || test "${modem_lp_timer_completion_callers[0]}" != "$bluetooth_hal"
+if ! rg -q 'pub struct BluetoothModemLpTimerSoftwareWork' "$modem_lp_timer_queue" \
+    || ! rg -q 'pub struct BluetoothModemLpTimerExpirationPending' "$modem_lp_timer_queue" \
+    || ! rg -q 'pub struct BluetoothModemLpTimerEventCell' "$modem_lp_timer_queue" \
+    || ! rg -q 'pub fn publish' "$modem_lp_timer_queue" \
+    || test "${#modem_lp_timer_completion_callers[@]}" -ne 2 \
+    || test "${modem_lp_timer_completion_callers[0]}" != "$modem_lp_timer_queue" \
+    || test "${modem_lp_timer_completion_callers[1]}" != "$bluetooth_hal"
 then
-    echo "Bluetooth modem LP-timer final rearm escaped HAL before software completion proof exists" >&2
+    echo "Bluetooth modem LP-timer final rearm escaped its publication-gated controller owner" >&2
     exit 1
 fi
 

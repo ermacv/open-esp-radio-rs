@@ -7,16 +7,17 @@
 //! BTDM HAL-init body are implemented as later enable-stage components. The
 //! two Controller interrupt sources, level/residency policies, baseline masks,
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
-//! state, affine ISR scheduler-register staging and the event-driven pure
-//! phases of one scheduler lock/modify request are also represented. A sampled
+//! state, affine ISR scheduler-register staging and one live finite
+//! scheduler-lock/modify PAC/HAL publication with a durable event worker are
+//! also represented. A sampled
 //! sixteen-list finished mask can be drained one bit per bounded event step.
 //! Controller-SRAM allocation geometry and result parsing live in the separate
 //! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
 //! one bounded DTM RX transition accounts a result word without claiming its
 //! still-missing completed-header ownership or visibility fence.
 //! These components are deliberately not connected across the missing
-//! selector-6 invariant, affine item/completion-list owner, lost-wake-safe
-//! cross-owner bridge, LP, BLE, NRT feature classification and live-route
+//! selector-6 invariant, affine item/completion-list owner, primary-ISR worker
+//! composition, LP, BLE, NRT feature classification and live-route
 //! prerequisites. No current finite state claims that the complete controller
 //! lifecycle, HCI transport, task or live interrupt epoch has completed.
 
@@ -44,8 +45,10 @@ mod dtm_tx_packet;
 mod interrupt;
 mod interrupt_classifier;
 mod interrupt_wake;
+mod modem_lp_timer_queue;
 #[cfg(target_arch = "riscv32")]
 mod phy;
+mod primary_interrupt;
 mod resources;
 #[cfg(any(target_arch = "riscv32", test))]
 mod scheduler;
@@ -114,6 +117,13 @@ pub use interrupt_classifier::{
 pub use interrupt_wake::{
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
 };
+pub use modem_lp_timer_queue::{
+    BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
+    BluetoothModemLpTimerExpiration, BluetoothModemLpTimerExpirationPending,
+    BluetoothModemLpTimerInterruptRuntimeStep, BluetoothModemLpTimerQueue,
+    BluetoothModemLpTimerScheduleError, BluetoothModemLpTimerSoftwareStep,
+    BluetoothModemLpTimerSoftwareWork, BluetoothModemLpTimerToken, step_modem_lp_timer_interrupt,
+};
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError,
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPrepareError,
@@ -126,6 +136,11 @@ pub use phy::{
     BluetoothPhyInitializationConfig, BluetoothPhyInitializationError,
     BluetoothPhyInitializationFailure, BluetoothPhyPlatform,
 };
+pub use primary_interrupt::{
+    BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
+    BluetoothPrimaryReferenceRecoveryRequired, BluetoothPrimarySchedulerEvent,
+    step_primary_interrupt,
+};
 pub use resources::BluetoothPhysicalResources;
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::BluetoothSchedulerTableLowBitsCleared;
@@ -134,7 +149,10 @@ pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedListIndex,
 };
 pub use scheduler_lock_modify::{
-    BluetoothSchedulerLockModifyAwaitingPublication, BluetoothSchedulerLockModifyInFlight,
-    BluetoothSchedulerLockModifyProgress, BluetoothSchedulerLockModifyPublication,
-    BluetoothSchedulerLockModifyPublicationResult,
+    BluetoothSchedulerLockModifyAwaitingPublication, BluetoothSchedulerLockModifyBeginError,
+    BluetoothSchedulerLockModifyEvent, BluetoothSchedulerLockModifyEventCell,
+    BluetoothSchedulerLockModifyEventPublication, BluetoothSchedulerLockModifyInFlight,
+    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyProgress,
+    BluetoothSchedulerLockModifyPublication, BluetoothSchedulerLockModifyPublicationResult,
+    BluetoothSchedulerLockModifyWorker, BluetoothSchedulerLockModifyWorkerStep,
 };

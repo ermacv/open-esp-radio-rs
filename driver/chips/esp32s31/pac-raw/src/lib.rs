@@ -37462,7 +37462,8 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
-        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         #[doc = "Field `ZERO_IMAGE_20_26` reader - "]
         pub type ZeroImage20_26R = crate::FieldReader;
         #[doc = "Field `ZERO_IMAGE_20_26` writer - "]
@@ -50921,6 +50922,22 @@ pub mod register_image_write {
         }
     }
 
+    /// Publish a caller-built complete image to `BLUETOOTH_CONTROLLER_CORE`.`OPERATIONAL_WORD_036C`.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_operational_word(
+        registers: &crate::BluetoothControllerCore,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .operational_word_036c()
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
     /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`PLCP1%s`.
     #[inline]
     pub fn publish_mac_tx_plcp1(registers: &crate::WifiMacTxQueueVector, index: usize, image: u32) {
@@ -51149,6 +51166,29 @@ pub mod zero_based_field_write {
             registers
                 .scheduler_finished_list_report()
                 .write_with_zero(|writer| writer.finished_list_mask().set(value));
+        }
+    }
+
+    /// Write `COMPRESSED_SRAM_POINTER`, `START` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_LOCK_MODIFY_REQUEST` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_lock_modify_request(
+        registers: &crate::BluetoothControllerCore,
+        compressed_sram_pointer_value: u32,
+        start_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .scheduler_lock_modify_request()
+                .write_with_zero(|writer| {
+                    writer
+                        .compressed_sram_pointer()
+                        .set(compressed_sram_pointer_value)
+                        .start()
+                        .bit(start_value)
+                });
         }
     }
 

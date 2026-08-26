@@ -13,13 +13,20 @@ pub struct BluetoothSchedulerReferenceGateObservation(u32);
 
 impl BluetoothSchedulerReferenceGateObservation {
     /// Wrap one complete register image at the reference-gate temporal point.
-    pub const fn from_bits(bits: u32) -> Self {
+    pub(crate) const fn from_bits(bits: u32) -> Self {
         Self(bits)
     }
 
-    /// Return the complete observed register image.
-    pub const fn bits(self) -> u32 {
-        self.0
+    /// Construct a semantic gate observation for upper-layer validation.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn from_busy_for_validation(busy: bool) -> Self {
+        Self(if busy { 1 << 31 } else { 0 })
+    }
+
+    /// Whether the scheduler was busy at the reference-gate temporal point.
+    pub const fn is_busy(self) -> bool {
+        self.0 & (1 << 31) != 0
     }
 }
 
@@ -29,13 +36,25 @@ pub struct BluetoothSchedulerWorkObservation(u32);
 
 impl BluetoothSchedulerWorkObservation {
     /// Wrap one complete register image at the deferred-work temporal point.
-    pub const fn from_bits(bits: u32) -> Self {
+    pub(crate) const fn from_bits(bits: u32) -> Self {
         Self(bits)
     }
 
-    /// Return the complete observed register image.
-    pub const fn bits(self) -> u32 {
-        self.0
+    /// Construct semantic deferred-work fields for upper-layer validation.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn from_fields_for_validation(busy: bool, reference_state_29: bool) -> Self {
+        Self((if busy { 1 << 31 } else { 0 }) | (if reference_state_29 { 1 << 29 } else { 0 }))
+    }
+
+    /// Whether the scheduler was busy at the deferred-work temporal point.
+    pub const fn is_busy(self) -> bool {
+        self.0 & (1 << 31) != 0
+    }
+
+    /// Whether the reviewed reference path was active at this temporal point.
+    pub const fn reference_path_active(self) -> bool {
+        self.0 & ((1 << 31) | (1 << 29)) == ((1 << 31) | (1 << 29))
     }
 }
 
@@ -255,7 +274,7 @@ mod tests {
     #[test]
     fn temporal_state_reads_remain_distinct_across_reference_clear() {
         let mut recorder = InterruptRecorder {
-            states: [0x1111_2222, 0xaaaa_5555],
+            states: [0, u32::MAX],
             next_state: 0,
             operations: Vec::new(),
         };
@@ -264,8 +283,9 @@ mod tests {
         execute_clear_scheduler_reference(&mut recorder);
         let work = execute_work_observation(&mut recorder);
 
-        assert_eq!(gate.bits(), 0x1111_2222);
-        assert_eq!(work.bits(), 0xaaaa_5555);
+        assert!(!gate.is_busy());
+        assert!(work.is_busy());
+        assert!(work.reference_path_active());
         assert_eq!(
             recorder.operations,
             [

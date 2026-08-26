@@ -17,6 +17,10 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerInterruptEvent, BluetoothModemLpTimerInterruptObservation,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
     BluetoothSchedulerDisablePrerequisite as BluetoothControllerSchedulerDisablePrerequisite,
+    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
+    BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
+    BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceGateObservation,
+    BluetoothSchedulerWorkObservation,
 };
 use open_esp_radio_esp32s31_pac::{
     BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothInterruptRegisters,
@@ -27,6 +31,7 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerInterruptStep as PacBluetoothModemLpTimerInterruptStep,
     BluetoothModemLpTimerRegistersPrepared as PacBluetoothModemLpTimerRegistersPrepared,
     BluetoothModemLpTimerSoftwarePending as PacBluetoothModemLpTimerSoftwarePending,
+    BluetoothPrimaryInterruptEpoch,
     BluetoothSchedulerDisableBusyObserved as PacSchedulerDisableBusyObserved,
     BluetoothSchedulerDisableIdleObserved as PacSchedulerDisableIdleObserved,
     BluetoothSchedulerDisableRequest as PacSchedulerDisableRequest,
@@ -450,6 +455,40 @@ pub struct BluetoothInterruptRegistersOwner {
 }
 
 impl BluetoothInterruptRegistersOwner {
+    /// Capture, acknowledge and retain one complete primary source-124 epoch.
+    pub fn capture_primary_and_acknowledge(&mut self) -> BluetoothPrimaryInterruptEpoch {
+        self.registers.capture_primary_and_acknowledge()
+    }
+
+    /// Capture the first scheduler-state observation used only by the
+    /// bank-one source-3 reference gate.
+    pub fn capture_scheduler_reference_gate(
+        &mut self,
+    ) -> BluetoothSchedulerReferenceGateObservation {
+        self.registers.capture_scheduler_reference_gate()
+    }
+
+    /// Clear the scheduler reference after the Controller has admitted the
+    /// mandatory post-clear scheduler consistency action.
+    #[doc(hidden)]
+    pub fn clear_scheduler_reference(&mut self) {
+        self.registers.clear_scheduler_reference();
+    }
+
+    /// Capture the later, independent scheduler-state observation used to
+    /// construct deferred work.
+    pub fn capture_scheduler_work(&mut self) -> BluetoothSchedulerWorkObservation {
+        self.registers.capture_scheduler_work()
+    }
+
+    /// Capture the interrupt-owned scheduler BUSY field for one lock/modify
+    /// decision without borrowing task-side controller registers.
+    pub fn capture_scheduler_lock_modify_interrupt(
+        &mut self,
+    ) -> BluetoothSchedulerLockModifyInterruptObservation {
+        self.registers.capture_scheduler_lock_modify_interrupt()
+    }
+
     /// Return the register partition to output-prepared ownership after both
     /// CPU routes have been disabled and shared ISR access has ended.
     ///
@@ -627,6 +666,28 @@ impl BluetoothControllerHal<'_> {
     /// retain the independently established clock/reset prerequisite.
     pub fn clear_scheduler_table_low_bits(&mut self) {
         self.registers.clear_scheduler_table_low_bits();
+    }
+
+    /// Capture task-owned START and RESULT fields for one scheduler
+    /// lock/modify decision.
+    pub fn capture_scheduler_lock_modify_task(
+        &mut self,
+    ) -> BluetoothSchedulerLockModifyTaskObservation {
+        self.registers.capture_scheduler_lock_modify_task()
+    }
+
+    /// Execute the finite scheduler lock/modify publication transaction.
+    ///
+    /// The Bluetooth controller state machine keeps this method hidden behind
+    /// its affine publication token. It performs two fresh operational-word
+    /// RMW edges, publishes the typed request and returns only after a device
+    /// fence; it never polls or blocks an executor.
+    #[doc(hidden)]
+    pub fn publish_scheduler_lock_modify(
+        &mut self,
+        request: BluetoothSchedulerLockModifyRequest,
+    ) -> BluetoothSchedulerLockModifyPublished {
+        self.registers.publish_scheduler_lock_modify(request)
     }
 
     /// Publish one controller-time latch request and return immediately.

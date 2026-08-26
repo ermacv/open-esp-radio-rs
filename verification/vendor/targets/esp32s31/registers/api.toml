@@ -420,6 +420,13 @@ register = "CLEAR"
 sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
 
 [[opaque-domains]]
+name = "BluetoothSchedulerOperationalWordImage"
+description = "Complete OPERATIONAL_WORD_036C image produced by one fresh scheduler lock/modify RMW edge."
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_WORD_036C"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[opaque-domains]]
 name = "MacPowerInterruptClearImage"
 description = "Register-specific event image written to the MAC power-interrupt clear register."
 peripheral = "WIFI_MAC_POWER_INTERRUPT"
@@ -1160,6 +1167,21 @@ register = "CONTROL%s"
 domain = "MacTxControlImage"
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
+
+[[register-image-writes]]
+name = "publish_bluetooth_scheduler_operational_word"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_WORD_036C"
+domain = "BluetoothSchedulerOperationalWordImage"
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[zero-based-field-writes]]
+name = "publish_bluetooth_scheduler_lock_modify_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_LOCK_MODIFY_REQUEST"
+fields = ["COMPRESSED_SRAM_POINTER", "START"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_plcp1"

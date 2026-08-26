@@ -582,6 +582,22 @@ impl MacInterruptClearImage {
     }
 }
 
+/// Complete OPERATIONAL_WORD_036C image produced by one fresh scheduler lock/modify RMW edge.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothSchedulerOperationalWordImage(u32);
+
+impl BluetoothSchedulerOperationalWordImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific event image written to the MAC power-interrupt clear register.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPowerInterruptClearImage(u32);
@@ -1237,6 +1253,18 @@ pub(crate) fn publish_mac_tx_control(
     value: MacTxControlImage,
 ) {
     crate::svd::register_image_write::publish_mac_tx_control(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_scheduler_operational_word` complete-image transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_scheduler_operational_word(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothSchedulerOperationalWordImage,
+) {
+    crate::svd::register_image_write::publish_bluetooth_scheduler_operational_word(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `publish_mac_tx_plcp1` complete-image transaction.

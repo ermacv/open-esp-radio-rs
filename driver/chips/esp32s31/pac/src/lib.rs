@@ -104,8 +104,9 @@ pub use bluetooth_modem_lp_timer::{
     BluetoothModemLpTimerRegistersPrepared, BluetoothModemLpTimerSoftwarePending,
 };
 pub use bluetooth_scheduler_lock_modify::{
-    BluetoothSchedulerLockModifyObservation, BluetoothSchedulerLockModifyRequest,
-    BluetoothSchedulerLockModifyRequestError,
+    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
+    BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
+    BluetoothSchedulerLockModifyRequestError, BluetoothSchedulerLockModifyTaskObservation,
 };
 pub use bluetooth_scheduler_runtime::{
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerReferenceGateObservation,

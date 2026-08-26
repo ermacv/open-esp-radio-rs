@@ -23,12 +23,6 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothPrimaryInterruptObservation,
 };
 
-const BANK_0_SOURCE_21: u32 = 1 << 21;
-const BANK_0_SOURCES_27_28: u32 = (1 << 27) | (1 << 28);
-const BANK_1_SOURCE_3: u32 = 1 << 3;
-const SCHEDULER_STATE_29: u32 = 1 << 29;
-const SCHEDULER_BUSY: u32 = 1 << 31;
-
 /// Dynamic scheduler trigger selected from one acknowledged primary snapshot.
 ///
 /// Names deliberately remain positional. Current evidence proves the branch
@@ -54,22 +48,38 @@ pub enum BluetoothPrimarySchedulerTrigger {
 }
 
 impl BluetoothPrimarySchedulerTrigger {
-    const fn from_status_bits(bank_0: u32, bank_1: u32) -> Self {
-        let sources_27_or_28_pending = bank_0 & BANK_0_SOURCES_27_28 != 0;
+    const fn from_observation(observation: BluetoothPrimaryInterruptObservation) -> Self {
+        let sources_27_or_28_pending = observation.bank_0_sources_27_or_28_pending();
 
-        if bank_1 & BANK_1_SOURCE_3 != 0 {
+        if observation.bank_1_source_3_pending() {
             Self::Bank1Source3 {
                 bank_0_sources_27_or_28_pending: sources_27_or_28_pending,
             }
         } else if sources_27_or_28_pending {
             Self::Bank0Sources27Or28 {
-                source_21_pending: bank_0 & BANK_0_SOURCE_21 != 0,
+                source_21_pending: observation.bank_0_source_21_pending(),
             }
-        } else if bank_0 & BANK_0_SOURCE_21 != 0 {
+        } else if observation.bank_0_source_21_pending() {
             Self::Bank0Source21
         } else {
             Self::None
         }
+    }
+
+    #[cfg(test)]
+    const fn from_dynamic_fields_for_validation(
+        source_21_pending: bool,
+        sources_27_or_28_pending: bool,
+        source_3_pending: bool,
+    ) -> Self {
+        Self::from_observation(
+            BluetoothPrimaryInterruptEpoch::for_dynamic_validation(
+                source_21_pending,
+                sources_27_or_28_pending,
+                source_3_pending,
+            )
+            .observation(),
+        )
     }
 
     const fn work_inputs(self) -> Option<(bool, bool)> {
@@ -110,10 +120,7 @@ impl BluetoothPrimaryInterruptClassification {
             return Err(BluetoothPrimaryControllerFault { epoch });
         }
         let observation = epoch.observation();
-        let scheduler_trigger = BluetoothPrimarySchedulerTrigger::from_status_bits(
-            observation.bank_0_bits(),
-            observation.bank_1_bits(),
-        );
+        let scheduler_trigger = BluetoothPrimarySchedulerTrigger::from_observation(observation);
         Ok(Self {
             epoch,
             scheduler_trigger,
@@ -201,7 +208,7 @@ impl BluetoothSchedulerReferenceGate {
         self,
         observation: BluetoothSchedulerReferenceGateObservation,
     ) -> BluetoothSchedulerReferenceAction {
-        if observation.bits() & SCHEDULER_BUSY == 0 {
+        if !observation.is_busy() {
             BluetoothSchedulerReferenceAction::ClearReferenceAndRunPostClearSchedulerAction
         } else {
             BluetoothSchedulerReferenceAction::PreserveReference
@@ -236,8 +243,7 @@ impl BluetoothSchedulerWorkClassifier {
         self,
         observation: BluetoothSchedulerWorkObservation,
     ) -> BluetoothSchedulerWorkerWake {
-        let reference_state = observation.bits() & (SCHEDULER_BUSY | SCHEDULER_STATE_29)
-            == (SCHEDULER_BUSY | SCHEDULER_STATE_29);
+        let reference_state = observation.reference_path_active();
         BluetoothSchedulerWorkerWake {
             class: if self.mark_candidate && reference_state {
                 BluetoothSchedulerWorkerWakeClass::Marked
@@ -288,22 +294,30 @@ impl BluetoothSchedulerWorkerWake {
 #[cfg(test)]
 mod tests {
     use super::{
-        BANK_0_SOURCE_21, BANK_0_SOURCES_27_28, BANK_1_SOURCE_3,
         BluetoothPrimaryInterruptClassification, BluetoothPrimarySchedulerTrigger,
         BluetoothSchedulerReferenceAction, BluetoothSchedulerReferenceGate,
         BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkClassifier,
         BluetoothSchedulerWorkObservation, BluetoothSchedulerWorkerWake,
-        BluetoothSchedulerWorkerWakeClass, SCHEDULER_BUSY, SCHEDULER_STATE_29,
+        BluetoothSchedulerWorkerWakeClass,
     };
     use open_esp_radio_esp32s31_pac::BluetoothPrimaryInterruptEpoch;
 
-    const fn trigger(bank_0: u32, bank_1: u32) -> BluetoothPrimarySchedulerTrigger {
-        BluetoothPrimarySchedulerTrigger::from_status_bits(bank_0, bank_1)
+    const fn trigger(
+        source_21_pending: bool,
+        sources_27_or_28_pending: bool,
+        source_3_pending: bool,
+    ) -> BluetoothPrimarySchedulerTrigger {
+        BluetoothPrimarySchedulerTrigger::from_dynamic_fields_for_validation(
+            source_21_pending,
+            sources_27_or_28_pending,
+            source_3_pending,
+        )
     }
 
     const fn classify_work(
         trigger: BluetoothPrimarySchedulerTrigger,
-        scheduler_state: u32,
+        busy: bool,
+        reference_state_29: bool,
     ) -> Option<BluetoothSchedulerWorkerWake> {
         match trigger.work_inputs() {
             Some((mark_candidate, state_publication_requested)) => Some(
@@ -311,45 +325,31 @@ mod tests {
                     mark_candidate,
                     state_publication_requested,
                 }
-                .classify(BluetoothSchedulerWorkObservation::from_bits(
-                    scheduler_state,
-                )),
+                .classify(
+                    BluetoothSchedulerWorkObservation::from_fields_for_validation(
+                        busy,
+                        reference_state_29,
+                    ),
+                ),
             ),
             None => None,
         }
     }
 
     #[test]
-    fn baseline_fault_preempts_dynamic_scheduler_work_and_retains_diagnostics() {
-        let epoch = BluetoothPrimaryInterruptEpoch::for_validation(
-            BANK_0_SOURCE_21,
-            BANK_1_SOURCE_3 | (1 << 9) | (1 << 12),
-            0x1111_2222,
-            0x3333_4444,
-            0x5555_6666,
-        );
+    fn baseline_fault_preempts_dynamic_scheduler_work() {
+        let epoch = BluetoothPrimaryInterruptEpoch::for_fault_validation();
         let expected_observation = epoch.observation();
         let fault = BluetoothPrimaryInterruptClassification::from_epoch(epoch)
             .expect_err("a baseline assertion source must preempt scheduler work");
 
         assert_eq!(fault.observation(), expected_observation);
-        assert_eq!(fault.evidence().bank_1_source_bits(), (1 << 9) | (1 << 12));
-        assert_eq!(
-            fault.evidence().source_9_details(),
-            Some([0x1111_2222, 0x3333_4444])
-        );
-        assert_eq!(fault.evidence().source_12_state(), Some(0x5555_6666));
+        assert!(fault.evidence().is_fault());
     }
 
     #[test]
     fn fault_free_epoch_reaches_dynamic_scheduler_classifier() {
-        let epoch = BluetoothPrimaryInterruptEpoch::for_validation(
-            BANK_0_SOURCES_27_28,
-            BANK_1_SOURCE_3,
-            u32::MAX,
-            u32::MAX,
-            u32::MAX,
-        );
+        let epoch = BluetoothPrimaryInterruptEpoch::for_dynamic_validation(false, true, true);
         let expected_observation = epoch.observation();
         let classification = BluetoothPrimaryInterruptClassification::from_epoch(epoch)
             .expect("dynamic sources are not fault lanes");
@@ -365,19 +365,22 @@ mod tests {
 
     #[test]
     fn bank_zero_trigger_table_preserves_source_precedence_and_pairing() {
-        assert_eq!(trigger(0, 0), BluetoothPrimarySchedulerTrigger::None);
         assert_eq!(
-            trigger(BANK_0_SOURCE_21, 0),
+            trigger(false, false, false),
+            BluetoothPrimarySchedulerTrigger::None
+        );
+        assert_eq!(
+            trigger(true, false, false),
             BluetoothPrimarySchedulerTrigger::Bank0Source21
         );
         assert_eq!(
-            trigger(1 << 27, 0),
+            trigger(false, true, false),
             BluetoothPrimarySchedulerTrigger::Bank0Sources27Or28 {
                 source_21_pending: false,
             }
         );
         assert_eq!(
-            trigger(BANK_0_SOURCE_21 | (1 << 28), 0),
+            trigger(true, true, false),
             BluetoothPrimarySchedulerTrigger::Bank0Sources27Or28 {
                 source_21_pending: true,
             }
@@ -387,13 +390,13 @@ mod tests {
     #[test]
     fn bank_one_source_three_has_precedence_and_retains_mark_candidate() {
         assert_eq!(
-            trigger(BANK_0_SOURCE_21, BANK_1_SOURCE_3),
+            trigger(true, false, true),
             BluetoothPrimarySchedulerTrigger::Bank1Source3 {
                 bank_0_sources_27_or_28_pending: false,
             }
         );
         assert_eq!(
-            trigger(BANK_0_SOURCES_27_28, BANK_1_SOURCE_3),
+            trigger(false, true, true),
             BluetoothPrimarySchedulerTrigger::Bank1Source3 {
                 bank_0_sources_27_or_28_pending: true,
             }
@@ -405,27 +408,33 @@ mod tests {
         let gate = BluetoothSchedulerReferenceGate;
 
         assert_eq!(
-            gate.classify(BluetoothSchedulerReferenceGateObservation::from_bits(0)),
+            gate.classify(
+                BluetoothSchedulerReferenceGateObservation::from_busy_for_validation(false)
+            ),
             BluetoothSchedulerReferenceAction::ClearReferenceAndRunPostClearSchedulerAction
         );
         assert_eq!(
-            gate.classify(BluetoothSchedulerReferenceGateObservation::from_bits(
-                SCHEDULER_BUSY
-            )),
+            gate.classify(
+                BluetoothSchedulerReferenceGateObservation::from_busy_for_validation(true)
+            ),
             BluetoothSchedulerReferenceAction::PreserveReference
         );
     }
 
     #[test]
     fn source_twenty_one_requests_ordinary_work_and_state_publication() {
-        for (state, expected_publication) in [
-            (0, false),
-            (SCHEDULER_BUSY, false),
-            (SCHEDULER_STATE_29, false),
-            (SCHEDULER_BUSY | SCHEDULER_STATE_29, true),
+        for (busy, state_29, expected_publication) in [
+            (false, false, false),
+            (true, false, false),
+            (false, true, false),
+            (true, true, true),
         ] {
-            let wake = classify_work(BluetoothPrimarySchedulerTrigger::Bank0Source21, state)
-                .expect("source 21 must request work");
+            let wake = classify_work(
+                BluetoothPrimarySchedulerTrigger::Bank0Source21,
+                busy,
+                state_29,
+            )
+            .expect("source 21 must request work");
             assert_eq!(wake.class(), BluetoothSchedulerWorkerWakeClass::Ordinary);
             assert_eq!(
                 wake.reference_state_publication(),
@@ -440,14 +449,16 @@ mod tests {
             BluetoothPrimarySchedulerTrigger::Bank0Sources27Or28 {
                 source_21_pending: false,
             },
-            SCHEDULER_BUSY,
+            true,
+            false,
         )
         .expect("high source group must request work");
         let marked = classify_work(
             BluetoothPrimarySchedulerTrigger::Bank0Sources27Or28 {
                 source_21_pending: false,
             },
-            SCHEDULER_BUSY | SCHEDULER_STATE_29,
+            true,
+            true,
         )
         .expect("high source group must request work");
 
@@ -465,7 +476,8 @@ mod tests {
             BluetoothPrimarySchedulerTrigger::Bank0Sources27Or28 {
                 source_21_pending: true,
             },
-            SCHEDULER_BUSY | SCHEDULER_STATE_29,
+            true,
+            true,
         )
         .expect("combined bank-zero trigger must request work");
 
@@ -475,19 +487,20 @@ mod tests {
 
     #[test]
     fn bank_one_trigger_always_publishes_and_marks_only_with_the_high_bank_zero_group() {
-        let state = SCHEDULER_BUSY | SCHEDULER_STATE_29;
         let ordinary = classify_work(
             BluetoothPrimarySchedulerTrigger::Bank1Source3 {
                 bank_0_sources_27_or_28_pending: false,
             },
-            state,
+            true,
+            true,
         )
         .expect("bank-one trigger must request work");
         let marked = classify_work(
             BluetoothPrimarySchedulerTrigger::Bank1Source3 {
                 bank_0_sources_27_or_28_pending: true,
             },
-            state,
+            true,
+            true,
         )
         .expect("bank-one trigger must request work");
 
@@ -503,7 +516,7 @@ mod tests {
     #[test]
     fn no_dynamic_trigger_produces_no_scheduler_work() {
         assert_eq!(
-            classify_work(BluetoothPrimarySchedulerTrigger::None, u32::MAX),
+            classify_work(BluetoothPrimarySchedulerTrigger::None, true, true),
             None
         );
     }

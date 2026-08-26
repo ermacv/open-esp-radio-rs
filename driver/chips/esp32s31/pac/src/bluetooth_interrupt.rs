@@ -370,6 +370,24 @@ impl BluetoothPrimaryInterruptObservation {
     pub const fn bank_1_bits(self) -> u32 {
         self.bank_1
     }
+
+    /// Whether positional dynamic source 21 was present in bank zero.
+    ///
+    /// Keeping this projection in the PAC prevents the Controller classifier
+    /// from duplicating generated interrupt-bank geometry.
+    pub const fn bank_0_source_21_pending(self) -> bool {
+        self.bank_0 & (1 << 21) != 0
+    }
+
+    /// Whether positional dynamic source 27 or 28 was present in bank zero.
+    pub const fn bank_0_sources_27_or_28_pending(self) -> bool {
+        self.bank_0 & ((1 << 27) | (1 << 28)) != 0
+    }
+
+    /// Whether positional dynamic source 3 was present in bank one.
+    pub const fn bank_1_source_3_pending(self) -> bool {
+        self.bank_1 & (1 << 3) != 0
+    }
 }
 
 impl BluetoothNrtInterruptObservation {
@@ -492,6 +510,33 @@ impl BluetoothPrimaryInterruptEpoch {
                 source_12_state,
             ),
         }
+    }
+
+    /// Construct one fault-free epoch from positional source presence without
+    /// exposing interrupt-bank bit geometry above the PAC.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn for_dynamic_validation(
+        bank_0_source_21_pending: bool,
+        bank_0_sources_27_or_28_pending: bool,
+        bank_1_source_3_pending: bool,
+    ) -> Self {
+        let bank_0 = if bank_0_source_21_pending { 1 << 21 } else { 0 }
+            | if bank_0_sources_27_or_28_pending {
+                1 << 27
+            } else {
+                0
+            };
+        let bank_1 = if bank_1_source_3_pending { 1 << 3 } else { 0 };
+        Self::for_validation(bank_0, bank_1, 0, 0, 0)
+    }
+
+    /// Construct one representative baseline-fault epoch for upper-layer
+    /// fail-stop validation without exporting the matching hardware mask.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn for_fault_validation() -> Self {
+        Self::for_validation(0, BLUETOOTH_PRIMARY_FAULT_BANK_1_SOURCE_8, 0, 0, 0)
     }
 }
 

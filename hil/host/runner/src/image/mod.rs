@@ -468,7 +468,7 @@ pub(crate) fn ensure_no_old_application_dependency(root: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn ensure_vendor_oracle_isolated(root: &Path) -> Result<()> {
+pub(crate) fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
     for relative in [
         "Cargo.lock",
         "hil/targets/esp32s31/Cargo.toml",
@@ -490,10 +490,7 @@ pub(crate) fn ensure_vendor_oracle_isolated(root: &Path) -> Result<()> {
             }
         }
     }
-    require_file(
-        &root.join("verification/vendor/targets/esp32s31/oracle-firmware/Cargo.toml"),
-        "isolated vendor-oracle workspace",
-    )
+    Ok(())
 }
 
 fn ensure_no_competing_log_writers(root: &Path) -> Result<()> {
@@ -817,7 +814,7 @@ mod tests {
     fn repository_layout_contains_the_embedded_workspace() {
         let root = repository_root().unwrap();
         assert!(root.join("hil/targets/esp32s31/Cargo.toml").is_file());
-        ensure_vendor_oracle_isolated(&root).unwrap();
+        ensure_vendor_dependencies_absent(&root).unwrap();
         ensure_no_competing_log_writers(&root).unwrap();
     }
 

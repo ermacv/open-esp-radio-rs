@@ -299,8 +299,8 @@ fn doctor(root: &std::path::Path, lab: &transport::lab_config::LabConfig) -> Res
     }
     image::ensure_no_old_application_dependency(root)?;
     eprintln!("old_application_dependency=ABSENT");
-    image::ensure_vendor_oracle_isolated(root)?;
-    eprintln!("vendor_oracle_default_graph=ABSENT");
+    image::ensure_vendor_dependencies_absent(root)?;
+    eprintln!("vendor_dependencies=ABSENT");
     emit_json(
         &serde_json::json!({
             "schema": reporting::run::RUN_SCHEMA,

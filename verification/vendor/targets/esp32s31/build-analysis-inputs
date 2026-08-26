@@ -3,23 +3,10 @@ set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd -- "${script_dir}/../../../.." && pwd)
-oracle_manifest="${script_dir}/oracle-firmware/Cargo.toml"
-trace_package="open-esp-radio-vendor-oracle-esp32s31-trace-elf"
 rust_target="riscv32imafc-unknown-none-elf"
 build_jobs=${OPEN_RADIO_ANALYSIS_BUILD_JOBS:-1}
 
 produced_roles=(
-    source-artifact:archive
-    source-artifact:libpp
-    source-artifact:libpp-replay
-    source-artifact:libnet80211
-    source-artifact:wifi-sta-ap-receive
-    source-artifact:wifi-sta-lifecycle
-    source-artifact:wifi-key-role
-    source-artifact:coex
-    source-artifact:btbb
-    source-artifact:ble-controller
-    source-artifact:bredr-controller
     rust-artifact
     rust-artifact:wifi-registers
     rust-artifact:bluetooth
@@ -38,54 +25,6 @@ if [[ ! "${build_jobs}" =~ ^[1-9][0-9]*$ ]]; then
     echo "OPEN_RADIO_ANALYSIS_BUILD_JOBS must be a positive integer" >&2
     exit 2
 fi
-
-required_oracles=(
-    esp32s31_rev0_rom.elf
-    libphy.a
-    libpp.a
-    libnet80211.a
-    libcoexist.a
-    libbtbb.a
-    libble_app.a
-    libbredr_app.a
-    libbtdm_common.a
-)
-for artifact in "${required_oracles[@]}"; do
-    path="${repository_root}/_oracles/${artifact}"
-    if [[ ! -f "${path}" ]]; then
-        echo "missing authenticated caller-owned artifact: ${path}" >&2
-        exit 1
-    fi
-done
-
-build_link_unit() {
-    local output_id=$1
-    local spec_name=$2
-    local spec_path="${script_dir}/oracle-firmware/trace-elf/${spec_name}"
-    local target_dir="${repository_root}/target/verification/${output_id}"
-
-    echo "Building ${output_id} from ${spec_name}" >&2
-    OPEN_RADIO_LINKED_ORACLE_SPEC="${spec_path}" \
-    CARGO_TARGET_DIR="${target_dir}" \
-        cargo build \
-            --manifest-path "${oracle_manifest}" \
-            --package "${trace_package}" \
-            --target "${rust_target}" \
-            --release \
-            --jobs "${build_jobs}"
-}
-
-build_link_unit vendor-linked linked-oracle.toml
-build_link_unit vendor-linked-libpp linked-oracle-libpp.toml
-build_link_unit vendor-linked-libpp-replay linked-oracle-libpp-replay.toml
-build_link_unit vendor-linked-libnet80211 linked-oracle-libnet80211.toml
-build_link_unit vendor-linked-libnet80211-rx-policy linked-oracle-libnet80211-rx-policy.toml
-build_link_unit vendor-linked-wifi-sta-lifecycle linked-oracle-wifi-sta-lifecycle.toml
-build_link_unit vendor-linked-wifi-key-role linked-oracle-wifi-key-role.toml
-build_link_unit vendor-linked-coex linked-oracle-coex.toml
-build_link_unit vendor-linked-btbb linked-oracle-btbb.toml
-build_link_unit vendor-linked-ble-controller linked-oracle-ble-controller.toml
-build_link_unit vendor-linked-bredr-controller linked-oracle-bredr-controller.toml
 
 echo "Building ESP32-S31 Rust comparison probes" >&2
 CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-probes" \
@@ -114,5 +53,5 @@ CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-bluetooth-prob
         --release \
         --jobs "${build_jobs}"
 
-echo "Analysis inputs are ready. Next:" >&2
+echo "Rust analysis inputs are ready. Bind caller-owned source artifacts, then run:" >&2
 echo "  cargo blobray --project ${script_dir}/vendor-project.toml --run-spec ${script_dir}/local.toml project status" >&2

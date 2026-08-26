@@ -267,6 +267,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "524eb3c489760508f71360112bca70f6e53173e6fe48fc5f0efd0f5ab217751d"
 
 [[package]]
+name = "embassy-net-driver"
+version = "0.2.0"
+source = "git+https://github.com/ermacv/embassy?rev=5a981ab3ccad883520ef634566215feb350613ad#5a981ab3ccad883520ef634566215feb350613ad"
+
+[[package]]
 name = "embassy-sync"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -486,7 +491,7 @@ dependencies = [
  "document-features",
  "embassy-embedded-hal",
  "embassy-futures",
- "embassy-net-driver",
+ "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0",
  "embassy-usb-driver",
  "embassy-usb-synopsys-otg",
@@ -804,7 +809,7 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
- "embassy-net-driver",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy?rev=5a981ab3ccad883520ef634566215feb350613ad)",
  "embassy-sync 0.8.0",
  "open-esp-radio-dma",
 ]

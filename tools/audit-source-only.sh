@@ -10,9 +10,9 @@ cd "$repo_root"
 
 # Every tracked Cargo package must resolve through a checked-in lockfile at its
 # actual workspace boundary. This also covers the independently buildable HIL,
-# example, product-integration, probe, and oracle-firmware workspaces without
-# reading local or private oracle inputs.
-tools/audit-cargo-metadata.sh --source-only
+# example, product-integration, and probe workspaces without reading local or
+# private vendor inputs.
+tools/audit-cargo-metadata.sh
 
 # Research resumes only from a warning-free workspace. Keep this fail-closed:
 # adding a new target or crate automatically subjects it to the same budget.

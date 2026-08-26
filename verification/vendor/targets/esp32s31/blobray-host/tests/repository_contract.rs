@@ -840,17 +840,6 @@ fn analysis_input_builder_owns_every_generated_project_role() {
         .map(str::to_owned)
         .collect::<std::collections::BTreeSet<_>>();
     let expected = [
-        "source-artifact:archive",
-        "source-artifact:libpp",
-        "source-artifact:libpp-replay",
-        "source-artifact:libnet80211",
-        "source-artifact:wifi-sta-ap-receive",
-        "source-artifact:wifi-sta-lifecycle",
-        "source-artifact:wifi-key-role",
-        "source-artifact:coex",
-        "source-artifact:btbb",
-        "source-artifact:ble-controller",
-        "source-artifact:bredr-controller",
         "rust-artifact",
         "rust-artifact:wifi-registers",
         "rust-artifact:bluetooth",
@@ -862,45 +851,8 @@ fn analysis_input_builder_owns_every_generated_project_role() {
 }
 
 #[test]
-fn bredr_controller_input_preserves_source_qualified_provenance() {
+fn bredr_controller_input_example_preserves_source_qualified_roles() {
     let target = repository_root().join("verification/vendor/targets/esp32s31");
-    let spec = toml_document(
-        &target.join("oracle-firmware/trace-elf/linked-oracle-bredr-controller.toml"),
-    );
-    assert_eq!(spec["schema"].as_integer(), Some(1));
-    assert_eq!(spec["source"].as_str(), Some("bredr-controller"));
-
-    let archives = spec["archives"]
-        .as_array()
-        .expect("BR/EDR linked archives")
-        .iter()
-        .map(|archive| archive.as_str().expect("archive path"))
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        archives,
-        BTreeSet::from([
-            "../../../../../../_oracles/libbredr_app.a",
-            "../../../../../../_oracles/libbtdm_common.a",
-            "../../../../../../_oracles/libbtbb.a",
-            "../../../../../../_oracles/libphy.a",
-        ])
-    );
-    let entries = spec["entry-symbols"]
-        .as_array()
-        .expect("BR/EDR entry symbols")
-        .iter()
-        .map(|entry| entry.as_str().expect("entry symbol"))
-        .collect::<BTreeSet<_>>();
-    for required in [
-        "bredr_controller_init",
-        "bredr_controller_deinit",
-        "bredr_hci_trans_register_tx",
-        "r_btdm_task_init",
-        "bt_bb_v2_init_cmplx",
-    ] {
-        assert!(entries.contains(required), "missing BR/EDR root {required}");
-    }
-
     let example =
         fs::read_to_string(target.join("local.example.toml")).expect("read local input example");
     assert_eq!(

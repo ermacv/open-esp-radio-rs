@@ -10,8 +10,7 @@ verification/
     └── targets/
         └── esp32s31/
             ├── target, memory, profile, disposition and baseline pack
-            ├── probes/             source-owned compiled comparison probes
-            └── oracle-firmware/    isolated opt-in vendor-linked firmware
+            └── probes/             source-owned compiled comparison probes
 ```
 
 The generic engine is temporarily implemented by

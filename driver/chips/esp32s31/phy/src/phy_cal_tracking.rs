@@ -347,6 +347,147 @@ const fn temperature_delta(current: i16, reference: i16) -> u32 {
     crate::phy_math::absolute_temperature((reference as i32).wrapping_sub(current as i32))
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyCalibrationTrackingBindingError {
+    UnsupportedAction,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RegisterAction {
+    SetHardwareFrequencyControl { enabled: bool },
+    ConfigureBasebandChannel { cbw: u8 },
+    RestoreTxGainCompensation,
+}
+
+/// Non-cloneable owner of one finite register-only calibration edge.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyCalibrationTrackingRegisterBinding {
+    action: RegisterAction,
+}
+
+impl PhyCalibrationTrackingRegisterBinding {
+    pub const fn new(
+        action: PhyCalibrationTrackingAction,
+    ) -> Result<Self, PhyCalibrationTrackingBindingError> {
+        let action = match action {
+            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled } => {
+                RegisterAction::SetHardwareFrequencyControl { enabled }
+            }
+            PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw } => {
+                RegisterAction::ConfigureBasebandChannel { cbw }
+            }
+            PhyCalibrationTrackingAction::RestoreTxGainCompensation => {
+                RegisterAction::RestoreTxGainCompensation
+            }
+            _ => return Err(PhyCalibrationTrackingBindingError::UnsupportedAction),
+        };
+        Ok(Self { action })
+    }
+
+    pub const fn action(&self) -> PhyCalibrationTrackingAction {
+        match self.action {
+            RegisterAction::SetHardwareFrequencyControl { enabled } => {
+                PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled }
+            }
+            RegisterAction::ConfigureBasebandChannel { cbw } => {
+                PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw }
+            }
+            RegisterAction::RestoreTxGainCompensation => {
+                PhyCalibrationTrackingAction::RestoreTxGainCompensation
+            }
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target(
+        self,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
+    ) -> PhyCalibrationTrackingCompletion {
+        match self.action {
+            RegisterAction::SetHardwareFrequencyControl { enabled } => {
+                open_esp_radio_esp32s31_hal::phy_frequency::set_hardware_control(
+                    registers, enabled,
+                );
+                PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled }
+            }
+            RegisterAction::ConfigureBasebandChannel { cbw } => {
+                open_esp_radio_esp32s31_hal::phy_frequency::configure_channel_cbw(
+                    registers,
+                    cbw.into(),
+                );
+                PhyCalibrationTrackingCompletion::BasebandChannelConfigured { cbw }
+            }
+            RegisterAction::RestoreTxGainCompensation => {
+                open_esp_radio_esp32s31_hal::phy_baseband::restore_tx_gain_compensation(registers);
+                PhyCalibrationTrackingCompletion::TxGainCompensationRestored
+            }
+        }
+    }
+}
+
+/// Non-cloneable owner of the mixed platform/register `phy_mac_enable_bb`
+/// edge.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyCalibrationTrackingMacBasebandBinding;
+
+impl PhyCalibrationTrackingMacBasebandBinding {
+    pub const fn new(
+        action: PhyCalibrationTrackingAction,
+    ) -> Result<Self, PhyCalibrationTrackingBindingError> {
+        match action {
+            PhyCalibrationTrackingAction::EnableMacBaseband => Ok(Self),
+            _ => Err(PhyCalibrationTrackingBindingError::UnsupportedAction),
+        }
+    }
+
+    pub const fn action(&self) -> PhyCalibrationTrackingAction {
+        PhyCalibrationTrackingAction::EnableMacBaseband
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target<
+        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl,
+        R: open_esp_radio_esp32s31_hal::PhyInitializationAccess,
+    >(
+        self,
+        platform: &mut P,
+        registers: &mut R,
+    ) -> PhyCalibrationTrackingCompletion {
+        open_esp_radio_esp32s31_hal::phy_frequency::enable_mac_baseband(platform, registers);
+        PhyCalibrationTrackingCompletion::MacBasebandEnabled
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum PhyCalibrationTrackingExternalBinding {
+    Register(PhyCalibrationTrackingRegisterBinding),
+    MacBaseband(PhyCalibrationTrackingMacBasebandBinding),
+}
+
+impl PhyCalibrationTrackingExternalBinding {
+    pub const fn lower(
+        action: PhyCalibrationTrackingAction,
+    ) -> Result<Self, PhyCalibrationTrackingBindingError> {
+        match action {
+            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { .. }
+            | PhyCalibrationTrackingAction::ConfigureBasebandChannel { .. }
+            | PhyCalibrationTrackingAction::RestoreTxGainCompensation => {
+                match PhyCalibrationTrackingRegisterBinding::new(action) {
+                    Ok(binding) => Ok(Self::Register(binding)),
+                    Err(error) => Err(error),
+                }
+            }
+            PhyCalibrationTrackingAction::EnableMacBaseband => {
+                match PhyCalibrationTrackingMacBasebandBinding::new(action) {
+                    Ok(binding) => Ok(Self::MacBaseband(binding)),
+                    Err(error) => Err(error),
+                }
+            }
+            _ => Err(PhyCalibrationTrackingBindingError::UnsupportedAction),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,5 +675,58 @@ mod tests {
             transition.advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored),
             Err(PhyCalibrationTrackingTransitionError::AlreadyComplete)
         );
+    }
+
+    #[test]
+    fn external_lowering_owns_only_complete_direct_hardware_leaves() {
+        let direct = [
+            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: false },
+            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: true },
+            PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw: 0 },
+            PhyCalibrationTrackingAction::ConfigureBasebandChannel { cbw: 0x13 },
+            PhyCalibrationTrackingAction::EnableMacBaseband,
+            PhyCalibrationTrackingAction::RestoreTxGainCompensation,
+        ];
+        for action in direct {
+            let binding = PhyCalibrationTrackingExternalBinding::lower(action).unwrap();
+            let lowered = match &binding {
+                PhyCalibrationTrackingExternalBinding::Register(binding) => binding.action(),
+                PhyCalibrationTrackingExternalBinding::MacBaseband(binding) => binding.action(),
+            };
+            assert_eq!(lowered, action);
+        }
+
+        let unresolved = [
+            PhyCalibrationTrackingAction::ClearPbus,
+            PhyCalibrationTrackingAction::CalibrateDcode,
+            PhyCalibrationTrackingAction::ResetCommonCalibrationState,
+            PhyCalibrationTrackingAction::PublishRxGainTable,
+            PhyCalibrationTrackingAction::RestoreChipChannel {
+                channel: 11,
+                cbw: 1,
+            },
+            PhyCalibrationTrackingAction::ForceTxRxOff { enabled: true },
+            PhyCalibrationTrackingAction::ResetClassCalibrationState,
+            PhyCalibrationTrackingAction::CalibrateTxDcPwdet {
+                class: PhyCalibrationTrackClass::Wifi,
+            },
+            PhyCalibrationTrackingAction::PublishWifiTxGain { channel: 11 },
+            PhyCalibrationTrackingAction::PublishBluetoothIeee802154TxGain,
+            PhyCalibrationTrackingAction::Complete(PhyCalibrationTrackingOutcome {
+                class: PhyCalibrationTrackClass::Wifi,
+                threshold: 30,
+                common_reference_temperature: 20,
+                wifi_reference_temperature: 20,
+                bluetooth_ieee802154_reference_temperature: 20,
+                common_updated: false,
+                class_updated: false,
+            }),
+        ];
+        for action in unresolved {
+            assert_eq!(
+                PhyCalibrationTrackingExternalBinding::lower(action),
+                Err(PhyCalibrationTrackingBindingError::UnsupportedAction)
+            );
+        }
     }
 }

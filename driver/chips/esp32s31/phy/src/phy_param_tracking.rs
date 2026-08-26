@@ -565,6 +565,15 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         self.child.advance(completion)
     }
 
+    pub fn lower_external(
+        &self,
+    ) -> Result<
+        crate::phy_cal_tracking::PhyCalibrationTrackingExternalBinding,
+        crate::phy_cal_tracking::PhyCalibrationTrackingBindingError,
+    > {
+        crate::phy_cal_tracking::PhyCalibrationTrackingExternalBinding::lower(self.action())
+    }
+
     pub const fn state(&self) -> &crate::phy_state::PhyState {
         self.state
     }
@@ -1153,6 +1162,11 @@ mod tests {
             crate::phy_cal_tracking::PhyCalibrationTrackingAction::RestoreTxGainCompensation
         );
         let mut child = child.commit().unwrap_err();
+        let binding = child.lower_external().unwrap();
+        assert!(matches!(
+            binding,
+            crate::phy_cal_tracking::PhyCalibrationTrackingExternalBinding::Register(_)
+        ));
         assert_eq!(
             child
                 .state()

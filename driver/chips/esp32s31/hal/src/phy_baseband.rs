@@ -142,6 +142,14 @@ pub fn configure_i2c_tx_rate(registers: &mut impl SharedPhyAccess) {
     registers.configure_i2c_tx_rate();
 }
 
+/// Apply complete pinned `phy_txgain_comp_pacfg_new(1)` without coupling it
+/// to calibration-tone setup.
+#[cfg(target_arch = "riscv32")]
+pub fn restore_tx_gain_compensation(registers: &mut impl SharedPhyAccess) {
+    let registers = phy_pac_mut(registers);
+    registers.restore_tx_gain_compensation();
+}
+
 /// Configure the complete baseband watchdog leaf.
 ///
 /// Basis: complete rev0 ROM `phy_bb_wdg_cfg` at `0x2f82_7860`, size `0x2c`.

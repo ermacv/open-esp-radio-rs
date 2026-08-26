@@ -578,7 +578,9 @@ impl RadioPhyRegisters {
         super::svd::zero_register_write::clear_tx_gain_compensation_aux(bb);
     }
 
-    fn restore_tx_gain_compensation(&mut self) {
+    /// Apply complete pinned `phy_txgain_comp_pacfg_new(1)` as four ordered
+    /// fresh-read byte updates.
+    pub fn restore_tx_gain_compensation(&mut self) {
         let compensation = self
             .peripherals
             .phy_baseband_config_oracle

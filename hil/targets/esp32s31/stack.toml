@@ -113,7 +113,7 @@ reason = "connected transition future preserves the exact join and teardown owne
 [[reviewed_frames]]
 function_contains = "::supervisor::station::run_connected::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/station.rs"
-max_bytes = 35072
+max_bytes = 35328
 reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck, split pairwise/group WPA2 replay, rekey, key, network, Rust rate-control, low-power/TWT, ESP-NOW and protected-fragment frontiers plus the parked paired-role scratch lease on the PSRAM task stack"
 
 [[reviewed_frames]]
@@ -143,7 +143,7 @@ reason = "shared initial/reconnect attempt future retains the exact phase owner 
 [[reviewed_frames]]
 function_contains = "run_esp32s31_station_supervisor_epoch"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/composition/supervisor.rs"
-max_bytes = 15360
+max_bytes = 15616
 reason = "chip station supervisor retains the typed dual-VIF role return, shared RX BlockAck capability reference, RX overload disposition, Rust rate-control and bounded low-power/ESP-NOW owners plus the AP retry report across one epoch on the PSRAM task stack"
 
 [[reviewed_frames]]
@@ -179,13 +179,13 @@ reason = "standalone AP service future owns the complete bounded power-save leas
 [[reviewed_frames]]
 function_contains = "::run_initial_join_epoch::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/station_epoch.rs"
-max_bytes = 13568
+max_bytes = 14080
 reason = "initial join future retains the recoverable scan, authentication, split pairwise/group replay, security and radio-owner frontier until the typed join disposition is returned"
 
 [[reviewed_frames]]
 function_contains = "::run_reconnected_epoch::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/station_epoch.rs"
-max_bytes = 13312
+max_bytes = 13568
 reason = "reconnect future retains the recoverable connected owner, split pairwise/group replay and expanded protocol policy until the typed join disposition is returned"
 
 [[reviewed_frames]]

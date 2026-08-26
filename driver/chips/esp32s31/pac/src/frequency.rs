@@ -141,6 +141,40 @@ impl RadioPhyRegisters {
             .modify(|_, w| w.memory_write_pulse().clear_bit());
     }
 
+    /// Apply complete rev0 ROM `phy_read_rf_freq_mem`.
+    pub fn read_frequency_memory(&mut self, address: u16, mode: u8) -> u32 {
+        assert!(
+            address <= 0x07ff,
+            "frequency-memory address must fit eleven bits"
+        );
+        assert!(mode <= 3, "frequency-memory read mode must fit two bits");
+        let frequency = &self.peripherals.phy_frequency_channel_oracle;
+        frequency.frequency_control().modify(|_, w| {
+            w.memory_address_low_unknown()
+                .set(address & 0x03ff)
+                .memory_address_high_or_module_reset_unknown()
+                .bit(address & 0x0400 != 0)
+        });
+        frequency
+            .i2c_number_control()
+            .modify(|_, w| w.memory_read_mode().set(mode));
+        frequency
+            .frequency_memory_read_control()
+            .modify(|_, w| w.read_pulse().set_bit());
+        frequency
+            .frequency_memory_read_control()
+            .modify(|_, w| w.read_pulse().clear_bit());
+        frequency.frequency_memory_read_result().read().bits()
+    }
+
+    /// Restore the low frequency-control channel index without pulsing a switch.
+    pub fn set_frequency_channel_index(&mut self, frequency_index: u8) {
+        self.peripherals
+            .phy_frequency_channel_oracle
+            .frequency_control()
+            .modify(|_, w| w.channel_index().set(frequency_index));
+    }
+
     /// Publish the complete `phy_freq_i2c_num_addr` register image.
     pub fn configure_frequency_i2c_number_addresses(
         &mut self,

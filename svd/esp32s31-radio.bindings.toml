@@ -97,13 +97,19 @@ access = "read-write"
 address = 537919520
 width = 32
 access = "read-write"
-identity = "PHY_FECOEX_RECOVERED.RF_FREQUENCY_CONTROL_OPAQUE"
-peripheral = "PHY_FECOEX_RECOVERED"
-peripheral-type = "PhyFecoexRecovered"
-peripheral-module = "phy_fecoex_recovered"
+identity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_CONTROL"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+peripheral-type = "PhyFrequencyChannelOracle"
+peripheral-module = "phy_frequency_channel_oracle"
 scope = []
-register-method = "rf_frequency_control_opaque"
-fields = []
+register-method = "frequency_memory_read_control"
+
+[[registers.fields]]
+svd-name = "READ_PULSE"
+method = "read_pulse"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537919524
@@ -197,6 +203,13 @@ peripheral-type = "PhyFrequencyChannelOracle"
 peripheral-module = "phy_frequency_channel_oracle"
 scope = []
 register-method = "i2c_number_control"
+
+[[registers.fields]]
+svd-name = "MEMORY_READ_MODE"
+method = "memory_read_mode"
+bit-offset = 0
+bit-width = 2
+access = "read-write"
 
 [[registers.fields]]
 svd-name = "NUMBER_ADDRESS_0_UNKNOWN"
@@ -398,13 +411,13 @@ access = "write-only"
 [[registers]]
 address = 537919552
 width = 32
-access = "unspecified"
-identity = "PHY_FECOEX_RECOVERED.RF_FREQUENCY_RESULT_OPAQUE"
-peripheral = "PHY_FECOEX_RECOVERED"
-peripheral-type = "PhyFecoexRecovered"
-peripheral-module = "phy_fecoex_recovered"
+access = "read-only"
+identity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_RESULT"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+peripheral-type = "PhyFrequencyChannelOracle"
+peripheral-module = "phy_frequency_channel_oracle"
 scope = []
-register-method = "rf_frequency_result_opaque"
+register-method = "frequency_memory_read_result"
 fields = []
 
 [[registers]]

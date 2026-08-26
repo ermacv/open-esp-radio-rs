@@ -1320,6 +1320,21 @@
           </fields>
         </register>
         <register>
+          <name>FREQUENCY_MEMORY_READ_CONTROL</name>
+          <description>Complete phy_read_rf_freq_mem pulses bit 16 after publishing the address and read mode; all other bits remain preserved and unnamed.</description>
+          <addressOffset>0x20</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>READ_PULSE</name>
+              <description>Set and then cleared by complete phy_read_rf_freq_mem for one synchronous frequency-memory read transaction.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
           <name>FREQUENCY_PARAMETER_0_OPAQUE</name>
           <description>Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.</description>
           <addressOffset>0x24</addressOffset>
@@ -1429,6 +1444,18 @@
           <size>0x20</size>
           <access>read-write</access>
           <fields>
+            <field>
+              <name>MEMORY_READ_MODE</name>
+              <description>Complete phy_read_rf_freq_mem replaces only the low two bits with its read-mode argument.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
+            </field>
             <field>
               <name>NUMBER_ADDRESS_0_UNKNOWN</name>
               <bitOffset>8</bitOffset>
@@ -1542,6 +1569,13 @@
               </writeConstraint>
             </field>
           </fields>
+        </register>
+        <register>
+          <name>FREQUENCY_MEMORY_READ_RESULT</name>
+          <description>Complete phy_read_rf_freq_mem returns this full word after the read pulse; individual result fields are interpreted by the caller.</description>
+          <addressOffset>0x40</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
         </register>
         <register>
           <name>FBW_BT_FILTER_CONTROL</name>
@@ -12446,19 +12480,6 @@
               </enumeratedValues>
             </field>
           </fields>
-        </register>
-        <register>
-          <name>RF_FREQUENCY_CONTROL_OPAQUE</name>
-          <description>Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown.</description>
-          <addressOffset>0x20</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-        </register>
-        <register>
-          <name>RF_FREQUENCY_RESULT_OPAQUE</name>
-          <description>Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown.</description>
-          <addressOffset>0x40</addressOffset>
-          <size>0x20</size>
         </register>
       </registers>
     </peripheral>

@@ -239,6 +239,292 @@ impl PhyFrequencyTableTransition {
     }
 }
 
+const PHY_RF_FREQUENCY_MEMORY_READ_MODE: u8 = 2;
+const PHY_RF_FREQUENCY_MEMORY_WRITE_MODE: u8 = 3;
+
+/// The only corrections selected by complete rev0 ROM
+/// `phy_rfpll_cap_correct`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyFrequencyCapCorrection {
+    DecreaseTwo,
+    IncreaseTwo,
+}
+
+impl PhyFrequencyCapCorrection {
+    const fn delta(self) -> i16 {
+        match self {
+            Self::DecreaseTwo => -2,
+            Self::IncreaseTwo => 2,
+        }
+    }
+}
+
+/// Inputs formerly read by `phy_pll_cap_mem_update` from shared globals.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyFrequencyCapMemoryRequest {
+    pub correction: PhyFrequencyCapCorrection,
+    pub current_channel: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyFrequencyCapMemoryOutcome {
+    pub entries_updated: u8,
+    pub correction: PhyFrequencyCapCorrection,
+    pub restored_frequency_index: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyFrequencyCapMemoryAction {
+    ReadMemory {
+        entry_index: u8,
+        address: u16,
+        mode: u8,
+    },
+    WriteMemory {
+        entry_index: u8,
+        address: u16,
+        value: u32,
+        mode: u8,
+    },
+    RestoreChannelIndex {
+        frequency_index: u8,
+    },
+    Complete(PhyFrequencyCapMemoryOutcome),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyFrequencyCapMemoryCompletion {
+    MemoryRead {
+        entry_index: u8,
+        address: u16,
+        mode: u8,
+        value: u32,
+    },
+    MemoryWritten {
+        entry_index: u8,
+        address: u16,
+        mode: u8,
+    },
+    ChannelIndexRestored {
+        frequency_index: u8,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyFrequencyCapMemoryTransitionError {
+    WrongCompletion,
+    AlreadyComplete,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum PhyFrequencyCapMemoryStep {
+    Read { entry_index: u8 },
+    Write { entry_index: u8, value: u32 },
+    RestoreChannelIndex,
+    Complete,
+}
+
+/// Exact arithmetic used by complete rev0 ROM `phy_pll_cap_mem_update` for
+/// one RF frequency-memory word.
+pub const fn phy_frequency_cap_adjusted_word(
+    raw: u32,
+    correction: PhyFrequencyCapCorrection,
+) -> u32 {
+    let cap = ((raw & 0xff) | ((raw >> 6) & 0x100)) as u16;
+    let adjusted = cap.wrapping_add(correction.delta() as u16);
+    let signed_high = ((adjusted as i16 as i32) >> 8) as u32;
+    ((raw & 0x0000_bf00) | (adjusted as u8 as u32) | signed_high.wrapping_shl(14)) & 0x00ff_ffff
+}
+
+/// Exact low-byte channel image restored by `phy_pll_cap_mem_update`.
+pub const fn phy_frequency_channel_index(channel: u16) -> u8 {
+    crate::phy_channel::channel_to_frequency(channel).wrapping_sub(0x60) as u8
+}
+
+/// Non-cloneable caller-driven owner of the 85-entry RFPLL cap update.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyFrequencyCapMemoryTransition {
+    request: PhyFrequencyCapMemoryRequest,
+    step: PhyFrequencyCapMemoryStep,
+}
+
+impl PhyFrequencyCapMemoryTransition {
+    pub const fn new(request: PhyFrequencyCapMemoryRequest) -> Self {
+        Self {
+            request,
+            step: PhyFrequencyCapMemoryStep::Read { entry_index: 0 },
+        }
+    }
+
+    const fn address(entry_index: u8) -> u16 {
+        phy_get_freq_mem_addr(
+            PHY_RF_FREQUENCY_MEMORY_BASE as u32,
+            PHY_FREQUENCY_MEMORY_ENTRY_STRIDE as u32,
+            entry_index as u32,
+            0,
+        )
+    }
+
+    pub const fn action(&self) -> PhyFrequencyCapMemoryAction {
+        match self.step {
+            PhyFrequencyCapMemoryStep::Read { entry_index } => {
+                PhyFrequencyCapMemoryAction::ReadMemory {
+                    entry_index,
+                    address: Self::address(entry_index),
+                    mode: PHY_RF_FREQUENCY_MEMORY_READ_MODE,
+                }
+            }
+            PhyFrequencyCapMemoryStep::Write { entry_index, value } => {
+                PhyFrequencyCapMemoryAction::WriteMemory {
+                    entry_index,
+                    address: Self::address(entry_index),
+                    value,
+                    mode: PHY_RF_FREQUENCY_MEMORY_WRITE_MODE,
+                }
+            }
+            PhyFrequencyCapMemoryStep::RestoreChannelIndex => {
+                PhyFrequencyCapMemoryAction::RestoreChannelIndex {
+                    frequency_index: phy_frequency_channel_index(self.request.current_channel),
+                }
+            }
+            PhyFrequencyCapMemoryStep::Complete => {
+                PhyFrequencyCapMemoryAction::Complete(PhyFrequencyCapMemoryOutcome {
+                    entries_updated: PHY_FREQUENCY_TABLE_ENTRY_COUNT,
+                    correction: self.request.correction,
+                    restored_frequency_index: phy_frequency_channel_index(
+                        self.request.current_channel,
+                    ),
+                })
+            }
+        }
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: PhyFrequencyCapMemoryCompletion,
+    ) -> Result<(), PhyFrequencyCapMemoryTransitionError> {
+        self.step = match (&self.step, completion) {
+            (
+                PhyFrequencyCapMemoryStep::Read { entry_index },
+                PhyFrequencyCapMemoryCompletion::MemoryRead {
+                    entry_index: completed_entry,
+                    address,
+                    mode: PHY_RF_FREQUENCY_MEMORY_READ_MODE,
+                    value,
+                },
+            ) if completed_entry == *entry_index && address == Self::address(*entry_index) => {
+                PhyFrequencyCapMemoryStep::Write {
+                    entry_index: *entry_index,
+                    value: phy_frequency_cap_adjusted_word(value, self.request.correction),
+                }
+            }
+            (
+                PhyFrequencyCapMemoryStep::Write { entry_index, .. },
+                PhyFrequencyCapMemoryCompletion::MemoryWritten {
+                    entry_index: completed_entry,
+                    address,
+                    mode: PHY_RF_FREQUENCY_MEMORY_WRITE_MODE,
+                },
+            ) if completed_entry == *entry_index && address == Self::address(*entry_index) => {
+                let next = entry_index.wrapping_add(1);
+                if next == PHY_FREQUENCY_TABLE_ENTRY_COUNT {
+                    PhyFrequencyCapMemoryStep::RestoreChannelIndex
+                } else {
+                    PhyFrequencyCapMemoryStep::Read { entry_index: next }
+                }
+            }
+            (
+                PhyFrequencyCapMemoryStep::RestoreChannelIndex,
+                PhyFrequencyCapMemoryCompletion::ChannelIndexRestored { frequency_index },
+            ) if frequency_index == phy_frequency_channel_index(self.request.current_channel) => {
+                PhyFrequencyCapMemoryStep::Complete
+            }
+            (PhyFrequencyCapMemoryStep::Complete, _) => {
+                return Err(PhyFrequencyCapMemoryTransitionError::AlreadyComplete);
+            }
+            _ => return Err(PhyFrequencyCapMemoryTransitionError::WrongCompletion),
+        };
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyFrequencyCapMemoryBindingError {
+    UnsupportedAction,
+}
+
+/// Non-cloneable owner of one RF frequency-memory MMIO transaction.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyFrequencyCapMemoryExternalBinding {
+    action: PhyFrequencyCapMemoryAction,
+}
+
+impl PhyFrequencyCapMemoryExternalBinding {
+    pub const fn lower(
+        action: PhyFrequencyCapMemoryAction,
+    ) -> Result<Self, PhyFrequencyCapMemoryBindingError> {
+        match action {
+            PhyFrequencyCapMemoryAction::Complete(_) => {
+                Err(PhyFrequencyCapMemoryBindingError::UnsupportedAction)
+            }
+            _ => Ok(Self { action }),
+        }
+    }
+
+    pub const fn action(&self) -> PhyFrequencyCapMemoryAction {
+        self.action
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target(
+        self,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
+    ) -> PhyFrequencyCapMemoryCompletion {
+        match self.action {
+            PhyFrequencyCapMemoryAction::ReadMemory {
+                entry_index,
+                address,
+                mode,
+            } => {
+                let value = open_esp_radio_esp32s31_hal::phy_frequency::read_memory(
+                    registers, address, mode,
+                );
+                PhyFrequencyCapMemoryCompletion::MemoryRead {
+                    entry_index,
+                    address,
+                    mode,
+                    value,
+                }
+            }
+            PhyFrequencyCapMemoryAction::WriteMemory {
+                entry_index,
+                address,
+                value,
+                mode,
+            } => {
+                open_esp_radio_esp32s31_hal::phy_frequency::write_memory(
+                    registers, address, value, mode,
+                );
+                PhyFrequencyCapMemoryCompletion::MemoryWritten {
+                    entry_index,
+                    address,
+                    mode,
+                }
+            }
+            PhyFrequencyCapMemoryAction::RestoreChannelIndex { frequency_index } => {
+                open_esp_radio_esp32s31_hal::phy_frequency::restore_channel_index(
+                    registers,
+                    frequency_index,
+                );
+                PhyFrequencyCapMemoryCompletion::ChannelIndexRestored { frequency_index }
+            }
+            PhyFrequencyCapMemoryAction::Complete(_) => {
+                unreachable!("terminal frequency-memory action cannot be externally lowered")
+            }
+        }
+    }
+}
+
 const fn i2c_address(block: u8, register: u8) -> PhyI2cAddress {
     PhyI2cAddress::new_internal(block, register)
 }
@@ -1277,12 +1563,17 @@ mod tests {
     use super::{
         PHY_FREQUENCY_TABLE_ENTRY_COUNT, PhyChannelFrequencyInitAction,
         PhyChannelFrequencyInitCompletion, PhyChannelFrequencyInitRequest,
-        PhyChannelFrequencyInitTransition, PhyChannelFrequencyRfpllPoint, PhyFrequencyI2cAction,
-        PhyFrequencyI2cCompletion, PhyFrequencyI2cRequest, PhyFrequencyI2cTransition,
-        PhyFrequencyI2cTransitionError, PhyFrequencyTableAction, PhyFrequencyTableCompletion,
-        PhyFrequencyTableParameters, PhyFrequencyTableRequest, PhyFrequencyTableTransition,
-        PhyFrequencyTableTransitionError, i2c_address, phy_frequency_i2c_number_address_image,
-        phy_frequency_memory_record, phy_frequency_xtal_duty,
+        PhyChannelFrequencyInitTransition, PhyChannelFrequencyRfpllPoint,
+        PhyFrequencyCapCorrection, PhyFrequencyCapMemoryAction, PhyFrequencyCapMemoryBindingError,
+        PhyFrequencyCapMemoryCompletion, PhyFrequencyCapMemoryExternalBinding,
+        PhyFrequencyCapMemoryRequest, PhyFrequencyCapMemoryTransition,
+        PhyFrequencyCapMemoryTransitionError, PhyFrequencyI2cAction, PhyFrequencyI2cCompletion,
+        PhyFrequencyI2cRequest, PhyFrequencyI2cTransition, PhyFrequencyI2cTransitionError,
+        PhyFrequencyTableAction, PhyFrequencyTableCompletion, PhyFrequencyTableParameters,
+        PhyFrequencyTableRequest, PhyFrequencyTableTransition, PhyFrequencyTableTransitionError,
+        i2c_address, phy_frequency_cap_adjusted_word, phy_frequency_channel_index,
+        phy_frequency_i2c_number_address_image, phy_frequency_memory_record,
+        phy_frequency_xtal_duty,
     };
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
 
@@ -1303,6 +1594,127 @@ mod tests {
         assert_eq!(
             super::phy_get_freq_mem_addr(0xffff_ffff, 0xffff_ffff, 2, 3),
             0
+        );
+    }
+
+    #[test]
+    fn cap_adjustment_preserves_the_rom_mask_and_reencodes_bit_eight() {
+        assert_eq!(
+            phy_frequency_cap_adjusted_word(0x00aa_bffe, PhyFrequencyCapCorrection::IncreaseTwo,),
+            0x0000_ff00
+        );
+        assert_eq!(
+            phy_frequency_cap_adjusted_word(0x00aa_ff01, PhyFrequencyCapCorrection::DecreaseTwo,),
+            0x0000_bfff
+        );
+        assert_eq!(phy_frequency_channel_index(11), 62);
+        assert_eq!(phy_frequency_channel_index(2_462), 62);
+    }
+
+    #[test]
+    fn cap_memory_transition_reads_and_writes_all_entries_before_restore() {
+        let request = PhyFrequencyCapMemoryRequest {
+            correction: PhyFrequencyCapCorrection::IncreaseTwo,
+            current_channel: 11,
+        };
+        let mut transition = PhyFrequencyCapMemoryTransition::new(request);
+        let mut reads = 0_u8;
+        let mut writes = 0_u8;
+
+        loop {
+            match transition.action() {
+                PhyFrequencyCapMemoryAction::ReadMemory {
+                    entry_index,
+                    address,
+                    mode,
+                } => {
+                    assert_eq!(entry_index, reads);
+                    assert_eq!(address, 0x20 + u16::from(entry_index) * 7);
+                    assert_eq!(mode, 2);
+                    transition
+                        .advance(PhyFrequencyCapMemoryCompletion::MemoryRead {
+                            entry_index,
+                            address,
+                            mode,
+                            value: 0x00aa_bf20,
+                        })
+                        .unwrap();
+                    reads += 1;
+                }
+                PhyFrequencyCapMemoryAction::WriteMemory {
+                    entry_index,
+                    address,
+                    value,
+                    mode,
+                } => {
+                    assert_eq!(entry_index, writes);
+                    assert_eq!(address, 0x20 + u16::from(entry_index) * 7);
+                    assert_eq!(value, 0x0000_bf22);
+                    assert_eq!(mode, 3);
+                    transition
+                        .advance(PhyFrequencyCapMemoryCompletion::MemoryWritten {
+                            entry_index,
+                            address,
+                            mode,
+                        })
+                        .unwrap();
+                    writes += 1;
+                }
+                PhyFrequencyCapMemoryAction::RestoreChannelIndex { frequency_index } => {
+                    assert_eq!(reads, PHY_FREQUENCY_TABLE_ENTRY_COUNT);
+                    assert_eq!(writes, PHY_FREQUENCY_TABLE_ENTRY_COUNT);
+                    assert_eq!(frequency_index, 62);
+                    transition
+                        .advance(PhyFrequencyCapMemoryCompletion::ChannelIndexRestored {
+                            frequency_index,
+                        })
+                        .unwrap();
+                }
+                PhyFrequencyCapMemoryAction::Complete(outcome) => {
+                    assert_eq!(outcome.entries_updated, PHY_FREQUENCY_TABLE_ENTRY_COUNT);
+                    assert_eq!(outcome.correction, request.correction);
+                    assert_eq!(outcome.restored_frequency_index, 62);
+                    break;
+                }
+            }
+        }
+
+        assert_eq!(
+            transition.advance(PhyFrequencyCapMemoryCompletion::ChannelIndexRestored {
+                frequency_index: 62,
+            }),
+            Err(PhyFrequencyCapMemoryTransitionError::AlreadyComplete)
+        );
+    }
+
+    #[test]
+    fn cap_memory_transition_and_binding_reject_foreign_or_terminal_edges() {
+        let mut transition = PhyFrequencyCapMemoryTransition::new(PhyFrequencyCapMemoryRequest {
+            correction: PhyFrequencyCapCorrection::DecreaseTwo,
+            current_channel: 1,
+        });
+        assert_eq!(
+            transition.advance(PhyFrequencyCapMemoryCompletion::MemoryRead {
+                entry_index: 1,
+                address: 0x27,
+                mode: 2,
+                value: 0x0000_ff80,
+            }),
+            Err(PhyFrequencyCapMemoryTransitionError::WrongCompletion)
+        );
+
+        let action = transition.action();
+        let binding = PhyFrequencyCapMemoryExternalBinding::lower(action).unwrap();
+        assert_eq!(binding.action(), action);
+        assert_eq!(
+            PhyFrequencyCapMemoryExternalBinding::lower(PhyFrequencyCapMemoryAction::Complete(
+                super::PhyFrequencyCapMemoryOutcome {
+                    entries_updated: 85,
+                    correction: PhyFrequencyCapCorrection::DecreaseTwo,
+                    restored_frequency_index: 12,
+                }
+            )),
+            Err(PhyFrequencyCapMemoryBindingError::UnsupportedAction)
         );
     }
 

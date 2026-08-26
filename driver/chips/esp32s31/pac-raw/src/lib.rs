@@ -3680,19 +3680,20 @@ pub mod phy_frequency_channel_oracle {
     pub struct RegisterBlock {
         _reserved0: [u8; 0x1c],
         frequency_control: FrequencyControl,
-        _reserved1: [u8; 0x04],
+        frequency_memory_read_control: FrequencyMemoryReadControl,
         frequency_parameter_0_opaque: FrequencyParameter0Opaque,
         frequency_parameter_1_status: FrequencyParameter1Status,
         frequency_memory_data: FrequencyMemoryData,
         i2c_number_control: I2cNumberControl,
         i2c_number_word: [I2cNumberWord; 3],
-        _reserved6: [u8; 0x0834],
+        frequency_memory_read_result: FrequencyMemoryReadResult,
+        _reserved8: [u8; 0x0830],
         fbw_bt_filter_control: FbwBtFilterControl,
-        _reserved7: [u8; 0x3b88],
+        _reserved9: [u8; 0x3b88],
         channel_tx_offset_control: ChannelTxOffsetControl,
-        _reserved8: [u8; 0x3444],
+        _reserved10: [u8; 0x3444],
         nrx_frequency_control: NrxFrequencyControl,
-        _reserved9: [u8; 0x0494],
+        _reserved11: [u8; 0x0494],
         channel_cbw_control_0: ChannelCbwControl0,
         channel_cbw_control_1: ChannelCbwControl1,
     }
@@ -3701,6 +3702,11 @@ pub mod phy_frequency_channel_oracle {
         #[inline(always)]
         pub const fn frequency_control(&self) -> &FrequencyControl {
             &self.frequency_control
+        }
+        #[doc = "0x20 - Complete phy_read_rf_freq_mem pulses bit 16 after publishing the address and read mode; all other bits remain preserved and unnamed."]
+        #[inline(always)]
+        pub const fn frequency_memory_read_control(&self) -> &FrequencyMemoryReadControl {
+            &self.frequency_memory_read_control
         }
         #[doc = "0x24 - Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public."]
         #[inline(always)]
@@ -3732,6 +3738,11 @@ pub mod phy_frequency_channel_oracle {
         #[inline(always)]
         pub fn i2c_number_word_iter(&self) -> impl Iterator<Item = &I2cNumberWord> {
             self.i2c_number_word.iter()
+        }
+        #[doc = "0x40 - Complete phy_read_rf_freq_mem returns this full word after the read pulse; individual result fields are interpreted by the caller."]
+        #[inline(always)]
+        pub const fn frequency_memory_read_result(&self) -> &FrequencyMemoryReadResult {
+            &self.frequency_memory_read_result
         }
         #[doc = "0x874 - Shared filter-bandwidth and Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and phy_bt_filter_reg."]
         #[inline(always)]
@@ -3911,6 +3922,46 @@ pub mod phy_frequency_channel_oracle {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "FREQUENCY_MEMORY_READ_CONTROL (rw) register accessor: Complete phy_read_rf_freq_mem pulses bit 16 after publishing the address and read mode; all other bits remain preserved and unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_memory_read_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_memory_read_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_memory_read_control`] module"]
+    #[doc(alias = "FREQUENCY_MEMORY_READ_CONTROL")]
+    pub type FrequencyMemoryReadControl =
+        crate::Reg<frequency_memory_read_control::FrequencyMemoryReadControlSpec>;
+    #[doc = "Complete phy_read_rf_freq_mem pulses bit 16 after publishing the address and read mode; all other bits remain preserved and unnamed."]
+    pub mod frequency_memory_read_control {
+        #[doc = "Register `FREQUENCY_MEMORY_READ_CONTROL` reader"]
+        pub type R = crate::R<FrequencyMemoryReadControlSpec>;
+        #[doc = "Register `FREQUENCY_MEMORY_READ_CONTROL` writer"]
+        pub type W = crate::W<FrequencyMemoryReadControlSpec>;
+        #[doc = "Field `READ_PULSE` reader - Set and then cleared by complete phy_read_rf_freq_mem for one synchronous frequency-memory read transaction."]
+        pub type ReadPulseR = crate::BitReader;
+        #[doc = "Field `READ_PULSE` writer - Set and then cleared by complete phy_read_rf_freq_mem for one synchronous frequency-memory read transaction."]
+        pub type ReadPulseW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 16 - Set and then cleared by complete phy_read_rf_freq_mem for one synchronous frequency-memory read transaction."]
+            #[inline(always)]
+            pub fn read_pulse(&self) -> ReadPulseR {
+                ReadPulseR::new(((self.bits >> 16) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 16 - Set and then cleared by complete phy_read_rf_freq_mem for one synchronous frequency-memory read transaction."]
+            #[inline(always)]
+            pub fn read_pulse(&mut self) -> ReadPulseW<'_, FrequencyMemoryReadControlSpec> {
+                ReadPulseW::new(self, 16)
+            }
+        }
+        #[doc = "Complete phy_read_rf_freq_mem pulses bit 16 after publishing the address and read mode; all other bits remain preserved and unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_memory_read_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_memory_read_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrequencyMemoryReadControlSpec;
+        impl crate::RegisterSpec for FrequencyMemoryReadControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`frequency_memory_read_control::R`](R) reader structure"]
+        impl crate::Readable for FrequencyMemoryReadControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`frequency_memory_read_control::W`](W) writer structure"]
+        impl crate::Writable for FrequencyMemoryReadControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
     #[doc = "FREQUENCY_PARAMETER_0_OPAQUE (w) register accessor: Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_parameter_0_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_parameter_0_opaque`] module"]
     #[doc(alias = "FREQUENCY_PARAMETER_0_OPAQUE")]
     pub type FrequencyParameter0Opaque =
@@ -4061,6 +4112,10 @@ pub mod phy_frequency_channel_oracle {
         pub type R = crate::R<I2cNumberControlSpec>;
         #[doc = "Register `I2C_NUMBER_CONTROL` writer"]
         pub type W = crate::W<I2cNumberControlSpec>;
+        #[doc = "Field `MEMORY_READ_MODE` reader - Complete phy_read_rf_freq_mem replaces only the low two bits with its read-mode argument."]
+        pub type MemoryReadModeR = crate::FieldReader;
+        #[doc = "Field `MEMORY_READ_MODE` writer - Complete phy_read_rf_freq_mem replaces only the low two bits with its read-mode argument."]
+        pub type MemoryReadModeW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `NUMBER_ADDRESS_0_UNKNOWN` reader - "]
         pub type NumberAddress0UnknownR = crate::FieldReader;
         #[doc = "Field `NUMBER_ADDRESS_0_UNKNOWN` writer - "]
@@ -4070,6 +4125,11 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `NUMBER_ADDRESS_1_UNKNOWN` writer - "]
         pub type NumberAddress1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         impl R {
+            #[doc = "Bits 0:1 - Complete phy_read_rf_freq_mem replaces only the low two bits with its read-mode argument."]
+            #[inline(always)]
+            pub fn memory_read_mode(&self) -> MemoryReadModeR {
+                MemoryReadModeR::new((self.bits & 3) as u8)
+            }
             #[doc = "Bits 8:12"]
             #[inline(always)]
             pub fn number_address_0_unknown(&self) -> NumberAddress0UnknownR {
@@ -4082,6 +4142,11 @@ pub mod phy_frequency_channel_oracle {
             }
         }
         impl W {
+            #[doc = "Bits 0:1 - Complete phy_read_rf_freq_mem replaces only the low two bits with its read-mode argument."]
+            #[inline(always)]
+            pub fn memory_read_mode(&mut self) -> MemoryReadModeW<'_, I2cNumberControlSpec> {
+                MemoryReadModeW::new(self, 0)
+            }
             #[doc = "Bits 8:12"]
             #[inline(always)]
             pub fn number_address_0_unknown(
@@ -4188,6 +4253,27 @@ pub mod phy_frequency_channel_oracle {
         impl crate::Writable for I2cNumberWordSpec {
             type Safety = crate::Unsafe;
         }
+    }
+    #[doc = "FREQUENCY_MEMORY_READ_RESULT (r) register accessor: Complete phy_read_rf_freq_mem returns this full word after the read pulse; individual result fields are interpreted by the caller.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_memory_read_result::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_memory_read_result`] module"]
+    #[doc(alias = "FREQUENCY_MEMORY_READ_RESULT")]
+    pub type FrequencyMemoryReadResult =
+        crate::Reg<frequency_memory_read_result::FrequencyMemoryReadResultSpec>;
+    #[doc = "Complete phy_read_rf_freq_mem returns this full word after the read pulse; individual result fields are interpreted by the caller."]
+    pub mod frequency_memory_read_result {
+        #[doc = "Register `FREQUENCY_MEMORY_READ_RESULT` reader"]
+        pub type R = crate::R<FrequencyMemoryReadResultSpec>;
+        impl core::fmt::Debug for R {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                write!(f, "{}", self.bits())
+            }
+        }
+        #[doc = "Complete phy_read_rf_freq_mem returns this full word after the read pulse; individual result fields are interpreted by the caller.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_memory_read_result::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrequencyMemoryReadResultSpec;
+        impl crate::RegisterSpec for FrequencyMemoryReadResultSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`frequency_memory_read_result::R`](R) reader structure"]
+        impl crate::Readable for FrequencyMemoryReadResultSpec {}
     }
     #[doc = "FBW_BT_FILTER_CONTROL (rw) register accessor: Shared filter-bandwidth and Bluetooth-filter word independently updated by complete phy_wifi_fbw_sel and phy_bt_filter_reg.\n\nYou can [`read`](crate::Reg::read) this register and get [`fbw_bt_filter_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fbw_bt_filter_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fbw_bt_filter_control`] module"]
     #[doc(alias = "FBW_BT_FILTER_CONTROL")]
@@ -30166,26 +30252,12 @@ pub mod phy_fecoex_recovered {
     pub struct RegisterBlock {
         _reserved0: [u8; 0x10],
         bt_coex_pti_config: BtCoexPtiConfig,
-        _reserved1: [u8; 0x0c],
-        rf_frequency_control_opaque: RfFrequencyControlOpaque,
-        _reserved2: [u8; 0x1c],
-        rf_frequency_result_opaque: RfFrequencyResultOpaque,
     }
     impl RegisterBlock {
         #[doc = "0x10 - Complete coex_pti_v2 performs two ordered fresh-read RMW operations: it first replaces bits 31:16 with 0x0640, then replaces bits 15:0 with 0x0010. Individual bit meanings remain unknown."]
         #[inline(always)]
         pub const fn bt_coex_pti_config(&self) -> &BtCoexPtiConfig {
             &self.bt_coex_pti_config
-        }
-        #[doc = "0x20 - Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown."]
-        #[inline(always)]
-        pub const fn rf_frequency_control_opaque(&self) -> &RfFrequencyControlOpaque {
-            &self.rf_frequency_control_opaque
-        }
-        #[doc = "0x40 - Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown."]
-        #[inline(always)]
-        pub const fn rf_frequency_result_opaque(&self) -> &RfFrequencyResultOpaque {
-            &self.rf_frequency_result_opaque
         }
     }
     #[doc = "BT_COEX_PTI_CONFIG (rw) register accessor: Complete coex_pti_v2 performs two ordered fresh-read RMW operations: it first replaces bits 31:16 with 0x0640, then replaces bits 15:0 with 0x0010. Individual bit meanings remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`bt_coex_pti_config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bt_coex_pti_config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bt_coex_pti_config`] module"]
@@ -30324,62 +30396,6 @@ pub mod phy_fecoex_recovered {
         impl crate::Readable for BtCoexPtiConfigSpec {}
         #[doc = "`write(|w| ..)` method takes [`bt_coex_pti_config::W`](W) writer structure"]
         impl crate::Writable for BtCoexPtiConfigSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-    #[doc = "RF_FREQUENCY_CONTROL_OPAQUE (rw) register accessor: Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_frequency_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_frequency_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rf_frequency_control_opaque`] module"]
-    #[doc(alias = "RF_FREQUENCY_CONTROL_OPAQUE")]
-    pub type RfFrequencyControlOpaque =
-        crate::Reg<rf_frequency_control_opaque::RfFrequencyControlOpaqueSpec>;
-    #[doc = "Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown."]
-    pub mod rf_frequency_control_opaque {
-        #[doc = "Register `RF_FREQUENCY_CONTROL_OPAQUE` reader"]
-        pub type R = crate::R<RfFrequencyControlOpaqueSpec>;
-        #[doc = "Register `RF_FREQUENCY_CONTROL_OPAQUE` writer"]
-        pub type W = crate::W<RfFrequencyControlOpaqueSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
-            }
-        }
-        impl W {}
-        #[doc = "Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_frequency_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_frequency_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RfFrequencyControlOpaqueSpec;
-        impl crate::RegisterSpec for RfFrequencyControlOpaqueSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`rf_frequency_control_opaque::R`](R) reader structure"]
-        impl crate::Readable for RfFrequencyControlOpaqueSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rf_frequency_control_opaque::W`](W) writer structure"]
-        impl crate::Writable for RfFrequencyControlOpaqueSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-    #[doc = "RF_FREQUENCY_RESULT_OPAQUE (rw) register accessor: Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_frequency_result_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_frequency_result_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rf_frequency_result_opaque`] module"]
-    #[doc(alias = "RF_FREQUENCY_RESULT_OPAQUE")]
-    pub type RfFrequencyResultOpaque =
-        crate::Reg<rf_frequency_result_opaque::RfFrequencyResultOpaqueSpec>;
-    #[doc = "Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown."]
-    pub mod rf_frequency_result_opaque {
-        #[doc = "Register `RF_FREQUENCY_RESULT_OPAQUE` reader"]
-        pub type R = crate::R<RfFrequencyResultOpaqueSpec>;
-        #[doc = "Register `RF_FREQUENCY_RESULT_OPAQUE` writer"]
-        pub type W = crate::W<RfFrequencyResultOpaqueSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
-            }
-        }
-        impl W {}
-        #[doc = "Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_frequency_result_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_frequency_result_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RfFrequencyResultOpaqueSpec;
-        impl crate::RegisterSpec for RfFrequencyResultOpaqueSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`rf_frequency_result_opaque::R`](R) reader structure"]
-        impl crate::Readable for RfFrequencyResultOpaqueSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rf_frequency_result_opaque::W`](W) writer structure"]
-        impl crate::Writable for RfFrequencyResultOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }

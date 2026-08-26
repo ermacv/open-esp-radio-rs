@@ -56,6 +56,20 @@ pub fn write_memory(registers: &mut impl SharedPhyAccess, address: u16, value: u
     registers.write_frequency_memory(address, value, mode);
 }
 
+/// Apply complete rev0 ROM `phy_read_rf_freq_mem`.
+#[cfg(target_arch = "riscv32")]
+pub fn read_memory(registers: &mut impl SharedPhyAccess, address: u16, mode: u8) -> u32 {
+    let registers = phy_pac_mut(registers);
+    registers.read_frequency_memory(address, mode)
+}
+
+/// Restore the frequency-control channel index without starting a switch.
+#[cfg(target_arch = "riscv32")]
+pub fn restore_channel_index(registers: &mut impl SharedPhyAccess, frequency_index: u8) {
+    let registers = phy_pac_mut(registers);
+    registers.set_frequency_channel_index(frequency_index);
+}
+
 /// Publish complete rev0 ROM `phy_freq_i2c_num_addr`.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_i2c_number_addresses(

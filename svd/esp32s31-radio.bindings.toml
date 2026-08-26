@@ -38078,6 +38078,24 @@ bit-width = 32
 access = "read-write"
 
 [[registers]]
+address = 537980968
+width = 32
+access = "read-write"
+identity = "MODEM_LPCON_PHY_TICK.TICK_CONF"
+peripheral = "MODEM_LPCON_PHY_TICK"
+peripheral-type = "ModemLpconPhyTick"
+peripheral-module = "modem_lpcon_phy_tick"
+scope = []
+register-method = "tick_conf"
+
+[[registers.fields]]
+svd-name = "MODEM_PWR_TICK_TARGET"
+method = "modem_pwr_tick_target"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers]]
 address = 537981952
 width = 32
 access = "read-write"

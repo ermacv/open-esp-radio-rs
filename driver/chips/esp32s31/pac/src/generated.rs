@@ -72,6 +72,21 @@ impl Ieee802154SharedTxOnDelayOverride {
     }
 }
 
+/// The sole fixed-crystal modem-power tick target accepted by the ESP32-S31 common-PHY prelude.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ModemPowerTickTarget {
+    /// The fixed 40 MHz ESP32-S31 crystal encoded by complete phy_get_xtal_freq as frequency_mhz minus one.
+    Xtal40Mhz = 0x00000027,
+}
+
+impl ModemPowerTickTarget {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// The two complete-ROM-evidenced power-detector circuit-mode encodings; no other three-bit value crosses the closed PAC.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1477,6 +1492,18 @@ pub(crate) fn publish_station_tbtt_target(
     value: StationTbttTargetBits35To10,
 ) {
     crate::svd::masked_register_modify::publish_station_tbtt_target(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_modem_power_tick_for_xtal_40mhz` masked transaction.
+#[inline]
+pub(crate) fn configure_modem_power_tick_for_xtal_40mhz(
+    registers: &crate::svd::ModemLpconPhyTick,
+    value: ModemPowerTickTarget,
+) {
+    crate::svd::masked_register_modify::configure_modem_power_tick_for_xtal_40mhz(
+        registers,
+        value.bits(),
+    );
 }
 
 /// Typed bridge for the reviewed `select_lp_power_detector_circuit_mode` masked transaction.

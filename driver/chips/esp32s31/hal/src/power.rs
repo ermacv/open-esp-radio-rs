@@ -9,8 +9,9 @@
 ///
 /// The open driver owns the order of operations, while the integration layer
 /// owns the chip PAC handles and implements each operation with that PAC. This
-/// keeps documented system peripherals out of the recovered radio PAC and
-/// makes the required ownership transfer explicit in the `Radio<P>` token.
+/// keeps the remaining platform-owned system registers behind the integration
+/// token. The common-PHY `MODEM_LPCON.TICK_CONF` carveout is independently
+/// owned by the route PAC and is not part of this trait.
 pub trait PowerClockControl {
     fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool);
     fn select_hp_active_modem_icg(&mut self);

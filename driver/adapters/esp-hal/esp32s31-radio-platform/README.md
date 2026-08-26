@@ -3,11 +3,13 @@
 This crate is the role-neutral owner of the ESP32-S31 modem platform
 singletons used by radio lifecycles: `MODEM_SYSCON`, `MODEM_LPCON`,
 `HP_SYS_CLKRST`, `PMU`, `LP_AON_CLK_RST`, `LP_PERI`, `LP_TSENS`, and
-`I2C_ANA_MST`. Raw peripheral handles stay private. Clients receive narrow
-semantic leases, and shared clock dependencies are reference-counted before
-they reach MMIO. The Bluetooth lease also implements the six platform
-operation families required by the common `register_chipv7_phy` transition;
-it does not expose any of the underlying singleton tokens.
+`I2C_ANA_MST`. Raw peripheral handles stay private. `MODEM_LPCON` is retained
+as the singleton proof for the remaining shared clock registers; its
+`TICK_CONF` word is operated only through the canonical route-owned PHY PAC.
+Clients receive narrow semantic leases, and shared clock dependencies are
+reference-counted before they reach MMIO. The Bluetooth lease implements only
+the remaining platform operation families required by the common
+`register_chipv7_phy` transition; it exposes no singleton token.
 
 Bluetooth is the first client. The existing Wi-Fi ESP-HAL adapter still owns
 the same singleton types independently, so safe Wi-Fi + Bluetooth composition

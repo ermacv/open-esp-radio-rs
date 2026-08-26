@@ -11752,6 +11752,72 @@ pub mod phy_clock_oracle {
         }
     }
 }
+#[doc = "Role-neutral MODEM_LPCON tick target used by the reviewed common-PHY prelude. Other MODEM_LPCON registers remain platform-owned."]
+pub type ModemLpconPhyTick = crate::Periph<modem_lpcon_phy_tick::RegisterBlock, 0x2010_f000>;
+impl core::fmt::Debug for ModemLpconPhyTick {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ModemLpconPhyTick").finish()
+    }
+}
+#[doc = "Role-neutral MODEM_LPCON tick target used by the reviewed common-PHY prelude. Other MODEM_LPCON registers remain platform-owned."]
+pub mod modem_lpcon_phy_tick {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x28],
+        tick_conf: TickConf,
+    }
+    impl RegisterBlock {
+        #[doc = "0x28 - Fixed-crystal modem-power tick target published by complete phy_get_xtal_freq."]
+        #[inline(always)]
+        pub const fn tick_conf(&self) -> &TickConf {
+            &self.tick_conf
+        }
+    }
+    #[doc = "TICK_CONF (rw) register accessor: Fixed-crystal modem-power tick target published by complete phy_get_xtal_freq.\n\nYou can [`read`](crate::Reg::read) this register and get [`tick_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tick_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tick_conf`] module"]
+    #[doc(alias = "TICK_CONF")]
+    pub type TickConf = crate::Reg<tick_conf::TickConfSpec>;
+    #[doc = "Fixed-crystal modem-power tick target published by complete phy_get_xtal_freq."]
+    pub mod tick_conf {
+        #[doc = "Register `TICK_CONF` reader"]
+        pub type R = crate::R<TickConfSpec>;
+        #[doc = "Register `TICK_CONF` writer"]
+        pub type W = crate::W<TickConfSpec>;
+        #[doc = "Field `MODEM_PWR_TICK_TARGET` reader - Six-bit target replaced with crystal_frequency_mhz minus one by complete phy_get_xtal_freq."]
+        pub type ModemPwrTickTargetR = crate::FieldReader;
+        #[doc = "Field `MODEM_PWR_TICK_TARGET` writer - Six-bit target replaced with crystal_frequency_mhz minus one by complete phy_get_xtal_freq."]
+        pub type ModemPwrTickTargetW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        impl R {
+            #[doc = "Bits 0:5 - Six-bit target replaced with crystal_frequency_mhz minus one by complete phy_get_xtal_freq."]
+            #[inline(always)]
+            pub fn modem_pwr_tick_target(&self) -> ModemPwrTickTargetR {
+                ModemPwrTickTargetR::new((self.bits & 0x3f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - Six-bit target replaced with crystal_frequency_mhz minus one by complete phy_get_xtal_freq."]
+            #[inline(always)]
+            pub fn modem_pwr_tick_target(&mut self) -> ModemPwrTickTargetW<'_, TickConfSpec> {
+                ModemPwrTickTargetW::new(self, 0)
+            }
+        }
+        #[doc = "Fixed-crystal modem-power tick target published by complete phy_get_xtal_freq.\n\nYou can [`read`](crate::Reg::read) this register and get [`tick_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tick_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TickConfSpec;
+        impl crate::RegisterSpec for TickConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tick_conf::R`](R) reader structure"]
+        impl crate::Readable for TickConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tick_conf::W`](W) writer structure"]
+        impl crate::Writable for TickConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets TICK_CONF to value 0x27"]
+        impl crate::Resettable for TickConfSpec {
+            const RESET_VALUE: u32 = 0x27;
+        }
+    }
+}
 #[doc = "Low-power always-on clock/reset registers reached by the reviewed PHY power-detector lifecycle."]
 pub type LpAonClkrst = crate::Periph<lp_aon_clkrst::RegisterBlock, 0x2070_1000>;
 impl core::fmt::Debug for LpAonClkrst {
@@ -49612,6 +49678,8 @@ pub struct Peripherals {
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
+    #[doc = "MODEM_LPCON_PHY_TICK"]
+    pub modem_lpcon_phy_tick: ModemLpconPhyTick,
     #[doc = "LP_AON_CLKRST"]
     pub lp_aon_clkrst: LpAonClkrst,
     #[doc = "LP_PERICLKRST"]
@@ -49821,6 +49889,7 @@ impl Peripherals {
             phy_rx_dco_oracle: unsafe { PhyRxDcoOracle::steal() },
             phy_cold_deadline_oracle: unsafe { PhyColdDeadlineOracle::steal() },
             phy_clock_oracle: unsafe { PhyClockOracle::steal() },
+            modem_lpcon_phy_tick: unsafe { ModemLpconPhyTick::steal() },
             lp_aon_clkrst: unsafe { LpAonClkrst::steal() },
             lp_periclkrst: unsafe { LpPericlkrst::steal() },
             lp_tsens: unsafe { LpTsens::steal() },
@@ -50248,6 +50317,7 @@ pub mod peripheral_ownership {
         pub phy_frequency_channel_oracle: crate::PhyFrequencyChannelOracle,
         pub phy_i2c_command_ram: crate::PhyI2cCommandRam,
         pub phy_iq_estimator_oracle: crate::PhyIqEstimatorOracle,
+        pub modem_lpcon_phy_tick: crate::ModemLpconPhyTick,
         pub lp_aon_clkrst: crate::LpAonClkrst,
         pub lp_periclkrst: crate::LpPericlkrst,
         pub lp_tsens: crate::LpTsens,
@@ -50350,6 +50420,7 @@ pub mod peripheral_ownership {
             phy_rx_dco_oracle,
             phy_cold_deadline_oracle,
             phy_clock_oracle,
+            modem_lpcon_phy_tick,
             lp_aon_clkrst,
             lp_periclkrst,
             lp_tsens,
@@ -50507,6 +50578,7 @@ pub mod peripheral_ownership {
                 phy_frequency_channel_oracle,
                 phy_i2c_command_ram,
                 phy_iq_estimator_oracle,
+                modem_lpcon_phy_tick,
                 lp_aon_clkrst,
                 lp_periclkrst,
                 lp_tsens,
@@ -52428,6 +52500,20 @@ pub mod masked_register_modify {
     pub fn publish_station_tbtt_target(registers: &crate::WifiMacStaTbttTarget, input: u32) {
         registers.target().modify(|reader, writer| {
             let image = (reader.bits() & 0xfc000000) | (input & 0x03ffffff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xffffffc0, accept input mask 0x0000003f, and set 0x00000000 in MODEM_LPCON_PHY_TICK.TICK_CONF.
+    #[inline]
+    pub fn configure_modem_power_tick_for_xtal_40mhz(
+        registers: &crate::ModemLpconPhyTick,
+        input: u32,
+    ) {
+        registers.tick_conf().modify(|reader, writer| {
+            let image = (reader.bits() & 0xffffffc0) | (input & 0x0000003f);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

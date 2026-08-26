@@ -44,7 +44,7 @@
 
     <peripheral>
       <name>MODEM_LPCON</name>
-      <description>SOURCE[ESP32S31_PAC_D0FB94E,S31_MODEM_LPCON_STRUCT]. Exact complete platform-owned modem low-power configuration block from the pinned ESP32-S31 PAC.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E,S31_MODEM_LPCON_STRUCT]. Remaining platform-owned modem low-power configuration registers from the pinned ESP32-S31 PAC; TICK_CONF is carved into the canonical shared-PHY model.</description>
       <baseAddress>0x2010F000</baseAddress>
       <registers>
         <register>
@@ -329,21 +329,6 @@
               <name>RST_DCMEM</name>
               <bitOffset>4</bitOffset>
               <bitWidth>1</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>TICK_CONF</name>
-          <description>TICK_CONF</description>
-          <addressOffset>0x28</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <resetValue>0x00000027</resetValue>
-          <fields>
-            <field>
-              <name>MODEM_PWR_TICK_TARGET</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>6</bitWidth>
             </field>
           </fields>
         </register>

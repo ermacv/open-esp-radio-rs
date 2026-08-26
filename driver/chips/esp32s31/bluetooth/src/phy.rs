@@ -6,8 +6,7 @@
 //! not maintain a Bluetooth-specific shadow of common PHY initialization.
 
 use open_esp_radio_esp32s31_hal::{
-    analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl,
-    phy_prelude::PhyPreludePlatformControl, wifi_bb::PhyWifiBbControl,
+    analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
@@ -28,15 +27,9 @@ use crate::{
 /// This is a composition contract only. Each parent trait remains the owner
 /// of one official system-peripheral operation family; Bluetooth gains no raw
 /// platform-register access through this marker.
-pub trait BluetoothPhyPlatform:
-    PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl
-{
-}
+pub trait BluetoothPhyPlatform: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl {}
 
-impl<T> BluetoothPhyPlatform for T where
-    T: PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl
-{
-}
+impl<T> BluetoothPhyPlatform for T where T: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl {}
 
 /// Caller-owned inputs for one full common-PHY registration.
 pub struct BluetoothPhyInitializationConfig {

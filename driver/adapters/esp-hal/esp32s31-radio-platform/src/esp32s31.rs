@@ -13,7 +13,6 @@ use open_esp_radio_esp32s31_bluetooth::{
 use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
-    phy_prelude::PhyPreludePlatformControl,
     wifi_bb::PhyWifiBbControl,
 };
 
@@ -125,17 +124,6 @@ impl BluetoothClockControl for EspHalBluetoothPlatform<'_> {
 
     fn disable_bluetooth_controller_clocks(&mut self) {
         self.inner.disable_bluetooth_controller_clocks();
-    }
-}
-
-impl PhyPreludePlatformControl for EspHalBluetoothPlatform<'_> {
-    fn configure_fixed_xtal_40mhz_tick(&mut self) {
-        // Complete pinned libphy.a[phy_init.o]::phy_get_xtal_freq replaces the
-        // constrained target with frequency_mhz - 1. ESP32-S31 has a fixed
-        // 40 MHz crystal contract.
-        MODEM_LPCON::regs()
-            .tick_conf()
-            .modify(|_, w| w.modem_pwr_tick_target().set(39));
     }
 }
 

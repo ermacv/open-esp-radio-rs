@@ -22,7 +22,6 @@ use open_esp_radio_esp32s31_hal::{
     PowerClockControl, PowerClockImages,
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
-    phy_prelude::PhyPreludePlatformControl,
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile;
@@ -318,17 +317,6 @@ impl PowerClockControl for EspHalRadioPeripheral {
             phy_i2c_160mhz_selected: i2c_source.clk_i2c_mst_sel_160m().bit_is_set(),
             phy_i2c_master_clock_enabled: i2c_clock.clk_i2c_mst_en().bit_is_set(),
         }
-    }
-}
-
-impl PhyPreludePlatformControl for EspHalRadioPeripheral {
-    fn configure_fixed_xtal_40mhz_tick(&mut self) {
-        // Complete pinned libphy.a[phy_init.o]::phy_get_xtal_freq replaces the
-        // constrained target with frequency_mhz - 1; ESP32-S31 has a fixed
-        // 40 MHz crystal contract.
-        MODEM_LPCON::regs()
-            .tick_conf()
-            .modify(|_, w| w.modem_pwr_tick_target().set(39));
     }
 }
 

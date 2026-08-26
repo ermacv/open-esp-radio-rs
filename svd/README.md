@@ -38,10 +38,11 @@ run loads it together with the schema-2 radio model; direct target-spec
 invocations load it together with `esp32s31-radio.svd`. It is not an input to
 the radio raw PAC, generates no runtime crate, and creates no second peripheral
 owner. Its definitions are pinned to the same `esp-pacs` revision as the
-workspace lockfile. In particular, it mirrors all 23 contiguous
-`MODEM_LPCON` registers at `0x2010_f000..0x2010_f05c` from that PAC, so vendor
-clock, reset, retention-memory and wakeup accesses receive stable register
-identities instead of merely falling inside a broad MMIO window.
+workspace lockfile. It mirrors the 22 platform-owned `MODEM_LPCON` registers
+around the canonical `TICK_CONF` carveout at `0x2010_f028`; that one reviewed
+common-PHY word is generated into the radio PAC instead. Vendor clock, reset,
+retention-memory and wakeup accesses still receive stable register identities
+instead of merely falling inside a broad MMIO window.
 
 ## Evidence policy
 

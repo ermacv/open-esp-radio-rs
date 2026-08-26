@@ -64,6 +64,7 @@ mod mac_tx;
 mod mac_tx_power_init;
 mod mac_tx_queue;
 mod mac_txrx_init;
+mod modem_lpcon_phy;
 pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;

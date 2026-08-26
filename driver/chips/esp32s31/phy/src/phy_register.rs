@@ -1228,8 +1228,7 @@ impl PhyRegisterMmioBinding {
 
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target<
-        P: open_esp_radio_esp32s31_hal::phy_prelude::PhyPreludePlatformControl
-            + open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
+        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
             + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
         R: open_esp_radio_esp32s31_hal::PhyInitializationAccess,
     >(
@@ -1261,7 +1260,7 @@ impl PhyRegisterMmioBinding {
                 open_esp_radio_esp32s31_hal::phy_i2c::pulse_master_reset(platform, host)
             }
             PhyRegisterMmioAction::ConfigureXtal40Mhz => {
-                open_esp_radio_esp32s31_hal::phy_prelude::configure_fixed_xtal_40mhz(platform)
+                open_esp_radio_esp32s31_hal::phy_prelude::configure_fixed_xtal_40mhz(registers)
             }
             PhyRegisterMmioAction::SetCalibrationClock { enabled } => {
                 crate::phy_hardware::set_phy_register_calibration_clock(registers, enabled)

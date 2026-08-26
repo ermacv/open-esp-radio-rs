@@ -95,7 +95,7 @@ fn target_declares_exhaustive_raw_pac_ownership_partitions() {
     let expected = [
         ("WifiMacPeripherals", "wifi_mac", 50_usize),
         ("WifiInterruptPeripherals", "wifi_interrupts", 2),
-        ("RadioPhyPeripherals", "radio_phy", 21),
+        ("RadioPhyPeripherals", "radio_phy", 22),
         ("CoexistencePeripherals", "coexistence", 4),
         ("BluetoothControllerPeripherals", "bluetooth", 19),
         ("BluetoothInterruptPeripherals", "bluetooth_interrupts", 2),
@@ -1406,6 +1406,35 @@ fn removed_provider_and_provenance_paths_do_not_return() {
         stale.is_empty(),
         "production source cites removed migration paths: {stale:#?}"
     );
+}
+
+#[test]
+fn modem_lpcon_phy_tick_has_one_route_owned_transaction() {
+    let repository = repository_root();
+    let generated_svd = fs::read_to_string(repository.join("svd/esp32s31-radio.svd"))
+        .expect("read generated radio SVD");
+    assert!(generated_svd.contains("<name>MODEM_LPCON_PHY_TICK</name>"));
+    assert!(generated_svd.contains("<name>TICK_CONF</name>"));
+
+    let platform_svd = fs::read_to_string(repository.join("svd/esp32s31-platform-radio-deps.svd"))
+        .expect("read platform dependency SVD");
+    assert!(
+        !platform_svd.contains("<name>TICK_CONF</name>"),
+        "the platform sidecar must not retain the route-owned tick register"
+    );
+
+    for path in [
+        repository.join("driver/adapters/esp-hal/esp32s31-wifi/src/lib.rs"),
+        repository.join("driver/adapters/esp-hal/esp32s31-radio-platform/src/esp32s31.rs"),
+    ] {
+        let source = fs::read_to_string(&path).expect("read ESP-HAL adapter");
+        assert!(
+            !source.contains(".tick_conf()"),
+            "ESP-HAL adapter {} bypasses the route-owned tick transaction",
+            path.display()
+        );
+        assert!(!source.contains("PhyPreludePlatformControl"));
+    }
 }
 
 #[test]

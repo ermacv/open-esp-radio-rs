@@ -11,8 +11,7 @@ use open_esp_radio_esp32s31_hal::{
     state::Powered,
 };
 use open_esp_radio_esp32s31_hal::{
-    analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl,
-    phy_prelude::PhyPreludePlatformControl, wifi_bb::PhyWifiBbControl,
+    analog_i2c::PhyPmuControl, phy_i2c::PhyI2cMasterControl, wifi_bb::PhyWifiBbControl,
 };
 
 use crate::{
@@ -2386,7 +2385,7 @@ where
 }
 
 impl<
-    P: PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     R: PhyInitializationAccess,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
@@ -2488,7 +2487,7 @@ pub async fn run_target_ieee802154_phy_register<P, D, O>(
     observer: O,
 ) -> Result<TargetIeee802154PhyRegisterSuccess<P>, TargetIeee802154PhyRegisterFailure<P>>
 where
-    P: PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
@@ -2565,7 +2564,7 @@ pub async fn run_target_phy_register<P, D, O>(
     observer: O,
 ) -> Result<TargetPhyRegisterSuccess<P>, TargetPhyRegisterFailure<P>>
 where
-    P: PhyPreludePlatformControl + PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
+    P: PhyPmuControl + PhyWifiBbControl + PhyI2cMasterControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {

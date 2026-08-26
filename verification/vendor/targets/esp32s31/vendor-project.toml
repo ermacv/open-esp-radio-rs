@@ -249,6 +249,7 @@ owned-ranges = [
     "modem-radio-core-mid",
     "coex-hw-timer",
     "modem-radio-core-high",
+    "modem-lpcon-phy-tick",
     "lp-aon-phy-aux",
     "lp-periclkrst-tsens-phy-aux",
     "lp-tsens-phy-aux",
